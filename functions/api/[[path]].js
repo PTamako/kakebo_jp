@@ -169,7 +169,7 @@ export async function onRequest({ request, env, params }) {
     if (a === 'stats' && m === 'GET') {
       const year = (url.searchParams.get('year') || '').slice(0, 4)
       if (year) {
-        if (!/^\\d{4}$/.test(year)) return json({ error: '年份格式不正确' }, 400)
+        if (!/^\d{4}$/.test(year)) return json({ error: '年份格式不正确' }, 400)
         const like = year + '%'
         const total = await db.prepare('SELECT COALESCE(SUM(amount),0) t, COUNT(*) n FROM entries WHERE date LIKE ?1').bind(like).first()
         const cat = await db.prepare('SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 GROUP BY category ORDER BY amount DESC').bind(like).all()

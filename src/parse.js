@@ -1,5 +1,5 @@
 // 文字 / OCR 结果解析：日期、时间、金额、商家、分类（全部在浏览器本地完成，免费）
-export const CATEGORIES = ['餐饮', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '其他']
+export const CATEGORIES = ['餐饮', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
 
 const pad = n => String(n).padStart(2, '0')
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -49,7 +49,7 @@ export function parseEntry(raw, rules) {
   const text = normalize(raw)
   const { category, keyword } = classify(text, rules)
   const firstLine = text.split('\n').map(s => s.trim()).find(s => s.length >= 2 && !/^[\d¥\s:\/.\-]+$/.test(s)) || ''
-  const merchant = keyword || firstLine.slice(0, 20)
+  const merchant = firstLine.slice(0, 40) || keyword
   return {
     date: findDate(text), time: findTime(text), amount: findAmount(text),
     category, merchant, note: text.length <= 40 ? text.replace(/\s+/g, ' ') : '',
@@ -58,7 +58,6 @@ export function parseEntry(raw, rules) {
 }
 
 // 将一段粘贴文字或一张 OCR 图片拆分为多笔记录。
-// 优先按空行分段；没有空行时，仅在明显是多条交易行且没有小票合计的情况下按行拆分，避免把普通小票商品行误当成多笔消费。
 export function parseEntries(raw, rules) {
   const text = normalize(raw)
   if (!text) return []

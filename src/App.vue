@@ -63,8 +63,6 @@ async function addCategory() {
     flash('分类已新增')
   } catch (e) { flash('新增分类失败：' + e.message) }
 }
-  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), time: '', amount: 0, category: '其他', merchant: '', note: '', raw: '', suggested: '其他', keyword: '' })
-}
 function removeDraft(i) { forms.value.splice(i, 1) }
 
 async function saveAll() {

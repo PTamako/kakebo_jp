@@ -136,10 +136,45 @@ const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
 const dayRows = computed(() => [...(stats.value?.byDay || [])].sort((a, b) => a.date.localeCompare(b.date)))
-const averageDaily = computed(() => {
-  const days = dayRows.value.length
-  return days ? Math.round(Number(stats.value?.total || 0) / days) : 0
+// Monthly statistics are grouped into Monday–Sunday weeks, clipped to the selected month.
+const weekRows = computed(() => {
+  const [year, monthNumber] = month.value.split('-').map(Number)
+  const monthStart = new Date(year, monthNumber - 1, 1)
+  const monthEnd = new Date(year, monthNumber, 0)
+  const groups = new Map()
+  for (const day of dayRows.value) {
+    const date = new Date(day.date + 'T12:00:00')
+    const monday = new Date(date)
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
+    const key = monday.toLocaleDateString('sv-SE')
+    const current = groups.get(key) || { start: key, end: '', amount: 0, days: 0 }
+    current.amount += Number(day.amount || 0)
+    current.days += 1
+    groups.set(key, current)
+  }
+  const weeks = []
+  const cursor = new Date(monthStart)
+  cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7))
+  while (cursor <= monthEnd) {
+    const monday = new Date(cursor)
+    const sunday = new Date(cursor)
+    sunday.setDate(sunday.getDate() + 6)
+    const clippedStart = monday < monthStart ? monthStart : monday
+    const clippedEnd = sunday > monthEnd ? monthEnd : sunday
+    const key = monday.toLocaleDateString('sv-SE')
+    const group = groups.get(key)
+    weeks.push({
+      key,
+      label: `${clippedStart.getMonth() + 1}/${clippedStart.getDate()}–${clippedEnd.getMonth() + 1}/${clippedEnd.getDate()}`,
+      amount: group?.amount || 0,
+      days: group?.days || 0
+    })
+    cursor.setDate(cursor.getDate() + 7)
+  }
+  return weeks
 })
+const maxWeek = computed(() => Math.max(1, ...weekRows.value.map(w => w.amount)))
+const averageWeekly = computed(() => weekRows.value.length ? Math.round(Number(stats.value?.total || 0) / weekRows.value.length) : 0)
 const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
   return `${y}年${Number(m)}月`
@@ -264,7 +299,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
       <div class="income-expense-strip"><div><small>本月收入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>本月支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>结余</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
       <div class="metric-grid">
         <div class="metric-card"><span class="metric-icon">▦</span><small>支出笔数</small><strong>{{ stats?.count || 0 }}<em>笔</em></strong></div>
-        <div class="metric-card"><span class="metric-icon">↗</span><small>日均消费（有消费日）</small><strong>{{ yen(averageDaily) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon">↗</span><small>周均消费</small><strong>{{ yen(averageWeekly) }}</strong></div>
       </div>
       <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>还没有统计数据</strong><p>添加消费记录后，这里会显示支出分布。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
       <template v-else>
@@ -279,12 +314,12 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
           </div>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>每日支出</h2><p>按日期查看消费变化</p></div><span class="section-mark">02</span></div>
+          <div class="section-title"><div><h2>每周支出</h2><p>按周一至周日汇总，首尾周按本月日期计算</p></div><span class="section-mark">02</span></div>
           <div class="daily-list">
-            <div v-for="d in dayRows" :key="d.date" class="daily-row">
-              <div class="daily-date"><strong>{{ Number(d.date.slice(8)) }}</strong><span>日</span></div>
-              <div class="daily-bar-wrap"><div class="daily-bar-track"><span :style="{ width: Math.max(2, (d.amount / maxDay) * 100) + '%' }"></span></div><small>{{ d.date.slice(5) }}</small></div>
-              <strong class="daily-amount">{{ yen(d.amount) }}</strong>
+            <div v-for="(w, i) in weekRows" :key="w.key" class="daily-row weekly-row">
+              <div class="daily-date week-index"><strong>第{{ i + 1 }}</strong><span>周</span></div>
+              <div class="daily-bar-wrap"><div class="daily-bar-track"><span :style="{ width: Math.max(2, (w.amount / maxWeek) * 100) + '%' }"></span></div><small>{{ w.label }} · {{ w.days }}个消费日</small></div>
+              <strong class="daily-amount">{{ yen(w.amount) }}</strong>
             </div>
           </div>
         </div>
@@ -377,7 +412,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .stats-card{padding:18px 16px;margin-top:12px}.section-title{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}.section-title h2{font-size:16px;margin:0;font-weight:800}.section-title p{font-size:11px;color:var(--muted);margin:4px 0 0}.section-mark{font-size:10px;font-weight:800;color:#a3adbb;letter-spacing:.1em;padding-top:3px}
 .category-list{display:grid;gap:17px}.category-row-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}.category-name{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700}.category-row-top>strong{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.category-swatch{width:9px;height:9px;border-radius:3px;background:#5279d1}.swatch-1{background:#26a69a}.swatch-2{background:#e5a34d}.swatch-3{background:#9b78d0}.swatch-4{background:#52a5c9}.swatch-5{background:#e07886}
 .bar-track{height:7px;background:#f0f3f7;border-radius:99px;overflow:hidden}.bar-fill{display:block;height:100%;background:#5279d1;border-radius:99px;transition:width .25s}.fill-1{background:#26a69a}.fill-2{background:#e5a34d}.fill-3{background:#9b78d0}.fill-4{background:#52a5c9}.fill-5{background:#e07886}.category-share{display:block;text-align:right;color:#9aa4b1;font-size:10px;margin-top:4px}
-.daily-list{display:grid;gap:13px}.daily-row{display:flex;align-items:center;gap:11px}.daily-date{display:flex;align-items:baseline;justify-content:center;gap:1px;width:34px;flex:none}.daily-date strong{font-size:16px}.daily-date span{font-size:10px;color:var(--muted)}.daily-bar-wrap{flex:1;min-width:0}.daily-bar-track{height:7px;background:#f0f3f7;border-radius:99px;overflow:hidden}.daily-bar-track span{display:block;height:100%;background:linear-gradient(90deg,#4f7bd7,#6b9de9);border-radius:99px}.daily-bar-wrap small{display:block;font-size:10px;color:#9aa4b1;margin-top:3px}.daily-amount{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.daily-list{display:grid;gap:13px}.daily-row{display:flex;align-items:center;gap:11px}.daily-date{display:flex;align-items:baseline;justify-content:center;gap:1px;width:34px;flex:none}.daily-date strong{font-size:16px}.daily-date span{font-size:10px;color:var(--muted)}.daily-date.week-index{width:48px;gap:0;white-space:nowrap}.daily-date.week-index strong{font-size:12px}.daily-bar-wrap{flex:1;min-width:0}.daily-bar-track{height:7px;background:#f0f3f7;border-radius:99px;overflow:hidden}.daily-bar-track span{display:block;height:100%;background:linear-gradient(90deg,#4f7bd7,#6b9de9);border-radius:99px}.daily-bar-wrap small{display:block;font-size:10px;color:#9aa4b1;margin-top:3px}.daily-amount{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .empty-state{display:flex;align-items:center;flex-direction:column;text-align:center;padding:34px 18px;background:#fff;border:1px dashed #dce3ec;border-radius:18px}.empty-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:16px;background:#edf2ff;color:var(--blue);font-size:23px;margin-bottom:12px}.empty-state strong{font-size:14px}.empty-state p{font-size:12px;color:var(--muted);margin:6px 0 17px}.empty-state button{min-width:140px}.stats-empty{margin-top:8px}
 .bottom-nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));width:min(calc(100% - 28px),460px);display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:7px;background:#ffffffed;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid #e8edf2;border-radius:19px;box-shadow:0 8px 30px #20324b18}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;color:#8994a3;padding:7px 4px;border-radius:13px;font-size:10px;font-weight:700}.bottom-nav button.active{background:#edf2ff;color:var(--blue)}.nav-icon{font-size:21px;line-height:1.15;font-weight:500}
 .year-picker{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 13px;padding:10px 13px;background:#fff;border:1px solid #edf0f4;border-radius:13px;font-size:12px;font-weight:700;color:var(--muted)}.year-picker select{width:125px;padding:8px 10px;font-size:13px;font-weight:750;color:var(--ink)}.annual-hero{margin-bottom:0}.year-month-list{display:grid;gap:15px}.year-month-row{display:grid;grid-template-columns:36px minmax(40px,1fr) minmax(78px,auto);align-items:center;gap:10px}.year-month-label{font-size:12px;font-weight:700;color:#647184}.year-month-track{height:8px;border-radius:99px;background:#f0f3f7;overflow:hidden}.year-month-track span{display:block;height:100%;border-radius:99px;background:var(--blue);transition:width .2s}.year-month-row strong{text-align:right;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}.category-share{display:block;color:#9aa4b1;font-size:10px;margin-top:5px}

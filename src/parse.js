@@ -61,10 +61,70 @@ export function parseEntry(raw, rules) {
 export function parseEntries(raw, rules) {
   const text = normalize(raw)
   if (!text) return []
+
+  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+  const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
+    || /\d{1,2}\s*月\s*\d{1,2}/.test(line)
+    || /\d{1,2}\s*\/\s*\d{1,2}/.test(line)
+  const paymentLine = line => /^(?:1回払い|一回払い|分割払い|リボ払い|ボーナス払い|支払回数|クレジット|カード利用|ご利用日|利用日|利用金額|お支払方法|お支払い方法)$/i.test(line.replace(/\s/g, ''))
+  const amountLine = line => {
+    const s = line.replace(/[＞>」】]/g, '').trim()
+    return /^(?:[¥￥]\s*)?\d[\d,]*(?:\s*円)?$/.test(s)
+      && Number(s.replace(/[¥￥円,\s]/g, '')) > 0
+  }
+  const cleanAmountLine = line => {
+    const s = line.replace(/[＞>」】]/g, '').trim()
+    const m = s.match(/(?:[¥￥]\s*)?([\d,]+)(?:\s*円)?/)
+    return m ? Number(m[1].replace(/,/g, '')) : 0
+  }
+  const merchantLike = line => {
+    if (dateLine(line) || amountLine(line) || paymentLine(line)) return false
+    if (/^(?:1回払い|一回払い|分割払い|円|¥|￥)$/i.test(line.replace(/\s/g, ''))) return false
+    return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(line)
+  }
+
+  // Card statements may OCR as columns: merchants first, dates next, amounts last.
+  // Join wrapped merchant names such as a store name split before 目店.
+  const merchants = []
+  for (const line of lines) {
+    if (!merchantLike(line)) continue
+    if (/^(?:目店|丁目店|店)$/.test(line) && merchants.length) {
+      merchants[merchants.length - 1] += line
+    } else {
+      merchants.push(line)
+    }
+  }
+
+  const dateLines = lines.filter(dateLine)
+  const amountLines = lines.filter(amountLine)
+  const hasColumnarShape = merchants.length >= 2
+    && dateLines.length >= 2
+    && amountLines.length >= 2
+    && merchants.length === dateLines.length
+    && dateLines.length === amountLines.length
+
+  if (hasColumnarShape) {
+    return merchants.map((merchant, i) => {
+      const dateRaw = dateLines[i]
+      const amount = cleanAmountLine(amountLines[i])
+      const { category, keyword } = classify(merchant, rules)
+      return {
+        date: findDate(dateRaw),
+        time: '',
+        amount,
+        category,
+        merchant: merchant.slice(0, 60),
+        note: '',
+        raw: merchant + '\n' + dateRaw + '\n' + amountLines[i],
+        suggested: category,
+        keyword
+      }
+    }).filter(e => e.amount > 0)
+  }
+
   const blocks = text.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
   if (blocks.length > 1) return blocks.map(block => parseEntry(block, rules)).filter(e => e.amount > 0)
 
-  const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean)
   const hasReceiptTotal = /合\s*計|合计|小計|小计|総\s*額|total|請求額|お買上(?:げ)?金額/i.test(text)
   const transactionLines = lines.filter(line =>
     line.length >= 3 &&
@@ -74,10 +134,10 @@ export function parseEntries(raw, rules) {
   if (!hasReceiptTotal && transactionLines.length >= 2 && transactionLines.length === lines.length) {
     return transactionLines.map(line => parseEntry(line, rules)).filter(e => e.amount > 0)
   }
+
   const entry = parseEntry(text, rules)
   return entry.amount > 0 ? [entry] : [entry]
 }
-
 // 图片 → 文字：Tesseract.js 在手机浏览器本地运行，不上传、不收费
 export async function ocrImage(file, onProgress) {
   const { createWorker } = await import('tesseract.js')

@@ -132,6 +132,17 @@ export async function onRequest({ request, env, params }) {
         ).bind(e.date, e.time || '', amount, e.category || (e.type === 'income' ? '工资' : '日用品'), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), e.type === 'income' ? 'income' : 'expense').run()
         return json({ ok: true })
       }
+      if (m === 'PUT' && b) {
+        const e = await request.json()
+        const id = Number(b)
+        const amount = Math.round(Number(e.amount))
+        if (!Number.isInteger(id) || id <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
+          return json({ error: '日期或金额不正确' }, 400)
+        const result = await db.prepare(
+          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8 WHERE id = ?9'
+        ).bind(e.date, e.time || '', amount, e.category || (e.type === 'income' ? '工资' : '日用品'), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), e.type === 'income' ? 'income' : 'expense', id).run()
+        return json({ ok: true, changes: result.meta?.changes ?? null })
+      }
       if (m === 'DELETE' && b) {
         await db.prepare('DELETE FROM entries WHERE id = ?1').bind(Number(b)).run()
         return json({ ok: true })

@@ -182,7 +182,7 @@ const annualAverage = computed(() => Math.round(Number(annualStats.value?.total 
       </ul>
     </section>
 
-    <section v-else class="page-section stats-page">
+    <section v-else-if="tab === 'stat'" class="page-section stats-page">
       <div class="page-heading"><div><p class="eyebrow">MONTHLY OVERVIEW</p><h1>支出统计</h1><p class="heading-subtitle">{{ monthLabel }} · 消费概览</p></div><span class="heading-icon">↗</span></div>
       <div class="hero-total">
         <span>本月总支出</span>

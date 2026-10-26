@@ -9,6 +9,7 @@ const annualStats = ref(null)
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
+const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '退款', '其他收入']
 const CATEGORY_ICONS = { '餐饮':'🍜', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '退款':'↩️', '其他收入':'🌷' }
 const categoryIcon = name => CATEGORY_ICONS[name] || '🧾'
@@ -105,6 +106,32 @@ async function remove(id) {
   if (!confirm('删除这一笔？')) return
   await api('entries/' + id, { method: 'DELETE' }); load()
 }
+function startEdit(entry) {
+  editingEntry.value = {
+    id: entry.id, date: entry.date, time: entry.time || '',
+    amount: Number(entry.amount), type: entry.type === 'income' ? 'income' : 'expense',
+    category: entry.category || '日用品', merchant: entry.merchant || '',
+    note: entry.note || '', raw: entry.raw || ''
+  }
+}
+function cancelEdit() { editingEntry.value = null }
+async function saveEdit() {
+  const e = editingEntry.value
+  if (!e) return
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !(Number(e.amount) > 0)) {
+    flash('请检查日期和金额')
+    return
+  }
+  try {
+    await api('entries/' + e.id, {
+      method: 'PUT',
+      body: JSON.stringify({ ...e, amount: Number(e.amount) })
+    })
+    editingEntry.value = null
+    flash('记录已更新')
+    await load()
+  } catch (err) { flash('更新失败：' + err.message) }
+}
 const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map(c => c.amount)))
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
@@ -199,9 +226,28 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
           <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
           <div class="ledger-info"><b>{{ e.merchant || e.category }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ e.category }} · {{ e.type === 'income' ? '收入' : '支出' }}</small></div>
           <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income' }">{{ e.type === 'income' ? '+' : '−' }}{{ yen(e.amount) }}</span>
-          <button class="icon-button delete-button" @click="remove(e.id)" aria-label="删除记录">×</button>
+          <button class="icon-button edit-button" @click="startEdit(e)" aria-label="编辑记录" title="编辑">✎</button>
+          <button class="icon-button delete-button" @click="remove(e.id)" aria-label="删除记录" title="删除">×</button>
         </li>
       </ul>
+      <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
+        <form class="edit-dialog" @submit.prevent="saveEdit">
+          <div class="edit-dialog-heading"><h2>编辑记录</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="关闭">×</button></div>
+          <div class="type-switch" role="group" aria-label="记录类型">
+            <button type="button" :class="{ selected: editingEntry.type === 'expense' }" @click="setEntryType(editingEntry, 'expense')">💸 支出</button>
+            <button type="button" :class="{ selected: editingEntry.type === 'income' }" @click="setEntryType(editingEntry, 'income')">🌷 收入</button>
+          </div>
+          <label class="form-field"><span>金额（日元）</span><input v-model.number="editingEntry.amount" type="number" min="1" inputmode="numeric" required /></label>
+          <div class="field-grid">
+            <label class="form-field"><span>日期</span><input v-model="editingEntry.date" type="date" required /></label>
+            <label class="form-field"><span>时间</span><input v-model="editingEntry.time" type="time" /></label>
+            <label class="form-field"><span>分类</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ c }}</option></select></label>
+            <label class="form-field"><span>商家</span><input v-model="editingEntry.merchant" /></label>
+          </div>
+          <label class="form-field"><span>备注</span><input v-model="editingEntry.note" /></label>
+          <div class="edit-dialog-actions"><button type="button" class="button-secondary" @click="cancelEdit">取消</button><button type="submit" class="button-primary">保存修改</button></div>
+        </form>
+      </div>
     </section>
 
     <section v-else-if="tab === 'stat'" class="page-section stats-page">
@@ -377,4 +423,11 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 
 @media(min-width:480px){main{padding-left:22px;padding-right:22px}.stats-card{padding:20px}.hero-total{padding:25px 24px 20px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+.edit-button{font-size:17px;color:#8d7792;width:27px}
+.edit-overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:18px;background:#2f253566;backdrop-filter:blur(3px)}
+.edit-dialog{display:grid;gap:14px;width:min(100%,460px);max-height:min(88dvh,760px);overflow:auto;padding:20px;background:#fffaf9;border:1px solid #f3e0e6;border-radius:22px;box-shadow:0 20px 70px #38233530}
+.edit-dialog-heading{display:flex;align-items:center;justify-content:space-between}
+.edit-dialog-heading h2{font-size:19px;margin:0}
+.edit-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.edit-dialog .type-switch{margin:0}
 </style>

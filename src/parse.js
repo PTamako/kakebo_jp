@@ -9,7 +9,7 @@ export function normalize(text) {
     .normalize('NFKC')
     .replace(/(?<=[\u3040-\u30ff\u4e00-\u9fff])[ \t]+(?=[\u3040-\u30ff\u4e00-\u9fff])/g, '')
     // OCR may split a two-digit day into "1 1" (e.g. 2026/10/1 1).
-    .replace(/(?<=\\d)[ \\t]+(?=\\d)/g, '')
+    .replace(/(?<=\d)[ \t]+(?=\d)/g, '')
     .trim()
 }
 

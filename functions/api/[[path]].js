@@ -19,7 +19,18 @@ const DEFAULT_RULES = {
     'デニーズ','ココス','びっくりドンキー','丸亀製麺','はなまるうどん','リンガーハット','てんや','大戸屋','やよい軒',
     'くら寿司','スシロー','はま寿司','かっぱ寿司','鳥貴族','ドトール','スターバックス','タリーズ','コメダ珈琲','サンマルクカフェ',
     'ミスタードーナツ','クリスピー・クリーム','シャトレーゼ','不二家','銀座コージーコーナー','文明堂','ヨックモック','カルディコーヒーファーム','カルディ','成城石井','富澤商店','久世福商店','業務用食品スーパー','パン','弁当','お弁当','惣菜','食品','食料品','スーパー','コンビニ',
-    'ランチ','ディナー','モーニング'
+    'ランチ','ディナー','モーニング',
+    '一蘭','天下一品','蒙古タンメン中本','らあめん花月嵐','幸楽苑','餃子の満州','町田商店','日高屋','リンガーハット','丸源ラーメン','山岡家','一風堂','博多一風堂','らーめん山頭火','AFURI','つけ麺','ラーメン','らーめん',
+    '焼肉きんぐ','牛角','安楽亭','叙々苑','焼肉ライク','ワンカルビ','七輪焼肉安安','しゃぶ葉','温野菜','木曽路','ゆず庵','しゃぶしゃぶ','すき焼き',
+    '餃子の王将','大阪王将','リンガーハット','天丼てんや','かつや','松のや','とんかつ和幸','さぼてん','和食さと','夢庵','藍屋','華屋与兵衛','木曽路','とんでん',
+    '磯丸水産','大庄水産','魚民','白木屋','目利きの銀次','や台ずし','庄や','鳥貴族','串カツ田中','世界の山ちゃん','塚田農場','てけてけ','磯丸水産',
+    'コメダ珈琲店','星乃珈琲店','珈琲館','上島珈琲店','エクセルシオールカフェ','プロント','ベローチェ','サンマルクカフェ','ドトールコーヒーショップ','猿田彦珈琲','ブルーボトルコーヒー',
+    'バーガーキング','フレッシュネスバーガー','ロッテリア','ゼッテリア','ウェンディーズ','サブウェイ','フレッシュネス','ケンタッキーフライドチキン','吉野家','すき家','松屋','なか卯',
+    '丸亀製麺','はなまるうどん','杵屋','名代富士そば','ゆで太郎','小諸そば','箱根そば','富士そば','リンガーハット','日高屋',
+    'オリジン弁当','キッチンオリジン','ほっともっと','ほっかほっか亭','崎陽軒','RF1','柿安','デパ地下','ほっともっと',
+    'サーティワン','31アイスクリーム','ハーゲンダッツ','ゴンチャ','タピオカ','果汁工房果琳','築地銀だこ','銀だこ','ミスタードーナツ','ビアードパパ','クリスピー・クリーム・ドーナツ',
+    'Uber Eats','ウーバーイーツ','出前館','menuデリバリー','Wolt','ウォルト','Rocket Now','ロケットナウ','マックデリバリー','ピザハット','ドミノ・ピザ','ピザーラ','ナポリの窯','銀のさら',
+    '食べログ','ぐるなび','ホットペッパーグルメ','Oisix','オイシックス','ヨシケイ','パルシステム','コープデリ','生協宅配','らでぃっしゅぼーや'
   ],
   '日用品': [
     'マツモトキヨシ','マツキヨ','ウエルシア','ウェルシア','ツルハドラッグ','スギ薬局','サンドラッグ','ココカラファイン',
@@ -115,9 +126,25 @@ export async function onRequest({ request, env, params }) {
         return json({ ok: true })
       }
     }
+    if (a === 'categories') {
+      if (m === 'GET') {
+        const base = ['餐饮','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
+        const { results } = await db.prepare("SELECT DISTINCT category FROM rules WHERE keyword LIKE '__category__:%' ORDER BY category").all()
+        return json([...new Set([...base, ...results.map(r => r.category)])])
+      }
+      if (m === 'POST') {
+        const body = await request.json()
+        const name = String(body.name || '').trim().slice(0, 20)
+        if (name.length < 1) return json({ error: '分类名称不能为空' }, 400)
+        const reserved = ['餐饮','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
+        if (reserved.includes(name)) return json({ ok: true, category: name })
+        await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name).run()
+        return json({ ok: true, category: name })
+      }
+    }
     if (a === 'rules') {
       if (m === 'GET') {
-        const marker = '__kakeibo_japanese_rules_v4_seeded__'
+        const marker = '__kakeibo_japanese_rules_v5_seeded__'
         const seeded = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(marker).first()
         if (!seeded) {
           const rows = [...DEFAULT_RULE_ROWS, [marker, '其他']]
@@ -129,7 +156,7 @@ export async function onRequest({ request, env, params }) {
             await db.batch(batch)
           }
         }
-        return json((await db.prepare('SELECT * FROM rules WHERE keyword != ?1').bind(marker).all()).results)
+        return json((await db.prepare('SELECT * FROM rules WHERE keyword != ?1 AND keyword NOT LIKE ?2').bind(marker, '__category__:%').all()).results)
       }
       if (m === 'POST') {
         const r = await request.json()

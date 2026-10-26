@@ -1,10 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { parseEntries, ocrImage, CATEGORIES } from './parse.js'
+import { parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 
 const tab = ref('add')
 const month = ref(new Date().toISOString().slice(0, 7))
-const rules = ref([]), entries = ref([]), stats = ref(null)
+const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
 const token = ref(localStorage.getItem('token') || '')
@@ -28,6 +28,7 @@ const flash = t => { msg.value = t; setTimeout(() => (msg.value = ''), 3000) }
 async function load() {
   try {
     if (!rules.value.length) rules.value = await api('rules')
+    categories.value = await api('categories')
     entries.value = await api('entries?month=' + month.value)
     stats.value = await api('stats?month=' + month.value)
   } catch (e) { flash(e.message) }
@@ -37,7 +38,7 @@ watch(month, load)
 
 function recognize() {
   if (!input.value.trim()) return
-  forms.value = parseEntries(input.value, rules.value)
+  forms.value = parseEntries(input.value, rules.value).map(f => ({ ...f, bindRule: false }))
   flash(forms.value.length > 1 ? `识别到 ${forms.value.length} 笔记录，请检查后批量保存` : '请检查识别结果')
 }
 async function onImage(e) {
@@ -51,6 +52,17 @@ async function onImage(e) {
   busy.value = ''
 }
 function addBlank() {
+  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), time: '', amount: 0, category: '日用品', merchant: '', note: '', raw: '', suggested: '日用品', keyword: '', bindRule: false })
+}
+async function addCategory() {
+  const name = prompt('请输入新分类名称（最多20字）')
+  if (!name?.trim()) return
+  try {
+    await api('categories', { method: 'POST', body: JSON.stringify({ name: name.trim() }) })
+    categories.value = await api('categories')
+    flash('分类已新增')
+  } catch (e) { flash('新增分类失败：' + e.message) }
+}
   forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), time: '', amount: 0, category: '其他', merchant: '', note: '', raw: '', suggested: '其他', keyword: '' })
 }
 function removeDraft(i) { forms.value.splice(i, 1) }
@@ -63,8 +75,8 @@ async function saveAll() {
     let saved = 0
     for (const f of forms.value) {
       await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
-      if (f.merchant && f.merchant.length >= 2 && f.category !== f.suggested) {
-        await api('rules', { method: 'POST', body: JSON.stringify({ keyword: f.merchant, category: f.category }) })
+      if (f.bindRule && f.merchant && f.merchant.trim().length >= 2) {
+        await api('rules', { method: 'POST', body: JSON.stringify({ keyword: f.merchant.trim(), category: f.category }) })
       }
       saved++
     }
@@ -105,7 +117,7 @@ const monthLabel = computed(() => {
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
 
     <section v-if="tab === 'add'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">NEW ENTRY</p><h1>记一笔</h1></div><span class="heading-icon">＋</span></div>
+      <div class="page-heading"><div><p class="eyebrow">NEW ENTRY</p><h1>记一笔</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ 新增分类</button></div>
       <div class="panel capture-panel">
         <label class="field-label" for="entry-text">消费内容</label>
         <textarea id="entry-text" v-model="input" rows="4" placeholder="例如：昨天 罗森 680円&#10;&#10;多笔消费可以分段粘贴，也可以上传小票图片。"></textarea>
@@ -127,10 +139,11 @@ const monthLabel = computed(() => {
         <div class="field-grid">
           <label class="form-field"><span>日期</span><input type="date" v-model="f.date" /></label>
           <label class="form-field"><span>时间</span><input type="time" v-model="f.time" /></label>
-          <label class="form-field"><span>分类</span><select v-model="f.category"><option v-for="c in CATEGORIES" :key="c">{{ c }}</option></select></label>
+          <label class="form-field"><span>分类</span><select v-model="f.category"><option v-for="c in categories" :key="c">{{ c }}</option></select></label>
           <label class="form-field"><span>商家</span><input v-model="f.merchant" /></label>
         </div>
         <label class="form-field"><span>备注</span><input v-model="f.note" placeholder="可选" /></label>
+        <label v-if="f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>将此商家绑定到所选分类，下次自动识别</span></label>
       </div>
       <div v-if="forms.length" class="batch-actions">
         <button class="button-secondary" @click="addBlank">＋ 添加一笔</button>
@@ -144,7 +157,7 @@ const monthLabel = computed(() => {
       <div v-if="!entries.length" class="empty-state"><span class="empty-icon">▤</span><strong>这个月还没有记录</strong><p>去「记一笔」添加第一笔消费。</p><button class="button-primary" @click="tab = 'add'">添加记录</button></div>
       <ul v-else class="ledger">
         <li v-for="e in entries" :key="e.id">
-          <span class="category-dot" :class="'cat-' + (CATEGORIES.indexOf(e.category) + 1)">{{ (e.category || '其').slice(0, 1) }}</span>
+          <span class="category-dot" :class="'cat-' + (categories.indexOf(e.category) + 1)">{{ (e.category || '其').slice(0, 1) }}</span>
           <div class="ledger-info"><b>{{ e.merchant || e.category }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ e.category }}</small></div>
           <span class="ledger-amount">{{ yen(e.amount) }}</span>
           <button class="icon-button delete-button" @click="remove(e.id)" aria-label="删除记录">×</button>
@@ -219,7 +232,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .button-primary{background:var(--blue);color:#fff;box-shadow:0 4px 9px #315fbd20}.button-primary:active{background:var(--blue-dark)}
 .button-secondary{background:#f1f5ff;color:var(--blue);border-color:#e2eaff}
 .upload-button{display:flex;cursor:pointer}
-.microcopy{font-size:11px;color:#929cab;margin:12px 0 0}.progress-wrap{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--blue);font-size:12px}.spinner{width:14px;height:14px;border:2px solid #dce6ff;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.microcopy{font-size:11px;color:#929cab;margin:12px 0 0}.manage-category{min-height:38px;padding:8px 10px;font-size:12px;white-space:nowrap}.bind-rule{display:flex;align-items:flex-start;gap:8px;padding:10px 11px;border:1px solid #dce7ff;background:#f7f9ff;border-radius:11px;color:#315fbd;font-size:12px}.bind-rule input{width:17px;height:17px;flex:none;margin:1px 0 0;accent-color:#315fbd}.bind-rule span{flex:1}.progress-wrap{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--blue);font-size:12px}.spinner{width:14px;height:14px;border:2px solid #dce6ff;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .toast{position:sticky;top:calc(8px + env(safe-area-inset-top));z-index:5;margin:0 0 14px;padding:11px 14px;background:#202b37;color:white;border-radius:12px;font-size:13px;box-shadow:0 5px 16px #17253820}
 .draft-heading{display:flex;align-items:center;justify-content:space-between;margin:24px 2px 10px}.draft-heading h2{font-size:17px;margin:0}.draft-heading p{font-size:12px;color:var(--muted);margin:3px 0 0}.count-pill{background:#e7f5f2;color:#11796f;padding:6px 10px;border-radius:99px;font-size:12px;font-weight:800}
 .entry-card{padding:15px;margin-top:11px;display:grid;gap:13px}.entry-card-heading{display:flex;align-items:center;gap:9px;min-width:0}.entry-card-heading strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;font-size:14px}.entry-number{display:grid;place-items:center;flex:none;width:30px;height:30px;background:#eef2ff;color:var(--blue);border-radius:10px;font-size:11px;font-weight:800}

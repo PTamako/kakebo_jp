@@ -8,6 +8,8 @@ export function normalize(text) {
   return text
     .normalize('NFKC')
     .replace(/(?<=[\u3040-\u30ff\u4e00-\u9fff])[ \t]+(?=[\u3040-\u30ff\u4e00-\u9fff])/g, '')
+    // OCR may split a two-digit day into "1 1" (e.g. 2026/10/1 1).
+    .replace(/(?<=\\d)[ \\t]+(?=\\d)/g, '')
     .trim()
 }
 
@@ -78,15 +80,17 @@ export function parseEntries(raw, rules) {
     return m ? Number(m[1].replace(/,/g, '')) : 0
   }
   const extractTrailingAmount = line => {
-    // Currency labels and common OCR noise after the amount are allowed; store-address digits are not.
-    const m = line.match(/(?:[¥￥]\s*)?(\d[\d,]{1,6})\s*(?:円|m[mn]|mm)?\s*(?:[Nn＞>2]+)?\s*[、,，。．.）)」】]*\s*$/i)
+    // Japanese card-statement OCR often misreads 円 as m/g/gm and thousand separators as periods.
+    // Only accept a number at the very end with a currency-like marker, to avoid treating address digits as amounts.
+    const m = line.match(/(?:[¥￥]\s*)?(\d[\d,，.]{1,7})\s*(円|m{1,2}|g(?:m)?|mm)?\s*(?:[Nn＞>2]+)?\s*[、,，。．.）)」】]*\s*$/i)
     if (!m) return null
-    const amount = Number(m[1].replace(/,/g, ''))
+    const rawNumber = m[1]
+    // Amounts in these Japanese statements are whole yen; OCR may render 5,931 as 5.931.
+    const amount = Number(rawNumber.replace(/[,，.]/g, ''))
     if (!Number.isFinite(amount) || amount < 1 || amount > 999999) return null
-    // Without a currency marker, only trust an amount at the end when OCR left a known trailing marker.
-    const tail = line.slice(m.index + m[0].length)
-    const hasCurrency = /円|[¥￥]|m[mn]|mm/i.test(m[0])
-    if (!hasCurrency && !/[Nn＞>2]\s*$/.test(line)) return null
+    const marker = m[2] || ''
+    const hasCurrency = /円|[¥￥]|m|g/i.test(marker) || /[Nn＞>2]\s*$/.test(line)
+    if (!hasCurrency) return null
     return { amount, raw: m[0], index: m.index }
   }
   const cleanMerchant = value => value

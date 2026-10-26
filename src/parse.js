@@ -163,7 +163,7 @@ export function parseEntries(raw, rules) {
     if (/^(?:目店|丁目店|店)$/.test(line.replace(/[\s＞>]/g, '')) && merchants.length) {
       merchants[merchants.length - 1] += line.replace(/[＞>]/g, '')
     } else {
-      merchants.push(line)
+      merchants.push(cleanMerchant(line))
     }
   }
   const amountLines = lines.filter(amountLine)

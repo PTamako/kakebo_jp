@@ -79,7 +79,7 @@ export function parseEntries(raw, rules) {
   }
   const extractTrailingAmount = line => {
     // Currency labels and common OCR noise after the amount are allowed; store-address digits are not.
-    const m = line.match(/(?:[¥￥]\s*)?(\d[\d,]{1,6})\s*(?:円|m[mn]|mm)?\s*(?:[Nn＞>2]+)?\s*$/i)
+    const m = line.match(/(?:[¥￥]\s*)?(\d[\d,]{1,6})\s*(?:円|m[mn]|mm)?\s*(?:[Nn＞>2]+)?\s*[、,，。．.）)」】]*\s*$/i)
     if (!m) return null
     const amount = Number(m[1].replace(/,/g, ''))
     if (!Number.isFinite(amount) || amount < 1 || amount > 999999) return null
@@ -92,7 +92,7 @@ export function parseEntries(raw, rules) {
   const cleanMerchant = value => value
     .replace(/[＞>」】]+\s*$/g, '')
     .replace(/[Nn]\s*$/g, '')
-    .replace(/[\s,，]+$/g, '')
+    .replace(/[\s,，、。．.]+$/g, '')
     .trim()
   const merchantRows = []
   const dateLines = lines.filter(dateLine)

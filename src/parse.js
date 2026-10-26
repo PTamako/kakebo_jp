@@ -71,12 +71,12 @@ export function parseEntries(raw, rules) {
   const paymentLine = line => /^(?:1回払い|一回払い|分割払い|リボ払い|ボーナス払い|支払回数|クレジット|カード利用|ご利用日|利用日|利用金額|お支払方法|お支払い方法)$/i.test(line.replace(/[\s＞>]/g, ''))
   const amountLine = line => {
     const s = line.replace(/[＞>」】]/g, '').trim()
-    if (!/^(?:[¥￥]\\s*)?\\d[\\d,]*(?:\\s*円)?$/.test(s)) return false
-    const digits = s.replace(/[^\\d]/g, '')
+    if (!/^(?:[¥￥]\s*)?\d[\d,]*(?:\s*円)?$/.test(s)) return false
+    const digits = s.replace(/[^\d]/g, '')
     const hasCurrency = /[¥￥円]/.test(s)
-    const hasThousandsSeparator = /^\\s*(?:[¥￥]\\s*)?\\d{1,3}(?:,\\d{3})+(?:\\s*円)?\\s*$/.test(s)
-    // Card statements may put a six-digit Suica/card reference on its own line.
-    // Do not mistake an unformatted reference such as "705507" for a yen amount.
+    const hasThousandsSeparator = /^\s*(?:[¥￥]\s*)?\d{1,3}(?:,\d{3})+(?:\s*円)?\s*$/.test(s)
+    // Long unformatted numbers in card statements are ambiguous and often reference IDs.
+    // Accept long amounts only when currency or thousands separators make them explicit.
     if (!hasCurrency && !hasThousandsSeparator && digits.length >= 6) return false
     const amount = Number(digits)
     return amount > 0 && amount <= 9999999
@@ -103,11 +103,11 @@ export function parseEntries(raw, rules) {
   const cleanMerchant = value => value
     // Card statements may append a reference number to every merchant row, not only Suica.
     // Strip visible numeric references and OCR-truncated forms such as "7...".
-    .replace(/\\s+\\d{6,}\\s*$/g, '')
-    .replace(/\\s+\\d{1,3}\\s*[.…・]{2,}\\s*$/g, '')
-    .replace(/[＞>」】]+\\s*$/g, '')
-    .replace(/[Nn]\\s*$/g, '')
-    .replace(/[\\s,，、。．.]+$/g, '')
+    .replace(/\s+\d{6,}\s*$/g, '')
+    .replace(/\s+\d{1,3}\s*[.…・]{2,}\s*$/g, '')
+    .replace(/[＞>」】]+\s*$/g, '')
+    .replace(/[Nn]\s*$/g, '')
+    .replace(/[\s,，、。．.]+$/g, '')
     .trim()
   const merchantRows = []
   const dateLines = lines.filter(dateLine)
@@ -163,7 +163,7 @@ export function parseEntries(raw, rules) {
     if (/^(?:目店|丁目店|店)$/.test(line.replace(/[\s＞>]/g, '')) && merchants.length) {
       merchants[merchants.length - 1] += line.replace(/[＞>]/g, '')
     } else {
-      merchants.push(line)
+      merchants.push(cleanMerchant(line))
     }
   }
   const amountLines = lines.filter(amountLine)

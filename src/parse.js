@@ -1,13 +1,13 @@
 // 文字 / OCR 结果解析：日期、时间、金额、商家、分类（全部在浏览器本地完成，免费）
-export const CATEGORIES = ['餐饮', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '其他']
+export const CATEGORIES = ['餐饮', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
 
 const pad = n => String(n).padStart(2, '0')
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
 export function normalize(text) {
   return text
-    .normalize('NFKC') // 全角数字/符号 → 半角
-    .replace(/(?<=[\u3040-\u30ff\u4e00-\u9fff])[ \t]+(?=[\u3040-\u30ff\u4e00-\u9fff])/g, '') // OCR 在汉字间多出的空格
+    .normalize('NFKC')
+    .replace(/(?<=[\u3040-\u30ff\u4e00-\u9fff])[ \t]+(?=[\u3040-\u30ff\u4e00-\u9fff])/g, '')
     .trim()
 }
 
@@ -23,21 +23,17 @@ function findDate(t, today = new Date()) {
 
 function findTime(t) {
   const m = t.match(/(?<!\d)([01]?\d|2[0-3])[:：时時]([0-5]\d)(?!\d)/)
-  return m ? `${pad(m[1])}:${m[2]}` : ''
+  return m ? `${pad(m[1])}:${pad(m[2])}` : ''
 }
 
 function findAmount(t) {
   const num = s => Number(s.replace(/[,，\s]/g, ''))
   let m
-  // 1) 合計 / 合计 / total 后面的金额（小票最可靠）
   if ((m = t.match(/(?:合\s*計|合计|お?買上(?:げ)?(?:金額)?|総\s*額|total|請求額)[^\d¥]{0,8}¥?\s*([\d,]{2,9})/i))) return num(m[1])
-  // 2) ¥ 金额
   const yen = [...t.matchAll(/[¥￥]\s*([\d,]{1,9})/g)].map(x => num(x[1]))
   if (yen.length) return Math.max(...yen)
-  // 3) 数字 + 円/元/块
   const unit = [...t.matchAll(/([\d,]{1,9})\s*(?:円|日元|元|块|塊)/g)].map(x => num(x[1]))
   if (unit.length) return Math.max(...unit)
-  // 4) 兜底：剔除日期时间后的最大数字
   const cleaned = t.replace(/\d{4}[年\/.\-]\d{1,2}[月\/.\-]\d{1,2}日?/g, '').replace(/\d{1,2}[:：]\d{2}/g, '')
   const all = [...cleaned.matchAll(/(?<![\d.])(\d{2,7})(?![\d.])/g)].map(x => Number(x[1]))
   return all.length ? Math.max(...all) : 0
@@ -46,14 +42,14 @@ function findAmount(t) {
 export function classify(text, rules) {
   const hit = [...rules].sort((a, b) => b.keyword.length - a.keyword.length)
     .find(r => text.toLowerCase().includes(r.keyword.toLowerCase()))
-  return hit ? { category: hit.category, keyword: hit.keyword } : { category: '其他', keyword: '' }
+  return hit ? { category: hit.category, keyword: hit.keyword } : { category: '日用品', keyword: '' }
 }
 
 export function parseEntry(raw, rules) {
   const text = normalize(raw)
   const { category, keyword } = classify(text, rules)
   const firstLine = text.split('\n').map(s => s.trim()).find(s => s.length >= 2 && !/^[\d¥\s:\/.\-]+$/.test(s)) || ''
-  const merchant = keyword || firstLine.slice(0, 20)
+  const merchant = firstLine.slice(0, 40) || keyword
   return {
     date: findDate(text), time: findTime(text), amount: findAmount(text),
     category, merchant, note: text.length <= 40 ? text.replace(/\s+/g, ' ') : '',
@@ -61,7 +57,28 @@ export function parseEntry(raw, rules) {
   }
 }
 
-// 图片 → 文字：Tesseract.js 在手机浏览器本地运行，不上传、不收费；首次会下载日文语言包并缓存
+// 将一段粘贴文字或一张 OCR 图片拆分为多笔记录。
+export function parseEntries(raw, rules) {
+  const text = normalize(raw)
+  if (!text) return []
+  const blocks = text.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
+  if (blocks.length > 1) return blocks.map(block => parseEntry(block, rules)).filter(e => e.amount > 0)
+
+  const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean)
+  const hasReceiptTotal = /合\s*計|合计|小計|小计|総\s*額|total|請求額|お買上(?:げ)?金額/i.test(text)
+  const transactionLines = lines.filter(line =>
+    line.length >= 3 &&
+    /(?:[¥￥]\s*[\d,]+|[\d,]+\s*(?:円|元|日元|块|塊))/.test(line) &&
+    !/^(?:小計|合計|合计|消費税|税|お預り|お釣り|釣銭|現金|クレジット|total|tax)\b/i.test(line)
+  )
+  if (!hasReceiptTotal && transactionLines.length >= 2 && transactionLines.length === lines.length) {
+    return transactionLines.map(line => parseEntry(line, rules)).filter(e => e.amount > 0)
+  }
+  const entry = parseEntry(text, rules)
+  return entry.amount > 0 ? [entry] : [entry]
+}
+
+// 图片 → 文字：Tesseract.js 在手机浏览器本地运行，不上传、不收费
 export async function ocrImage(file, onProgress) {
   const { createWorker } = await import('tesseract.js')
   const worker = await createWorker(['jpn', 'eng'], 1, {

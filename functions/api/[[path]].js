@@ -115,9 +115,19 @@ export async function onRequest({ request, env, params }) {
     }
     if (a === 'rules') {
       if (m === 'GET') {
-        const stmt = db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)')
-        for (const [keyword, category] of DEFAULT_RULE_ROWS) await stmt.bind(keyword, category).run()
-        return json((await db.prepare('SELECT * FROM rules').all()).results)
+        const marker = '__kakeibo_defaults_v2_seeded__'
+        const seeded = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(marker).first()
+        if (!seeded) {
+          const rows = [...DEFAULT_RULE_ROWS, [marker, '其他']]
+          // 分批写入，避免首次打开页面时逐条访问 D1。
+          for (let i = 0; i < rows.length; i += 40) {
+            const batch = rows.slice(i, i + 40).map(([keyword, category]) =>
+              db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
+            )
+            await db.batch(batch)
+          }
+        }
+        return json((await db.prepare('SELECT * FROM rules WHERE keyword != ?1').bind(marker).all()).results)
       }
       if (m === 'POST') {
         const r = await request.json()

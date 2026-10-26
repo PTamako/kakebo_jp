@@ -42,7 +42,7 @@ function findAmount(t) {
 export function classify(text, rules) {
   const hit = [...rules].sort((a, b) => b.keyword.length - a.keyword.length)
     .find(r => text.toLowerCase().includes(r.keyword.toLowerCase()))
-  return hit ? { category: hit.category, keyword: hit.keyword } : { category: '其他', keyword: '' }
+  return hit ? { category: hit.category, keyword: hit.keyword } : { category: '日用品', keyword: '' }
 }
 
 export function parseEntry(raw, rules) {

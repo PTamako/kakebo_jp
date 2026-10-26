@@ -139,7 +139,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
   <main>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">🐶🐕</span>
+        <span class="brand-mark" aria-label="小白和鸡毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="小白" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="鸡毛" /></span>
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>和小白、鸡毛一起记账</small></div>
       </div>
       <input type="month" v-model="month" class="month" aria-label="统计月份" />
@@ -212,7 +212,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
         <div class="hero-footer"><span class="hero-dot"></span>{{ stats?.count || 0 }} 笔消费记录</div>
       </div>
       <div class="piggy-card" :class="'piggy-' + pigState(monthlyRatio)">
-        <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="小白和鸡毛的表情"><span class="puppy-white">{{ pigState(monthlyRatio) === 'broken' ? '🐶😭' : pigState(monthlyRatio) === 'sweating' ? '🐶💦' : pigState(monthlyRatio) === 'empty' ? '🐶❔' : '🐶✨' }}</span><span class="puppy-jimao">{{ pigState(monthlyRatio) === 'broken' ? '🐕💦' : pigState(monthlyRatio) === 'sweating' ? '🐕😟' : pigState(monthlyRatio) === 'empty' ? '🐕❔' : '🐕🤍' }}</span><small>小白 × 鸡毛</small></div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="小白和鸡毛"><img class="puppy-white" src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="小白" loading="lazy" /><img class="puppy-jimao" src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="鸡毛" loading="lazy" /><small>小白 × 鸡毛</small></div>
         <div class="piggy-content"><div class="piggy-title">本月收支平衡</div><div class="piggy-status">{{ pigLabel(monthlyRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (monthlyRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出占收入</span><strong>{{ ratioLabel(monthlyRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip"><div><small>本月收入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>本月支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>结余</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
@@ -254,7 +254,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
       </div>
       <div class="income-expense-strip annual-income-strip"><div><small>全年收入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>全年支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>全年结余</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
       <div class="piggy-card" :class="'piggy-' + pigState(annualRatio)">
-        <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="小白和鸡毛的表情"><span class="puppy-white">{{ pigState(annualRatio) === 'broken' ? '🐶😭' : pigState(annualRatio) === 'sweating' ? '🐶💦' : pigState(annualRatio) === 'empty' ? '🐶❔' : '🐶✨' }}</span><span class="puppy-jimao">{{ pigState(annualRatio) === 'broken' ? '🐕💦' : pigState(annualRatio) === 'sweating' ? '🐕😟' : pigState(annualRatio) === 'empty' ? '🐕❔' : '🐕🤍' }}</span><small>小白 × 鸡毛</small></div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="小白和鸡毛"><img class="puppy-white" src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="小白" loading="lazy" /><img class="puppy-jimao" src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="鸡毛" loading="lazy" /><small>小白 × 鸡毛</small></div>
         <div class="piggy-content"><div class="piggy-title">年度收支平衡</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出占收入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>
       </div>
       <div class="metric-grid">
@@ -338,6 +338,17 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .entry-mode-row{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:-5px 0 12px}.manual-add-button{min-height:43px;font-size:12px}.income-add-button{background:#fff4f0;color:#c15e48;border-color:#ffe1d8}.type-switch{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;border-radius:13px;background:#f2f5f9}.type-switch button{border:0;border-radius:9px;padding:9px;background:transparent;color:#788495;font-size:13px;font-weight:800}.type-switch button.selected{background:#fff;color:#315fbd;box-shadow:0 2px 8px #20324b12}.type-switch button:last-child.selected{color:#16836f}.income-amount-wrap>span{color:#16836f}.income-category-dot{background:#e5f7ef;color:#16836f}.income-amount{color:#16836f}.income-text{color:#16836f!important}.expense-text{color:#d84d4d!important}.batch-actions-empty{margin-top:12px}.income-expense-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:11px 0}.income-expense-strip>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:12px 10px;background:#fff;border:1px solid #edf0f4;border-radius:13px}.income-expense-strip small{font-size:10px;color:var(--muted)}.income-expense-strip strong{font-size:clamp(12px,3.2vw,15px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.piggy-card{display:flex;align-items:center;gap:13px;margin:12px 0;padding:15px;background:linear-gradient(135deg,#fff9ef,#fff);border:1px solid #f5e9d6;border-radius:18px;transition:background .2s,border-color .2s}.piggy-character{display:grid;place-items:center;flex:none;width:64px;height:64px;border-radius:20px;background:#fff0dc;font-size:35px;letter-spacing:-8px;padding-right:7px}.piggy-content{flex:1;min-width:0}.piggy-title{font-size:13px;font-weight:850}.piggy-status{font-size:11px;color:#8c7a64;margin:3px 0 9px}.piggy-track{height:10px;border-radius:99px;background:#f1e7dc;overflow:hidden}.piggy-track span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#74c6a7,#f0bf5e);transition:width .35s,background .2s}.piggy-numbers{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:10px;color:#8c7a64}.piggy-numbers strong{font-size:11px;color:#5b5044}.piggy-sweating{background:linear-gradient(135deg,#fff0ed,#fff);border-color:#ffc6bc}.piggy-sweating .piggy-character{background:#ffe1dc;animation:piggy-shake .5s ease-in-out infinite alternate}.piggy-sweating .piggy-track span{background:linear-gradient(90deg,#ffad64,#ee5b55)}.piggy-sweating .piggy-status{color:#cb5148}.piggy-broken{background:linear-gradient(135deg,#fff0f0,#fff);border-color:#f3a4a4}.piggy-broken .piggy-character{background:#ffe0e0;filter:grayscale(.2);animation:piggy-shake .18s linear 3}.piggy-broken .piggy-track span{background:#dc4242}.piggy-broken .piggy-status{color:#c92f3b;font-weight:800}.piggy-empty{background:#f8fafc;border-color:#e8edf2}.piggy-empty .piggy-character{background:#edf2ff}.piggy-empty .piggy-track span{background:#b7c2d2}@keyframes piggy-shake{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.category-emoji{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:#f2f5fb;font-size:15px}.annual-income-strip{margin-top:10px}
 
 /* 小白与鸡毛主题：整站统一使用柔和奶油色、樱花粉与暖黄色 */
+.brand-mark{display:flex;align-items:center;justify-content:center;gap:0;overflow:hidden}
+.brand-mark img{width:27px;height:27px;object-fit:contain;display:block}
+.brand-mark img+img{margin-left:-5px}
+.puppy-pair{gap:0;letter-spacing:0;padding:3px}
+.puppy-pair img{display:block;width:43px;height:43px;object-fit:contain;flex:none;filter:drop-shadow(0 2px 1px #7a4c3010);transition:transform .2s,filter .2s}
+.puppy-pair img+img{margin-left:-5px}
+.puppy-sweating img{transform:rotate(4deg) translateY(-2px)}
+.puppy-broken img:first-child{transform:rotate(-8deg) translateY(2px);filter:grayscale(.35)}
+.puppy-broken img:last-of-type{transform:rotate(8deg) translateY(-1px);filter:grayscale(.2)}
+.puppy-empty img{opacity:.78}
+
 .brand-mark{box-shadow:inset 0 0 0 1px #f8dce4,0 4px 12px #d96f9110}
 .button-primary{background:linear-gradient(135deg,#e989a7,#d96f91);box-shadow:0 4px 10px #d96f9126}
 .button-primary:active{background:#bd5376}

@@ -66,6 +66,11 @@ function addBlank(type = 'expense') {
   const category = type === 'income' ? '工资' : '日用品'
   forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), time: '', amount: 0, type, category, merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
+function setEntryType(form, type) {
+  form.type = type
+  if (type === 'income' && !INCOME_CATEGORIES.includes(form.category)) form.category = '工资'
+  if (type === 'expense' && INCOME_CATEGORIES.includes(form.category)) form.category = '日用品'
+}
 async function addCategory() {
   const name = prompt('请输入新分类名称（最多20字）')
   if (!name?.trim()) return
@@ -166,8 +171,8 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
         <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新记录' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="移除此笔">×</button></div>
         <div class="type-switch" role="group" aria-label="记录类型">
-          <button type="button" :class="{ selected: (f.type || 'expense') === 'expense' }" @click="f.type = 'expense'; if (INCOME_CATEGORIES.includes(f.category)) f.category = '日用品'">💸 支出</button>
-          <button type="button" :class="{ selected: f.type === 'income' }" @click="f.type = 'income'; if (!INCOME_CATEGORIES.includes(f.category)) f.category = '工资'">🌷 收入</button>
+          <button type="button" :class="{ selected: (f.type || 'expense') === 'expense' }" @click="setEntryType(f, 'expense')">💸 支出</button>
+          <button type="button" :class="{ selected: f.type === 'income' }" @click="setEntryType(f, 'income')">🌷 收入</button>
         </div>
         <label class="form-field amount-field"><span>{{ f.type === 'income' ? '收入金额（日元）' : '支出金额（日元）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金额（日元）" /></div></label>
         <div class="field-grid">

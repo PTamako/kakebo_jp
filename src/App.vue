@@ -131,7 +131,7 @@ const annualAverage = computed(() => Math.round(Number(annualStats.value?.total 
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)
 const pigState = ratio => ratio === null ? 'empty' : ratio > 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
-const pigLabel = ratio => ratio === null ? '先记录收入，看看支出占收入多少' : ratio > 1 ? '支出超过收入了，小猪碎掉啦！' : ratio >= .8 ? '快到预算边缘了，小猪热得冒汗！' : '状态不错，小猪还很轻松'
+const pigLabel = ratio => ratio === null ? '先记下收入，让小白和鸡毛看看收支情况' : ratio > 1 ? '糟糕！鸡毛和小白一起崩溃了！' : ratio >= .8 ? '快到预算边缘啦，鸡毛都冒汗了！' : '状态不错，小白和鸡毛都很轻松'
 const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(ratio * 100) + '%'
 </script>
 
@@ -139,8 +139,8 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
   <main>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark">¥</span>
-        <div><strong>家計簿</strong><small>毎日の支出を、すっきり管理</small></div>
+        <span class="brand-mark" aria-hidden="true">🐶🐕</span>
+        <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>和小白、鸡毛一起记账</small></div>
       </div>
       <input type="month" v-model="month" class="month" aria-label="统计月份" />
     </header>
@@ -212,7 +212,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
         <div class="hero-footer"><span class="hero-dot"></span>{{ stats?.count || 0 }} 笔消费记录</div>
       </div>
       <div class="piggy-card" :class="'piggy-' + pigState(monthlyRatio)">
-        <div class="piggy-character" aria-hidden="true">{{ pigState(monthlyRatio) === 'broken' ? '🐷💔' : pigState(monthlyRatio) === 'sweating' ? '🐷💦' : '🐷' }}</div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="小白和鸡毛的表情"><span class="puppy-white">{{ pigState(monthlyRatio) === 'broken' ? '🐶😭' : pigState(monthlyRatio) === 'sweating' ? '🐶💦' : pigState(monthlyRatio) === 'empty' ? '🐶❔' : '🐶✨' }}</span><span class="puppy-jimao">{{ pigState(monthlyRatio) === 'broken' ? '🐕💦' : pigState(monthlyRatio) === 'sweating' ? '🐕😟' : pigState(monthlyRatio) === 'empty' ? '🐕❔' : '🐕🤍' }}</span><small>小白 × 鸡毛</small></div>
         <div class="piggy-content"><div class="piggy-title">本月收支平衡</div><div class="piggy-status">{{ pigLabel(monthlyRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (monthlyRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出占收入</span><strong>{{ ratioLabel(monthlyRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip"><div><small>本月收入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>本月支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>结余</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
@@ -254,7 +254,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
       </div>
       <div class="income-expense-strip annual-income-strip"><div><small>全年收入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>全年支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>全年结余</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
       <div class="piggy-card" :class="'piggy-' + pigState(annualRatio)">
-        <div class="piggy-character" aria-hidden="true">{{ pigState(annualRatio) === 'broken' ? '🐷💔' : pigState(annualRatio) === 'sweating' ? '🐷💦' : '🐷' }}</div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="小白和鸡毛的表情"><span class="puppy-white">{{ pigState(annualRatio) === 'broken' ? '🐶😭' : pigState(annualRatio) === 'sweating' ? '🐶💦' : pigState(annualRatio) === 'empty' ? '🐶❔' : '🐶✨' }}</span><span class="puppy-jimao">{{ pigState(annualRatio) === 'broken' ? '🐕💦' : pigState(annualRatio) === 'sweating' ? '🐕😟' : pigState(annualRatio) === 'empty' ? '🐕❔' : '🐕🤍' }}</span><small>小白 × 鸡毛</small></div>
         <div class="piggy-content"><div class="piggy-title">年度收支平衡</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出占收入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>
       </div>
       <div class="metric-grid">
@@ -296,15 +296,15 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
 </template>
 
 <style>
-:root{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","PingFang SC",system-ui,sans-serif;color:#202b37;background:#f5f7fa;font-synthesis:none;text-rendering:optimizeLegibility;--ink:#202b37;--muted:#7c8795;--line:#e8edf2;--blue:#315fbd;--blue-dark:#244b9a;--paper:#f5f7fa;--card:#fff;--teal:#168b82}
+:root{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","PingFang SC",system-ui,sans-serif;color:#473d46;background:#fff8f5;font-synthesis:none;text-rendering:optimizeLegibility;--ink:#473d46;--muted:#8c7e88;--line:#f3e5e8;--blue:#d96f91;--blue-dark:#bd5376;--paper:#fff8f5;--card:#fff;--teal:#68a995}
 *{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body{margin:0;background:radial-gradient(ellipse at 12% 0%,#fff0e8 0,transparent 32%),radial-gradient(ellipse at 95% 18%,#fff0f5 0,transparent 30%),var(--paper);color:var(--ink);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 button:disabled{opacity:.45;cursor:not-allowed}
 main{width:min(100%,560px);min-height:100dvh;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 18px calc(104px + env(safe-area-inset-bottom))}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0 24px}
-.brand{display:flex;align-items:center;gap:10px}.brand-mark{display:grid;place-items:center;width:42px;height:42px;border-radius:14px;background:#e6edff;color:var(--blue);font-size:23px;font-weight:800}.brand strong{display:block;font-size:17px;letter-spacing:.02em}.brand small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
+.brand{display:flex;align-items:center;gap:10px}.brand-mark{display:grid;place-items:center;width:58px;height:42px;border-radius:15px;background:linear-gradient(135deg,#fff0e6,#ffeaf1);color:var(--blue);font-size:20px;font-weight:800;letter-spacing:-7px;padding-right:7px;box-shadow:inset 0 0 0 1px #f8dce4}.brand strong{display:block;font-size:17px;letter-spacing:.02em}.brand-heart{color:#e985a2;font-size:15px}.brand small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
 input,select,textarea{width:100%;min-width:0;border:1px solid #e0e6ed;border-radius:11px;background:#fff;color:var(--ink);padding:11px 12px;outline:none;transition:border-color .15s,box-shadow .15s}
 input:focus,select:focus,textarea:focus{border-color:#8da9e8;box-shadow:0 0 0 3px #315fbd18}
 .month{width:142px;padding:9px 8px;font-size:12px;font-weight:650;background:#fff}
@@ -336,6 +336,34 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .bottom-nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));width:min(calc(100% - 28px),460px);display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:7px;background:#ffffffed;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid #e8edf2;border-radius:19px;box-shadow:0 8px 30px #20324b18}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;color:#8994a3;padding:7px 4px;border-radius:13px;font-size:10px;font-weight:700}.bottom-nav button.active{background:#edf2ff;color:var(--blue)}.nav-icon{font-size:21px;line-height:1.15;font-weight:500}
 .year-picker{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 13px;padding:10px 13px;background:#fff;border:1px solid #edf0f4;border-radius:13px;font-size:12px;font-weight:700;color:var(--muted)}.year-picker select{width:125px;padding:8px 10px;font-size:13px;font-weight:750;color:var(--ink)}.annual-hero{margin-bottom:0}.year-month-list{display:grid;gap:15px}.year-month-row{display:grid;grid-template-columns:36px minmax(40px,1fr) minmax(78px,auto);align-items:center;gap:10px}.year-month-label{font-size:12px;font-weight:700;color:#647184}.year-month-track{height:8px;border-radius:99px;background:#f0f3f7;overflow:hidden}.year-month-track span{display:block;height:100%;border-radius:99px;background:var(--blue);transition:width .2s}.year-month-row strong{text-align:right;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}.category-share{display:block;color:#9aa4b1;font-size:10px;margin-top:5px}
 .entry-mode-row{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:-5px 0 12px}.manual-add-button{min-height:43px;font-size:12px}.income-add-button{background:#fff4f0;color:#c15e48;border-color:#ffe1d8}.type-switch{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;border-radius:13px;background:#f2f5f9}.type-switch button{border:0;border-radius:9px;padding:9px;background:transparent;color:#788495;font-size:13px;font-weight:800}.type-switch button.selected{background:#fff;color:#315fbd;box-shadow:0 2px 8px #20324b12}.type-switch button:last-child.selected{color:#16836f}.income-amount-wrap>span{color:#16836f}.income-category-dot{background:#e5f7ef;color:#16836f}.income-amount{color:#16836f}.income-text{color:#16836f!important}.expense-text{color:#d84d4d!important}.batch-actions-empty{margin-top:12px}.income-expense-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:11px 0}.income-expense-strip>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:12px 10px;background:#fff;border:1px solid #edf0f4;border-radius:13px}.income-expense-strip small{font-size:10px;color:var(--muted)}.income-expense-strip strong{font-size:clamp(12px,3.2vw,15px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.piggy-card{display:flex;align-items:center;gap:13px;margin:12px 0;padding:15px;background:linear-gradient(135deg,#fff9ef,#fff);border:1px solid #f5e9d6;border-radius:18px;transition:background .2s,border-color .2s}.piggy-character{display:grid;place-items:center;flex:none;width:64px;height:64px;border-radius:20px;background:#fff0dc;font-size:35px;letter-spacing:-8px;padding-right:7px}.piggy-content{flex:1;min-width:0}.piggy-title{font-size:13px;font-weight:850}.piggy-status{font-size:11px;color:#8c7a64;margin:3px 0 9px}.piggy-track{height:10px;border-radius:99px;background:#f1e7dc;overflow:hidden}.piggy-track span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#74c6a7,#f0bf5e);transition:width .35s,background .2s}.piggy-numbers{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:10px;color:#8c7a64}.piggy-numbers strong{font-size:11px;color:#5b5044}.piggy-sweating{background:linear-gradient(135deg,#fff0ed,#fff);border-color:#ffc6bc}.piggy-sweating .piggy-character{background:#ffe1dc;animation:piggy-shake .5s ease-in-out infinite alternate}.piggy-sweating .piggy-track span{background:linear-gradient(90deg,#ffad64,#ee5b55)}.piggy-sweating .piggy-status{color:#cb5148}.piggy-broken{background:linear-gradient(135deg,#fff0f0,#fff);border-color:#f3a4a4}.piggy-broken .piggy-character{background:#ffe0e0;filter:grayscale(.2);animation:piggy-shake .18s linear 3}.piggy-broken .piggy-track span{background:#dc4242}.piggy-broken .piggy-status{color:#c92f3b;font-weight:800}.piggy-empty{background:#f8fafc;border-color:#e8edf2}.piggy-empty .piggy-character{background:#edf2ff}.piggy-empty .piggy-track span{background:#b7c2d2}@keyframes piggy-shake{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.category-emoji{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:#f2f5fb;font-size:15px}.annual-income-strip{margin-top:10px}
+
+/* 小白与鸡毛主题：整站统一使用柔和奶油色、樱花粉与暖黄色 */
+.brand-mark{box-shadow:inset 0 0 0 1px #f8dce4,0 4px 12px #d96f9110}
+.button-primary{background:linear-gradient(135deg,#e989a7,#d96f91);box-shadow:0 4px 10px #d96f9126}
+.button-primary:active{background:#bd5376}
+.button-secondary{background:#fff0f4;color:#b95478;border-color:#f8dce5}
+.button-secondary:active{background:#ffe5ed}
+.bottom-nav button.active{background:#fff0f4;color:#bd5376}
+.bottom-nav{border-color:#f3e2e7;box-shadow:0 8px 30px #a75d7414}
+.page-heading .heading-icon,.metric-icon,.empty-icon{background:#fff0f4;color:#bd5376}
+.hero-total{background:linear-gradient(130deg,#e989a7 0%,#d96f91 100%);box-shadow:0 10px 24px #d96f9126}
+.entry-number{background:#fff0f4;color:#bd5376}
+.count-pill{background:#eaf7ef;color:#44866d}
+.capture-panel,.entry-card,.stats-card,.metric-card,.ledger{border-color:#f3e7e9}
+.piggy-card{background:linear-gradient(135deg,#fff8e9,#fff);border-color:#f6e6d3}
+.piggy-sweating{background:linear-gradient(135deg,#fff0f4,#fff);border-color:#f5c5d4}
+.piggy-broken{background:linear-gradient(135deg,#fff0f0,#fff);border-color:#f1b6c2}
+.puppy-pair{display:flex;align-items:center;justify-content:center;gap:0;position:relative;flex:none;width:90px;height:76px;border-radius:23px;background:linear-gradient(135deg,#fff0e4,#ffeef4);font-size:28px;letter-spacing:-7px;padding-right:7px;transition:transform .2s,background .2s}
+.puppy-pair span{display:inline-block;filter:drop-shadow(0 2px 1px #7a4c3010)}
+.puppy-pair small{position:absolute;left:0;right:0;bottom:3px;text-align:center;font-size:8px;letter-spacing:.02em;color:#a77a85;font-weight:800}
+.puppy-sweating{background:linear-gradient(135deg,#fff0dc,#ffe8ef);animation:puppy-bob .6s ease-in-out infinite alternate}
+.puppy-broken{background:linear-gradient(135deg,#ffe6eb,#fff0f0);animation:puppy-shake .2s linear 3}
+.puppy-empty{background:linear-gradient(135deg,#f2f5ff,#fff0f4)}
+.puppy-happy{background:linear-gradient(135deg,#fff0e4,#fff0f6)}
+@keyframes puppy-bob{from{transform:translateY(0) rotate(-2deg)}to{transform:translateY(-2px) rotate(2deg)}}
+@keyframes puppy-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
+@media(prefers-reduced-motion:reduce){.puppy-sweating,.puppy-broken{animation:none}}
+
 @media(min-width:480px){main{padding-left:22px;padding-right:22px}.stats-card{padding:20px}.hero-total{padding:25px 24px 20px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 </style>

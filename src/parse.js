@@ -14,7 +14,7 @@ export function normalize(text) {
 function findDate(t, today = new Date()) {
   let m
   // In card statements, OCR sometimes splits the day "11" as "1 1" just before "回払い".
-  if ((m = t.match(/(20\\d{2})\\s*[年/.\\-]\\s*(\\d{1,2})\\s*[月/.\\-]\\s*1\\s+1\\s*(?=回\\s*払)/))) return `${m[1]}-${pad(m[2])}-11`
+  if ((m = t.match(/(20\d{2})\s*[年/.\\-]\s*(\d{1,2})\s*[月/.\\-]\s*1\s+1\s*(?=回\s*払)/))) return `${m[1]}-${pad(m[2])}-11`
   if ((m = t.match(/(20\d{2})\s*[年\/.\-]\s*(\d{1,2})\s*[月\/.\-]\s*(\d{1,2})/))) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`
   if ((m = t.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?/))) return `${today.getFullYear()}-${pad(m[1])}-${pad(m[2])}`
   if ((m = t.match(/(?<!\d)(\d{1,2})\/(\d{1,2})(?!\d)/))) return `${today.getFullYear()}-${pad(m[1])}-${pad(m[2])}`

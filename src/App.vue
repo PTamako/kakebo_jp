@@ -4,6 +4,8 @@ import { parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.j
 
 const tab = ref('add')
 const month = ref(new Date().toISOString().slice(0, 7))
+const selectedYear = ref(new Date().getFullYear())
+const annualStats = ref(null)
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
@@ -33,8 +35,14 @@ async function load() {
     stats.value = await api('stats?month=' + month.value)
   } catch (e) { flash(e.message) }
 }
-onMounted(load)
+async function loadYear() {
+  try { annualStats.value = await api('stats?year=' + selectedYear.value) }
+  catch (e) { flash('年度统计加载失败：' + e.message) }
+}
+onMounted(() => { load(); loadYear() })
 watch(month, load)
+watch(selectedYear, loadYear)
+watch(tab, value => { if (value === 'year') loadYear() })
 
 function recognize() {
   if (!input.value.trim()) return
@@ -100,6 +108,17 @@ const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
   return `${y}年${Number(m)}月`
 })
+const yearOptions = computed(() => Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - i))
+const yearMonthRows = computed(() => {
+  const values = new Map((annualStats.value?.byMonth || []).map(item => [item.month, Number(item.amount)]))
+  return Array.from({ length: 12 }, (_, i) => {
+    const key = `${selectedYear.value}-${String(i + 1).padStart(2, '0')}`
+    return { month: key, label: `${i + 1}月`, amount: values.get(key) || 0 }
+  })
+})
+const maxYearMonth = computed(() => Math.max(1, ...yearMonthRows.value.map(item => item.amount)))
+const highestSpendMonth = computed(() => yearMonthRows.value.reduce((best, item) => item.amount > best.amount ? item : best, { month: '', label: '暂无', amount: 0 }))
+const annualAverage = computed(() => Math.round(Number(annualStats.value?.total || 0) / 12))
 </script>
 
 <template>
@@ -199,10 +218,47 @@ const monthLabel = computed(() => {
       </template>
     </section>
 
+    <section v-else-if="tab === 'year'" class="page-section stats-page annual-page">
+      <div class="page-heading"><div><p class="eyebrow">YEARLY OVERVIEW</p><h1>年度统计</h1><p class="heading-subtitle">按年份汇总全年消费</p></div><span class="heading-icon">⌁</span></div>
+      <label class="year-picker"><span>统计年份</span><select v-model.number="selectedYear" aria-label="统计年份"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select></label>
+      <div class="hero-total annual-hero">
+        <span>{{ selectedYear }}年总支出</span><strong>{{ yen(annualStats?.total) }}</strong>
+        <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }} 笔消费记录</div>
+      </div>
+      <div class="metric-grid">
+        <div class="metric-card"><span class="metric-icon">▦</span><small>月均支出（按12个月计算）</small><strong>{{ yen(annualAverage) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon">↗</span><small>消费最高月份</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : '暂无' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
+      </div>
+      <div v-if="!annualStats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>这一年还没有记录</strong><p>选择其他年份，或添加消费记录后再查看。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
+      <template v-else>
+        <div class="stats-card">
+          <div class="section-title"><div><h2>每月支出</h2><p>{{ selectedYear }}年1月至12月</p></div><span class="section-mark">01</span></div>
+          <div class="year-month-list">
+            <div v-for="item in yearMonthRows" :key="item.month" class="year-month-row">
+              <span class="year-month-label">{{ item.label }}</span>
+              <div class="year-month-track"><span :style="{ width: item.amount ? Math.max(2, item.amount / maxYearMonth * 100) + '%' : '0%' }"></span></div>
+              <strong>{{ item.amount ? yen(item.amount) : '—' }}</strong>
+            </div>
+          </div>
+        </div>
+        <div class="stats-card">
+          <div class="section-title"><div><h2>年度分类支出</h2><p>按全年累计金额排序</p></div><span class="section-mark">02</span></div>
+          <div class="category-list">
+            <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row">
+              <div class="category-row-top"><span class="category-name"><span class="category-swatch" :class="'swatch-' + (i % 6)"></span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
+              <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(annualStats?.total || 0)) * 100) + '%' }"></span></div>
+              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}% of total</small>
+            </div>
+          </div>
+        </div>
+      </template>
+    </section>
+
     <nav class="bottom-nav" aria-label="主导航">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon">＋</span><span>记一笔</span></button>
       <button :class="{ active: tab === 'list' }" @click="tab = 'list'"><span class="nav-icon">≡</span><span>明细</span></button>
-      <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon">▥</span><span>统计</span></button>
+      <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon">▥</span><span>月统计</span></button>
+      <button :class="{ active: tab === 'year' }" @click="tab = 'year'"><span class="nav-icon">▤</span><span>年统计</span></button>
     </nav>
   </main>
 </template>
@@ -245,7 +301,8 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .bar-track{height:7px;background:#f0f3f7;border-radius:99px;overflow:hidden}.bar-fill{display:block;height:100%;background:#5279d1;border-radius:99px;transition:width .25s}.fill-1{background:#26a69a}.fill-2{background:#e5a34d}.fill-3{background:#9b78d0}.fill-4{background:#52a5c9}.fill-5{background:#e07886}.category-share{display:block;text-align:right;color:#9aa4b1;font-size:10px;margin-top:4px}
 .daily-list{display:grid;gap:13px}.daily-row{display:flex;align-items:center;gap:11px}.daily-date{display:flex;align-items:baseline;justify-content:center;gap:1px;width:34px;flex:none}.daily-date strong{font-size:16px}.daily-date span{font-size:10px;color:var(--muted)}.daily-bar-wrap{flex:1;min-width:0}.daily-bar-track{height:7px;background:#f0f3f7;border-radius:99px;overflow:hidden}.daily-bar-track span{display:block;height:100%;background:linear-gradient(90deg,#4f7bd7,#6b9de9);border-radius:99px}.daily-bar-wrap small{display:block;font-size:10px;color:#9aa4b1;margin-top:3px}.daily-amount{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .empty-state{display:flex;align-items:center;flex-direction:column;text-align:center;padding:34px 18px;background:#fff;border:1px dashed #dce3ec;border-radius:18px}.empty-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:16px;background:#edf2ff;color:var(--blue);font-size:23px;margin-bottom:12px}.empty-state strong{font-size:14px}.empty-state p{font-size:12px;color:var(--muted);margin:6px 0 17px}.empty-state button{min-width:140px}.stats-empty{margin-top:8px}
-.bottom-nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));width:min(calc(100% - 28px),420px);display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:7px;background:#ffffffed;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid #e8edf2;border-radius:19px;box-shadow:0 8px 30px #20324b18}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;color:#8994a3;padding:7px 4px;border-radius:13px;font-size:10px;font-weight:700}.bottom-nav button.active{background:#edf2ff;color:var(--blue)}.nav-icon{font-size:21px;line-height:1.15;font-weight:500}
+.bottom-nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));width:min(calc(100% - 28px),460px);display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:7px;background:#ffffffed;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid #e8edf2;border-radius:19px;box-shadow:0 8px 30px #20324b18}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;color:#8994a3;padding:7px 4px;border-radius:13px;font-size:10px;font-weight:700}.bottom-nav button.active{background:#edf2ff;color:var(--blue)}.nav-icon{font-size:21px;line-height:1.15;font-weight:500}
+.year-picker{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 13px;padding:10px 13px;background:#fff;border:1px solid #edf0f4;border-radius:13px;font-size:12px;font-weight:700;color:var(--muted)}.year-picker select{width:125px;padding:8px 10px;font-size:13px;font-weight:750;color:var(--ink)}.annual-hero{margin-bottom:0}.year-month-list{display:grid;gap:15px}.year-month-row{display:grid;grid-template-columns:36px minmax(40px,1fr) minmax(78px,auto);align-items:center;gap:10px}.year-month-label{font-size:12px;font-weight:700;color:#647184}.year-month-track{height:8px;border-radius:99px;background:#f0f3f7;overflow:hidden}.year-month-track span{display:block;height:100%;border-radius:99px;background:var(--blue);transition:width .2s}.year-month-row strong{text-align:right;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}.category-share{display:block;color:#9aa4b1;font-size:10px;margin-top:5px}
 @media(min-width:480px){main{padding-left:22px;padding-right:22px}.stats-card{padding:20px}.hero-total{padding:25px 24px 20px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 </style>

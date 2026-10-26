@@ -44,7 +44,7 @@ async function loadYear() {
   catch (e) { flash('年度统计加载失败：' + e.message) }
 }
 onMounted(() => { load(); loadYear() })
-watch(month, load)
+watch(month, () => { selectedDay.value = ''; swipedEntryId.value = null; load() })
 watch(selectedYear, loadYear)
 watch(tab, value => { if (value === 'year') loadYear() })
 
@@ -136,6 +136,54 @@ const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
 const dayRows = computed(() => [...(stats.value?.byDay || [])].sort((a, b) => a.date.localeCompare(b.date)))
+const selectedDay = ref('')
+const swipedEntryId = ref(null)
+let touchStartX = 0
+let touchStartY = 0
+let suppressRowClick = false
+const filteredEntries = computed(() => selectedDay.value ? entries.value.filter(e => e.date === selectedDay.value) : entries.value)
+const calendarDays = computed(() => {
+  const [year, monthNumber] = month.value.split('-').map(Number)
+  const daysInMonth = new Date(year, monthNumber, 0).getDate()
+  const firstDayOffset = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7
+  const amounts = new Map(dayRows.value.map(day => [day.date, Number(day.amount || 0)]))
+  const days = Array.from({ length: firstDayOffset }, (_, i) => ({ key: `blank-${i}`, blank: true }))
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = `${year}-${String(monthNumber).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    days.push({ key: date, date, day, amount: amounts.get(date) || 0, blank: false })
+  }
+  while (days.length % 7) days.push({ key: `blank-end-${days.length}`, blank: true })
+  return days
+})
+function toggleDay(date) {
+  if (selectedDay.value === date) selectedDay.value = ''
+  else selectedDay.value = date
+  swipedEntryId.value = null
+}
+function startSwipe(event) {
+  if (event.touches?.length !== 1) return
+  touchStartX = event.touches[0].clientX
+  touchStartY = event.touches[0].clientY
+}
+function endSwipe(event, id) {
+  if (!event.changedTouches?.length) return
+  const dx = event.changedTouches[0].clientX - touchStartX
+  const dy = event.changedTouches[0].clientY - touchStartY
+  if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+    swipedEntryId.value = dx < 0 ? id : null
+    suppressRowClick = true
+    setTimeout(() => { suppressRowClick = false }, 350)
+  }
+}
+function handleEntryClick(entry) {
+  if (suppressRowClick) return
+  if (swipedEntryId.value === entry.id) {
+    swipedEntryId.value = null
+    return
+  }
+  swipedEntryId.value = null
+  startEdit(entry)
+}
 // Monthly statistics are grouped into Monday–Sunday weeks, clipped to the selected month.
 const weekRows = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
@@ -254,15 +302,26 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
 
     <section v-else-if="tab === 'list'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">TRANSACTIONS</p><h1>收支明细</h1></div><span class="heading-icon">≡</span></div>
-      <div class="summary-strip"><span>{{ monthLabel }}</span><strong>{{ entries.length }} 笔记录</strong></div>
+      <section class="month-calendar" aria-label="月度消费日历">
+        <div class="calendar-heading"><strong>{{ monthLabel }}</strong><button v-if="selectedDay" class="calendar-reset" @click="selectedDay = ''">查看整月</button></div>
+        <div class="calendar-weekdays"><span v-for="weekday in ['一', '二', '三', '四', '五', '六', '日']" :key="weekday">{{ weekday }}</span></div>
+        <div class="calendar-grid">
+          <button v-for="day in calendarDays" :key="day.key" type="button" class="calendar-day" :class="{ 'calendar-blank': day.blank, 'calendar-selected': selectedDay === day.date, 'calendar-has-spend': day.amount > 0 }" :disabled="day.blank" @click="toggleDay(day.date)" :aria-label="day.blank ? undefined : day.date + ' 支出 ' + yen(day.amount)">
+            <template v-if="!day.blank"><span class="calendar-day-number">{{ day.day }}</span><small v-if="day.amount > 0">{{ yen(day.amount) }}</small><small v-else class="calendar-no-spend">—</small></template>
+          </button>
+        </div>
+      </section>
+      <div class="summary-strip"><span>{{ selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日明细' : monthLabel }}</span><strong>{{ filteredEntries.length }} 笔记录</strong></div>
       <div v-if="!entries.length" class="empty-state"><span class="empty-icon">▤</span><strong>这个月还没有记录</strong><p>去「记一笔」添加第一笔消费。</p><button class="button-primary" @click="tab = 'add'">添加记录</button></div>
+      <div v-else-if="filteredEntries.length === 0" class="empty-state filtered-empty"><span class="empty-icon">♡</span><strong>{{ selectedDay ? '这一天还没有记录' : '这个月还没有记录' }}</strong><p>{{ selectedDay ? '点击日历中的日期可切换查看。' : '去「记一笔」添加第一笔消费。' }}</p><button v-if="selectedDay" class="button-secondary" @click="selectedDay = ''">查看整月</button><button v-else class="button-primary" @click="tab = 'add'">添加记录</button></div>
       <ul v-else class="ledger">
-        <li v-for="e in entries" :key="e.id">
-          <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
-          <div class="ledger-info"><b>{{ e.merchant || e.category }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ e.category }} · {{ e.type === 'income' ? '收入' : '支出' }}</small></div>
-          <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income' }">{{ e.type === 'income' ? '+' : '−' }}{{ yen(e.amount) }}</span>
-          <button class="icon-button edit-button" @click="startEdit(e)" aria-label="编辑记录" title="编辑">✎</button>
-          <button class="icon-button delete-button" @click="remove(e.id)" aria-label="删除记录" title="删除">×</button>
+        <li v-for="e in filteredEntries" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+          <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
+            <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
+            <div class="ledger-info"><b>{{ e.merchant || e.category }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ e.category }} · {{ e.type === 'income' ? '收入' : '支出' }}</small></div>
+            <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income' }">{{ e.type === 'income' ? '+' : '−' }}{{ yen(e.amount) }}</span>
+          </div>
+          <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="删除记录">删除</button>
         </li>
       </ul>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
@@ -406,7 +465,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .icon-button{border:0;background:transparent;color:#9ba5b2;display:grid;place-items:center;width:30px;height:30px;border-radius:9px;font-size:23px;padding:0;flex:none}.icon-button:active{background:#f1f3f6}.form-field{display:grid;gap:6px;min-width:0}.form-field>span{font-size:11px;color:#7c8795;font-weight:650}.form-field input,.form-field select{font-size:13px;padding:10px;border-radius:10px}.amount-input-wrap{display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid #e0e6ed;border-radius:12px;background:#fbfcff}.amount-input-wrap>span{font-size:18px;color:var(--blue);font-weight:800}.amount-input-wrap input{border:0;box-shadow:none;background:transparent;padding:11px 0;font-size:26px;font-weight:800;letter-spacing:-.04em;color:var(--ink)}.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .batch-actions{display:grid;grid-template-columns:.8fr 1.2fr;gap:9px;margin-top:14px}.batch-actions button{width:100%}
 .summary-strip{display:flex;justify-content:space-between;align-items:center;margin:-3px 0 12px;color:var(--muted);font-size:12px}.summary-strip strong{color:#536174;font-weight:700}
-.ledger{list-style:none;margin:0;padding:3px 14px;background:#fff;border:1px solid #edf0f4;border-radius:17px;box-shadow:0 5px 20px #24354b08}.ledger li{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid #eff2f6;min-width:0}.ledger li:last-child{border-bottom:0}.category-dot{display:grid;place-items:center;flex:none;width:39px;height:39px;border-radius:13px;background:#edf2ff;color:#315fbd;font-size:14px;font-weight:800}.cat-2{background:#e8f7f2;color:#16836f}.cat-3{background:#fff2df;color:#b87518}.cat-4{background:#f3eaff;color:#8755bd}.cat-5{background:#e8f5fb;color:#267da0}.cat-6{background:#ffecef;color:#c45569}.cat-7{background:#fff0e5;color:#bd6c39}.cat-8{background:#fcebdc;color:#a65b2a}.cat-9{background:#eef1f5;color:#667384}.ledger-info{min-width:0;flex:1}.ledger-info b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ledger-info small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.ledger-amount{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}.delete-button{font-size:20px;width:24px}
+.month-calendar{margin:0 0 14px;padding:14px 12px 12px;background:#fff;border:1px solid #f3e2e7;border-radius:18px;box-shadow:0 5px 20px #a75d740a}.calendar-heading{display:flex;align-items:center;justify-content:space-between;margin:0 3px 12px}.calendar-heading strong{font-size:14px;font-weight:850}.calendar-reset{border:0;background:#fff0f4;color:#b95478;border-radius:9px;padding:6px 9px;font-size:11px;font-weight:750}.calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.calendar-weekdays{margin-bottom:5px}.calendar-weekdays span{text-align:center;font-size:10px;color:#9b8790;font-weight:750;padding:3px 0}.calendar-day{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;min-width:0;min-height:54px;padding:6px 1px 4px;border:1px solid transparent;border-radius:10px;background:#fff9fa;color:#55464b}.calendar-day:disabled{background:transparent}.calendar-day-number{font-size:12px;font-weight:750;line-height:1.1}.calendar-day small{display:block;max-width:100%;font-size:8px;line-height:1.1;color:#bd6b88;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:-.04em}.calendar-day .calendar-no-spend{color:#d7cbd0}.calendar-day.calendar-has-spend{background:#fff0f4;border-color:#f8dce5}.calendar-day.calendar-selected{background:#d96f91;border-color:#d96f91;color:#fff;box-shadow:0 3px 8px #d96f9128}.calendar-day.calendar-selected small{color:#fff}.calendar-day:active:not(:disabled){transform:scale(.96)}.ledger{list-style:none;margin:0;padding:3px 14px;background:#fff;border:1px solid #edf0f4;border-radius:17px;box-shadow:0 5px 20px #24354b08}.ledger li{position:relative;overflow:hidden;border-bottom:1px solid #eff2f6;min-width:0}.ledger li:last-child{border-bottom:0}.ledger-row-content{position:relative;z-index:1;display:flex;align-items:center;gap:11px;padding:13px 0;background:#fff;min-width:0;transition:transform .2s ease;cursor:pointer;touch-action:pan-y}.ledger li.swiped-open .ledger-row-content{transform:translateX(-68px)}.swipe-delete{position:absolute;top:0;right:0;bottom:0;width:64px;border:0;border-radius:10px;background:#e86e86;color:#fff;font-size:12px;font-weight:800;letter-spacing:.02em}.filtered-empty{margin-bottom:10px}.category-dot{display:grid;place-items:center;flex:none;width:39px;height:39px;border-radius:13px;background:#edf2ff;color:#315fbd;font-size:14px;font-weight:800}.cat-2{background:#e8f7f2;color:#16836f}.cat-3{background:#fff2df;color:#b87518}.cat-4{background:#f3eaff;color:#8755bd}.cat-5{background:#e8f5fb;color:#267da0}.cat-6{background:#ffecef;color:#c45569}.cat-7{background:#fff0e5;color:#bd6c39}.cat-8{background:#fcebdc;color:#a65b2a}.cat-9{background:#eef1f5;color:#667384}.ledger-info{min-width:0;flex:1}.ledger-info b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ledger-info small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.ledger-amount{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}.delete-button{font-size:20px;width:24px}
 .hero-total{position:relative;overflow:hidden;background:linear-gradient(130deg,#315fbd 0%,#284d9b 100%);border-radius:21px;padding:22px 21px 18px;color:#fff;box-shadow:0 10px 24px #315fbd24}.hero-total:after{content:"";position:absolute;width:155px;height:155px;border:1px solid #ffffff1c;border-radius:50%;right:-38px;top:-74px;box-shadow:0 0 0 22px #ffffff08,0 0 0 45px #ffffff06}.hero-total>span{display:block;font-size:12px;color:#dbe5ff}.hero-total>strong{display:block;font-size:clamp(29px,8vw,39px);line-height:1.25;letter-spacing:-.045em;margin:8px 0 15px;font-variant-numeric:tabular-nums}.hero-footer{display:flex;align-items:center;gap:7px;font-size:11px;color:#dbe5ff}.hero-dot{width:6px;height:6px;border-radius:50%;background:#76e0c1}
 .metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:11px 0 19px}.metric-card{padding:14px 14px 15px;min-width:0}.metric-icon{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:#edf2ff;color:var(--blue);font-size:17px;margin-bottom:10px}.metric-card small{display:block;color:var(--muted);font-size:11px;line-height:1.4;min-height:29px}.metric-card strong{display:block;font-size:20px;letter-spacing:-.04em;margin-top:4px;overflow-wrap:anywhere}.metric-card em{font-size:11px;font-style:normal;font-weight:600;color:var(--muted);margin-left:3px}
 .stats-card{padding:18px 16px;margin-top:12px}.section-title{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}.section-title h2{font-size:16px;margin:0;font-weight:800}.section-title p{font-size:11px;color:var(--muted);margin:4px 0 0}.section-mark{font-size:10px;font-weight:800;color:#a3adbb;letter-spacing:.1em;padding-top:3px}
@@ -458,7 +517,6 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 
 @media(min-width:480px){main{padding-left:22px;padding-right:22px}.stats-card{padding:20px}.hero-total{padding:25px 24px 20px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
-.edit-button{font-size:17px;color:#8d7792;width:27px}
 .edit-overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:18px;background:#2f253566;backdrop-filter:blur(3px)}
 .edit-dialog{display:grid;gap:14px;width:min(100%,460px);max-height:min(88dvh,760px);overflow:auto;padding:20px;background:#fffaf9;border:1px solid #f3e0e6;border-radius:22px;box-shadow:0 20px 70px #38233530}
 .edit-dialog-heading{display:flex;align-items:center;justify-content:space-between}

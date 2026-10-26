@@ -71,8 +71,15 @@ export function parseEntries(raw, rules) {
   const paymentLine = line => /^(?:1回払い|一回払い|分割払い|リボ払い|ボーナス払い|支払回数|クレジット|カード利用|ご利用日|利用日|利用金額|お支払方法|お支払い方法)$/i.test(line.replace(/[\s＞>]/g, ''))
   const amountLine = line => {
     const s = line.replace(/[＞>」】]/g, '').trim()
-    return /^(?:[¥￥]\s*)?\d[\d,]*(?:\s*円)?$/.test(s)
-      && Number(s.replace(/[¥￥円,\s]/g, '')) > 0
+    if (!/^(?:[¥￥]\\s*)?\\d[\\d,]*(?:\\s*円)?$/.test(s)) return false
+    const digits = s.replace(/[^\\d]/g, '')
+    const hasCurrency = /[¥￥円]/.test(s)
+    const hasThousandsSeparator = /^\\s*(?:[¥￥]\\s*)?\\d{1,3}(?:,\\d{3})+(?:\\s*円)?\\s*$/.test(s)
+    // Card statements may put a six-digit Suica/card reference on its own line.
+    // Do not mistake an unformatted reference such as "705507" for a yen amount.
+    if (!hasCurrency && !hasThousandsSeparator && digits.length >= 6) return false
+    const amount = Number(digits)
+    return amount > 0 && amount <= 9999999
   }
   const cleanAmountLine = line => {
     const s = line.replace(/[＞>」】]/g, '').trim()

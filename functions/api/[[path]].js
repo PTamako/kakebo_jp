@@ -106,7 +106,14 @@ export async function onRequest({ request, env, params }) {
   try {
     // Automatic one-time migration: existing rows default to expenses.
     try { await db.prepare('SELECT type FROM entries LIMIT 1').first() }
-    catch { await db.prepare("ALTER TABLE entries ADD COLUMN type TEXT NOT NULL DEFAULT 'expense'").run() }
+    catch (columnCheckError) {
+      try { await db.prepare("ALTER TABLE entries ADD COLUMN type TEXT NOT NULL DEFAULT 'expense'").run() }
+      catch (migrationError) {
+        // Two first requests may race during the first deploy; accept it if the other request added the column.
+        try { await db.prepare('SELECT type FROM entries LIMIT 1').first() }
+        catch { throw migrationError }
+      }
+    }
 
     if (a === 'entries') {
       if (m === 'GET') {

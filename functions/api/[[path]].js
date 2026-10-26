@@ -118,7 +118,7 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日期或金额不正确' }, 400)
         await db.prepare(
           'INSERT INTO entries (date,time,amount,category,merchant,note,raw) VALUES (?1,?2,?3,?4,?5,?6,?7)'
-        ).bind(e.date, e.time || '', amount, e.category || '其他', e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000)).run()
+        ).bind(e.date, e.time || '', amount, e.category || '日用品', e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000)).run()
         return json({ ok: true })
       }
       if (m === 'DELETE' && b) {
@@ -129,7 +129,7 @@ export async function onRequest({ request, env, params }) {
     if (a === 'categories') {
       if (m === 'GET') {
         const base = ['餐饮','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
-        const { results } = await db.prepare("SELECT DISTINCT category FROM rules WHERE keyword LIKE '__category__:%' ORDER BY category").all()
+        const { results } = await db.prepare("SELECT DISTINCT category FROM rules WHERE substr(keyword, 1, 13) = '__category__:' ORDER BY category").all()
         return json([...new Set([...base, ...results.map(r => r.category)])])
       }
       if (m === 'POST') {
@@ -156,7 +156,7 @@ export async function onRequest({ request, env, params }) {
             await db.batch(batch)
           }
         }
-        return json((await db.prepare('SELECT * FROM rules WHERE keyword != ?1 AND keyword NOT LIKE ?2').bind(marker, '__category__:%').all()).results)
+        return json((await db.prepare('SELECT * FROM rules WHERE keyword != ?1 AND substr(keyword, 1, 13) != ?2').bind(marker, '__category__:').all()).results)
       }
       if (m === 'POST') {
         const r = await request.json()

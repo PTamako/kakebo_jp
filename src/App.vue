@@ -222,7 +222,7 @@ const weekRows = computed(() => {
   return weeks
 })
 const maxWeek = computed(() => Math.max(1, ...weekRows.value.map(w => w.amount)))
-const averageWeekly = computed(() => weekRows.value.length ? Math.round(Number(stats.value?.total || 0) / weekRows.value.length) : 0)
+const averageDaily = computed(() => dayRows.value.length ? Math.round(Number(stats.value?.total || 0) / dayRows.value.length) : 0)
 const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
   return `${y}年${Number(m)}月`
@@ -358,7 +358,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
       <div class="income-expense-strip"><div><small>本月收入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>本月支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>结余</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
       <div class="metric-grid">
         <div class="metric-card"><span class="metric-icon">▦</span><small>支出笔数</small><strong>{{ stats?.count || 0 }}<em>笔</em></strong></div>
-        <div class="metric-card"><span class="metric-icon">↗</span><small>周均消费</small><strong>{{ yen(averageWeekly) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon">↗</span><small>日均消费（有消费日）</small><strong>{{ yen(averageDaily) }}</strong></div>
       </div>
       <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>还没有统计数据</strong><p>添加消费记录后，这里会显示支出分布。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
       <template v-else>

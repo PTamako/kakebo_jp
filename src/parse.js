@@ -66,7 +66,7 @@ export function parseEntries(raw, rules) {
   const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
     || /\d{1,2}\s*月\s*\d{1,2}/.test(line)
     || /\d{1,2}\s*\/\s*\d{1,2}/.test(line)
-  const paymentLine = line => /^(?:1回払い|一回払い|分割払い|リボ払い|ボーナス払い|支払回数|クレジット|カード利用|ご利用日|利用日|利用金額|お支払方法|お支払い方法)$/i.test(line.replace(/\s/g, ''))
+  const paymentLine = line => /^(?:1回払い|一回払い|分割払い|リボ払い|ボーナス払い|支払回数|クレジット|カード利用|ご利用日|利用日|利用金額|お支払方法|お支払い方法)$/i.test(line.replace(/[\s＞>]/g, ''))
   const amountLine = line => {
     const s = line.replace(/[＞>」】]/g, '').trim()
     return /^(?:[¥￥]\s*)?\d[\d,]*(?:\s*円)?$/.test(s)
@@ -77,31 +77,77 @@ export function parseEntries(raw, rules) {
     const m = s.match(/(?:[¥￥]\s*)?([\d,]+)(?:\s*円)?/)
     return m ? Number(m[1].replace(/,/g, '')) : 0
   }
+  const extractTrailingAmount = line => {
+    // Currency labels and common OCR noise after the amount are allowed; store-address digits are not.
+    const m = line.match(/(?:[¥￥]\s*)?(\d[\d,]{1,6})\s*(?:円|m[mn]|mm)?\s*(?:[Nn＞>2]+)?\s*$/i)
+    if (!m) return null
+    const amount = Number(m[1].replace(/,/g, ''))
+    if (!Number.isFinite(amount) || amount < 1 || amount > 999999) return null
+    // Without a currency marker, only trust an amount at the end when OCR left a known trailing marker.
+    const tail = line.slice(m.index + m[0].length)
+    const hasCurrency = /円|[¥￥]|m[mn]|mm/i.test(m[0])
+    if (!hasCurrency && !/[Nn＞>2]\s*$/.test(line)) return null
+    return { amount, raw: m[0], index: m.index }
+  }
+  const cleanMerchant = value => value
+    .replace(/[＞>」】]+\s*$/g, '')
+    .replace(/[Nn]\s*$/g, '')
+    .replace(/[\s,，]+$/g, '')
+    .trim()
+  const merchantRows = []
+  const dateLines = lines.filter(dateLine)
+
+  // OCR frequently returns one merchant+amount line, then a date/payment line.
+  // Example: "セブンイレブン葛飾柴又4丁目店 521mM N".
+  for (const line of lines) {
+    if (dateLine(line) || paymentLine(line) || amountLine(line)) continue
+    const found = extractTrailingAmount(line)
+    if (!found) continue
+    const merchant = cleanMerchant(line.slice(0, found.index))
+    if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) continue
+    merchantRows.push({ merchant, amount: found.amount, amountRaw: found.raw })
+  }
+
+  // A wrapped store suffix ("目店 >") belongs to the preceding merchant row.
+  for (const line of lines) {
+    if (/^目\s*店\s*[＞>]*$/.test(line) && merchantRows.length) {
+      const last = merchantRows[merchantRows.length - 1]
+      last.merchant = (last.merchant.replace(/\s*$/, '') + '目店').replace(/目店目店$/, '目店')
+    }
+  }
+
+  if (merchantRows.length >= 2 && merchantRows.length === dateLines.length) {
+    return merchantRows.map((row, i) => {
+      const dateRaw = dateLines[i]
+      const { category, keyword } = classify(row.merchant, rules)
+      return {
+        date: findDate(dateRaw), time: '', amount: row.amount, category,
+        merchant: row.merchant.slice(0, 60), note: '',
+        raw: row.merchant + '\n' + dateRaw + '\n' + row.amountRaw,
+        suggested: category, keyword
+      }
+    }).filter(e => e.amount > 0)
+  }
+
   const merchantLike = line => {
     if (dateLine(line) || amountLine(line) || paymentLine(line)) return false
-    if (/^(?:1回払い|一回払い|分割払い|円|¥|￥)$/i.test(line.replace(/\s/g, ''))) return false
+    if (/^(?:目店|丁目店|店|円|¥|￥)$/i.test(line.replace(/[\s＞>]/g, ''))) return false
     return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(line)
   }
 
-  // Card statements may OCR as columns: merchants first, dates next, amounts last.
-  // Join wrapped merchant names such as a store name split before 目店.
+  // Card statements may also OCR as columns: merchant names first, then dates, then amounts.
   const merchants = []
   for (const line of lines) {
     if (!merchantLike(line)) continue
-    if (/^(?:目店|丁目店|店)$/.test(line) && merchants.length) {
-      merchants[merchants.length - 1] += line
+    if (/^(?:目店|丁目店|店)$/.test(line.replace(/[\s＞>]/g, '')) && merchants.length) {
+      merchants[merchants.length - 1] += line.replace(/[＞>]/g, '')
     } else {
       merchants.push(line)
     }
   }
-
-  const dateLines = lines.filter(dateLine)
   const amountLines = lines.filter(amountLine)
-  const hasColumnarShape = merchants.length >= 2
-    && dateLines.length >= 2
-    && amountLines.length >= 2
-    && merchants.length === dateLines.length
-    && dateLines.length === amountLines.length
+  const hasColumnarShape = merchants.length >= 2 && dateLines.length >= 2 && amountLines.length >= 2
+    && merchants.length === dateLines.length && dateLines.length === amountLines.length
 
   if (hasColumnarShape) {
     return merchants.map((merchant, i) => {
@@ -109,15 +155,10 @@ export function parseEntries(raw, rules) {
       const amount = cleanAmountLine(amountLines[i])
       const { category, keyword } = classify(merchant, rules)
       return {
-        date: findDate(dateRaw),
-        time: '',
-        amount,
-        category,
-        merchant: merchant.slice(0, 60),
-        note: '',
+        date: findDate(dateRaw), time: '', amount, category,
+        merchant: merchant.slice(0, 60), note: '',
         raw: merchant + '\n' + dateRaw + '\n' + amountLines[i],
-        suggested: category,
-        keyword
+        suggested: category, keyword
       }
     }).filter(e => e.amount > 0)
   }

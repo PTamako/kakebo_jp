@@ -103,11 +103,11 @@ export function parseEntries(raw, rules) {
   const cleanMerchant = value => value
     // Card statements may append a reference number to every merchant row, not only Suica.
     // Strip visible numeric references and OCR-truncated forms such as "7...".
-    .replace(/\\s+\\d{6,}\\s*$/g, '')
-    .replace(/\\s+\\d{1,3}\\s*[.…・]{2,}\\s*$/g, '')
-    .replace(/[＞>」】]+\\s*$/g, '')
-    .replace(/[Nn]\\s*$/g, '')
-    .replace(/[\\s,，、。．.]+$/g, '')
+    .replace(/\s+\d{6,}\s*$/g, '')
+    .replace(/\s+\d{1,3}\s*[.…・]{2,}\s*$/g, '')
+    .replace(/[＞>」】]+\s*$/g, '')
+    .replace(/[Nn]\s*$/g, '')
+    .replace(/[\s,，、。．.]+$/g, '')
     .trim()
   const merchantRows = []
   const dateLines = lines.filter(dateLine)

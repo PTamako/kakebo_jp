@@ -96,24 +96,30 @@ export function parseEntries(raw, rules) {
     .trim()
   const merchantRows = []
   const dateLines = lines.filter(dateLine)
+  let activeMerchantRow = null
 
   // OCR frequently returns one merchant+amount line, then a date/payment line.
   // Example: "セブンイレブン葛飾柴又4丁目店 521mM N".
+  // Keep wrapped merchant suffixes attached to the immediately preceding row.
   for (const line of lines) {
-    if (dateLine(line) || paymentLine(line) || amountLine(line)) continue
+    if (dateLine(line) || paymentLine(line)) {
+      activeMerchantRow = null
+      continue
+    }
+    if (/^目\s*店\s*[＞>]*$/.test(line)) {
+      if (activeMerchantRow) activeMerchantRow.merchant += '目店'
+      continue
+    }
+    if (amountLine(line)) {
+      activeMerchantRow = null
+      continue
+    }
     const found = extractTrailingAmount(line)
     if (!found) continue
     const merchant = cleanMerchant(line.slice(0, found.index))
     if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) continue
-    merchantRows.push({ merchant, amount: found.amount, amountRaw: found.raw })
-  }
-
-  // A wrapped store suffix ("目店 >") belongs to the preceding merchant row.
-  for (const line of lines) {
-    if (/^目\s*店\s*[＞>]*$/.test(line) && merchantRows.length) {
-      const last = merchantRows[merchantRows.length - 1]
-      last.merchant = (last.merchant.replace(/\s*$/, '') + '目店').replace(/目店目店$/, '目店')
-    }
+    activeMerchantRow = { merchant, amount: found.amount, amountRaw: found.raw }
+    merchantRows.push(activeMerchantRow)
   }
 
   if (merchantRows.length >= 2 && merchantRows.length === dateLines.length) {

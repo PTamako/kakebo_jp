@@ -136,10 +136,45 @@ const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
 const dayRows = computed(() => [...(stats.value?.byDay || [])].sort((a, b) => a.date.localeCompare(b.date)))
-const averageDaily = computed(() => {
-  const days = dayRows.value.length
-  return days ? Math.round(Number(stats.value?.total || 0) / days) : 0
+// Monthly statistics are grouped into Monday–Sunday weeks, clipped to the selected month.
+const weekRows = computed(() => {
+  const [year, monthNumber] = month.value.split('-').map(Number)
+  const monthStart = new Date(year, monthNumber - 1, 1)
+  const monthEnd = new Date(year, monthNumber, 0)
+  const groups = new Map()
+  for (const day of dayRows.value) {
+    const date = new Date(day.date + 'T12:00:00')
+    const monday = new Date(date)
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
+    const key = monday.toLocaleDateString('sv-SE')
+    const current = groups.get(key) || { start: key, end: '', amount: 0, days: 0 }
+    current.amount += Number(day.amount || 0)
+    current.days += 1
+    groups.set(key, current)
+  }
+  const weeks = []
+  const cursor = new Date(monthStart)
+  cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7))
+  while (cursor <= monthEnd) {
+    const monday = new Date(cursor)
+    const sunday = new Date(cursor)
+    sunday.setDate(sunday.getDate() + 6)
+    const clippedStart = monday < monthStart ? monthStart : monday
+    const clippedEnd = sunday > monthEnd ? monthEnd : sunday
+    const key = monday.toLocaleDateString('sv-SE')
+    const group = groups.get(key)
+    weeks.push({
+      key,
+      label: `${clippedStart.getMonth() + 1}/${clippedStart.getDate()}–${clippedEnd.getMonth() + 1}/${clippedEnd.getDate()}`,
+      amount: group?.amount || 0,
+      days: group?.days || 0
+    })
+    cursor.setDate(cursor.getDate() + 7)
+  }
+  return weeks
 })
+const maxWeek = computed(() => Math.max(1, ...weekRows.value.map(w => w.amount)))
+const averageWeekly = computed(() => weekRows.value.length ? Math.round(Number(stats.value?.total || 0) / weekRows.value.length) : 0)
 const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
   return `${y}年${Number(m)}月`
@@ -264,7 +299,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
       <div class="income-expense-strip"><div><small>本月收入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>本月支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>结余</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
       <div class="metric-grid">
         <div class="metric-card"><span class="metric-icon">▦</span><small>支出笔数</small><strong>{{ stats?.count || 0 }}<em>笔</em></strong></div>
-        <div class="metric-card"><span class="metric-icon">↗</span><small>日均消费（有消费日）</small><strong>{{ yen(averageDaily) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon">↗</span><small>周均消费</small><strong>{{ yen(averageWeekly) }}</strong></div>
       </div>
       <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>还没有统计数据</strong><p>添加消费记录后，这里会显示支出分布。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
       <template v-else>
@@ -279,12 +314,12 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
           </div>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>每日支出</h2><p>按日期查看消费变化</p></div><span class="section-mark">02</span></div>
+          <div class="section-title"><div><h2>每周支出</h2><p>按周一至周日汇总，首尾周按本月日期计算</p></div><span class="section-mark">02</span></div>
           <div class="daily-list">
-            <div v-for="d in dayRows" :key="d.date" class="daily-row">
-              <div class="daily-date"><strong>{{ Number(d.date.slice(8)) }}</strong><span>日</span></div>
-              <div class="daily-bar-wrap"><div class="daily-bar-track"><span :style="{ width: Math.max(2, (d.amount / maxDay) * 100) + '%' }"></span></div><small>{{ d.date.slice(5) }}</small></div>
-              <strong class="daily-amount">{{ yen(d.amount) }}</strong>
+            <div v-for="(w, i) in weekRows" :key="w.key" class="daily-row weekly-row">
+              <div class="daily-date week-index"><strong>第{{ i + 1 }}</strong><span>周</span></div>
+              <div class="daily-bar-wrap"><div class="daily-bar-track"><span :style="{ width: Math.max(2, (w.amount / maxWeek) * 100) + '%' }"></span></div><small>{{ w.label }} · {{ w.days }}个消费日</small></div>
+              <strong class="daily-amount">{{ yen(w.amount) }}</strong>
             </div>
           </div>
         </div>

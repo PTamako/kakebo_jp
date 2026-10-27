@@ -96,9 +96,7 @@ const DEFAULT_RULES = {
   ]
 }
 
-const DEFAULT_RULE_ROWS = Object.entries(DEFAULT_RULES).flatMap(([category, keywords]) =>
-  keywords.map(keyword => [keyword, category])
-)
+const DEFAULT_RULE_ROWS = [...new Map(Object.entries(DEFAULT_RULES).flatMap(([category, keywords]) => keywords.map(keyword => [keyword, [keyword, category]]) )).values()]
 
 export async function onRequest({ request, env, params }) {
   // 个人使用：设置环境变量 AUTH_TOKEN 后，所有请求都需要携带 x-token
@@ -176,14 +174,14 @@ export async function onRequest({ request, env, params }) {
     }
     if (a === 'rules') {
       if (m === 'GET') {
-        const marker = '__kakeibo_japanese_rules_v5_seeded__'
+        const marker = '__kakeibo_japanese_rules_v6_initialized__'
         const seeded = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(marker).first()
         if (!seeded) {
           const rows = [...DEFAULT_RULE_ROWS, [marker, '其他']]
           // 分批写入，避免首次打开页面时逐条访问 D1。
           for (let i = 0; i < rows.length; i += 40) {
             const batch = rows.slice(i, i + 40).map(([keyword, category]) =>
-              db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
+              db.prepare('INSERT OR REPLACE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
             )
             await db.batch(batch)
           }

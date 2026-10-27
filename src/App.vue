@@ -496,8 +496,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </button>
         </div>
       </section>
-      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + categoryLabel(detailFilter.category) + 'の' + (detailFilter.type === 'income' ? '収入' : '支出') : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
-      <div v-if="detailFilter" class="detail-filter-strip"><span>カテゴリで絞り込み中</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
+      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + (detailFilter.type === 'transfer' ? '資産移動' : categoryLabel(detailFilter.category) + 'の' + (detailFilter.type === 'income' ? '収入' : '支出')) : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
+      <div v-if="detailFilter" class="detail-filter-strip"><span>{{ detailFilter.type === 'transfer' ? '資産移動で絞り込み中' : 'カテゴリで絞り込み中' }}</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
       <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
       <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><p>{{ detailFilter ? '条件に一致する記録はありません。' : '「入力」から最初の記録を追加できます。' }}</p><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
       

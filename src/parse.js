@@ -233,7 +233,7 @@ export function parseEntries(raw, rules) {
   // separate lines (e.g. 2,992円～). Recover each independently instead of
   // falling back to a single giant draft containing all the transactions.
   const standaloneAmount = line => {
-    const match = line.match(/^(?:[¥￥]\\s*)?(\\d{1,3}(?:[,，.]\\d{3})+|\\d{1,6})\\s*円\\s*[~～〜く>＞Nn]*$/)
+    const match = line.match(/^(?:[¥￥]\s*)?(\d{1,3}(?:[,，.]\d{3})+|\d{1,6})\s*円\s*[~～〜く>＞Nn]*$/)
     if (!match) return null
     const value = Number(match[1].replace(/[,，.]/g, ''))
     return value > 0 && value <= 9999999 ? value : null
@@ -241,17 +241,17 @@ export function parseEntries(raw, rules) {
   const cardBlocks = []
   let blockStart = 0
   for (let i = 0; i < lines.length; i++) {
-    if (!dateLine(lines[i]) || !/^\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}$/.test(lines[i])) continue
+    if (!dateLine(lines[i]) || !/^\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}$/.test(lines[i])) continue
     const block = lines.slice(blockStart, i).filter(line => !/^(?:ご本人|本人|家族|家族会員|1回払い|一回払い|分割払い|リボ払い)$/.test(line))
     const amountIndex = block.findIndex(line => standaloneAmount(line) !== null)
     if (amountIndex >= 1) {
       const amount = standaloneAmount(block[amountIndex])
       const merchantText = [...block.slice(0, amountIndex), ...block.slice(amountIndex + 1)].join('')
       const merchant = cleanMerchant(merchantText)
-      if (merchant && /[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}A-Za-z]/u.test(merchant)) {
+      if (merchant && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) {
         const { category, keyword } = classify(merchant, rules)
         cardBlocks.push({ date: findDate(lines[i]), time: '', amount, category,
-          merchant: merchant.slice(0, 60), note: '', raw: block.join('\\n') + '\\n' + lines[i], suggested: category, keyword })
+          merchant: merchant.slice(0, 60), note: '', raw: block.join('\n') + '\n' + lines[i], suggested: category, keyword })
       }
     }
     blockStart = i + 1

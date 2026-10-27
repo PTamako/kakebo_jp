@@ -174,28 +174,36 @@ export async function onRequest({ request, env, params }) {
     }
     if (a === 'rules') {
       if (m === 'GET') {
-        const marker = '__kakeibo_japanese_rules_v7_initialized__'
+        // デフォルトルールとユーザー上書きルールを分離し、初期化や再デプロイで個人設定を消さない。
+        await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
+        const marker = '__kakeibo_japanese_rules_v8_initialized__'
         const seeded = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(marker).first()
         if (!seeded) {
-          // 一度だけ旧キーワードルールを初期化。ユーザー定義カテゴリのメタ行は残し、以後の個別ルールは保持する。
-          await db.prepare("DELETE FROM rules WHERE substr(keyword, 1, 13) != '__category__:'").run()
           const rows = [...DEFAULT_RULE_ROWS, [marker, '其他']]
-          // 分批写入，避免首次打开页面时逐条访问 D1。
           for (let i = 0; i < rows.length; i += 40) {
             const batch = rows.slice(i, i + 40).map(([keyword, category]) =>
-              db.prepare('INSERT OR REPLACE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
+              db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
             )
             await db.batch(batch)
           }
         }
-        return json((await db.prepare('SELECT * FROM rules WHERE keyword != ?1 AND substr(keyword, 1, 13) != ?2').bind(marker, '__category__:').all()).results)
+        const [baseResult, customResult] = await Promise.all([
+          db.prepare("SELECT * FROM rules WHERE keyword != ?1 AND substr(keyword, 1, 13) != ?2").bind(marker, '__category__:').all(),
+          db.prepare('SELECT keyword, category FROM custom_rules').all()
+        ])
+        const merged = new Map((baseResult.results || []).map(rule => [rule.keyword, rule]))
+        for (const rule of (customResult.results || [])) merged.set(rule.keyword, rule)
+        return json([...merged.values()])
       }
       if (m === 'POST') {
         const r = await request.json()
         const kw = String(r.keyword || '').trim()
+        const category = String(r.category || '').trim()
         if (kw.length < 2) return json({ error: '关键词太短' }, 400)
-        await db.prepare('INSERT OR REPLACE INTO rules (keyword,category) VALUES (?1,?2)').bind(kw, r.category).run()
-        return json({ ok: true })
+        if (!category) return json({ error: '分类不能为空' }, 400)
+        await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
+        await db.prepare('INSERT INTO custom_rules (keyword,category) VALUES (?1,?2) ON CONFLICT(keyword) DO UPDATE SET category = excluded.category').bind(kw, category).run()
+        return json({ ok: true, keyword: kw, category })
       }
     }
     if (a === 'stats' && m === 'GET') {

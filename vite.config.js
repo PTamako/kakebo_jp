@@ -8,7 +8,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: '记账本', short_name: '记账本', lang: 'zh-CN',
+        name: '家計簿', short_name: '家計簿', lang: 'ja',
         display: 'standalone', start_url: '/',
         theme_color: '#79afea', background_color: '#fffaf2',
         icons: [

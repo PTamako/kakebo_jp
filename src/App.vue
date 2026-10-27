@@ -496,7 +496,6 @@ const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCatego
   .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
   .sort((a, b) => b.amount - a.amount))
 const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
-function openMonthDetails(point) { month.value = point.month; tab.value = 'list' }
 function openMonthDetails(point, type) {
   detailFilter.value = null
   detailSourceEntries.value = []

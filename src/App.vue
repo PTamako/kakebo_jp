@@ -250,6 +250,21 @@ async function saveInvestment(item) {
 const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map(c => c.amount)))
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
+const pieGradient = rows => {
+  const total = rows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0)
+  if (!total) return 'conic-gradient(var(--line) 0deg 360deg)'
+  const colors = ['#d96f91', '#78a9d6', '#d9b957', '#78ad91', '#b9a1d9', '#e6a56b', '#8bbdc1', '#d6a3b8', '#9ba9c5', '#b5bd78']
+  let cursor = 0
+  return 'conic-gradient(' + rows.map((row, i) => {
+    const start = cursor
+    cursor += Math.max(0, Number(row.amount) || 0) / total * 360
+    return colors[i % colors.length] + ' ' + start + 'deg ' + cursor + 'deg'
+  }).join(', ') + ')'
+}
+const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value))
+const annualIncomePie = computed(() => pieGradient(annualIncomeCategories.value || []))
+const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || []))
+
 const selectedDay = ref('')
 const swipedEntryId = ref(null)
 const filteredEntries = computed(() => selectedDay.value ? entries.value.filter(e => e.date === selectedDay.value) : entries.value)
@@ -613,7 +628,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>集計データがありません</strong><p>支出を記録すると、ここに内訳が表示されます。</p><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div class="stats-card">
-          <div class="section-title"><div><h2>カテゴリ支出</h2><p>何にお金を使ったか確認しましょう</p></div><span class="section-mark">01</span></div>
+          <div class="section-title"><div><h2>カテゴリ支出</h2><p>何にお金を使ったか確認しましょう</p></div></div>
+          <div class="category-pie" :style="{ background: monthlyCategoryPie }" role="img" aria-label="カテゴリ別支出の割合"></div>
           <div class="category-list">
             <div v-for="(c, i) in categoryRows" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'month' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'month')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'month')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'month')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
@@ -623,7 +639,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </div>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>週別支出</h2><p>月曜日から日曜日で集計（最初と最後の週は当月の日付で計算）</p></div><span class="section-mark">02</span></div>
+          <div class="section-title"><div><h2>週別支出</h2><p>月曜日から日曜日で集計（最初と最後の週は当月の日付で計算）</p></div></div>
           <div class="daily-list">
             <div v-for="(w, i) in weekRows" :key="w.key" class="daily-row weekly-row">
               <div class="daily-date week-index"><strong>第{{ i + 1 }}</strong><span>週</span></div>
@@ -654,7 +670,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><p>別の年を選ぶか、記録を追加してください。</p><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div v-if="annualStats?.count" class="stats-card">
-          <div class="section-title"><div><h2>月別支出</h2><p>{{ selectedYear }}年1月〜12月</p></div><span class="section-mark">01</span></div>
+          <div class="section-title"><div><h2>月別支出</h2><p>{{ selectedYear }}年1月〜12月</p></div></div>
           <div class="year-month-list">
             <div v-for="item in yearMonthRows" :key="item.month" class="year-month-row">
               <span class="year-month-label">{{ item.label }}</span>
@@ -664,7 +680,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </div>
         </div>
         <div class="stats-card trend-card">
-          <div class="section-title"><div><h2>収入の推移</h2><p>月ごとの年間収入の推移</p></div><span class="section-mark">03</span></div>
+          <div class="section-title"><div><h2>収入の推移</h2><p>月ごとの年間収入の推移</p></div></div>
           <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>月間最高収入</span></div>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年収入の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
@@ -686,7 +702,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </div>
         </div>
         <div class="stats-card trend-card">
-          <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入。破線は80%と100%の目安</p></div><span class="section-mark">04</span></div>
+          <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入。破線は80%と100%の目安</p></div></div>
           <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>月間最高の支出割合</span></div>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出割合の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
@@ -704,7 +720,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <p class="trend-note">収入がない月は割合を計算しません。縦軸は0〜150%で、150%を超える点は上限に表示されます。</p>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>年度カテゴリ収入</h2><p>年間合計の多い順</p></div><span class="section-mark">05</span></div>
+          <div class="section-title"><div><h2>年度カテゴリ収入</h2><p>年間合計の多い順</p></div></div>
+          <div v-if="annualIncomeCategories.length" class="category-pie" :style="{ background: annualIncomePie }" role="img" aria-label="年度カテゴリ収入の割合"></div>
           <div v-if="annualIncomeCategories.length" class="category-list">
             <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'income' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'income', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'income', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'income', 'year')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
@@ -715,7 +732,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <p v-else class="trend-note">この年の収入記録はありません。</p>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div><span class="section-mark">02</span></div>
+          <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div></div>
+          <div class="category-pie" :style="{ background: annualExpensePie }" role="img" aria-label="年度カテゴリ支出の割合"></div>
           <div class="category-list">
             <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'year')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
@@ -917,4 +935,6 @@ main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);
 
 
 .day-group-list{display:grid;gap:10px;width:100%;box-sizing:border-box;margin:0;padding:0;background:transparent;border:0;box-shadow:none;overflow:visible}.entry-day-group{overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:14px}.entry-day-heading{display:grid;grid-template-columns:18px auto auto 1fr;align-items:center;gap:8px;width:100%;padding:13px 12px;border:0;background:var(--card);color:var(--ink);text-align:left}.entry-day-chevron{color:var(--blue-dark);font-size:16px}.entry-day-heading strong{font-size:13px}.entry-day-count{font-size:11px;color:var(--muted)}.entry-day-total{text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.entry-day-items{margin:0;border:0;border-radius:0;box-shadow:none}.entry-day-items li:first-child{border-top:1px solid var(--line)}.entry-day-items li{padding-left:10px;padding-right:10px}.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap} .load-more-wrap{display:flex;justify-content:center;padding:14px 0 28px}.load-more-button{width:100%;max-width:320px;padding:12px 16px;font-size:13px;font-weight:700}
+
+.category-pie{width:min(64vw,220px);aspect-ratio:1;border-radius:50%;margin:14px auto 18px;border:4px solid var(--card);box-shadow:0 2px 12px #20324b12}
 </style>

@@ -52,9 +52,12 @@ async function loadYear() {
   catch (e) { flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
 onMounted(() => { load(); loadYear() })
-watch(month, () => { selectedDay.value = ''; swipedEntryId.value = null; load() })
-watch(selectedYear, loadYear)
-watch(tab, value => { if (value === 'year') loadYear() })
+watch(month, async () => { selectedDay.value = ''; swipedEntryId.value = null; listPage.value = 1; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
+watch(selectedYear, async () => { listPage.value = 1; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
+watch(tab, value => {
+  if (value === 'year') loadYear()
+  if (value === 'list') listPage.value = 1
+})
 
 function recognize() {
   if (!input.value.trim()) return
@@ -143,6 +146,47 @@ async function saveEdit() {
 const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map(c => c.amount)))
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
+const detailFilter = ref(null)
+const detailSourceEntries = ref([])
+const detailLoading = ref(false)
+const listPage = ref(1)
+const listPageSize = 50
+const displayEntries = computed(() => {
+  const source = detailFilter.value ? detailSourceEntries.value : filteredEntries.value
+  return detailFilter.value
+    ? source.filter(entry => entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income'))
+    : source
+})
+const listPageCount = computed(() => Math.max(1, Math.ceil(displayEntries.value.length / listPageSize)))
+const pagedEntries = computed(() => {
+  const start = (listPage.value - 1) * listPageSize
+  return displayEntries.value.slice(start, start + listPageSize)
+})
+watch(listPageCount, count => { if (listPage.value > count) listPage.value = count })
+async function openCategoryDetails(category, type, period) {
+  detailFilter.value = { category, type, period }
+  selectedDay.value = ''
+  detailSourceEntries.value = []
+  listPage.value = 1
+  tab.value = 'list'
+  detailLoading.value = true
+  try {
+    const query = period === 'year' ? 'entries?year=' + selectedYear.value : 'entries?month=' + month.value
+    detailSourceEntries.value = await api(query)
+  } catch (e) {
+    flash('明細の読み込みに失敗しました：' + e.message)
+  } finally {
+    detailLoading.value = false
+  }
+}
+function clearDetailFilter() {
+  detailFilter.value = null
+  detailSourceEntries.value = []
+  listPage.value = 1
+}
+function changeListPage(page) {
+  listPage.value = Math.min(listPageCount.value, Math.max(1, page))
+}
 const dayRows = computed(() => [...(stats.value?.byDay || [])].sort((a, b) => a.date.localeCompare(b.date)))
 const selectedDay = ref('')
 const swipedEntryId = ref(null)
@@ -166,6 +210,7 @@ const calendarDays = computed(() => {
 function toggleDay(date) {
   if (selectedDay.value === date) selectedDay.value = ''
   else selectedDay.value = date
+  listPage.value = 1
   swipedEntryId.value = null
 }
 function startSwipe(event) {
@@ -292,7 +337,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <span class="brand-mark" aria-label="しろちゃんとちび毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="しろちゃん" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="ちび毛" /></span>
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
-      <input v-if="tab !== 'year'" type="month" v-model="month" class="month" aria-label="集計月" />
+      <input v-if="tab !== 'year' && !(tab === 'list' && detailFilter?.period === 'year')" type="month" v-model="month" class="month" aria-label="集計月" />
     </header>
     <div class="theme-switcher" role="group" aria-label="配色">
       <span>配色</span>
@@ -346,7 +391,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
     <section v-else-if="tab === 'list'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">収支記録</p><h1>収支明細</h1></div><span class="heading-icon">≡</span></div>
-      <section class="month-calendar" aria-label="月間支出カレンダー">
+      <section v-if="!detailFilter" class="month-calendar" aria-label="月間支出カレンダー">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><button v-if="selectedDay" class="calendar-reset" @click="selectedDay = ''">月全体を表示</button></div>
         <div class="calendar-weekdays"><span v-for="weekday in ['一', '二', '三', '四', '五', '六', '日']" :key="weekday">{{ weekday }}</span></div>
         <div class="calendar-grid">
@@ -355,11 +400,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </button>
         </div>
       </section>
-      <div class="summary-strip"><span>{{ selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel }}</span><strong>{{ filteredEntries.length }}件の記録</strong></div>
-      <div v-if="!entries.length" class="empty-state"><span class="empty-icon">▤</span><strong>この月の記録はありません</strong><p>「入力」から最初の支出を記録しましょう。</p><button class="button-primary" @click="tab = 'add'">記録を追加</button></div>
-      <div v-else-if="filteredEntries.length === 0" class="empty-state filtered-empty"><span class="empty-icon">♡</span><strong>{{ selectedDay ? 'この日の記録はありません' : 'この月の記録はありません' }}</strong><p>{{ selectedDay ? 'カレンダーの日付を選ぶと表示を切り替えられます。' : '「入力」から最初の支出を記録しましょう。' }}</p><button v-if="selectedDay" class="button-secondary" @click="selectedDay = ''">月全体を表示</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
-      <ul v-else class="ledger">
-        <li v-for="e in filteredEntries" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + categoryLabel(detailFilter.category) + 'の' + (detailFilter.type === 'income' ? '収入' : '支出') : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
+      <div v-if="detailFilter" class="detail-filter-strip"><span>カテゴリで絞り込み中</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
+      <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
+      <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><p>{{ detailFilter ? '条件に一致する記録はありません。' : '「入力」から最初の記録を追加できます。' }}</p><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
+      
+      <ul v-else-if="!detailLoading" class="ledger">
+        <li v-for="e in pagedEntries" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
           <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
             <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
             <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : '支出' }}</small></div>
@@ -368,6 +415,11 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
         </li>
       </ul>
+      <div v-if="displayEntries.length > listPageSize && !detailLoading" class="detail-pagination" aria-label="明細ページ">
+        <button type="button" class="button-secondary" :disabled="listPage <= 1" @click="changeListPage(listPage - 1)">前へ</button>
+        <span>{{ listPage }} / {{ listPageCount }} ページ（50件ずつ）</span>
+        <button type="button" class="button-secondary" :disabled="listPage >= listPageCount" @click="changeListPage(listPage + 1)">次へ</button>
+      </div>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
         <form class="edit-dialog" @submit.prevent="saveEdit">
           <div class="edit-dialog-heading"><h2>記録を編集</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="閉じる">×</button></div>
@@ -409,10 +461,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="stats-card">
           <div class="section-title"><div><h2>カテゴリ支出</h2><p>何にお金を使ったか確認しましょう</p></div><span class="section-mark">01</span></div>
           <div class="category-list">
-            <div v-for="(c, i) in categoryRows" :key="c.category" class="category-row">
+            <div v-for="(c, i) in categoryRows" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'month' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'month')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'month')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'month')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span :class="'bar-fill fill-' + (i % 6)" :style="{ width: Math.max(2, (c.amount / maxCat) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ stats.total ? Math.round(c.amount / stats.total * 100) : 0 }}%（今月の支出合計に占める割合）</small>
+              <small class="category-share">{{ stats.total ? Math.round(c.amount / stats.total * 100) : 0 }}%（今月の支出合計に占める割合） · タップして明細を見る</small>
             </div>
           </div>
         </div>
@@ -500,10 +552,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="stats-card">
           <div class="section-title"><div><h2>年度カテゴリ収入</h2><p>年間合計の多い順</p></div><span class="section-mark">05</span></div>
           <div v-if="annualIncomeCategories.length" class="category-list">
-            <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row">
+            <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'income' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'income', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'income', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'income', 'year')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
-              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}%（年間収入に占める割合）</small>
+              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}%（年間収入に占める割合） · タップして明細</small>
             </div>
           </div>
           <p v-else class="trend-note">この年の収入記録はありません。</p>
@@ -511,10 +563,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="stats-card">
           <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div><span class="section-mark">02</span></div>
           <div class="category-list">
-            <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row">
+            <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'year')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(annualStats?.total || 0)) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}%（年間支出に占める割合）</small>
+              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}%（年間支出に占める割合） · タップして明細</small>
             </div>
           </div>
         </div>
@@ -652,4 +704,19 @@ main.theme-blue .brand-mark{background:linear-gradient(135deg,#eaf5fd,#dcecf9);b
 main.theme-yellow .brand-mark{background:linear-gradient(135deg,#fff9df,#f9edc1);box-shadow:inset 0 0 0 1px #f0e5bc}
 main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);box-shadow:inset 0 0 0 1px #d1e8d8}
 
+
+.category-row-clickable{cursor:pointer;border-radius:12px;padding:8px;margin:-8px;transition:background .15s,transform .15s}
+.category-row-clickable:hover,.category-row-clickable:focus-visible{background:color-mix(in srgb,var(--blue) 8%,transparent);outline:none}
+.category-row-clickable:active{transform:scale(.99)}
+
+
+
+
+
+
+
+
+.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap}.detail-pagination{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:14px}
+.detail-pagination span{font-size:11px;color:var(--muted);text-align:center}
+.detail-pagination button{padding:8px 10px;font-size:12px;white-space:nowrap}
 </style>

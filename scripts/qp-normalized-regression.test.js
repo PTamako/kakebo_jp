@@ -19,7 +19,7 @@ QP/ ダ イソ ー 220 m 、
 10 月 5 日 1 回 払い`
   const rows = parseEntries(input, [])
   assert.equal(rows.length, 7)
-  assert.deepEqual(rows.map(row => row.amount), [537, 880, 220, 22, 309, 1096, 220])
+  assert.deepEqual(rows.map(row => row.amount), [537, 880, 220, 622, 309, 1096, 220])
   assert.deepEqual(rows.map(row => row.date), [
     '2026-10-07', '2026-10-07', '2026-10-06', '2026-10-06',
     '2026-10-06', '2026-10-05', '2026-10-05'

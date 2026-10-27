@@ -1,0 +1,20 @@
+name: Validate
+# Validate category-to-details navigation and shared-list pagination as part of the production build
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run targeted QUICPay OCR regression tests
+        run: node --test scripts/parse.test.js scripts/qp-card-regression.test.js scripts/qp-normalized-regression.test.js scripts/qp-ocr-compact-amounts.test.js scripts/qp-row-by-row-regression.test.js
+      - run: npm run build

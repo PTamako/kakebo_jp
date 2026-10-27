@@ -89,7 +89,11 @@ export function parseEntries(raw, rules) {
   const text = normalize(raw)
   if (!text) return []
 
-  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+  // Normalize card-statement rows such as "QUICPay 利用 (QP/ マイバスケット ) 628gm"
+  // into the existing QP-row format before parsing each transaction independently.
+  const lines = text.split(/\r?\n/).map(s => s.trim())
+    .filter(Boolean)
+    .map(line => line.replace(/^.*?\(\s*QP\s*\//i, 'QP / '))
   const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
     || /(?<!\d)\d{2}\s*[.\/-]\s*\d{1,2}\s*[.\/-]\s*\d{1,2}(?!\d)/.test(line)
     || /\d{1,2}\s*月\s*\d{1,2}/.test(line)
@@ -131,10 +135,11 @@ export function parseEntries(raw, rules) {
     // Strip visible numeric references and OCR-truncated forms such as "7...".
     .replace(/\s+\d{6,}\s*$/g, '')
     .replace(/\s+\d{1,3}\s*[.…・]{2,}\s*$/g, '')
-    .replace(/[＞>」】]+\s*$/g, '')
+    .replace(/[＞>」】）)]+\s*$/g, '')
     .replace(/[Nn]\s*$/g, '')
     .replace(/[\s,，、。．.]+$/g, '')
     .trim()
+    .replace(/マイバスケツト/g, 'マイバスケット')
   // QP statements: each transaction is a QP-prefixed merchant/amount line,
   // followed by a date and payment-method line. Parse the final numeric token explicitly.
   const qpRows = []
@@ -145,7 +150,7 @@ export function parseEntries(raw, rules) {
     // Capture the final amount token, not the merchant/reference text.
     // The OCR engine may remove the space before the amount entirely (e.g. "ダイソー880m").
     // Anchor the amount to the line ending marker instead of requiring a separator from the merchant.
-    const m = body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV]+\s*$/i)
+    const m = body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV|]+\s*$/i)
       || body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)\s*$/i)
     if (!m || !m[1].trim()) continue
     let token = m[2]
@@ -324,8 +329,15 @@ export function parseEntries(raw, rules) {
     return transactionLines.map(line => parseEntry(line, rules)).filter(e => e.amount > 0)
   }
 
+  // Do not mistake month/day digits for a transaction amount when OCR omitted the amount
+  // from a card-statement row that still contains payment metadata.
+  const hasCardPaymentMetadata = lines.some(line => /回\s*払(?:い)?/.test(line))
+  const hasExplicitAmount = lines.some(line =>
+    /[¥￥]\s*[\d,]+|[\d,]+\s*円|\d[\d,，.]{1,7}\s*(?:m{1,2}|g(?:m)?|mm|ロ|口)\b/i.test(line)
+  )
   const entry = parseEntry(text, rules)
-  return entry.amount > 0 ? [entry] : [entry]
+  if (hasCardPaymentMetadata && dateLines.length && !hasExplicitAmount) return [{ ...entry, amount: 0 }]
+  return [entry]
 }
 // 图片 → 文字：Tesseract.js 在手机浏览器本地运行，不上传、不收费
 export async function ocrImage(file, onProgress) {

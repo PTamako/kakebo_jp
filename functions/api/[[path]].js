@@ -98,6 +98,14 @@ const DEFAULT_RULES = {
 
 const DEFAULT_RULE_ROWS = [...new Map(Object.entries(DEFAULT_RULES).flatMap(([category, keywords]) => keywords.map(keyword => [keyword, [keyword, category]]) )).values()]
 
+
+// SBIの投信積立引落は資産移動として扱い、生活支出から除外する。
+const isInvestmentTransfer = e => {
+  const text = [e.merchant, e.note, e.raw].filter(Boolean).join(' ').toLowerCase()
+  return /証券投信積立サービス|投信積立サービス|翌月買付分/.test(text) ||
+    (/sbi/.test(text) && /投信積立|投資信託積立/.test(text))
+}
+
 export async function onRequest({ request, env, params }) {
   // 个人使用：设置环境变量 AUTH_TOKEN 后，所有请求都需要携带 x-token
   if (env.AUTH_TOKEN && request.headers.get('x-token') !== env.AUTH_TOKEN)
@@ -122,6 +130,9 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    // 既存のSBI投信積立明細も資産移動へ補正する（生活費統計から除外）。
+    await db.prepare("UPDATE entries SET type = 'transfer', category = '投資・資産移動' WHERE (merchant LIKE '%証券投信積立サービス%' OR note LIKE '%証券投信積立サービス%' OR raw LIKE '%証券投信積立サービス%' OR merchant LIKE '%翌月買付分%' OR note LIKE '%翌月買付分%' OR raw LIKE '%翌月買付分%') AND type != 'transfer'").run()
+
     if (a === 'entries') {
       if (m === 'GET') {
         const datePrefix = entriesYear && /^\\d{4}$/.test(entriesYear) ? entriesYear : month
@@ -132,23 +143,25 @@ export async function onRequest({ request, env, params }) {
       }
       if (m === 'POST') {
         const e = await request.json()
+        const transfer = isInvestmentTransfer(e)
         const amount = Math.round(Number(e.amount))
         if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         await db.prepare(
           'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)'
-        ).bind(e.date, e.time || '', amount, e.category || (e.type === 'income' ? '工资' : '日用品'), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), e.type === 'income' ? 'income' : 'expense').run()
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense')).run()
         return json({ ok: true })
       }
       if (m === 'PUT' && b) {
         const e = await request.json()
+        const transfer = isInvestmentTransfer(e)
         const id = Number(b)
         const amount = Math.round(Number(e.amount))
         if (!Number.isInteger(id) || id <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         const result = await db.prepare(
           'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8 WHERE id = ?9'
-        ).bind(e.date, e.time || '', amount, e.category || (e.type === 'income' ? '工资' : '日用品'), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), e.type === 'income' ? 'income' : 'expense', id).run()
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), id).run()
         return json({ ok: true, changes: result.meta?.changes ?? null })
       }
       if (m === 'DELETE' && b) {
@@ -248,9 +261,9 @@ export async function onRequest({ request, env, params }) {
       if (year) {
         if (!/^\d{4}$/.test(year)) return json({ error: '年份格式不正确' }, 400)
         const like = year + '%'
-        const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type != 'income' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type != 'income' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income FROM entries WHERE date LIKE ?1").bind(like).first()
-        const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type != 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
-        const monthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type != 'income' GROUP BY substr(date,1,7) ORDER BY month").bind(like).all()
+        const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income FROM entries WHERE date LIKE ?1").bind(like).first()
+        const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()
+        const monthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY substr(date,1,7) ORDER BY month").bind(like).all()
         const incomeMonthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY substr(date,1,7) ORDER BY month").bind(like).all()
         const incomeCategoryRows = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
         const incomeMonthCategoryRows = await db.prepare("SELECT substr(date,1,7) month, category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY substr(date,1,7), category ORDER BY month, amount DESC").bind(like).all()
@@ -259,7 +272,7 @@ export async function onRequest({ request, env, params }) {
       const like = month + '%'
       const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type != 'income' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type != 'income' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income FROM entries WHERE date LIKE ?1").bind(like).first()
       const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type != 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
-      const day = await db.prepare("SELECT date, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type != 'income' GROUP BY date ORDER BY date").bind(like).all()
+      const day = await db.prepare("SELECT date, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY date ORDER BY date").bind(like).all()
       return json({ total: total.t, count: total.n, income: total.income, byCategory: cat.results, byDay: day.results })
     }
     return json({ error: 'not found' }, 404)

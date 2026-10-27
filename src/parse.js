@@ -109,6 +109,34 @@ export function parseEntries(raw, rules) {
     .replace(/[Nn]\s*$/g, '')
     .replace(/[\s,，、。．.]+$/g, '')
     .trim()
+  // Some card apps place the date, payment method, and yen amount together on the line below the merchant.
+  // Example: "Suicaチャージ（楽天ペイ） 705507" followed by "2026/10/17 1回払い ¥1,000".
+  const pairedStatementRows = []
+  for (let i = 0; i < lines.length; i++) {
+    const detailLine = lines[i]
+    if (!dateLine(detailLine) || !/[¥￥]\s*[\d,]+/.test(detailLine)) continue
+    let merchantLine = ''
+    for (let j = i - 1; j >= 0; j--) {
+      if (dateLine(lines[j]) || amountLine(lines[j]) || paymentLine(lines[j])) continue
+      if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(lines[j])) {
+        merchantLine = cleanMerchant(lines[j])
+        break
+      }
+    }
+    const amountMatch = detailLine.match(/[¥￥]\s*([\d,]+)/)
+    if (!merchantLine || !amountMatch) continue
+    const amount = Number(amountMatch[1].replace(/,/g, ''))
+    if (amount <= 0 || amount > 9999999) continue
+    const { category, keyword } = classify(merchantLine, rules)
+    pairedStatementRows.push({
+      date: findDate(detailLine), time: '', amount, category,
+      merchant: merchantLine.slice(0, 60), note: '',
+      raw: merchantLine + '\\n' + detailLine,
+      suggested: category, keyword
+    })
+  }
+  if (pairedStatementRows.length >= 2) return pairedStatementRows
+
   const merchantRows = []
   const dateLines = lines.filter(dateLine)
   let activeMerchantRow = null

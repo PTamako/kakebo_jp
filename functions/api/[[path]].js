@@ -1,6 +1,6 @@
 // Cloudflare Pages Functions：/api/*
 const json = (d, s = 200) =>
-  new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json' } })
+  new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
 
 // 初回访问和后续访问都会补齐默认规则；INSERT OR IGNORE 保留用户自己新增/修改的规则。
 // 关键词尽量采用店铺全名，避免「コジマ」误匹配「ペットのコジマ」。
@@ -108,8 +108,10 @@ const isInvestmentTransfer = e => {
 
 export async function onRequest({ request, env, params }) {
   // 个人使用：设置环境变量 AUTH_TOKEN 后，所有请求都需要携带 x-token
-  if (env.AUTH_TOKEN && request.headers.get('x-token') !== env.AUTH_TOKEN)
-    return json({ error: 'unauthorized' }, 401)
+  // Fail closed: never expose personal transactions when the access token is missing.
+  if (!env.AUTH_TOKEN) return json({ error: 'アクセス認証が設定されていません' }, 503)
+  if (request.headers.get('x-token') !== env.AUTH_TOKEN)
+    return json({ error: 'アクセスコードを確認してください' }, 401)
 
   const db = env.DB
   const url = new URL(request.url)
@@ -168,26 +170,26 @@ export async function onRequest({ request, env, params }) {
       updated_at TEXT
     )`).run()
     await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL)").run()
-    const applyTransferDelta = async (target, delta) => {
-      if (target !== 'sbi' || !delta) return
-      await db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + ?1), updated_at = ?2 WHERE platform = ?3")
-        .bind(delta, new Date().toISOString(), target).run()
-    }
-
-    // Apply scheduled transfers only on/after their effective date. D1 batch makes
-    // balance adjustment and marking due rows applied one atomic operation.
+    // Applied transfers are ledger facts, NOT investment valuations.
+    // Do not mutate investment_snapshots.current_value here: it is a manually
+    // entered market valuation that may already include the purchase.
+    const tokyoToday = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const applyDueTransfers = async () => {
-      const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-      for (const target of ['sbi']) {
-        await db.batch([
-          db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + (SELECT COALESCE(SUM(amount), 0) FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)), updated_at = ?3 WHERE platform = ?1 AND EXISTS (SELECT 1 FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)")
-            .bind(target, today, new Date().toISOString()),
-          db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0")
-            .bind(target, today)
-        ])
-      }
+      await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
+        .bind(tokyoToday()).run()
     }
     await applyDueTransfers()
+
+    // D1 unique index makes OCR retries idempotent even when a response is lost.
+    try { await db.prepare('SELECT client_request_id FROM entries LIMIT 1').first() }
+    catch (columnCheckError) {
+      try { await db.prepare('ALTER TABLE entries ADD COLUMN client_request_id TEXT').run() }
+      catch (migrationError) {
+        try { await db.prepare('SELECT client_request_id FROM entries LIMIT 1').first() }
+        catch { throw migrationError }
+      }
+    }
+    await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_client_request_id ON entries(client_request_id)').run()
 
     // 既存のSBI投信積立明細も資産移動へ補正する（生活費統計から除外）。
     // Historical entries must not be silently rewritten on each request.
@@ -203,26 +205,28 @@ export async function onRequest({ request, env, params }) {
       }
       if (m === 'POST') {
         const e = await request.json()
-        const transfer = e.type === 'transfer' || isInvestmentTransfer(e)
-        const amount = Math.round(Number(e.amount))
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
+        const transfer = e.type === 'transfer' || (!['income', 'expense'].includes(e.type) && isInvestmentTransfer(e))
+        const amount = Number(e.amount)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isSafeInteger(Number(e.amount)) || !Number.isSafeInteger(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || e.date) : null
         if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
         const applied = target && transferDate <= today ? 1 : 0
-        await db.prepare(
-          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied, transferDate).run()
-        if (applied) await applyTransferDelta(target, amount)
-        return json({ ok: true })
+        const clientRequestId = e.clientRequestId == null ? null : String(e.clientRequestId).trim()
+        if (clientRequestId && !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
+          return json({ error: '記録IDの形式が正しくありません' }, 400)
+        const inserted = await db.prepare(
+          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(client_request_id) DO NOTHING'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied, transferDate, clientRequestId).run()
+        return json({ ok: true, duplicate: inserted.meta?.changes === 0 })
       }
       if (m === 'PUT' && b) {
         const e = await request.json()
         const transfer = e.type === 'transfer' || isInvestmentTransfer(e)
         const id = Number(b)
-        const amount = Math.round(Number(e.amount))
+        const amount = Number(e.amount)
         if (!Number.isInteger(id) || id <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1').bind(id).first()
@@ -230,19 +234,16 @@ export async function onRequest({ request, env, params }) {
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
         if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
-        if (previous.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
         const applied = target && transferDate <= today ? 1 : 0
         const result = await db.prepare(
           'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11 WHERE id = ?12'
         ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied ? 1 : 0, transferDate, id).run()
-        if (applied) await applyTransferDelta(target, amount)
         return json({ ok: true, changes: result.meta?.changes ?? null })
       }
       if (m === 'DELETE' && b) {
         const id = Number(b)
         const previous = await db.prepare('SELECT amount, transfer_target, transfer_applied FROM entries WHERE id = ?1').bind(id).first()
-        if (previous?.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
         await db.prepare('DELETE FROM entries WHERE id = ?1').bind(id).run()
         return json({ ok: true })
       }
@@ -312,10 +313,10 @@ export async function onRequest({ request, env, params }) {
       const id = Number(b)
       const item = await db.prepare("SELECT id, amount, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1 AND type = 'transfer'").bind(id).first()
       if (!item || item.transfer_target !== 'sbi') return json({ error: '対象の資産移動が見つかりません' }, 404)
-      if (Number(item.transfer_applied) !== 1) {
-        await applyTransferDelta('sbi', Number(item.amount || 0))
-        await db.prepare('UPDATE entries SET transfer_applied = 1 WHERE id = ?1').bind(id).run()
-      }
+      if (String(item.transfer_date || item.date) > tokyoToday())
+        return json({ error: '振替予定日前には処理できません' }, 409)
+      await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE id = ?1 AND type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied,0) = 0")
+        .bind(id).run()
       const updated = await db.prepare('SELECT id, date, amount, merchant, note, transfer_target, transfer_applied, transfer_date FROM entries WHERE id = ?1').bind(id).first()
       return json(updated)
     }
@@ -334,7 +335,7 @@ export async function onRequest({ request, env, params }) {
       )`).run()
       await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL)").run()
       if (m === 'GET') {
-        const { results } = await db.prepare("SELECT platform, current_value, pnl, updated_at FROM investment_snapshots ORDER BY CASE platform WHEN 'sbi' THEN 1 ELSE 2 END").all()
+        const { results } = await db.prepare("SELECT platform, current_value, pnl, updated_at, (SELECT COALESCE(SUM(amount),0) FROM entries WHERE type = 'transfer' AND transfer_target = investment_snapshots.platform AND transfer_applied = 1) AS invested_total FROM investment_snapshots ORDER BY CASE platform WHEN 'sbi' THEN 1 ELSE 2 END").all()
         return json(results)
       }
       if (m === 'PUT') {
@@ -372,6 +373,7 @@ export async function onRequest({ request, env, params }) {
     }
     return json({ error: 'not found' }, 404)
   } catch (err) {
-    return json({ error: String(err.message || err) }, 500)
+    console.error('家計簿 API エラー', err)
+    return json({ error: 'サーバー処理に失敗しました' }, 500)
   }
 }

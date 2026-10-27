@@ -136,25 +136,38 @@ async function logout() {
     catch { /* Device is logged out locally even when offline. */ }
   }
 }
+let loginPromise = null
+let rejectedSession = ''
+async function ensureLogin() {
+  if (loginPromise) return loginPromise
+  loginPromise = (async () => {
+    const code = prompt('アクセスコードを入力してください')
+    if (!code) throw new Error('アクセスコードが必要です')
+    await signIn(code)
+  })()
+  try { await loginPromise } finally { loginPromise = null }
+}
 async function unlock() {
-  const code = prompt('アクセスコードを入力してください')
-  if (!code) return
-  try { await signIn(code); await Promise.all([load(), loadYear(), loadInvestments(), loadTransfers()]) }
+  try { await ensureLogin(); await Promise.all([load(), loadYear(), loadInvestments(), loadTransfers()]) }
   catch (error) { flash(error.message) }
 }
 async function api(path, opt = {}) {
+  // All requests wait for the same login; never display concurrent prompts.
+  if (!token.value) await ensureLogin()
   const requestToken = token.value
   const r = await fetch('/api/' + path, {
     ...opt, headers: { 'content-type': 'application/json', 'x-session': requestToken, ...(opt.headers || {}) }
   })
   if (r.status === 401) {
+    // A different request may already have refreshed the session.
     if (token.value !== requestToken) return api(path, opt)
-    token.value = ''
-    localStorage.removeItem('kakeibo-device-session')
-    const code = prompt('アクセスコードを入力してください')
-    if (code) { await signIn(code); return api(path, opt) }
-    locked.value = true
-    throw new Error('アクセスコードが必要です')
+    if (rejectedSession !== requestToken) {
+      rejectedSession = requestToken
+      token.value = ''
+      localStorage.removeItem('kakeibo-device-session')
+    }
+    await ensureLogin()
+    return api(path, opt)
   }
   const d = await r.json()
   if (!r.ok) throw new Error(d.error || 'リクエストに失敗しました')

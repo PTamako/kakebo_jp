@@ -106,15 +106,31 @@ const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryI
 const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
 
-const token = ref(localStorage.getItem('token') || '')
+// Move legacy credentials out of persistent storage without forcing a new login.
+const previousToken = localStorage.getItem('token') || ''
+if (previousToken && !sessionStorage.getItem('kakeibo-token')) sessionStorage.setItem('kakeibo-token', previousToken)
+localStorage.removeItem('token')
+const token = ref(sessionStorage.getItem('kakeibo-token') || '')
+const locked = ref(sessionStorage.getItem('kakeibo-locked') === '1')
+function logout() {
+  if (busy.value || editSaving.value || investmentBusy.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
+  if (!confirm('ログアウトしますか？未保存の入力は失われます。')) return
+  sessionStorage.removeItem('kakeibo-token')
+  localStorage.removeItem('token')
+  sessionStorage.setItem('kakeibo-locked', '1')
+  location.reload()
+}
+function unlock() { sessionStorage.removeItem('kakeibo-locked'); location.reload() }
 
 async function api(path, opt = {}) {
+  const requestToken = token.value
   const r = await fetch('/api/' + path, {
-    ...opt, headers: { 'content-type': 'application/json', 'x-token': token.value, ...(opt.headers || {}) }
+    ...opt, headers: { 'content-type': 'application/json', 'x-token': requestToken, ...(opt.headers || {}) }
   })
   if (r.status === 401) {
+    if (token.value !== requestToken) return api(path, opt)
     const t = prompt('アクセスコードを入力してください')
-    if (t) { token.value = t; localStorage.setItem('token', t); return api(path, opt) }
+    if (t) { token.value = t; sessionStorage.setItem('kakeibo-token', t); return api(path, opt) }
     throw new Error('アクセスコードが必要です')
   }
   const d = await r.json()
@@ -148,7 +164,7 @@ async function loadYear() {
     if (requestId === yearRequestId && year === selectedYear.value) annualStats.value = nextStats
   } catch (e) { if (requestId === yearRequestId) flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
-onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers() })
+onMounted(() => { if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers() } })
 
 watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
@@ -711,7 +727,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 </script>
 
 <template>
-  <main :class="`theme-${theme}`">
+  <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong><p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
+  <main v-else :class="`theme-${theme}`">
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-label="しろちゃんとちび毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="しろちゃん" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="ちび毛" /></span>
@@ -723,6 +740,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </header>
     <div class="theme-switcher" role="group" aria-label="配色">
       <span>配色</span>
+      <button type="button" @click="logout">ログアウト</button>
       <button v-for="item in themes" :key="item.id" type="button" :class="{ selected: theme === item.id }" :aria-pressed="theme === item.id" @click="setTheme(item.id)"><i :style="{ background: item.color }"></i>{{ item.label }}</button>
     </div>
 

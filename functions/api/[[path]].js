@@ -130,6 +130,16 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    // transfer_target stores the destination account for asset-transfer entries.
+    try { await db.prepare('SELECT transfer_target FROM entries LIMIT 1').first() }
+    catch (columnCheckError) {
+      try { await db.prepare('ALTER TABLE entries ADD COLUMN transfer_target TEXT').run() }
+      catch (migrationError) {
+        try { await db.prepare('SELECT transfer_target FROM entries LIMIT 1').first() }
+        catch { throw migrationError }
+      }
+    }
+
     // 既存のSBI投信積立明細も資産移動へ補正する（生活費統計から除外）。
     await db.prepare("UPDATE entries SET type = 'transfer', category = '投資・資産移動' WHERE (merchant LIKE '%証券投信積立サービス%' OR note LIKE '%証券投信積立サービス%' OR raw LIKE '%証券投信積立サービス%' OR merchant LIKE '%翌月買付分%' OR note LIKE '%翌月買付分%' OR raw LIKE '%翌月買付分%') AND type != 'transfer'").run()
 
@@ -148,8 +158,8 @@ export async function onRequest({ request, env, params }) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         await db.prepare(
-          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense')).run()
+          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null).run()
         return json({ ok: true })
       }
       if (m === 'PUT' && b) {
@@ -160,8 +170,8 @@ export async function onRequest({ request, env, params }) {
         if (!Number.isInteger(id) || id <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         const result = await db.prepare(
-          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8 WHERE id = ?9'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), id).run()
+          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9 WHERE id = ?10'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null, id).run()
         return json({ ok: true, changes: result.meta?.changes ?? null })
       }
       if (m === 'DELETE' && b) {

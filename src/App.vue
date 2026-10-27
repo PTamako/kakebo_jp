@@ -11,7 +11,7 @@ const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '退款', '其他收入']
-const CATEGORY_ICONS = { '餐饮':'🍜', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '退款':'↩️', '其他收入':'🌷' }
+const CATEGORY_ICONS = { '餐饮':'🍜', '饮食料品':'🛒', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '退款':'↩️', '其他收入':'🌷' }
 const categoryIcon = name => CATEGORY_ICONS[name] || '🧾'
 const token = ref(localStorage.getItem('token') || '')
 

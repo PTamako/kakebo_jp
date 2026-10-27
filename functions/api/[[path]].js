@@ -176,13 +176,19 @@ export async function onRequest({ request, env, params }) {
       if (m === 'GET') {
         // デフォルトルールとユーザー上書きルールを分離し、初期化や再デプロイで個人設定を消さない。
         await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
-        const marker = '__kakeibo_japanese_rules_v8_initialized__'
+        const marker = '__kakeibo_japanese_rules_v9_initialized__'
         const seeded = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(marker).first()
         if (!seeded) {
+          // 旧规则表没有区分默认规则和个人规则：保留不属于默认关键词的旧规则作为个人规则。
+          const defaultKeywords = new Set(DEFAULT_RULE_ROWS.map(([keyword]) => keyword))
+          const legacy = await db.prepare("SELECT keyword, category FROM rules WHERE substr(keyword, 1, 13) != '__category__:'").all()
+          for (const rule of (legacy.results || []).filter(rule => !defaultKeywords.has(rule.keyword))) {
+            await db.prepare('INSERT OR IGNORE INTO custom_rules (keyword, category) VALUES (?1, ?2)').bind(rule.keyword, rule.category).run()
+          }
           const rows = [...DEFAULT_RULE_ROWS, [marker, '其他']]
           for (let i = 0; i < rows.length; i += 40) {
             const batch = rows.slice(i, i + 40).map(([keyword, category]) =>
-              db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
+              db.prepare('INSERT OR REPLACE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
             )
             await db.batch(batch)
           }

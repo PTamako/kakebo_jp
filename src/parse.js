@@ -1,5 +1,5 @@
 // 文字 / OCR 结果解析：日期、时间、金额、商家、分类（全部在浏览器本地完成，免费）
-export const CATEGORIES = ['餐饮', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
+export const CATEGORIES = ['餐饮', '饮食料品', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
 
 const pad = n => String(n).padStart(2, '0')
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -65,7 +65,7 @@ export function classify(text, rules) {
   const supermarket = [...SUPERMARKET_KEYWORDS]
     .sort((a, b) => b.length - a.length)
     .find(keyword => normalizedText.includes(normalize(keyword).toLowerCase()))
-  if (supermarket) return { category: '餐饮', keyword: supermarket }
+  if (supermarket) return { category: '饮食料品', keyword: supermarket }
 
   const hit = [...rules].sort((a, b) => b.keyword.length - a.keyword.length)
     .find(r => normalizedText.includes(normalize(r.keyword).toLowerCase()))

@@ -124,7 +124,7 @@ async function saveAll() {
 }
 async function remove(id) {
   if (!confirm('この記録を削除しますか？')) return
-  await api('entries/' + id, { method: 'DELETE' }); await load(); await loadInvestments()
+  await api('entries/' + id, { method: 'DELETE' }); await load(); await refreshDetailSource(); await loadYear(); await loadInvestments(); await loadTransfers()
 }
 function startEdit(entry) {
   editingEntry.value = {
@@ -151,6 +151,8 @@ async function saveEdit() {
     editingEntry.value = null
     flash('記録を更新しました')
     await load()
+    await refreshDetailSource()
+    await loadYear()
     await loadInvestments()
     await loadTransfers()
   } catch (err) { flash('更新に失敗しました：' + err.message) }
@@ -282,6 +284,14 @@ async function openCategoryDetails(category, type, period) {
   } finally {
     detailLoading.value = false
   }
+}
+async function refreshDetailSource() {
+  const filter = detailFilter.value
+  if (!filter) return
+  try {
+    const query = filter.period === 'year' ? 'entries?year=' + selectedYear.value : 'entries?month=' + month.value
+    detailSourceEntries.value = await api(query)
+  } catch (e) { flash('明細の再読み込みに失敗しました：' + e.message) }
 }
 function clearDetailFilter() {
   detailFilter.value = null

@@ -699,8 +699,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </div>
         </div>
       </article>
-      <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">振替を登録すると評価額に自動反映。評価額と損益は手動更新もできます</p></div><span class="heading-icon">￥</span></div>
-      <div class="investment-note">資産移動の明細で振替先を選ぶと、金額が評価額に自動加算されます。証券会社・PayPayで確認した評価額を手動保存すると、その値に更新できます。日常の収支には含めません。</div>
+      <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">振替は評価額に自動反映。評価額・損益は手動更新できます</p></div><span class="heading-icon">￥</span></div>
+      <div class="investment-note">振替先を指定すると評価額に自動加算。評価額・損益は手動更新できます。家計の収支には含みません。</div>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
         <div class="investment-card-heading"><div><h2>{{ item.label }}</h2><p>{{ item.detail }}</p></div><span class="investment-unit">{{ item.unit }}</span></div>
         <label class="form-field"><span>現在の評価額（{{ item.unit }}）</span><input v-model.number="investments[item.id].currentValue" type="number" min="0" step="1" inputmode="numeric" placeholder="現在の評価額" /></label>

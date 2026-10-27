@@ -120,11 +120,15 @@ export function parseEntries(raw, rules) {
     if (!/^QP\s*\//i.test(line)) continue
     const body = line.replace(/^QP\s*\/\s*/i, '').trim()
     // Capture the final amount token, not the merchant/reference text.
-    const m = body.match(/^(.*?)\s+([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV]*\s*$/i)
+    // The OCR engine may remove the space before the amount entirely (e.g. "ダイソー880m").
+    // Anchor the amount to the line ending marker instead of requiring a separator from the merchant.
+    const m = body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV]+\s*$/i)
+      || body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)\s*$/i)
     if (!m || !m[1].trim()) continue
     let token = m[2]
-      .replace(/[oOｏＯ]/g, '0')
-      .replace(/[\]\[]/g, '1')
+      // In this QP statement font, OCR commonly confuses 6 with "o"; "]" is a noisy thousands separator.
+      .replace(/[oOｏＯ]/g, '6')
+      .replace(/[\]\[]/g, '')
       .replace(/[\s,，.]/g, '')
     const amount = Number(token)
     if (!Number.isFinite(amount) || amount < 1 || amount > 999999) continue

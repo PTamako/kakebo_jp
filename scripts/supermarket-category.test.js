@@ -12,7 +12,7 @@ test('Japanese convenience stores default to food groceries across common Seven-
 })
 
 test('common Japanese supermarkets default to food groceries', () => {
-  for (const merchant of ['イトーヨーカドー', 'まいばすけっと', 'ベルク', 'イオンフードスタイル', 'ライフ']) {
+  for (const merchant of ['イトーヨーカドー', 'まいばすけっと', 'マイバスケット', 'マイバスケツト', 'ベルク', 'イオンフードスタイル', 'ライフ']) {
     assert.equal(classify(merchant, []).category, '饮食料品', merchant)
   }
 })

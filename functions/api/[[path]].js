@@ -283,8 +283,11 @@ export async function onRequest({ request, env, params }) {
         const existing = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind('__category__:' + name).first()
         if (existing) return json({ error: '同じカテゴリが既にあります' }, 409)
         await db.prepare('CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL)').run()
-        await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name).run()
-        await db.prepare('INSERT OR IGNORE INTO category_icons (category, icon) VALUES (?1, ?2)').bind(name, icon).run()
+        // Keep the category and its icon together if a database write fails.
+        await db.batch([
+          db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name),
+          db.prepare('INSERT OR IGNORE INTO category_icons (category, icon) VALUES (?1, ?2)').bind(name, icon)
+        ])
         return json({ ok: true, category: name })
       }
     }

@@ -3,6 +3,9 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 
 const tab = ref('add')
+const theme = ref(localStorage.getItem('kakeibo-theme') || 'pink')
+const themes = [{ id: 'pink', label: 'ピンク', color: '#d96f91' }, { id: 'blue', label: 'ブルー', color: '#78a9d6' }, { id: 'yellow', label: 'イエロー', color: '#d9b957' }, { id: 'green', label: 'グリーン', color: '#78ad91' }]
+function setTheme(value) { theme.value = value; localStorage.setItem('kakeibo-theme', value) }
 const month = ref(new Date().toISOString().slice(0, 7))
 const selectedYear = ref(new Date().getFullYear())
 const annualStats = ref(null)
@@ -283,7 +286,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 </script>
 
 <template>
-  <main>
+  <main :class="`theme-${theme}`">
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-label="しろちゃんとちび毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="しろちゃん" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="ちび毛" /></span>
@@ -291,6 +294,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <input v-if="tab !== 'year'" type="month" v-model="month" class="month" aria-label="集計月" />
     </header>
+    <div class="theme-switcher" role="group" aria-label="配色">
+      <span>配色</span>
+      <button v-for="item in themes" :key="item.id" type="button" :class="{ selected: theme === item.id }" :aria-pressed="theme === item.id" @click="setTheme(item.id)"><i :style="{ background: item.color }"></i>{{ item.label }}</button>
+    </div>
 
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
 
@@ -530,7 +537,7 @@ body{margin:0;background:radial-gradient(ellipse at 12% 0%,#fff0e8 0,transparent
 button,input,select,textarea{font:inherit}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 button:disabled{opacity:.45;cursor:not-allowed}
-main{width:min(100%,560px);min-height:100dvh;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 18px calc(104px + env(safe-area-inset-bottom))}
+main{width:min(100%,560px);min-height:100dvh;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 18px calc(104px + env(safe-area-inset-bottom));background:var(--paper);color:var(--ink);transition:background .2s,color .2s}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0 24px}
 .brand{display:flex;align-items:center;gap:10px}.brand-mark{display:grid;place-items:center;width:58px;height:42px;border-radius:15px;background:linear-gradient(135deg,#fff0e6,#ffeaf1);color:var(--blue);font-size:20px;font-weight:800;letter-spacing:-7px;padding-right:7px;box-shadow:inset 0 0 0 1px #f8dce4}.brand strong{display:block;font-size:17px;letter-spacing:.02em}.brand-heart{color:#e985a2;font-size:15px}.brand small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
 input,select,textarea{width:100%;min-width:0;border:1px solid #e0e6ed;border-radius:11px;background:#fff;color:var(--ink);padding:11px 12px;outline:none;transition:border-color .15s,box-shadow .15s}
@@ -623,4 +630,26 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .income-breakdown-heading h3{margin:0;font-size:14px}
 .income-breakdown-heading p{margin:3px 0 0;font-size:10px;color:var(--muted)}
 .income-breakdown-heading>strong{font-size:16px;white-space:nowrap;color:#16836f}.trend-note{margin:8px 0 0;line-height:1.5}
+
+.theme-switcher{display:flex;align-items:center;gap:6px;margin:-13px 0 17px;padding:0 0 2px;flex-wrap:wrap}
+.theme-switcher>span{font-size:11px;color:var(--muted);font-weight:700;margin-right:2px}
+.theme-switcher button{display:flex;align-items:center;gap:5px;padding:5px 8px;border:1px solid var(--line);border-radius:99px;background:var(--card);color:var(--muted);font-size:10px;font-weight:700}
+.theme-switcher button i{display:block;width:10px;height:10px;border-radius:50%;box-shadow:inset 0 0 0 1px #00000010}
+.theme-switcher button.selected{border-color:var(--blue);color:var(--blue-dark);background:var(--card);box-shadow:0 0 0 1px var(--blue) inset}
+main.theme-blue{--ink:#34485b;--muted:#74899b;--line:#dceaf5;--blue:#78a9d6;--blue-dark:#4f87ba;--paper:#f2f8fd;--card:#fff}
+main.theme-yellow{--ink:#5b5037;--muted:#93845f;--line:#f0e5bc;--blue:#d9b957;--blue-dark:#ad8c2e;--paper:#fffbed;--card:#fff}
+main.theme-green{--ink:#3d5949;--muted:#789181;--line:#dcebe0;--blue:#78ad91;--blue-dark:#4e896b;--paper:#f1f9f3;--card:#fff}
+main.theme-blue .button-secondary,main.theme-blue .bottom-nav button.active,main.theme-blue .page-heading .heading-icon,main.theme-blue .metric-icon,main.theme-blue .empty-icon,main.theme-blue .entry-number,main.theme-blue .calendar-reset,main.theme-blue .trend-month-labels button.trend-month-selected{background:#e5f2fc;color:#4f87ba;border-color:#d1e6f7}
+main.theme-yellow .button-secondary,main.theme-yellow .bottom-nav button.active,main.theme-yellow .page-heading .heading-icon,main.theme-yellow .metric-icon,main.theme-yellow .empty-icon,main.theme-yellow .entry-number,main.theme-yellow .calendar-reset,main.theme-yellow .trend-month-labels button.trend-month-selected{background:#fff5cf;color:#a9892d;border-color:#f0e5bc}
+main.theme-green .button-secondary,main.theme-green .bottom-nav button.active,main.theme-green .page-heading .heading-icon,main.theme-green .metric-icon,main.theme-green .empty-icon,main.theme-green .entry-number,main.theme-green .calendar-reset,main.theme-green .trend-month-labels button.trend-month-selected{background:#e4f3e8;color:#4e896b;border-color:#d1e8d8}
+main.theme-blue .button-primary{background:#78a9d6}main.theme-blue .hero-total{background:linear-gradient(130deg,#78a9d6,#4f87ba)}
+main.theme-yellow .button-primary{background:#d9b957}main.theme-yellow .hero-total{background:linear-gradient(130deg,#d9b957,#ad8c2e)}
+main.theme-green .button-primary{background:#78ad91}main.theme-green .hero-total{background:linear-gradient(130deg,#78ad91,#4e896b)}
+main.theme-blue .calendar-day.calendar-has-spend{background:#e5f2fc;border-color:#d1e6f7}main.theme-blue .calendar-day.calendar-selected{background:#78a9d6;border-color:#78a9d6}
+main.theme-yellow .calendar-day.calendar-has-spend{background:#fff5cf;border-color:#f0e5bc}main.theme-yellow .calendar-day.calendar-selected{background:#d9b957;border-color:#d9b957}
+main.theme-green .calendar-day.calendar-has-spend{background:#e4f3e8;border-color:#d1e8d8}main.theme-green .calendar-day.calendar-selected{background:#78ad91;border-color:#78ad91}
+main.theme-blue .brand-mark{background:linear-gradient(135deg,#eaf5fd,#dcecf9);box-shadow:inset 0 0 0 1px #d1e6f7}
+main.theme-yellow .brand-mark{background:linear-gradient(135deg,#fff9df,#f9edc1);box-shadow:inset 0 0 0 1px #f0e5bc}
+main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);box-shadow:inset 0 0 0 1px #d1e8d8}
+
 </style>

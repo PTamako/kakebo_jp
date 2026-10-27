@@ -108,37 +108,59 @@ const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryI
 const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
 
-// Move legacy credentials out of persistent storage without forcing a new login.
-const previousToken = localStorage.getItem('token') || ''
-if (previousToken && !sessionStorage.getItem('kakeibo-token')) sessionStorage.setItem('kakeibo-token', previousToken)
+// Store only a revocable, 30-day device session; never persist the access code.
 localStorage.removeItem('token')
-const token = ref(sessionStorage.getItem('kakeibo-token') || '')
-const locked = ref(sessionStorage.getItem('kakeibo-locked') === '1')
-function logout() {
+const token = ref(localStorage.getItem('kakeibo-device-session') || '')
+const locked = ref(!token.value && localStorage.getItem('kakeibo-logged-out') === '1')
+async function signIn(code) {
+  const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) })
+  const result = await response.json()
+  if (!response.ok) throw new Error(result.error || 'アクセスコードを確認してください')
+  token.value = result.session
+  localStorage.setItem('kakeibo-device-session', result.session)
+  localStorage.removeItem('kakeibo-logged-out')
+  sessionStorage.removeItem('kakeibo-token')
+  locked.value = false
+}
+async function logout() {
   if (busy.value || editSaving.value || investmentBusy.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
   if (!confirm('ログアウトしますか？未保存の入力は失われます。')) return
+  const oldSession = token.value
+  token.value = ''
+  localStorage.removeItem('kakeibo-device-session')
   sessionStorage.removeItem('kakeibo-token')
-  localStorage.removeItem('token')
-  sessionStorage.setItem('kakeibo-locked', '1')
-  location.reload()
+  localStorage.setItem('kakeibo-logged-out', '1')
+  locked.value = true
+  if (oldSession) {
+    try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'x-session': oldSession } }) }
+    catch { /* Device is logged out locally even when offline. */ }
+  }
 }
-function unlock() { sessionStorage.removeItem('kakeibo-locked'); location.reload() }
-
+async function unlock() {
+  const code = prompt('アクセスコードを入力してください')
+  if (!code) return
+  try { await signIn(code); await Promise.all([load(), loadYear(), loadInvestments(), loadTransfers()]) }
+  catch (error) { flash(error.message) }
+}
 async function api(path, opt = {}) {
   const requestToken = token.value
   const r = await fetch('/api/' + path, {
-    ...opt, headers: { 'content-type': 'application/json', 'x-token': requestToken, ...(opt.headers || {}) }
+    ...opt, headers: { 'content-type': 'application/json', 'x-session': requestToken, ...(opt.headers || {}) }
   })
   if (r.status === 401) {
     if (token.value !== requestToken) return api(path, opt)
-    const t = prompt('アクセスコードを入力してください')
-    if (t) { token.value = t; sessionStorage.setItem('kakeibo-token', t); return api(path, opt) }
+    token.value = ''
+    localStorage.removeItem('kakeibo-device-session')
+    const code = prompt('アクセスコードを入力してください')
+    if (code) { await signIn(code); return api(path, opt) }
+    locked.value = true
     throw new Error('アクセスコードが必要です')
   }
   const d = await r.json()
   if (!r.ok) throw new Error(d.error || 'リクエストに失敗しました')
   return d
 }
+
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 let flashTimer
 const flash = t => { clearTimeout(flashTimer); msg.value = t; flashTimer = setTimeout(() => (msg.value = ''), 3000) }

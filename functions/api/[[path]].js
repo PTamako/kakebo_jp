@@ -110,6 +110,7 @@ export async function onRequest({ request, env, params }) {
   const m = request.method
   const [a, b] = params.path || []
   const month = (url.searchParams.get('month') || '').slice(0, 7)
+  const entriesYear = (url.searchParams.get('year') || '').slice(0, 4)
 
   try {
     // Automatic one-time migration: existing rows default to expenses.
@@ -125,9 +126,10 @@ export async function onRequest({ request, env, params }) {
 
     if (a === 'entries') {
       if (m === 'GET') {
+        const datePrefix = entriesYear && /^\\d{4}$/.test(entriesYear) ? entriesYear : month
         const { results } = await db
-          .prepare('SELECT * FROM entries WHERE date LIKE ?1 ORDER BY date DESC, time DESC, id DESC LIMIT 1000')
-          .bind(month + '%').all()
+          .prepare('SELECT * FROM entries WHERE date LIKE ?1 ORDER BY date DESC, time DESC, id DESC LIMIT 10000')
+          .bind(datePrefix + '%').all()
         return json(results)
       }
       if (m === 'POST') {

@@ -435,6 +435,14 @@ const yearMonthRows = computed(() => {
     return { month: key, label: `${i + 1}月`, amount: expenses.get(key) || 0, income: incomes.get(key) || 0 }
   })
 })
+const expenseTrendPoints = computed(() => {
+  const max = Math.max(1, ...yearMonthRows.value.map(item => item.amount))
+  return yearMonthRows.value.map((item, i) => ({ ...item, x: 16 + i * 26.18, y: 108 - item.amount / max * 82 }))
+})
+const expenseTrendLine = computed(() => expenseTrendPoints.value.map(point => `${point.x},${point.y}`).join(' '))
+const expenseTrendArea = computed(() => expenseTrendPoints.value.length
+  ? `16,108 ${expenseTrendLine.value} 304,108`
+  : '')
 const incomeTrendPoints = computed(() => {
   const max = Math.max(1, ...yearMonthRows.value.map(item => item.income))
   return yearMonthRows.value.map((item, i) => ({ ...item, x: 16 + i * 26.18, y: 108 - item.income / max * 82 }))
@@ -670,14 +678,15 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><p>別の年を選ぶか、記録を追加してください。</p><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div v-if="annualStats?.count" class="stats-card">
-          <div class="section-title"><div><h2>月別支出</h2><p>{{ selectedYear }}年1月〜12月</p></div></div>
-          <div class="year-month-list">
-            <div v-for="item in yearMonthRows" :key="item.month" class="year-month-row">
-              <span class="year-month-label">{{ item.label }}</span>
-              <div class="year-month-track"><span :style="{ width: item.amount ? Math.max(2, item.amount / maxYearMonth * 100) + '%' : '0%' }"></span></div>
-              <strong>{{ item.amount ? yen(item.amount) : '—' }}</strong>
-            </div>
-          </div>
+          <div class="section-title"><div><h2>支出の推移</h2><p>{{ selectedYear }}年1月〜12月</p></div></div>
+          <div class="trend-summary"><strong>{{ yen(highestSpendMonth.amount) }}</strong><span>月間最高支出 · {{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</span></div>
+          <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出の推移'">
+            <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
+            <polygon v-if="expenseTrendArea" :points="expenseTrendArea" class="expense-chart-area" />
+            <polyline :points="expenseTrendLine" class="chart-line expense-chart-line" />
+            <circle v-for="point in expenseTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="3.5" class="chart-point expense-chart-point" />
+          </svg>
+          <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>収入の推移</h2><p>月ごとの年間収入の推移</p></div></div>
@@ -889,7 +898,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .edit-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .edit-dialog .type-switch{margin:0}
 
-.trend-card{overflow:hidden}.trend-summary{display:flex;align-items:baseline;gap:8px;margin:2px 0 4px}.trend-summary strong{font-size:22px;font-weight:800;color:var(--ink)}.trend-summary span,.trend-note{font-size:11px;color:var(--muted)}.trend-chart{display:block;width:100%;height:auto;overflow:visible;margin-top:8px}.chart-grid-line{stroke:var(--line);stroke-width:1}.chart-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.income-chart-line{stroke:#54a78c}.ratio-chart-line{stroke:#d96f91}.chart-point{stroke:#fff;stroke-width:1.2}.income-chart-point{fill:#54a78c}.ratio-chart-point{fill:#d96f91}.chart-reference-line{stroke:#d5a34b;stroke-width:1.2;stroke-dasharray:4 4}.chart-reference-danger{stroke:#d96f91}.trend-month-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));padding:0 2px;text-align:center;color:var(--muted);font-size:10px}
+.trend-card{overflow:hidden}.trend-summary{display:flex;align-items:baseline;gap:8px;margin:2px 0 4px}.trend-summary strong{font-size:22px;font-weight:800;color:var(--ink)}.trend-summary span,.trend-note{font-size:11px;color:var(--muted)}.trend-chart{display:block;width:100%;height:auto;overflow:visible;margin-top:8px}.chart-grid-line{stroke:var(--line);stroke-width:1}.chart-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.income-chart-line{stroke:#54a78c}.expense-chart-line{stroke:var(--accent, #d96f91)}.expense-chart-area{fill:#d96f9120;stroke:none}.ratio-chart-line{stroke:#d96f91}.chart-point{stroke:#fff;stroke-width:1.2}.income-chart-point{fill:#54a78c}.expense-chart-point{fill:#d96f91}.ratio-chart-point{fill:#d96f91}.chart-reference-line{stroke:#d5a34b;stroke-width:1.2;stroke-dasharray:4 4}.chart-reference-danger{stroke:#d96f91}.trend-month-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));padding:0 2px;text-align:center;color:var(--muted);font-size:10px}
 .trend-month-labels button{min-width:0;padding:4px 0;border:0;border-radius:7px;background:transparent;color:inherit;font-size:10px}
 .trend-month-labels button.trend-month-selected{background:#fff0f4;color:#bd5376;font-weight:850}
 .clickable-chart-point{cursor:pointer;outline:none}

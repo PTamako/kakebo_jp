@@ -162,8 +162,10 @@ const pagedEntries = computed(() => {
   const start = (listPage.value - 1) * listPageSize
   return displayEntries.value.slice(start, start + listPageSize)
 })
+watch(listPageCount, count => { if (listPage.value > count) listPage.value = count })
 async function openCategoryDetails(category, type, period) {
   detailFilter.value = { category, type, period }
+  selectedDay.value = ''
   detailSourceEntries.value = []
   listPage.value = 1
   tab.value = 'list'
@@ -208,6 +210,7 @@ const calendarDays = computed(() => {
 function toggleDay(date) {
   if (selectedDay.value === date) selectedDay.value = ''
   else selectedDay.value = date
+  listPage.value = 1
   swipedEntryId.value = null
 }
 function startSwipe(event) {
@@ -388,7 +391,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
     <section v-else-if="tab === 'list'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">収支記録</p><h1>収支明細</h1></div><span class="heading-icon">≡</span></div>
-      <section class="month-calendar" aria-label="月間支出カレンダー">
+      <section v-if="!detailFilter" class="month-calendar" aria-label="月間支出カレンダー">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><button v-if="selectedDay" class="calendar-reset" @click="selectedDay = ''">月全体を表示</button></div>
         <div class="calendar-weekdays"><span v-for="weekday in ['一', '二', '三', '四', '五', '六', '日']" :key="weekday">{{ weekday }}</span></div>
         <div class="calendar-grid">
@@ -705,15 +708,15 @@ main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);
 .category-row-clickable{cursor:pointer;border-radius:12px;padding:8px;margin:-8px;transition:background .15s,transform .15s}
 .category-row-clickable:hover,.category-row-clickable:focus-visible{background:color-mix(in srgb,var(--blue) 8%,transparent);outline:none}
 .category-row-clickable:active{transform:scale(.99)}
-.category-detail-card{border:1px solid color-mix(in srgb,var(--blue) 24%,var(--line))}
-.category-detail-list{display:grid;gap:0}
-.category-detail-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);min-width:0}
-.category-detail-row:last-child{border-bottom:0}
-.category-detail-info{display:grid;gap:3px;min-width:0;flex:1}
-.category-detail-info strong{overflow-wrap:anywhere;font-size:13px}
-.category-detail-info small{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
-.category-detail-amount{font-size:13px;white-space:nowrap}
+
+
+
+
+
+
+
+
 .detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap}.detail-pagination{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:14px}
 .detail-pagination span{font-size:11px;color:var(--muted);text-align:center}
-.detail-pagination button,.detail-close{padding:8px 10px;font-size:12px;white-space:nowrap}
+.detail-pagination button{padding:8px 10px;font-size:12px;white-space:nowrap}
 </style>

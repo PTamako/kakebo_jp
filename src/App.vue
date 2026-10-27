@@ -288,6 +288,22 @@ const donutSelected = period => donutRows(period).find(c => c.category === selec
 const donutTotal = period => donutRows(period).reduce((n, c) => n + Number(c.amount || 0), 0)
 const donutPercent = period => donutSelected(period) && donutTotal(period) ? (Number(donutSelected(period).amount) / donutTotal(period) * 100).toFixed(1) : '0.0'
 const chooseDonut = (period, category) => { selectedDonut.value = { ...selectedDonut.value, [period]: category } }
+const selectDonutSlice = (event, period) => {
+  const rows = donutRows(period)
+  const total = donutTotal(period)
+  if (!total) return
+  const rect = event.currentTarget.getBoundingClientRect()
+  const x = event.clientX - rect.left - rect.width / 2
+  const y = event.clientY - rect.top - rect.height / 2
+  const radius = Math.hypot(x, y)
+  if (radius < rect.width * 0.345 || radius > rect.width * 0.5) return
+  const angle = (Math.atan2(x, -y) * 180 / Math.PI + 360) % 360
+  let cumulative = 0
+  for (const row of rows) {
+    cumulative += Math.max(0, Number(row.amount) || 0) / total * 360
+    if (angle <= cumulative + 0.000001) { chooseDonut(period, row.category); return }
+  }
+}
 const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette))
 const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette))
 
@@ -714,14 +730,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <template v-else>
         <div class="stats-card">
           <div class="section-title"><div><h2>カテゴリ支出</h2><p>何にお金を使ったか確認しましょう</p></div></div>
-          <div class="pie-chart-layout">
-            <div class="category-pie donut-chart" :style="{ background: monthlyCategoryPie }" role="img" :aria-label="'カテゴリ支出 ' + donutPercent('month') + '%'"><div class="donut-center"><span>{{ donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('month')?.amount || 0) }}</strong><small>{{ donutPercent('month') }}%</small></div></div>
-            <div class="category-list pie-legend">
-              <div v-for="(c, i) in categoryRows" :key="c.category" class="pie-legend-row category-row-clickable" :class="{ 'donut-category-active': donutSelected('month')?.category === c.category }" role="button" tabindex="0" :aria-pressed="donutSelected('month')?.category === c.category" @click="chooseDonut('month', c.category)" @keydown.enter.prevent="chooseDonut('month', c.category)" @keydown.space.prevent="chooseDonut('month', c.category)">
-                <span class="pie-legend-name"><i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span></span>
-                
-              </div>
-            <button type="button" class="donut-detail-link" :disabled="!donutSelected('month')" @click="openCategoryDetails(donutSelected('month').category, 'expense', 'month')">選択カテゴリの明細を見る</button>
+          <div class="pie-chart-layout donut-vertical">
+            <div class="category-pie donut-chart" :style="{ background: annualExpensePie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'なし') + ' ' + donutPercent('year') + '%'" @click="selectDonutSlice($event, 'year')">
+              <div class="donut-center"><span>{{ donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('year')?.amount || 0) }}</strong><small>{{ donutPercent('year') }}%</small></div>
+            </div>
+            <div class="category-list pie-legend" role="group" aria-label="カテゴリを選択すると明細を表示">
+              <button v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" type="button" class="pie-legend-row" :class="{ 'donut-category-active': donutSelected('year')?.category === c.category }" @click="openCategoryDetails(c.category, 'expense', 'year')" :aria-label="categoryLabel(c.category) + 'の明細を見る'">
+                <i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -809,14 +825,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </div>
         <div class="stats-card">
           <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div></div>
-          <div class="pie-chart-layout">
-            <div class="category-pie donut-chart" :style="{ background: annualExpensePie }" role="img" :aria-label="'カテゴリ支出 ' + donutPercent('year') + '%'"><div class="donut-center"><span>{{ donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('year')?.amount || 0) }}</strong><small>{{ donutPercent('year') }}%</small></div></div>
-            <div class="category-list pie-legend">
-              <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="pie-legend-row category-row-clickable" :class="{ 'donut-category-active': donutSelected('year')?.category === c.category }" role="button" tabindex="0" :aria-pressed="donutSelected('year')?.category === c.category" @click="chooseDonut('year', c.category)" @keydown.enter.prevent="chooseDonut('year', c.category)" @keydown.space.prevent="chooseDonut('year', c.category)">
-                <span class="pie-legend-name"><i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span></span>
-                
-              </div>
-            <button type="button" class="donut-detail-link" :disabled="!donutSelected('year')" @click="openCategoryDetails(donutSelected('year').category, 'expense', 'year')">選択カテゴリの明細を見る</button>
+          <div class="pie-chart-layout donut-vertical">
+            <div class="category-pie donut-chart" :style="{ background: monthlyCategoryPie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'なし') + ' ' + donutPercent('month') + '%'" @click="selectDonutSlice($event, 'month')">
+              <div class="donut-center"><span>{{ donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('month')?.amount || 0) }}</strong><small>{{ donutPercent('month') }}%</small></div>
+            </div>
+            <div class="category-list pie-legend" role="group" aria-label="カテゴリを選択すると明細を表示">
+              <button v-for="(c, i) in categoryRows" :key="c.category" type="button" class="pie-legend-row" :class="{ 'donut-category-active': donutSelected('month')?.category === c.category }" @click="openCategoryDetails(c.category, 'expense', 'month')" :aria-label="categoryLabel(c.category) + 'の明細を見る'">
+                <i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1026,4 +1042,12 @@ main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);
 .pie-legend-row.donut-category-active{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 10%,var(--card))}
 .pie-legend-name{font-size:11px;min-width:0}
 @media(max-width:390px){.pie-chart-layout{grid-template-columns:minmax(100px,43%) minmax(0,1fr);gap:8px}.donut-center strong{font-size:12px}.pie-legend-row{padding:7px 5px}}
-.donut-detail-link{font-size:11px;font-weight:700;border:1px solid var(--line);border-radius:9px;background:var(--card);padding:8px 5px;color:var(--blue-dark);width:100%}.donut-detail-link:disabled{opacity:.45}</style>
+.donut-detail-link{font-size:11px;font-weight:700;border:1px solid var(--line);border-radius:9px;background:var(--card);padding:8px 5px;color:var(--blue-dark);width:100%}.donut-detail-link:disabled{opacity:.45}
+.pie-chart-layout.donut-vertical{display:flex;flex-direction:column;align-items:center;gap:16px}
+.donut-vertical .category-pie.donut-chart{width:min(100%,230px);max-width:230px;cursor:pointer;touch-action:manipulation}
+.donut-vertical .donut-center{pointer-events:none}
+.donut-vertical .pie-legend{display:flex;flex-wrap:nowrap;gap:7px;width:100%;max-height:none;overflow-x:auto;overflow-y:hidden;padding:4px 2px 8px;scrollbar-width:thin;justify-content:flex-start}
+.donut-vertical .pie-legend-row{flex:0 0 auto;width:auto;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:11px;border-radius:999px;padding:8px 11px;min-height:36px}
+.donut-vertical .pie-legend-dot{width:9px;height:9px;border-radius:50%}
+@media(min-width:520px){.donut-vertical .pie-legend{justify-content:center;flex-wrap:wrap;overflow:visible}}
+</style>

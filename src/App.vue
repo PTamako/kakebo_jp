@@ -162,8 +162,26 @@ async function loadTransfers() {
   catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
   finally { transferLoading.value = false }
 }
-const transferStatus = item => Number(item.transfer_applied) === 1 ? '入金反映済み' : (String(item.transfer_date || item.date) > new Date().toLocaleDateString('sv-SE') ? '入金予定' : '反映確認中')
+const transferStatus = item => Number(item.transfer_applied) === 1 ? '処理成功' : (String(item.transfer_date || item.date) > new Date().toLocaleDateString('sv-SE') ? '入金予定' : '未処理')
 const transferStatusClass = item => Number(item.transfer_applied) === 1 ? 'transfer-done' : 'transfer-waiting'
+async function retryTransfer(item) {
+  try {
+    await api('transfers/' + item.id, { method: 'POST' })
+    await loadTransfers()
+    await loadInvestments()
+    flash('資産移動を処理しました')
+  } catch (e) { flash('処理に失敗しました：' + e.message) }
+}
+async function deleteTransfer(item) {
+  if (!confirm('この待処理事項を削除しますか？家計簿の記録も削除されます。')) return
+  try {
+    await api('entries/' + item.id, { method: 'DELETE' })
+    await loadTransfers()
+    await load()
+    await loadInvestments()
+    flash('記録を削除しました')
+  } catch (e) { flash('削除に失敗しました：' + e.message) }
+}
 
 const investmentItems = [
   { id: 'sbi', label: 'SBI証券', detail: '投資信託', unit: '円' },
@@ -668,7 +686,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div v-else class="pending-transfer-list">
           <div v-for="item in pendingTransfers" :key="item.id" class="pending-transfer-row">
             <div class="pending-transfer-main"><strong>{{ item.merchant || item.note || 'SBI証券への資産移動' }}</strong><span>予定日 {{ item.transfer_date || item.date }} · ¥{{ Number(item.amount || 0).toLocaleString('ja-JP') }}</span></div>
-            <span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span>
+            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" aria-label="削除" title="削除" @click="deleteTransfer(item)">×</button><button v-else class="pending-retry" @click="retryTransfer(item)">手動処理</button></div>
           </div>
         </div>
       </article>
@@ -738,7 +756,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .empty-state{display:flex;align-items:center;flex-direction:column;text-align:center;padding:34px 18px;background:#fff;border:1px dashed #dce3ec;border-radius:18px}.empty-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:16px;background:#edf2ff;color:var(--blue);font-size:23px;margin-bottom:12px}.empty-state strong{font-size:14px}.empty-state p{font-size:12px;color:var(--muted);margin:6px 0 17px}.empty-state button{min-width:140px}.stats-empty{margin-top:8px}
 .bottom-nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));width:min(calc(100% - 28px),460px);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;padding:6px;background:#ffffffed;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid #e8edf2;border-radius:19px;box-shadow:0 8px 30px #20324b18}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;color:#8994a3;padding:7px 4px;border-radius:13px;font-size:10px;font-weight:700}.bottom-nav button.active{background:#edf2ff;color:var(--blue)}.nav-icon{font-size:21px;line-height:1.15;font-weight:500}
 
-.pending-transfer-panel{padding:15px;margin-bottom:15px}.pending-transfer-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.pending-transfer-heading h2{font-size:16px;margin:0}.pending-transfer-heading .eyebrow{margin:0 0 3px}.pending-refresh{padding:7px 12px;font-size:12px}.pending-transfer-help{margin:9px 0 12px;font-size:11px;line-height:1.6;color:var(--muted)}.pending-transfer-list{display:grid;gap:9px}.pending-transfer-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid var(--line)}.pending-transfer-main{display:grid;gap:4px;min-width:0}.pending-transfer-main strong{font-size:12px;overflow-wrap:anywhere}.pending-transfer-main span{font-size:11px;color:var(--muted)}.pending-transfer-status{flex:none;padding:5px 8px;border-radius:99px;font-size:10px;font-weight:800}.transfer-done{background:#e5f6ed;color:#24815b}.transfer-waiting{background:#fff3d7;color:#9b7620}.pending-transfer-empty{padding:12px 0;color:var(--muted);font-size:12px}
+.pending-transfer-panel{padding:15px;margin-bottom:15px}.pending-transfer-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.pending-transfer-heading h2{font-size:16px;margin:0}.pending-transfer-heading .eyebrow{margin:0 0 3px}.pending-refresh{padding:7px 12px;font-size:12px}.pending-transfer-help{margin:9px 0 12px;font-size:11px;line-height:1.6;color:var(--muted)}.pending-transfer-list{display:grid;gap:9px}.pending-transfer-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid var(--line)}.pending-transfer-main{display:grid;gap:4px;min-width:0}.pending-transfer-main strong{font-size:12px;overflow-wrap:anywhere}.pending-transfer-main span{font-size:11px;color:var(--muted)}.pending-transfer-actions{display:flex;align-items:center;gap:7px;flex:none}.pending-delete{width:29px;height:29px;border:1px solid var(--line);border-radius:50%;background:var(--card);color:var(--muted);font-size:20px;line-height:1;display:grid;place-items:center}.pending-retry{padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--blue-dark);font-size:11px;font-weight:800;white-space:nowrap}.pending-transfer-status{flex:none;padding:5px 8px;border-radius:99px;font-size:10px;font-weight:800}.transfer-done{background:#e5f6ed;color:#24815b}.transfer-waiting{background:#fff3d7;color:#9b7620}.pending-transfer-empty{padding:12px 0;color:var(--muted);font-size:12px}
 .investment-note{padding:12px 14px;margin:-5px 0 14px;border-radius:13px;background:var(--card);border:1px solid var(--line);font-size:12px;line-height:1.7;color:var(--muted)}
 .investment-card{padding:16px;margin-bottom:13px}
 .investment-card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}

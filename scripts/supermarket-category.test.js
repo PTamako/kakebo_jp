@@ -11,6 +11,33 @@ test('Japanese convenience stores default to food groceries across common Seven-
   }
 })
 
+test('common merchants map to sensible default categories', () => {
+  const cases = [
+    ['マクドナルド葛飾店', '餐饮'],
+    ['スターバックス', '餐饮'],
+    ['吉野家', '餐饮'],
+    ['ダイソー', '日用品'],
+    ['マツモトキヨシ', '日用品'],
+    ['ニトリ', '日用品'],
+    ['ユニクロ', '日用品'],
+    ['モバイルSuica', '交通'],
+    ['京成電鉄', '交通'],
+    ['東京電力', '居住'],
+    ['SoftBank 光', '居住'],
+    ['〇〇クリニック', '医疗'],
+    ['調剤薬局', '医疗'],
+    ['Netflix', '娱乐'],
+    ['TOHOシネマズ', '娱乐'],
+    ['ペットのコジマ', '宠物'],
+    ['動物病院', '宠物'],
+    ['ヨドバシカメラ', '购物'],
+    ['楽天市場', '购物']
+  ]
+  for (const [merchant, category] of cases) {
+    assert.equal(classify(merchant, []).category, category, merchant)
+  }
+})
+
 test('common Japanese supermarkets default to food groceries', () => {
   for (const merchant of ['イトーヨーカドー', 'まいばすけっと', 'マイバスケット', 'マイバスケツト', 'ベルク', 'イオンフードスタイル', 'ライフ']) {
     assert.equal(classify(merchant, []).category, '饮食料品', merchant)

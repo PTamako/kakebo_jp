@@ -262,7 +262,8 @@ const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCatego
   .sort((a, b) => b.amount - a.amount))
 const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
 function selectIncomeMonth(point) {
-  selectedIncomeMonth.value = point.month
+  // Tapping the currently selected month again closes its breakdown.
+  selectedIncomeMonth.value = selectedIncomeMonth.value === point.month ? '' : point.month
 }
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)

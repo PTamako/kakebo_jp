@@ -7,6 +7,7 @@ const month = ref(new Date().toISOString().slice(0, 7))
 const selectedYear = ref(new Date().getFullYear())
 const annualStats = ref(null)
 const selectedIncomeMonth = ref('')
+const selectedRatioMonth = ref('')
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
@@ -265,6 +266,12 @@ function selectIncomeMonth(point) {
   // Tapping the currently selected month again closes its breakdown.
   selectedIncomeMonth.value = selectedIncomeMonth.value === point.month ? '' : point.month
 }
+function selectRatioMonth(point) {
+  // Tapping the currently selected month again closes its breakdown.
+  selectedRatioMonth.value = selectedRatioMonth.value === point.month ? '' : point.month
+}
+const selectedRatioMonthRow = computed(() => yearMonthRows.value.find(item => item.month === selectedRatioMonth.value) || null)
+const selectedRatio = computed(() => selectedRatioMonthRow.value && selectedRatioMonthRow.value.income > 0 ? selectedRatioMonthRow.value.amount / selectedRatioMonthRow.value.income : null)
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)
 const pigState = ratio => ratio === null ? 'empty' : ratio > 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
@@ -470,9 +477,14 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
             <line x1="16" y1="64.27" x2="304" y2="64.27" class="chart-reference-line" />
             <line x1="16" y1="53.33" x2="304" y2="53.33" class="chart-reference-line chart-reference-danger" />
             <polyline v-if="ratioTrendLine" :points="ratioTrendLine" class="chart-line ratio-chart-line" />
-            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="2.7" class="chart-point ratio-chart-point" />
+            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point ratio-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '收支比 ' + Math.round(point.ratio * 100) + '%，点击查看当月收支金额'" @click="selectRatioMonth(point)" @keydown.enter.prevent="selectRatioMonth(point)" @keydown.space.prevent="selectRatioMonth(point)" />
           </svg>
-          <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
+          <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" :class="{ 'trend-month-selected': selectedRatioMonth === item.month }" @click="selectRatioMonth(item)">{{ Number(item.month.slice(5)) }}</button></div>
+          <div v-if="selectedRatioMonthRow" class="income-month-breakdown ratio-month-breakdown">
+            <div class="income-breakdown-heading"><div><h3>{{ selectedRatioMonthRow.month.replace('-', '年') }}月收支情况</h3><p>支出 ÷ 收入</p></div><strong>{{ selectedRatio === null ? '无法计算' : Math.round(selectedRatio * 100) + '%' }}</strong></div>
+            <div class="ratio-detail-amounts"><div><span>当月收入</span><strong>{{ yen(selectedRatioMonthRow.income) }}</strong></div><div><span>当月支出</span><strong>{{ yen(selectedRatioMonthRow.amount) }}</strong></div></div>
+            <p v-if="selectedRatio === null" class="trend-note">这个月没有收入记录，暂时无法计算收支比。</p>
+          </div>
           <p class="trend-note">没有收入的月份不计算比例；曲线纵轴为 0%–150%，超过 150% 的点按上限显示。</p>
         </div>
         <div class="stats-card">
@@ -603,6 +615,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .clickable-chart-point{cursor:pointer;outline:none}
 .clickable-chart-point:focus,.clickable-chart-point.chart-point-selected{stroke:#bd5376;stroke-width:2.5}
 .income-month-breakdown{margin-top:14px;padding:13px;background:#fff9fa;border:1px solid #f3e2e7;border-radius:14px}
+.ratio-detail-amounts{display:grid;grid-template-columns:1fr 1fr;gap:9px}.ratio-detail-amounts>div{display:grid;gap:5px;padding:11px;background:#fff;border:1px solid #f3e7e9;border-radius:11px}.ratio-detail-amounts span{font-size:11px;color:var(--muted)}.ratio-detail-amounts strong{font-size:14px;font-variant-numeric:tabular-nums}
 .income-breakdown-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
 .income-breakdown-heading h3{margin:0;font-size:14px}
 .income-breakdown-heading p{margin:3px 0 0;font-size:10px;color:var(--muted)}

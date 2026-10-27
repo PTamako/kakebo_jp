@@ -5,7 +5,7 @@ import { onRequest } from '../functions/api/[[path]].js'
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.icons = [] }
+  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
   async batch(statements) { for (const statement of statements) await statement.run() }
   prepare(sql) {
     const db = this
@@ -13,6 +13,8 @@ class LedgerDb {
       args: [],
       bind(...args) { this.args = args; return this },
       async first() {
+        if (sql.startsWith('SELECT token_hash FROM device_sessions')) return (db.sessions.get(this.args[0]) || 0) > this.args[1] ? { token_hash: this.args[0] } : null
+        if (sql.startsWith('SELECT attempts, reset_at FROM login_attempts')) return db.attempts.get(this.args[0]) || null
         if (sql.startsWith('SELECT id, amount, transfer_target, transfer_applied, transfer_date, date FROM entries'))
           return db.entries.find(e => e.id === this.args[0] && e.type === 'transfer') || null
         if (sql.startsWith('SELECT amount, type, transfer_target'))
@@ -39,6 +41,13 @@ class LedgerDb {
       },
       async run() {
         db.sql.push(sql)
+        if (sql.startsWith('INSERT INTO device_sessions')) db.sessions.set(this.args[0], this.args[1])
+        if (sql.startsWith('DELETE FROM device_sessions')) db.sessions.delete(this.args[0])
+        if (sql.startsWith('DELETE FROM login_attempts')) db.attempts.delete(this.args[0])
+        if (sql.startsWith('INSERT INTO login_attempts')) {
+          const prior = db.attempts.get(this.args[0])
+          db.attempts.set(this.args[0], prior && prior.reset_at > this.args[2] ? { attempts: prior.attempts + 1, reset_at: prior.reset_at } : { attempts: 1, reset_at: this.args[1] })
+        }
         if (sql.startsWith('INSERT INTO entries')) {
           const a = this.args
           if (a[11] && db.entries.some(e => e.client_request_id === a[11])) return { meta: { changes: 0 } }
@@ -74,8 +83,13 @@ class LedgerDb {
 
 const call = async (db, path, method = 'GET', payload, options = {}) => {
   const body = payload === undefined ? undefined : JSON.stringify(payload)
+  if (!options.token && options.auth !== '') {
+    const login = await call(db, 'auth/login', 'POST', { code: options.auth ?? 'test-secret' }, { token: 'login-request', auth: options.auth })
+    if (login.status !== 200) throw Error('test login failed: ' + login.status)
+    options = { ...options, session: login.body.session }
+  }
   const request = new Request('https://example.test/api/' + path, {
-    method, headers: { 'x-token': options.token ?? 'test-secret', 'content-type': 'application/json', ...(options.confirmId ? { 'x-confirm-delete': String(options.confirmId) } : {}) }, body
+    method, headers: { 'x-session': options.session ?? options.token ?? '', 'content-type': 'application/json', ...(options.confirmId ? { 'x-confirm-delete': String(options.confirmId) } : {}) }, body
   })
   const response = await onRequest({ request, env: { DB: db, AUTH_TOKEN: options.auth ?? 'test-secret' },
     params: { path: path.split('?')[0].split('/') } })
@@ -197,4 +211,26 @@ test('new category icon persists and existing entries stay untouched', async () 
   assert.equal((await call(db, 'categories', 'POST', { name: '教育', icon: 'invalid' })).status, 400)
   assert.equal(db.entries[0].amount, 1000)
   assert.equal(db.icons[0].icon, 'beauty')
+})
+
+test('device session persists, expires and is revoked on logout', async () => {
+  const db = new LedgerDb()
+  const login = await call(db, 'auth/login', 'POST', { code: 'test-secret' }, { token: 'login-request' })
+  assert.equal(login.status, 200)
+  const session = login.body.session
+  assert.match(session, /^[a-f0-9]{64}$/)
+  assert.equal((await call(db, 'investments', 'GET', undefined, { token: session })).status, 200)
+  assert.equal((await call(db, 'auth/logout', 'POST', undefined, { token: session })).status, 200)
+  assert.equal((await call(db, 'investments', 'GET', undefined, { token: session })).status, 401)
+  const again = await call(db, 'auth/login', 'POST', { code: 'test-secret' }, { token: 'login-request' })
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(again.body.session))
+  const key = Array.from(new Uint8Array(hash), x => x.toString(16).padStart(2, '0')).join('')
+  db.sessions.set(key, Date.now() - 1)
+  assert.equal((await call(db, 'investments', 'GET', undefined, { token: again.body.session })).status, 401)
+})
+test('wrong access codes are rate limited without exposing ledger', async () => {
+  const db = new LedgerDb()
+  for (let i = 0; i < 5; i++) assert.equal((await call(db, 'auth/login', 'POST', { code: 'wrong' }, { token: 'login-request' })).status, 401)
+  assert.equal((await call(db, 'auth/login', 'POST', { code: 'wrong' }, { token: 'login-request' })).status, 429)
+  assert.equal(db.entries.length, 0)
 })

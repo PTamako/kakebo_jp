@@ -6,6 +6,7 @@ const tab = ref('add')
 const month = ref(new Date().toISOString().slice(0, 7))
 const selectedYear = ref(new Date().getFullYear())
 const annualStats = ref(null)
+const selectedIncomeMonth = ref('')
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
@@ -432,7 +433,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年收入变化曲线'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
-            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="2.7" class="chart-point income-chart-point" />
+            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedIncomeMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '收入 ' + yen(point.income) + '，点击查看分类'" @click="selectIncomeMonth(point)" @keydown.enter.prevent="selectIncomeMonth(point)" @keydown.space.prevent="selectIncomeMonth(point)" />
           </svg>
           <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" :class="{ 'trend-month-selected': selectedIncomeMonth === item.month }" @click="selectIncomeMonth(item)">{{ Number(item.month.slice(5)) }}</button></div>
           <p class="trend-note">点击曲线上的月份，即可查看该月各收入分类的金额。</p>

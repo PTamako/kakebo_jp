@@ -56,10 +56,10 @@ async function loadYear() {
 onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers(); window.addEventListener('scroll', handleEntryScroll, { passive: true }) })
 onUnmounted(() => window.removeEventListener('scroll', handleEntryScroll))
 watch(month, async () => { selectedDay.value = ''; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
-watch(selectedYear, async () => { listPage.value = 1; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
+watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
 watch(tab, value => {
   if (value === 'year') loadYear()
-  if (value === 'list') listPage.value = 1
+  if (value === 'list') visibleEntryCount.value = 20
 })
 
 function recognize() {
@@ -293,7 +293,7 @@ watch([displayEntries, detailFilter, selectedDay], () => {
   const today = new Date().toLocaleDateString('sv-SE')
   const defaultDay = detailFilter.value ? days[0] : (days.includes(today) ? today : days[0])
   expandedEntryDays.value = new Set(defaultDay ? [defaultDay] : [])
-  listPage.value = 1
+  visibleEntryCount.value = 20
 }, { deep: true })
 watch(visibleEntryCount, () => {
   const days = groupedPagedEntries.value.map(group => group.date)
@@ -303,7 +303,7 @@ async function openCategoryDetails(category, type, period) {
   detailFilter.value = { category, type, period }
   selectedDay.value = ''
   detailSourceEntries.value = []
-  listPage.value = 1
+  visibleEntryCount.value = 20
   tab.value = 'list'
   detailLoading.value = true
   try {
@@ -326,7 +326,7 @@ async function refreshDetailSource() {
 function clearDetailFilter() {
   detailFilter.value = null
   detailSourceEntries.value = []
-  listPage.value = 1
+  visibleEntryCount.value = 20
 }
 const dayRows = computed(() => [...(stats.value?.byDay || [])].sort((a, b) => a.date.localeCompare(b.date)))
 let touchStartX = 0
@@ -348,7 +348,7 @@ const calendarDays = computed(() => {
 function toggleDay(date) {
   if (selectedDay.value === date) selectedDay.value = ''
   else selectedDay.value = date
-  listPage.value = 1
+  visibleEntryCount.value = 20
   swipedEntryId.value = null
 }
 function startSwipe(event) {

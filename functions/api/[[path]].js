@@ -307,6 +307,11 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    if (a === 'transfers' && m === 'GET') {
+      const { results } = await db.prepare("SELECT id, date, amount, merchant, note, transfer_target, transfer_applied, transfer_date FROM entries WHERE type = 'transfer' AND transfer_target = 'sbi' AND (COALESCE(transfer_date, date) >= date('now', '-30 days') OR COALESCE(transfer_applied, 0) = 0) ORDER BY COALESCE(transfer_date, date) ASC, id DESC LIMIT 100").all()
+      return json(results)
+    }
+
     if (a === 'investments') {
       await db.prepare(`CREATE TABLE IF NOT EXISTS investment_snapshots (
         platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),

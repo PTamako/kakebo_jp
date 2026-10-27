@@ -604,8 +604,8 @@ const selectedRatioMonthRow = computed(() => yearMonthRows.value.find(item => it
 const selectedRatio = computed(() => selectedRatioMonthRow.value && selectedRatioMonthRow.value.income > 0 ? selectedRatioMonthRow.value.amount / selectedRatioMonthRow.value.income : null)
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)
-const pigState = ratio => ratio === null ? 'empty' : ratio > 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
-const pigLabel = ratio => ratio === null ? 'まず収入を記録して、収支バランスを確認しましょう' : ratio > 1 ? '大変！支出が収入を上回っています！' : ratio >= .8 ? '予算オーバーに注意しましょう！' : 'いい感じです。この調子でいきましょう'
+const pigState = ratio => ratio === null ? 'empty' : ratio >= 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
+const pigLabel = ratio => ratio === null ? 'まず収入を記録して、収支バランスを確認しましょう' : ratio >= 1 ? '大変！支出が収入以上になっています！' : ratio >= .8 ? '予算オーバーに注意しましょう！' : 'いい感じです。この調子でいきましょう'
 const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.round(ratio * 100) + '%'
 </script>
 
@@ -1147,4 +1147,35 @@ main .annual-month-list .entry-day-group{border-radius:var(--radius-md);overflow
 @media(prefers-reduced-motion:reduce){main *,main *::before,main *::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
 main .heading-icon svg{width:21px;height:21px;display:block}
-.ui-line-icon{display:block;width:19px;height:19px;flex:none}.type-action-icon{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;margin-right:5px}.metric-icon .ui-line-icon{width:18px;height:18px}.type-switch button{display:inline-flex;align-items:center;justify-content:center;gap:3px}.category-line-icon{width:17px;height:17px;margin:auto}.category-dot,.category-emoji{display:inline-grid;place-items:center}</style>
+.ui-line-icon{display:block;width:19px;height:19px;flex:none}.type-action-icon{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;margin-right:5px}.metric-icon .ui-line-icon{width:18px;height:18px}.type-switch button{display:inline-flex;align-items:center;justify-content:center;gap:3px}.category-line-icon{width:17px;height:17px;margin:auto}.category-dot,.category-emoji{display:inline-grid;place-items:center}
+/* Mobile-first PWA shell, usable with four cream themes. */
+main{--touch-height:44px;--card-padding:16px;--section-gap:14px;--radius-sm:10px;--radius-md:14px;--radius-lg:18px;
+width:100%;max-width:560px;padding:calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 100px);
+overscroll-behavior-y:contain}
+main .topbar{gap:8px;padding:5px 0 15px;min-height:58px}
+main .brand-mark{width:49px;height:40px}
+main .brand strong{font-size:16px}
+main .page-heading{margin-bottom:14px}
+main .page-heading h1{font-size:24px}
+main .stats-card,main .panel,main .metric-card{border-radius:var(--radius-lg);box-shadow:0 3px 16px rgba(28,33,44,.045)}
+main .stats-card{padding:var(--card-padding)}
+main input:not([type=checkbox]):not([type=radio]),main select,main textarea{min-height:var(--touch-height);font-size:16px}
+main .button-primary,main .button-secondary,main .entry-type-filter button,main .stats-period-tabs button{min-height:var(--touch-height)}
+main .bottom-nav{bottom:calc(8px + env(safe-area-inset-bottom));width:min(calc(100% - 20px),460px);padding:7px;gap:4px;border-radius:22px}
+main .bottom-nav button{min-height:52px;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:750}
+main .bottom-nav .nav-icon{display:grid;place-items:center;min-height:23px}
+main .bottom-nav .nav-icon svg{width:21px;height:21px}
+main .piggy-card{border-radius:var(--radius-lg);gap:12px;min-height:104px}
+main .puppy-pair{width:86px;min-width:86px;min-height:80px;position:relative}
+main .puppy-pair img{width:43px;height:43px}
+main .piggy-content{min-width:0}
+main .piggy-sweating{border-color:#eac56d;background:linear-gradient(135deg,#fff8e9,var(--card))}
+main .piggy-broken{border-color:#eaa3ad;background:linear-gradient(135deg,#fff0f1,var(--card))}
+main .puppy-pair.puppy-sweating::after,main .puppy-pair.puppy-broken::after{position:absolute;top:0;right:0;display:grid;place-items:center;width:25px;height:25px;border-radius:50%;font-size:15px;box-shadow:0 2px 8px #00000014}
+main .puppy-pair.puppy-sweating::after{content:"💦";background:#fff7df}
+main .puppy-pair.puppy-broken::after{content:"💥";background:#ffebed}
+main .piggy-sweating .piggy-status{color:#987018}
+main .piggy-broken .piggy-status{color:#b74358}
+@media(max-width:370px){main{padding-left:12px;padding-right:12px}main .bottom-nav{width:calc(100% - 12px);padding:5px;gap:2px}main .bottom-nav button{font-size:10px}main .topbar{gap:5px}main .brand small{font-size:10px}}
+@media(min-width:561px){main{border-inline:1px solid var(--line)}}
+</style>

@@ -114,13 +114,13 @@ export function parseEntries(raw, rules) {
     .trim()
   // Some issuers put merchant and reference on one line, then date/cardholder/payment/amount on another.
   // Other issuers put amount beside merchant and date on a separate line. Keep these layouts distinct.
-  const isCardMetadata = line => /^(?:ご本人|本人|家族|家族会員|1回払い|一回払い|分割払い|リボ払い|ボーナス払い|ご本人\\s+1回払い|本人\\s+1回払い)$/i
-    .test(line.replace(/[\\s＞>]/g, ''))
+  const isCardMetadata = line => /^(?:ご本人|本人|家族|家族会員|1回払い|一回払い|分割払い|リボ払い|ボーナス払い|ご本人\s+1回払い|本人\s+1回払い)$/i
+    .test(line.replace(/[\s＞>]/g, ''))
   const pairedStatementRows = []
   for (let i = 0; i < lines.length; i++) {
     const detailLine = lines[i]
-    if (!dateLine(detailLine) || !/[¥￥]\\s*[\\d,]+/.test(detailLine)) continue
-    const amountMatch = detailLine.match(/[¥￥]\\s*([\\d,]+)/)
+    if (!dateLine(detailLine) || !/[¥￥]\s*[\d,]+/.test(detailLine)) continue
+    const amountMatch = detailLine.match(/[¥￥]\s*([\d,]+)/)
     if (!amountMatch) continue
     const amount = Number(amountMatch[1].replace(/,/g, ''))
     if (amount <= 0 || amount > 9999999) continue
@@ -132,10 +132,10 @@ export function parseEntries(raw, rules) {
       const candidate = lines[j]
       if (dateLine(candidate)) break
       if (isCardMetadata(candidate) || paymentLine(candidate) || amountLine(candidate)) continue
-      if (/^(?:ご本人|本人|家族|1回払い|一回払い|分割払い|リボ払い|ボーナス払い)$/.test(candidate.replace(/[\\s＞>]/g, ''))) continue
-      if (!/[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}A-Za-z]/u.test(candidate)) {
+      if (/^(?:ご本人|本人|家族|1回払い|一回払い|分割払い|リボ払い|ボーナス払い)$/.test(candidate.replace(/[\s＞>]/g, ''))) continue
+      if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(candidate)) {
         // Ignore standalone reference numbers and other OCR noise.
-        if (/^\\d{4,}$/.test(candidate)) continue
+        if (/^\d{4,}$/.test(candidate)) continue
         break
       }
       parts.unshift(candidate)
@@ -149,7 +149,7 @@ export function parseEntries(raw, rules) {
     pairedStatementRows.push({
       date: findDate(detailLine), time: '', amount, category,
       merchant: merchantLine.slice(0, 60), note: '',
-      raw: merchantLine + '\\n' + detailLine,
+      raw: merchantLine + '\n' + detailLine,
       suggested: category, keyword
     })
   }

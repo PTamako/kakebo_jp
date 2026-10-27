@@ -16,6 +16,8 @@ function findDate(t, today = new Date()) {
   // In card statements, OCR sometimes splits the day "11" as "1 1" just before "回払い".
   if ((m = t.match(/(20\d{2})\s*\/\s*(\d{1,2})\s*\/\s*1\s+1\s*(?=回\s*払)/))) return m[1] + '-' + pad(m[2]) + '-11'
   if ((m = t.match(/(20\d{2})\s*[年\/.\-]\s*(\d{1,2})\s*[月\/.\-]\s*(\d{1,2})/))) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`
+  // Japanese card apps often abbreviate the year: 26.10.18 means 2026-10-18.
+  if ((m = t.match(/(?<!\d)(\d{2})\s*[.\/-]\s*(\d{1,2})\s*[.\/-]\s*(\d{1,2})(?!\d)/))) return `20${m[1]}-${pad(m[2])}-${pad(m[3])}`
   if ((m = t.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?/))) return `${today.getFullYear()}-${pad(m[1])}-${pad(m[2])}`
   if ((m = t.match(/(?<!\d)(\d{1,2})\/(\d{1,2})(?!\d)/))) return `${today.getFullYear()}-${pad(m[1])}-${pad(m[2])}`
   const off = /前天|一昨日/.test(t) ? 2 : /昨天|昨日/.test(t) ? 1 : 0
@@ -66,6 +68,7 @@ export function parseEntries(raw, rules) {
 
   const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
   const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
+    || /(?<!\d)\d{2}\s*[.\/-]\s*\d{1,2}\s*[.\/-]\s*\d{1,2}(?!\d)/.test(line)
     || /\d{1,2}\s*月\s*\d{1,2}/.test(line)
     || /\d{1,2}\s*\/\s*\d{1,2}/.test(line)
   const paymentLine = line => /^(?:1回払い|一回払い|分割払い|リボ払い|ボーナス払い|支払回数|クレジット|カード利用|ご利用日|利用日|利用金額|お支払方法|お支払い方法)$/i.test(line.replace(/[\s＞>]/g, ''))
@@ -144,7 +147,8 @@ export function parseEntries(raw, rules) {
   // OCR frequently returns one merchant+amount line, then a date/payment line.
   // Example: "セブンイレブン葛飾柴又4丁目店 521mM N".
   // Keep wrapped merchant suffixes attached to the immediately preceding row.
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i]
     if (dateLine(line) || paymentLine(line)) {
       activeMerchantRow = null
       continue
@@ -157,7 +161,17 @@ export function parseEntries(raw, rules) {
       activeMerchantRow = null
       continue
     }
-    const found = extractTrailingAmount(line)
+    let found = extractTrailingAmount(line)
+    // If OCR wraps a long merchant name and places the amount on the next visual line,
+    // join the two before parsing (e.g. "マクドナルドモバイルオーダ" + "ー 420 円").
+    if (!found && i + 1 < lines.length && !dateLine(lines[i + 1]) && !paymentLine(lines[i + 1])) {
+      const nextFound = extractTrailingAmount(lines[i + 1])
+      if (nextFound && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(line)) {
+        line = line + lines[i + 1]
+        i++
+        found = extractTrailingAmount(line)
+      }
+    }
     if (!found) continue
     const merchant = cleanMerchant(line.slice(0, found.index))
     if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) continue

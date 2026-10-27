@@ -146,6 +146,9 @@ async function saveEdit() {
 const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map(c => c.amount)))
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
+const selectedDay = ref('')
+const swipedEntryId = ref(null)
+const filteredEntries = computed(() => selectedDay.value ? entries.value.filter(e => e.date === selectedDay.value) : entries.value)
 const detailFilter = ref(null)
 const detailSourceEntries = ref([])
 const detailLoading = ref(false)
@@ -188,12 +191,9 @@ function changeListPage(page) {
   listPage.value = Math.min(listPageCount.value, Math.max(1, page))
 }
 const dayRows = computed(() => [...(stats.value?.byDay || [])].sort((a, b) => a.date.localeCompare(b.date)))
-const selectedDay = ref('')
-const swipedEntryId = ref(null)
 let touchStartX = 0
 let touchStartY = 0
 let suppressRowClick = false
-const filteredEntries = computed(() => selectedDay.value ? entries.value.filter(e => e.date === selectedDay.value) : entries.value)
 const calendarDays = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
   const daysInMonth = new Date(year, monthNumber, 0).getDate()

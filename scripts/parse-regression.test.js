@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseEntries } from '../src/parse.js'
+import { classify, parseEntries } from '../src/parse.js'
 
 const rules = []
 
@@ -39,4 +39,26 @@ SBI証券投信積立サービス
     ['セブンーイレブン', '2026-10-16', 744],
     ['SBI証券投信積立サービス（翌月買付分）', '2026-10-14', 15000]
   ])
+})
+
+
+test('classifies My Basket as a supermarket before the generic bus transport keyword', () => {
+  const result = classify('まいばすけっと 葛飾高砂店', [
+    { keyword: 'バス', category: '交通' }
+  ])
+  assert.deepEqual(result, { category: '餐饮', keyword: 'まいばすけっと' })
+})
+
+test('supermarket classification takes priority over conflicting saved transport rules', () => {
+  const result = classify('まいばすけっと', [
+    { keyword: 'まいばすけっと', category: '交通' },
+    { keyword: 'バス', category: '交通' }
+  ])
+  assert.equal(result.category, '餐饮')
+})
+
+test('transport merchants still classify as transport', () => {
+  assert.deepEqual(classify('京成電鉄', [
+    { keyword: '京成電鉄', category: '交通' }
+  ]), { category: '交通', keyword: '京成電鉄' })
 })

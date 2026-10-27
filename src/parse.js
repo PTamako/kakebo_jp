@@ -149,7 +149,7 @@ export function parseEntries(raw, rules) {
     // Capture the final amount token, not the merchant/reference text.
     // The OCR engine may remove the space before the amount entirely (e.g. "ダイソー880m").
     // Anchor the amount to the line ending marker instead of requiring a separator from the merchant.
-    const m = body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV]+\s*$/i)
+    const m = body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV|]+\s*$/i)
       || body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)\s*$/i)
     if (!m || !m[1].trim()) continue
     let token = m[2]

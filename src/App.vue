@@ -143,6 +143,8 @@ async function saveAll() {
     // Remove each successfully saved draft immediately so retry never resubmits it.
     while (forms.value.length) {
       const f = forms.value[0]
+      // Retain one stable ID across retries (including "saved on server, reply lost").
+      if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
       await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
       forms.value.shift()
       saved++
@@ -205,13 +207,7 @@ async function loadTransfers() {
   transferLoading.value = true
   try {
     let rows = await api('transfers')
-    // 予定日を迎えた未処理の振替は自動反映を試し、失敗したものだけ手動処理を表示する
-    const dueTransfers = rows.filter(item => Number(item.transfer_applied) !== 1 && transferDue(item))
-    for (const item of dueTransfers) {
-      try { await api('transfers/' + item.id, { method: 'POST' }) }
-      catch { /* 自動処理に失敗した場合は未処理のまま残し、手動処理を表示 */ }
-    }
-    if (dueTransfers.length) rows = await api('transfers')
+    // The backend marks due transfers once; no extra per-row writes needed here.
     pendingTransfers.value = rows
   } catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
   finally { transferLoading.value = false }
@@ -241,7 +237,7 @@ const investmentItems = [
   { id: 'sbi', label: 'SBI証券', detail: '投資信託', unit: '円' },
 ]
 const investments = ref({
-  sbi: { currentValue: null, pnl: null, updatedAt: '' },
+  sbi: { currentValue: null, pnl: null, investedTotal: 0, updatedAt: '' },
 })
 const investmentBusy = ref(false)
 const investmentReturn = item => {
@@ -260,6 +256,7 @@ async function loadInvestments() {
       investments.value[row.platform] = {
         currentValue: row.current_value === null ? null : Number(row.current_value),
         pnl: row.pnl === null ? null : Number(row.pnl),
+        investedTotal: Number(row.invested_total || 0),
         updatedAt: row.updated_at || ''
       }
     }
@@ -906,10 +903,11 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </div>
         </div>
       </article>
-      <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">振替は評価額に自動反映。評価額・損益は手動更新できます</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
-      <div class="investment-note">振替先を指定すると評価額に自動加算。評価額・損益は手動更新できます。家計の収支には含みません。</div>
+      <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">積立額は明細から計算し、評価額・損益は手動管理します</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
+      <div class="investment-note">SBIへの振替は「積立累計」に反映し、評価額には加算しません。評価額・損益は証券口座の最新表示を確認して入力してください。過去の自動加算分が評価額に残っている場合は、数値を確認して更新してください。</div>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
         <div class="investment-card-heading"><div><h2>{{ item.label }}</h2><p>{{ item.detail }}</p></div><span class="investment-unit">{{ item.unit }}</span></div>
+        <div class="investment-principal"><small>家計簿から確認できる積立累計</small><strong>{{ yen(investments[item.id].investedTotal) }}</strong><small>振替先を設定した登録済み明細から集計</small></div>
         <label class="form-field"><span>現在の評価額（{{ item.unit }}）</span><input v-model.number="investments[item.id].currentValue" type="number" min="0" step="1" inputmode="numeric" placeholder="現在の評価額" /></label>
         <label class="form-field"><span>評価損益（{{ item.unit }}）</span><input v-model.number="investments[item.id].pnl" type="number" step="1" inputmode="numeric" placeholder="例：-1339" /></label>
         <div class="investment-summary">
@@ -1183,4 +1181,8 @@ main .piggy-broken .piggy-status{color:#b74358}
 main .entry-mode-row .manual-add-button{min-height:44px;gap:7px}
 main .entry-mode-row .entry-mode-icon{background:transparent;color:var(--blue-dark);border-radius:0;flex:0 0 19px;width:19px;height:19px}
 main .entry-mode-row .entry-mode-icon .ui-line-icon{width:19px;height:19px}
+
+.investment-principal{display:grid;gap:3px;padding:12px 14px;margin:0 0 14px;border-radius:14px;background:var(--tint);color:var(--ink)}
+.investment-principal strong{font-size:21px;font-variant-numeric:tabular-nums}
+.investment-principal small{font-size:11px;color:var(--muted)}
 </style>

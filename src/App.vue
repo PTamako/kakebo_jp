@@ -282,6 +282,12 @@ const pieGradient = (rows, colors) => {
   }).join(', ') + ')'
 }
 const expensePalette = ['#d96f91', '#e6a56b', '#c65f7c', '#d9b957', '#b96b9a', '#e58b70', '#a96b82', '#d6a3b8', '#b87957', '#c78eaa']
+const selectedDonut = ref({ month: '', year: '' })
+const donutRows = period => period === 'month' ? categoryRows.value : (annualStats.value?.byCategory || [])
+const donutSelected = period => donutRows(period).find(c => c.category === selectedDonut.value[period]) || donutRows(period)[0] || null
+const donutTotal = period => donutRows(period).reduce((n, c) => n + Number(c.amount || 0), 0)
+const donutPercent = period => donutSelected(period) && donutTotal(period) ? (Number(donutSelected(period).amount) / donutTotal(period) * 100).toFixed(1) : '0.0'
+const chooseDonut = (period, category) => { selectedDonut.value = { ...selectedDonut.value, [period]: category } }
 const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette))
 const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette))
 
@@ -709,7 +715,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="stats-card">
           <div class="section-title"><div><h2>カテゴリ支出</h2><p>何にお金を使ったか確認しましょう</p></div></div>
           <div class="pie-chart-layout">
-            <div class="category-pie" :style="{ background: monthlyCategoryPie }" role="img" aria-label="カテゴリ別支出の割合"></div>
+            <div class="category-pie donut-chart" :style="{ background: monthlyCategoryPie }" role="img" :aria-label="'カテゴリ支出 ' + donutPercent('month') + '%'"><div class="donut-center"><span>{{ donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('month')?.amount || 0) }}</strong><small>{{ donutPercent('month') }}%</small></div></div>
             <div class="category-list pie-legend">
               <div v-for="(c, i) in categoryRows" :key="c.category" class="pie-legend-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'month' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'month')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'month')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'month')">
                 <span class="pie-legend-name"><i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span></span>
@@ -803,7 +809,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="stats-card">
           <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div></div>
           <div class="pie-chart-layout">
-            <div class="category-pie" :style="{ background: annualExpensePie }" role="img" aria-label="年度カテゴリ支出の割合"></div>
+            <div class="category-pie donut-chart" :style="{ background: annualExpensePie }" role="img" :aria-label="'カテゴリ支出 ' + donutPercent('year') + '%'"><div class="donut-center"><span>{{ donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('year')?.amount || 0) }}</strong><small>{{ donutPercent('year') }}%</small></div></div>
             <div class="category-list pie-legend">
               <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="pie-legend-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'year')">
                 <span class="pie-legend-name"><i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span></span>

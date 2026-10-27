@@ -1049,7 +1049,6 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </div>
       </article>
       <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">積立額は明細から計算し、評価額・損益は手動管理します</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
-      <div class="investment-note">SBIへの振替は「積立累計」に反映し、評価額には加算しません。評価額・損益は証券口座の最新表示を確認して入力してください。これまでの評価額は変更しません。登録済みの取引履歴もそのまま保存されます。</div>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
         <div class="investment-card-heading"><div><h2>{{ item.label }}</h2><p>{{ item.detail }}</p></div><span class="investment-unit">{{ item.unit }}</span></div>
         <div class="investment-principal"><small>家計簿から確認できる積立累計</small><strong>{{ yen(investments[item.id].investedTotal) }}</strong><small>振替先を設定した登録済み明細から集計</small></div>
@@ -1062,7 +1061,6 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <p class="investment-updated">最終更新：{{ investments[item.id].updatedAt ? new Date(investments[item.id].updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '未更新' }}</p>
         <button class="button-primary investment-save" :disabled="investmentBusy" @click="saveInvestment(item)">最新データを保存</button>
       </article>
-      <p class="investment-footnote">評価額は手動更新できます。振替先を指定した資産移動は登録時に自動加算されます。相場・評価損益の自動取得や日次履歴の保存は行いません。</p>
     </section>
 
     <nav class="bottom-nav" aria-label="メインメニュー">

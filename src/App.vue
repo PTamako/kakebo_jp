@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 
 const tab = ref('add')
@@ -53,8 +53,9 @@ async function loadYear() {
   try { annualStats.value = await api('stats?year=' + selectedYear.value) }
   catch (e) { flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
-onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers() })
-watch(month, async () => { selectedDay.value = ''; swipedEntryId.value = null; listPage.value = 1; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
+onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers(); window.addEventListener('scroll', handleEntryScroll, { passive: true }) })
+onUnmounted(() => window.removeEventListener('scroll', handleEntryScroll))
+watch(month, async () => { selectedDay.value = ''; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { listPage.value = 1; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
 watch(tab, value => {
   if (value === 'year') loadYear()
@@ -255,20 +256,21 @@ const filteredEntries = computed(() => selectedDay.value ? entries.value.filter(
 const detailFilter = ref(null)
 const detailSourceEntries = ref([])
 const detailLoading = ref(false)
-const listPage = ref(1)
-const listPageSize = 50
+const visibleEntryCount = ref(20)
+const listPageSize = 20
 const displayEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : filteredEntries.value
   return detailFilter.value
     ? source.filter(entry => detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income'))
     : source
 })
-const listPageCount = computed(() => Math.max(1, Math.ceil(displayEntries.value.length / listPageSize)))
-const pagedEntries = computed(() => {
-  const sorted = [...displayEntries.value].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.time || '').localeCompare(String(a.time || '')))
-  const start = (listPage.value - 1) * listPageSize
-  return sorted.slice(start, start + listPageSize)
-})
+const sortedDisplayEntries = computed(() => [...displayEntries.value].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.time || '').localeCompare(String(a.time || ''))))
+const pagedEntries = computed(() => sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
+function loadMoreEntries() { visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize) }
+function handleEntryScroll() {
+  if (tab.value !== 'list' || detailLoading.value || visibleEntryCount.value >= sortedDisplayEntries.value.length) return
+  if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 240) loadMoreEntries()
+}
 const expandedEntryDays = ref(new Set())
 const groupedPagedEntries = computed(() => {
   const groups = new Map()
@@ -286,17 +288,17 @@ function toggleEntryDay(date) {
   expandedEntryDays.value = next
 }
 watch([displayEntries, detailFilter, selectedDay], () => {
+  visibleEntryCount.value = 20
   const days = [...new Set(displayEntries.value.map(entry => String(entry.date || '').slice(0, 10)).filter(Boolean))].sort((a, b) => b.localeCompare(a))
   const today = new Date().toLocaleDateString('sv-SE')
   const defaultDay = detailFilter.value ? days[0] : (days.includes(today) ? today : days[0])
   expandedEntryDays.value = new Set(defaultDay ? [defaultDay] : [])
   listPage.value = 1
 }, { deep: true })
-watch(listPage, () => {
+watch(visibleEntryCount, () => {
   const days = groupedPagedEntries.value.map(group => group.date)
   if (days.length && !days.some(day => expandedEntryDays.value.has(day))) expandedEntryDays.value = new Set([days[0]])
 })
-watch(listPageCount, count => { if (listPage.value > count) listPage.value = count })
 async function openCategoryDetails(category, type, period) {
   detailFilter.value = { category, type, period }
   selectedDay.value = ''
@@ -325,9 +327,6 @@ function clearDetailFilter() {
   detailFilter.value = null
   detailSourceEntries.value = []
   listPage.value = 1
-}
-function changeListPage(page) {
-  listPage.value = Math.min(listPageCount.value, Math.max(1, page))
 }
 const dayRows = computed(() => [...(stats.value?.byDay || [])].sort((a, b) => a.date.localeCompare(b.date)))
 let touchStartX = 0
@@ -573,10 +572,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </ul>
         </section>
       </div>
-      <div v-if="displayEntries.length > listPageSize && !detailLoading" class="detail-pagination" aria-label="明細ページ">
-        <button type="button" class="button-secondary" :disabled="listPage <= 1" @click="changeListPage(listPage - 1)">前へ</button>
-        <span>{{ listPage }} / {{ listPageCount }} ページ（50件ずつ）</span>
-        <button type="button" class="button-secondary" :disabled="listPage >= listPageCount" @click="changeListPage(listPage + 1)">次へ</button>
+      <div v-if="!detailLoading && visibleEntryCount < sortedDisplayEntries.length" class="load-more-wrap">
+        <button type="button" class="button-secondary load-more-button" @click="loadMoreEntries">読み込みを続ける（{{ Math.min(listPageSize, sortedDisplayEntries.length - visibleEntryCount) }}件）</button>
       </div>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
         <form class="edit-dialog" @submit.prevent="saveEdit">
@@ -926,7 +923,5 @@ main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);
 
 
 
-.day-group-list{display:grid;gap:10px;background:transparent;border:0;box-shadow:none;overflow:visible}.entry-day-group{overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:14px}.entry-day-heading{display:grid;grid-template-columns:18px auto auto 1fr;align-items:center;gap:8px;width:100%;padding:13px 12px;border:0;background:var(--card);color:var(--ink);text-align:left}.entry-day-chevron{color:var(--blue-dark);font-size:16px}.entry-day-heading strong{font-size:13px}.entry-day-count{font-size:11px;color:var(--muted)}.entry-day-total{text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.entry-day-items{margin:0;border:0;border-radius:0;box-shadow:none}.entry-day-items li:first-child{border-top:1px solid var(--line)}.entry-day-items li{padding-left:10px;padding-right:10px}.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap}.detail-pagination{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:14px}
-.detail-pagination span{font-size:11px;color:var(--muted);text-align:center}
-.detail-pagination button{padding:8px 10px;font-size:12px;white-space:nowrap}
+.day-group-list{display:grid;gap:10px;background:transparent;border:0;box-shadow:none;overflow:visible}.entry-day-group{overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:14px}.entry-day-heading{display:grid;grid-template-columns:18px auto auto 1fr;align-items:center;gap:8px;width:100%;padding:13px 12px;border:0;background:var(--card);color:var(--ink);text-align:left}.entry-day-chevron{color:var(--blue-dark);font-size:16px}.entry-day-heading strong{font-size:13px}.entry-day-count{font-size:11px;color:var(--muted)}.entry-day-total{text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.entry-day-items{margin:0;border:0;border-radius:0;box-shadow:none}.entry-day-items li:first-child{border-top:1px solid var(--line)}.entry-day-items li{padding-left:10px;padding-right:10px}.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap} .load-more-wrap{display:flex;justify-content:center;padding:14px 0 28px}.load-more-button{width:100%;max-width:320px;padding:12px 16px;font-size:13px;font-weight:700}
 </style>

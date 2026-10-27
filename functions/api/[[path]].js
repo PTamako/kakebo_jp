@@ -107,17 +107,48 @@ const isInvestmentTransfer = e => {
     (/sbi/.test(text) && /投信積立|投資信託積立/.test(text))
 }
 
-export async function onRequest({ request, env, params }) {
-  // 个人使用：设置环境变量 AUTH_TOKEN 后，所有请求都需要携带 x-token
-  // Fail closed: never expose personal transactions when the access token is missing.
-  if (!env.AUTH_TOKEN) return json({ error: 'アクセス認証が設定されていません' }, 503)
-  if (request.headers.get('x-token') !== env.AUTH_TOKEN)
-    return json({ error: 'アクセスコードを確認してください' }, 401)
+async function sessionHash(session) {
+  const bytes = new TextEncoder().encode(session)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest), x => x.toString(16).padStart(2, '0')).join('')
+}
 
+export async function onRequest({ request, env, params }) {
+  // Device sessions are revocable and expire after 30 days. Never store the access code.
+  if (!env.AUTH_TOKEN) return json({ error: 'アクセス認証が設定されていません' }, 503)
   const db = env.DB
   const url = new URL(request.url)
   const m = request.method
   const [a, b] = params.path || []
+  if (a === 'auth') {
+    if (b === 'login' && m === 'POST') {
+      let body
+      try { body = await request.json() } catch { return json({ error: '入力内容を確認してください' }, 400) }
+      if (typeof body?.code !== 'string' || body.code !== env.AUTH_TOKEN) return json({ error: 'アクセスコードを確認してください' }, 401)
+      const session = Array.from(crypto.getRandomValues(new Uint8Array(32)), x => x.toString(16).padStart(2, '0')).join('')
+      const hash = await sessionHash(session)
+      const expires = Date.now() + 30 * 24 * 60 * 60 * 1000
+      try {
+        await db.prepare('CREATE TABLE IF NOT EXISTS device_sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)').run()
+        await db.prepare('INSERT INTO device_sessions (token_hash, expires_at) VALUES (?1, ?2)').bind(hash, expires).run()
+      } catch { return json({ error: 'ログイン処理に失敗しました' }, 500) }
+      return json({ session, expires_at: expires })
+    }
+    if (b === 'logout' && m === 'POST') {
+      const session = request.headers.get('x-session') || ''
+      if (/^[a-f0-9]{64}$/.test(session)) {
+        try { await db.prepare('DELETE FROM device_sessions WHERE token_hash = ?1').bind(await sessionHash(session)).run() } catch {}
+      }
+      return json({ ok: true })
+    }
+    return json({ error: 'not found' }, 404)
+  }
+  const session = request.headers.get('x-session') || ''
+  if (!/^[a-f0-9]{64}$/.test(session)) return json({ error: 'アクセスコードを確認してください' }, 401)
+  let validSession
+  try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
+  catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
+  if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
   const month = url.searchParams.get('month') || ''
   const entriesYear = url.searchParams.get('year') || ''
 

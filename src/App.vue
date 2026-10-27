@@ -51,7 +51,7 @@ async function loadYear() {
   try { annualStats.value = await api('stats?year=' + selectedYear.value) }
   catch (e) { flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
-onMounted(() => { load(); loadYear(); loadInvestments() })
+onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers() })
 watch(month, async () => { selectedDay.value = ''; swipedEntryId.value = null; listPage.value = 1; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { listPage.value = 1; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
 watch(tab, value => {
@@ -151,6 +151,17 @@ async function saveEdit() {
     await loadInvestments()
   } catch (err) { flash('更新に失敗しました：' + err.message) }
 }
+
+const pendingTransfers = ref([])
+const transferLoading = ref(false)
+async function loadTransfers() {
+  transferLoading.value = true
+  try { pendingTransfers.value = await api('transfers') }
+  catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
+  finally { transferLoading.value = false }
+}
+const transferStatus = item => Number(item.transfer_applied) === 1 ? '入金反映済み' : (String(item.transfer_date || item.date) > new Date().toLocaleDateString('sv-SE') ? '入金予定' : '反映確認中')
+const transferStatusClass = item => Number(item.transfer_applied) === 1 ? 'transfer-done' : 'transfer-waiting'
 
 const investmentItems = [
   { id: 'sbi', label: 'SBI証券', detail: '投資信託', unit: '円' },
@@ -647,6 +658,18 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
 
     <section v-else-if="tab === 'investments'" class="page-section">
+      <article class="panel pending-transfer-panel">
+        <div class="pending-transfer-heading"><div><p class="eyebrow">確認リスト</p><h2>待処理事項</h2></div><button class="button-secondary pending-refresh" :disabled="transferLoading" @click="loadTransfers">更新</button></div>
+        <p class="pending-transfer-help">振替予定日になると、家計簿を開いた際にSBI証券の評価額へ反映します。ここで反映状況を確認できます。</p>
+        <div v-if="transferLoading" class="pending-transfer-empty">読み込み中…</div>
+        <div v-else-if="!pendingTransfers.length" class="pending-transfer-empty">確認が必要な振替はありません</div>
+        <div v-else class="pending-transfer-list">
+          <div v-for="item in pendingTransfers" :key="item.id" class="pending-transfer-row">
+            <div class="pending-transfer-main"><strong>{{ item.merchant || item.note || 'SBI証券への資産移動' }}</strong><span>予定日 {{ item.transfer_date || item.date }} · ¥{{ Number(item.amount || 0).toLocaleString('ja-JP') }}</span></div>
+            <span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span>
+          </div>
+        </div>
+      </article>
       <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">振替を登録すると評価額に自動反映。評価額と損益は手動更新もできます</p></div><span class="heading-icon">￥</span></div>
       <div class="investment-note">資産移動の明細で振替先を選ぶと、金額が評価額に自動加算されます。証券会社・PayPayで確認した評価額を手動保存すると、その値に更新できます。日常の収支には含めません。</div>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
@@ -713,6 +736,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .empty-state{display:flex;align-items:center;flex-direction:column;text-align:center;padding:34px 18px;background:#fff;border:1px dashed #dce3ec;border-radius:18px}.empty-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:16px;background:#edf2ff;color:var(--blue);font-size:23px;margin-bottom:12px}.empty-state strong{font-size:14px}.empty-state p{font-size:12px;color:var(--muted);margin:6px 0 17px}.empty-state button{min-width:140px}.stats-empty{margin-top:8px}
 .bottom-nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));width:min(calc(100% - 28px),460px);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;padding:6px;background:#ffffffed;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid #e8edf2;border-radius:19px;box-shadow:0 8px 30px #20324b18}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;color:#8994a3;padding:7px 4px;border-radius:13px;font-size:10px;font-weight:700}.bottom-nav button.active{background:#edf2ff;color:var(--blue)}.nav-icon{font-size:21px;line-height:1.15;font-weight:500}
 
+.pending-transfer-panel{padding:15px;margin-bottom:15px}.pending-transfer-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.pending-transfer-heading h2{font-size:16px;margin:0}.pending-transfer-heading .eyebrow{margin:0 0 3px}.pending-refresh{padding:7px 12px;font-size:12px}.pending-transfer-help{margin:9px 0 12px;font-size:11px;line-height:1.6;color:var(--muted)}.pending-transfer-list{display:grid;gap:9px}.pending-transfer-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid var(--line)}.pending-transfer-main{display:grid;gap:4px;min-width:0}.pending-transfer-main strong{font-size:12px;overflow-wrap:anywhere}.pending-transfer-main span{font-size:11px;color:var(--muted)}.pending-transfer-status{flex:none;padding:5px 8px;border-radius:99px;font-size:10px;font-weight:800}.transfer-done{background:#e5f6ed;color:#24815b}.transfer-waiting{background:#fff3d7;color:#9b7620}.pending-transfer-empty{padding:12px 0;color:var(--muted);font-size:12px}
 .investment-note{padding:12px 14px;margin:-5px 0 14px;border-radius:13px;background:var(--card);border:1px solid var(--line);font-size:12px;line-height:1.7;color:var(--muted)}
 .investment-card{padding:16px;margin-bottom:13px}
 .investment-card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}

@@ -56,9 +56,52 @@ const ICON_LIBRARY = [
   { id:'travel', label:'旅行', path:'M3 15l7 1 8 5 2-1-5-6 5-5c2-2 0-4-2-2l-5 5-6-5-1 2 5 8-8-2Z' },
   { id:'subscriptions', label:'サブスク', path:'M4 5h16v14H4zM10 9l5 3-5 3V9Z' },
   { id:'gift', label:'贈り物', path:CATEGORY_ICON_PATHS['奖金'] },
+  { id:'electricity', label:'電気', path:'M13 2 5 13h6l-1 9 9-12h-6z' },
+  { id:'water', label:'水道', path:'M12 3C9 7 6 11 6 15a6 6 0 0 0 12 0c0-4-3-8-6-12Z' },
+  { id:'gas', label:'ガス', path:'M12 3c1 5-4 5-4 10-2-1-2-3-2-3-3 7 1 11 6 11s8-4 6-9c-1 2-2 2-3 2 1-5-2-8-3-11Z' },
+  { id:'rent', label:'家賃', path:'M3 11l9-8 9 8M6 10v10h12V10M10 20v-6h4v6' },
+  { id:'internet', label:'インターネット', path:'M3 9a14 14 0 0 1 18 0M6 12a9 9 0 0 1 12 0M9 15a5 5 0 0 1 6 0M12 19h.01' },
+  { id:'hair', label:'美容院', path:'M4 5l16 14M20 5 4 19M5 5h.01M5 19h.01' },
+  { id:'cosmetics', label:'化粧品', path:'M9 3h6v5H9zM8 8h8v12H8zM10 13h4' },
+  { id:'clothes', label:'衣服', path:'M8 4 4 6 2 10l4 2v8h12v-8l4-2-2-4-4-2c-1 3-7 3-8 0Z' },
+  { id:'shoes', label:'靴', path:'M4 5h5l3 8 6 2c2 1 3 2 3 4H3v-3z' },
+  { id:'books', label:'書籍', path:'M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4zM20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z' },
+  { id:'lessons', label:'習い事', path:'M4 20h16M6 17 16 4l3 3-10 13H6z' },
+  { id:'childcare', label:'子育て', path:'M8 10a4 4 0 1 0 8 0 4 4 0 0 0-8 0ZM5 21c0-4 3-6 7-6s7 2 7 6' },
+  { id:'family', label:'家族', path:'M8 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6M16 14c3 0 5 2 5 5v1' },
+  { id:'car', label:'車', path:'M4 16l1-6 2-4h10l2 4 1 6v3h-2v-2H6v2H4zM5 12h14M7 15h.01M17 15h.01' },
+  { id:'bicycle', label:'自転車', path:'M5 19a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19 19a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM5 16l5-7 3 7H5l7-5h4M10 9H8' },
+  { id:'fuel', label:'ガソリン', path:'M5 20V4h10v16M3 20h14M7 6h6v5H7zM15 9h2l2 2v6a2 2 0 0 0 2 0v-5' },
+  { id:'parking', label:'駐車場', path:'M4 3h16v18H4zM9 18V6h4a3 3 0 0 1 0 6H9' },
+  { id:'fitness', label:'運動', path:'M4 8v8M2 10v4M7 6v12M7 12h10M17 6v12M20 8v8M22 10v4' },
+  { id:'health', label:'健康', path:'M12 21S3 16 3 10a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 11-9 11Z' },
+  { id:'medicine', label:'薬', path:'M5 12 12 5a5 5 0 0 1 7 7l-7 7a5 5 0 0 1-7-7ZM8 9l7 7' },
+  { id:'dental', label:'歯科', path:'M7 4c-3 0-4 3-3 7l2 7c1 4 3 3 4-1l2-4 2 4c1 4 3 5 4 1l2-7c1-4 0-7-3-7-2 0-3 1-5 1S9 4 7 4Z' },
+  { id:'cafe', label:'カフェ', path:'M4 7h13v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM17 9h2a2 2 0 0 1 0 4h-2M3 21h16' },
+  { id:'hobby', label:'趣味', path:'M5 5h14v14H5zM8 9h8M8 13h5' },
+  { id:'music', label:'音楽', path:'M9 18V5l10-2v13M9 8l10-2M9 18c0 2-4 3-5 1s3-4 5-3M19 16c0 2-4 3-5 1s3-4 5-3' },
+  { id:'movie', label:'映画', path:'M3 6h18v13H3zM3 10h18M7 6l3 4M14 6l3 4' },
+  { id:'electronics', label:'家電', path:'M4 5h16v12H4zM9 21h6M12 17v4' },
+  { id:'furniture', label:'家具', path:'M4 10v8M20 10v8M4 14h16M6 14V8h12v6M6 18v2M18 18v2' },
+  { id:'repair', label:'修理', path:'M14 5a5 5 0 0 0-6 6L3 16l5 5 5-5a5 5 0 0 0 6-6l-3 3-3-3z' },
+  { id:'charity', label:'寄付', path:'M12 20S4 15 4 10a4 4 0 0 1 8-2 4 4 0 0 1 8 2c0 5-8 10-8 10Z' },
+  { id:'bank', label:'銀行', path:'M3 9l9-6 9 6H3ZM5 10v8M9 10v8M15 10v8M19 10v8M3 20h18' },
+  { id:'savings', label:'貯金', path:'M4 9h16v10H4zM8 9V6h8v3M15 14h2' },
+  { id:'fees', label:'手数料', path:'M5 5h14v14H5zM8 9h8M8 13h8M8 17h4' },
+  { id:'delivery', label:'配送料', path:'M3 6h11v10H3zM14 10h4l3 3v3h-7zM7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM18 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4' },
+  { id:'cleaning', label:'清掃', path:'M8 3h8v5H8zM7 8h10l2 12H5zM9 12h6' },
+  { id:'events', label:'イベント', path:'M4 6h16v14H4zM8 3v6M16 3v6M4 11h16' },
+  { id:'work', label:'仕事', path:'M3 7h18v13H3zM8 7V4h8v3M3 12h18' },
+  { id:'phone-device', label:'スマホ本体', path:'M7 2h10v20H7zM10 5h4M11 19h2' },
   { id:'other', label:'その他', path:'M5 3h14v18H5V3ZM8 8h8M8 12h8M8 16h5' }
 ]
 const categoryIcons = ref({})
+const availableIcons = computed(() => {
+  const used = new Set(Object.values(categoryIcons.value))
+  const existingPaths = new Set(categories.value.map(name => CATEGORY_ICON_PATHS[name]).filter(Boolean))
+  const existingLabels = new Set(categories.value.map(name => CATEGORY_LABELS[name] || name))
+  return ICON_LIBRARY.filter(icon => icon.id === 'other' || (!used.has(icon.id) && !existingPaths.has(icon.path) && !existingLabels.has(icon.label)))
+})
 const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || CATEGORY_ICON_PATHS[name] || ICON_LIBRARY.at(-1).path
 const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
@@ -148,7 +191,7 @@ const categoryDialog = ref(false)
 const categoryName = ref('')
 const categoryIcon = ref('other')
 const categorySaving = ref(false)
-function addCategory() { categoryName.value = ''; categoryIcon.value = 'other'; categoryDialog.value = true }
+function addCategory() { categoryName.value = ''; categoryIcon.value = availableIcons.value[0]?.id || 'other'; categoryDialog.value = true }
 async function saveCategory() {
   if (categorySaving.value) return
   const name = categoryName.value.trim()
@@ -694,7 +737,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>カテゴリ名</span><input v-model.trim="categoryName" maxlength="20" required :disabled="categorySaving" placeholder="例：美容" /></label>
           <p class="field-label">アイコンを選択</p>
           <div class="icon-picker" role="group" aria-label="アイコンを選択">
-            <button v-for="icon in ICON_LIBRARY" :key="icon.id" type="button" :disabled="categorySaving" :class="{ selected: categoryIcon === icon.id }" :aria-pressed="categoryIcon === icon.id" @click="categoryIcon = icon.id"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="icon.path"/></svg><span>{{ icon.label }}</span></button>
+            <button v-for="icon in availableIcons" :key="icon.id" type="button" :disabled="categorySaving" :class="{ selected: categoryIcon === icon.id }" :aria-pressed="categoryIcon === icon.id" @click="categoryIcon = icon.id"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="icon.path"/></svg><span>{{ icon.label }}</span></button>
           </div>
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="categorySaving" @click="categoryDialog = false">キャンセル</button><button type="submit" class="button-primary" :disabled="categorySaving">{{ categorySaving ? '保存中…' : '追加する' }}</button></div>
         </form>

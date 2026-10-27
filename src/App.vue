@@ -54,7 +54,15 @@ async function loadYear() {
 onMounted(() => { load(); loadYear() })
 watch(month, () => { selectedDay.value = ''; swipedEntryId.value = null; if (categoryDetail.value?.period === 'month') { categoryDetail.value = null; categoryDetailEntries.value = []; categoryDetailPage.value = 1; categoryDetailRequest++ }; load() })
 watch(selectedYear, () => { if (categoryDetail.value?.period === 'year') { categoryDetail.value = null; categoryDetailEntries.value = []; categoryDetailPage.value = 1; categoryDetailRequest++ }; loadYear() })
-watch(tab, value => { if (value === 'year') loadYear() })
+watch(tab, value => {
+  if (value === 'year') loadYear()
+  if ((categoryDetail.value?.period === 'year' && value !== 'year') || (categoryDetail.value?.period === 'month' && value !== 'stat')) {
+    categoryDetail.value = null
+    categoryDetailEntries.value = []
+    categoryDetailPage.value = 1
+    categoryDetailRequest++
+  }
+})
 
 function recognize() {
   if (!input.value.trim()) return

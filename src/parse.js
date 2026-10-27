@@ -424,29 +424,57 @@ export async function ocrImage(file, onProgress) {
   })
   try {
     const primary = (await worker.recognize(file)).data.text
-    // QUICPay statements place amounts in a right-aligned column. A second OCR pass on
-    // that column helps recover amounts omitted when the full screenshot is read linearly.
-    if (!/QUICPay|QUIC\\s*Pay/i.test(primary)) return primary
+    if (!/QUIC\s*Pay|QUICPay/i.test(primary)) return primary
+
     let bitmap
     try {
       bitmap = await createImageBitmap(file)
+      const sourceWidth = Math.max(1, Math.round(bitmap.width * 0.4))
+      const scale = 2
       const canvas = document.createElement('canvas')
-      canvas.width = Math.max(1, Math.round(bitmap.width * 0.36))
-      canvas.height = bitmap.height
-      const context = canvas.getContext('2d')
-      context.drawImage(bitmap, bitmap.width - canvas.width, 0, canvas.width, bitmap.height, 0, 0, canvas.width, canvas.height)
+      canvas.width = sourceWidth * scale
+      canvas.height = bitmap.height * scale
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context) return primary
+      context.drawImage(bitmap, bitmap.width - sourceWidth, 0, sourceWidth, bitmap.height, 0, 0, canvas.width, canvas.height)
+
+      // Enlarge and increase contrast before reading the right-aligned price column.
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
+      for (let i = 0; i < pixels.data.length; i += 4) {
+        const luminance = pixels.data[i] * 0.299 + pixels.data[i + 1] * 0.587 + pixels.data[i + 2] * 0.114
+        const value = luminance > 178 ? 255 : 0
+        pixels.data[i] = value
+        pixels.data[i + 1] = value
+        pixels.data[i + 2] = value
+      }
+      context.putImageData(pixels, 0, 0)
+
       const columnText = (await worker.recognize(canvas)).data.text
+      // Accept OCR noise around an amount, but only retain plausible yen values.
       const amounts = columnText.split(/\r?\n/).map(line => line.trim())
-        .map(line => line.match(/^(?:[¥￥]\s*)?(\d{1,3}(?:[,，.]\d{3})+|\d{2,6})(?:\s*円)?$/)?.[1])
-        .filter(Boolean)
-        .map(value => value.replace(/[,，.]/g, ''))
-      const qpCount = (primary.match(/QUICPay\s*利用\s*\(\s*Q?O?P\s*\//gi) || []).length
-      if (qpCount >= 2 && amounts.length === qpCount) return primary + '\n__QP_AMOUNT_COLUMN__\n' + amounts.join('\n')
+        .map(line => {
+          const normalized = line
+            .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+            .replace(/[OoＯｏ]/g, '0')
+            .replace(/[Il|]/g, '1')
+            .replace(/[Ss]/g, '5')
+            .replace(/[Ｂ]/g, '8')
+            .replace(/[¥￥円,，.:\s]/g, '')
+          const match = normalized.match(/^\D{0,2}(\d{2,6})\D{0,2}$/)
+          return match ? Number(match[1]) : null
+        })
+        .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
+      const qpCount = (primary.match(/QUIC\s*Pay|QUICPay/gi) || []).length
+      if (qpCount >= 2 && amounts.length === qpCount) {
+        return primary + '\n__QP_AMOUNT_COLUMN__\n' + amounts.join('\n')
+      }
     } catch (_) {
       // Keep the primary OCR result if image cropping or the second pass is unavailable.
     } finally {
       bitmap?.close?.()
     }
     return primary
-  } finally { await worker.terminate() }
+  } finally {
+    await worker.terminate()
+  }
 }

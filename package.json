@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "cf:dev": "vite build && wrangler pages dev dist",
-    "test:parse": "node --test scripts/parse-regression.test.js"
+    "test:parse": "node --test scripts/*.test.js"
   },
   "dependencies": {
     "tesseract.js": "^5.1.0",

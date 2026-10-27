@@ -112,6 +112,37 @@ export function parseEntries(raw, rules) {
     .replace(/[Nn]\s*$/g, '')
     .replace(/[\s,，、。．.]+$/g, '')
     .trim()
+  // QP/ card apps may OCR each transaction as a merchant+amount line followed by a date/payment line.
+  // Amounts can contain OCR spaces or substitutions, e.g. "1] 096 ロ" for "1,096 円".
+  const qpRows = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!/^QP\s*\//i.test(line)) continue
+    const nextDate = lines.slice(i + 1, i + 4).find(candidate => dateLine(candidate))
+    if (!nextDate) continue
+    const withoutPrefix = line.replace(/^QP\s*\/\s*/i, '').trim()
+    const amountMatch = withoutPrefix.match(/([0-9０-９oOｏＯ１-９\]\[\s,，.]{1,10})\s*(?:円|m{1,2}|g(?:m)?|ロ|口|、|,|，|。|．|\.)?\s*$/i)
+    if (!amountMatch) continue
+    let token = amountMatch[1]
+      .replace(/[oOｏＯ]/g, '0')
+      .replace(/[\]\[]/g, '1')
+      .replace(/[\s,，.]/g, '')
+    const amount = Number(token)
+    if (!Number.isFinite(amount) || amount < 1 || amount > 999999) continue
+    let merchant = withoutPrefix.slice(0, amountMatch.index).trim()
+    merchant = cleanMerchant(merchant)
+    // OCR inserts spaces inside Japanese store names; normalize() already joins Japanese characters.
+    if (!merchant || !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) continue
+    const { category, keyword } = classify(merchant, rules)
+    qpRows.push({
+      date: findDate(nextDate), time: '', amount, category,
+      merchant: merchant.slice(0, 60), note: '',
+      raw: merchant + '\n' + nextDate + '\n' + amountMatch[0],
+      suggested: category, keyword
+    })
+  }
+  if (qpRows.length >= 2) return qpRows
+
   // Some issuers put merchant and reference on one line, then date/cardholder/payment/amount on another.
   // Other issuers put amount beside merchant and date on a separate line. Keep these layouts distinct.
   const isCardMetadata = line => /^(?:ご本人|本人|家族|家族会員|1回払い|一回払い|分割払い|リボ払い|ボーナス払い|ご本人\s+1回払い|本人\s+1回払い)$/i

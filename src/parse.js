@@ -86,6 +86,17 @@ export function parseEntry(raw, rules) {
 
 // 将一段粘贴文字或一张 OCR 图片拆分为多笔记录。
 export function parseEntries(raw, rules) {
+  const marker = '\n__QP_AMOUNT_COLUMN__\n'
+  let qpColumnAmounts = []
+  if (typeof raw === 'string' && raw.includes(marker)) {
+    const parts = raw.split(marker)
+    raw = parts[0]
+    qpColumnAmounts = (parts[1] || '').split(/\\r?\\n/).map(line => line.trim())
+      .map(line => line.match(/^(?:[¥￥]\\s*)?(\\d{1,3}(?:[,，.]\\d{3})+|\\d{2,6})(?:\\s*円)?$/)?.[1])
+      .filter(Boolean)
+      .map(value => Number(value.replace(/[,，.]/g, '')))
+      .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
+  }
   const text = normalize(raw)
   if (!text) return []
 
@@ -223,6 +234,13 @@ export function parseEntries(raw, rules) {
         merchant: merchant.slice(0, 60),
         note: amount ? '' : '金額を読み取れませんでした。明細を確認してください',
         raw: block.join('\n'), suggested: category, keyword
+      })
+    }
+    if (qpColumnAmounts.length === recovered.length) {
+      recovered.forEach((row, index) => {
+        row.amount = qpColumnAmounts[index]
+        row.note = ''
+        row.raw += '\\n金额由右侧金额栏二次识别'
       })
     }
     if (recovered.length > qpRows.length) return recovered
@@ -404,5 +422,31 @@ export async function ocrImage(file, onProgress) {
   const worker = await createWorker(['jpn', 'eng'], 1, {
     logger: m => m.status === 'recognizing text' && onProgress?.(Math.round(m.progress * 100))
   })
-  try { return (await worker.recognize(file)).data.text } finally { await worker.terminate() }
+  try {
+    const primary = (await worker.recognize(file)).data.text
+    // QUICPay statements place amounts in a right-aligned column. A second OCR pass on
+    // that column helps recover amounts omitted when the full screenshot is read linearly.
+    if (!/QUICPay|QUIC\\s*Pay/i.test(primary)) return primary
+    let bitmap
+    try {
+      bitmap = await createImageBitmap(file)
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(bitmap.width * 0.36))
+      canvas.height = bitmap.height
+      const context = canvas.getContext('2d')
+      context.drawImage(bitmap, bitmap.width - canvas.width, 0, canvas.width, bitmap.height, 0, 0, canvas.width, canvas.height)
+      const columnText = (await worker.recognize(canvas)).data.text
+      const amounts = columnText.split(/\\r?\\n/).map(line => line.trim())
+        .map(line => line.match(/^(?:[¥￥]\\s*)?(\\d{1,3}(?:[,，.]\\d{3})+|\\d{2,6})(?:\\s*円)?$/)?.[1])
+        .filter(Boolean)
+        .map(value => value.replace(/[,，.]/g, ''))
+      const qpCount = (primary.match(/QUICPay\\s*利用\\s*\\(\\s*Q?O?P\\s*\\//gi) || []).length
+      if (qpCount >= 2 && amounts.length === qpCount) return primary + '\\n__QP_AMOUNT_COLUMN__\\n' + amounts.join('\\n')
+    } catch (_) {
+      // Keep the primary OCR result if image cropping or the second pass is unavailable.
+    } finally {
+      bitmap?.close?.()
+    }
+    return primary
+  } finally { await worker.terminate() }
 }

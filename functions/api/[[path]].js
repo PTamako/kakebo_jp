@@ -307,6 +307,18 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    if (a === 'transfers' && b && m === 'POST') {
+      const id = Number(b)
+      const item = await db.prepare("SELECT id, amount, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1 AND type = 'transfer'").bind(id).first()
+      if (!item || item.transfer_target !== 'sbi') return json({ error: '対象の資産移動が見つかりません' }, 404)
+      if (Number(item.transfer_applied) !== 1) {
+        await applyTransferDelta('sbi', Number(item.amount || 0))
+        await db.prepare('UPDATE entries SET transfer_applied = 1 WHERE id = ?1').bind(id).run()
+      }
+      const updated = await db.prepare('SELECT id, date, amount, merchant, note, transfer_target, transfer_applied, transfer_date FROM entries WHERE id = ?1').bind(id).first()
+      return json(updated)
+    }
+
     if (a === 'transfers' && m === 'GET') {
       const { results } = await db.prepare("SELECT id, date, amount, merchant, note, transfer_target, transfer_applied, transfer_date FROM entries WHERE type = 'transfer' AND transfer_target = 'sbi' AND (COALESCE(transfer_date, date) >= date('now', '-30 days') OR COALESCE(transfer_applied, 0) = 0) ORDER BY COALESCE(transfer_date, date) ASC, id DESC LIMIT 100").all()
       return json(results)

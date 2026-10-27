@@ -117,6 +117,7 @@ async function saveAll() {
     flash(`${saved}件の記録を保存しました`)
     await load()
     await loadInvestments()
+    await loadTransfers()
   } catch (e) { flash(`一部の記録を保存しましたが、残りの保存に失敗しました：${e.message}。重複保存を避けるため、明細を再読み込みして確認してください。`) }
 }
 async function remove(id) {
@@ -149,6 +150,7 @@ async function saveEdit() {
     flash('記録を更新しました')
     await load()
     await loadInvestments()
+    await loadTransfers()
   } catch (err) { flash('更新に失敗しました：' + err.message) }
 }
 

@@ -113,8 +113,17 @@ const MERCHANT_CATEGORY_KEYWORDS = [
   ] }
 ]
 
-export function classify(text, rules) {
+export function classify(text, rules = []) {
   const normalizedText = normalize(text).toLowerCase()
+
+  // User-created rules take precedence over built-in defaults.
+  // Matching is fuzzy substring matching; if several rules match, use the most specific (longest) keyword.
+  const userRule = [...rules]
+    .filter(r => r?.keyword && r?.category)
+    .sort((a, b) => normalize(b.keyword).length - normalize(a.keyword).length)
+    .find(r => normalizedText.includes(normalize(r.keyword).toLowerCase()))
+  if (userRule) return { category: userRule.category, keyword: userRule.keyword }
+
   const supermarket = [...SUPERMARKET_KEYWORDS]
     .sort((a, b) => b.length - a.length)
     .find(keyword => normalizedText.includes(normalize(keyword).toLowerCase()))
@@ -126,9 +135,7 @@ export function classify(text, rules) {
     .find(rule => normalizedText.includes(normalize(rule.keyword).toLowerCase()))
   if (merchantRule) return merchantRule
 
-  const hit = [...rules].sort((a, b) => b.keyword.length - a.keyword.length)
-    .find(r => normalizedText.includes(normalize(r.keyword).toLowerCase()))
-  return hit ? { category: hit.category, keyword: hit.keyword } : { category: '日用品', keyword: '' }
+  return { category: '日用品', keyword: '' }
 }
 
 export function parseEntry(raw, rules) {

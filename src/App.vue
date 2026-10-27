@@ -440,7 +440,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div class="entry-mode-row">
         <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')">➖ 支出</button>
         <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')">➕ 収入</button>
-        <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')">↗ 資産移動</button>
+        <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')">↔ 資産移動</button>
       </div>
       <div class="panel capture-panel">
         <label class="field-label" for="entry-text">テキスト読み取り</label>

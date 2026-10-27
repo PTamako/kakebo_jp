@@ -118,10 +118,15 @@ export function classify(text, rules = []) {
 
   // User-created rules take precedence over built-in defaults.
   // Matching is fuzzy substring matching; if several rules match, use the most specific (longest) keyword.
+  const merchantAliases = { 'スタバ': 'スターバックス' }
   const userRule = [...rules]
     .filter(r => r?.keyword && r?.category)
     .sort((a, b) => normalize(b.keyword).length - normalize(a.keyword).length)
-    .find(r => normalizedText.includes(normalize(r.keyword).toLowerCase()))
+    .find(r => {
+      const keyword = normalize(r.keyword).toLowerCase()
+      return normalizedText.includes(keyword) ||
+        (merchantAliases[keyword] && normalizedText.includes(merchantAliases[keyword].toLowerCase()))
+    })
   if (userRule) return { category: userRule.category, keyword: userRule.keyword }
 
   const supermarket = [...SUPERMARKET_KEYWORDS]
@@ -213,11 +218,42 @@ export function parseEntries(raw, rules) {
     // Strip visible numeric references and OCR-truncated forms such as "7...".
     .replace(/\s+\d{6,}\s*$/g, '')
     .replace(/\s+\d{1,3}\s*[.…・]{2,}\s*$/g, '')
-    .replace(/[＞>」】）)]+\s*$/g, '')
+    .replace(/[＞>」】]+\s*$/g, '')
     .replace(/[Nn]\s*$/g, '')
     .replace(/[\s,，、。．.]+$/g, '')
     .trim()
     .replace(/マイバスケツト/g, 'マイバスケット')
+    .replace(/\(([^()]*)\)/g, '（$1）')
+
+  // Card statement blocks sometimes separate merchant, amount and date into
+  // separate lines (e.g. 2,992円～). Recover each independently instead of
+  // falling back to a single giant draft containing all the transactions.
+  const standaloneAmount = line => {
+    const match = line.match(/^(?:[¥￥]\\s*)?(\\d{1,3}(?:[,，.]\\d{3})+|\\d{1,6})\\s*円\\s*[～〜く>＞Nn]*$/)
+    if (!match) return null
+    const value = Number(match[1].replace(/[,，.]/g, ''))
+    return value > 0 && value <= 9999999 ? value : null
+  }
+  const cardBlocks = []
+  let blockStart = 0
+  for (let i = 0; i < lines.length; i++) {
+    if (!dateLine(lines[i]) || !/^\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}$/.test(lines[i])) continue
+    const block = lines.slice(blockStart, i).filter(line => !/^(?:ご本人|本人|家族|家族会員|1回払い|一回払い|分割払い|リボ払い)$/.test(line))
+    const amountIndex = block.findIndex(line => standaloneAmount(line) !== null)
+    if (amountIndex >= 1) {
+      const amount = standaloneAmount(block[amountIndex])
+      const merchantText = [...block.slice(0, amountIndex), ...block.slice(amountIndex + 1)].join('')
+      const merchant = cleanMerchant(merchantText)
+      if (merchant && /[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}A-Za-z]/u.test(merchant)) {
+        const { category, keyword } = classify(merchant, rules)
+        cardBlocks.push({ date: findDate(lines[i]), time: '', amount, category,
+          merchant: merchant.slice(0, 60), note: '', raw: block.join('\\n') + '\\n' + lines[i], suggested: category, keyword })
+      }
+    }
+    blockStart = i + 1
+  }
+  if (cardBlocks.length >= 2 && cardBlocks.length === lines.filter(dateLine).length) return cardBlocks
+
   // QP statements: each transaction is a QP-prefixed merchant/amount line,
   // followed by a date and payment-method line. Parse the final numeric token explicitly.
   const qpRows = []

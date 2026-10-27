@@ -178,7 +178,7 @@ export function parseEntries(raw, rules) {
     })
   }
   // Prefer the established parser when it recovered every row; use block recovery only for missing rows.
-  if (qpRows.length >= lines.filter(line => /^(?:QUICPay\\s*利用\\s*)?QP\\s*\\//i.test(line)).length && qpRows.length >= 2) return qpRows
+  if (qpRows.length >= lines.filter(line => /^(?:QUICPay\s*利用\s*)?QP\s*\//i.test(line)).length && qpRows.length >= 2) return qpRows
   // Robust transaction-block fallback for QUICPay OCR. Keep every detected transaction,
   // even if OCR misses its amount; zero-amount drafts remain editable instead of being dropped.
   const qpStart = line => /^(?:QUICPay\s*利用\s*)?QP\s*\//i.test(line)
@@ -236,7 +236,6 @@ export function parseEntries(raw, rules) {
       .replace(/マイバスケツト/g, 'マイバスケット')
   }
 
-  if (qpRows.length >= 2) return qpRows
 
   // Some issuers put merchant and reference on one line, then date/cardholder/payment/amount on another.
   // Other issuers put amount beside merchant and date on a separate line. Keep these layouts distinct.

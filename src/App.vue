@@ -339,7 +339,23 @@ function setEntryTypeFilter(value) {
   visibleEntryCount.value = 20
 }
 const sortedDisplayEntries = computed(() => [...displayEntries.value].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.time || '').localeCompare(String(a.time || ''))))
-const pagedEntries = computed(() => sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
+const annualDetailMode = computed(() => detailFilter.value?.period === 'year')
+const pagedEntries = computed(() => annualDetailMode.value ? sortedDisplayEntries.value : sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
+const expandedMonth = ref('')
+const annualMonthGroups = computed(() => {
+  const grouped = new Map()
+  for (const entry of sortedDisplayEntries.value) {
+    const key = String(entry.date || '').slice(0, 7)
+    if (!grouped.has(key)) grouped.set(key, { month: key, items: [], total: 0 })
+    const group = grouped.get(key)
+    group.items.push(entry)
+    group.total += Number(entry.amount || 0)
+  }
+  return [...grouped.values()]
+})
+watch(annualMonthGroups, groups => {
+  if (annualDetailMode.value && !groups.some(g => g.month === expandedMonth.value)) expandedMonth.value = groups[0]?.month || ''
+})
 function loadMoreEntries() { visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize) }
 const expandedEntryDays = ref(new Set())
 const groupedPagedEntries = computed(() => {
@@ -655,12 +671,32 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </button>
         </div>
       </section>
-      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · カテゴリ明細' : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel + ' · ' + ({all: 'すべて', income: '収入', expense: '支出', transfer: '資産移動'}[entryTypeFilter])) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
+      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + ({income:'収入',expense:'支出',transfer:'資産移動'}[detailFilter.type] || 'すべて') + ' · ' + (detailFilter.type === 'transfer' ? '資産移動' : categoryLabel(detailFilter.category)) : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel + ' · ' + ({all: 'すべて', income: '収入', expense: '支出', transfer: '資産移動'}[entryTypeFilter])) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
       <div v-if="detailFilter" class="detail-filter-strip"><span>{{ detailFilter.type === 'transfer' ? '資産移動で絞り込み中' : 'カテゴリで絞り込み中' }}</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
       <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
       <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><p>{{ detailFilter ? '条件に一致する記録はありません。' : '「入力」から最初の記録を追加できます。' }}</p><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
       
-      <div v-else-if="!detailLoading" class="ledger day-group-list">
+      <div v-if="!detailLoading && displayEntries.length && annualDetailMode" class="ledger annual-month-list">
+        <section v-for="group in annualMonthGroups" :key="group.month" class="entry-day-group">
+          <button type="button" class="entry-day-heading" :aria-expanded="expandedMonth === group.month" @click="expandedMonth = expandedMonth === group.month ? '' : group.month">
+            <span class="entry-day-chevron">{{ expandedMonth === group.month ? '▾' : '▸' }}</span>
+            <strong>{{ Number(group.month.slice(5)) }}月</strong>
+            <span class="entry-day-count">{{ group.items.length }}件</span>
+            <span class="entry-day-total">{{ yen(group.total) }}</span>
+          </button>
+          <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+              <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
+                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
+                <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.replace(/-/g, '/') }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }}</small></div>
+                <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '↗ ' : '−' }}{{ yen(e.amount) }}</span>
+              </div>
+              <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
+            </li>
+          </ul>
+        </section>
+      </div>
+      <div v-else-if="!detailLoading && displayEntries.length" class="ledger day-group-list">
         <section v-for="group in groupedPagedEntries" :key="group.date" class="entry-day-group">
           <button type="button" class="entry-day-heading" :aria-expanded="expandedEntryDays.has(group.date)" @click="toggleEntryDay(group.date)">
             <span class="entry-day-chevron">{{ expandedEntryDays.has(group.date) ? '▾' : '▸' }}</span>
@@ -680,7 +716,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </ul>
         </section>
       </div>
-      <div v-if="!detailLoading && visibleEntryCount < sortedDisplayEntries.length" class="load-more-wrap">
+      <div v-if="!detailLoading && !annualDetailMode && visibleEntryCount < sortedDisplayEntries.length" class="load-more-wrap">
         <button type="button" class="button-secondary load-more-button" @click="loadMoreEntries">読み込みを続ける（{{ Math.min(listPageSize, sortedDisplayEntries.length - visibleEntryCount) }}件）</button>
       </div>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">

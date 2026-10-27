@@ -6,6 +6,8 @@ const tab = ref('add')
 const month = ref(new Date().toISOString().slice(0, 7))
 const selectedYear = ref(new Date().getFullYear())
 const annualStats = ref(null)
+const selectedIncomeMonth = ref('')
+const selectedRatioMonth = ref('')
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
@@ -251,6 +253,25 @@ const ratioTrendMax = computed(() => Math.max(0, ...ratioTrendPoints.value.filte
 const maxYearMonth = computed(() => Math.max(1, ...yearMonthRows.value.map(item => item.amount)))
 const highestSpendMonth = computed(() => yearMonthRows.value.reduce((best, item) => item.amount > best.amount ? item : best, { month: '', label: '暂无', amount: 0 }))
 const annualAverage = computed(() => Math.round(Number(annualStats.value?.total || 0) / 12))
+const selectedIncomeMonthRow = computed(() => yearMonthRows.value.find(item => item.month === selectedIncomeMonth.value) || null)
+const selectedIncomeCategories = computed(() => (annualStats.value?.incomeByMonthCategory || [])
+  .filter(item => item.month === selectedIncomeMonth.value)
+  .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
+  .sort((a, b) => b.amount - a.amount))
+const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCategory || [])
+  .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
+  .sort((a, b) => b.amount - a.amount))
+const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
+function selectIncomeMonth(point) {
+  // Tapping the currently selected month again closes its breakdown.
+  selectedIncomeMonth.value = selectedIncomeMonth.value === point.month ? '' : point.month
+}
+function selectRatioMonth(point) {
+  // Tapping the currently selected month again closes its breakdown.
+  selectedRatioMonth.value = selectedRatioMonth.value === point.month ? '' : point.month
+}
+const selectedRatioMonthRow = computed(() => yearMonthRows.value.find(item => item.month === selectedRatioMonth.value) || null)
+const selectedRatio = computed(() => selectedRatioMonthRow.value && selectedRatioMonthRow.value.income > 0 ? selectedRatioMonthRow.value.amount / selectedRatioMonthRow.value.income : null)
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)
 const pigState = ratio => ratio === null ? 'empty' : ratio > 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
@@ -265,13 +286,13 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
         <span class="brand-mark" aria-label="小白和鸡毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="小白" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="鸡毛" /></span>
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>和小白、鸡毛一起记账</small></div>
       </div>
-      <input type="month" v-model="month" class="month" aria-label="统计月份" />
+      <input v-if="tab !== 'year'" type="month" v-model="month" class="month" aria-label="统计月份" />
     </header>
 
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
 
     <section v-if="tab === 'add'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">NEW ENTRY</p><h1>记一笔</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ 新增分类</button></div>
+      <div class="page-heading"><div><p class="eyebrow">新增记录</p><h1>记一笔</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ 新增分类</button></div>
       <div class="entry-mode-row">
         <button class="button-secondary manual-add-button" @click="addBlank('expense')">✍️ 手动添加支出</button>
         <button class="button-secondary manual-add-button income-add-button" @click="addBlank('income')">＋ 记录收入</button>
@@ -314,7 +335,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
     </section>
 
     <section v-else-if="tab === 'list'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">TRANSACTIONS</p><h1>收支明细</h1></div><span class="heading-icon">≡</span></div>
+      <div class="page-heading"><div><p class="eyebrow">收支记录</p><h1>收支明细</h1></div><span class="heading-icon">≡</span></div>
       <section class="month-calendar" aria-label="月度消费日历">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><button v-if="selectedDay" class="calendar-reset" @click="selectedDay = ''">查看整月</button></div>
         <div class="calendar-weekdays"><span v-for="weekday in ['一', '二', '三', '四', '五', '六', '日']" :key="weekday">{{ weekday }}</span></div>
@@ -358,7 +379,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
     </section>
 
     <section v-else-if="tab === 'stat'" class="page-section stats-page">
-      <div class="page-heading"><div><p class="eyebrow">MONTHLY OVERVIEW</p><h1>支出统计</h1><p class="heading-subtitle">{{ monthLabel }} · 消费概览</p></div><span class="heading-icon">↗</span></div>
+      <div class="page-heading"><div><p class="eyebrow">月度概览</p><h1>支出统计</h1><p class="heading-subtitle">{{ monthLabel }} · 消费概览</p></div><span class="heading-icon">↗</span></div>
       <div class="hero-total">
         <span>本月总支出</span>
         <strong>{{ yen(stats?.total) }}</strong>
@@ -381,7 +402,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
             <div v-for="(c, i) in categoryRows" :key="c.category" class="category-row">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span :class="'bar-fill fill-' + (i % 6)" :style="{ width: Math.max(2, (c.amount / maxCat) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ stats.total ? Math.round(c.amount / stats.total * 100) : 0 }}% of total</small>
+              <small class="category-share">{{ stats.total ? Math.round(c.amount / stats.total * 100) : 0 }}% 占本月总支出</small>
             </div>
           </div>
         </div>
@@ -399,7 +420,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
     </section>
 
     <section v-else-if="tab === 'year'" class="page-section stats-page annual-page">
-      <div class="page-heading"><div><p class="eyebrow">YEARLY OVERVIEW</p><h1>年度统计</h1><p class="heading-subtitle">按年份汇总全年消费</p></div><span class="heading-icon">⌁</span></div>
+      <div class="page-heading"><div><p class="eyebrow">年度概览</p><h1>年度统计</h1><p class="heading-subtitle">按年份汇总全年消费</p></div><span class="heading-icon">⌁</span></div>
       <label class="year-picker"><span>统计年份</span><select v-model.number="selectedYear" aria-label="统计年份"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select></label>
       <div class="hero-total annual-hero">
         <span>{{ selectedYear }}年总支出</span><strong>{{ yen(annualStats?.total) }}</strong>
@@ -414,9 +435,9 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
         <div class="metric-card"><span class="metric-icon">▦</span><small>月均支出（按12个月计算）</small><strong>{{ yen(annualAverage) }}</strong></div>
         <div class="metric-card"><span class="metric-icon">↗</span><small>消费最高月份</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : '暂无' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
       </div>
-      <div v-if="!annualStats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>这一年还没有记录</strong><p>选择其他年份，或添加消费记录后再查看。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
+      <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>这一年还没有记录</strong><p>选择其他年份，或添加消费记录后再查看。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
       <template v-else>
-        <div class="stats-card">
+        <div v-if="annualStats?.count" class="stats-card">
           <div class="section-title"><div><h2>每月支出</h2><p>{{ selectedYear }}年1月至12月</p></div><span class="section-mark">01</span></div>
           <div class="year-month-list">
             <div v-for="item in yearMonthRows" :key="item.month" class="year-month-row">
@@ -432,9 +453,21 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年收入变化曲线'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
-            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="2.7" class="chart-point income-chart-point" />
+            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedIncomeMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '收入 ' + yen(point.income) + '，点击查看分类'" @click="selectIncomeMonth(point)" @keydown.enter.prevent="selectIncomeMonth(point)" @keydown.space.prevent="selectIncomeMonth(point)" />
           </svg>
-          <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
+          <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" :class="{ 'trend-month-selected': selectedIncomeMonth === item.month }" @click="selectIncomeMonth(item)">{{ Number(item.month.slice(5)) }}</button></div>
+          <p class="trend-note">点击曲线上的月份，即可查看该月各收入分类的金额。</p>
+          <div v-if="selectedIncomeMonthRow" class="income-month-breakdown">
+            <div class="income-breakdown-heading"><div><h3>{{ selectedIncomeMonthRow.label }}收入分类</h3><p>{{ selectedYear }}年 · {{ selectedIncomeCategories.length }} 个分类</p></div><strong>{{ yen(selectedIncomeMonthRow.income) }}</strong></div>
+            <div v-if="selectedIncomeCategories.length" class="category-list">
+              <div v-for="(c, i) in selectedIncomeCategories" :key="c.category" class="category-row">
+                <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
+                <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(selectedIncomeMonthRow.income)) * 100) + '%' }"></span></div>
+                <small class="category-share">{{ selectedIncomeMonthRow.income ? Math.round(Number(c.amount) / Number(selectedIncomeMonthRow.income) * 100) : 0 }}% 占当月总收入</small>
+              </div>
+            </div>
+            <p v-else class="trend-note">这个月还没有收入记录。</p>
+          </div>
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>收支比变化曲线</h2><p>支出 ÷ 收入；虚线参考 80% 与 100%</p></div><span class="section-mark">04</span></div>
@@ -444,10 +477,26 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
             <line x1="16" y1="64.27" x2="304" y2="64.27" class="chart-reference-line" />
             <line x1="16" y1="53.33" x2="304" y2="53.33" class="chart-reference-line chart-reference-danger" />
             <polyline v-if="ratioTrendLine" :points="ratioTrendLine" class="chart-line ratio-chart-line" />
-            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="2.7" class="chart-point ratio-chart-point" />
+            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point ratio-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '收支比 ' + Math.round(point.ratio * 100) + '%，点击查看当月收支金额'" @click="selectRatioMonth(point)" @keydown.enter.prevent="selectRatioMonth(point)" @keydown.space.prevent="selectRatioMonth(point)" />
           </svg>
-          <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
+          <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" :class="{ 'trend-month-selected': selectedRatioMonth === item.month }" @click="selectRatioMonth(item)">{{ Number(item.month.slice(5)) }}</button></div>
+          <div v-if="selectedRatioMonthRow" class="income-month-breakdown ratio-month-breakdown">
+            <div class="income-breakdown-heading"><div><h3>{{ selectedRatioMonthRow.month.replace('-', '年') }}月收支情况</h3><p>支出 ÷ 收入</p></div><strong>{{ selectedRatio === null ? '无法计算' : Math.round(selectedRatio * 100) + '%' }}</strong></div>
+            <div class="ratio-detail-amounts"><div><span>当月收入</span><strong>{{ yen(selectedRatioMonthRow.income) }}</strong></div><div><span>当月支出</span><strong>{{ yen(selectedRatioMonthRow.amount) }}</strong></div></div>
+            <p v-if="selectedRatio === null" class="trend-note">这个月没有收入记录，暂时无法计算收支比。</p>
+          </div>
           <p class="trend-note">没有收入的月份不计算比例；曲线纵轴为 0%–150%，超过 150% 的点按上限显示。</p>
+        </div>
+        <div class="stats-card">
+          <div class="section-title"><div><h2>年度分类收入</h2><p>按全年累计金额排序</p></div><span class="section-mark">05</span></div>
+          <div v-if="annualIncomeCategories.length" class="category-list">
+            <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row">
+              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
+              <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
+              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}% 占全年总收入</small>
+            </div>
+          </div>
+          <p v-else class="trend-note">这一年还没有收入记录。</p>
         </div>
         <div class="stats-card">
           <div class="section-title"><div><h2>年度分类支出</h2><p>按全年累计金额排序</p></div><span class="section-mark">02</span></div>
@@ -455,7 +504,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
             <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(annualStats?.total || 0)) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}% of total</small>
+              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}% 占全年总支出</small>
             </div>
           </div>
         </div>
@@ -560,5 +609,15 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .edit-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .edit-dialog .type-switch{margin:0}
 
-.trend-card{overflow:hidden}.trend-summary{display:flex;align-items:baseline;gap:8px;margin:2px 0 4px}.trend-summary strong{font-size:22px;font-weight:800;color:var(--ink)}.trend-summary span,.trend-note{font-size:11px;color:var(--muted)}.trend-chart{display:block;width:100%;height:auto;overflow:visible;margin-top:8px}.chart-grid-line{stroke:var(--line);stroke-width:1}.chart-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.income-chart-line{stroke:#54a78c}.ratio-chart-line{stroke:#d96f91}.chart-point{stroke:#fff;stroke-width:1.2}.income-chart-point{fill:#54a78c}.ratio-chart-point{fill:#d96f91}.chart-reference-line{stroke:#d5a34b;stroke-width:1.2;stroke-dasharray:4 4}.chart-reference-danger{stroke:#d96f91}.trend-month-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));padding:0 2px;text-align:center;color:var(--muted);font-size:10px}.trend-note{margin:8px 0 0;line-height:1.5}
+.trend-card{overflow:hidden}.trend-summary{display:flex;align-items:baseline;gap:8px;margin:2px 0 4px}.trend-summary strong{font-size:22px;font-weight:800;color:var(--ink)}.trend-summary span,.trend-note{font-size:11px;color:var(--muted)}.trend-chart{display:block;width:100%;height:auto;overflow:visible;margin-top:8px}.chart-grid-line{stroke:var(--line);stroke-width:1}.chart-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.income-chart-line{stroke:#54a78c}.ratio-chart-line{stroke:#d96f91}.chart-point{stroke:#fff;stroke-width:1.2}.income-chart-point{fill:#54a78c}.ratio-chart-point{fill:#d96f91}.chart-reference-line{stroke:#d5a34b;stroke-width:1.2;stroke-dasharray:4 4}.chart-reference-danger{stroke:#d96f91}.trend-month-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));padding:0 2px;text-align:center;color:var(--muted);font-size:10px}
+.trend-month-labels button{min-width:0;padding:4px 0;border:0;border-radius:7px;background:transparent;color:inherit;font-size:10px}
+.trend-month-labels button.trend-month-selected{background:#fff0f4;color:#bd5376;font-weight:850}
+.clickable-chart-point{cursor:pointer;outline:none}
+.clickable-chart-point:focus,.clickable-chart-point.chart-point-selected{stroke:#bd5376;stroke-width:2.5}
+.income-month-breakdown{margin-top:14px;padding:13px;background:#fff9fa;border:1px solid #f3e2e7;border-radius:14px}
+.ratio-detail-amounts{display:grid;grid-template-columns:1fr 1fr;gap:9px}.ratio-detail-amounts>div{display:grid;gap:5px;padding:11px;background:#fff;border:1px solid #f3e7e9;border-radius:11px}.ratio-detail-amounts span{font-size:11px;color:var(--muted)}.ratio-detail-amounts strong{font-size:14px;font-variant-numeric:tabular-nums}
+.income-breakdown-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.income-breakdown-heading h3{margin:0;font-size:14px}
+.income-breakdown-heading p{margin:3px 0 0;font-size:10px;color:var(--muted)}
+.income-breakdown-heading>strong{font-size:16px;white-space:nowrap;color:#16836f}.trend-note{margin:8px 0 0;line-height:1.5}
 </style>

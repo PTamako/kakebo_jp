@@ -179,12 +179,16 @@ export async function onRequest({ request, env, params }) {
         const marker = '__kakeibo_japanese_rules_v9_initialized__'
         const seeded = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(marker).first()
         if (!seeded) {
-          // 旧规则表没有区分默认规则和个人规则：保留不属于默认关键词的旧规则作为个人规则。
-          const defaultKeywords = new Set(DEFAULT_RULE_ROWS.map(([keyword]) => keyword))
+          // 旧规则表无法区分默认规则与个人规则：保留非默认关键词，以及被用户改过分类的默认关键词。
+          const defaultCategories = new Map(DEFAULT_RULE_ROWS.map(([keyword, category]) => [keyword, category]))
           const legacy = await db.prepare("SELECT keyword, category FROM rules WHERE substr(keyword, 1, 13) != '__category__:'").all()
-          for (const rule of (legacy.results || []).filter(rule => !defaultKeywords.has(rule.keyword))) {
+          for (const rule of (legacy.results || []).filter(rule =>
+            !defaultCategories.has(rule.keyword) || defaultCategories.get(rule.keyword) !== rule.category
+          )) {
             await db.prepare('INSERT OR IGNORE INTO custom_rules (keyword, category) VALUES (?1, ?2)').bind(rule.keyword, rule.category).run()
           }
+          // 清理旧版遗留的默认关键词，但保留用户自定义分类元数据。
+          await db.prepare("DELETE FROM rules WHERE substr(keyword, 1, 13) != '__category__:'").run()
           const rows = [...DEFAULT_RULE_ROWS, [marker, '其他']]
           for (let i = 0; i < rows.length; i += 40) {
             const batch = rows.slice(i, i + 40).map(([keyword, category]) =>

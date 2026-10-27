@@ -91,8 +91,8 @@ export function parseEntries(raw, rules) {
   if (typeof raw === 'string' && raw.includes(marker)) {
     const parts = raw.split(marker)
     raw = parts[0]
-    qpColumnAmounts = (parts[1] || '').split(/\\r?\\n/).map(line => line.trim())
-      .map(line => line.match(/^(?:[¥￥]\\s*)?(\\d{1,3}(?:[,，.]\\d{3})+|\\d{2,6})(?:\\s*円)?$/)?.[1])
+    qpColumnAmounts = (parts[1] || '').split(/\r?\n/).map(line => line.trim())
+      .map(line => line.match(/^(?:[¥￥]\s*)?(\d{1,3}(?:[,，.]\d{3})+|\d{2,6})(?:\s*円)?$/)?.[1])
       .filter(Boolean)
       .map(value => Number(value.replace(/[,，.]/g, '')))
       .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
@@ -436,12 +436,12 @@ export async function ocrImage(file, onProgress) {
       const context = canvas.getContext('2d')
       context.drawImage(bitmap, bitmap.width - canvas.width, 0, canvas.width, bitmap.height, 0, 0, canvas.width, canvas.height)
       const columnText = (await worker.recognize(canvas)).data.text
-      const amounts = columnText.split(/\\r?\\n/).map(line => line.trim())
-        .map(line => line.match(/^(?:[¥￥]\\s*)?(\\d{1,3}(?:[,，.]\\d{3})+|\\d{2,6})(?:\\s*円)?$/)?.[1])
+      const amounts = columnText.split(/\r?\n/).map(line => line.trim())
+        .map(line => line.match(/^(?:[¥￥]\s*)?(\d{1,3}(?:[,，.]\d{3})+|\d{2,6})(?:\s*円)?$/)?.[1])
         .filter(Boolean)
         .map(value => value.replace(/[,，.]/g, ''))
-      const qpCount = (primary.match(/QUICPay\\s*利用\\s*\\(\\s*Q?O?P\\s*\\//gi) || []).length
-      if (qpCount >= 2 && amounts.length === qpCount) return primary + '\\n__QP_AMOUNT_COLUMN__\\n' + amounts.join('\\n')
+      const qpCount = (primary.match(/QUICPay\s*利用\s*\(\s*Q?O?P\s*\//gi) || []).length
+      if (qpCount >= 2 && amounts.length === qpCount) return primary + '\n__QP_AMOUNT_COLUMN__\n' + amounts.join('\n')
     } catch (_) {
       // Keep the primary OCR result if image cropping or the second pass is unavailable.
     } finally {

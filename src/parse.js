@@ -88,7 +88,7 @@ const MERCHANT_CATEGORY_KEYWORDS = [
   ] },
   { category: '居住', keywords: [
     '東京電力', 'TEPCO', '東京ガス', '大阪ガス', '東邦ガス', 'ENEOSでんき', 'オクトパスエナジー',
-    'Octopus Energy', 'SoftBank 光', 'ソフトバンク光', 'NTTファイナンス', '水道料金',
+    'Octopus Energy', 'SoftBank 光', 'ソフトバンク光', 'ソフトバンク', 'NTTファイナンス', '水道料金',
     '家賃', '管理費', '住宅ローン'
   ] },
   { category: '医疗', keywords: [

@@ -177,7 +177,7 @@ export async function onRequest({ request, env, params }) {
     // Apply scheduled transfers only on/after their effective date. D1 batch makes
     // balance adjustment and marking due rows applied one atomic operation.
     const applyDueTransfers = async () => {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
       for (const target of ['sbi', 'paypay']) {
         await db.batch([
           db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + (SELECT COALESCE(SUM(amount), 0) FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)), updated_at = ?3 WHERE platform = ?1 AND EXISTS (SELECT 1 FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)")

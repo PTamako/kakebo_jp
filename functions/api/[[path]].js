@@ -232,10 +232,10 @@ export async function onRequest({ request, env, params }) {
       }
       if (m === 'PUT' && b) {
         const e = await request.json()
-        const transfer = e.type === 'transfer' || isInvestmentTransfer(e)
+        const transfer = e.type === 'transfer' || (!['income', 'expense'].includes(e.type) && isInvestmentTransfer(e))
         const id = Number(b)
         const amount = Number(e.amount)
-        if (!Number.isInteger(id) || id <= 0 || !validDate(e.date) || !Number.isFinite(amount) || amount <= 0)
+        if (!Number.isSafeInteger(id) || id <= 0 || !validDate(e.date) || !Number.isSafeInteger(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)

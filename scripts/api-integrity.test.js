@@ -42,6 +42,12 @@ class LedgerDb {
             transfer_target: a[8], transfer_applied: a[9], transfer_date: a[10], client_request_id: a[11] })
           return { meta: { changes: 1 } }
         }
+        if (sql.startsWith('UPDATE entries SET date =')) {
+          const a = this.args
+          const e = db.entries.find(row => row.id === a[11])
+          if (e) Object.assign(e, { date: a[0], amount: a[2], category: a[3], merchant: a[4], type: a[7], transfer_target: a[8], transfer_applied: a[9], transfer_date: a[10] })
+          return { meta: { changes: e ? 1 : 0 } }
+        }
         if (sql.startsWith('UPDATE entries SET transfer_applied = 1 WHERE type')) {
           for (const e of db.entries) if (e.type === 'transfer' && e.transfer_target === 'sbi' && !e.transfer_applied && (e.transfer_date || e.date) <= this.args[0]) e.transfer_applied = 1
         }
@@ -155,4 +161,24 @@ test('deletion is refused unless a matching single entry ID is explicitly confir
   assert.equal(db.entries.length, 1)
   assert.equal((await call(db, 'entries/31', 'DELETE', undefined, { confirmId: 31 })).status, 200)
   assert.equal(db.entries.length, 0)
+})
+
+test('editing respects explicit expense or income even for investment-looking text', async () => {
+  const db = new LedgerDb()
+  await call(db, 'entries', 'POST', { date: '2026-10-01', amount: 1000, type: 'expense', clientRequestId: 'edit-type-test-001' })
+  for (const type of ['expense', 'income']) {
+    const result = await call(db, 'entries/1', 'PUT', { date: '2026-10-01', amount: 1000, type, merchant: '証券投信積立サービス', category: '日用品' })
+    assert.equal(result.status, 200)
+    assert.equal(db.entries[0].type, type)
+    assert.equal(db.entries[0].transfer_target, null)
+    assert.equal(db.snapshot, 120000)
+  }
+})
+test('editing rejects fractional and unsafe amounts without changing the entry', async () => {
+  const db = new LedgerDb()
+  await call(db, 'entries', 'POST', { date: '2026-10-01', amount: 1000, type: 'expense', clientRequestId: 'edit-amount-test-001' })
+  for (const amount of [1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal((await call(db, 'entries/1', 'PUT', { date: '2026-10-01', amount, type: 'expense' })).status, 400)
+    assert.equal(db.entries[0].amount, 1000)
+  }
 })

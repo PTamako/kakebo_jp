@@ -286,14 +286,15 @@ async function saveInvestment(item) {
 const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map(c => c.amount)))
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
-const pieGradient = (rows, colors) => {
+const pieGradient = (rows, colors, selected) => {
   const total = rows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0)
   if (!total) return 'conic-gradient(var(--line) 0deg 360deg)'
   let cursor = 0
   return 'conic-gradient(' + rows.map((row, i) => {
     const start = cursor
     cursor += Math.max(0, Number(row.amount) || 0) / total * 360
-    return colors[i % colors.length] + ' ' + start + 'deg ' + cursor + 'deg'
+    const color = colors[i % colors.length]
+    return (selected && row.category !== selected ? `color-mix(in srgb, ${color} 42%, var(--card))` : color) + ' ' + start + 'deg ' + cursor + 'deg'
   }).join(', ') + ')'
 }
 const expensePalette = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)', 'var(--chart-9)', 'var(--chart-10)']
@@ -319,8 +320,8 @@ const selectDonutSlice = (event, period) => {
     if (angle <= cumulative + 0.000001) { chooseDonut(period, row.category); return }
   }
 }
-const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette))
-const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette))
+const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette, donutSelected('month')?.category))
+const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette, donutSelected('year')?.category))
 
 const selectedDay = ref('')
 const entryTypeFilter = ref('all')
@@ -1079,7 +1080,7 @@ main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);
 
 
 
-.day-group-list{display:grid;gap:10px;width:100%;box-sizing:border-box;margin:0;padding:0;background:transparent;border:0;box-shadow:none;overflow:visible}.entry-day-group{overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:14px}.entry-day-heading{display:grid;grid-template-columns:18px auto auto 1fr;align-items:center;gap:8px;width:100%;padding:13px 12px;border:0;background:var(--card);color:var(--ink);text-align:left}.entry-day-chevron{color:var(--blue-dark);font-size:16px}.entry-day-heading strong{font-size:13px}.entry-day-count{font-size:11px;color:var(--muted)}.entry-day-total{text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.entry-day-items{margin:0;border:0;border-radius:0;box-shadow:none}.entry-day-items li:first-child{border-top:1px solid var(--line)}.entry-day-items li{padding-left:10px;padding-right:10px}.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap} .load-more-wrap{display:flex;justify-content:center;padding:14px 0 28px}.load-more-button{width:100%;max-width:320px;padding:12px 16px;font-size:13px;font-weight:700}
+.annual-month-list,.day-group-list{display:grid;gap:10px;width:100%;box-sizing:border-box;margin:0;padding:0;background:transparent;border:0;box-shadow:none;overflow:visible}.entry-day-group{overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:14px}.entry-day-heading{display:grid;grid-template-columns:18px auto auto 1fr;align-items:center;gap:8px;width:100%;padding:13px 12px;border:0;background:var(--card);color:var(--ink);text-align:left}.entry-day-chevron{color:var(--blue-dark);font-size:16px}.entry-day-heading strong{font-size:13px}.entry-day-count{font-size:11px;color:var(--muted)}.entry-day-total{text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.entry-day-items{margin:0;border:0;border-radius:0;box-shadow:none}.entry-day-items li:first-child{border-top:1px solid var(--line)}.entry-day-items li{padding-left:10px;padding-right:10px}.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap} .load-more-wrap{display:flex;justify-content:center;padding:14px 0 28px}.load-more-button{width:100%;max-width:320px;padding:12px 16px;font-size:13px;font-weight:700}
 
 .pie-chart-layout{display:flex;flex-direction:column;align-items:stretch;gap:16px}.category-pie{width:min(100%,188px);align-self:center;aspect-ratio:1;border-radius:50%;margin:0;border:5px solid var(--card);box-shadow:0 4px 18px #20324b16}.pie-legend{display:grid;gap:7px;min-width:0;width:100%}.pie-legend-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding:10px 11px;border-radius:9px;background:color-mix(in srgb,var(--line) 24%,transparent)}.pie-legend-name{display:flex;align-items:center;gap:9px;min-width:0;font-size:12px;font-weight:700}.pie-legend-name>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pie-legend-dot{display:block;flex:none;width:10px;height:10px;border-radius:3px;box-shadow:0 0 0 2px #fff}.pie-legend-values{display:flex;flex:none;align-items:center;flex-direction:row;gap:10px;min-width:0}.pie-legend-values strong{font-size:12px;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}.pie-legend-values small{display:inline-block;min-width:42px;text-align:right;font-size:11px;font-weight:800;color:var(--blue-dark)}.annual-income-bars .category-row{padding:8px 0}.clickable-chart-point{cursor:pointer;outline:none}.clickable-chart-point:focus-visible{stroke:var(--ink);stroke-width:3}.stats-period-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin:0 0 14px;border-radius:13px;background:color-mix(in srgb,var(--blue) 15%,var(--card))}.stats-period-tabs button{min-height:38px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-size:13px;font-weight:750}.stats-period-tabs button.selected{background:var(--card);color:var(--blue-dark);box-shadow:0 2px 8px color-mix(in srgb,var(--blue) 18%,transparent);outline:1px solid color-mix(in srgb,var(--blue) 30%,transparent)}.entry-type-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:0 0 12px;padding:4px;border-radius:13px;background:color-mix(in srgb,var(--blue) 13%,var(--card))}.entry-type-filter button{min-width:0;min-height:38px;padding:7px 3px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-size:12px;font-weight:750;white-space:nowrap}.entry-type-filter button.selected{background:#fff;color:var(--blue-dark);box-shadow:0 2px 8px #4b23300d}.calendar-actions{display:flex;align-items:center;gap:5px}@media(max-width:390px){.pie-legend-row{gap:6px;padding:9px 8px}.pie-legend-values{gap:6px}.pie-legend-values strong{font-size:11px}.pie-legend-name{font-size:11px}.bottom-nav{width:calc(100% - 18px);gap:3px}.bottom-nav button{font-size:10px;padding:6px 1px}}
 

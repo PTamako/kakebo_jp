@@ -281,7 +281,7 @@ const pieGradient = (rows, colors) => {
     return colors[i % colors.length] + ' ' + start + 'deg ' + cursor + 'deg'
   }).join(', ') + ')'
 }
-const expensePalette = ['#d96f91', '#e6a56b', '#c65f7c', '#d9b957', '#b96b9a', '#e58b70', '#a96b82', '#d6a3b8', '#b87957', '#c78eaa']
+const expensePalette = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)', 'var(--chart-9)', 'var(--chart-10)']
 const selectedDonut = ref({ month: '', year: '' })
 const donutRows = period => period === 'month' ? categoryRows.value : (annualStats.value?.byCategory || [])
 const donutSelected = period => donutRows(period).find(c => c.category === selectedDonut.value[period]) || donutRows(period)[0] || null
@@ -1086,4 +1086,46 @@ main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);
 .donut-vertical .pie-legend-row{flex:0 0 auto;width:auto;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:11px;border-radius:999px;padding:8px 11px;min-height:36px}
 .donut-vertical .pie-legend-dot{width:9px;height:9px;border-radius:50%}
 @media(min-width:520px){.donut-vertical .pie-legend{justify-content:center;flex-wrap:wrap;overflow:visible}}
+
+/* Unified visual system: theme tokens, interaction, components and charts. */
+main{
+ --radius-sm:10px;--radius-md:15px;--radius-lg:20px;
+ --shadow-soft:0 5px 24px rgba(51,46,59,.055);
+ --focus-ring:color-mix(in srgb,var(--blue) 28%,transparent);
+ --tint:color-mix(in srgb,var(--blue) 10%,var(--card));
+ --chart-1:#d96f91;--chart-2:#e2a16b;--chart-3:#9476bb;--chart-4:#6eae9a;--chart-5:#d6b252;
+ --chart-6:#b879a6;--chart-7:#7d9cbd;--chart-8:#d98578;--chart-9:#91a96d;--chart-10:#bc8b72;
+}
+main.theme-blue{--chart-1:#689ed2;--chart-2:#8b8fce;--chart-3:#67ada8;--chart-4:#d1ac70;--chart-5:#a58ac8;--chart-6:#73b6cc;--chart-7:#b17caa;--chart-8:#8ba77c;--chart-9:#df988f;--chart-10:#849cad}
+main.theme-yellow{--chart-1:#c9a441;--chart-2:#d98573;--chart-3:#90a86a;--chart-4:#a78cc2;--chart-5:#e0b778;--chart-6:#83b0a8;--chart-7:#ba9385;--chart-8:#d69ea8;--chart-9:#9d9fae;--chart-10:#b0a074}
+main.theme-green{--chart-1:#69a68b;--chart-2:#a2b96f;--chart-3:#80a0cb;--chart-4:#d4aa6e;--chart-5:#ad8fc4;--chart-6:#7fb8ad;--chart-7:#d18e91;--chart-8:#91a878;--chart-9:#ac99b0;--chart-10:#b8a077}
+main .stats-card,main .panel,main .metric-card,main .investment-card{
+ border-color:var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft);
+}
+main .stats-card{padding:20px 17px}
+main .page-heading h1{letter-spacing:-.045em;line-height:1.25}
+main .heading-icon,main .metric-icon,main .empty-icon{color:var(--blue-dark);background:var(--tint)}
+main button{transition:background-color .18s,border-color .18s,color .18s,box-shadow .18s,transform .15s}
+main button:not(:disabled):active{transform:scale(.975)}
+main button:focus-visible,main [role="button"]:focus-visible,main a:focus-visible{
+ outline:3px solid var(--focus-ring);outline-offset:3px
+}
+main input:focus,main select:focus,main textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--focus-ring)}
+main input,main textarea,main select{border-color:var(--line);background:var(--card);border-radius:var(--radius-sm)}
+main .button-primary{border-color:transparent;background:var(--blue-dark);box-shadow:0 4px 12px var(--focus-ring);font-weight:750}
+main .button-secondary,main .calendar-reset,main .period-reset{background:var(--tint);color:var(--blue-dark);border-color:var(--line)}
+main .type-switch button.selected,main .entry-type-filter button.selected,main .stats-period-tabs button.selected{color:var(--blue-dark);border-color:var(--blue);background:var(--tint)}
+main .bottom-nav{background:color-mix(in srgb,var(--card) 94%,transparent);border-color:var(--line);box-shadow:0 9px 28px rgba(40,42,55,.12)}
+main .bottom-nav button{border-radius:13px}
+main .bottom-nav button.active{background:var(--tint);color:var(--blue-dark)}
+main .bottom-nav .nav-icon{color:inherit}
+main .bottom-nav svg{stroke:currentColor}
+main .donut-center{background:var(--card);box-shadow:inset 0 0 0 1px var(--line)}
+main .donut-vertical .pie-legend-row{border-color:var(--line);background:var(--card);color:var(--ink)}
+main .donut-vertical .pie-legend-row.donut-category-active{background:var(--tint);border-color:var(--blue);color:var(--blue-dark)}
+main .category-swatch,main .pie-legend-dot{border:1px solid rgba(0,0,0,.06)}
+main .entry-day-heading{border-radius:var(--radius-md)}
+main .annual-month-list .entry-day-group{border-radius:var(--radius-md);overflow:hidden}
+@media(prefers-reduced-motion:reduce){main *,main *::before,main *::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
 </style>

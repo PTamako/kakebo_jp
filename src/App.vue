@@ -252,6 +252,18 @@ const ratioTrendMax = computed(() => Math.max(0, ...ratioTrendPoints.value.filte
 const maxYearMonth = computed(() => Math.max(1, ...yearMonthRows.value.map(item => item.amount)))
 const highestSpendMonth = computed(() => yearMonthRows.value.reduce((best, item) => item.amount > best.amount ? item : best, { month: '', label: '暂无', amount: 0 }))
 const annualAverage = computed(() => Math.round(Number(annualStats.value?.total || 0) / 12))
+const selectedIncomeMonthRow = computed(() => yearMonthRows.value.find(item => item.month === selectedIncomeMonth.value) || null)
+const selectedIncomeCategories = computed(() => (annualStats.value?.incomeByMonthCategory || [])
+  .filter(item => item.month === selectedIncomeMonth.value)
+  .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
+  .sort((a, b) => b.amount - a.amount))
+const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCategory || [])
+  .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
+  .sort((a, b) => b.amount - a.amount))
+const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
+function selectIncomeMonth(point) {
+  selectedIncomeMonth.value = point.month
+}
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)
 const pigState = ratio => ratio === null ? 'empty' : ratio > 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
@@ -415,9 +427,9 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
         <div class="metric-card"><span class="metric-icon">▦</span><small>月均支出（按12个月计算）</small><strong>{{ yen(annualAverage) }}</strong></div>
         <div class="metric-card"><span class="metric-icon">↗</span><small>消费最高月份</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : '暂无' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
       </div>
-      <div v-if="!annualStats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>这一年还没有记录</strong><p>选择其他年份，或添加消费记录后再查看。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
+      <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>这一年还没有记录</strong><p>选择其他年份，或添加消费记录后再查看。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
       <template v-else>
-        <div class="stats-card">
+        <div v-if="annualStats?.count" class="stats-card">
           <div class="section-title"><div><h2>每月支出</h2><p>{{ selectedYear }}年1月至12月</p></div><span class="section-mark">01</span></div>
           <div class="year-month-list">
             <div v-for="item in yearMonthRows" :key="item.month" class="year-month-row">

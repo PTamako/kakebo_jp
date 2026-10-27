@@ -265,8 +265,36 @@ const displayEntries = computed(() => {
 })
 const listPageCount = computed(() => Math.max(1, Math.ceil(displayEntries.value.length / listPageSize)))
 const pagedEntries = computed(() => {
+  const sorted = [...displayEntries.value].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.time || '').localeCompare(String(a.time || '')))
   const start = (listPage.value - 1) * listPageSize
-  return displayEntries.value.slice(start, start + listPageSize)
+  return sorted.slice(start, start + listPageSize)
+})
+const expandedEntryDays = ref(new Set())
+const groupedPagedEntries = computed(() => {
+  const groups = new Map()
+  for (const entry of pagedEntries.value) {
+    const day = String(entry.date || '').slice(0, 10)
+    if (!groups.has(day)) groups.set(day, [])
+    groups.get(day).push(entry)
+  }
+  return [...groups.entries()].map(([date, items]) => ({ date, items }))
+})
+function toggleEntryDay(date) {
+  const next = new Set(expandedEntryDays.value)
+  if (next.has(date)) next.delete(date)
+  else next.add(date)
+  expandedEntryDays.value = next
+}
+watch([displayEntries, detailFilter, selectedDay], () => {
+  const days = [...new Set(displayEntries.value.map(entry => String(entry.date || '').slice(0, 10)).filter(Boolean))].sort((a, b) => b.localeCompare(a))
+  const today = new Date().toLocaleDateString('sv-SE')
+  const defaultDay = detailFilter.value ? days[0] : (days.includes(today) ? today : days[0])
+  expandedEntryDays.value = new Set(defaultDay ? [defaultDay] : [])
+  listPage.value = 1
+}, { deep: true })
+watch(listPage, () => {
+  const days = groupedPagedEntries.value.map(group => group.date)
+  if (days.length && !days.some(day => expandedEntryDays.value.has(day))) expandedEntryDays.value = new Set([days[0]])
 })
 watch(listPageCount, count => { if (listPage.value > count) listPage.value = count })
 async function openCategoryDetails(category, type, period) {
@@ -525,16 +553,26 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
       <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><p>{{ detailFilter ? '条件に一致する記録はありません。' : '「入力」から最初の記録を追加できます。' }}</p><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
       
-      <ul v-else-if="!detailLoading" class="ledger">
-        <li v-for="e in pagedEntries" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
-          <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
-            <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
-            <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
-            <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '↗ ' : '−' }}{{ yen(e.amount) }}</span>
-          </div>
-          <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
-        </li>
-      </ul>
+      <div v-else-if="!detailLoading" class="ledger day-group-list">
+        <section v-for="group in groupedPagedEntries" :key="group.date" class="entry-day-group">
+          <button type="button" class="entry-day-heading" :aria-expanded="expandedEntryDays.has(group.date)" @click="toggleEntryDay(group.date)">
+            <span class="entry-day-chevron">{{ expandedEntryDays.has(group.date) ? '▾' : '▸' }}</span>
+            <strong>{{ group.date.replace(/-/g, '/') }}</strong>
+            <span class="entry-day-count">{{ group.items.length }}件</span>
+            <span class="entry-day-total">{{ yen(group.items.reduce((sum, entry) => sum + (entry.type === 'income' ? -Number(entry.amount || 0) : Number(entry.amount || 0)), 0)) }}</span>
+          </button>
+          <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+              <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
+                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
+                <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
+                <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '↗ ' : '−' }}{{ yen(e.amount) }}</span>
+              </div>
+              <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
+            </li>
+          </ul>
+        </section>
+      </div>
       <div v-if="displayEntries.length > listPageSize && !detailLoading" class="detail-pagination" aria-label="明細ページ">
         <button type="button" class="button-secondary" :disabled="listPage <= 1" @click="changeListPage(listPage - 1)">前へ</button>
         <span>{{ listPage }} / {{ listPageCount }} ページ（50件ずつ）</span>
@@ -888,7 +926,7 @@ main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);
 
 
 
-.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap}.detail-pagination{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:14px}
+.day-group-list{display:grid;gap:10px;background:transparent;border:0;box-shadow:none;overflow:visible}.entry-day-group{overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:14px}.entry-day-heading{display:grid;grid-template-columns:18px auto auto 1fr;align-items:center;gap:8px;width:100%;padding:13px 12px;border:0;background:var(--card);color:var(--ink);text-align:left}.entry-day-chevron{color:var(--blue-dark);font-size:16px}.entry-day-heading strong{font-size:13px}.entry-day-count{font-size:11px;color:var(--muted)}.entry-day-total{text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.entry-day-items{margin:0;border:0;border-radius:0;box-shadow:none}.entry-day-items li:first-child{border-top:1px solid var(--line)}.entry-day-items li{padding-left:10px;padding-right:10px}.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap}.detail-pagination{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:14px}
 .detail-pagination span{font-size:11px;color:var(--muted);text-align:center}
 .detail-pagination button{padding:8px 10px;font-size:12px;white-space:nowrap}
 </style>

@@ -150,6 +150,16 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    // transfer_date is the date the money/points actually arrive at the destination.
+    try { await db.prepare('SELECT transfer_date FROM entries LIMIT 1').first() }
+    catch (columnCheckError) {
+      try { await db.prepare('ALTER TABLE entries ADD COLUMN transfer_date TEXT').run() }
+      catch (migrationError) {
+        try { await db.prepare('SELECT transfer_date FROM entries LIMIT 1').first() }
+        catch { throw migrationError }
+      }
+    }
+
     // Investment balances exist independently from household income/expense totals.
     await db.prepare(`CREATE TABLE IF NOT EXISTS investment_snapshots (
       platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),
@@ -163,6 +173,21 @@ export async function onRequest({ request, env, params }) {
       await db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + ?1), updated_at = ?2 WHERE platform = ?3")
         .bind(delta, new Date().toISOString(), target).run()
     }
+
+    // Apply scheduled transfers only on/after their effective date. D1 batch makes
+    // balance adjustment and marking due rows applied one atomic operation.
+    const applyDueTransfers = async () => {
+      const today = new Date().toISOString().slice(0, 10)
+      for (const target of ['sbi', 'paypay']) {
+        await db.batch([
+          db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + (SELECT COALESCE(SUM(amount), 0) FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)), updated_at = ?3 WHERE platform = ?1 AND EXISTS (SELECT 1 FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)")
+            .bind(target, today, new Date().toISOString()),
+          db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0")
+            .bind(target, today)
+        ])
+      }
+    }
+    await applyDueTransfers()
 
     // 既存のSBI投信積立明細も資産移動へ補正する（生活費統計から除外）。
     await db.prepare("UPDATE entries SET type = 'transfer', category = '投資・資産移動' WHERE (merchant LIKE '%証券投信積立サービス%' OR note LIKE '%証券投信積立サービス%' OR raw LIKE '%証券投信積立サービス%' OR merchant LIKE '%翌月買付分%' OR note LIKE '%翌月買付分%' OR raw LIKE '%翌月買付分%') AND type != 'transfer'").run()
@@ -182,10 +207,14 @@ export async function onRequest({ request, env, params }) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         const target = transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null
+        const transferDate = transfer ? (e.transferDate || e.date) : null
+        if (transfer && !/^\\d{4}-\\d{2}-\\d{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
+        const today = new Date().toISOString().slice(0, 10)
+        const applied = target && transferDate <= today ? 1 : 0
         await db.prepare(
-          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, target ? 1 : 0).run()
-        if (target) await applyTransferDelta(target, amount)
+          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied, transferDate).run()
+        if (applied) await applyTransferDelta(target, amount)
         return json({ ok: true })
       }
       if (m === 'PUT' && b) {
@@ -195,14 +224,18 @@ export async function onRequest({ request, env, params }) {
         const amount = Math.round(Number(e.amount))
         if (!Number.isInteger(id) || id <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
-        const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied FROM entries WHERE id = ?1').bind(id).first()
+        const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
         const target = transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null
+        const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
+        if (transfer && !/^\\d{4}-\\d{2}-\\d{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         if (previous.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
+        const today = new Date().toISOString().slice(0, 10)
+        const applied = target && transferDate <= today ? 1 : 0
         const result = await db.prepare(
-          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10 WHERE id = ?11'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, target ? 1 : 0, id).run()
-        if (target) await applyTransferDelta(target, amount)
+          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11 WHERE id = ?12'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied ? 1 : 0, transferDate, id).run()
+        if (applied) await applyTransferDelta(target, amount)
         return json({ ok: true, changes: result.meta?.changes ?? null })
       }
       if (m === 'DELETE' && b) {

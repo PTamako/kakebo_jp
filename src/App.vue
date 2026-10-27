@@ -137,6 +137,7 @@ async function logout() {
   }
 }
 let loginPromise = null
+let rejectedSession = ''
 async function ensureLogin() {
   if (loginPromise) return loginPromise
   loginPromise = (async () => {
@@ -160,8 +161,11 @@ async function api(path, opt = {}) {
   if (r.status === 401) {
     // A different request may already have refreshed the session.
     if (token.value !== requestToken) return api(path, opt)
-    token.value = ''
-    localStorage.removeItem('kakeibo-device-session')
+    if (rejectedSession !== requestToken) {
+      rejectedSession = requestToken
+      token.value = ''
+      localStorage.removeItem('kakeibo-device-session')
+    }
     await ensureLogin()
     return api(path, opt)
   }

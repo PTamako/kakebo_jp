@@ -8,7 +8,6 @@ const themes = [{ id: 'pink', label: 'ピンク', color: '#d96f91' }, { id: 'blu
 function setTheme(value) { theme.value = value; localStorage.setItem('kakeibo-theme', value) }
 const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 const month = ref(currentMonth())
-function resetMonth() { month.value = currentMonth() }
 const selectedYear = ref(new Date().getFullYear())
 const annualStats = ref(null)
 const selectedIncomeMonth = ref('')
@@ -440,7 +439,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
       <span v-if="tab === 'add'" class="today-date">{{ todayLabel }}</span>
-      <div v-else-if="tab === 'list' || tab === 'stat'" class="topbar-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div>
+      <div v-else-if="tab === 'list' || tab === 'stat'" class="topbar-period"><input type="month" v-model="month" class="month" aria-label="集計月" /></div>
       <select v-else-if="tab === 'year'" v-model.number="selectedYear" class="topbar-year" aria-label="集計年"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select>
     </header>
     <div class="theme-switcher" role="group" aria-label="配色">

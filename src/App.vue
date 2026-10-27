@@ -53,8 +53,8 @@ async function loadYear() {
   try { annualStats.value = await api('stats?year=' + selectedYear.value) }
   catch (e) { flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
-onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers(); window.addEventListener('scroll', handleEntryScroll, { passive: true }) })
-onUnmounted(() => window.removeEventListener('scroll', handleEntryScroll))
+onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers() })
+
 watch(month, async () => { selectedDay.value = ''; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
 watch(tab, value => {
@@ -267,10 +267,6 @@ const displayEntries = computed(() => {
 const sortedDisplayEntries = computed(() => [...displayEntries.value].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.time || '').localeCompare(String(a.time || ''))))
 const pagedEntries = computed(() => sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
 function loadMoreEntries() { visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize) }
-function handleEntryScroll() {
-  if (tab.value !== 'list' || detailLoading.value || visibleEntryCount.value >= sortedDisplayEntries.value.length) return
-  if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 240) loadMoreEntries()
-}
 const expandedEntryDays = ref(new Set())
 const groupedPagedEntries = computed(() => {
   const groups = new Map()

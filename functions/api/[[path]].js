@@ -208,7 +208,7 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日期或金额不正确' }, 400)
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || e.date) : null
-        if (transfer && !/^\\d{4}-\\d{2}-\\d{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
+        if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date().toISOString().slice(0, 10)
         const applied = target && transferDate <= today ? 1 : 0
         await db.prepare(
@@ -228,7 +228,7 @@ export async function onRequest({ request, env, params }) {
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
-        if (transfer && !/^\\d{4}-\\d{2}-\\d{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
+        if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         if (previous.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
         const today = new Date().toISOString().slice(0, 10)
         const applied = target && transferDate <= today ? 1 : 0

@@ -398,6 +398,19 @@ watch(visibleEntryCount, () => {
   const days = groupedPagedEntries.value.map(group => group.date)
   if (days.length && !days.some(day => expandedEntryDays.value.has(day))) expandedEntryDays.value = new Set([days[0]])
 })
+async function fetchPeriodDetailRows(period, requestId = null) {
+  if (period !== 'year') return api('entries?month=' + month.value)
+  const year = selectedYear.value
+  const rows = []
+  for (let offset = 0; ; offset += 500) {
+    if (requestId !== null && requestId !== detailRequestId) return []
+    const page = await api('entries?year=' + year + '&offset=' + offset)
+    if (!Array.isArray(page)) throw new Error('年間明細の形式が正しくありません')
+    rows.push(...page)
+    if (page.length < 500) break
+  }
+  return rows
+}
 async function openCategoryDetails(category, type, period) {
   detailFilter.value = { category, type, period }
   entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
@@ -408,8 +421,7 @@ async function openCategoryDetails(category, type, period) {
   detailLoading.value = true
   const requestId = ++detailRequestId
   try {
-    const query = period === 'year' ? 'entries?year=' + selectedYear.value : 'entries?month=' + month.value
-    const rows = await api(query)
+    const rows = await fetchPeriodDetailRows(period, requestId)
     if (requestId === detailRequestId) detailSourceEntries.value = rows
   } catch (e) {
     if (requestId === detailRequestId) flash('明細の読み込みに失敗しました：' + e.message)
@@ -421,8 +433,7 @@ async function refreshDetailSource() {
   const filter = detailFilter.value
   if (!filter) return
   try {
-    const query = filter.period === 'year' ? 'entries?year=' + selectedYear.value : 'entries?month=' + month.value
-    detailSourceEntries.value = await api(query)
+    detailSourceEntries.value = await fetchPeriodDetailRows(filter.period)
   } catch (e) { flash('明細の再読み込みに失敗しました：' + e.message) }
 }
 function clearDetailFilter() {

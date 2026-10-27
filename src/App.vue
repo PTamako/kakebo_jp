@@ -325,7 +325,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="field-grid">
           <label class="form-field"><span>日付</span><input type="date" v-model="f.date" /></label>
           <label class="form-field"><span>時刻</span><input type="time" v-model="f.time" /></label>
-          <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c">{{ categoryLabel(c) }}</option></select></label>
+          <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
           <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
         </div>
         <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
@@ -372,7 +372,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="field-grid">
             <label class="form-field"><span>日付</span><input v-model="editingEntry.date" type="date" required /></label>
             <label class="form-field"><span>時刻</span><input v-model="editingEntry.time" type="time" /></label>
-            <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ c }}</option></select></label>
+            <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
             <label class="form-field"><span>店舗</span><input v-model="editingEntry.merchant" /></label>
           </div>
           <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>

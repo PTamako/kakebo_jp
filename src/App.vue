@@ -156,10 +156,20 @@ async function saveEdit() {
 
 const pendingTransfers = ref([])
 const transferLoading = ref(false)
+const transferDue = item => String(item.transfer_date || item.date) <= new Date().toLocaleDateString('sv-SE')
 async function loadTransfers() {
   transferLoading.value = true
-  try { pendingTransfers.value = await api('transfers') }
-  catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
+  try {
+    let rows = await api('transfers')
+    // 予定日を迎えた未処理の振替は自動反映を試し、失敗したものだけ手動処理を表示する
+    const dueTransfers = rows.filter(item => Number(item.transfer_applied) !== 1 && transferDue(item))
+    for (const item of dueTransfers) {
+      try { await api('transfers/' + item.id, { method: 'POST' }) }
+      catch { /* 自動処理に失敗した場合は未処理のまま残し、手動処理を表示 */ }
+    }
+    if (dueTransfers.length) rows = await api('transfers')
+    pendingTransfers.value = rows
+  } catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
   finally { transferLoading.value = false }
 }
 const transferStatus = item => Number(item.transfer_applied) === 1 ? '処理成功' : (String(item.transfer_date || item.date) > new Date().toLocaleDateString('sv-SE') ? '入金予定' : '未処理')
@@ -686,7 +696,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div v-else class="pending-transfer-list">
           <div v-for="item in pendingTransfers" :key="item.id" class="pending-transfer-row">
             <div class="pending-transfer-main"><strong>{{ item.merchant || item.note || 'SBI証券への資産移動' }}</strong><span>予定日 {{ item.transfer_date || item.date }} · ¥{{ Number(item.amount || 0).toLocaleString('ja-JP') }}</span></div>
-            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" aria-label="削除" title="削除" @click="deleteTransfer(item)">×</button><button v-else class="pending-retry" @click="retryTransfer(item)">手動処理</button></div>
+            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" aria-label="削除" title="削除" @click="deleteTransfer(item)">×</button><button v-else-if="transferDue(item)" class="pending-retry" @click="retryTransfer(item)">手動処理</button></div>
           </div>
         </div>
       </article>

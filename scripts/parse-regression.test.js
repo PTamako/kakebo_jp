@@ -46,7 +46,7 @@ test('classifies My Basket as a supermarket before the generic bus transport key
   const result = classify('まいばすけっと 葛飾高砂店', [
     { keyword: 'バス', category: '交通' }
   ])
-  assert.deepEqual(result, { category: '餐饮', keyword: 'まいばすけっと' })
+  assert.deepEqual(result, { category: '饮食料品', keyword: 'まいばすけっと' })
 })
 
 test('supermarket classification takes priority over conflicting saved transport rules', () => {
@@ -54,7 +54,7 @@ test('supermarket classification takes priority over conflicting saved transport
     { keyword: 'まいばすけっと', category: '交通' },
     { keyword: 'バス', category: '交通' }
   ])
-  assert.equal(result.category, '餐饮')
+  assert.equal(result.category, '饮食料品')
 })
 
 test('transport merchants still classify as transport', () => {

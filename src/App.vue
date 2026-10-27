@@ -54,9 +54,14 @@ async function load() {
     stats.value = nextStats
   } catch (e) { flash(e.message) }
 }
+let yearRequestId = 0
 async function loadYear() {
-  try { annualStats.value = await api('stats?year=' + selectedYear.value) }
-  catch (e) { flash('年間集計の読み込みに失敗しました：' + e.message) }
+  const requestId = ++yearRequestId
+  const year = selectedYear.value
+  try {
+    const nextStats = await api('stats?year=' + year)
+    if (requestId === yearRequestId && year === selectedYear.value) annualStats.value = nextStats
+  } catch (e) { if (requestId === yearRequestId) flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
 onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers() })
 
@@ -109,25 +114,35 @@ async function addCategory() {
 function removeDraft(i) { forms.value.splice(i, 1) }
 
 async function saveAll() {
+  if (busy.value === 'saving') return
   if (!forms.value.length) return flash('保存する記録がありません')
   const invalid = forms.value.findIndex(f => !(Number(f.amount) > 0))
   if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
+  busy.value = 'saving'
+  let saved = 0
+  let ruleFailures = 0
   try {
-    let saved = 0
-    for (const f of forms.value) {
+    // Remove each successfully saved draft immediately so retry never resubmits it.
+    while (forms.value.length) {
+      const f = forms.value[0]
       await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
-      if (f.bindRule && f.merchant && f.merchant.trim().length >= 2) {
-        await api('rules', { method: 'POST', body: JSON.stringify({ keyword: f.merchant.trim(), category: f.category }) })
-      }
+      forms.value.shift()
       saved++
+      if (f.bindRule && f.merchant && f.merchant.trim().length >= 2) {
+        try {
+          await api('rules', { method: 'POST', body: JSON.stringify({ keyword: f.merchant.trim(), category: f.category }) })
+        } catch { ruleFailures++ }
+      }
     }
-    rules.value = await api('rules')
-    forms.value = []; input.value = ''
-    flash(`${saved}件の記録を保存しました`)
-    await load()
-    await loadInvestments()
-    await loadTransfers()
-  } catch (e) { flash(`一部の記録を保存しましたが、残りの保存に失敗しました：${e.message}。重複保存を避けるため、明細を再読み込みして確認してください。`) }
+    input.value = ''
+    flash(`${saved}件の記録を保存しました${ruleFailures ? '（分類ルールの保存に一部失敗しました）' : ''}`)
+  } catch (e) {
+    flash(`${saved}件を保存しました。未保存の${forms.value.length}件は入力欄に残っています：${e.message}`)
+  } finally {
+    busy.value = ''
+    try { rules.value = await api('rules') } catch { /* Keep existing rules when temporarily offline. */ }
+    await Promise.allSettled([load(), loadYear(), loadInvestments(), loadTransfers()])
+  }
 }
 async function remove(id) {
   if (!confirm('この記録を削除しますか？')) return
@@ -278,6 +293,7 @@ const filteredEntries = computed(() => entries.value.filter(e => String(e.date |
 const detailFilter = ref(null)
 const detailSourceEntries = ref([])
 const detailLoading = ref(false)
+let detailRequestId = 0
 const visibleEntryCount = ref(20)
 const listPageSize = 20
 const entryMatchesType = entry => entryTypeFilter.value === 'all' ||
@@ -292,6 +308,8 @@ const displayEntries = computed(() => {
   return narrowed.filter(entryMatchesType).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
 })
 function setEntryTypeFilter(value) {
+  detailRequestId++
+  detailLoading.value = false
   entryTypeFilter.value = value
   detailFilter.value = null
   detailSourceEntries.value = []
@@ -334,13 +352,15 @@ async function openCategoryDetails(category, type, period) {
   visibleEntryCount.value = 20
   tab.value = 'list'
   detailLoading.value = true
+  const requestId = ++detailRequestId
   try {
     const query = period === 'year' ? 'entries?year=' + selectedYear.value : 'entries?month=' + month.value
-    detailSourceEntries.value = await api(query)
+    const rows = await api(query)
+    if (requestId === detailRequestId) detailSourceEntries.value = rows
   } catch (e) {
-    flash('明細の読み込みに失敗しました：' + e.message)
+    if (requestId === detailRequestId) flash('明細の読み込みに失敗しました：' + e.message)
   } finally {
-    detailLoading.value = false
+    if (requestId === detailRequestId) detailLoading.value = false
   }
 }
 async function refreshDetailSource() {
@@ -352,6 +372,8 @@ async function refreshDetailSource() {
   } catch (e) { flash('明細の再読み込みに失敗しました：' + e.message) }
 }
 function clearDetailFilter() {
+  detailRequestId++
+  detailLoading.value = false
   detailFilter.value = null
   detailSourceEntries.value = []
   visibleEntryCount.value = 20
@@ -503,6 +525,8 @@ const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCatego
 const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
 function openMonthDetails(point, type) {
   if (!point?.month || !['income', 'expense'].includes(type)) return
+  detailRequestId++
+  detailLoading.value = false
   detailFilter.value = null
   detailSourceEntries.value = []
   selectedDay.value = ''

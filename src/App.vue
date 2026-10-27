@@ -229,12 +229,25 @@ const monthLabel = computed(() => {
 })
 const yearOptions = computed(() => Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - i))
 const yearMonthRows = computed(() => {
-  const values = new Map((annualStats.value?.byMonth || []).map(item => [item.month, Number(item.amount)]))
+  const expenses = new Map((annualStats.value?.byMonth || []).map(item => [item.month, Number(item.amount)]))
+  const incomes = new Map((annualStats.value?.incomeByMonth || []).map(item => [item.month, Number(item.amount)]))
   return Array.from({ length: 12 }, (_, i) => {
     const key = `${selectedYear.value}-${String(i + 1).padStart(2, '0')}`
-    return { month: key, label: `${i + 1}月`, amount: values.get(key) || 0 }
+    return { month: key, label: `${i + 1}月`, amount: expenses.get(key) || 0, income: incomes.get(key) || 0 }
   })
 })
+const incomeTrendPoints = computed(() => {
+  const max = Math.max(1, ...yearMonthRows.value.map(item => item.income))
+  return yearMonthRows.value.map((item, i) => ({ ...item, x: 16 + i * 26.18, y: 108 - item.income / max * 82 }))
+})
+const incomeTrendLine = computed(() => incomeTrendPoints.value.map(point => `${point.x},${point.y}`).join(' '))
+const ratioTrendPoints = computed(() => yearMonthRows.value.map((item, i) => {
+  const ratio = item.income > 0 ? item.amount / item.income : null
+  return { ...item, ratio, x: 16 + i * 26.18, y: ratio === null ? null : 108 - Math.min(1.5, ratio) / 1.5 * 82 }
+}))
+const ratioTrendLine = computed(() => ratioTrendPoints.value.filter(point => point.ratio !== null).map(point => `${point.x},${point.y}`).join(' '))
+const incomeTrendMax = computed(() => Math.max(0, ...yearMonthRows.value.map(item => item.income)))
+const ratioTrendMax = computed(() => Math.max(0, ...ratioTrendPoints.value.filter(point => point.ratio !== null).map(point => point.ratio)))
 const maxYearMonth = computed(() => Math.max(1, ...yearMonthRows.value.map(item => item.amount)))
 const highestSpendMonth = computed(() => yearMonthRows.value.reduce((best, item) => item.amount > best.amount ? item : best, { month: '', label: '暂无', amount: 0 }))
 const annualAverage = computed(() => Math.round(Number(annualStats.value?.total || 0) / 12))
@@ -413,6 +426,29 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
             </div>
           </div>
         </div>
+        <div class="stats-card trend-card">
+          <div class="section-title"><div><h2>收入变化曲线</h2><p>按月查看全年收入走势</p></div><span class="section-mark">03</span></div>
+          <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>单月最高收入</span></div>
+          <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年收入变化曲线'">
+            <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
+            <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
+            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="2.7" class="chart-point income-chart-point" />
+          </svg>
+          <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
+        </div>
+        <div class="stats-card trend-card">
+          <div class="section-title"><div><h2>收支比变化曲线</h2><p>支出 ÷ 收入；虚线参考 80% 与 100%</p></div><span class="section-mark">04</span></div>
+          <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : '暂无' }}</strong><span>最高月度支出占收入比例</span></div>
+          <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年收支比变化曲线'">
+            <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
+            <line x1="16" y1="64.27" x2="304" y2="64.27" class="chart-reference-line" />
+            <line x1="16" y1="53.33" x2="304" y2="53.33" class="chart-reference-line chart-reference-danger" />
+            <polyline v-if="ratioTrendLine" :points="ratioTrendLine" class="chart-line ratio-chart-line" />
+            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="2.7" class="chart-point ratio-chart-point" />
+          </svg>
+          <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
+          <p class="trend-note">没有收入的月份不计算比例；曲线纵轴为 0%–150%，超过 150% 的点按上限显示。</p>
+        </div>
         <div class="stats-card">
           <div class="section-title"><div><h2>年度分类支出</h2><p>按全年累计金额排序</p></div><span class="section-mark">02</span></div>
           <div class="category-list">
@@ -523,4 +559,6 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .edit-dialog-heading h2{font-size:19px;margin:0}
 .edit-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .edit-dialog .type-switch{margin:0}
+
+.trend-card{overflow:hidden}.trend-summary{display:flex;align-items:baseline;gap:8px;margin:2px 0 4px}.trend-summary strong{font-size:22px;font-weight:800;color:var(--ink)}.trend-summary span,.trend-note{font-size:11px;color:var(--muted)}.trend-chart{display:block;width:100%;height:auto;overflow:visible;margin-top:8px}.chart-grid-line{stroke:var(--line);stroke-width:1}.chart-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.income-chart-line{stroke:#54a78c}.ratio-chart-line{stroke:#d96f91}.chart-point{stroke:#fff;stroke-width:1.2}.income-chart-point{fill:#54a78c}.ratio-chart-point{fill:#d96f91}.chart-reference-line{stroke:#d5a34b;stroke-width:1.2;stroke-dasharray:4 4}.chart-reference-danger{stroke:#d96f91}.trend-month-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));padding:0 2px;text-align:center;color:var(--muted);font-size:10px}.trend-note{margin:8px 0 0;line-height:1.5}
 </style>

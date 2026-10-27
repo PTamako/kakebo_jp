@@ -190,7 +190,8 @@ export async function onRequest({ request, env, params }) {
     await applyDueTransfers()
 
     // 既存のSBI投信積立明細も資産移動へ補正する（生活費統計から除外）。
-    await db.prepare("UPDATE entries SET type = 'transfer', category = '投資・資産移動' WHERE (merchant LIKE '%証券投信積立サービス%' OR note LIKE '%証券投信積立サービス%' OR raw LIKE '%証券投信積立サービス%' OR merchant LIKE '%翌月買付分%' OR note LIKE '%翌月買付分%' OR raw LIKE '%翌月買付分%') AND type != 'transfer'").run()
+    // Historical entries must not be silently rewritten on each request.
+    // Existing categorization is preserved until the user explicitly edits the entry.
 
     if (a === 'entries') {
       if (m === 'GET') {

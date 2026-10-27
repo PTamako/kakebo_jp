@@ -35,3 +35,5 @@ CREATE TABLE IF NOT EXISTS investment_snapshots (
   pnl INTEGER,
   updated_at TEXT
 );
+
+-- SBI投信積立などの資金移動は entries.type='transfer' とし、生活費統計から除外する。

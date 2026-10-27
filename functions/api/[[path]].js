@@ -169,7 +169,7 @@ export async function onRequest({ request, env, params }) {
     )`).run()
     await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL)").run()
     const applyTransferDelta = async (target, delta) => {
-      if (!['sbi', 'paypay'].includes(target) || !delta) return
+      if (target !== 'sbi' || !delta) return
       await db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + ?1), updated_at = ?2 WHERE platform = ?3")
         .bind(delta, new Date().toISOString(), target).run()
     }
@@ -178,7 +178,7 @@ export async function onRequest({ request, env, params }) {
     // balance adjustment and marking due rows applied one atomic operation.
     const applyDueTransfers = async () => {
       const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-      for (const target of ['sbi', 'paypay']) {
+      for (const target of ['sbi']) {
         await db.batch([
           db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + (SELECT COALESCE(SUM(amount), 0) FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)), updated_at = ?3 WHERE platform = ?1 AND EXISTS (SELECT 1 FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)")
             .bind(target, today, new Date().toISOString()),
@@ -226,7 +226,7 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日期或金额不正确' }, 400)
         const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
-        const target = transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null
+        const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
         if (transfer && !/^\\d{4}-\\d{2}-\\d{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         if (previous.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
@@ -314,7 +314,7 @@ export async function onRequest({ request, env, params }) {
         pnl INTEGER,
         updated_at TEXT
       )`).run()
-      await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL), ('paypay', NULL, NULL, NULL)").run()
+      await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL)").run()
       if (m === 'GET') {
         const { results } = await db.prepare("SELECT platform, current_value, pnl, updated_at FROM investment_snapshots ORDER BY CASE platform WHEN 'sbi' THEN 1 ELSE 2 END").all()
         return json(results)
@@ -324,7 +324,7 @@ export async function onRequest({ request, env, params }) {
         const platform = String(body.platform || '')
         const currentValue = Number(body.currentValue)
         const pnl = Number(body.pnl)
-        if (!['sbi', 'paypay'].includes(platform) ||
+        if (platform !== 'sbi' ||
             !Number.isSafeInteger(currentValue) || currentValue < 0 ||
             !Number.isSafeInteger(pnl)) return json({ error: '入力内容を確認してください' }, 400)
         const updatedAt = new Date().toISOString()

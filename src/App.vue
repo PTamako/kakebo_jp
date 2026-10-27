@@ -18,7 +18,7 @@ const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
 const CATEGORY_ICONS = { '餐饮':'🍜', '饮食料品':'🛒', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '老公生活费':'🏠', '父母赠与':'💝', '亲友赠与':'🎁', '退款':'↩️', '其他收入':'🌷', '投資・資産移動':'🔄' }
 const categoryIcon = name => CATEGORY_ICONS[name] || '🧾'
-const CATEGORY_LABELS = { '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
+const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
 
 const token = ref(localStorage.getItem('token') || '')
@@ -61,7 +61,11 @@ watch(tab, value => {
 
 function recognize() {
   if (!input.value.trim()) return
-  forms.value = parseEntries(input.value, rules.value).map(f => ({ ...f, bindRule: false }))
+  forms.value = parseEntries(input.value, rules.value).map(f => {
+    const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
+    const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
+    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, bindRule: false }
+  })
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
 async function onImage(e) {
@@ -75,13 +79,14 @@ async function onImage(e) {
   busy.value = ''
 }
 function addBlank(type = 'expense') {
-  const category = type === 'income' ? '工资' : '日用品'
+  const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
   forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), time: '', amount: 0, type, category, merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   form.type = type
-  if (type === 'income' && !INCOME_CATEGORIES.includes(form.category)) form.category = '工资'
-  if (type === 'expense' && INCOME_CATEGORIES.includes(form.category)) form.category = '日用品'
+  if (type === 'income') form.category = INCOME_CATEGORIES.includes(form.category) ? form.category : '工资'
+  else if (type === 'transfer') form.category = '投資・資産移動'
+  else if (INCOME_CATEGORIES.includes(form.category) || form.category === '投資・資産移動') form.category = '日用品'
 }
 async function addCategory() {
   const name = prompt('新しいカテゴリ名を入力してください（20文字以内）')
@@ -120,7 +125,7 @@ async function remove(id) {
 function startEdit(entry) {
   editingEntry.value = {
     id: entry.id, date: entry.date, time: entry.time || '',
-    amount: Number(entry.amount), type: entry.type === 'income' ? 'income' : 'expense',
+    amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
     category: entry.category || '日用品', merchant: entry.merchant || '',
     note: entry.note || '', raw: entry.raw || ''
   }
@@ -403,6 +408,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div class="entry-mode-row">
         <button class="button-secondary manual-add-button" @click="addBlank('expense')">✍️ 支出を手入力</button>
         <button class="button-secondary manual-add-button income-add-button" @click="addBlank('income')">＋ 収入を記録</button>
+        <button class="button-secondary manual-add-button" @click="addBlank('transfer')">↗ 資産移動を記録</button>
       </div>
       <div class="panel capture-panel">
         <label class="field-label" for="entry-text">テキスト読み取り</label>
@@ -424,13 +430,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="type-switch" role="group" aria-label="記録の種類">
           <button type="button" :class="{ selected: (f.type || 'expense') === 'expense' }" @click="setEntryType(f, 'expense')">💸 支出</button>
           <button type="button" :class="{ selected: f.type === 'income' }" @click="setEntryType(f, 'income')">🌷 収入</button>
+          <button type="button" :class="{ selected: f.type === 'transfer' }" @click="setEntryType(f, 'transfer')">↗ 資産移動</button>
         </div>
-        <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
+        <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : f.type === 'transfer' ? '資産移動額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
         <p v-if="!(Number(f.amount) > 0)" class="amount-warning" role="alert">金額を読み取れませんでした。明細を確認して金額を入力してください。</p>
         <div class="field-grid">
           <label class="form-field"><span>日付</span><input type="date" v-model="f.date" /></label>
           <label class="form-field"><span>時刻</span><input type="time" v-model="f.time" /></label>
-          <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
+          <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : f.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
           <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
         </div>
         <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
@@ -479,12 +486,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="type-switch" role="group" aria-label="記録の種類">
             <button type="button" :class="{ selected: editingEntry.type === 'expense' }" @click="setEntryType(editingEntry, 'expense')">💸 支出</button>
             <button type="button" :class="{ selected: editingEntry.type === 'income' }" @click="setEntryType(editingEntry, 'income')">🌷 収入</button>
+            <button type="button" :class="{ selected: editingEntry.type === 'transfer' }" @click="setEntryType(editingEntry, 'transfer')">↗ 資産移動</button>
           </div>
           <label class="form-field"><span>金額（円）</span><input v-model.number="editingEntry.amount" type="number" min="1" inputmode="numeric" required /></label>
           <div class="field-grid">
             <label class="form-field"><span>日付</span><input v-model="editingEntry.date" type="date" required /></label>
             <label class="form-field"><span>時刻</span><input v-model="editingEntry.time" type="time" /></label>
-            <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
+            <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : editingEntry.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
             <label class="form-field"><span>店舗</span><input v-model="editingEntry.merchant" /></label>
           </div>
           <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
@@ -505,6 +513,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="piggy-content"><div class="piggy-title">今月の収支バランス</div><div class="piggy-status">{{ pigLabel(monthlyRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (monthlyRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(monthlyRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip"><div><small>今月の収入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>今月の支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>差引残高</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
+      <div class="income-expense-strip transfer-summary"><div><small>今月の資産移動</small><strong>{{ yen(stats?.transferTotal) }}</strong></div><div><small>件数</small><strong>{{ stats?.transferCount || 0 }}件</strong></div><div><small>生活支出には含めない</small><strong>別集計</strong></div></div>
       <div class="metric-grid">
         <div class="metric-card"><span class="metric-icon">▦</span><small>支出件数</small><strong>{{ stats?.count || 0 }}<em>件</em></strong></div>
         <div class="metric-card"><span class="metric-icon">↗</span><small>1日平均支出（支出があった日）</small><strong>{{ yen(averageDaily) }}</strong></div>
@@ -542,6 +551,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件の支出記録</div>
       </div>
       <div class="income-expense-strip annual-income-strip"><div><small>年間収入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>年間支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>年間収支</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
+      <div class="income-expense-strip transfer-summary"><div><small>年間の資産移動</small><strong>{{ yen(annualStats?.transferTotal) }}</strong></div><div><small>件数</small><strong>{{ annualStats?.transferCount || 0 }}件</strong></div><div><small>生活支出には含めない</small><strong>別集計</strong></div></div>
       <div class="piggy-card" :class="'piggy-' + pigState(annualRatio)">
         <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="しろちゃんとちび毛"><img class="puppy-white" src="https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" src="https://cdn2.cdnstep.com/8A5BxvcpUvyc8nO7YV3A/1-1.thumb128.png" alt="ちび毛としろちゃんのスタンプ" loading="lazy" /><small>しろちゃん × ちび毛</small></div>
         <div class="piggy-content"><div class="piggy-title">年間の収支バランス</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>

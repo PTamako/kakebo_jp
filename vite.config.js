@@ -10,10 +10,9 @@ export default defineConfig({
       manifest: {
         name: '记账本', short_name: '记账本', lang: 'zh-CN',
         display: 'standalone', start_url: '/',
-        theme_color: '#2f4b8a', background_color: '#f1f4f1',
+        theme_color: '#79afea', background_color: '#fffaf2',
         icons: [
-          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
         ]
       },
       workbox: { navigateFallbackDenylist: [/^\/api/] }

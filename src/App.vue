@@ -265,7 +265,6 @@ const pieGradient = (rows, colors) => {
 const expensePalette = ['#d96f91', '#e6a56b', '#c65f7c', '#d9b957', '#b96b9a', '#e58b70', '#a96b82', '#d6a3b8', '#b87957', '#c78eaa']
 const incomePalette = ['#3d9b82', '#78a9d6', '#267d70', '#8bbdc1', '#5c9dba', '#78ad91', '#9ba9c5', '#a2c9b4', '#547fa7', '#b5bd78']
 const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette))
-const annualIncomePie = computed(() => pieGradient(annualIncomeCategories.value || [], incomePalette))
 const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette))
 
 const selectedDay = ref('')
@@ -686,14 +685,15 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <template v-else>
         <div class="stats-card">
           <div class="section-title"><div><h2>カテゴリ支出</h2><p>何にお金を使ったか確認しましょう</p></div></div>
-          <div class="category-pie" :style="{ background: monthlyCategoryPie }" role="img" aria-label="カテゴリ別支出の割合"></div>
-          <div class="category-list pie-legend">
-            <div v-for="(c, i) in categoryRows" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'month' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'month')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'month')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'month')">
-              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
-              <div class="bar-track"><span :class="'bar-fill fill-' + (i % 6)" :style="{ width: Math.max(2, (c.amount / maxCat) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ stats.total ? Math.round(c.amount / stats.total * 100) : 0 }}%（今月の支出合計に占める割合） · タップして明細を見る</small>
+          <div class="pie-chart-layout">
+            <div class="category-pie" :style="{ background: monthlyCategoryPie }" role="img" aria-label="カテゴリ別支出の割合"></div>
+            <div class="category-list pie-legend">
+              <div v-for="(c, i) in categoryRows" :key="c.category" class="pie-legend-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'month' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'month')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'month')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'month')">
+                <span class="pie-legend-name"><i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span></span>
+                <span class="pie-legend-values"><strong>{{ yen(c.amount) }}</strong><small>{{ stats?.total ? Math.round(Number(c.amount) / Number(stats.total) * 100) : 0 }}%</small></span>
+              </div>
             </div>
-          </div>
+
         </div>
         <div class="stats-card">
           <div class="section-title"><div><h2>週別支出</h2><p>月曜日から日曜日で集計（最初と最後の週は当月の日付で計算）</p></div></div>
@@ -748,17 +748,6 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </svg>
 <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
           <p class="trend-note">グラフの月をタップすると、その月のカテゴリ別収入を確認できます。</p>
-          <div v-if="selectedIncomeMonthRow" class="income-month-breakdown">
-            <div class="income-breakdown-heading"><div><h3>{{ selectedIncomeMonthRow.label }}収入カテゴリ</h3><p>{{ selectedYear }}年 · {{ selectedIncomeCategories.length }}カテゴリ</p></div><strong>{{ yen(selectedIncomeMonthRow.income) }}</strong></div>
-            <div v-if="selectedIncomeCategories.length" class="category-list">
-              <div v-for="(c, i) in selectedIncomeCategories" :key="c.category" class="category-row">
-                <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
-                <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(selectedIncomeMonthRow.income)) * 100) + '%' }"></span></div>
-                <small class="category-share">{{ selectedIncomeMonthRow.income ? Math.round(Number(c.amount) / Number(selectedIncomeMonthRow.income) * 100) : 0 }}%（当月の収入に占める割合）</small>
-              </div>
-            </div>
-            <p v-else class="trend-note">この月の収入記録はありません。</p>
-          </div>
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入。破線は80%と100%の目安</p></div></div>
@@ -791,14 +780,15 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </div>
         <div class="stats-card">
           <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div></div>
-          <div class="category-pie" :style="{ background: annualExpensePie }" role="img" aria-label="年度カテゴリ支出の割合"></div>
-          <div class="category-list pie-legend">
-            <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'year')">
-              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
-              <div class="bar-track"><span class="bar-fill expense-category-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(annualStats?.total || 0)) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}%（年間支出に占める割合） · タップして明細</small>
+          <div class="pie-chart-layout">
+            <div class="category-pie" :style="{ background: annualExpensePie }" role="img" aria-label="年度カテゴリ支出の割合"></div>
+            <div class="category-list pie-legend">
+              <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="pie-legend-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'year')">
+                <span class="pie-legend-name"><i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span></span>
+                <span class="pie-legend-values"><strong>{{ yen(c.amount) }}</strong><small>{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}%</small></span>
+              </div>
             </div>
-          </div>
+
         </div>
       </template>
     </section>

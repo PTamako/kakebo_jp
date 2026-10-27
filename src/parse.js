@@ -139,6 +139,7 @@ export function parseEntries(raw, rules) {
     .replace(/[Nn]\s*$/g, '')
     .replace(/[\s,，、。．.]+$/g, '')
     .trim()
+    .replace(/マイバスケツト/g, 'マイバスケット')
   // QP statements: each transaction is a QP-prefixed merchant/amount line,
   // followed by a date and payment-method line. Parse the final numeric token explicitly.
   const qpRows = []
@@ -175,7 +176,7 @@ export function parseEntries(raw, rules) {
       suggested: category, keyword
     })
   }
-  if (qpRows.length >= 1) return qpRows
+  if (qpRows.length >= 2) return qpRows
 
   // Some issuers put merchant and reference on one line, then date/cardholder/payment/amount on another.
   // Other issuers put amount beside merchant and date on a separate line. Keep these layouts distinct.

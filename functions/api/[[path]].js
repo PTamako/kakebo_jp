@@ -1,4 +1,5 @@
 // Cloudflare Pages Functions：/api/*
+const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 const json = (d, s = 200) =>
   new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
 
@@ -117,8 +118,8 @@ export async function onRequest({ request, env, params }) {
   const url = new URL(request.url)
   const m = request.method
   const [a, b] = params.path || []
-  const month = (url.searchParams.get('month') || '').slice(0, 7)
-  const entriesYear = (url.searchParams.get('year') || '').slice(0, 4)
+  const month = url.searchParams.get('month') || ''
+  const entriesYear = url.searchParams.get('year') || ''
 
   try {
     // Automatic one-time migration: existing rows default to expenses.
@@ -197,21 +198,29 @@ export async function onRequest({ request, env, params }) {
 
     if (a === 'entries') {
       if (m === 'GET') {
-        const datePrefix = entriesYear && /^\d{4}$/.test(entriesYear) ? entriesYear : month
+        if ((entriesYear && !/^\d{4}$/.test(entriesYear)) ||
+            (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) ||
+            (!entriesYear && !month)) return json({ error: '対象期間が正しくありません' }, 400)
+        const datePrefix = entriesYear || month
+        const offsetRaw = url.searchParams.get('offset')
+        const offset = offsetRaw === null ? 0 : Number(offsetRaw)
+        if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) return json({ error: '読み込み位置が正しくありません' }, 400)
+        // Legacy clients get the same list shape; the annual view requests 500-row pages.
+        const limit = offsetRaw === null ? 10000 : 500
         const { results } = await db
-          .prepare('SELECT * FROM entries WHERE date LIKE ?1 ORDER BY date DESC, time DESC, id DESC LIMIT 10000')
-          .bind(datePrefix + '%').all()
+          .prepare('SELECT * FROM entries WHERE date LIKE ?1 ORDER BY date DESC, time DESC, id DESC LIMIT ?2 OFFSET ?3')
+          .bind(datePrefix + '%', limit, offset).all()
         return json(results)
       }
       if (m === 'POST') {
         const e = await request.json()
         const transfer = e.type === 'transfer' || (!['income', 'expense'].includes(e.type) && isInvestmentTransfer(e))
         const amount = Number(e.amount)
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isSafeInteger(Number(e.amount)) || !Number.isSafeInteger(amount) || amount <= 0)
+        if (!validDate(e.date) || !Number.isSafeInteger(Number(e.amount)) || !Number.isSafeInteger(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || e.date) : null
-        if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
+        if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
         const applied = target && transferDate <= today ? 1 : 0
         const clientRequestId = e.clientRequestId == null ? null : String(e.clientRequestId).trim()
@@ -227,13 +236,13 @@ export async function onRequest({ request, env, params }) {
         const transfer = e.type === 'transfer' || isInvestmentTransfer(e)
         const id = Number(b)
         const amount = Number(e.amount)
-        if (!Number.isInteger(id) || id <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
+        if (!Number.isInteger(id) || id <= 0 || !validDate(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
         const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
-        if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
+        if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
         const applied = target && transferDate <= today ? 1 : 0
         const result = await db.prepare(

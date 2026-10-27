@@ -269,7 +269,7 @@ const selectedDay = ref('')
 const entryTypeFilter = ref('all')
 const calendarExpanded = ref(false)
 const swipedEntryId = ref(null)
-const filteredEntries = computed(() => selectedDay.value ? entries.value.filter(e => e.date === selectedDay.value) : entries.value)
+const filteredEntries = computed(() => entries.value.filter(e => String(e.date || '').startsWith(month.value) && (!selectedDay.value || String(e.date || '').slice(0, 10) === selectedDay.value)))
 const detailFilter = ref(null)
 const detailSourceEntries = ref([])
 const detailLoading = ref(false)
@@ -497,11 +497,13 @@ const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCatego
   .sort((a, b) => b.amount - a.amount))
 const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
 function openMonthDetails(point, type) {
+  if (!point?.month || !['income', 'expense'].includes(type)) return
   detailFilter.value = null
   detailSourceEntries.value = []
   selectedDay.value = ''
   calendarExpanded.value = false
   entryTypeFilter.value = type
+  entries.value = [] // Clear the previous month's records before asynchronous loading.
   if (month.value !== point.month) month.value = point.month
   tab.value = 'list'
 }
@@ -924,7 +926,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .edit-dialog .type-switch{margin:0}
 
 .trend-card{overflow:hidden}.trend-summary{display:flex;align-items:baseline;gap:8px;margin:2px 0 4px}.trend-summary strong{font-size:22px;font-weight:800;color:var(--ink)}.trend-summary span,.trend-note{font-size:11px;color:var(--muted)}.trend-chart{display:block;width:100%;height:auto;overflow:visible;margin-top:8px}.chart-grid-line{stroke:var(--line);stroke-width:1}.chart-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.income-chart-line{stroke:#278b73}.expense-chart-line{stroke:#d96f91}.expense-chart-area{fill:#d96f9120;stroke:none}.ratio-chart-line{stroke:#d96f91}.chart-point{stroke:#fff;stroke-width:1.2}.income-chart-point{fill:#278b73}.expense-chart-point{fill:#d96f91}.ratio-chart-point{fill:#d96f91}.chart-reference-line{stroke:#d5a34b;stroke-width:1.2;stroke-dasharray:4 4}.chart-reference-danger{stroke:#d96f91}.trend-month-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));padding:0 2px;text-align:center;color:var(--muted);font-size:10px}
-.trend-month-labels button{min-width:0;padding:4px 0;border:0;border-radius:7px;background:transparent;color:inherit;font-size:10px}
+.trend-month-labels button{min-width:0;min-height:32px;padding:7px 0;border:0;border-radius:7px;background:transparent;color:inherit;font-size:11px;cursor:pointer;touch-action:manipulation}.trend-month-labels button:hover,.trend-month-labels button:focus-visible{background:color-mix(in srgb,var(--blue) 12%,transparent);color:var(--ink);outline:2px solid transparent}
 .trend-month-labels button.trend-month-selected{background:#fff0f4;color:#bd5376;font-weight:850}
 .clickable-chart-point{cursor:pointer;outline:none}
 .clickable-chart-point:focus,.clickable-chart-point.chart-point-selected{stroke:#bd5376;stroke-width:2.5}

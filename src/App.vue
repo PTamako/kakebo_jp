@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { groupAnnualEntries } from './detail-pagination.js'
 import { parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 
 const tab = ref('add')
@@ -376,19 +377,13 @@ function setEntryTypeFilter(value) {
 }
 const sortedDisplayEntries = computed(() => [...displayEntries.value].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.time || '').localeCompare(String(a.time || ''))))
 const annualDetailMode = computed(() => detailFilter.value?.period === 'year')
-const pagedEntries = computed(() => annualDetailMode.value ? sortedDisplayEntries.value : sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
+const pagedEntries = computed(() => sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
 const expandedMonth = ref('')
-const annualMonthGroups = computed(() => {
-  const grouped = new Map()
-  for (const entry of sortedDisplayEntries.value) {
-    const key = String(entry.date || '').slice(0, 7)
-    if (!grouped.has(key)) grouped.set(key, { month: key, items: [], total: 0 })
-    const group = grouped.get(key)
-    group.items.push(entry)
-    group.total += Number(entry.amount || 0)
-  }
-  return [...grouped.values()]
-})
+const annualVisibleCounts = ref({})
+const annualMonthGroups = computed(() => groupAnnualEntries(sortedDisplayEntries.value, annualVisibleCounts.value, listPageSize))
+function loadMoreAnnualEntries(group) {
+  annualVisibleCounts.value = { ...annualVisibleCounts.value, [group.month]: Math.min(group.count, group.items.length + listPageSize) }
+}
 watch(annualMonthGroups, groups => {
   if (annualDetailMode.value && !groups.some(g => g.month === expandedMonth.value)) expandedMonth.value = groups[0]?.month || ''
 })
@@ -407,6 +402,7 @@ function toggleEntryDay(date) {
   expandedEntryDays.value = expandedEntryDays.value.has(date) ? new Set() : new Set([date])
 }
 watch([displayEntries, detailFilter, selectedDay], () => {
+  annualVisibleCounts.value = {}
   visibleEntryCount.value = 20
   const days = [...new Set(displayEntries.value.map(entry => String(entry.date || '').slice(0, 10)).filter(Boolean))].sort((a, b) => b.localeCompare(a))
   const today = new Date().toLocaleDateString('sv-SE')
@@ -730,7 +726,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <button type="button" class="entry-day-heading" :aria-expanded="expandedMonth === group.month" @click="expandedMonth = expandedMonth === group.month ? '' : group.month">
             <span class="entry-day-chevron">{{ expandedMonth === group.month ? '▾' : '▸' }}</span>
             <strong>{{ Number(group.month.slice(5)) }}月</strong>
-            <span class="entry-day-count">{{ group.items.length }}件</span>
+            <span class="entry-day-count">{{ group.count }}件</span>
             <span class="entry-day-total">{{ yen(group.total) }}</span>
           </button>
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
@@ -743,6 +739,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
               <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
+          <div v-if="expandedMonth === group.month && group.items.length < group.count" class="load-more-wrap">
+            <button type="button" class="button-secondary load-more-button" @click.stop="loadMoreAnnualEntries(group)">読み込みを続ける（{{ Math.min(listPageSize, group.count - group.items.length) }}件）</button>
+          </div>
         </section>
       </div>
       <div v-else-if="!detailLoading && displayEntries.length" class="ledger day-group-list">

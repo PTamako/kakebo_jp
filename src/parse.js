@@ -213,7 +213,8 @@ export function parseEntries(raw, rules) {
     if (!hasCurrency) return null
     return { amount, raw: m[0], index: m.index }
   }
-  const cleanMerchant = value => value
+  const cleanMerchant = value => {
+    const cleaned = value
     // Card statements may append a reference number to every merchant row, not only Suica.
     // Strip visible numeric references and OCR-truncated forms such as "7...".
     .replace(/\s+\d{6,}\s*$/g, '')
@@ -224,12 +225,15 @@ export function parseEntries(raw, rules) {
     .trim()
     .replace(/マイバスケツト/g, 'マイバスケット')
     .replace(/\(([^()]*)\)/g, '（$1）')
+    // Keep balanced closing parentheses, drop only stray OCR punctuation.
+    return cleaned.includes('（') ? cleaned : cleaned.replace(/\)\s*$/, '').trim()
+  }
 
   // Card statement blocks sometimes separate merchant, amount and date into
   // separate lines (e.g. 2,992円～). Recover each independently instead of
   // falling back to a single giant draft containing all the transactions.
   const standaloneAmount = line => {
-    const match = line.match(/^(?:[¥￥]\\s*)?(\\d{1,3}(?:[,，.]\\d{3})+|\\d{1,6})\\s*円\\s*[～〜く>＞Nn]*$/)
+    const match = line.match(/^(?:[¥￥]\\s*)?(\\d{1,3}(?:[,，.]\\d{3})+|\\d{1,6})\\s*円\\s*[~～〜く>＞Nn]*$/)
     if (!match) return null
     const value = Number(match[1].replace(/[,，.]/g, ''))
     return value > 0 && value <= 9999999 ? value : null

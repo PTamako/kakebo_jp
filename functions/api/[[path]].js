@@ -270,8 +270,8 @@ export async function onRequest({ request, env, params }) {
         return json({ year: Number(year), total: total.t, count: total.n, income: total.income, byCategory: cat.results, byMonth: monthRows.results, incomeByMonth: incomeMonthRows.results, incomeByCategory: incomeCategoryRows.results, incomeByMonthCategory: incomeMonthCategoryRows.results })
       }
       const like = month + '%'
-      const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type != 'income' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type != 'income' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income FROM entries WHERE date LIKE ?1").bind(like).first()
-      const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type != 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
+      const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income FROM entries WHERE date LIKE ?1").bind(like).first()
+      const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()
       const day = await db.prepare("SELECT date, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY date ORDER BY date").bind(like).all()
       return json({ total: total.t, count: total.n, income: total.income, byCategory: cat.results, byDay: day.results })
     }

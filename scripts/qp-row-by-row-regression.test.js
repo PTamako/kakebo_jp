@@ -53,9 +53,11 @@ QUICPay 利用 (QP/ ケンタッキーフライドチキン) 1,580円 、
 QUICPay 利用 (QP/ イオンフードスタイル) 254 = 、
 1 回 払い
 10 月 17 日`
-  const rows = parseEntries(input, [])
+  const withRightColumn = input + '\\n__QP_AMOUNT_COLUMN__\\n550\\n392\\n417\\n315\\n4888\\n1580\\n254'
+  const rows = parseEntries(withRightColumn, [])
   assert.equal(rows.length, 7)
-  assert.deepEqual(rows.map(row => row.amount), [550, 0, 417, 315, 4888, 1580, 254])
+  assert.deepEqual(rows.map(row => row.amount), [550, 392, 417, 315, 4888, 1580, 254])
   assert.match(rows[1].merchant, /イトーヨーカドー/)
-  assert.match(rows[1].note, /金額を読み取れません/)
+  assert.match(rows[1].note, /^$/)
+  assert.match(rows[5].merchant, /ケンタッキー/)
 })

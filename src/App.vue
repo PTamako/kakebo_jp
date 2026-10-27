@@ -355,7 +355,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <li v-for="e in filteredEntries" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
           <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
             <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
-            <div class="ledger-info"><b>{{ e.merchant || e.category }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : '支出' }}</small></div>
+            <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : '支出' }}</small></div>
             <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income' }">{{ e.type === 'income' ? '+' : '−' }}{{ yen(e.amount) }}</span>
           </div>
           <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
@@ -451,7 +451,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </div>
         </div>
         <div class="stats-card trend-card">
-          <div class="section-title"><div><h2>収入の推移</h2><p>按月查看年間収入走势</p></div><span class="section-mark">03</span></div>
+          <div class="section-title"><div><h2>収入の推移</h2><p>月ごとの年間収入の推移</p></div><span class="section-mark">03</span></div>
           <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>月間最高収入</span></div>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年収入の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
@@ -464,7 +464,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <div class="income-breakdown-heading"><div><h3>{{ selectedIncomeMonthRow.label }}収入カテゴリ</h3><p>{{ selectedYear }}年 · {{ selectedIncomeCategories.length }}カテゴリ</p></div><strong>{{ yen(selectedIncomeMonthRow.income) }}</strong></div>
             <div v-if="selectedIncomeCategories.length" class="category-list">
               <div v-for="(c, i) in selectedIncomeCategories" :key="c.category" class="category-row">
-                <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
+                <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
                 <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(selectedIncomeMonthRow.income)) * 100) + '%' }"></span></div>
                 <small class="category-share">{{ selectedIncomeMonthRow.income ? Math.round(Number(c.amount) / Number(selectedIncomeMonthRow.income) * 100) : 0 }}%（当月の収入に占める割合）</small>
               </div>
@@ -474,7 +474,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入。破線は80%と100%の目安</p></div><span class="section-mark">04</span></div>
-          <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>最高月度支出／収入比例</span></div>
+          <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>月間最高の支出割合</span></div>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出割合の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <line x1="16" y1="64.27" x2="304" y2="64.27" class="chart-reference-line" />
@@ -494,7 +494,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="section-title"><div><h2>年度カテゴリ収入</h2><p>年間合計の多い順</p></div><span class="section-mark">05</span></div>
           <div v-if="annualIncomeCategories.length" class="category-list">
             <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row">
-              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
+              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
               <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}%（年間収入に占める割合）</small>
             </div>
@@ -505,7 +505,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div><span class="section-mark">02</span></div>
           <div class="category-list">
             <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row">
-              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
+              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(annualStats?.total || 0)) * 100) + '%' }"></span></div>
               <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}%（年間支出に占める割合）</small>
             </div>

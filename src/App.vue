@@ -693,7 +693,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
                 <span class="pie-legend-values"><strong>{{ yen(c.amount) }}</strong><small>{{ stats?.total ? Math.round(Number(c.amount) / Number(stats.total) * 100) : 0 }}%</small></span>
               </div>
             </div>
-
+          </div>
         </div>
         <div class="stats-card">
           <div class="section-title"><div><h2>週別支出</h2><p>月曜日から日曜日で集計（最初と最後の週は当月の日付で計算）</p></div></div>
@@ -788,7 +788,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
                 <span class="pie-legend-values"><strong>{{ yen(c.amount) }}</strong><small>{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}%</small></span>
               </div>
             </div>
-
+          </div>
         </div>
       </template>
     </section>

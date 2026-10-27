@@ -278,10 +278,7 @@ const groupedPagedEntries = computed(() => {
   return [...groups.entries()].map(([date, items]) => ({ date, items }))
 })
 function toggleEntryDay(date) {
-  const next = new Set(expandedEntryDays.value)
-  if (next.has(date)) next.delete(date)
-  else next.add(date)
-  expandedEntryDays.value = next
+  expandedEntryDays.value = expandedEntryDays.value.has(date) ? new Set() : new Set([date])
 }
 watch([displayEntries, detailFilter, selectedDay], () => {
   visibleEntryCount.value = 20

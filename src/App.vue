@@ -18,8 +18,26 @@ const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
-const CATEGORY_ICONS = { '餐饮':'🍜', '饮食料品':'🛒', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '老公生活费':'🏠', '父母赠与':'💝', '亲友赠与':'🎁', '退款':'↩️', '其他收入':'🌷', '投資・資産移動':'🔄' }
-const categoryIcon = name => CATEGORY_ICONS[name] || '🧾'
+const CATEGORY_ICON_PATHS = {
+ '餐饮':'M4 14h16M5 14a7 7 0 0 0 14 0M8 19h8M8 5v5M12 5v5M16 5v5',
+ '饮食料品':'M3 6h2l2 11h12l2-8H6M9 21h.01M18 21h.01',
+ '日用品':'M7 4h10l2 16H5L7 4ZM9 8h6',
+ '交通':'M5 16V7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v9H5ZM5 11h14M8 20v-4M16 20v-4',
+ '购物':'M5 8h14l1 12H4L5 8ZM9 9V6a3 3 0 0 1 6 0v3',
+ '居住':'M3 11l9-8 9 8M6 9v11h12V9M10 20v-7h4v7',
+ '医疗':'M9 4h6v5h5v6h-5v5H9v-5H4V9h5V4Z',
+ '娱乐':'M7 7h10l4 8-3 4-4-4h-4l-4 4-3-4 4-8ZM8 11v4M6 13h4M16 11h.01M18 13h.01',
+ '宠物':'M7 9h.01M17 9h.01M5 6h.01M19 6h.01M12 11c-3 0-7 4-7 7 0 2 2 3 4 2l3-1 3 1c2 1 4 0 4-2 0-3-4-7-7-7Z',
+ '工资':'M4 8h16v12H4V8ZM7 8V5h10v3M8 14h8',
+ '奖金':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13M8 7c-3-4 3-6 4 0 1-6 7-4 4 0',
+ '副业':'M3 7h18v13H3V7ZM8 7V4h8v3M3 12h18',
+ '老公生活费':'M3 11l9-8 9 8M6 9v11h12V9M10 20v-7h4v7',
+ '父母赠与':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13',
+ '亲友赠与':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13',
+ '退款':'M8 6 3 11l5 5M3 11h11a6 6 0 0 1 0 12',
+ '投資・資産移動':'M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4'
+}
+const categoryIconPath = name => CATEGORY_ICON_PATHS[name] || 'M5 3h14v18H5V3ZM8 8h8M8 12h8M8 16h5'
 const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
 
@@ -687,7 +705,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
             <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
-                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
+                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.replace(/-/g, '/') }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }}</small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '↗ ' : '−' }}{{ yen(e.amount) }}</span>
               </div>
@@ -707,7 +725,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
             <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
-                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
+                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '↗ ' : '−' }}{{ yen(e.amount) }}</span>
               </div>
@@ -852,7 +870,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="section-title"><div><h2>年度カテゴリ収入</h2><p>年間合計の多い順</p></div></div>
           <div v-if="annualIncomeCategories.length" class="category-list annual-income-bars">
             <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'income' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'income', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'income', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'income', 'year')">
-              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
+              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(c.category)"/></svg></span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill income-category-fill" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
               <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}%（年間収入に占める割合） · タップして明細</small>
             </div>
@@ -1129,4 +1147,4 @@ main .annual-month-list .entry-day-group{border-radius:var(--radius-md);overflow
 @media(prefers-reduced-motion:reduce){main *,main *::before,main *::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
 main .heading-icon svg{width:21px;height:21px;display:block}
-.ui-line-icon{display:block;width:19px;height:19px;flex:none}.type-action-icon{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;margin-right:5px}.metric-icon .ui-line-icon{width:18px;height:18px}.type-switch button{display:inline-flex;align-items:center;justify-content:center;gap:3px}</style>
+.ui-line-icon{display:block;width:19px;height:19px;flex:none}.type-action-icon{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;margin-right:5px}.metric-icon .ui-line-icon{width:18px;height:18px}.type-switch button{display:inline-flex;align-items:center;justify-content:center;gap:3px}.category-line-icon{width:17px;height:17px;margin:auto}.category-dot,.category-emoji{display:inline-grid;place-items:center}</style>

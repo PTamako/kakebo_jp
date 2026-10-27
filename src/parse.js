@@ -86,6 +86,17 @@ export function parseEntry(raw, rules) {
 
 // 将一段粘贴文字或一张 OCR 图片拆分为多笔记录。
 export function parseEntries(raw, rules) {
+  const marker = '\n__QP_AMOUNT_COLUMN__\n'
+  let qpColumnAmounts = []
+  if (typeof raw === 'string' && raw.includes(marker)) {
+    const parts = raw.split(marker)
+    raw = parts[0]
+    qpColumnAmounts = (parts[1] || '').split(/\r?\n/).map(line => line.trim())
+      .map(line => line.match(/^(?:[¥￥]\s*)?(\d{1,3}(?:[,，.]\d{3})+|\d{2,6})(?:\s*円)?$/)?.[1])
+      .filter(Boolean)
+      .map(value => Number(value.replace(/[,，.]/g, '')))
+      .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
+  }
   const text = normalize(raw)
   if (!text) return []
 
@@ -93,7 +104,8 @@ export function parseEntries(raw, rules) {
   // into the existing QP-row format before parsing each transaction independently.
   const lines = text.split(/\r?\n/).map(s => s.trim())
     .filter(Boolean)
-    .map(line => line.replace(/^.*?\(\s*QP\s*\//i, 'QP / '))
+    .map(line => line.replace(/^.*?\(\s*Q?O?P\s*\//i, 'QP / '))
+
   const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
     || /(?<!\d)\d{2}\s*[.\/-]\s*\d{1,2}\s*[.\/-]\s*\d{1,2}(?!\d)/.test(line)
     || /\d{1,2}\s*月\s*\d{1,2}/.test(line)
@@ -176,7 +188,72 @@ export function parseEntries(raw, rules) {
       suggested: category, keyword
     })
   }
-  if (qpRows.length >= 2) return qpRows
+  // Prefer the established parser when it recovered every row; use block recovery only for missing rows.
+  if (qpRows.length >= lines.filter(line => /^(?:QUICPay\s*利用\s*)?QP\s*\//i.test(line)).length && qpRows.length >= 2) return qpRows
+  // Robust transaction-block fallback for QUICPay OCR. Keep every detected transaction,
+  // even if OCR misses its amount; zero-amount drafts remain editable instead of being dropped.
+  const qpStart = line => /^(?:QUICPay\s*利用\s*)?QP\s*\//i.test(line)
+  const qpStarts = lines.map((line, index) => qpStart(line) ? index : -1).filter(index => index >= 0)
+  if (qpStarts.length >= 2) {
+    const recovered = []
+    for (let n = 0; n < qpStarts.length; n++) {
+      const start = qpStarts[n]
+      const block = lines.slice(start, qpStarts[n + 1] ?? lines.length)
+      const dateRaw = block.find(dateLine)
+      if (!dateRaw) continue
+      const first = block[0].replace(/^QP\s*\/\s*/i, '').trim()
+      const joined = block.join(' ')
+      const dateIndex = block.indexOf(dateRaw)
+      const amountSources = block.slice(0, dateIndex < 0 ? block.length : dateIndex)
+      let amount = 0
+      for (const candidate of amountSources) {
+        const stripped = candidate.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+        const matches = [...stripped.matchAll(/(\d[\d,，.]{0,7})\s*(円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])/ig)]
+        if (matches.length) {
+          const rawAmount = matches[matches.length - 1][1]
+          const parsed = Number(rawAmount.replace(/[,，.]/g, '').replace(/[oOｏＯ]/g, '6'))
+          if (parsed > 0 && parsed <= 999999) { amount = parsed; break }
+        }
+      }
+      // Merchant may wrap across OCR lines; remove amount/date/payment noise from the block.
+      let merchant = first
+        .replace(/\s*[（(].*$/, '')
+        .replace(/[＞>」】）)]+\s*$/, '')
+      const wrapped = block.slice(1, dateIndex < 0 ? block.length : dateIndex)
+        .filter(line => !/回\s*払|^[\d,，.]+\s*(?:円|m|g|=|＝)?$/i.test(line))
+        .filter(line => !/(\d[\d,，.]{0,7})\s*(?:円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝)/i.test(line))
+      if (wrapped.length) merchant += wrapped.join('')
+      merchant = cleanQpMerchant(merchant)
+      if (!merchant || !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) {
+        merchant = cleanQpMerchant(first)
+      }
+      if (!merchant) continue
+      const { category, keyword } = classify(merchant, rules)
+      recovered.push({
+        date: findDate(dateRaw), time: '', amount, category,
+        merchant: merchant.slice(0, 60),
+        note: amount ? '' : '金額を読み取れませんでした。明細を確認してください',
+        raw: block.join('\n'), suggested: category, keyword
+      })
+    }
+    if (qpColumnAmounts.length === recovered.length) {
+      recovered.forEach((row, index) => {
+        row.amount = qpColumnAmounts[index]
+        row.note = ''
+        row.raw += '\\n金额由右侧金额栏二次识别'
+      })
+    }
+    if (recovered.length > qpRows.length) return recovered
+  }
+  function cleanQpMerchant(value) {
+    return value
+      .replace(/\s*\d[\d,，.]{0,7}\s*(?:円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])\s*[、,，。．.）)]*\s*$/i, '')
+      .replace(/[＞>」】）)]+\s*$/, '')
+      .replace(/[\s,，、。．.]+$/, '')
+      .trim()
+      .replace(/マイバスケツト/g, 'マイバスケット')
+  }
+
 
   // Some issuers put merchant and reference on one line, then date/cardholder/payment/amount on another.
   // Other issuers put amount beside merchant and date on a separate line. Keep these layouts distinct.
@@ -345,5 +422,59 @@ export async function ocrImage(file, onProgress) {
   const worker = await createWorker(['jpn', 'eng'], 1, {
     logger: m => m.status === 'recognizing text' && onProgress?.(Math.round(m.progress * 100))
   })
-  try { return (await worker.recognize(file)).data.text } finally { await worker.terminate() }
+  try {
+    const primary = (await worker.recognize(file)).data.text
+    if (!/QUIC\s*Pay|QUICPay/i.test(primary)) return primary
+
+    let bitmap
+    try {
+      bitmap = await createImageBitmap(file)
+      const sourceWidth = Math.max(1, Math.round(bitmap.width * 0.4))
+      const scale = 2
+      const canvas = document.createElement('canvas')
+      canvas.width = sourceWidth * scale
+      canvas.height = bitmap.height * scale
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context) return primary
+      context.drawImage(bitmap, bitmap.width - sourceWidth, 0, sourceWidth, bitmap.height, 0, 0, canvas.width, canvas.height)
+
+      // Enlarge and increase contrast before reading the right-aligned price column.
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
+      for (let i = 0; i < pixels.data.length; i += 4) {
+        const luminance = pixels.data[i] * 0.299 + pixels.data[i + 1] * 0.587 + pixels.data[i + 2] * 0.114
+        const value = luminance > 178 ? 255 : 0
+        pixels.data[i] = value
+        pixels.data[i + 1] = value
+        pixels.data[i + 2] = value
+      }
+      context.putImageData(pixels, 0, 0)
+
+      const columnText = (await worker.recognize(canvas)).data.text
+      // Accept OCR noise around an amount, but only retain plausible yen values.
+      const amounts = columnText.split(/\r?\n/).map(line => line.trim())
+        .map(line => {
+          const normalized = line
+            .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+            .replace(/[OoＯｏ]/g, '0')
+            .replace(/[Il|]/g, '1')
+            .replace(/[Ss]/g, '5')
+            .replace(/[Ｂ]/g, '8')
+            .replace(/[¥￥円,，.:\s]/g, '')
+          const match = normalized.match(/^\D{0,2}(\d{2,6})\D{0,2}$/)
+          return match ? Number(match[1]) : null
+        })
+        .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
+      const qpCount = (primary.match(/QUIC\s*Pay|QUICPay/gi) || []).length
+      if (qpCount >= 2 && amounts.length === qpCount) {
+        return primary + '\n__QP_AMOUNT_COLUMN__\n' + amounts.join('\n')
+      }
+    } catch (_) {
+      // Keep the primary OCR result if image cropping or the second pass is unavailable.
+    } finally {
+      bitmap?.close?.()
+    }
+    return primary
+  } finally {
+    await worker.terminate()
+  }
 }

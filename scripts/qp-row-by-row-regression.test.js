@@ -28,3 +28,36 @@ QP/ ダ イソ ー 220 m 、
   assert.match(rows[1].merchant, /ダイソー/)
   assert.match(rows[4].merchant, /マイバスケット/)
 })
+
+
+test('QUICPay OCR keeps every transaction when one amount is missing', () => {
+  const input = `QUICPay 利用 (QP/ ダイソー) 550m 、
+1 回 払い
+10 月 21 日
+QUICPay 利用 (QOP/ イトーヨーカドー タカサゴテン
+カサゴテン) >
+1 回 払い
+10 月 21 日
+QUICPay 利用 (QP/ マイバスケット) 417 = 、
+1 回 払い
+10 月 20 日
+QUICPay 利用 (QP/ マイバスケット) 315m 、
+1 回 払い
+10 月 19 日
+QUICPay 利用 (QP/ ベルク) 4.888gm 、
+1 回 払い
+10 月 18 日
+QUICPay 利用 (QP/ ケンタッキーフライドチキン) 1,580円 、
+1 回 払い
+10 月 17 日
+QUICPay 利用 (QP/ イオンフードスタイル) 254 = 、
+1 回 払い
+10 月 17 日`
+  const withRightColumn = input + '\n__QP_AMOUNT_COLUMN__\n550\n392\n417\n315\n4888\n1580\n254'
+  const rows = parseEntries(withRightColumn, [])
+  assert.equal(rows.length, 7)
+  assert.deepEqual(rows.map(row => row.amount), [550, 392, 417, 315, 4888, 1580, 254])
+  assert.match(rows[1].merchant, /イトーヨーカドー/)
+  assert.match(rows[1].note, /^$/)
+  assert.match(rows[5].merchant, /ケンタッキー/)
+})

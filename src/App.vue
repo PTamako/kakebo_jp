@@ -492,7 +492,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
             <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(annualStats?.total || 0)) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}% of total</small>
+              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}% 占全年总支出</small>
             </div>
           </div>
         </div>

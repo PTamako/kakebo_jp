@@ -192,9 +192,8 @@ export async function onRequest({ request, env, params }) {
     }
     await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_client_request_id ON entries(client_request_id)').run()
 
-    // 既存のSBI投信積立明細も資産移動へ補正する（生活費統計から除外）。
-    // Historical entries must not be silently rewritten on each request.
-    // Existing categorization is preserved until the user explicitly edits the entry.
+    // Never rewrite or delete existing ledger rows during migration.
+    // SBI valuation entries remain untouched unless the user explicitly edits them.
 
     if (a === 'entries') {
       if (m === 'GET') {
@@ -252,9 +251,13 @@ export async function onRequest({ request, env, params }) {
       }
       if (m === 'DELETE' && b) {
         const id = Number(b)
-        const previous = await db.prepare('SELECT amount, transfer_target, transfer_applied FROM entries WHERE id = ?1').bind(id).first()
-        await db.prepare('DELETE FROM entries WHERE id = ?1').bind(id).run()
-        return json({ ok: true })
+        // Prevent accidental deletion from upgrades, retries or malformed API calls.
+        // Only an explicitly confirmed single-record UI operation may delete a row.
+        if (!Number.isSafeInteger(id) || id <= 0 ||
+            request.headers.get('x-confirm-delete') !== String(id))
+          return json({ error: '削除する記録の確認が必要です' }, 428)
+        const result = await db.prepare('DELETE FROM entries WHERE id = ?1').bind(id).run()
+        return json({ ok: true, changes: result.meta?.changes ?? 0 })
       }
     }
     if (a === 'categories') {
@@ -288,12 +291,13 @@ export async function onRequest({ request, env, params }) {
           )) {
             await db.prepare('INSERT OR IGNORE INTO custom_rules (keyword, category) VALUES (?1, ?2)').bind(rule.keyword, rule.category).run()
           }
-          // 清理旧版遗留的默认关键词，但保留用户自定义分类元数据。
-          await db.prepare("DELETE FROM rules WHERE substr(keyword, 1, 13) != '__category__:'").run()
+          // Never delete or overwrite legacy rules during a software upgrade.
+          // Add only missing defaults and a completion marker. Existing user data
+          // remains in the original table even after custom_rules is populated.
           const rows = [...DEFAULT_RULE_ROWS, [marker, '其他']]
           for (let i = 0; i < rows.length; i += 40) {
             const batch = rows.slice(i, i + 40).map(([keyword, category]) =>
-              db.prepare('INSERT OR REPLACE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
+              db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
             )
             await db.batch(batch)
           }

@@ -6,7 +6,9 @@ const tab = ref('add')
 const theme = ref(localStorage.getItem('kakeibo-theme') || 'pink')
 const themes = [{ id: 'pink', label: 'ピンク', color: '#d96f91' }, { id: 'blue', label: 'ブルー', color: '#78a9d6' }, { id: 'yellow', label: 'イエロー', color: '#d9b957' }, { id: 'green', label: 'グリーン', color: '#78ad91' }]
 function setTheme(value) { theme.value = value; localStorage.setItem('kakeibo-theme', value) }
-const month = ref(new Date().toISOString().slice(0, 7))
+const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+const month = ref(currentMonth())
+function resetMonth() { month.value = currentMonth() }
 const selectedYear = ref(new Date().getFullYear())
 const annualStats = ref(null)
 const selectedIncomeMonth = ref('')
@@ -438,7 +440,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
       <span v-if="tab === 'add'" class="today-date">{{ todayLabel }}</span>
-      <input v-else-if="tab !== 'year' && tab !== 'investments' && !(tab === 'list' && detailFilter?.period === 'year')" type="month" v-model="month" class="month" aria-label="集計月" />
+      <div v-else-if="tab === 'list' || tab === 'stat'" class="topbar-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div>
+      <select v-else-if="tab === 'year'" v-model.number="selectedYear" class="topbar-year" aria-label="集計年"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select>
     </header>
     <div class="theme-switcher" role="group" aria-label="配色">
       <span>配色</span>
@@ -596,7 +599,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </section>
 
     <section v-else-if="tab === 'year'" class="page-section stats-page annual-page">
-      <div class="page-heading annual-heading"><div><p class="eyebrow">年間サマリー</p><h1>年間集計</h1><p class="heading-subtitle">年ごとの支出を集計</p></div><label class="year-picker"><span>集計年</span><select v-model.number="selectedYear" aria-label="集計年"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select></label></div>
+      <div class="page-heading"><div><p class="eyebrow">年間サマリー</p><h1>年間集計</h1><p class="heading-subtitle">年ごとの支出を集計</p></div><span class="heading-icon">⌁</span></div>
       <div class="hero-total annual-hero">
         <span>{{ selectedYear }}年の支出合計</span><strong>{{ yen(annualStats?.total) }}</strong>
         <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件の支出記録</div>
@@ -740,7 +743,7 @@ input,select,textarea{width:100%;min-width:0;border:1px solid #e0e6ed;border-rad
 input:focus,select:focus,textarea:focus{border-color:#8da9e8;box-shadow:0 0 0 3px #315fbd18}
 .month{width:142px;padding:9px 8px;font-size:12px;font-weight:650;background:#fff}
 .page-section{animation:appear .18s ease-out}@keyframes appear{from{opacity:.6;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
-.page-heading{display:flex;align-items:center;justify-content:space-between;margin:0 0 18px}.today-date{font-size:12px;font-weight:750;color:var(--muted);white-space:nowrap;padding:8px 0 8px 8px}.annual-heading{gap:10px}.annual-heading .year-picker{flex:none;margin:0;padding:0;background:transparent;border:0;gap:6px}.annual-heading .year-picker span{display:none}.annual-heading .year-picker select{width:auto;max-width:116px;padding:8px 9px;border-radius:10px}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.15em;color:var(--blue);margin:0 0 4px}.page-heading h1{font-size:27px;line-height:1.2;letter-spacing:-.045em;margin:0;font-weight:800}.heading-subtitle{font-size:12px;color:var(--muted);margin:7px 0 0}.heading-icon{display:grid;place-items:center;width:43px;height:43px;border-radius:15px;background:#e9efff;color:var(--blue);font-size:25px;font-weight:500}
+.page-heading{display:flex;align-items:center;justify-content:space-between;margin:0 0 18px}.today-date{font-size:12px;font-weight:750;color:var(--muted);white-space:nowrap;padding:8px 0 8px 8px}.topbar-period{display:flex;align-items:center;gap:5px}.period-reset{flex:none;padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}.topbar-year{width:auto;max-width:116px;padding:9px 8px;font-size:12px;font-weight:750;background:var(--card)}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.15em;color:var(--blue);margin:0 0 4px}.page-heading h1{font-size:27px;line-height:1.2;letter-spacing:-.045em;margin:0;font-weight:800}.heading-subtitle{font-size:12px;color:var(--muted);margin:7px 0 0}.heading-icon{display:grid;place-items:center;width:43px;height:43px;border-radius:15px;background:#e9efff;color:var(--blue);font-size:25px;font-weight:500}
 .panel,.entry-card,.stats-card,.metric-card{background:var(--card);border:1px solid #edf0f4;border-radius:18px;box-shadow:0 5px 20px #24354b08}
 .capture-panel{padding:16px}.field-label{display:block;font-size:13px;font-weight:750;margin-bottom:9px}
 textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;background:#fbfcfe;border-color:#e8edf3}

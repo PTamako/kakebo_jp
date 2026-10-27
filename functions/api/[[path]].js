@@ -167,7 +167,7 @@ export async function onRequest({ request, env, params }) {
       pnl INTEGER,
       updated_at TEXT
     )`).run()
-    await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL), ('paypay', NULL, NULL, NULL)").run()
+    await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL)").run()
     const applyTransferDelta = async (target, delta) => {
       if (!['sbi', 'paypay'].includes(target) || !delta) return
       await db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + ?1), updated_at = ?2 WHERE platform = ?3")
@@ -206,7 +206,7 @@ export async function onRequest({ request, env, params }) {
         const amount = Math.round(Number(e.amount))
         if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
-        const target = transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null
+        const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || e.date) : null
         if (transfer && !/^\\d{4}-\\d{2}-\\d{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date().toISOString().slice(0, 10)

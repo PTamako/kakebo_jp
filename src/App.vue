@@ -6,7 +6,9 @@ const tab = ref('add')
 const theme = ref(localStorage.getItem('kakeibo-theme') || 'pink')
 const themes = [{ id: 'pink', label: 'ピンク', color: '#d96f91' }, { id: 'blue', label: 'ブルー', color: '#78a9d6' }, { id: 'yellow', label: 'イエロー', color: '#d9b957' }, { id: 'green', label: 'グリーン', color: '#78ad91' }]
 function setTheme(value) { theme.value = value; localStorage.setItem('kakeibo-theme', value) }
-const month = ref(new Date().toISOString().slice(0, 7))
+const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+const month = ref(currentMonth())
+function resetMonth() { month.value = currentMonth() }
 const selectedYear = ref(new Date().getFullYear())
 const annualStats = ref(null)
 const selectedIncomeMonth = ref('')
@@ -16,9 +18,9 @@ const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
-const CATEGORY_ICONS = { '餐饮':'🍜', '饮食料品':'🛒', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '老公生活费':'🏠', '父母赠与':'💝', '亲友赠与':'🎁', '退款':'↩️', '其他收入':'🌷' }
+const CATEGORY_ICONS = { '餐饮':'🍜', '饮食料品':'🛒', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '老公生活费':'🏠', '父母赠与':'💝', '亲友赠与':'🎁', '退款':'↩️', '其他收入':'🌷', '投資・資産移動':'🔄' }
 const categoryIcon = name => CATEGORY_ICONS[name] || '🧾'
-const CATEGORY_LABELS = { '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
+const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
 
 const token = ref(localStorage.getItem('token') || '')
@@ -51,7 +53,7 @@ async function loadYear() {
   try { annualStats.value = await api('stats?year=' + selectedYear.value) }
   catch (e) { flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
-onMounted(() => { load(); loadYear() })
+onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers() })
 watch(month, async () => { selectedDay.value = ''; swipedEntryId.value = null; listPage.value = 1; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { listPage.value = 1; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
 watch(tab, value => {
@@ -61,7 +63,11 @@ watch(tab, value => {
 
 function recognize() {
   if (!input.value.trim()) return
-  forms.value = parseEntries(input.value, rules.value).map(f => ({ ...f, bindRule: false }))
+  forms.value = parseEntries(input.value, rules.value).map(f => {
+    const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
+    const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
+    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, bindRule: false }
+  })
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
 async function onImage(e) {
@@ -75,13 +81,14 @@ async function onImage(e) {
   busy.value = ''
 }
 function addBlank(type = 'expense') {
-  const category = type === 'income' ? '工资' : '日用品'
-  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), time: '', amount: 0, type, category, merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
+  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   form.type = type
-  if (type === 'income' && !INCOME_CATEGORIES.includes(form.category)) form.category = '工资'
-  if (type === 'expense' && INCOME_CATEGORIES.includes(form.category)) form.category = '日用品'
+  if (type === 'income') form.category = INCOME_CATEGORIES.includes(form.category) ? form.category : '工资'
+  else if (type === 'transfer') form.category = '投資・資産移動'
+  else if (INCOME_CATEGORIES.includes(form.category) || form.category === '投資・資産移動') form.category = '日用品'
 }
 async function addCategory() {
   const name = prompt('新しいカテゴリ名を入力してください（20文字以内）')
@@ -111,16 +118,19 @@ async function saveAll() {
     forms.value = []; input.value = ''
     flash(`${saved}件の記録を保存しました`)
     await load()
+    await loadInvestments()
+    await loadTransfers()
   } catch (e) { flash(`一部の記録を保存しましたが、残りの保存に失敗しました：${e.message}。重複保存を避けるため、明細を再読み込みして確認してください。`) }
 }
 async function remove(id) {
   if (!confirm('この記録を削除しますか？')) return
-  await api('entries/' + id, { method: 'DELETE' }); load()
+  await api('entries/' + id, { method: 'DELETE' }); await load(); await loadInvestments()
 }
 function startEdit(entry) {
   editingEntry.value = {
     id: entry.id, date: entry.date, time: entry.time || '',
-    amount: Number(entry.amount), type: entry.type === 'income' ? 'income' : 'expense',
+    amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
+    transferTarget: entry.transfer_target || '', transferDate: entry.transfer_date || entry.date,
     category: entry.category || '日用品', merchant: entry.merchant || '',
     note: entry.note || '', raw: entry.raw || ''
   }
@@ -141,8 +151,99 @@ async function saveEdit() {
     editingEntry.value = null
     flash('記録を更新しました')
     await load()
+    await loadInvestments()
+    await loadTransfers()
   } catch (err) { flash('更新に失敗しました：' + err.message) }
 }
+
+const pendingTransfers = ref([])
+const transferLoading = ref(false)
+const transferDue = item => String(item.transfer_date || item.date) <= new Date().toLocaleDateString('sv-SE')
+async function loadTransfers() {
+  transferLoading.value = true
+  try {
+    let rows = await api('transfers')
+    // 予定日を迎えた未処理の振替は自動反映を試し、失敗したものだけ手動処理を表示する
+    const dueTransfers = rows.filter(item => Number(item.transfer_applied) !== 1 && transferDue(item))
+    for (const item of dueTransfers) {
+      try { await api('transfers/' + item.id, { method: 'POST' }) }
+      catch { /* 自動処理に失敗した場合は未処理のまま残し、手動処理を表示 */ }
+    }
+    if (dueTransfers.length) rows = await api('transfers')
+    pendingTransfers.value = rows
+  } catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
+  finally { transferLoading.value = false }
+}
+const transferStatus = item => Number(item.transfer_applied) === 1 ? '処理成功' : (String(item.transfer_date || item.date) > new Date().toLocaleDateString('sv-SE') ? '入金予定' : '未処理')
+const transferStatusClass = item => Number(item.transfer_applied) === 1 ? 'transfer-done' : 'transfer-waiting'
+async function retryTransfer(item) {
+  try {
+    await api('transfers/' + item.id, { method: 'POST' })
+    await loadTransfers()
+    await loadInvestments()
+    flash('資産移動を処理しました')
+  } catch (e) { flash('処理に失敗しました：' + e.message) }
+}
+async function deleteTransfer(item) {
+  if (!confirm('この待処理事項を削除しますか？家計簿の記録も削除されます。')) return
+  try {
+    await api('entries/' + item.id, { method: 'DELETE' })
+    await loadTransfers()
+    await load()
+    await loadInvestments()
+    flash('記録を削除しました')
+  } catch (e) { flash('削除に失敗しました：' + e.message) }
+}
+
+const investmentItems = [
+  { id: 'sbi', label: 'SBI証券', detail: '投資信託', unit: '円' },
+]
+const investments = ref({
+  sbi: { currentValue: null, pnl: null, updatedAt: '' },
+})
+const investmentBusy = ref(false)
+const investmentReturn = item => {
+  const form = investments.value[item.id]
+  const value = Number(form.currentValue)
+  const pnl = Number(form.pnl)
+  if (form.currentValue === null || form.currentValue === '' || form.pnl === null || form.pnl === '' ||
+      !Number.isFinite(value) || !Number.isFinite(pnl) || value - pnl <= 0) return null
+  return pnl / (value - pnl) * 100
+}
+async function loadInvestments() {
+  try {
+    const rows = await api('investments')
+    for (const row of rows) {
+      if (!investments.value[row.platform]) continue
+      investments.value[row.platform] = {
+        currentValue: row.current_value === null ? null : Number(row.current_value),
+        pnl: row.pnl === null ? null : Number(row.pnl),
+        updatedAt: row.updated_at || ''
+      }
+    }
+  } catch (e) { flash('資産データを読み込めませんでした：' + e.message) }
+}
+async function saveInvestment(item) {
+  const form = investments.value[item.id]
+  const value = Number(form.currentValue)
+  const pnl = Number(form.pnl)
+  if (form.currentValue === null || form.currentValue === '' || !Number.isSafeInteger(value) || value < 0 ||
+      form.pnl === null || form.pnl === '' || !Number.isSafeInteger(pnl)) {
+    flash('現在の評価額と評価損益を整数で入力してください')
+    return
+  }
+  investmentBusy.value = true
+  try {
+    const row = await api('investments', {
+      method: 'PUT',
+      body: JSON.stringify({ platform: item.id, currentValue: value, pnl })
+    })
+    form.updatedAt = row.updated_at || new Date().toISOString()
+    flash(item.label + 'の資産情報を更新しました')
+  } catch (e) { flash('更新に失敗しました：' + e.message) }
+  finally { investmentBusy.value = false }
+}
+
 const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map(c => c.amount)))
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
@@ -157,7 +258,7 @@ const listPageSize = 50
 const displayEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : filteredEntries.value
   return detailFilter.value
-    ? source.filter(entry => entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income'))
+    ? source.filter(entry => detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income'))
     : source
 })
 const listPageCount = computed(() => Math.max(1, Math.ceil(displayEntries.value.length / listPageSize)))
@@ -276,11 +377,11 @@ const weekRows = computed(() => {
 })
 const maxWeek = computed(() => Math.max(1, ...weekRows.value.map(w => w.amount)))
 const averageDaily = computed(() => dayRows.value.length ? Math.round(Number(stats.value?.total || 0) / dayRows.value.length) : 0)
+const todayLabel = computed(() => { const d = new Date(); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日` })
 const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
   return `${y}年${Number(m)}月`
 })
-const yearOptions = computed(() => Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - i))
 const yearMonthRows = computed(() => {
   const expenses = new Map((annualStats.value?.byMonth || []).map(item => [item.month, Number(item.amount)]))
   const incomes = new Map((annualStats.value?.incomeByMonth || []).map(item => [item.month, Number(item.amount)]))
@@ -337,7 +438,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <span class="brand-mark" aria-label="しろちゃんとちび毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="しろちゃん" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="ちび毛" /></span>
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
-      <input v-if="tab !== 'year' && !(tab === 'list' && detailFilter?.period === 'year')" type="month" v-model="month" class="month" aria-label="集計月" />
+      <span v-if="tab === 'add'" class="today-date">{{ todayLabel }}</span>
+      <div v-else-if="tab === 'list' || tab === 'stat'" class="topbar-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div>
+      <label v-else-if="tab === 'year'" class="topbar-year-wrap"><input v-model.number="selectedYear" class="topbar-year" type="number" min="1900" max="9999" step="1" inputmode="numeric" aria-label="集計年" /><span>年</span></label>
     </header>
     <div class="theme-switcher" role="group" aria-label="配色">
       <span>配色</span>
@@ -349,8 +452,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <section v-if="tab === 'add'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
       <div class="entry-mode-row">
-        <button class="button-secondary manual-add-button" @click="addBlank('expense')">✍️ 支出を手入力</button>
-        <button class="button-secondary manual-add-button income-add-button" @click="addBlank('income')">＋ 収入を記録</button>
+        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon expense-icon" aria-hidden="true">−</span><span>支出</span></button>
+        <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon income-icon" aria-hidden="true">＋</span><span>収入</span></button>
+        <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon transfer-icon" aria-hidden="true">⇄</span><span>資産移動</span></button>
       </div>
       <div class="panel capture-panel">
         <label class="field-label" for="entry-text">テキスト読み取り</label>
@@ -372,14 +476,19 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="type-switch" role="group" aria-label="記録の種類">
           <button type="button" :class="{ selected: (f.type || 'expense') === 'expense' }" @click="setEntryType(f, 'expense')">💸 支出</button>
           <button type="button" :class="{ selected: f.type === 'income' }" @click="setEntryType(f, 'income')">🌷 収入</button>
+          <button type="button" :class="{ selected: f.type === 'transfer' }" @click="setEntryType(f, 'transfer')">↗ 資産移動</button>
         </div>
-        <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
+        <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : f.type === 'transfer' ? '資産移動額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
         <p v-if="!(Number(f.amount) > 0)" class="amount-warning" role="alert">金額を読み取れませんでした。明細を確認して金額を入力してください。</p>
         <div class="field-grid">
           <label class="form-field"><span>日付</span><input type="date" v-model="f.date" /></label>
           <label class="form-field"><span>時刻</span><input type="time" v-model="f.time" /></label>
-          <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
+          <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : f.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
           <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
+        </div>
+        <div v-if="f.type === 'transfer'" class="field-grid transfer-schedule-fields">
+          <label class="form-field"><span>振替先</span><select v-model="f.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>
+          <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="f.transferDate" type="date" required /></label>
         </div>
         <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
         <label v-if="f.type !== 'income' && f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>この店舗を選択したカテゴリに登録し、次回から自動判定する</span></label>
@@ -401,8 +510,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </button>
         </div>
       </section>
-      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + categoryLabel(detailFilter.category) + 'の' + (detailFilter.type === 'income' ? '収入' : '支出') : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
-      <div v-if="detailFilter" class="detail-filter-strip"><span>カテゴリで絞り込み中</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
+      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + (detailFilter.type === 'transfer' ? '資産移動' : categoryLabel(detailFilter.category) + 'の' + (detailFilter.type === 'income' ? '収入' : '支出')) : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
+      <div v-if="detailFilter" class="detail-filter-strip"><span>{{ detailFilter.type === 'transfer' ? '資産移動で絞り込み中' : 'カテゴリで絞り込み中' }}</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
       <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
       <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><p>{{ detailFilter ? '条件に一致する記録はありません。' : '「入力」から最初の記録を追加できます。' }}</p><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
       
@@ -410,8 +519,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <li v-for="e in pagedEntries" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
           <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
             <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
-            <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : '支出' }}</small></div>
-            <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income' }">{{ e.type === 'income' ? '+' : '−' }}{{ yen(e.amount) }}</span>
+            <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
+            <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '↗ ' : '−' }}{{ yen(e.amount) }}</span>
           </div>
           <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
         </li>
@@ -427,13 +536,18 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="type-switch" role="group" aria-label="記録の種類">
             <button type="button" :class="{ selected: editingEntry.type === 'expense' }" @click="setEntryType(editingEntry, 'expense')">💸 支出</button>
             <button type="button" :class="{ selected: editingEntry.type === 'income' }" @click="setEntryType(editingEntry, 'income')">🌷 収入</button>
+            <button type="button" :class="{ selected: editingEntry.type === 'transfer' }" @click="setEntryType(editingEntry, 'transfer')">↗ 資産移動</button>
           </div>
           <label class="form-field"><span>金額（円）</span><input v-model.number="editingEntry.amount" type="number" min="1" inputmode="numeric" required /></label>
           <div class="field-grid">
             <label class="form-field"><span>日付</span><input v-model="editingEntry.date" type="date" required /></label>
             <label class="form-field"><span>時刻</span><input v-model="editingEntry.time" type="time" /></label>
-            <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
+            <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : editingEntry.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
             <label class="form-field"><span>店舗</span><input v-model="editingEntry.merchant" /></label>
+          </div>
+          <div v-if="editingEntry.type === 'transfer'" class="field-grid transfer-schedule-fields">
+            <label class="form-field"><span>振替先</span><select v-model="editingEntry.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>
+            <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="editingEntry.transferDate" type="date" required /></label>
           </div>
           <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary">変更を保存</button></div>
@@ -453,6 +567,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="piggy-content"><div class="piggy-title">今月の収支バランス</div><div class="piggy-status">{{ pigLabel(monthlyRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (monthlyRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(monthlyRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip"><div><small>今月の収入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>今月の支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>差引残高</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
+      <div class="income-expense-strip transfer-summary"><div><small>今月の資産移動</small><strong>{{ yen(stats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'month')" aria-label="今月の資産移動明細を表示">{{ stats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div></div>
       <div class="metric-grid">
         <div class="metric-card"><span class="metric-icon">▦</span><small>支出件数</small><strong>{{ stats?.count || 0 }}<em>件</em></strong></div>
         <div class="metric-card"><span class="metric-icon">↗</span><small>1日平均支出（支出があった日）</small><strong>{{ yen(averageDaily) }}</strong></div>
@@ -484,12 +599,12 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
     <section v-else-if="tab === 'year'" class="page-section stats-page annual-page">
       <div class="page-heading"><div><p class="eyebrow">年間サマリー</p><h1>年間集計</h1><p class="heading-subtitle">年ごとの支出を集計</p></div><span class="heading-icon">⌁</span></div>
-      <label class="year-picker"><span>集計年</span><select v-model.number="selectedYear" aria-label="集計年"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select></label>
       <div class="hero-total annual-hero">
         <span>{{ selectedYear }}年の支出合計</span><strong>{{ yen(annualStats?.total) }}</strong>
         <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件の支出記録</div>
       </div>
       <div class="income-expense-strip annual-income-strip"><div><small>年間収入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>年間支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>年間収支</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
+      <div class="income-expense-strip transfer-summary"><div><small>年間の資産移動</small><strong>{{ yen(annualStats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'year')" aria-label="年間の資産移動明細を表示">{{ annualStats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div></div>
       <div class="piggy-card" :class="'piggy-' + pigState(annualRatio)">
         <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="しろちゃんとちび毛"><img class="puppy-white" src="https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" src="https://cdn2.cdnstep.com/8A5BxvcpUvyc8nO7YV3A/1-1.thumb128.png" alt="ちび毛としろちゃんのスタンプ" loading="lazy" /><small>しろちゃん × ちび毛</small></div>
         <div class="piggy-content"><div class="piggy-title">年間の収支バランス</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>
@@ -574,11 +689,41 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </template>
     </section>
 
+
+    <section v-else-if="tab === 'investments'" class="page-section">
+      <article class="panel pending-transfer-panel">
+        <div class="pending-transfer-heading"><h2>振替予定</h2><button class="pending-refresh" :disabled="transferLoading" @click="loadTransfers" aria-label="振替予定を更新" title="更新">↻ 更新</button></div>
+        <div v-if="transferLoading" class="pending-transfer-empty">読み込み中…</div>
+        <div v-else-if="!pendingTransfers.length" class="pending-transfer-empty">確認が必要な振替はありません</div>
+        <div v-else class="pending-transfer-list">
+          <div v-for="item in pendingTransfers" :key="item.id" class="pending-transfer-row">
+            <div class="pending-transfer-main"><strong>{{ item.merchant || item.note || 'SBI証券への資産移動' }}</strong><span>予定日 {{ item.transfer_date || item.date }} · ¥{{ Number(item.amount || 0).toLocaleString('ja-JP') }}</span></div>
+            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" aria-label="削除" title="削除" @click="deleteTransfer(item)">×</button><button v-else-if="transferDue(item)" class="pending-retry" @click="retryTransfer(item)">手動処理</button></div>
+          </div>
+        </div>
+      </article>
+      <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">振替は評価額に自動反映。評価額・損益は手動更新できます</p></div><span class="heading-icon">￥</span></div>
+      <div class="investment-note">振替先を指定すると評価額に自動加算。評価額・損益は手動更新できます。家計の収支には含みません。</div>
+      <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
+        <div class="investment-card-heading"><div><h2>{{ item.label }}</h2><p>{{ item.detail }}</p></div><span class="investment-unit">{{ item.unit }}</span></div>
+        <label class="form-field"><span>現在の評価額（{{ item.unit }}）</span><input v-model.number="investments[item.id].currentValue" type="number" min="0" step="1" inputmode="numeric" placeholder="現在の評価額" /></label>
+        <label class="form-field"><span>評価損益（{{ item.unit }}）</span><input v-model.number="investments[item.id].pnl" type="number" step="1" inputmode="numeric" placeholder="例：-1339" /></label>
+        <div class="investment-summary">
+          <div><small>評価損益</small><strong :class="Number(investments[item.id].pnl) > 0 ? 'investment-positive' : Number(investments[item.id].pnl) < 0 ? 'investment-negative' : ''">{{ investments[item.id].pnl === null || investments[item.id].pnl === '' ? '—' : (Number(investments[item.id].pnl) > 0 ? '+' : '') + Number(investments[item.id].pnl).toLocaleString('ja-JP') + ' ' + item.unit }}</strong></div>
+          <div><small>損益率</small><strong :class="investmentReturn(item) > 0 ? 'investment-positive' : investmentReturn(item) < 0 ? 'investment-negative' : ''">{{ investmentReturn(item) === null ? '—' : (investmentReturn(item) > 0 ? '+' : '') + investmentReturn(item).toFixed(2) + '%' }}</strong></div>
+        </div>
+        <p class="investment-updated">最終更新：{{ investments[item.id].updatedAt ? new Date(investments[item.id].updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '未更新' }}</p>
+        <button class="button-primary investment-save" :disabled="investmentBusy" @click="saveInvestment(item)">最新データを保存</button>
+      </article>
+      <p class="investment-footnote">評価額は手動更新できます。振替先を指定した資産移動は登録時に自動加算されます。相場・評価損益の自動取得や日次履歴の保存は行いません。</p>
+    </section>
+
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon">＋</span><span>入力</span></button>
       <button :class="{ active: tab === 'list' }" @click="tab = 'list'"><span class="nav-icon">≡</span><span>明細</span></button>
       <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon">▥</span><span>月間集計</span></button>
       <button :class="{ active: tab === 'year' }" @click="tab = 'year'"><span class="nav-icon">▤</span><span>年間集計</span></button>
+      <button :class="{ active: tab === 'investments' }" @click="tab = 'investments'"><span class="nav-icon">￥</span><span>資産・投資</span></button>
     </nav>
   </main>
 </template>
@@ -591,13 +736,17 @@ button,input,select,textarea{font:inherit}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 button:disabled{opacity:.45;cursor:not-allowed}
 main{width:min(100%,560px);min-height:100dvh;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 18px calc(104px + env(safe-area-inset-bottom));background:var(--paper);color:var(--ink);transition:background .2s,color .2s}
+/* Keep long pages, especially annual statistics, vertically scrollable on iOS/PWA. */
+html,body,#app{min-height:100%;height:auto;overflow-y:auto;-webkit-overflow-scrolling:touch}
+main{height:auto;overflow:visible}
+.annual-page{display:block;min-height:0;overflow:visible;padding-bottom:18px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0 24px}
 .brand{display:flex;align-items:center;gap:10px}.brand-mark{display:grid;place-items:center;width:58px;height:42px;border-radius:15px;background:linear-gradient(135deg,#fff0e6,#ffeaf1);color:var(--blue);font-size:20px;font-weight:800;letter-spacing:-7px;padding-right:7px;box-shadow:inset 0 0 0 1px #f8dce4}.brand strong{display:block;font-size:17px;letter-spacing:.02em}.brand-heart{color:#e985a2;font-size:15px}.brand small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
 input,select,textarea{width:100%;min-width:0;border:1px solid #e0e6ed;border-radius:11px;background:#fff;color:var(--ink);padding:11px 12px;outline:none;transition:border-color .15s,box-shadow .15s}
 input:focus,select:focus,textarea:focus{border-color:#8da9e8;box-shadow:0 0 0 3px #315fbd18}
 .month{width:142px;padding:9px 8px;font-size:12px;font-weight:650;background:#fff}
 .page-section{animation:appear .18s ease-out}@keyframes appear{from{opacity:.6;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
-.page-heading{display:flex;align-items:center;justify-content:space-between;margin:0 0 18px}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.15em;color:var(--blue);margin:0 0 4px}.page-heading h1{font-size:27px;line-height:1.2;letter-spacing:-.045em;margin:0;font-weight:800}.heading-subtitle{font-size:12px;color:var(--muted);margin:7px 0 0}.heading-icon{display:grid;place-items:center;width:43px;height:43px;border-radius:15px;background:#e9efff;color:var(--blue);font-size:25px;font-weight:500}
+.page-heading{display:flex;align-items:center;justify-content:space-between;margin:0 0 18px}.today-date{font-size:12px;font-weight:750;color:var(--muted);white-space:nowrap;padding:8px 0 8px 8px}.topbar-period{display:flex;align-items:center;gap:5px}.period-reset{flex:none;padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}.topbar-year-wrap{display:flex;align-items:center;gap:3px;padding:0 8px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--muted);font-size:12px;font-weight:750}.topbar-year{width:58px;min-width:0;padding:9px 0;border:0;background:transparent;font-size:13px;font-weight:750;text-align:right;appearance:textfield;-moz-appearance:textfield}.topbar-year::-webkit-inner-spin-button,.topbar-year::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.15em;color:var(--blue);margin:0 0 4px}.page-heading h1{font-size:27px;line-height:1.2;letter-spacing:-.045em;margin:0;font-weight:800}.heading-subtitle{font-size:12px;color:var(--muted);margin:7px 0 0}.heading-icon{display:grid;place-items:center;width:43px;height:43px;border-radius:15px;background:#e9efff;color:var(--blue);font-size:25px;font-weight:500}
 .panel,.entry-card,.stats-card,.metric-card{background:var(--card);border:1px solid #edf0f4;border-radius:18px;box-shadow:0 5px 20px #24354b08}
 .capture-panel{padding:16px}.field-label{display:block;font-size:13px;font-weight:750;margin-bottom:9px}
 textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;background:#fbfcfe;border-color:#e8edf3}
@@ -621,9 +770,21 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .bar-track{height:7px;background:#f0f3f7;border-radius:99px;overflow:hidden}.bar-fill{display:block;height:100%;background:#5279d1;border-radius:99px;transition:width .25s}.fill-1{background:#26a69a}.fill-2{background:#e5a34d}.fill-3{background:#9b78d0}.fill-4{background:#52a5c9}.fill-5{background:#e07886}.category-share{display:block;text-align:right;color:#9aa4b1;font-size:10px;margin-top:4px}
 .daily-list{display:grid;gap:13px}.daily-row{display:flex;align-items:center;gap:11px}.daily-date{display:flex;align-items:baseline;justify-content:center;gap:1px;width:34px;flex:none}.daily-date strong{font-size:16px}.daily-date span{font-size:10px;color:var(--muted)}.daily-date.week-index{width:48px;gap:0;white-space:nowrap}.daily-date.week-index strong{font-size:12px}.daily-bar-wrap{flex:1;min-width:0}.daily-bar-track{height:7px;background:#f0f3f7;border-radius:99px;overflow:hidden}.daily-bar-track span{display:block;height:100%;background:linear-gradient(90deg,#4f7bd7,#6b9de9);border-radius:99px}.daily-bar-wrap small{display:block;font-size:10px;color:#9aa4b1;margin-top:3px}.daily-amount{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .empty-state{display:flex;align-items:center;flex-direction:column;text-align:center;padding:34px 18px;background:#fff;border:1px dashed #dce3ec;border-radius:18px}.empty-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:16px;background:#edf2ff;color:var(--blue);font-size:23px;margin-bottom:12px}.empty-state strong{font-size:14px}.empty-state p{font-size:12px;color:var(--muted);margin:6px 0 17px}.empty-state button{min-width:140px}.stats-empty{margin-top:8px}
-.bottom-nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));width:min(calc(100% - 28px),460px);display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:7px;background:#ffffffed;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid #e8edf2;border-radius:19px;box-shadow:0 8px 30px #20324b18}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;color:#8994a3;padding:7px 4px;border-radius:13px;font-size:10px;font-weight:700}.bottom-nav button.active{background:#edf2ff;color:var(--blue)}.nav-icon{font-size:21px;line-height:1.15;font-weight:500}
+.bottom-nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));width:min(calc(100% - 28px),460px);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;padding:6px;background:#ffffffed;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid #e8edf2;border-radius:19px;box-shadow:0 8px 30px #20324b18}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;color:#8994a3;padding:7px 4px;border-radius:13px;font-size:10px;font-weight:700}.bottom-nav button.active{background:#edf2ff;color:var(--blue)}.nav-icon{font-size:21px;line-height:1.15;font-weight:500}
+
+.pending-transfer-panel{padding:10px 13px;margin-bottom:12px}.pending-transfer-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}.pending-transfer-heading h2{font-size:14px;margin:0}.pending-refresh{padding:4px 7px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:11px;font-weight:700}.pending-refresh:active{background:var(--paper)}.pending-transfer-list{display:grid;gap:5px}.pending-transfer-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line)}.pending-transfer-main{display:grid;gap:4px;min-width:0}.pending-transfer-main strong{font-size:12px;overflow-wrap:anywhere}.pending-transfer-main span{font-size:11px;color:var(--muted)}.pending-transfer-actions{display:flex;align-items:center;gap:7px;flex:none}.pending-delete{width:29px;height:29px;border:1px solid var(--line);border-radius:50%;background:var(--card);color:var(--muted);font-size:20px;line-height:1;display:grid;place-items:center}.pending-retry{padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--blue-dark);font-size:11px;font-weight:800;white-space:nowrap}.pending-transfer-status{flex:none;padding:5px 8px;border-radius:99px;font-size:10px;font-weight:800}.transfer-done{background:#e5f6ed;color:#24815b}.transfer-waiting{background:#fff3d7;color:#9b7620}.pending-transfer-empty{padding:12px 0;color:var(--muted);font-size:12px}
+.investment-note{padding:12px 14px;margin:-5px 0 14px;border-radius:13px;background:var(--card);border:1px solid var(--line);font-size:12px;line-height:1.7;color:var(--muted)}
+.investment-card{padding:16px;margin-bottom:13px}
+.investment-card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}
+.investment-card-heading h2{margin:0;font-size:17px}.investment-card-heading p{margin:3px 0 0;color:var(--muted);font-size:12px}
+.investment-unit{padding:5px 10px;border-radius:9px;background:var(--paper);font-size:12px;font-weight:800;color:var(--blue)}
+.investment-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:13px;padding:12px;background:var(--paper);border-radius:12px}
+.investment-summary div{display:grid;gap:4px}.investment-summary small{font-size:11px;color:var(--muted)}.investment-summary strong{font-size:17px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.transfer-amount{color:var(--blue)}
+.investment-positive{color:#25845f}.investment-negative{color:#c44f69}.investment-updated{margin:11px 0 13px;color:var(--muted);font-size:11px}
+.investment-save{width:100%}.investment-footnote{font-size:11px;line-height:1.7;color:var(--muted);padding:0 4px}
 .year-picker{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 13px;padding:10px 13px;background:#fff;border:1px solid #edf0f4;border-radius:13px;font-size:12px;font-weight:700;color:var(--muted)}.year-picker select{width:125px;padding:8px 10px;font-size:13px;font-weight:750;color:var(--ink)}.annual-hero{margin-bottom:0}.year-month-list{display:grid;gap:15px}.year-month-row{display:grid;grid-template-columns:36px minmax(40px,1fr) minmax(78px,auto);align-items:center;gap:10px}.year-month-label{font-size:12px;font-weight:700;color:#647184}.year-month-track{height:8px;border-radius:99px;background:#f0f3f7;overflow:hidden}.year-month-track span{display:block;height:100%;border-radius:99px;background:var(--blue);transition:width .2s}.year-month-row strong{text-align:right;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}.category-share{display:block;color:#9aa4b1;font-size:10px;margin-top:5px}
-.entry-mode-row{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:-5px 0 12px}.manual-add-button{min-height:43px;font-size:12px}.income-add-button{background:#fff4f0;color:#c15e48;border-color:#ffe1d8}.type-switch{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;border-radius:13px;background:#f2f5f9}.type-switch button{border:0;border-radius:9px;padding:9px;background:transparent;color:#788495;font-size:13px;font-weight:800}.type-switch button.selected{background:#fff;color:#315fbd;box-shadow:0 2px 8px #20324b12}.type-switch button:last-child.selected{color:#16836f}.income-amount-wrap>span{color:#16836f}.income-category-dot{background:#e5f7ef;color:#16836f}.income-amount{color:#16836f}.income-text{color:#16836f!important}.expense-text{color:#d84d4d!important}.batch-actions-empty{margin-top:12px}.income-expense-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:11px 0}.income-expense-strip>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:12px 10px;background:#fff;border:1px solid #edf0f4;border-radius:13px}.income-expense-strip small{font-size:10px;color:var(--muted)}.income-expense-strip strong{font-size:clamp(12px,3.2vw,15px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.piggy-card{display:flex;align-items:center;gap:13px;margin:12px 0;padding:15px;background:linear-gradient(135deg,#fff9ef,#fff);border:1px solid #f5e9d6;border-radius:18px;transition:background .2s,border-color .2s}.piggy-character{display:grid;place-items:center;flex:none;width:64px;height:64px;border-radius:20px;background:#fff0dc;font-size:35px;letter-spacing:-8px;padding-right:7px}.piggy-content{flex:1;min-width:0}.piggy-title{font-size:13px;font-weight:850}.piggy-status{font-size:11px;color:#8c7a64;margin:3px 0 9px}.piggy-track{height:10px;border-radius:99px;background:#f1e7dc;overflow:hidden}.piggy-track span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#74c6a7,#f0bf5e);transition:width .35s,background .2s}.piggy-numbers{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:10px;color:#8c7a64}.piggy-numbers strong{font-size:11px;color:#5b5044}.piggy-sweating{background:linear-gradient(135deg,#fff0ed,#fff);border-color:#ffc6bc}.piggy-sweating .piggy-character{background:#ffe1dc;animation:piggy-shake .5s ease-in-out infinite alternate}.piggy-sweating .piggy-track span{background:linear-gradient(90deg,#ffad64,#ee5b55)}.piggy-sweating .piggy-status{color:#cb5148}.piggy-broken{background:linear-gradient(135deg,#fff0f0,#fff);border-color:#f3a4a4}.piggy-broken .piggy-character{background:#ffe0e0;filter:grayscale(.2);animation:piggy-shake .18s linear 3}.piggy-broken .piggy-track span{background:#dc4242}.piggy-broken .piggy-status{color:#c92f3b;font-weight:800}.piggy-empty{background:#f8fafc;border-color:#e8edf2}.piggy-empty .piggy-character{background:#edf2ff}.piggy-empty .piggy-track span{background:#b7c2d2}@keyframes piggy-shake{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.category-emoji{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:#f2f5fb;font-size:15px}.annual-income-strip{margin-top:10px}
+.entry-mode-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr);gap:8px;margin:-5px 0 12px}.manual-add-button{display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:40px;padding:4px 4px;border:1px solid #e8e8ee;border-radius:11px;background:rgba(255,255,255,.88);color:#454b57;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 2px 5px rgba(40,45,60,.04);transition:transform .15s,box-shadow .15s}.manual-add-button:active{transform:scale(.97);box-shadow:none}.entry-mode-icon{display:inline-flex;align-items:center;justify-content:center;flex:0 0 22px;width:22px;height:22px;border-radius:7px;font-size:17px;font-weight:800;line-height:1}.expense-icon{background:#fff0ef;color:#d85d59}.income-icon{background:#eaf7ee;color:#329464}.transfer-icon{background:#edf3ff;color:#587fc4;font-size:17px}.income-add-button{background:rgba(255,255,255,.88);color:#454b57;border-color:#e8e8ee}.type-switch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:5px;border-radius:13px;background:#f2f5f9}.type-switch button{border:0;border-radius:9px;padding:9px;background:transparent;color:#788495;font-size:13px;font-weight:800}.type-switch button.selected{background:#fff;color:#315fbd;box-shadow:0 2px 8px #20324b12}.type-switch button:last-child.selected{color:#16836f}.income-amount-wrap>span{color:#16836f}.income-category-dot{background:#e5f7ef;color:#16836f}.income-amount{color:#16836f}.income-text{color:#16836f!important}.expense-text{color:#d84d4d!important}.batch-actions-empty{margin-top:12px}.transfer-count-link{display:inline-flex;align-items:center;gap:5px;padding:2px 0;border:0;background:transparent;color:inherit;font:inherit;font-weight:800;text-align:left;cursor:pointer}.transfer-count-link span{color:#587fc4;font-size:18px}.transfer-count-link:active{opacity:.65}.income-expense-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:11px 0}.income-expense-strip>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:12px 10px;background:#fff;border:1px solid #edf0f4;border-radius:13px}.income-expense-strip small{font-size:10px;color:var(--muted)}.income-expense-strip strong{font-size:clamp(12px,3.2vw,15px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.piggy-card{display:flex;align-items:center;gap:13px;margin:12px 0;padding:15px;background:linear-gradient(135deg,#fff9ef,#fff);border:1px solid #f5e9d6;border-radius:18px;transition:background .2s,border-color .2s}.piggy-character{display:grid;place-items:center;flex:none;width:64px;height:64px;border-radius:20px;background:#fff0dc;font-size:35px;letter-spacing:-8px;padding-right:7px}.piggy-content{flex:1;min-width:0}.piggy-title{font-size:13px;font-weight:850}.piggy-status{font-size:11px;color:#8c7a64;margin:3px 0 9px}.piggy-track{height:10px;border-radius:99px;background:#f1e7dc;overflow:hidden}.piggy-track span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#74c6a7,#f0bf5e);transition:width .35s,background .2s}.piggy-numbers{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:10px;color:#8c7a64}.piggy-numbers strong{font-size:11px;color:#5b5044}.piggy-sweating{background:linear-gradient(135deg,#fff0ed,#fff);border-color:#ffc6bc}.piggy-sweating .piggy-character{background:#ffe1dc;animation:piggy-shake .5s ease-in-out infinite alternate}.piggy-sweating .piggy-track span{background:linear-gradient(90deg,#ffad64,#ee5b55)}.piggy-sweating .piggy-status{color:#cb5148}.piggy-broken{background:linear-gradient(135deg,#fff0f0,#fff);border-color:#f3a4a4}.piggy-broken .piggy-character{background:#ffe0e0;filter:grayscale(.2);animation:piggy-shake .18s linear 3}.piggy-broken .piggy-track span{background:#dc4242}.piggy-broken .piggy-status{color:#c92f3b;font-weight:800}.piggy-empty{background:#f8fafc;border-color:#e8edf2}.piggy-empty .piggy-character{background:#edf2ff}.piggy-empty .piggy-track span{background:#b7c2d2}@keyframes piggy-shake{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.category-emoji{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:#f2f5fb;font-size:15px}.annual-income-strip{margin-top:10px}
 
 /* しろちゃんとちび毛のテーマ：クリーム色、桜色、暖かな黄色 */
 .brand-mark{display:flex;align-items:center;justify-content:center;gap:0;overflow:hidden}

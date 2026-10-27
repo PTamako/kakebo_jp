@@ -26,3 +26,14 @@ INSERT OR IGNORE INTO rules (keyword, category) VALUES
 ('家賃','居住'),('房租','居住'),('電気','居住'),('ガス','居住'),('水道','居住'),('水电','居住'),
 ('病院','医疗'),('薬局','医疗'),('クリニック','医疗'),
 ('映画','娱乐'),('カラオケ','娱乐'),('Netflix','娱乐');
+
+
+-- 投資は家計の収支明細と分離し、最新スナップショットのみを保存する。
+CREATE TABLE IF NOT EXISTS investment_snapshots (
+  platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),
+  current_value INTEGER,
+  pnl INTEGER,
+  updated_at TEXT
+);
+
+-- SBI投信積立などの資金移動は entries.type='transfer' とし、生活費統計から除外する。

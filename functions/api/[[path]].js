@@ -98,6 +98,14 @@ const DEFAULT_RULES = {
 
 const DEFAULT_RULE_ROWS = [...new Map(Object.entries(DEFAULT_RULES).flatMap(([category, keywords]) => keywords.map(keyword => [keyword, [keyword, category]]) )).values()]
 
+
+// SBIの投信積立引落は資産移動として扱い、生活支出から除外する。
+const isInvestmentTransfer = e => {
+  const text = [e.merchant, e.note, e.raw].filter(Boolean).join(' ').toLowerCase()
+  return /証券投信積立サービス|投信積立サービス|翌月買付分/.test(text) ||
+    (/sbi/.test(text) && /投信積立|投資信託積立/.test(text))
+}
+
 export async function onRequest({ request, env, params }) {
   // 个人使用：设置环境变量 AUTH_TOKEN 后，所有请求都需要携带 x-token
   if (env.AUTH_TOKEN && request.headers.get('x-token') !== env.AUTH_TOKEN)
@@ -122,6 +130,68 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    // transfer_target stores the destination account for asset-transfer entries.
+    try { await db.prepare('SELECT transfer_target FROM entries LIMIT 1').first() }
+    catch (columnCheckError) {
+      try { await db.prepare('ALTER TABLE entries ADD COLUMN transfer_target TEXT').run() }
+      catch (migrationError) {
+        try { await db.prepare('SELECT transfer_target FROM entries LIMIT 1').first() }
+        catch { throw migrationError }
+      }
+    }
+
+    // Track whether a transfer has already been applied to its destination balance.
+    try { await db.prepare('SELECT transfer_applied FROM entries LIMIT 1').first() }
+    catch (columnCheckError) {
+      try { await db.prepare('ALTER TABLE entries ADD COLUMN transfer_applied INTEGER NOT NULL DEFAULT 0').run() }
+      catch (migrationError) {
+        try { await db.prepare('SELECT transfer_applied FROM entries LIMIT 1').first() }
+        catch { throw migrationError }
+      }
+    }
+
+    // transfer_date is the date the money/points actually arrive at the destination.
+    try { await db.prepare('SELECT transfer_date FROM entries LIMIT 1').first() }
+    catch (columnCheckError) {
+      try { await db.prepare('ALTER TABLE entries ADD COLUMN transfer_date TEXT').run() }
+      catch (migrationError) {
+        try { await db.prepare('SELECT transfer_date FROM entries LIMIT 1').first() }
+        catch { throw migrationError }
+      }
+    }
+
+    // Investment balances exist independently from household income/expense totals.
+    await db.prepare(`CREATE TABLE IF NOT EXISTS investment_snapshots (
+      platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),
+      current_value INTEGER,
+      pnl INTEGER,
+      updated_at TEXT
+    )`).run()
+    await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL)").run()
+    const applyTransferDelta = async (target, delta) => {
+      if (target !== 'sbi' || !delta) return
+      await db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + ?1), updated_at = ?2 WHERE platform = ?3")
+        .bind(delta, new Date().toISOString(), target).run()
+    }
+
+    // Apply scheduled transfers only on/after their effective date. D1 batch makes
+    // balance adjustment and marking due rows applied one atomic operation.
+    const applyDueTransfers = async () => {
+      const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      for (const target of ['sbi']) {
+        await db.batch([
+          db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + (SELECT COALESCE(SUM(amount), 0) FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)), updated_at = ?3 WHERE platform = ?1 AND EXISTS (SELECT 1 FROM entries WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0)")
+            .bind(target, today, new Date().toISOString()),
+          db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = ?1 AND COALESCE(transfer_date, date) <= ?2 AND COALESCE(transfer_applied, 0) = 0")
+            .bind(target, today)
+        ])
+      }
+    }
+    await applyDueTransfers()
+
+    // 既存のSBI投信積立明細も資産移動へ補正する（生活費統計から除外）。
+    await db.prepare("UPDATE entries SET type = 'transfer', category = '投資・資産移動' WHERE (merchant LIKE '%証券投信積立サービス%' OR note LIKE '%証券投信積立サービス%' OR raw LIKE '%証券投信積立サービス%' OR merchant LIKE '%翌月買付分%' OR note LIKE '%翌月買付分%' OR raw LIKE '%翌月買付分%') AND type != 'transfer'").run()
+
     if (a === 'entries') {
       if (m === 'GET') {
         const datePrefix = entriesYear && /^\\d{4}$/.test(entriesYear) ? entriesYear : month
@@ -132,27 +202,47 @@ export async function onRequest({ request, env, params }) {
       }
       if (m === 'POST') {
         const e = await request.json()
+        const transfer = e.type === 'transfer' || isInvestmentTransfer(e)
         const amount = Math.round(Number(e.amount))
         if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
+        const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
+        const transferDate = transfer ? (e.transferDate || e.date) : null
+        if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
+        const today = new Date().toISOString().slice(0, 10)
+        const applied = target && transferDate <= today ? 1 : 0
         await db.prepare(
-          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)'
-        ).bind(e.date, e.time || '', amount, e.category || (e.type === 'income' ? '工资' : '日用品'), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), e.type === 'income' ? 'income' : 'expense').run()
+          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied, transferDate).run()
+        if (applied) await applyTransferDelta(target, amount)
         return json({ ok: true })
       }
       if (m === 'PUT' && b) {
         const e = await request.json()
+        const transfer = e.type === 'transfer' || isInvestmentTransfer(e)
         const id = Number(b)
         const amount = Math.round(Number(e.amount))
         if (!Number.isInteger(id) || id <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
+        const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1').bind(id).first()
+        if (!previous) return json({ error: '明細が見つかりません' }, 404)
+        const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
+        const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
+        if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
+        if (previous.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
+        const today = new Date().toISOString().slice(0, 10)
+        const applied = target && transferDate <= today ? 1 : 0
         const result = await db.prepare(
-          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8 WHERE id = ?9'
-        ).bind(e.date, e.time || '', amount, e.category || (e.type === 'income' ? '工资' : '日用品'), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), e.type === 'income' ? 'income' : 'expense', id).run()
+          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11 WHERE id = ?12'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied ? 1 : 0, transferDate, id).run()
+        if (applied) await applyTransferDelta(target, amount)
         return json({ ok: true, changes: result.meta?.changes ?? null })
       }
       if (m === 'DELETE' && b) {
-        await db.prepare('DELETE FROM entries WHERE id = ?1').bind(Number(b)).run()
+        const id = Number(b)
+        const previous = await db.prepare('SELECT amount, transfer_target, transfer_applied FROM entries WHERE id = ?1').bind(id).first()
+        if (previous?.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
+        await db.prepare('DELETE FROM entries WHERE id = ?1').bind(id).run()
         return json({ ok: true })
       }
     }
@@ -216,24 +306,68 @@ export async function onRequest({ request, env, params }) {
         return json({ ok: true, keyword: kw, category })
       }
     }
+
+    if (a === 'transfers' && b && m === 'POST') {
+      const id = Number(b)
+      const item = await db.prepare("SELECT id, amount, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1 AND type = 'transfer'").bind(id).first()
+      if (!item || item.transfer_target !== 'sbi') return json({ error: '対象の資産移動が見つかりません' }, 404)
+      if (Number(item.transfer_applied) !== 1) {
+        await applyTransferDelta('sbi', Number(item.amount || 0))
+        await db.prepare('UPDATE entries SET transfer_applied = 1 WHERE id = ?1').bind(id).run()
+      }
+      const updated = await db.prepare('SELECT id, date, amount, merchant, note, transfer_target, transfer_applied, transfer_date FROM entries WHERE id = ?1').bind(id).first()
+      return json(updated)
+    }
+
+    if (a === 'transfers' && m === 'GET') {
+      const { results } = await db.prepare("SELECT id, date, amount, merchant, note, transfer_target, transfer_applied, transfer_date FROM entries WHERE type = 'transfer' AND transfer_target = 'sbi' AND (COALESCE(transfer_date, date) >= date('now', '-30 days') OR COALESCE(transfer_applied, 0) = 0) ORDER BY COALESCE(transfer_date, date) ASC, id DESC LIMIT 100").all()
+      return json(results)
+    }
+
+    if (a === 'investments') {
+      await db.prepare(`CREATE TABLE IF NOT EXISTS investment_snapshots (
+        platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),
+        current_value INTEGER,
+        pnl INTEGER,
+        updated_at TEXT
+      )`).run()
+      await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL)").run()
+      if (m === 'GET') {
+        const { results } = await db.prepare("SELECT platform, current_value, pnl, updated_at FROM investment_snapshots ORDER BY CASE platform WHEN 'sbi' THEN 1 ELSE 2 END").all()
+        return json(results)
+      }
+      if (m === 'PUT') {
+        const body = await request.json()
+        const platform = String(body.platform || '')
+        const currentValue = Number(body.currentValue)
+        const pnl = Number(body.pnl)
+        if (platform !== 'sbi' ||
+            !Number.isSafeInteger(currentValue) || currentValue < 0 ||
+            !Number.isSafeInteger(pnl)) return json({ error: '入力内容を確認してください' }, 400)
+        const updatedAt = new Date().toISOString()
+        await db.prepare('INSERT INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(platform) DO UPDATE SET current_value = excluded.current_value, pnl = excluded.pnl, updated_at = excluded.updated_at').bind(platform, currentValue, pnl, updatedAt).run()
+        return json({ platform, current_value: currentValue, pnl, updated_at: updatedAt })
+      }
+    }
+
     if (a === 'stats' && m === 'GET') {
       const year = (url.searchParams.get('year') || '').slice(0, 4)
       if (year) {
         if (!/^\d{4}$/.test(year)) return json({ error: '年份格式不正确' }, 400)
         const like = year + '%'
-        const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type != 'income' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type != 'income' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income FROM entries WHERE date LIKE ?1").bind(like).first()
-        const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type != 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
-        const monthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type != 'income' GROUP BY substr(date,1,7) ORDER BY month").bind(like).all()
+        const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income, COALESCE(SUM(CASE WHEN type = 'transfer' THEN amount ELSE 0 END),0) transferTotal, SUM(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END) transferCount FROM entries WHERE date LIKE ?1").bind(like).first()
+        const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()
+        const monthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY substr(date,1,7) ORDER BY month").bind(like).all()
         const incomeMonthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY substr(date,1,7) ORDER BY month").bind(like).all()
         const incomeCategoryRows = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
         const incomeMonthCategoryRows = await db.prepare("SELECT substr(date,1,7) month, category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY substr(date,1,7), category ORDER BY month, amount DESC").bind(like).all()
-        return json({ year: Number(year), total: total.t, count: total.n, income: total.income, byCategory: cat.results, byMonth: monthRows.results, incomeByMonth: incomeMonthRows.results, incomeByCategory: incomeCategoryRows.results, incomeByMonthCategory: incomeMonthCategoryRows.results })
+        return json({ year: Number(year), total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, byCategory: cat.results, byMonth: monthRows.results, incomeByMonth: incomeMonthRows.results, incomeByCategory: incomeCategoryRows.results, incomeByMonthCategory: incomeMonthCategoryRows.results })
       }
       const like = month + '%'
-      const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type != 'income' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type != 'income' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income FROM entries WHERE date LIKE ?1").bind(like).first()
-      const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type != 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
-      const day = await db.prepare("SELECT date, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type != 'income' GROUP BY date ORDER BY date").bind(like).all()
-      return json({ total: total.t, count: total.n, income: total.income, byCategory: cat.results, byDay: day.results })
+      const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income, COALESCE(SUM(CASE WHEN type = 'transfer' THEN amount ELSE 0 END),0) transferTotal, SUM(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END) transferCount FROM entries WHERE date LIKE ?1").bind(like).first()
+      const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()
+      const day = await db.prepare("SELECT date, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY date ORDER BY date").bind(like).all()
+      return json({ total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, byCategory: cat.results, byDay: day.results })
     }
     return json({ error: 'not found' }, 404)
   } catch (err) {

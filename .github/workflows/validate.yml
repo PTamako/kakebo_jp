@@ -14,5 +14,6 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run test:parse
+      - name: Run targeted QUICPay OCR regression tests
+        run: node --test scripts/parse.test.js scripts/qp-card-regression.test.js scripts/qp-normalized-regression.test.js scripts/qp-ocr-compact-amounts.test.js scripts/qp-row-by-row-regression.test.js
       - run: npm run build

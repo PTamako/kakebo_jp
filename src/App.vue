@@ -434,7 +434,19 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
             <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="2.7" class="chart-point income-chart-point" />
           </svg>
-          <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
+          <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" :class="{ 'trend-month-selected': selectedIncomeMonth === item.month }" @click="selectIncomeMonth(item)">{{ Number(item.month.slice(5)) }}</button></div>
+          <p class="trend-note">点击曲线上的月份，即可查看该月各收入分类的金额。</p>
+          <div v-if="selectedIncomeMonthRow" class="income-month-breakdown">
+            <div class="income-breakdown-heading"><div><h3>{{ selectedIncomeMonthRow.label }}收入分类</h3><p>{{ selectedYear }}年 · {{ selectedIncomeCategories.length }} 个分类</p></div><strong>{{ yen(selectedIncomeMonthRow.income) }}</strong></div>
+            <div v-if="selectedIncomeCategories.length" class="category-list">
+              <div v-for="(c, i) in selectedIncomeCategories" :key="c.category" class="category-row">
+                <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
+                <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(selectedIncomeMonthRow.income)) * 100) + '%' }"></span></div>
+                <small class="category-share">{{ selectedIncomeMonthRow.income ? Math.round(Number(c.amount) / Number(selectedIncomeMonthRow.income) * 100) : 0 }}% of monthly income</small>
+              </div>
+            </div>
+            <p v-else class="trend-note">这个月还没有收入记录。</p>
+          </div>
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>收支比变化曲线</h2><p>支出 ÷ 收入；虚线参考 80% 与 100%</p></div><span class="section-mark">04</span></div>
@@ -448,6 +460,17 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
           </svg>
           <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
           <p class="trend-note">没有收入的月份不计算比例；曲线纵轴为 0%–150%，超过 150% 的点按上限显示。</p>
+        </div>
+        <div class="stats-card">
+          <div class="section-title"><div><h2>年度分类收入</h2><p>按全年累计金额排序</p></div><span class="section-mark">05</span></div>
+          <div v-if="annualIncomeCategories.length" class="category-list">
+            <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row">
+              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
+              <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
+              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}% of annual income</small>
+            </div>
+          </div>
+          <p v-else class="trend-note">这一年还没有收入记录。</p>
         </div>
         <div class="stats-card">
           <div class="section-title"><div><h2>年度分类支出</h2><p>按全年累计金额排序</p></div><span class="section-mark">02</span></div>
@@ -560,5 +583,14 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .edit-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .edit-dialog .type-switch{margin:0}
 
-.trend-card{overflow:hidden}.trend-summary{display:flex;align-items:baseline;gap:8px;margin:2px 0 4px}.trend-summary strong{font-size:22px;font-weight:800;color:var(--ink)}.trend-summary span,.trend-note{font-size:11px;color:var(--muted)}.trend-chart{display:block;width:100%;height:auto;overflow:visible;margin-top:8px}.chart-grid-line{stroke:var(--line);stroke-width:1}.chart-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.income-chart-line{stroke:#54a78c}.ratio-chart-line{stroke:#d96f91}.chart-point{stroke:#fff;stroke-width:1.2}.income-chart-point{fill:#54a78c}.ratio-chart-point{fill:#d96f91}.chart-reference-line{stroke:#d5a34b;stroke-width:1.2;stroke-dasharray:4 4}.chart-reference-danger{stroke:#d96f91}.trend-month-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));padding:0 2px;text-align:center;color:var(--muted);font-size:10px}.trend-note{margin:8px 0 0;line-height:1.5}
+.trend-card{overflow:hidden}.trend-summary{display:flex;align-items:baseline;gap:8px;margin:2px 0 4px}.trend-summary strong{font-size:22px;font-weight:800;color:var(--ink)}.trend-summary span,.trend-note{font-size:11px;color:var(--muted)}.trend-chart{display:block;width:100%;height:auto;overflow:visible;margin-top:8px}.chart-grid-line{stroke:var(--line);stroke-width:1}.chart-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.income-chart-line{stroke:#54a78c}.ratio-chart-line{stroke:#d96f91}.chart-point{stroke:#fff;stroke-width:1.2}.income-chart-point{fill:#54a78c}.ratio-chart-point{fill:#d96f91}.chart-reference-line{stroke:#d5a34b;stroke-width:1.2;stroke-dasharray:4 4}.chart-reference-danger{stroke:#d96f91}.trend-month-labels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));padding:0 2px;text-align:center;color:var(--muted);font-size:10px}
+.trend-month-labels button{min-width:0;padding:4px 0;border:0;border-radius:7px;background:transparent;color:inherit;font-size:10px}
+.trend-month-labels button.trend-month-selected{background:#fff0f4;color:#bd5376;font-weight:850}
+.clickable-chart-point{cursor:pointer;outline:none}
+.clickable-chart-point:focus,.clickable-chart-point.chart-point-selected{stroke:#bd5376;stroke-width:2.5}
+.income-month-breakdown{margin-top:14px;padding:13px;background:#fff9fa;border:1px solid #f3e2e7;border-radius:14px}
+.income-breakdown-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.income-breakdown-heading h3{margin:0;font-size:14px}
+.income-breakdown-heading p{margin:3px 0 0;font-size:10px;color:var(--muted)}
+.income-breakdown-heading>strong{font-size:16px;white-space:nowrap;color:#16836f}.trend-note{margin:8px 0 0;line-height:1.5}
 </style>

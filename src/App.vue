@@ -41,12 +41,17 @@ async function api(path, opt = {}) {
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 const flash = t => { msg.value = t; setTimeout(() => (msg.value = ''), 3000) }
 
+let loadRequestId = 0
 async function load() {
+  const requestId = ++loadRequestId
+  const requestedMonth = month.value
   try {
     if (!rules.value.length) rules.value = await api('rules')
-    categories.value = await api('categories')
-    entries.value = await api('entries?month=' + month.value)
-    stats.value = await api('stats?month=' + month.value)
+    const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), api('entries?month=' + requestedMonth), api('stats?month=' + requestedMonth)])
+    if (requestId !== loadRequestId || requestedMonth !== month.value) return
+    categories.value = nextCategories
+    entries.value = nextEntries
+    stats.value = nextStats
   } catch (e) { flash(e.message) }
 }
 async function loadYear() {
@@ -503,8 +508,12 @@ function openMonthDetails(point, type) {
   selectedDay.value = ''
   calendarExpanded.value = false
   entryTypeFilter.value = type
-  entries.value = [] // Clear the previous month's records before asynchronous loading.
-  if (month.value !== point.month) month.value = point.month
+  if (month.value !== point.month) {
+    entries.value = []
+    month.value = point.month
+  } else if (!entries.value.length) {
+    load()
+  }
   tab.value = 'list'
 }
 function selectRatioMonth(point) {

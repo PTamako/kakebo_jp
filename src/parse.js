@@ -93,7 +93,64 @@ export function parseEntries(raw, rules) {
   // into the existing QP-row format before parsing each transaction independently.
   const lines = text.split(/\r?\n/).map(s => s.trim())
     .filter(Boolean)
-    .map(line => line.replace(/^.*?\(\s*QP\s*\//i, 'QP / '))
+    .map(line => line.replace(/^.*?\(\s*Q?O?P\s*\//i, 'QP / '))
+
+  // Robust transaction-block fallback for QUICPay OCR. Keep every detected transaction,
+  // even if OCR misses its amount; zero-amount drafts remain editable instead of being dropped.
+  const qpStart = line => /^(?:QUICPay\s*利用\s*)?QP\s*\//i.test(line)
+  const qpStarts = lines.map((line, index) => qpStart(line) ? index : -1).filter(index => index >= 0)
+  if (qpStarts.length >= 2) {
+    const recovered = []
+    for (let n = 0; n < qpStarts.length; n++) {
+      const start = qpStarts[n]
+      const block = lines.slice(start, qpStarts[n + 1] ?? lines.length)
+      const dateRaw = block.find(dateLine)
+      if (!dateRaw) continue
+      const first = block[0].replace(/^QP\s*\/\s*/i, '').trim()
+      const joined = block.join(' ')
+      const dateIndex = block.indexOf(dateRaw)
+      const amountSources = block.slice(0, dateIndex < 0 ? block.length : dateIndex)
+      let amount = 0
+      for (const candidate of amountSources) {
+        const stripped = candidate.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+        const matches = [...stripped.matchAll(/(\d[\d,，.]{0,7})\s*(円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])/ig)]
+        if (matches.length) {
+          const rawAmount = matches[matches.length - 1][1]
+          const parsed = Number(rawAmount.replace(/[,，.]/g, '').replace(/[oOｏＯ]/g, '6'))
+          if (parsed > 0 && parsed <= 999999) { amount = parsed; break }
+        }
+      }
+      // Merchant may wrap across OCR lines; remove amount/date/payment noise from the block.
+      let merchant = first
+        .replace(/\s*[（(].*$/, '')
+        .replace(/[＞>」】）)]+\s*$/, '')
+      const wrapped = block.slice(1, dateIndex < 0 ? block.length : dateIndex)
+        .filter(line => !/回\s*払|^[\d,，.]+\s*(?:円|m|g|=|＝)?$/i.test(line))
+        .filter(line => !/(\d[\d,，.]{0,7})\s*(?:円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝)/i.test(line))
+      if (wrapped.length) merchant += wrapped.join('')
+      merchant = cleanQpMerchant(merchant)
+      if (!merchant || !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) {
+        merchant = cleanQpMerchant(first)
+      }
+      if (!merchant) continue
+      const { category, keyword } = classify(merchant, rules)
+      recovered.push({
+        date: findDate(dateRaw), time: '', amount, category,
+        merchant: merchant.slice(0, 60),
+        note: amount ? '' : '金額を読み取れませんでした。明細を確認してください',
+        raw: block.join('\n'), suggested: category, keyword
+      })
+    }
+    if (recovered.length >= 2) return recovered
+  }
+  function cleanQpMerchant(value) {
+    return value
+      .replace(/\s*\d[\d,，.]{0,7}\s*(?:円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])\s*[、,，。．.）)]*\s*$/i, '')
+      .replace(/[＞>」】）)]+\s*$/, '')
+      .replace(/[\s,，、。．.]+$/, '')
+      .trim()
+      .replace(/マイバスケツト/g, 'マイバスケット')
+  }
   const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
     || /(?<!\d)\d{2}\s*[.\/-]\s*\d{1,2}\s*[.\/-]\s*\d{1,2}(?!\d)/.test(line)
     || /\d{1,2}\s*月\s*\d{1,2}/.test(line)

@@ -5,7 +5,7 @@ import { onRequest } from '../functions/api/[[path]].js'
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = [] }
+  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.icons = [] }
   async batch(statements) { for (const statement of statements) await statement.run() }
   prepare(sql) {
     const db = this
@@ -19,10 +19,14 @@ class LedgerDb {
           return db.entries.find(e => e.id === this.args[0]) || null
         if (sql.startsWith('SELECT amount, transfer_target'))
           return db.entries.find(e => e.id === this.args[0]) || null
-        if (sql.startsWith('SELECT keyword FROM rules WHERE keyword')) return db.seeded ? { keyword: this.args[0] } : null
+        if (sql.startsWith('SELECT keyword FROM rules WHERE keyword')) {
+          if (String(this.args[0]).startsWith('__category__:')) return db.rules.find(r => r.keyword === this.args[0]) || null
+          return db.seeded ? { keyword: this.args[0] } : null
+        }
         return { exists: true }
       },
       async all() {
+        if (sql.startsWith('SELECT category, icon FROM category_icons')) return { results: db.icons }
         if (sql.startsWith('SELECT keyword, category FROM rules WHERE substr')) return { results: db.rules }
         if (sql.startsWith('SELECT * FROM rules WHERE keyword')) return { results: db.rules }
         if (sql.startsWith('SELECT keyword, category FROM custom_rules')) return { results: db.customRules }
@@ -57,6 +61,7 @@ class LedgerDb {
         if (sql.startsWith('DELETE FROM entries')) db.entries = db.entries.filter(e => e.id !== this.args[0])
         if (sql.startsWith('DELETE FROM rules')) throw Error('migration attempted to delete user rules')
         if (sql.startsWith('INSERT OR REPLACE INTO rules')) throw Error('migration attempted to overwrite user rules')
+        if (sql.startsWith('INSERT OR IGNORE INTO category_icons') && !db.icons.some(r => r.category === this.args[0])) db.icons.push({ category: this.args[0], icon: this.args[1] })
         if (sql.startsWith('INSERT OR IGNORE INTO custom_rules') && !db.customRules.some(r => r.keyword === this.args[0]))
           db.customRules.push({ keyword: this.args[0], category: this.args[1] })
         if (sql.startsWith('INSERT OR IGNORE INTO rules') && !db.rules.some(r => r.keyword === this.args[0]))
@@ -181,4 +186,15 @@ test('editing rejects fractional and unsafe amounts without changing the entry',
     assert.equal((await call(db, 'entries/1', 'PUT', { date: '2026-10-01', amount, type: 'expense' })).status, 400)
     assert.equal(db.entries[0].amount, 1000)
   }
+})
+
+test('new category icon persists and existing entries stay untouched', async () => {
+  const db = new LedgerDb()
+  db.entries.push({ id: 42, date: '2026-10-01', amount: 1000, type: 'expense' })
+  assert.equal((await call(db, 'categories', 'POST', { name: '美容', icon: 'beauty' })).status, 200)
+  assert.deepEqual((await call(db, 'category-icons')).body, { '美容': 'beauty' })
+  assert.equal((await call(db, 'categories', 'POST', { name: '美容', icon: 'insurance' })).status, 409)
+  assert.equal((await call(db, 'categories', 'POST', { name: '教育', icon: 'invalid' })).status, 400)
+  assert.equal(db.entries[0].amount, 1000)
+  assert.equal(db.icons[0].icon, 'beauty')
 })

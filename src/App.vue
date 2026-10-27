@@ -742,10 +742,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <span v-if="tab === 'add'" class="today-date">{{ todayLabel }}</span>
       <div v-else-if="tab === 'list' || (tab === 'stat' && statsPeriod === 'month')" class="topbar-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div>
       <label v-else-if="tab === 'stat' && statsPeriod === 'year'" class="topbar-year-wrap"><input v-model.number="selectedYear" class="topbar-year" type="number" min="1900" max="9999" step="1" inputmode="numeric" aria-label="集計年" /><span>年</span></label>
+      <button type="button" class="header-logout" @click="logout">ログアウト</button>
     </header>
     <div class="theme-switcher" role="group" aria-label="配色">
       <span>配色</span>
-      <button type="button" @click="logout">ログアウト</button>
       <button v-for="item in themes" :key="item.id" type="button" :class="{ selected: theme === item.id }" :aria-pressed="theme === item.id" @click="setTheme(item.id)"><i :style="{ background: item.color }"></i>{{ item.label }}</button>
     </div>
 
@@ -1190,6 +1190,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .income-breakdown-heading p{margin:3px 0 0;font-size:10px;color:var(--muted)}
 .income-breakdown-heading>strong{font-size:16px;white-space:nowrap;color:#16836f}.trend-note{margin:8px 0 0;line-height:1.5}
 
+.header-logout{flex-shrink:0;white-space:nowrap;border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:var(--card);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer}
 .theme-switcher{display:flex;align-items:center;gap:6px;margin:-13px 0 17px;padding:0 0 2px;flex-wrap:wrap}
 .theme-switcher>span{font-size:11px;color:var(--muted);font-weight:700;margin-right:2px}
 .theme-switcher button{display:flex;align-items:center;gap:5px;padding:5px 8px;border:1px solid var(--line);border-radius:99px;background:var(--card);color:var(--muted);font-size:10px;font-weight:700}

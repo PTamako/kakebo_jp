@@ -2,6 +2,28 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { classify } from '../src/parse.js'
 
+test('user-defined rules use fuzzy matching and override built-in defaults', () => {
+  assert.deepEqual(
+    classify('マイバスケット葛飾柴又店', [{ keyword: 'マイバスケット', category: '宠物' }]),
+    { category: '宠物', keyword: 'マイバスケット' }
+  )
+  assert.deepEqual(
+    classify('スターバックス 小岩店', [{ keyword: 'スタバ', category: '购物' }]),
+    { category: '购物', keyword: 'スタバ' }
+  )
+  assert.deepEqual(
+    classify('ＳｏｆｔＢａｎｋ 光', [{ keyword: 'softbank', category: '居住' }]),
+    { category: '居住', keyword: 'softbank' }
+  )
+  assert.deepEqual(
+    classify('セブンイレブン葛飾柴又店', [
+      { keyword: 'セブン', category: '购物' },
+      { keyword: 'セブンイレブン', category: '娱乐' }
+    ]),
+    { category: '娱乐', keyword: 'セブンイレブン' }
+  )
+})
+
 test('Japanese convenience stores default to food groceries across common Seven-Eleven spellings', () => {
   for (const merchant of [
     'セブンーイレブン', 'セブンｰイレブン', 'セブン-イレブン', 'セブンイレブン葛飾柴又店',

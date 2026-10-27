@@ -95,6 +95,10 @@ export function parseEntries(raw, rules) {
     .filter(Boolean)
     .map(line => line.replace(/^.*?\(\s*Q?O?P\s*\//i, 'QP / '))
 
+  const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
+    || /(?<!\d)\d{2}\s*[.\/-]\s*\d{1,2}\s*[.\/-]\s*\d{1,2}(?!\d)/.test(line)
+    || /\d{1,2}\s*月\s*\d{1,2}/.test(line)
+    || /\d{1,2}\s*\/\s*\d{1,2}/.test(line)
   // Robust transaction-block fallback for QUICPay OCR. Keep every detected transaction,
   // even if OCR misses its amount; zero-amount drafts remain editable instead of being dropped.
   const qpStart = line => /^(?:QUICPay\s*利用\s*)?QP\s*\//i.test(line)
@@ -151,10 +155,6 @@ export function parseEntries(raw, rules) {
       .trim()
       .replace(/マイバスケツト/g, 'マイバスケット')
   }
-  const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
-    || /(?<!\d)\d{2}\s*[.\/-]\s*\d{1,2}\s*[.\/-]\s*\d{1,2}(?!\d)/.test(line)
-    || /\d{1,2}\s*月\s*\d{1,2}/.test(line)
-    || /\d{1,2}\s*\/\s*\d{1,2}/.test(line)
   const paymentLine = line => /^(?:1回払い|一回払い|分割払い|リボ払い|ボーナス払い|支払回数|クレジット|カード利用|ご利用日|利用日|利用金額|お支払方法|お支払い方法)$/i.test(line.replace(/[\s＞>]/g, ''))
   const amountLine = line => {
     const s = line.replace(/[＞>」】]/g, '').trim()

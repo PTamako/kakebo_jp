@@ -112,16 +112,15 @@ export function parseEntries(raw, rules) {
     .replace(/[Nn]\s*$/g, '')
     .replace(/[\s,，、。．.]+$/g, '')
     .trim()
-  // QP/ card apps may OCR each transaction as a merchant+amount line followed by a date/payment line.
-  // Amounts can contain OCR spaces or substitutions, e.g. "1] 096 ロ" for "1,096 円".
+  // QP statements: each transaction is a QP-prefixed merchant/amount line,
+  // followed by a date and payment-method line. Parse the final numeric token explicitly.
   const qpRows = []
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (!/^QP\s*\//i.test(line)) continue
-    // The amount is the final numeric token on the QP row; do not let OCR spaces
-    // cause the merchant name to be swallowed by a broad numeric match.
     const body = line.replace(/^QP\s*\/\s*/i, '').trim()
-    const m = body.match(/^(.*?)\s+([0-9０-９oOｏＯ\]\[][\d０-９oOｏＯ\]\[\s,，.]{0,8})\s*(円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV]*\s*$/i)
+    // Capture the final amount token, not the merchant/reference text.
+    const m = body.match(/^(.*?)\s+([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV]*\s*$/i)
     if (!m || !m[1].trim()) continue
     let token = m[2]
       .replace(/[oOｏＯ]/g, '0')
@@ -129,7 +128,11 @@ export function parseEntries(raw, rules) {
       .replace(/[\s,，.]/g, '')
     const amount = Number(token)
     if (!Number.isFinite(amount) || amount < 1 || amount > 999999) continue
-    const nextDate = lines.slice(i + 1, i + 4).find(candidate => dateLine(candidate))
+    let nextDate = null
+    for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+      if (/^QP\s*\//i.test(lines[j])) break
+      if (dateLine(lines[j])) { nextDate = lines[j]; break }
+    }
     if (!nextDate) continue
     const merchant = cleanMerchant(m[1])
     if (!merchant || !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) continue

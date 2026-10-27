@@ -1,4 +1,5 @@
 name: Validate
+# Validate category-to-details navigation and shared-list pagination as part of the production build
 on:
   pull_request:
   push:

@@ -216,6 +216,33 @@ export async function onRequest({ request, env, params }) {
         return json({ ok: true, keyword: kw, category })
       }
     }
+
+    if (a === 'investments') {
+      await db.prepare(`CREATE TABLE IF NOT EXISTS investment_snapshots (
+        platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),
+        current_value INTEGER,
+        pnl INTEGER,
+        updated_at TEXT
+      )`).run()
+      await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL), ('paypay', NULL, NULL, NULL)").run()
+      if (m === 'GET') {
+        const { results } = await db.prepare("SELECT platform, current_value, pnl, updated_at FROM investment_snapshots ORDER BY CASE platform WHEN 'sbi' THEN 1 ELSE 2 END").all()
+        return json(results)
+      }
+      if (m === 'PUT') {
+        const body = await request.json()
+        const platform = String(body.platform || '')
+        const currentValue = Number(body.currentValue)
+        const pnl = Number(body.pnl)
+        if (!['sbi', 'paypay'].includes(platform) ||
+            !Number.isSafeInteger(currentValue) || currentValue < 0 ||
+            !Number.isSafeInteger(pnl)) return json({ error: '入力内容を確認してください' }, 400)
+        const updatedAt = new Date().toISOString()
+        await db.prepare('INSERT INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(platform) DO UPDATE SET current_value = excluded.current_value, pnl = excluded.pnl, updated_at = excluded.updated_at').bind(platform, currentValue, pnl, updatedAt).run()
+        return json({ platform, current_value: currentValue, pnl, updated_at: updatedAt })
+      }
+    }
+
     if (a === 'stats' && m === 'GET') {
       const year = (url.searchParams.get('year') || '').slice(0, 4)
       if (year) {

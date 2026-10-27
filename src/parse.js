@@ -118,26 +118,26 @@ export function parseEntries(raw, rules) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (!/^QP\s*\//i.test(line)) continue
-    const nextDate = lines.slice(i + 1, i + 4).find(candidate => dateLine(candidate))
-    if (!nextDate) continue
-    const withoutPrefix = line.replace(/^QP\s*\/\s*/i, '').trim()
-    const amountMatch = withoutPrefix.match(/([0-9０-９oOｏＯ１-９\]\[\s,，.]{1,10})\s*(?:円|m{1,2}|g(?:m)?|ロ|口|、|,|，|。|．|\.)?\s*$/i)
-    if (!amountMatch) continue
-    let token = amountMatch[1]
+    // The amount is the final numeric token on the QP row; do not let OCR spaces
+    // cause the merchant name to be swallowed by a broad numeric match.
+    const body = line.replace(/^QP\s*\/\s*/i, '').trim()
+    const m = body.match(/^(.*?)\s+([0-9０-９oOｏＯ\]\[][\d０-９oOｏＯ\]\[\s,，.]{0,8})\s*(円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV]*\s*$/i)
+    if (!m || !m[1].trim()) continue
+    let token = m[2]
       .replace(/[oOｏＯ]/g, '0')
       .replace(/[\]\[]/g, '1')
       .replace(/[\s,，.]/g, '')
     const amount = Number(token)
     if (!Number.isFinite(amount) || amount < 1 || amount > 999999) continue
-    let merchant = withoutPrefix.slice(0, amountMatch.index).trim()
-    merchant = cleanMerchant(merchant)
-    // OCR inserts spaces inside Japanese store names; normalize() already joins Japanese characters.
+    const nextDate = lines.slice(i + 1, i + 4).find(candidate => dateLine(candidate))
+    if (!nextDate) continue
+    const merchant = cleanMerchant(m[1])
     if (!merchant || !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) continue
     const { category, keyword } = classify(merchant, rules)
     qpRows.push({
       date: findDate(nextDate), time: '', amount, category,
       merchant: merchant.slice(0, 60), note: '',
-      raw: merchant + '\n' + nextDate + '\n' + amountMatch[0],
+      raw: merchant + '\n' + nextDate + '\n' + m[2],
       suggested: category, keyword
     })
   }

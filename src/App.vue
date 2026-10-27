@@ -52,8 +52,8 @@ async function loadYear() {
   catch (e) { flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
 onMounted(() => { load(); loadYear() })
-watch(month, () => { selectedDay.value = ''; swipedEntryId.value = null; load() })
-watch(selectedYear, loadYear)
+watch(month, () => { selectedDay.value = ''; swipedEntryId.value = null; if (categoryDetail.value?.period === 'month') { categoryDetail.value = null; categoryDetailEntries.value = []; categoryDetailPage.value = 1; categoryDetailRequest++ }; load() })
+watch(selectedYear, () => { if (categoryDetail.value?.period === 'year') { categoryDetail.value = null; categoryDetailEntries.value = []; categoryDetailPage.value = 1; categoryDetailRequest++ }; loadYear() })
 watch(tab, value => { if (value === 'year') loadYear() })
 
 function recognize() {

@@ -12,7 +12,6 @@ const month = ref(currentMonth())
 function resetMonth() { month.value = currentMonth() }
 const selectedYear = ref(new Date().getFullYear())
 const annualStats = ref(null)
-const selectedIncomeMonth = ref('')
 const selectedRatioMonth = ref('')
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
@@ -263,7 +262,6 @@ const pieGradient = (rows, colors) => {
   }).join(', ') + ')'
 }
 const expensePalette = ['#d96f91', '#e6a56b', '#c65f7c', '#d9b957', '#b96b9a', '#e58b70', '#a96b82', '#d6a3b8', '#b87957', '#c78eaa']
-const incomePalette = ['#3d9b82', '#78a9d6', '#267d70', '#8bbdc1', '#5c9dba', '#78ad91', '#9ba9c5', '#a2c9b4', '#547fa7', '#b5bd78']
 const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette))
 const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette))
 
@@ -384,7 +382,7 @@ const calendarDays = computed(() => {
 const visibleCalendarDays = computed(() => {
   if (calendarExpanded.value) return calendarDays.value
   const today = new Date().toLocaleDateString('sv-SE')
-  const target = today.startsWith(month.value) ? today : calendarDays.value.find(day => !day.blank)?.date
+  const target = selectedDay.value.startsWith(month.value) ? selectedDay.value : (today.startsWith(month.value) ? today : calendarDays.value.find(day => !day.blank)?.date)
   const index = calendarDays.value.findIndex(day => day.date === target)
   const start = Math.max(0, Math.floor(Math.max(0, index) / 7) * 7)
   return calendarDays.value.slice(start, start + 7)
@@ -494,11 +492,6 @@ const ratioTrendMax = computed(() => Math.max(0, ...ratioTrendPoints.value.filte
 const maxYearMonth = computed(() => Math.max(1, ...yearMonthRows.value.map(item => item.amount)))
 const highestSpendMonth = computed(() => yearMonthRows.value.reduce((best, item) => item.amount > best.amount ? item : best, { month: '', label: 'データなし', amount: 0 }))
 const annualAverage = computed(() => Math.round(Number(annualStats.value?.total || 0) / 12))
-const selectedIncomeMonthRow = computed(() => yearMonthRows.value.find(item => item.month === selectedIncomeMonth.value) || null)
-const selectedIncomeCategories = computed(() => (annualStats.value?.incomeByMonthCategory || [])
-  .filter(item => item.month === selectedIncomeMonth.value)
-  .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
-  .sort((a, b) => b.amount - a.amount))
 const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCategory || [])
   .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
   .sort((a, b) => b.amount - a.amount))
@@ -512,10 +505,6 @@ function openMonthDetails(point, type) {
   entryTypeFilter.value = type
   if (month.value !== point.month) month.value = point.month
   tab.value = 'list'
-}
-function selectIncomeMonth(point) {
-  // Tapping the currently selected month again closes its breakdown.
-  selectedIncomeMonth.value = selectedIncomeMonth.value === point.month ? '' : point.month
 }
 function selectRatioMonth(point) {
   // Tapping the currently selected month again closes its breakdown.

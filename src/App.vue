@@ -1,5 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import puppyWorried from './assets/puppy-worried.gif'
+import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
 import { parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 
@@ -722,8 +724,8 @@ const selectedRatio = computed(() => selectedRatioMonthRow.value && selectedRati
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)
 const pigState = ratio => ratio === null ? 'empty' : ratio >= 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
-// Public image hosts can be unavailable; retain the existing sticker as fallback.
-const puppyExpression = ratio => ratio >= 1 ? 'https://c-ssl.duitang.com/uploads/blog/202409/02/73SmoNaPceDbLjV.jpeg' : 'https://c-ssl.dtstatic.com/uploads/blog/202402/19/5zSNDyB8HO2VZQL.thumb.1000_0.gif'
+// Sticker sources: https://www.duitang.com/blog/?id=1514035768 and https://www.duitang.com/blog/?id=1536248097
+const puppyExpression = ratio => ratio >= 1 ? puppyCrying : puppyWorried
 function puppyFallback(event) { event.target.onerror = null; event.target.src = 'https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png' }
 const pigLabel = ratio => ratio === null ? 'まず収入を記録して、収支バランスを確認しましょう' : ratio >= 1 ? '大変！支出が収入以上になっています！' : ratio >= .8 ? '予算オーバーに注意しましょう！' : 'いい感じです。この調子でいきましょう'
 const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.round(ratio * 100) + '%'

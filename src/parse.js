@@ -175,7 +175,7 @@ export function parseEntries(raw, rules) {
       suggested: category, keyword
     })
   }
-  if (qpRows.length >= 2) return qpRows
+  if (qpRows.length >= 1) return qpRows
 
   // Some issuers put merchant and reference on one line, then date/cardholder/payment/amount on another.
   // Other issuers put amount beside merchant and date on a separate line. Keep these layouts distinct.
@@ -328,8 +328,15 @@ export function parseEntries(raw, rules) {
     return transactionLines.map(line => parseEntry(line, rules)).filter(e => e.amount > 0)
   }
 
+  // Do not mistake month/day digits for a transaction amount when OCR omitted the amount
+  // from a card-statement row that still contains payment metadata.
+  const hasCardPaymentMetadata = lines.some(line => /回\s*払(?:い)?/.test(line))
+  const hasExplicitAmount = lines.some(line =>
+    /[¥￥]\s*[\d,]+|[\d,]+\s*円|\d[\d,，.]{1,7}\s*(?:m{1,2}|g(?:m)?|mm|ロ|口)\b/i.test(line)
+  )
   const entry = parseEntry(text, rules)
-  return entry.amount > 0 ? [entry] : [entry]
+  if (hasCardPaymentMetadata && dateLines.length && !hasExplicitAmount) return [{ ...entry, amount: 0 }]
+  return [entry]
 }
 // 图片 → 文字：Tesseract.js 在手机浏览器本地运行，不上传、不收费
 export async function ocrImage(file, onProgress) {

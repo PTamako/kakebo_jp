@@ -46,7 +46,7 @@ function findAmount(t) {
 // Supermarket names must be checked before generic keywords such as 「バス」.
 // 「まいばすけっと」 contains the characters 「バス」, but is a supermarket, not transport.
 const SUPERMARKET_KEYWORDS = [
-  'まいばすけっと', 'まいばす', 'イオン', 'AEON', 'マックスバリュ', 'ダイエー',
+  'まいばすけっと', 'まいばす', 'マイバスケット', 'マイバスケツト', 'マイバス', 'イオン', 'AEON', 'マックスバリュ', 'ダイエー',
   'ライフ', 'LIFE', 'サミットストア', 'サミット', 'マルエツ', '西友', 'SEIYU',
   'オーケーストア', 'オーケー', 'OKストア', 'ベルク', 'ヤオコー', 'オオゼキ',
   'いなげや', 'コモディイイダ', 'アコレ', 'ビッグ・エー', 'ビッグエー', 'ロピア',

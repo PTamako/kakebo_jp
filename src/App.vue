@@ -45,7 +45,7 @@ const token = ref(localStorage.getItem('token') || '')
 
 async function api(path, opt = {}) {
   const r = await fetch('/api/' + path, {
-    ...opt, headers: { 'content-type': 'application/json', 'x-token': token.value }
+    ...opt, headers: { 'content-type': 'application/json', 'x-token': token.value, ...(opt.headers || {}) }
   })
   if (r.status === 401) {
     const t = prompt('アクセスコードを入力してください')
@@ -167,7 +167,7 @@ async function saveAll() {
 async function remove(id) {
   if (!confirm('この記録を削除しますか？')) return
   try {
-    await api('entries/' + id, { method: 'DELETE' })
+    await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadInvestments(), loadTransfers()])
     flash('記録を削除しました')
   } catch (error) { flash('削除に失敗しました：' + error.message) }
@@ -229,7 +229,7 @@ async function retryTransfer(item) {
 async function deleteTransfer(item) {
   if (!confirm('この待処理事項を削除しますか？家計簿の記録も削除されます。')) return
   try {
-    await api('entries/' + item.id, { method: 'DELETE' })
+    await api('entries/' + item.id, { method: 'DELETE', headers: { 'x-confirm-delete': String(item.id) } })
     await loadTransfers()
     await load()
     await loadInvestments()
@@ -920,7 +920,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </div>
       </article>
       <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">積立額は明細から計算し、評価額・損益は手動管理します</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
-      <div class="investment-note">SBIへの振替は「積立累計」に反映し、評価額には加算しません。評価額・損益は証券口座の最新表示を確認して入力してください。過去の自動加算分が評価額に残っている場合は、数値を確認して更新してください。</div>
+      <div class="investment-note">SBIへの振替は「積立累計」に反映し、評価額には加算しません。評価額・損益は証券口座の最新表示を確認して入力してください。これまでの評価額は変更しません。登録済みの取引履歴もそのまま保存されます。</div>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
         <div class="investment-card-heading"><div><h2>{{ item.label }}</h2><p>{{ item.detail }}</p></div><span class="investment-unit">{{ item.unit }}</span></div>
         <div class="investment-principal"><small>家計簿から確認できる積立累計</small><strong>{{ yen(investments[item.id].investedTotal) }}</strong><small>振替先を設定した登録済み明細から集計</small></div>

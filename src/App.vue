@@ -456,7 +456,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
               <div v-for="(c, i) in selectedIncomeCategories" :key="c.category" class="category-row">
                 <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
                 <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(selectedIncomeMonthRow.income)) * 100) + '%' }"></span></div>
-                <small class="category-share">{{ selectedIncomeMonthRow.income ? Math.round(Number(c.amount) / Number(selectedIncomeMonthRow.income) * 100) : 0 }}% of monthly income</small>
+                <small class="category-share">{{ selectedIncomeMonthRow.income ? Math.round(Number(c.amount) / Number(selectedIncomeMonthRow.income) * 100) : 0 }}% 占当月总收入</small>
               </div>
             </div>
             <p v-else class="trend-note">这个月还没有收入记录。</p>
@@ -481,7 +481,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
             <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
-              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}% of annual income</small>
+              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}% 占全年总收入</small>
             </div>
           </div>
           <p v-else class="trend-note">这一年还没有收入记录。</p>

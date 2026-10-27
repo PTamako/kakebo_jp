@@ -630,9 +630,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <section v-if="tab === 'add'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
       <div class="entry-mode-row">
-        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon expense-icon" aria-hidden="true">−</span><span>支出</span></button>
-        <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon income-icon" aria-hidden="true">＋</span><span>収入</span></button>
-        <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon transfer-icon" aria-hidden="true">⇄</span><span>資産移動</span></button>
+        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
+        <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
+        <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
       </div>
       <div class="panel capture-panel">
         <label class="field-label" for="entry-text">テキスト読み取り</label>
@@ -1178,4 +1178,9 @@ main .piggy-sweating .piggy-status{color:#987018}
 main .piggy-broken .piggy-status{color:#b74358}
 @media(max-width:370px){main{padding-left:12px;padding-right:12px}main .bottom-nav{width:calc(100% - 12px);padding:5px;gap:2px}main .bottom-nav button{font-size:10px}main .topbar{gap:5px}main .brand small{font-size:10px}}
 @media(min-width:561px){main{border-inline:1px solid var(--line)}}
+
+/* Input shortcuts reuse the exact SVG paths from the draft/edit type selector. */
+main .entry-mode-row .manual-add-button{min-height:44px;gap:7px}
+main .entry-mode-row .entry-mode-icon{background:transparent;color:var(--blue-dark);border-radius:0;flex:0 0 19px;width:19px;height:19px}
+main .entry-mode-row .entry-mode-icon .ui-line-icon{width:19px;height:19px}
 </style>

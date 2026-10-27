@@ -260,6 +260,11 @@ export async function onRequest({ request, env, params }) {
         return json({ ok: true, changes: result.meta?.changes ?? 0 })
       }
     }
+    if (a === 'category-icons' && m === 'GET') {
+      await db.prepare('CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL)').run()
+      const { results } = await db.prepare('SELECT category, icon FROM category_icons').all()
+      return json(Object.fromEntries(results.map(r => [r.category, r.icon])))
+    }
     if (a === 'categories') {
       if (m === 'GET') {
         const base = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
@@ -271,8 +276,15 @@ export async function onRequest({ request, env, params }) {
         const name = String(body.name || '').trim().slice(0, 20)
         if (name.length < 1) return json({ error: '分类名称不能为空' }, 400)
         const reserved = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
-        if (reserved.includes(name)) return json({ ok: true, category: name })
+        const icon = String(body.icon || 'other')
+        const validIcons = ['food','dining','daily','transport','shopping','home','medical','pet','beauty','education','insurance','utilities','phone','tax','travel','subscriptions','gift','other']
+        if (!validIcons.includes(icon)) return json({ error: 'アイコンを確認してください' }, 400)
+        if (reserved.includes(name)) return json({ error: '同じカテゴリが既にあります' }, 409)
+        const existing = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind('__category__:' + name).first()
+        if (existing) return json({ error: '同じカテゴリが既にあります' }, 409)
+        await db.prepare('CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL)').run()
         await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name).run()
+        await db.prepare('INSERT OR IGNORE INTO category_icons (category, icon) VALUES (?1, ?2)').bind(name, icon).run()
         return json({ ok: true, category: name })
       }
     }

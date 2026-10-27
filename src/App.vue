@@ -38,7 +38,28 @@ const CATEGORY_ICON_PATHS = {
  '退款':'M8 6 3 11l5 5M3 11h11a6 6 0 0 1 0 12',
  '投資・資産移動':'M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4'
 }
-const categoryIconPath = name => CATEGORY_ICON_PATHS[name] || 'M5 3h14v18H5V3ZM8 8h8M8 12h8M8 16h5'
+const ICON_LIBRARY = [
+  { id:'food', label:'食料品', path:CATEGORY_ICON_PATHS['饮食料品'] },
+  { id:'dining', label:'外食', path:CATEGORY_ICON_PATHS['餐饮'] },
+  { id:'daily', label:'日用品', path:CATEGORY_ICON_PATHS['日用品'] },
+  { id:'transport', label:'交通', path:CATEGORY_ICON_PATHS['交通'] },
+  { id:'shopping', label:'買い物', path:CATEGORY_ICON_PATHS['购物'] },
+  { id:'home', label:'住居', path:CATEGORY_ICON_PATHS['居住'] },
+  { id:'medical', label:'医療', path:CATEGORY_ICON_PATHS['医疗'] },
+  { id:'pet', label:'ペット', path:CATEGORY_ICON_PATHS['宠物'] },
+  { id:'beauty', label:'美容', path:'M9 3h6v5H9zM8 8h8v12H8zM10 12h4M18 3v4M16 5h4' },
+  { id:'education', label:'教育', path:'M2 9l10-5 10 5-10 5-10-5ZM6 11v5c3 3 9 3 12 0v-5M21 10v6' },
+  { id:'insurance', label:'保険', path:'M12 3l8 3v5c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3ZM9 12l2 2 4-4' },
+  { id:'utilities', label:'光熱費', path:'M13 2 5 13h6l-1 9 9-12h-6V2Z' },
+  { id:'phone', label:'通信', path:'M7 2h10v20H7zM10 5h4M11 19h2' },
+  { id:'tax', label:'税金', path:'M4 21h16M5 19V9h14v10M3 9l9-6 9 6M8 12v4M12 12v4M16 12v4' },
+  { id:'travel', label:'旅行', path:'M3 15l7 1 8 5 2-1-5-6 5-5c2-2 0-4-2-2l-5 5-6-5-1 2 5 8-8-2Z' },
+  { id:'subscriptions', label:'サブスク', path:'M4 5h16v14H4zM10 9l5 3-5 3V9Z' },
+  { id:'gift', label:'贈り物', path:CATEGORY_ICON_PATHS['奖金'] },
+  { id:'other', label:'その他', path:'M5 3h14v18H5V3ZM8 8h8M8 12h8M8 16h5' }
+]
+const categoryIcons = ref({})
+const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || CATEGORY_ICON_PATHS[name] || ICON_LIBRARY.at(-1).path
 const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
 
@@ -70,6 +91,7 @@ async function load() {
     const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), api('entries?month=' + requestedMonth), api('stats?month=' + requestedMonth)])
     if (requestId !== loadRequestId || requestedMonth !== month.value) return
     categories.value = nextCategories
+    try { categoryIcons.value = await api('category-icons') } catch { /* Existing categories keep their default icons. */ }
     entries.value = nextEntries
     stats.value = nextStats
   } catch (e) { flash(e.message) }
@@ -122,14 +144,25 @@ function setEntryType(form, type) {
   else if (type === 'transfer') form.category = '投資・資産移動'
   else if (INCOME_CATEGORIES.includes(form.category) || form.category === '投資・資産移動') form.category = '日用品'
 }
-async function addCategory() {
-  const name = prompt('新しいカテゴリ名を入力してください（20文字以内）')
-  if (!name?.trim()) return
+const categoryDialog = ref(false)
+const categoryName = ref('')
+const categoryIcon = ref('other')
+const categorySaving = ref(false)
+function addCategory() { categoryName.value = ''; categoryIcon.value = 'other'; categoryDialog.value = true }
+async function saveCategory() {
+  if (categorySaving.value) return
+  const name = categoryName.value.trim()
+  if (!name) return flash('カテゴリ名を入力してください')
+  if (categories.value.some(c => c === name || categoryLabel(c) === name)) return flash('同じカテゴリが既にあります')
+  categorySaving.value = true
   try {
-    await api('categories', { method: 'POST', body: JSON.stringify({ name: name.trim() }) })
+    await api('categories', { method: 'POST', body: JSON.stringify({ name, icon: categoryIcon.value }) })
     categories.value = await api('categories')
+    categoryIcons.value = await api('category-icons')
+    categoryDialog.value = false
     flash('カテゴリを追加しました')
   } catch (e) { flash('カテゴリの追加に失敗しました：' + e.message) }
+  finally { categorySaving.value = false }
 }
 function removeDraft(i) { forms.value.splice(i, 1) }
 
@@ -655,6 +688,17 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <section v-if="tab === 'add'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
       <fieldset class="draft-controls" :disabled="busy === 'saving'" :aria-busy="busy === 'saving'">
+      <div v-if="categoryDialog" class="edit-overlay" @click.self="!categorySaving && (categoryDialog = false)">
+        <form class="edit-dialog category-dialog" @submit.prevent="saveCategory" aria-label="カテゴリを追加">
+          <div class="edit-dialog-heading"><h2>カテゴリを追加</h2><button type="button" class="icon-button" :disabled="categorySaving" @click="categoryDialog = false" aria-label="閉じる">×</button></div>
+          <label class="form-field"><span>カテゴリ名</span><input v-model.trim="categoryName" maxlength="20" required :disabled="categorySaving" placeholder="例：美容" /></label>
+          <p class="field-label">アイコンを選択</p>
+          <div class="icon-picker" role="group" aria-label="アイコンを選択">
+            <button v-for="icon in ICON_LIBRARY" :key="icon.id" type="button" :disabled="categorySaving" :class="{ selected: categoryIcon === icon.id }" :aria-pressed="categoryIcon === icon.id" @click="categoryIcon = icon.id"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="icon.path"/></svg><span>{{ icon.label }}</span></button>
+          </div>
+          <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="categorySaving" @click="categoryDialog = false">キャンセル</button><button type="submit" class="button-primary" :disabled="categorySaving">{{ categorySaving ? '保存中…' : '追加する' }}</button></div>
+        </form>
+      </div>
       <div class="entry-mode-row">
         <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
         <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
@@ -1177,6 +1221,7 @@ main .donut-vertical .pie-legend-row.donut-category-active{background:var(--tint
 main .category-swatch,main .pie-legend-dot{border:1px solid rgba(0,0,0,.06)}
 main .entry-day-heading{border-radius:var(--radius-md)}
 .draft-controls,.edit-fields{border:0;margin:0;padding:0;min-width:0}.draft-controls:disabled,.edit-fields:disabled{opacity:.7}button:disabled{cursor:not-allowed;opacity:.55}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.category-dialog{max-height:min(85dvh,720px);overflow-y:auto}.icon-picker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:8px 0 18px}.icon-picker button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:64px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font-size:11px}.icon-picker button.selected{border:2px solid var(--blue);background:var(--tint);color:var(--blue-dark)}.icon-picker svg{width:24px;height:24px}
 main .annual-month-list .entry-day-group{border-radius:var(--radius-md);overflow:hidden}
 @media(prefers-reduced-motion:reduce){main *,main *::before,main *::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 

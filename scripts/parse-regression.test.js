@@ -62,3 +62,10 @@ test('transport merchants still classify as transport', () => {
     { keyword: '京成電鉄', category: '交通' }
   ]), { category: '交通', keyword: '京成電鉄' })
 })
+
+
+test('restaurants remain in the dining category', () => {
+  assert.deepEqual(classify('マクドナルド', [
+    { keyword: 'マクドナルド', category: '餐饮' }
+  ]), { category: '餐饮', keyword: 'マクドナルド' })
+})

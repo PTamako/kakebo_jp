@@ -107,3 +107,15 @@ test('a scheduled future transfer cannot be confirmed early', async () => {
   assert.equal(result.status, 409)
   assert.equal(db.entries[0].transfer_applied, 0)
 })
+
+test('rejects impossible dates and invalid reporting periods', async () => {
+  const db = new LedgerDb()
+  const invalid = await call(db, 'entries', 'POST', {
+    date: '2026-02-31', amount: 1000, type: 'expense', clientRequestId: 'invalid-date-001'
+  })
+  assert.equal(invalid.status, 400)
+  assert.equal(db.entries.length, 0)
+  assert.equal((await call(db, 'entries?month=2026-13')).status, 400)
+  assert.equal((await call(db, 'entries?year=20x6')).status, 400)
+  assert.equal((await call(db, 'entries?year=2026&offset=-5')).status, 400)
+})

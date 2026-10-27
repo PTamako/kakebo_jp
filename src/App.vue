@@ -57,7 +57,8 @@ async function api(path, opt = {}) {
   return d
 }
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
-const flash = t => { msg.value = t; setTimeout(() => (msg.value = ''), 3000) }
+let flashTimer
+const flash = t => { clearTimeout(flashTimer); msg.value = t; flashTimer = setTimeout(() => (msg.value = ''), 3000) }
 
 let loadRequestId = 0
 async function load() {
@@ -102,7 +103,7 @@ function recognize() {
 }
 async function onImage(e) {
   const f = e.target.files[0]; e.target.value = ''
-  if (!f) return
+  if (!f || busy.value) return
   busy.value = '読み取り中 0%（初回は日本語データをダウンロードします）'
   try {
     input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
@@ -132,7 +133,7 @@ async function addCategory() {
 function removeDraft(i) { forms.value.splice(i, 1) }
 
 async function saveAll() {
-  if (busy.value === 'saving') return
+  if (busy.value) return
   if (!forms.value.length) return flash('保存する記録がありません')
   const invalid = forms.value.findIndex(f => !(Number(f.amount) > 0))
   if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
@@ -159,18 +160,23 @@ async function saveAll() {
   } catch (e) {
     flash(`${saved}件を保存しました。未保存の${forms.value.length}件は入力欄に残っています：${e.message}`)
   } finally {
-    busy.value = ''
     try { rules.value = await api('rules') } catch { /* Keep existing rules when temporarily offline. */ }
     await Promise.allSettled([load(), loadYear(), loadInvestments(), loadTransfers()])
+    busy.value = ''
   }
 }
+const pendingEntryIds = ref(new Set())
+const editSaving = ref(false)
 async function remove(id) {
+  if (pendingEntryIds.value.has(id)) return
   if (!confirm('この記録を削除しますか？')) return
+  pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
   try {
     await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadInvestments(), loadTransfers()])
     flash('記録を削除しました')
   } catch (error) { flash('削除に失敗しました：' + error.message) }
+  finally { const next = new Set(pendingEntryIds.value); next.delete(id); pendingEntryIds.value = next }
 }
 function startEdit(entry) {
   editingEntry.value = {
@@ -181,14 +187,15 @@ function startEdit(entry) {
     note: entry.note || '', raw: entry.raw || ''
   }
 }
-function cancelEdit() { editingEntry.value = null }
+function cancelEdit() { if (!editSaving.value) editingEntry.value = null }
 async function saveEdit() {
   const e = editingEntry.value
-  if (!e) return
+  if (!e || editSaving.value) return
   if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !(Number(e.amount) > 0)) {
     flash('日付と金額を確認してください')
     return
   }
+  editSaving.value = true
   try {
     await api('entries/' + e.id, {
       method: 'PUT',
@@ -202,6 +209,7 @@ async function saveEdit() {
     await loadInvestments()
     await loadTransfers()
   } catch (err) { flash('更新に失敗しました：' + err.message) }
+  finally { editSaving.value = false }
 }
 
 const pendingTransfers = ref([])
@@ -218,16 +226,22 @@ async function loadTransfers() {
 }
 const transferStatus = item => Number(item.transfer_applied) === 1 ? '処理成功' : (String(item.transfer_date || item.date) > new Date().toLocaleDateString('sv-SE') ? '入金予定' : '未処理')
 const transferStatusClass = item => Number(item.transfer_applied) === 1 ? 'transfer-done' : 'transfer-waiting'
+const transferActionId = ref(null)
 async function retryTransfer(item) {
+  if (transferActionId.value !== null) return
+  transferActionId.value = item.id
   try {
     await api('transfers/' + item.id, { method: 'POST' })
     await loadTransfers()
     await loadInvestments()
     flash('資産移動を処理しました')
   } catch (e) { flash('処理に失敗しました：' + e.message) }
+  finally { transferActionId.value = null }
 }
 async function deleteTransfer(item) {
+  if (transferActionId.value !== null) return
   if (!confirm('この待処理事項を削除しますか？家計簿の記録も削除されます。')) return
+  transferActionId.value = item.id
   try {
     await api('entries/' + item.id, { method: 'DELETE', headers: { 'x-confirm-delete': String(item.id) } })
     await loadTransfers()
@@ -235,6 +249,7 @@ async function deleteTransfer(item) {
     await loadInvestments()
     flash('記録を削除しました')
   } catch (e) { flash('削除に失敗しました：' + e.message) }
+  finally { transferActionId.value = null }
 }
 
 const investmentItems = [
@@ -267,6 +282,7 @@ async function loadInvestments() {
   } catch (e) { flash('資産データを読み込めませんでした：' + e.message) }
 }
 async function saveInvestment(item) {
+  if (investmentBusy.value) return
   const form = investments.value[item.id]
   const value = Number(form.currentValue)
   const pnl = Number(form.pnl)
@@ -642,6 +658,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
     <section v-if="tab === 'add'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
+      <fieldset class="draft-controls" :disabled="busy === 'saving'" :aria-busy="busy === 'saving'">
       <div class="entry-mode-row">
         <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
         <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
@@ -652,7 +669,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <textarea id="entry-text" v-model="input" rows="4" placeholder="例：昨日 コンビニ 680円&#10;&#10;複数の支出を貼り付けたり、レシート画像をアップロードしたりできます。"></textarea>
         <div class="action-row">
           <button class="button-primary" @click="recognize" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
-          <label class="button-secondary upload-button">撮影／画像を選択<input type="file" accept="image/*" @change="onImage" hidden /></label>
+          <label class="button-secondary upload-button">撮影／画像を選択<input type="file" accept="image/*" @change="onImage" :disabled="!!busy" hidden /></label>
         </div>
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
@@ -686,8 +703,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
         <button class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
-        <button class="button-primary" @click="saveAll" :disabled="!forms.length">保存 {{ forms.length }}件</button>
+        <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
       </div>
+      </fieldset>
     </section>
 
     <section v-else-if="tab === 'list'" class="page-section">
@@ -722,7 +740,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.replace(/-/g, '/') }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }}</small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
-              <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
+              <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
         </section>
@@ -751,8 +769,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <button type="button" class="button-secondary load-more-button" @click="loadMoreEntries">読み込みを続ける（{{ Math.min(listPageSize, sortedDisplayEntries.length - visibleEntryCount) }}件）</button>
       </div>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
-        <form class="edit-dialog" @submit.prevent="saveEdit">
+        <form class="edit-dialog" @submit.prevent="saveEdit" :aria-busy="editSaving">
           <div class="edit-dialog-heading"><h2>記録を編集</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="閉じる">×</button></div>
+          <fieldset class="edit-fields" :disabled="editSaving">
           <div class="type-switch" role="group" aria-label="記録の種類">
             <button type="button" :class="{ selected: editingEntry.type === 'expense' }" @click="setEntryType(editingEntry, 'expense')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
             <button type="button" :class="{ selected: editingEntry.type === 'income' }" @click="setEntryType(editingEntry, 'income')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
@@ -770,7 +789,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="editingEntry.transferDate" type="date" required /></label>
           </div>
           <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
-          <div class="edit-dialog-actions"><button type="button" class="button-secondary" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary">変更を保存</button></div>
+          </fieldset>
+          <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="editSaving" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary" :disabled="editSaving">{{ editSaving ? '保存中…' : '変更を保存' }}</button></div>
         </form>
       </div>
     </section>
@@ -915,7 +935,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div v-else class="pending-transfer-list">
           <div v-for="item in pendingTransfers" :key="item.id" class="pending-transfer-row">
             <div class="pending-transfer-main"><strong>{{ item.merchant || item.note || 'SBI証券への資産移動' }}</strong><span>予定日 {{ item.transfer_date || item.date }} · ¥{{ Number(item.amount || 0).toLocaleString('ja-JP') }}</span></div>
-            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" aria-label="削除" title="削除" @click="deleteTransfer(item)">×</button><button v-else-if="transferDue(item)" class="pending-retry" @click="retryTransfer(item)">手動処理</button></div>
+            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" :disabled="transferActionId !== null" aria-label="削除" title="削除" @click="deleteTransfer(item)">×</button><button v-else-if="transferDue(item)" class="pending-retry" :disabled="transferActionId !== null" @click="retryTransfer(item)">手動処理</button></div>
           </div>
         </div>
       </article>
@@ -1157,6 +1177,7 @@ main .donut-vertical .pie-legend-row{border-color:var(--line);background:var(--c
 main .donut-vertical .pie-legend-row.donut-category-active{background:var(--tint);border-color:var(--blue);color:var(--blue-dark)}
 main .category-swatch,main .pie-legend-dot{border:1px solid rgba(0,0,0,.06)}
 main .entry-day-heading{border-radius:var(--radius-md)}
+.draft-controls,.edit-fields{border:0;margin:0;padding:0;min-width:0}.draft-controls:disabled,.edit-fields:disabled{opacity:.7}button:disabled{cursor:not-allowed;opacity:.55}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 main .annual-month-list .entry-day-group{border-radius:var(--radius-md);overflow:hidden}
 @media(prefers-reduced-motion:reduce){main *,main *::before,main *::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 

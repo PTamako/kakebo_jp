@@ -444,7 +444,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
         </div>
         <div v-if="f.type === 'transfer'" class="field-grid transfer-schedule-fields">
-          <label class="form-field"><span>振替先</span><select v-model="f.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option><option value="paypay">PayPayポイント運用</option></select></label>
+          <label class="form-field"><span>振替先</span><select v-model="f.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>
           <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="f.transferDate" type="date" required /></label>
         </div>
         <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>

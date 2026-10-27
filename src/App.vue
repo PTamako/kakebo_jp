@@ -12,9 +12,12 @@ const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([.
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
 const editingEntry = ref(null)
-const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
-const CATEGORY_ICONS = { '餐饮':'🍜', '饮食料品':'🛒', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '老公生活费':'🏠', '父母赠与':'💝', '亲友赠与':'🎁', '退款':'↩️', '其他收入':'🌷' }
+const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他収入']
+const CATEGORY_ICONS = { '餐饮':'🍜', '饮食料品':'🛒', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '老公生活费':'🏠', '父母赠与':'💝', '亲友赠与':'🎁', '退款':'↩️', '其他収入':'🌷' }
 const categoryIcon = name => CATEGORY_ICONS[name] || '🧾'
+const CATEGORY_LABELS = { '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
+const categoryLabel = name => CATEGORY_LABELS[name] || name
+
 const token = ref(localStorage.getItem('token') || '')
 
 async function api(path, opt = {}) {
@@ -22,12 +25,12 @@ async function api(path, opt = {}) {
     ...opt, headers: { 'content-type': 'application/json', 'x-token': token.value }
   })
   if (r.status === 401) {
-    const t = prompt('请输入访问口令')
+    const t = prompt('アクセスコードを入力してください')
     if (t) { token.value = t; localStorage.setItem('token', t); return api(path, opt) }
-    throw new Error('需要口令')
+    throw new Error('アクセスコードが必要です')
   }
   const d = await r.json()
-  if (!r.ok) throw new Error(d.error || '请求失败')
+  if (!r.ok) throw new Error(d.error || 'リクエストに失敗しました')
   return d
 }
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
@@ -43,7 +46,7 @@ async function load() {
 }
 async function loadYear() {
   try { annualStats.value = await api('stats?year=' + selectedYear.value) }
-  catch (e) { flash('年度统计加载失败：' + e.message) }
+  catch (e) { flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
 onMounted(() => { load(); loadYear() })
 watch(month, () => { selectedDay.value = ''; swipedEntryId.value = null; load() })
@@ -53,16 +56,16 @@ watch(tab, value => { if (value === 'year') loadYear() })
 function recognize() {
   if (!input.value.trim()) return
   forms.value = parseEntries(input.value, rules.value).map(f => ({ ...f, bindRule: false }))
-  flash(forms.value.length > 1 ? `识别到 ${forms.value.length} 笔记录，请检查后批量保存` : '请检查识别结果')
+  flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
 async function onImage(e) {
   const f = e.target.files[0]; e.target.value = ''
   if (!f) return
-  busy.value = '识别中 0%（首次需下载日文语言包）'
+  busy.value = '読み取り中 0%（初回は日本語データをダウンロードします）'
   try {
-    input.value = await ocrImage(f, p => (busy.value = `识别中 ${p}%`))
+    input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
     recognize()
-  } catch (err) { flash('图片识别失败：' + err.message) }
+  } catch (err) { flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
 }
 function addBlank(type = 'expense') {
@@ -75,20 +78,20 @@ function setEntryType(form, type) {
   if (type === 'expense' && INCOME_CATEGORIES.includes(form.category)) form.category = '日用品'
 }
 async function addCategory() {
-  const name = prompt('请输入新分类名称（最多20字）')
+  const name = prompt('新しいカテゴリ名を入力してください（20文字以内）')
   if (!name?.trim()) return
   try {
     await api('categories', { method: 'POST', body: JSON.stringify({ name: name.trim() }) })
     categories.value = await api('categories')
-    flash('分类已新增')
-  } catch (e) { flash('新增分类失败：' + e.message) }
+    flash('カテゴリを追加しました')
+  } catch (e) { flash('カテゴリの追加に失敗しました：' + e.message) }
 }
 function removeDraft(i) { forms.value.splice(i, 1) }
 
 async function saveAll() {
-  if (!forms.value.length) return flash('没有可保存的记录')
+  if (!forms.value.length) return flash('保存する記録がありません')
   const invalid = forms.value.findIndex(f => !(Number(f.amount) > 0))
-  if (invalid >= 0) return flash(`第 ${invalid + 1} 笔金额无效，请检查`)
+  if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
   try {
     let saved = 0
     for (const f of forms.value) {
@@ -100,12 +103,12 @@ async function saveAll() {
     }
     rules.value = await api('rules')
     forms.value = []; input.value = ''
-    flash(`已保存 ${saved} 笔记录`)
+    flash(`${saved}件の記録を保存しました`)
     await load()
-  } catch (e) { flash(`已保存部分记录；后续保存失败：${e.message}。请刷新明细确认，避免重复保存。`) }
+  } catch (e) { flash(`一部の記録を保存しましたが、残りの保存に失敗しました：${e.message}。重複保存を避けるため、明細を再読み込みして確認してください。`) }
 }
 async function remove(id) {
-  if (!confirm('删除这一笔？')) return
+  if (!confirm('この記録を削除しますか？')) return
   await api('entries/' + id, { method: 'DELETE' }); load()
 }
 function startEdit(entry) {
@@ -121,7 +124,7 @@ async function saveEdit() {
   const e = editingEntry.value
   if (!e) return
   if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !(Number(e.amount) > 0)) {
-    flash('请检查日期和金额')
+    flash('日付と金額を確認してください')
     return
   }
   try {
@@ -130,9 +133,9 @@ async function saveEdit() {
       body: JSON.stringify({ ...e, amount: Number(e.amount) })
     })
     editingEntry.value = null
-    flash('记录已更新')
+    flash('記録を更新しました')
     await load()
-  } catch (err) { flash('更新失败：' + err.message) }
+  } catch (err) { flash('更新に失敗しました：' + err.message) }
 }
 const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map(c => c.amount)))
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
@@ -251,15 +254,15 @@ const ratioTrendLine = computed(() => ratioTrendPoints.value.filter(point => poi
 const incomeTrendMax = computed(() => Math.max(0, ...yearMonthRows.value.map(item => item.income)))
 const ratioTrendMax = computed(() => Math.max(0, ...ratioTrendPoints.value.filter(point => point.ratio !== null).map(point => point.ratio)))
 const maxYearMonth = computed(() => Math.max(1, ...yearMonthRows.value.map(item => item.amount)))
-const highestSpendMonth = computed(() => yearMonthRows.value.reduce((best, item) => item.amount > best.amount ? item : best, { month: '', label: '暂无', amount: 0 }))
+const highestSpendMonth = computed(() => yearMonthRows.value.reduce((best, item) => item.amount > best.amount ? item : best, { month: '', label: 'データなし', amount: 0 }))
 const annualAverage = computed(() => Math.round(Number(annualStats.value?.total || 0) / 12))
 const selectedIncomeMonthRow = computed(() => yearMonthRows.value.find(item => item.month === selectedIncomeMonth.value) || null)
 const selectedIncomeCategories = computed(() => (annualStats.value?.incomeByMonthCategory || [])
   .filter(item => item.month === selectedIncomeMonth.value)
-  .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
+  .map(item => ({ category: item.category || '其他収入', amount: Number(item.amount || 0) }))
   .sort((a, b) => b.amount - a.amount))
 const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCategory || [])
-  .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
+  .map(item => ({ category: item.category || '其他収入', amount: Number(item.amount || 0) }))
   .sort((a, b) => b.amount - a.amount))
 const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
 function selectIncomeMonth(point) {
@@ -275,69 +278,69 @@ const selectedRatio = computed(() => selectedRatioMonthRow.value && selectedRati
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)
 const pigState = ratio => ratio === null ? 'empty' : ratio > 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
-const pigLabel = ratio => ratio === null ? '先记下收入，让小白和鸡毛看看收支情况' : ratio > 1 ? '糟糕！鸡毛和小白一起崩溃了！' : ratio >= .8 ? '快到预算边缘啦，鸡毛都冒汗了！' : '状态不错，小白和鸡毛都很轻松'
-const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(ratio * 100) + '%'
+const pigLabel = ratio => ratio === null ? 'まず収入を記録して、収支バランスを確認しましょう' : ratio > 1 ? '大変！支出が収入を上回っています！' : ratio >= .8 ? '予算オーバーに注意しましょう！' : 'いい感じです。この調子でいきましょう'
+const ratioLabel = ratio => ratio === null ? 'データなし収入数据' : Math.round(ratio * 100) + '%'
 </script>
 
 <template>
   <main>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-label="小白和鸡毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="小白" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="鸡毛" /></span>
-        <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>和小白、鸡毛一起记账</small></div>
+        <span class="brand-mark" aria-label="しろちゃんとちび毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="小白" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="鸡毛" /></span>
+        <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
-      <input v-if="tab !== 'year'" type="month" v-model="month" class="month" aria-label="统计月份" />
+      <input v-if="tab !== 'year'" type="month" v-model="month" class="month" aria-label="集計月" />
     </header>
 
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
 
     <section v-if="tab === 'add'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">新增记录</p><h1>记一笔</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ 新增分类</button></div>
+      <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
       <div class="entry-mode-row">
-        <button class="button-secondary manual-add-button" @click="addBlank('expense')">✍️ 手动添加支出</button>
-        <button class="button-secondary manual-add-button income-add-button" @click="addBlank('income')">＋ 记录收入</button>
+        <button class="button-secondary manual-add-button" @click="addBlank('expense')">✍️ 支出を手入力</button>
+        <button class="button-secondary manual-add-button income-add-button" @click="addBlank('income')">＋ 収入を記録</button>
       </div>
       <div class="panel capture-panel">
-        <label class="field-label" for="entry-text">文字识别</label>
-        <textarea id="entry-text" v-model="input" rows="4" placeholder="例如：昨天 罗森 680円&#10;&#10;多笔消费可以分段粘贴，也可以上传小票图片。"></textarea>
+        <label class="field-label" for="entry-text">テキスト読み取り</label>
+        <textarea id="entry-text" v-model="input" rows="4" placeholder="例：昨日 コンビニ 680円&#10;&#10;複数の支出を貼り付けたり、レシート画像をアップロードしたりできます。"></textarea>
         <div class="action-row">
-          <button class="button-primary" @click="recognize" :disabled="!!busy || !input.trim()">识别文字</button>
-          <label class="button-secondary upload-button">拍照 / 选图片<input type="file" accept="image/*" @change="onImage" hidden /></label>
+          <button class="button-primary" @click="recognize" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
+          <label class="button-secondary upload-button">撮影／画像を選択<input type="file" accept="image/*" @change="onImage" hidden /></label>
         </div>
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
-        <p class="microcopy">图片在当前设备本地识别，不会上传到 OCR 服务。</p>
+        <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
       </div>
 
       <div v-if="forms.length" class="draft-heading">
-        <div><h2>确认识别结果</h2><p>保存前请核对金额和商家</p></div>
-        <span class="count-pill">{{ forms.length }} 笔</span>
+        <div><h2>読み取り結果の確認</h2><p>保存前に金額と店舗名を確認してください</p></div>
+        <span class="count-pill">{{ forms.length }}件</span>
       </div>
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
-        <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新记录' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="移除此笔">×</button></div>
-        <div class="type-switch" role="group" aria-label="记录类型">
+        <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新しい記録' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
+        <div class="type-switch" role="group" aria-label="記録の種類">
           <button type="button" :class="{ selected: (f.type || 'expense') === 'expense' }" @click="setEntryType(f, 'expense')">💸 支出</button>
-          <button type="button" :class="{ selected: f.type === 'income' }" @click="setEntryType(f, 'income')">🌷 收入</button>
+          <button type="button" :class="{ selected: f.type === 'income' }" @click="setEntryType(f, 'income')">🌷 収入</button>
         </div>
-        <label class="form-field amount-field"><span>{{ f.type === 'income' ? '收入金额（日元）' : '支出金额（日元）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金额（日元）" /></div></label>
+        <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
         <div class="field-grid">
-          <label class="form-field"><span>日期</span><input type="date" v-model="f.date" /></label>
-          <label class="form-field"><span>时间</span><input type="time" v-model="f.time" /></label>
-          <label class="form-field"><span>分类</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c">{{ c }}</option></select></label>
-          <label class="form-field"><span>商家</span><input v-model="f.merchant" /></label>
+          <label class="form-field"><span>日付</span><input type="date" v-model="f.date" /></label>
+          <label class="form-field"><span>時刻</span><input type="time" v-model="f.time" /></label>
+          <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c">{{ categoryLabel(c) }}</option></select></label>
+          <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
         </div>
-        <label class="form-field"><span>备注</span><input v-model="f.note" placeholder="可选" /></label>
-        <label v-if="f.type !== 'income' && f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>将此商家绑定到所选分类，下次自动识别</span></label>
+        <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
+        <label v-if="f.type !== 'income' && f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>将此店舗绑定到所选カテゴリ，下次自动识别</span></label>
       </div>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
-        <button class="button-secondary" @click="addBlank('expense')">＋ 再加一笔</button>
-        <button class="button-primary" @click="saveAll" :disabled="!forms.length">保存 {{ forms.length }} 笔</button>
+        <button class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
+        <button class="button-primary" @click="saveAll" :disabled="!forms.length">保存 {{ forms.length }}件</button>
       </div>
     </section>
 
     <section v-else-if="tab === 'list'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">收支记录</p><h1>收支明细</h1></div><span class="heading-icon">≡</span></div>
-      <section class="month-calendar" aria-label="月度消费日历">
-        <div class="calendar-heading"><strong>{{ monthLabel }}</strong><button v-if="selectedDay" class="calendar-reset" @click="selectedDay = ''">查看整月</button></div>
+      <div class="page-heading"><div><p class="eyebrow">収支記録</p><h1>収支明細</h1></div><span class="heading-icon">≡</span></div>
+      <section class="month-calendar" aria-label="月間支出カレンダー">
+        <div class="calendar-heading"><strong>{{ monthLabel }}</strong><button v-if="selectedDay" class="calendar-reset" @click="selectedDay = ''">月全体を表示</button></div>
         <div class="calendar-weekdays"><span v-for="weekday in ['一', '二', '三', '四', '五', '六', '日']" :key="weekday">{{ weekday }}</span></div>
         <div class="calendar-grid">
           <button v-for="day in calendarDays" :key="day.key" type="button" class="calendar-day" :class="{ 'calendar-blank': day.blank, 'calendar-selected': selectedDay === day.date, 'calendar-has-spend': day.amount > 0 }" :disabled="day.blank" @click="toggleDay(day.date)" :aria-label="day.blank ? undefined : day.date + ' 支出 ' + yen(day.amount)">
@@ -345,73 +348,73 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
           </button>
         </div>
       </section>
-      <div class="summary-strip"><span>{{ selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日明细' : monthLabel }}</span><strong>{{ filteredEntries.length }} 笔记录</strong></div>
-      <div v-if="!entries.length" class="empty-state"><span class="empty-icon">▤</span><strong>这个月还没有记录</strong><p>去「记一笔」添加第一笔消费。</p><button class="button-primary" @click="tab = 'add'">添加记录</button></div>
-      <div v-else-if="filteredEntries.length === 0" class="empty-state filtered-empty"><span class="empty-icon">♡</span><strong>{{ selectedDay ? '这一天还没有记录' : '这个月还没有记录' }}</strong><p>{{ selectedDay ? '点击日历中的日期可切换查看。' : '去「记一笔」添加第一笔消费。' }}</p><button v-if="selectedDay" class="button-secondary" @click="selectedDay = ''">查看整月</button><button v-else class="button-primary" @click="tab = 'add'">添加记录</button></div>
+      <div class="summary-strip"><span>{{ selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel }}</span><strong>{{ filteredEntries.length }}件记录</strong></div>
+      <div v-if="!entries.length" class="empty-state"><span class="empty-icon">▤</span><strong>この月の記録はありません</strong><p>去「入力」添加第一笔消费。</p><button class="button-primary" @click="tab = 'add'">記録を追加</button></div>
+      <div v-else-if="filteredEntries.length === 0" class="empty-state filtered-empty"><span class="empty-icon">♡</span><strong>{{ selectedDay ? 'この日の記録はありません' : 'この月の記録はありません' }}</strong><p>{{ selectedDay ? '点击日历中的日付可切换查看。' : '去「入力」添加第一笔消费。' }}</p><button v-if="selectedDay" class="button-secondary" @click="selectedDay = ''">月全体を表示</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
       <ul v-else class="ledger">
         <li v-for="e in filteredEntries" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
           <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
             <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
-            <div class="ledger-info"><b>{{ e.merchant || e.category }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ e.category }} · {{ e.type === 'income' ? '收入' : '支出' }}</small></div>
+            <div class="ledger-info"><b>{{ e.merchant || e.category }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : '支出' }}</small></div>
             <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income' }">{{ e.type === 'income' ? '+' : '−' }}{{ yen(e.amount) }}</span>
           </div>
-          <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="删除记录">删除</button>
+          <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">删除</button>
         </li>
       </ul>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
         <form class="edit-dialog" @submit.prevent="saveEdit">
-          <div class="edit-dialog-heading"><h2>编辑记录</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="关闭">×</button></div>
-          <div class="type-switch" role="group" aria-label="记录类型">
+          <div class="edit-dialog-heading"><h2>記録を編集</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="閉じる">×</button></div>
+          <div class="type-switch" role="group" aria-label="記録の種類">
             <button type="button" :class="{ selected: editingEntry.type === 'expense' }" @click="setEntryType(editingEntry, 'expense')">💸 支出</button>
-            <button type="button" :class="{ selected: editingEntry.type === 'income' }" @click="setEntryType(editingEntry, 'income')">🌷 收入</button>
+            <button type="button" :class="{ selected: editingEntry.type === 'income' }" @click="setEntryType(editingEntry, 'income')">🌷 収入</button>
           </div>
-          <label class="form-field"><span>金额（日元）</span><input v-model.number="editingEntry.amount" type="number" min="1" inputmode="numeric" required /></label>
+          <label class="form-field"><span>金額（円）</span><input v-model.number="editingEntry.amount" type="number" min="1" inputmode="numeric" required /></label>
           <div class="field-grid">
-            <label class="form-field"><span>日期</span><input v-model="editingEntry.date" type="date" required /></label>
-            <label class="form-field"><span>时间</span><input v-model="editingEntry.time" type="time" /></label>
-            <label class="form-field"><span>分类</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ c }}</option></select></label>
-            <label class="form-field"><span>商家</span><input v-model="editingEntry.merchant" /></label>
+            <label class="form-field"><span>日付</span><input v-model="editingEntry.date" type="date" required /></label>
+            <label class="form-field"><span>時刻</span><input v-model="editingEntry.time" type="time" /></label>
+            <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : categories)" :key="c" :value="c">{{ c }}</option></select></label>
+            <label class="form-field"><span>店舗</span><input v-model="editingEntry.merchant" /></label>
           </div>
-          <label class="form-field"><span>备注</span><input v-model="editingEntry.note" /></label>
-          <div class="edit-dialog-actions"><button type="button" class="button-secondary" @click="cancelEdit">取消</button><button type="submit" class="button-primary">保存修改</button></div>
+          <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
+          <div class="edit-dialog-actions"><button type="button" class="button-secondary" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary">変更を保存</button></div>
         </form>
       </div>
     </section>
 
     <section v-else-if="tab === 'stat'" class="page-section stats-page">
-      <div class="page-heading"><div><p class="eyebrow">月度概览</p><h1>支出统计</h1><p class="heading-subtitle">{{ monthLabel }} · 消费概览</p></div><span class="heading-icon">↗</span></div>
+      <div class="page-heading"><div><p class="eyebrow">月間サマリー</p><h1>支出集計</h1><p class="heading-subtitle">{{ monthLabel }} · 支出サマリー</p></div><span class="heading-icon">↗</span></div>
       <div class="hero-total">
-        <span>本月总支出</span>
+        <span>今月の支出合計</span>
         <strong>{{ yen(stats?.total) }}</strong>
-        <div class="hero-footer"><span class="hero-dot"></span>{{ stats?.count || 0 }} 笔消费记录</div>
+        <div class="hero-footer"><span class="hero-dot"></span>{{ stats?.count || 0 }}件消费记录</div>
       </div>
       <div class="piggy-card" :class="'piggy-' + pigState(monthlyRatio)">
-        <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="小白和鸡毛"><img class="puppy-white" src="https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png" alt="小白贴图预览" loading="lazy" /><img class="puppy-jimao" src="https://cdn2.cdnstep.com/8A5BxvcpUvyc8nO7YV3A/1-1.thumb128.png" alt="鸡毛和小白贴图预览" loading="lazy" /><small>小白 × 鸡毛</small></div>
-        <div class="piggy-content"><div class="piggy-title">本月收支平衡</div><div class="piggy-status">{{ pigLabel(monthlyRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (monthlyRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出占收入</span><strong>{{ ratioLabel(monthlyRatio) }}</strong></div></div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="しろちゃんとちび毛"><img class="puppy-white" src="https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" src="https://cdn2.cdnstep.com/8A5BxvcpUvyc8nO7YV3A/1-1.thumb128.png" alt="鸡毛和しろちゃんのスタンプ" loading="lazy" /><small>しろちゃん × ちび毛</small></div>
+        <div class="piggy-content"><div class="piggy-title">今月の収支バランス</div><div class="piggy-status">{{ pigLabel(monthlyRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (monthlyRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出占収入</span><strong>{{ ratioLabel(monthlyRatio) }}</strong></div></div>
       </div>
-      <div class="income-expense-strip"><div><small>本月收入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>本月支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>结余</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
+      <div class="income-expense-strip"><div><small>本月収入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>今月の支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>差引残高</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
       <div class="metric-grid">
-        <div class="metric-card"><span class="metric-icon">▦</span><small>支出笔数</small><strong>{{ stats?.count || 0 }}<em>笔</em></strong></div>
-        <div class="metric-card"><span class="metric-icon">↗</span><small>日均消费（有消费日）</small><strong>{{ yen(averageDaily) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon">▦</span><small>支出件数</small><strong>{{ stats?.count || 0 }}<em>笔</em></strong></div>
+        <div class="metric-card"><span class="metric-icon">↗</span><small>1日平均支出（支出があった日）</small><strong>{{ yen(averageDaily) }}</strong></div>
       </div>
-      <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>还没有统计数据</strong><p>添加消费记录后，这里会显示支出分布。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
+      <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>集計データがありません</strong><p>支出を記録すると、ここに内訳が表示されます。</p><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div class="stats-card">
-          <div class="section-title"><div><h2>分类支出</h2><p>看看钱主要花在哪里</p></div><span class="section-mark">01</span></div>
+          <div class="section-title"><div><h2>カテゴリ支出</h2><p>何にお金を使ったか確認しましょう</p></div><span class="section-mark">01</span></div>
           <div class="category-list">
             <div v-for="(c, i) in categoryRows" :key="c.category" class="category-row">
-              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
+              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span :class="'bar-fill fill-' + (i % 6)" :style="{ width: Math.max(2, (c.amount / maxCat) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ stats.total ? Math.round(c.amount / stats.total * 100) : 0 }}% 占本月总支出</small>
+              <small class="category-share">{{ stats.total ? Math.round(c.amount / stats.total * 100) : 0 }}% 占今月の支出合計</small>
             </div>
           </div>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>每周支出</h2><p>按周一至周日汇总，首尾周按本月日期计算</p></div><span class="section-mark">02</span></div>
+          <div class="section-title"><div><h2>週別支出</h2><p>按週一至週日汇总，首尾週按本月日付计算</p></div><span class="section-mark">02</span></div>
           <div class="daily-list">
             <div v-for="(w, i) in weekRows" :key="w.key" class="daily-row weekly-row">
-              <div class="daily-date week-index"><strong>第{{ i + 1 }}</strong><span>周</span></div>
-              <div class="daily-bar-wrap"><div class="daily-bar-track"><span :style="{ width: Math.max(2, (w.amount / maxWeek) * 100) + '%' }"></span></div><small>{{ w.label }} · {{ w.days }}个消费日</small></div>
+              <div class="daily-date week-index"><strong>第{{ i + 1 }}</strong><span>週</span></div>
+              <div class="daily-bar-wrap"><div class="daily-bar-track"><span :style="{ width: Math.max(2, (w.amount / maxWeek) * 100) + '%' }"></span></div><small>{{ w.label }} · {{ w.days }}日間の支出</small></div>
               <strong class="daily-amount">{{ yen(w.amount) }}</strong>
             </div>
           </div>
@@ -420,25 +423,25 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
     </section>
 
     <section v-else-if="tab === 'year'" class="page-section stats-page annual-page">
-      <div class="page-heading"><div><p class="eyebrow">年度概览</p><h1>年度统计</h1><p class="heading-subtitle">按年份汇总全年消费</p></div><span class="heading-icon">⌁</span></div>
-      <label class="year-picker"><span>统计年份</span><select v-model.number="selectedYear" aria-label="统计年份"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select></label>
+      <div class="page-heading"><div><p class="eyebrow">年間サマリー</p><h1>年間集計</h1><p class="heading-subtitle">年ごとの支出を集計</p></div><span class="heading-icon">⌁</span></div>
+      <label class="year-picker"><span>集計年</span><select v-model.number="selectedYear" aria-label="集計年"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select></label>
       <div class="hero-total annual-hero">
-        <span>{{ selectedYear }}年总支出</span><strong>{{ yen(annualStats?.total) }}</strong>
-        <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }} 笔支出记录</div>
+        <span>{{ selectedYear }}年の支出合計</span><strong>{{ yen(annualStats?.total) }}</strong>
+        <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件支出记录</div>
       </div>
-      <div class="income-expense-strip annual-income-strip"><div><small>全年收入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>全年支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>全年结余</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
+      <div class="income-expense-strip annual-income-strip"><div><small>全年収入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>年間支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>全年差引残高</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
       <div class="piggy-card" :class="'piggy-' + pigState(annualRatio)">
-        <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="小白和鸡毛"><img class="puppy-white" src="https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png" alt="小白贴图预览" loading="lazy" /><img class="puppy-jimao" src="https://cdn2.cdnstep.com/8A5BxvcpUvyc8nO7YV3A/1-1.thumb128.png" alt="鸡毛和小白贴图预览" loading="lazy" /><small>小白 × 鸡毛</small></div>
-        <div class="piggy-content"><div class="piggy-title">年度收支平衡</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出占收入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="しろちゃんとちび毛"><img class="puppy-white" src="https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" src="https://cdn2.cdnstep.com/8A5BxvcpUvyc8nO7YV3A/1-1.thumb128.png" alt="鸡毛和しろちゃんのスタンプ" loading="lazy" /><small>しろちゃん × ちび毛</small></div>
+        <div class="piggy-content"><div class="piggy-title">年間の収支バランス</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出占収入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>
       </div>
       <div class="metric-grid">
-        <div class="metric-card"><span class="metric-icon">▦</span><small>月均支出（按12个月计算）</small><strong>{{ yen(annualAverage) }}</strong></div>
-        <div class="metric-card"><span class="metric-icon">↗</span><small>消费最高月份</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : '暂无' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
+        <div class="metric-card"><span class="metric-icon">▦</span><small>月平均支出（12か月で計算）</small><strong>{{ yen(annualAverage) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon">↗</span><small>支出が最も多い月</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
       </div>
-      <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>这一年还没有记录</strong><p>选择其他年份，或添加消费记录后再查看。</p><button class="button-primary" @click="tab = 'add'">记一笔</button></div>
+      <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><p>別の年を選ぶか、記録を追加してください。</p><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div v-if="annualStats?.count" class="stats-card">
-          <div class="section-title"><div><h2>每月支出</h2><p>{{ selectedYear }}年1月至12月</p></div><span class="section-mark">01</span></div>
+          <div class="section-title"><div><h2>月別支出</h2><p>{{ selectedYear }}年1月〜12月</p></div><span class="section-mark">01</span></div>
           <div class="year-month-list">
             <div v-for="item in yearMonthRows" :key="item.month" class="year-month-row">
               <span class="year-month-label">{{ item.label }}</span>
@@ -448,74 +451,74 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
           </div>
         </div>
         <div class="stats-card trend-card">
-          <div class="section-title"><div><h2>收入变化曲线</h2><p>按月查看全年收入走势</p></div><span class="section-mark">03</span></div>
-          <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>单月最高收入</span></div>
-          <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年收入变化曲线'">
+          <div class="section-title"><div><h2>収入变化曲线</h2><p>按月查看全年収入走势</p></div><span class="section-mark">03</span></div>
+          <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>单月最高収入</span></div>
+          <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年収入变化曲线'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
-            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedIncomeMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '收入 ' + yen(point.income) + '，点击查看分类'" @click="selectIncomeMonth(point)" @keydown.enter.prevent="selectIncomeMonth(point)" @keydown.space.prevent="selectIncomeMonth(point)" />
+            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedIncomeMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '収入 ' + yen(point.income) + '，点击查看カテゴリ'" @click="selectIncomeMonth(point)" @keydown.enter.prevent="selectIncomeMonth(point)" @keydown.space.prevent="selectIncomeMonth(point)" />
           </svg>
           <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" :class="{ 'trend-month-selected': selectedIncomeMonth === item.month }" @click="selectIncomeMonth(item)">{{ Number(item.month.slice(5)) }}</button></div>
-          <p class="trend-note">点击曲线上的月份，即可查看该月各收入分类的金额。</p>
+          <p class="trend-note">点击曲线上的月份，即可查看该月各収入カテゴリ的金额。</p>
           <div v-if="selectedIncomeMonthRow" class="income-month-breakdown">
-            <div class="income-breakdown-heading"><div><h3>{{ selectedIncomeMonthRow.label }}收入分类</h3><p>{{ selectedYear }}年 · {{ selectedIncomeCategories.length }} 个分类</p></div><strong>{{ yen(selectedIncomeMonthRow.income) }}</strong></div>
+            <div class="income-breakdown-heading"><div><h3>{{ selectedIncomeMonthRow.label }}収入カテゴリ</h3><p>{{ selectedYear }}年 · {{ selectedIncomeCategories.length }} 个カテゴリ</p></div><strong>{{ yen(selectedIncomeMonthRow.income) }}</strong></div>
             <div v-if="selectedIncomeCategories.length" class="category-list">
               <div v-for="(c, i) in selectedIncomeCategories" :key="c.category" class="category-row">
                 <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
                 <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(selectedIncomeMonthRow.income)) * 100) + '%' }"></span></div>
-                <small class="category-share">{{ selectedIncomeMonthRow.income ? Math.round(Number(c.amount) / Number(selectedIncomeMonthRow.income) * 100) : 0 }}% 占当月总收入</small>
+                <small class="category-share">{{ selectedIncomeMonthRow.income ? Math.round(Number(c.amount) / Number(selectedIncomeMonthRow.income) * 100) : 0 }}% 占当月总収入</small>
               </div>
             </div>
-            <p v-else class="trend-note">这个月还没有收入记录。</p>
+            <p v-else class="trend-note">这个月还没有収入记录。</p>
           </div>
         </div>
         <div class="stats-card trend-card">
-          <div class="section-title"><div><h2>收支比变化曲线</h2><p>支出 ÷ 收入；虚线参考 80% 与 100%</p></div><span class="section-mark">04</span></div>
-          <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : '暂无' }}</strong><span>最高月度支出占收入比例</span></div>
-          <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年收支比变化曲线'">
+          <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入；虚线参考 80% 与 100%</p></div><span class="section-mark">04</span></div>
+          <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>最高月度支出占収入比例</span></div>
+          <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出割合の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <line x1="16" y1="64.27" x2="304" y2="64.27" class="chart-reference-line" />
             <line x1="16" y1="53.33" x2="304" y2="53.33" class="chart-reference-line chart-reference-danger" />
             <polyline v-if="ratioTrendLine" :points="ratioTrendLine" class="chart-line ratio-chart-line" />
-            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point ratio-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '收支比 ' + Math.round(point.ratio * 100) + '%，点击查看当月收支金额'" @click="selectRatioMonth(point)" @keydown.enter.prevent="selectRatioMonth(point)" @keydown.space.prevent="selectRatioMonth(point)" />
+            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point ratio-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '支出割合 ' + Math.round(point.ratio * 100) + '%。タップして当月の収支を確認'" @click="selectRatioMonth(point)" @keydown.enter.prevent="selectRatioMonth(point)" @keydown.space.prevent="selectRatioMonth(point)" />
           </svg>
           <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" :class="{ 'trend-month-selected': selectedRatioMonth === item.month }" @click="selectRatioMonth(item)">{{ Number(item.month.slice(5)) }}</button></div>
           <div v-if="selectedRatioMonthRow" class="income-month-breakdown ratio-month-breakdown">
-            <div class="income-breakdown-heading"><div><h3>{{ selectedRatioMonthRow.month.replace('-', '年') }}月收支情况</h3><p>支出 ÷ 收入</p></div><strong>{{ selectedRatio === null ? '无法计算' : Math.round(selectedRatio * 100) + '%' }}</strong></div>
-            <div class="ratio-detail-amounts"><div><span>当月收入</span><strong>{{ yen(selectedRatioMonthRow.income) }}</strong></div><div><span>当月支出</span><strong>{{ yen(selectedRatioMonthRow.amount) }}</strong></div></div>
-            <p v-if="selectedRatio === null" class="trend-note">这个月没有收入记录，暂时无法计算收支比。</p>
+            <div class="income-breakdown-heading"><div><h3>{{ selectedRatioMonthRow.month.replace('-', '年') }}月の収支</h3><p>支出 ÷ 収入</p></div><strong>{{ selectedRatio === null ? '計算できません' : Math.round(selectedRatio * 100) + '%' }}</strong></div>
+            <div class="ratio-detail-amounts"><div><span>当月収入</span><strong>{{ yen(selectedRatioMonthRow.income) }}</strong></div><div><span>当月の支出</span><strong>{{ yen(selectedRatioMonthRow.amount) }}</strong></div></div>
+            <p v-if="selectedRatio === null" class="trend-note">这个月没有収入记录，暂时計算できません收支比。</p>
           </div>
-          <p class="trend-note">没有收入的月份不计算比例；曲线纵轴为 0%–150%，超过 150% 的点按上限显示。</p>
+          <p class="trend-note">没有収入的月份不计算比例；曲线纵轴为 0%–150%，超过 150% 的点按上限显示。</p>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>年度分类收入</h2><p>按全年累计金额排序</p></div><span class="section-mark">05</span></div>
+          <div class="section-title"><div><h2>年度カテゴリ収入</h2><p>年間合計の多い順</p></div><span class="section-mark">05</span></div>
           <div v-if="annualIncomeCategories.length" class="category-list">
             <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
-              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}% 占全年总收入</small>
+              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}% 占全年总収入</small>
             </div>
           </div>
-          <p v-else class="trend-note">这一年还没有收入记录。</p>
+          <p v-else class="trend-note">这一年还没有収入记录。</p>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>年度分类支出</h2><p>按全年累计金额排序</p></div><span class="section-mark">02</span></div>
+          <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div><span class="section-mark">02</span></div>
           <div class="category-list">
             <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(annualStats?.total || 0)) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}% 占全年总支出</small>
+              <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}% 占全年の支出合計</small>
             </div>
           </div>
         </div>
       </template>
     </section>
 
-    <nav class="bottom-nav" aria-label="主导航">
-      <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon">＋</span><span>记一笔</span></button>
-      <button :class="{ active: tab === 'list' }" @click="tab = 'list'"><span class="nav-icon">≡</span><span>明细</span></button>
-      <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon">▥</span><span>月统计</span></button>
-      <button :class="{ active: tab === 'year' }" @click="tab = 'year'"><span class="nav-icon">▤</span><span>年统计</span></button>
+    <nav class="bottom-nav" aria-label="メインメニュー">
+      <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon">＋</span><span>入力</span></button>
+      <button :class="{ active: tab === 'list' }" @click="tab = 'list'"><span class="nav-icon">≡</span><span>明細</span></button>
+      <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon">▥</span><span>月間集計</span></button>
+      <button :class="{ active: tab === 'year' }" @click="tab = 'year'"><span class="nav-icon">▤</span><span>年間集計</span></button>
     </nav>
   </main>
 </template>

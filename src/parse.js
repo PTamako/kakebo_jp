@@ -46,7 +46,7 @@ function findAmount(t) {
 // Supermarket names must be checked before generic keywords such as 「バス」.
 // 「まいばすけっと」 contains the characters 「バス」, but is a supermarket, not transport.
 const SUPERMARKET_KEYWORDS = [
-  'まいばすけっと', 'まいばす', 'イオン', 'AEON', 'マックスバリュ', 'ダイエー',
+  'まいばすけっと', 'まいばす', 'マイバスケット', 'マイバスケツト', 'マイバス', 'イオン', 'AEON', 'マックスバリュ', 'ダイエー',
   'ライフ', 'LIFE', 'サミットストア', 'サミット', 'マルエツ', '西友', 'SEIYU',
   'オーケーストア', 'オーケー', 'OKストア', 'ベルク', 'ヤオコー', 'オオゼキ',
   'いなげや', 'コモディイイダ', 'アコレ', 'ビッグ・エー', 'ビッグエー', 'ロピア',
@@ -56,20 +56,86 @@ const SUPERMARKET_KEYWORDS = [
   'スーパーセンタートライアル', '成城石井', '紀ノ国屋', 'KINOKUNIYA',
   'クイーンズ伊勢丹', '北野エース', '東急ストア', '京王ストア', '京急ストア',
   '小田急OX', '文化堂', 'スーパーバリュー', 'ベルクス', 'コープ', '生協',
-  'コンビニ', 'セブン-イレブン', 'セブンイレブン', 'ローソン', 'ファミリーマート',
-  'ファミマ', 'ミニストップ'
+  'コンビニ', 'セブン-イレブン', 'セブンイレブン', 'セブンーイレブン', 'セブンｰイレブン',
+  'セブン‐イレブン', 'セブン−イレブン', 'セブン－イレブン', '7-Eleven', '7-ELEVEN', '7-11',
+  'ローソン', 'ファミリーマート', 'ファミマ', 'ミニストップ', 'NewDays', 'ニューデイズ', 'デイリーヤマザキ', 'ポプラ'
 ]
 
-export function classify(text, rules) {
+// Merchant defaults by category. Keep these conservative: ambiguous merchants fall through to user rules/default.
+const MERCHANT_CATEGORY_KEYWORDS = [
+  { category: '餐饮', keywords: [
+    'マクドナルド', 'マック', 'モスバーガー', 'ケンタッキー', 'KFC', 'ミスタードーナツ', 'ミスド',
+    'スターバックス', 'スタバ', 'ドトール', 'タリーズ', 'コメダ珈琲', 'サイゼリヤ', 'ガスト',
+    'バーミヤン', 'ジョナサン', 'デニーズ', 'すかいらーく', '吉野家', 'すき家', '松屋',
+    'なか卯', '丸亀製麺', 'はなまるうどん', '日高屋', '餃子の王将', '大阪王将',
+    'くら寿司', 'スシロー', 'はま寿司', 'かっぱ寿司', '焼肉きんぐ', '牛角', '鳥貴族',
+    'Uber Eats', 'ウーバーイーツ', '出前館', 'menu', 'ピザハット', 'ドミノ・ピザ', 'ほっともっと',
+    'オリジン弁当', 'ほっかほっか亭', '食べログ'
+  ] },
+  { category: '日用品', keywords: [
+    'マツモトキヨシ', 'マツキヨ', 'ウエルシア', 'ウェルシア', 'ツルハドラッグ', 'スギ薬局',
+    'ココカラファイン', 'サンドラッグ', 'クリエイトSD', 'クスリのアオキ', 'コスモス薬品',
+    'ダイソー', 'DAISO', 'セリア', 'Seria', 'キャンドゥ', 'Can★Do', 'ワッツ',
+    'ニトリ', '無印良品', 'MUJI', 'カインズ', 'コーナン', 'DCM', 'ビバホーム',
+    'ドン・キホーテ', 'ドンキ', 'ロフト', 'LOFT', 'ハンズ', '東急ハンズ', 'ユニクロ', 'UNIQLO',
+    'GU', 'しまむら', '西松屋', 'アカチャンホンポ', '赤ちゃん本舗'
+  ] },
+  { category: '交通', keywords: [
+    'Suica', 'PASMO', 'ICOCA', 'モバイルSuica', 'モバイルPASMO', 'JR東日本', 'JR東海',
+    'JR西日本', '東京メトロ', '都営地下鉄', '京成電鉄', '京急', '東急電鉄', '小田急電鉄',
+    '京王電鉄', '東武鉄道', '西武鉄道', 'タクシー', 'GOタクシー', 'DiDi', '日本交通',
+    'Times駐車場', 'タイムズ', '三井のリパーク', 'ENEOS', '出光', 'apollostation', 'コスモ石油'
+  ] },
+  { category: '居住', keywords: [
+    '東京電力', 'TEPCO', '東京ガス', '大阪ガス', '東邦ガス', 'ENEOSでんき', 'オクトパスエナジー',
+    'Octopus Energy', 'SoftBank 光', 'ソフトバンク光', 'ソフトバンク', 'NTTファイナンス', '水道料金',
+    '家賃', '管理費', '住宅ローン'
+  ] },
+  { category: '医疗', keywords: [
+    '病院', 'クリニック', '診療所', '歯科', '歯医者', '調剤薬局', '薬局', '処方箋',
+    '日本調剤', 'クオール薬局', 'アイン薬局', 'スギ薬局調剤', '眼科', '整形外科', '皮膚科'
+  ] },
+  { category: '娱乐', keywords: [
+    'Netflix', 'ネットフリックス', 'Amazon Prime', 'Prime Video', 'Disney+', 'ディズニープラス',
+    'YouTube Premium', 'Spotify', 'Apple Music', 'Nintendo', 'PlayStation', 'Steam',
+    'カラオケ', 'ビッグエコー', 'まねきねこ', 'ラウンドワン', '映画館', 'TOHOシネマズ',
+    'ユナイテッド・シネマ', 'チケットぴあ', 'イープラス'
+  ] },
+  { category: '宠物', keywords: [
+    'ペットショップ', 'ペットのコジマ', 'コジマ', 'イオンペット', 'PETEMO', 'ペテモ',
+    '動物病院', '獣医', 'ペットホテル', 'トリミング', 'チャーム', 'charm'
+  ] },
+  { category: '购物', keywords: [
+    'Amazon.co.jp', '楽天市場', 'Yahoo!ショッピング', 'ヨドバシカメラ', 'ビックカメラ',
+    'ヤマダデンキ', 'エディオン', 'ケーズデンキ', 'Apple Store', 'ZARA', 'H&M',
+    'ABC-MART', 'アディダス', 'adidas', 'ナイキ', 'NIKE', '高島屋', '伊勢丹', '三越',
+    '大丸', '松坂屋', 'ルミネ', 'パルコ', 'PARCO', 'ららぽーと'
+  ] }
+]
+
+export function classify(text, rules = []) {
   const normalizedText = normalize(text).toLowerCase()
+
+  // User-created rules take precedence over built-in defaults.
+  // Matching is fuzzy substring matching; if several rules match, use the most specific (longest) keyword.
+  const userRule = [...rules]
+    .filter(r => r?.keyword && r?.category)
+    .sort((a, b) => normalize(b.keyword).length - normalize(a.keyword).length)
+    .find(r => normalizedText.includes(normalize(r.keyword).toLowerCase()))
+  if (userRule) return { category: userRule.category, keyword: userRule.keyword }
+
   const supermarket = [...SUPERMARKET_KEYWORDS]
     .sort((a, b) => b.length - a.length)
     .find(keyword => normalizedText.includes(normalize(keyword).toLowerCase()))
   if (supermarket) return { category: '饮食料品', keyword: supermarket }
 
-  const hit = [...rules].sort((a, b) => b.keyword.length - a.keyword.length)
-    .find(r => normalizedText.includes(normalize(r.keyword).toLowerCase()))
-  return hit ? { category: hit.category, keyword: hit.keyword } : { category: '日用品', keyword: '' }
+  const merchantRule = MERCHANT_CATEGORY_KEYWORDS
+    .flatMap(group => group.keywords.map(keyword => ({ category: group.category, keyword })))
+    .sort((a, b) => b.keyword.length - a.keyword.length)
+    .find(rule => normalizedText.includes(normalize(rule.keyword).toLowerCase()))
+  if (merchantRule) return merchantRule
+
+  return { category: '日用品', keyword: '' }
 }
 
 export function parseEntry(raw, rules) {

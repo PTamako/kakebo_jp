@@ -89,7 +89,11 @@ export function parseEntries(raw, rules) {
   const text = normalize(raw)
   if (!text) return []
 
-  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+  // Normalize card-statement rows such as "QUICPay 利用 (QP/ マイバスケット ) 628gm"
+  // into the existing QP-row format before parsing each transaction independently.
+  const lines = text.split(/\r?\n/).map(s => s.trim())
+    .filter(Boolean)
+    .map(line => line.replace(/^.*?\(\s*QP\s*\//i, 'QP / '))
   const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
     || /(?<!\d)\d{2}\s*[.\/-]\s*\d{1,2}\s*[.\/-]\s*\d{1,2}(?!\d)/.test(line)
     || /\d{1,2}\s*月\s*\d{1,2}/.test(line)
@@ -131,7 +135,7 @@ export function parseEntries(raw, rules) {
     // Strip visible numeric references and OCR-truncated forms such as "7...".
     .replace(/\s+\d{6,}\s*$/g, '')
     .replace(/\s+\d{1,3}\s*[.…・]{2,}\s*$/g, '')
-    .replace(/[＞>」】]+\s*$/g, '')
+    .replace(/[＞>」】）)]+\s*$/g, '')
     .replace(/[Nn]\s*$/g, '')
     .replace(/[\s,，、。．.]+$/g, '')
     .trim()

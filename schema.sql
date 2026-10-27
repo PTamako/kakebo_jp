@@ -7,9 +7,16 @@ CREATE TABLE IF NOT EXISTS entries (
   merchant TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
   raw TEXT NOT NULL DEFAULT '',  -- 识别前的原文
+  type TEXT NOT NULL DEFAULT 'expense' CHECK(type IN ('expense','income','transfer')),
+  transfer_target TEXT,
+  transfer_applied INTEGER NOT NULL DEFAULT 0,
+  transfer_date TEXT,
+  client_request_id TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
+-- 新建数据库可直接建立去重索引；已有数据库由 API 兼容迁移创建。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_client_request_id ON entries(client_request_id);
 
 CREATE TABLE IF NOT EXISTS rules (
   keyword TEXT PRIMARY KEY,

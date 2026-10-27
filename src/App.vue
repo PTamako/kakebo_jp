@@ -18,8 +18,26 @@ const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
-const CATEGORY_ICONS = { '餐饮':'🍜', '饮食料品':'🛒', '日用品':'🧻', '交通':'🚃', '购物':'🛍️', '居住':'🏠', '医疗':'💊', '娱乐':'🎮', '宠物':'🐱', '其他':'✨', '工资':'💴', '奖金':'🎁', '副业':'💻', '老公生活费':'🏠', '父母赠与':'💝', '亲友赠与':'🎁', '退款':'↩️', '其他收入':'🌷', '投資・資産移動':'🔄' }
-const categoryIcon = name => CATEGORY_ICONS[name] || '🧾'
+const CATEGORY_ICON_PATHS = {
+ '餐饮':'M4 14h16M5 14a7 7 0 0 0 14 0M8 19h8M8 5v5M12 5v5M16 5v5',
+ '饮食料品':'M3 6h2l2 11h12l2-8H6M9 21h.01M18 21h.01',
+ '日用品':'M7 4h10l2 16H5L7 4ZM9 8h6',
+ '交通':'M5 16V7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v9H5ZM5 11h14M8 20v-4M16 20v-4',
+ '购物':'M5 8h14l1 12H4L5 8ZM9 9V6a3 3 0 0 1 6 0v3',
+ '居住':'M3 11l9-8 9 8M6 9v11h12V9M10 20v-7h4v7',
+ '医疗':'M9 4h6v5h5v6h-5v5H9v-5H4V9h5V4Z',
+ '娱乐':'M7 7h10l4 8-3 4-4-4h-4l-4 4-3-4 4-8ZM8 11v4M6 13h4M16 11h.01M18 13h.01',
+ '宠物':'M7 9h.01M17 9h.01M5 6h.01M19 6h.01M12 11c-3 0-7 4-7 7 0 2 2 3 4 2l3-1 3 1c2 1 4 0 4-2 0-3-4-7-7-7Z',
+ '工资':'M4 8h16v12H4V8ZM7 8V5h10v3M8 14h8',
+ '奖金':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13M8 7c-3-4 3-6 4 0 1-6 7-4 4 0',
+ '副业':'M3 7h18v13H3V7ZM8 7V4h8v3M3 12h18',
+ '老公生活费':'M3 11l9-8 9 8M6 9v11h12V9M10 20v-7h4v7',
+ '父母赠与':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13',
+ '亲友赠与':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13',
+ '退款':'M8 6 3 11l5 5M3 11h11a6 6 0 0 1 0 12',
+ '投資・資産移動':'M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4'
+}
+const categoryIconPath = name => CATEGORY_ICON_PATHS[name] || 'M5 3h14v18H5V3ZM8 8h8M8 12h8M8 16h5'
 const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
 
@@ -27,7 +45,7 @@ const token = ref(localStorage.getItem('token') || '')
 
 async function api(path, opt = {}) {
   const r = await fetch('/api/' + path, {
-    ...opt, headers: { 'content-type': 'application/json', 'x-token': token.value }
+    ...opt, headers: { 'content-type': 'application/json', 'x-token': token.value, ...(opt.headers || {}) }
   })
   if (r.status === 401) {
     const t = prompt('アクセスコードを入力してください')
@@ -39,7 +57,8 @@ async function api(path, opt = {}) {
   return d
 }
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
-const flash = t => { msg.value = t; setTimeout(() => (msg.value = ''), 3000) }
+let flashTimer
+const flash = t => { clearTimeout(flashTimer); msg.value = t; flashTimer = setTimeout(() => (msg.value = ''), 3000) }
 
 let loadRequestId = 0
 async function load() {
@@ -84,7 +103,7 @@ function recognize() {
 }
 async function onImage(e) {
   const f = e.target.files[0]; e.target.value = ''
-  if (!f) return
+  if (!f || busy.value) return
   busy.value = '読み取り中 0%（初回は日本語データをダウンロードします）'
   try {
     input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
@@ -114,7 +133,7 @@ async function addCategory() {
 function removeDraft(i) { forms.value.splice(i, 1) }
 
 async function saveAll() {
-  if (busy.value === 'saving') return
+  if (busy.value) return
   if (!forms.value.length) return flash('保存する記録がありません')
   const invalid = forms.value.findIndex(f => !(Number(f.amount) > 0))
   if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
@@ -125,6 +144,8 @@ async function saveAll() {
     // Remove each successfully saved draft immediately so retry never resubmits it.
     while (forms.value.length) {
       const f = forms.value[0]
+      // Retain one stable ID across retries (including "saved on server, reply lost").
+      if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
       await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
       forms.value.shift()
       saved++
@@ -139,14 +160,23 @@ async function saveAll() {
   } catch (e) {
     flash(`${saved}件を保存しました。未保存の${forms.value.length}件は入力欄に残っています：${e.message}`)
   } finally {
-    busy.value = ''
     try { rules.value = await api('rules') } catch { /* Keep existing rules when temporarily offline. */ }
     await Promise.allSettled([load(), loadYear(), loadInvestments(), loadTransfers()])
+    busy.value = ''
   }
 }
+const pendingEntryIds = ref(new Set())
+const editSaving = ref(false)
 async function remove(id) {
+  if (pendingEntryIds.value.has(id)) return
   if (!confirm('この記録を削除しますか？')) return
-  await api('entries/' + id, { method: 'DELETE' }); await load(); await refreshDetailSource(); await loadYear(); await loadInvestments(); await loadTransfers()
+  pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
+  try {
+    await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
+    await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadInvestments(), loadTransfers()])
+    flash('記録を削除しました')
+  } catch (error) { flash('削除に失敗しました：' + error.message) }
+  finally { const next = new Set(pendingEntryIds.value); next.delete(id); pendingEntryIds.value = next }
 }
 function startEdit(entry) {
   editingEntry.value = {
@@ -157,14 +187,15 @@ function startEdit(entry) {
     note: entry.note || '', raw: entry.raw || ''
   }
 }
-function cancelEdit() { editingEntry.value = null }
+function cancelEdit() { if (!editSaving.value) editingEntry.value = null }
 async function saveEdit() {
   const e = editingEntry.value
-  if (!e) return
+  if (!e || editSaving.value) return
   if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !(Number(e.amount) > 0)) {
     flash('日付と金額を確認してください')
     return
   }
+  editSaving.value = true
   try {
     await api('entries/' + e.id, {
       method: 'PUT',
@@ -178,6 +209,7 @@ async function saveEdit() {
     await loadInvestments()
     await loadTransfers()
   } catch (err) { flash('更新に失敗しました：' + err.message) }
+  finally { editSaving.value = false }
 }
 
 const pendingTransfers = ref([])
@@ -187,43 +219,44 @@ async function loadTransfers() {
   transferLoading.value = true
   try {
     let rows = await api('transfers')
-    // 予定日を迎えた未処理の振替は自動反映を試し、失敗したものだけ手動処理を表示する
-    const dueTransfers = rows.filter(item => Number(item.transfer_applied) !== 1 && transferDue(item))
-    for (const item of dueTransfers) {
-      try { await api('transfers/' + item.id, { method: 'POST' }) }
-      catch { /* 自動処理に失敗した場合は未処理のまま残し、手動処理を表示 */ }
-    }
-    if (dueTransfers.length) rows = await api('transfers')
+    // The backend marks due transfers once; no extra per-row writes needed here.
     pendingTransfers.value = rows
   } catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
   finally { transferLoading.value = false }
 }
 const transferStatus = item => Number(item.transfer_applied) === 1 ? '処理成功' : (String(item.transfer_date || item.date) > new Date().toLocaleDateString('sv-SE') ? '入金予定' : '未処理')
 const transferStatusClass = item => Number(item.transfer_applied) === 1 ? 'transfer-done' : 'transfer-waiting'
+const transferActionId = ref(null)
 async function retryTransfer(item) {
+  if (transferActionId.value !== null) return
+  transferActionId.value = item.id
   try {
     await api('transfers/' + item.id, { method: 'POST' })
     await loadTransfers()
     await loadInvestments()
     flash('資産移動を処理しました')
   } catch (e) { flash('処理に失敗しました：' + e.message) }
+  finally { transferActionId.value = null }
 }
 async function deleteTransfer(item) {
+  if (transferActionId.value !== null) return
   if (!confirm('この待処理事項を削除しますか？家計簿の記録も削除されます。')) return
+  transferActionId.value = item.id
   try {
-    await api('entries/' + item.id, { method: 'DELETE' })
+    await api('entries/' + item.id, { method: 'DELETE', headers: { 'x-confirm-delete': String(item.id) } })
     await loadTransfers()
     await load()
     await loadInvestments()
     flash('記録を削除しました')
   } catch (e) { flash('削除に失敗しました：' + e.message) }
+  finally { transferActionId.value = null }
 }
 
 const investmentItems = [
   { id: 'sbi', label: 'SBI証券', detail: '投資信託', unit: '円' },
 ]
 const investments = ref({
-  sbi: { currentValue: null, pnl: null, updatedAt: '' },
+  sbi: { currentValue: null, pnl: null, investedTotal: 0, updatedAt: '' },
 })
 const investmentBusy = ref(false)
 const investmentReturn = item => {
@@ -242,12 +275,14 @@ async function loadInvestments() {
       investments.value[row.platform] = {
         currentValue: row.current_value === null ? null : Number(row.current_value),
         pnl: row.pnl === null ? null : Number(row.pnl),
+        investedTotal: Number(row.invested_total || 0),
         updatedAt: row.updated_at || ''
       }
     }
   } catch (e) { flash('資産データを読み込めませんでした：' + e.message) }
 }
 async function saveInvestment(item) {
+  if (investmentBusy.value) return
   const form = investments.value[item.id]
   const value = Number(form.currentValue)
   const pnl = Number(form.pnl)
@@ -271,19 +306,42 @@ async function saveInvestment(item) {
 const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map(c => c.amount)))
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))
-const pieGradient = (rows, colors) => {
+const pieGradient = (rows, colors, selected) => {
   const total = rows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0)
   if (!total) return 'conic-gradient(var(--line) 0deg 360deg)'
   let cursor = 0
   return 'conic-gradient(' + rows.map((row, i) => {
     const start = cursor
     cursor += Math.max(0, Number(row.amount) || 0) / total * 360
-    return colors[i % colors.length] + ' ' + start + 'deg ' + cursor + 'deg'
+    const color = colors[i % colors.length]
+    return (selected && row.category !== selected ? `color-mix(in srgb, ${color} 42%, var(--card))` : color) + ' ' + start + 'deg ' + cursor + 'deg'
   }).join(', ') + ')'
 }
-const expensePalette = ['#d96f91', '#e6a56b', '#c65f7c', '#d9b957', '#b96b9a', '#e58b70', '#a96b82', '#d6a3b8', '#b87957', '#c78eaa']
-const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette))
-const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette))
+const expensePalette = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)', 'var(--chart-9)', 'var(--chart-10)']
+const selectedDonut = ref({ month: '', year: '' })
+const donutRows = period => period === 'month' ? categoryRows.value : (annualStats.value?.byCategory || [])
+const donutSelected = period => donutRows(period).find(c => c.category === selectedDonut.value[period]) || donutRows(period)[0] || null
+const donutTotal = period => donutRows(period).reduce((n, c) => n + Number(c.amount || 0), 0)
+const donutPercent = period => donutSelected(period) && donutTotal(period) ? (Number(donutSelected(period).amount) / donutTotal(period) * 100).toFixed(1) : '0.0'
+const chooseDonut = (period, category) => { selectedDonut.value = { ...selectedDonut.value, [period]: category } }
+const selectDonutSlice = (event, period) => {
+  const rows = donutRows(period)
+  const total = donutTotal(period)
+  if (!total) return
+  const rect = event.currentTarget.getBoundingClientRect()
+  const x = event.clientX - rect.left - rect.width / 2
+  const y = event.clientY - rect.top - rect.height / 2
+  const radius = Math.hypot(x, y)
+  if (radius < rect.width * 0.345 || radius > rect.width * 0.5) return
+  const angle = (Math.atan2(x, -y) * 180 / Math.PI + 360) % 360
+  let cumulative = 0
+  for (const row of rows) {
+    cumulative += Math.max(0, Number(row.amount) || 0) / total * 360
+    if (angle <= cumulative + 0.000001) { chooseDonut(period, row.category); return }
+  }
+}
+const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette, donutSelected('month')?.category))
+const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette, donutSelected('year')?.category))
 
 const selectedDay = ref('')
 const entryTypeFilter = ref('all')
@@ -317,7 +375,23 @@ function setEntryTypeFilter(value) {
   visibleEntryCount.value = 20
 }
 const sortedDisplayEntries = computed(() => [...displayEntries.value].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.time || '').localeCompare(String(a.time || ''))))
-const pagedEntries = computed(() => sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
+const annualDetailMode = computed(() => detailFilter.value?.period === 'year')
+const pagedEntries = computed(() => annualDetailMode.value ? sortedDisplayEntries.value : sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
+const expandedMonth = ref('')
+const annualMonthGroups = computed(() => {
+  const grouped = new Map()
+  for (const entry of sortedDisplayEntries.value) {
+    const key = String(entry.date || '').slice(0, 7)
+    if (!grouped.has(key)) grouped.set(key, { month: key, items: [], total: 0 })
+    const group = grouped.get(key)
+    group.items.push(entry)
+    group.total += Number(entry.amount || 0)
+  }
+  return [...grouped.values()]
+})
+watch(annualMonthGroups, groups => {
+  if (annualDetailMode.value && !groups.some(g => g.month === expandedMonth.value)) expandedMonth.value = groups[0]?.month || ''
+})
 function loadMoreEntries() { visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize) }
 const expandedEntryDays = ref(new Set())
 const groupedPagedEntries = computed(() => {
@@ -344,6 +418,19 @@ watch(visibleEntryCount, () => {
   const days = groupedPagedEntries.value.map(group => group.date)
   if (days.length && !days.some(day => expandedEntryDays.value.has(day))) expandedEntryDays.value = new Set([days[0]])
 })
+async function fetchPeriodDetailRows(period, requestId = null) {
+  if (period !== 'year') return api('entries?month=' + month.value)
+  const year = selectedYear.value
+  const rows = []
+  for (let offset = 0; ; offset += 500) {
+    if (requestId !== null && requestId !== detailRequestId) return []
+    const page = await api('entries?year=' + year + '&offset=' + offset)
+    if (!Array.isArray(page)) throw new Error('年間明細の形式が正しくありません')
+    rows.push(...page)
+    if (page.length < 500) break
+  }
+  return rows
+}
 async function openCategoryDetails(category, type, period) {
   detailFilter.value = { category, type, period }
   entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
@@ -354,8 +441,7 @@ async function openCategoryDetails(category, type, period) {
   detailLoading.value = true
   const requestId = ++detailRequestId
   try {
-    const query = period === 'year' ? 'entries?year=' + selectedYear.value : 'entries?month=' + month.value
-    const rows = await api(query)
+    const rows = await fetchPeriodDetailRows(period, requestId)
     if (requestId === detailRequestId) detailSourceEntries.value = rows
   } catch (e) {
     if (requestId === detailRequestId) flash('明細の読み込みに失敗しました：' + e.message)
@@ -367,8 +453,7 @@ async function refreshDetailSource() {
   const filter = detailFilter.value
   if (!filter) return
   try {
-    const query = filter.period === 'year' ? 'entries?year=' + selectedYear.value : 'entries?month=' + month.value
-    detailSourceEntries.value = await api(query)
+    detailSourceEntries.value = await fetchPeriodDetailRows(filter.period)
   } catch (e) { flash('明細の再読み込みに失敗しました：' + e.message) }
 }
 function clearDetailFilter() {
@@ -548,8 +633,8 @@ const selectedRatioMonthRow = computed(() => yearMonthRows.value.find(item => it
 const selectedRatio = computed(() => selectedRatioMonthRow.value && selectedRatioMonthRow.value.income > 0 ? selectedRatioMonthRow.value.amount / selectedRatioMonthRow.value.income : null)
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)
-const pigState = ratio => ratio === null ? 'empty' : ratio > 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
-const pigLabel = ratio => ratio === null ? 'まず収入を記録して、収支バランスを確認しましょう' : ratio > 1 ? '大変！支出が収入を上回っています！' : ratio >= .8 ? '予算オーバーに注意しましょう！' : 'いい感じです。この調子でいきましょう'
+const pigState = ratio => ratio === null ? 'empty' : ratio >= 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
+const pigLabel = ratio => ratio === null ? 'まず収入を記録して、収支バランスを確認しましょう' : ratio >= 1 ? '大変！支出が収入以上になっています！' : ratio >= .8 ? '予算オーバーに注意しましょう！' : 'いい感じです。この調子でいきましょう'
 const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.round(ratio * 100) + '%'
 </script>
 
@@ -573,17 +658,18 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
     <section v-if="tab === 'add'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
+      <fieldset class="draft-controls" :disabled="busy === 'saving'" :aria-busy="busy === 'saving'">
       <div class="entry-mode-row">
-        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon expense-icon" aria-hidden="true">−</span><span>支出</span></button>
-        <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon income-icon" aria-hidden="true">＋</span><span>収入</span></button>
-        <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon transfer-icon" aria-hidden="true">⇄</span><span>資産移動</span></button>
+        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
+        <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
+        <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
       </div>
       <div class="panel capture-panel">
         <label class="field-label" for="entry-text">テキスト読み取り</label>
         <textarea id="entry-text" v-model="input" rows="4" placeholder="例：昨日 コンビニ 680円&#10;&#10;複数の支出を貼り付けたり、レシート画像をアップロードしたりできます。"></textarea>
         <div class="action-row">
           <button class="button-primary" @click="recognize" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
-          <label class="button-secondary upload-button">撮影／画像を選択<input type="file" accept="image/*" @change="onImage" hidden /></label>
+          <label class="button-secondary upload-button">撮影／画像を選択<input type="file" accept="image/*" @change="onImage" :disabled="!!busy" hidden /></label>
         </div>
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
@@ -596,9 +682,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
         <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新しい記録' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
         <div class="type-switch" role="group" aria-label="記録の種類">
-          <button type="button" :class="{ selected: (f.type || 'expense') === 'expense' }" @click="setEntryType(f, 'expense')">💸 支出</button>
-          <button type="button" :class="{ selected: f.type === 'income' }" @click="setEntryType(f, 'income')">🌷 収入</button>
-          <button type="button" :class="{ selected: f.type === 'transfer' }" @click="setEntryType(f, 'transfer')">↗ 資産移動</button>
+          <button type="button" :class="{ selected: (f.type || 'expense') === 'expense' }" @click="setEntryType(f, 'expense')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
+          <button type="button" :class="{ selected: f.type === 'income' }" @click="setEntryType(f, 'income')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
+          <button type="button" :class="{ selected: f.type === 'transfer' }" @click="setEntryType(f, 'transfer')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
         </div>
         <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : f.type === 'transfer' ? '資産移動額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
         <p v-if="!(Number(f.amount) > 0)" class="amount-warning" role="alert">金額を読み取れませんでした。明細を確認して金額を入力してください。</p>
@@ -617,12 +703,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
         <button class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
-        <button class="button-primary" @click="saveAll" :disabled="!forms.length">保存 {{ forms.length }}件</button>
+        <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
       </div>
+      </fieldset>
     </section>
 
     <section v-else-if="tab === 'list'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">収支記録</p><h1>収支明細</h1></div><span class="heading-icon">≡</span></div>
+      <div class="page-heading"><div><p class="eyebrow">収支記録</p><h1>収支明細</h1></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span></div>
       <div class="entry-type-filter" role="group" aria-label="明細の種類"><button v-for="option in [{value: 'all', label: 'すべて'}, {value: 'income', label: '収入'}, {value: 'expense', label: '支出'}, {value: 'transfer', label: '資産移動'}]" :key="option.value" type="button" :class="{ selected: entryTypeFilter === option.value }" :aria-pressed="entryTypeFilter === option.value" @click="setEntryTypeFilter(option.value)">{{ option.label }}</button></div>
       <section v-if="!detailFilter" class="month-calendar" aria-label="月間明細カレンダー">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><div class="calendar-actions"><button type="button" class="calendar-reset" @click="calendarExpanded = !calendarExpanded">{{ calendarExpanded ? '週のみ表示' : '月全体を表示' }}</button><button v-if="selectedDay" type="button" class="calendar-reset" @click="selectedDay = ''">日付解除</button></div></div>
@@ -633,12 +720,32 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </button>
         </div>
       </section>
-      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · カテゴリ明細' : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel + ' · ' + ({all: 'すべて', income: '収入', expense: '支出', transfer: '資産移動'}[entryTypeFilter])) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
+      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + ({income:'収入',expense:'支出',transfer:'資産移動'}[detailFilter.type] || 'すべて') + ' · ' + (detailFilter.type === 'transfer' ? '資産移動' : categoryLabel(detailFilter.category)) : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel + ' · ' + ({all: 'すべて', income: '収入', expense: '支出', transfer: '資産移動'}[entryTypeFilter])) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
       <div v-if="detailFilter" class="detail-filter-strip"><span>{{ detailFilter.type === 'transfer' ? '資産移動で絞り込み中' : 'カテゴリで絞り込み中' }}</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
       <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
       <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><p>{{ detailFilter ? '条件に一致する記録はありません。' : '「入力」から最初の記録を追加できます。' }}</p><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
       
-      <div v-else-if="!detailLoading" class="ledger day-group-list">
+      <div v-if="!detailLoading && displayEntries.length && annualDetailMode" class="ledger annual-month-list">
+        <section v-for="group in annualMonthGroups" :key="group.month" class="entry-day-group">
+          <button type="button" class="entry-day-heading" :aria-expanded="expandedMonth === group.month" @click="expandedMonth = expandedMonth === group.month ? '' : group.month">
+            <span class="entry-day-chevron">{{ expandedMonth === group.month ? '▾' : '▸' }}</span>
+            <strong>{{ Number(group.month.slice(5)) }}月</strong>
+            <span class="entry-day-count">{{ group.items.length }}件</span>
+            <span class="entry-day-total">{{ yen(group.total) }}</span>
+          </button>
+          <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+              <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
+                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
+                <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.replace(/-/g, '/') }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }}</small></div>
+                <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
+              </div>
+              <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
+            </li>
+          </ul>
+        </section>
+      </div>
+      <div v-else-if="!detailLoading && displayEntries.length" class="ledger day-group-list">
         <section v-for="group in groupedPagedEntries" :key="group.date" class="entry-day-group">
           <button type="button" class="entry-day-heading" :aria-expanded="expandedEntryDays.has(group.date)" @click="toggleEntryDay(group.date)">
             <span class="entry-day-chevron">{{ expandedEntryDays.has(group.date) ? '▾' : '▸' }}</span>
@@ -649,25 +756,26 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
             <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
-                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]">{{ categoryIcon(e.category) }}</span>
+                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
-                <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '↗ ' : '−' }}{{ yen(e.amount) }}</span>
+                <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
               <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
         </section>
       </div>
-      <div v-if="!detailLoading && visibleEntryCount < sortedDisplayEntries.length" class="load-more-wrap">
+      <div v-if="!detailLoading && !annualDetailMode && visibleEntryCount < sortedDisplayEntries.length" class="load-more-wrap">
         <button type="button" class="button-secondary load-more-button" @click="loadMoreEntries">読み込みを続ける（{{ Math.min(listPageSize, sortedDisplayEntries.length - visibleEntryCount) }}件）</button>
       </div>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
-        <form class="edit-dialog" @submit.prevent="saveEdit">
+        <form class="edit-dialog" @submit.prevent="saveEdit" :aria-busy="editSaving">
           <div class="edit-dialog-heading"><h2>記録を編集</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="閉じる">×</button></div>
+          <fieldset class="edit-fields" :disabled="editSaving">
           <div class="type-switch" role="group" aria-label="記録の種類">
-            <button type="button" :class="{ selected: editingEntry.type === 'expense' }" @click="setEntryType(editingEntry, 'expense')">💸 支出</button>
-            <button type="button" :class="{ selected: editingEntry.type === 'income' }" @click="setEntryType(editingEntry, 'income')">🌷 収入</button>
-            <button type="button" :class="{ selected: editingEntry.type === 'transfer' }" @click="setEntryType(editingEntry, 'transfer')">↗ 資産移動</button>
+            <button type="button" :class="{ selected: editingEntry.type === 'expense' }" @click="setEntryType(editingEntry, 'expense')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
+            <button type="button" :class="{ selected: editingEntry.type === 'income' }" @click="setEntryType(editingEntry, 'income')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
+            <button type="button" :class="{ selected: editingEntry.type === 'transfer' }" @click="setEntryType(editingEntry, 'transfer')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
           </div>
           <label class="form-field"><span>金額（円）</span><input v-model.number="editingEntry.amount" type="number" min="1" inputmode="numeric" required /></label>
           <div class="field-grid">
@@ -681,13 +789,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="editingEntry.transferDate" type="date" required /></label>
           </div>
           <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
-          <div class="edit-dialog-actions"><button type="button" class="button-secondary" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary">変更を保存</button></div>
+          </fieldset>
+          <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="editSaving" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary" :disabled="editSaving">{{ editSaving ? '保存中…' : '変更を保存' }}</button></div>
         </form>
       </div>
     </section>
 
     <section v-else-if="tab === 'stat' && statsPeriod === 'month'" class="page-section stats-page">
-      <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ monthLabel }}の収支を分析</p></div><span class="heading-icon">↗</span></div>
+      <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ monthLabel }}の収支を分析</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span></div>
       <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月次</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年次</button></div>
       <div class="hero-total">
         <span>今月の支出合計</span>
@@ -701,20 +810,21 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div class="income-expense-strip"><div><small>今月の収入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>今月の支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>差引残高</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
       <div class="income-expense-strip transfer-summary"><div><small>今月の資産移動</small><strong>{{ yen(stats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'month')" aria-label="今月の資産移動明細を表示">{{ stats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div></div>
       <div class="metric-grid">
-        <div class="metric-card"><span class="metric-icon">▦</span><small>支出件数</small><strong>{{ stats?.count || 0 }}<em>件</em></strong></div>
-        <div class="metric-card"><span class="metric-icon">↗</span><small>1日平均支出（支出があった日）</small><strong>{{ yen(averageDaily) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>支出件数</small><strong>{{ stats?.count || 0 }}<em>件</em></strong></div>
+        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span><small>1日平均支出（支出があった日）</small><strong>{{ yen(averageDaily) }}</strong></div>
       </div>
       <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>集計データがありません</strong><p>支出を記録すると、ここに内訳が表示されます。</p><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div class="stats-card">
           <div class="section-title"><div><h2>カテゴリ支出</h2><p>何にお金を使ったか確認しましょう</p></div></div>
-          <div class="pie-chart-layout">
-            <div class="category-pie" :style="{ background: monthlyCategoryPie }" role="img" aria-label="カテゴリ別支出の割合"></div>
-            <div class="category-list pie-legend">
-              <div v-for="(c, i) in categoryRows" :key="c.category" class="pie-legend-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'month' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'month')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'month')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'month')">
-                <span class="pie-legend-name"><i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span></span>
-                <span class="pie-legend-values"><strong>{{ yen(c.amount) }}</strong><small>{{ stats?.total ? Math.round(Number(c.amount) / Number(stats.total) * 100) : 0 }}%</small></span>
-              </div>
+          <div class="pie-chart-layout donut-vertical">
+            <div class="category-pie donut-chart" :style="{ background: monthlyCategoryPie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'なし') + ' ' + donutPercent('month') + '%'" @click="selectDonutSlice($event, 'month')">
+              <div class="donut-center"><span>{{ donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('month')?.amount || 0) }}</strong><small>{{ donutPercent('month') }}%</small></div>
+            </div>
+            <div class="category-list pie-legend" role="group" aria-label="カテゴリを選択すると明細を表示">
+              <button v-for="(c, i) in categoryRows" :key="c.category" type="button" class="pie-legend-row" :class="{ 'donut-category-active': donutSelected('month')?.category === c.category }" @click="openCategoryDetails(c.category, 'expense', 'month')" :aria-label="categoryLabel(c.category) + 'の明細を見る'">
+                <i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -732,7 +842,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </section>
 
     <section v-else-if="tab === 'stat' && statsPeriod === 'year'" class="page-section stats-page annual-page">
-      <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ selectedYear }}年の収支を分析</p></div><span class="heading-icon">⌁</span></div>
+      <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ selectedYear }}年の収支を分析</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V10M10 19V5M16 19v-8M22 19V8"/></svg></span></div>
       <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月次</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年次</button></div>
       <div class="hero-total annual-hero">
         <span>{{ selectedYear }}年の支出合計</span><strong>{{ yen(annualStats?.total) }}</strong>
@@ -745,8 +855,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div class="income-expense-strip annual-income-strip"><div><small>年間収入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>年間支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>年間収支</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
       <div class="income-expense-strip transfer-summary"><div><small>年間の資産移動</small><strong>{{ yen(annualStats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'year')" aria-label="年間の資産移動明細を表示">{{ annualStats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div></div>
       <div class="metric-grid">
-        <div class="metric-card"><span class="metric-icon">▦</span><small>月平均支出（12か月で計算）</small><strong>{{ yen(annualAverage) }}</strong></div>
-        <div class="metric-card"><span class="metric-icon">↗</span><small>支出が最も多い月</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
+        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>月平均支出（12か月で計算）</small><strong>{{ yen(annualAverage) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span><small>支出が最も多い月</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
       </div>
       <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><p>別の年を選ぶか、記録を追加してください。</p><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
@@ -793,7 +903,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="section-title"><div><h2>年度カテゴリ収入</h2><p>年間合計の多い順</p></div></div>
           <div v-if="annualIncomeCategories.length" class="category-list annual-income-bars">
             <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'income' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'income', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'income', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'income', 'year')">
-              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
+              <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(c.category)"/></svg></span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill income-category-fill" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
               <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}%（年間収入に占める割合） · タップして明細</small>
             </div>
@@ -802,13 +912,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </div>
         <div class="stats-card">
           <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div></div>
-          <div class="pie-chart-layout">
-            <div class="category-pie" :style="{ background: annualExpensePie }" role="img" aria-label="年度カテゴリ支出の割合"></div>
-            <div class="category-list pie-legend">
-              <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="pie-legend-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'year')">
-                <span class="pie-legend-name"><i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span></span>
-                <span class="pie-legend-values"><strong>{{ yen(c.amount) }}</strong><small>{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}%</small></span>
-              </div>
+          <div class="pie-chart-layout donut-vertical">
+            <div class="category-pie donut-chart" :style="{ background: annualExpensePie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'なし') + ' ' + donutPercent('year') + '%'" @click="selectDonutSlice($event, 'year')">
+              <div class="donut-center"><span>{{ donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('year')?.amount || 0) }}</strong><small>{{ donutPercent('year') }}%</small></div>
+            </div>
+            <div class="category-list pie-legend" role="group" aria-label="カテゴリを選択すると明細を表示">
+              <button v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" type="button" class="pie-legend-row" :class="{ 'donut-category-active': donutSelected('year')?.category === c.category }" @click="openCategoryDetails(c.category, 'expense', 'year')" :aria-label="categoryLabel(c.category) + 'の明細を見る'">
+                <i class="pie-legend-dot" :style="{ background: expensePalette[i % expensePalette.length] }"></i><span>{{ categoryLabel(c.category) }}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -824,14 +935,15 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div v-else class="pending-transfer-list">
           <div v-for="item in pendingTransfers" :key="item.id" class="pending-transfer-row">
             <div class="pending-transfer-main"><strong>{{ item.merchant || item.note || 'SBI証券への資産移動' }}</strong><span>予定日 {{ item.transfer_date || item.date }} · ¥{{ Number(item.amount || 0).toLocaleString('ja-JP') }}</span></div>
-            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" aria-label="削除" title="削除" @click="deleteTransfer(item)">×</button><button v-else-if="transferDue(item)" class="pending-retry" @click="retryTransfer(item)">手動処理</button></div>
+            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" :disabled="transferActionId !== null" aria-label="削除" title="削除" @click="deleteTransfer(item)">×</button><button v-else-if="transferDue(item)" class="pending-retry" :disabled="transferActionId !== null" @click="retryTransfer(item)">手動処理</button></div>
           </div>
         </div>
       </article>
-      <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">振替は評価額に自動反映。評価額・損益は手動更新できます</p></div><span class="heading-icon">￥</span></div>
-      <div class="investment-note">振替先を指定すると評価額に自動加算。評価額・損益は手動更新できます。家計の収支には含みません。</div>
+      <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">積立額は明細から計算し、評価額・損益は手動管理します</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
+      <div class="investment-note">SBIへの振替は「積立累計」に反映し、評価額には加算しません。評価額・損益は証券口座の最新表示を確認して入力してください。これまでの評価額は変更しません。登録済みの取引履歴もそのまま保存されます。</div>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
         <div class="investment-card-heading"><div><h2>{{ item.label }}</h2><p>{{ item.detail }}</p></div><span class="investment-unit">{{ item.unit }}</span></div>
+        <div class="investment-principal"><small>家計簿から確認できる積立累計</small><strong>{{ yen(investments[item.id].investedTotal) }}</strong><small>振替先を設定した登録済み明細から集計</small></div>
         <label class="form-field"><span>現在の評価額（{{ item.unit }}）</span><input v-model.number="investments[item.id].currentValue" type="number" min="0" step="1" inputmode="numeric" placeholder="現在の評価額" /></label>
         <label class="form-field"><span>評価損益（{{ item.unit }}）</span><input v-model.number="investments[item.id].pnl" type="number" step="1" inputmode="numeric" placeholder="例：-1339" /></label>
         <div class="investment-summary">
@@ -1003,7 +1115,111 @@ main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);
 
 
 
-.day-group-list{display:grid;gap:10px;width:100%;box-sizing:border-box;margin:0;padding:0;background:transparent;border:0;box-shadow:none;overflow:visible}.entry-day-group{overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:14px}.entry-day-heading{display:grid;grid-template-columns:18px auto auto 1fr;align-items:center;gap:8px;width:100%;padding:13px 12px;border:0;background:var(--card);color:var(--ink);text-align:left}.entry-day-chevron{color:var(--blue-dark);font-size:16px}.entry-day-heading strong{font-size:13px}.entry-day-count{font-size:11px;color:var(--muted)}.entry-day-total{text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.entry-day-items{margin:0;border:0;border-radius:0;box-shadow:none}.entry-day-items li:first-child{border-top:1px solid var(--line)}.entry-day-items li{padding-left:10px;padding-right:10px}.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap} .load-more-wrap{display:flex;justify-content:center;padding:14px 0 28px}.load-more-button{width:100%;max-width:320px;padding:12px 16px;font-size:13px;font-weight:700}
+.annual-month-list,.day-group-list{display:grid;gap:10px;width:100%;box-sizing:border-box;margin:0;padding:0;background:transparent;border:0;box-shadow:none;overflow:visible}.entry-day-group{overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:14px}.entry-day-heading{display:grid;grid-template-columns:18px auto auto 1fr;align-items:center;gap:8px;width:100%;padding:13px 12px;border:0;background:var(--card);color:var(--ink);text-align:left}.entry-day-chevron{color:var(--blue-dark);font-size:16px}.entry-day-heading strong{font-size:13px}.entry-day-count{font-size:11px;color:var(--muted)}.entry-day-total{text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.entry-day-items{margin:0;border:0;border-radius:0;box-shadow:none}.entry-day-items li:first-child{border-top:1px solid var(--line)}.entry-day-items li{padding-left:10px;padding-right:10px}.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap} .load-more-wrap{display:flex;justify-content:center;padding:14px 0 28px}.load-more-button{width:100%;max-width:320px;padding:12px 16px;font-size:13px;font-weight:700}
 
 .pie-chart-layout{display:flex;flex-direction:column;align-items:stretch;gap:16px}.category-pie{width:min(100%,188px);align-self:center;aspect-ratio:1;border-radius:50%;margin:0;border:5px solid var(--card);box-shadow:0 4px 18px #20324b16}.pie-legend{display:grid;gap:7px;min-width:0;width:100%}.pie-legend-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding:10px 11px;border-radius:9px;background:color-mix(in srgb,var(--line) 24%,transparent)}.pie-legend-name{display:flex;align-items:center;gap:9px;min-width:0;font-size:12px;font-weight:700}.pie-legend-name>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pie-legend-dot{display:block;flex:none;width:10px;height:10px;border-radius:3px;box-shadow:0 0 0 2px #fff}.pie-legend-values{display:flex;flex:none;align-items:center;flex-direction:row;gap:10px;min-width:0}.pie-legend-values strong{font-size:12px;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}.pie-legend-values small{display:inline-block;min-width:42px;text-align:right;font-size:11px;font-weight:800;color:var(--blue-dark)}.annual-income-bars .category-row{padding:8px 0}.clickable-chart-point{cursor:pointer;outline:none}.clickable-chart-point:focus-visible{stroke:var(--ink);stroke-width:3}.stats-period-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin:0 0 14px;border-radius:13px;background:color-mix(in srgb,var(--blue) 15%,var(--card))}.stats-period-tabs button{min-height:38px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-size:13px;font-weight:750}.stats-period-tabs button.selected{background:var(--card);color:var(--blue-dark);box-shadow:0 2px 8px color-mix(in srgb,var(--blue) 18%,transparent);outline:1px solid color-mix(in srgb,var(--blue) 30%,transparent)}.entry-type-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:0 0 12px;padding:4px;border-radius:13px;background:color-mix(in srgb,var(--blue) 13%,var(--card))}.entry-type-filter button{min-width:0;min-height:38px;padding:7px 3px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-size:12px;font-weight:750;white-space:nowrap}.entry-type-filter button.selected{background:#fff;color:var(--blue-dark);box-shadow:0 2px 8px #4b23300d}.calendar-actions{display:flex;align-items:center;gap:5px}@media(max-width:390px){.pie-legend-row{gap:6px;padding:9px 8px}.pie-legend-values{gap:6px}.pie-legend-values strong{font-size:11px}.pie-legend-name{font-size:11px}.bottom-nav{width:calc(100% - 18px);gap:3px}.bottom-nav button{font-size:10px;padding:6px 1px}}
+
+.pie-chart-layout{display:grid;grid-template-columns:minmax(110px,44%) minmax(0,1fr);align-items:center;gap:10px}
+.category-pie.donut-chart{width:100%;max-width:210px;aspect-ratio:1;position:relative;display:grid;place-items:center;margin:auto;border:0}
+.donut-center{width:69%;height:69%;background:var(--card);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:7px;text-align:center;box-shadow:0 1px 7px #0000000b;min-width:0}
+.donut-center span{font-size:10px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.donut-center strong{font-size:clamp(12px,3vw,18px);letter-spacing:-.04em;overflow-wrap:anywhere}
+.donut-center small{font-size:13px;font-weight:800}
+.pie-legend{max-height:260px;overflow-y:auto;gap:5px;align-content:start}
+.pie-legend-row{justify-content:flex-start;padding:8px;min-height:32px;border:1px solid transparent;cursor:pointer}
+.pie-legend-row.donut-category-active{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 10%,var(--card))}
+.pie-legend-name{font-size:11px;min-width:0}
+@media(max-width:390px){.pie-chart-layout{grid-template-columns:minmax(100px,43%) minmax(0,1fr);gap:8px}.donut-center strong{font-size:12px}.pie-legend-row{padding:7px 5px}}
+.donut-detail-link{font-size:11px;font-weight:700;border:1px solid var(--line);border-radius:9px;background:var(--card);padding:8px 5px;color:var(--blue-dark);width:100%}.donut-detail-link:disabled{opacity:.45}
+.pie-chart-layout.donut-vertical{display:flex;flex-direction:column;align-items:center;gap:16px}
+.donut-vertical .category-pie.donut-chart{width:min(100%,230px);max-width:230px;cursor:pointer;touch-action:manipulation}
+.donut-vertical .donut-center{pointer-events:none}
+.donut-vertical .pie-legend{display:flex;flex-wrap:nowrap;gap:7px;width:100%;max-height:none;overflow-x:auto;overflow-y:hidden;padding:4px 2px 8px;scrollbar-width:thin;justify-content:flex-start}
+.donut-vertical .pie-legend-row{flex:0 0 auto;width:auto;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:11px;border-radius:999px;padding:8px 11px;min-height:36px}
+.donut-vertical .pie-legend-dot{width:9px;height:9px;border-radius:50%}
+@media(min-width:520px){.donut-vertical .pie-legend{justify-content:center;flex-wrap:wrap;overflow:visible}}
+
+/* Unified visual system: theme tokens, interaction, components and charts. */
+main{
+ --radius-sm:10px;--radius-md:15px;--radius-lg:20px;
+ --shadow-soft:0 5px 24px rgba(51,46,59,.055);
+ --focus-ring:color-mix(in srgb,var(--blue) 28%,transparent);
+ --tint:color-mix(in srgb,var(--blue) 10%,var(--card));
+ --chart-1:#d96f91;--chart-2:#e2a16b;--chart-3:#9476bb;--chart-4:#6eae9a;--chart-5:#d6b252;
+ --chart-6:#b879a6;--chart-7:#7d9cbd;--chart-8:#d98578;--chart-9:#91a96d;--chart-10:#bc8b72;
+}
+main.theme-blue{--chart-1:#689ed2;--chart-2:#8b8fce;--chart-3:#67ada8;--chart-4:#d1ac70;--chart-5:#a58ac8;--chart-6:#73b6cc;--chart-7:#b17caa;--chart-8:#8ba77c;--chart-9:#df988f;--chart-10:#849cad}
+main.theme-yellow{--chart-1:#c9a441;--chart-2:#d98573;--chart-3:#90a86a;--chart-4:#a78cc2;--chart-5:#e0b778;--chart-6:#83b0a8;--chart-7:#ba9385;--chart-8:#d69ea8;--chart-9:#9d9fae;--chart-10:#b0a074}
+main.theme-green{--chart-1:#69a68b;--chart-2:#a2b96f;--chart-3:#80a0cb;--chart-4:#d4aa6e;--chart-5:#ad8fc4;--chart-6:#7fb8ad;--chart-7:#d18e91;--chart-8:#91a878;--chart-9:#ac99b0;--chart-10:#b8a077}
+main .stats-card,main .panel,main .metric-card,main .investment-card{
+ border-color:var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft);
+}
+main .stats-card{padding:20px 17px}
+main .page-heading h1{letter-spacing:-.045em;line-height:1.25}
+main .heading-icon,main .metric-icon,main .empty-icon{color:var(--blue-dark);background:var(--tint)}
+main button{transition:background-color .18s,border-color .18s,color .18s,box-shadow .18s,transform .15s}
+main button:not(:disabled):active{transform:scale(.975)}
+main button:focus-visible,main [role="button"]:focus-visible,main a:focus-visible{
+ outline:3px solid var(--focus-ring);outline-offset:3px
+}
+main input:focus,main select:focus,main textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--focus-ring)}
+main input,main textarea,main select{border-color:var(--line);background:var(--card);border-radius:var(--radius-sm)}
+main .button-primary{border-color:transparent;background:var(--blue-dark);box-shadow:0 4px 12px var(--focus-ring);font-weight:750}
+main .button-secondary,main .calendar-reset,main .period-reset{background:var(--tint);color:var(--blue-dark);border-color:var(--line)}
+main .type-switch button.selected,main .entry-type-filter button.selected,main .stats-period-tabs button.selected{color:var(--blue-dark);border-color:var(--blue);background:var(--tint)}
+main .bottom-nav{background:color-mix(in srgb,var(--card) 94%,transparent);border-color:var(--line);box-shadow:0 9px 28px rgba(40,42,55,.12)}
+main .bottom-nav button{border-radius:13px}
+main .bottom-nav button.active{background:var(--tint);color:var(--blue-dark)}
+main .bottom-nav .nav-icon{color:inherit}
+main .bottom-nav svg{stroke:currentColor}
+main .donut-center{background:var(--card);box-shadow:inset 0 0 0 1px var(--line)}
+main .donut-vertical .pie-legend-row{border-color:var(--line);background:var(--card);color:var(--ink)}
+main .donut-vertical .pie-legend-row.donut-category-active{background:var(--tint);border-color:var(--blue);color:var(--blue-dark)}
+main .category-swatch,main .pie-legend-dot{border:1px solid rgba(0,0,0,.06)}
+main .entry-day-heading{border-radius:var(--radius-md)}
+.draft-controls,.edit-fields{border:0;margin:0;padding:0;min-width:0}.draft-controls:disabled,.edit-fields:disabled{opacity:.7}button:disabled{cursor:not-allowed;opacity:.55}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+main .annual-month-list .entry-day-group{border-radius:var(--radius-md);overflow:hidden}
+@media(prefers-reduced-motion:reduce){main *,main *::before,main *::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+main .heading-icon svg{width:21px;height:21px;display:block}
+.ui-line-icon{display:block;width:19px;height:19px;flex:none}.type-action-icon{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;margin-right:5px}.metric-icon .ui-line-icon{width:18px;height:18px}.type-switch button{display:inline-flex;align-items:center;justify-content:center;gap:3px}.category-line-icon{width:17px;height:17px;margin:auto}.category-dot,.category-emoji{display:inline-grid;place-items:center}
+/* Mobile-first PWA shell, usable with four cream themes. */
+main{--touch-height:44px;--card-padding:16px;--section-gap:14px;--radius-sm:10px;--radius-md:14px;--radius-lg:18px;
+width:100%;max-width:560px;padding:calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 100px);
+overscroll-behavior-y:contain}
+main .topbar{gap:8px;padding:5px 0 15px;min-height:58px}
+main .brand-mark{width:49px;height:40px}
+main .brand strong{font-size:16px}
+main .page-heading{margin-bottom:14px}
+main .page-heading h1{font-size:24px}
+main .stats-card,main .panel,main .metric-card{border-radius:var(--radius-lg);box-shadow:0 3px 16px rgba(28,33,44,.045)}
+main .stats-card{padding:var(--card-padding)}
+main input:not([type=checkbox]):not([type=radio]),main select,main textarea{min-height:var(--touch-height);font-size:16px}
+main .button-primary,main .button-secondary,main .entry-type-filter button,main .stats-period-tabs button{min-height:var(--touch-height)}
+main .bottom-nav{bottom:calc(8px + env(safe-area-inset-bottom));width:min(calc(100% - 20px),460px);padding:7px;gap:4px;border-radius:22px}
+main .bottom-nav button{min-height:52px;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:750}
+main .bottom-nav .nav-icon{display:grid;place-items:center;min-height:23px}
+main .bottom-nav .nav-icon svg{width:21px;height:21px}
+main .piggy-card{border-radius:var(--radius-lg);gap:12px;min-height:104px}
+main .puppy-pair{width:86px;min-width:86px;min-height:80px;position:relative}
+main .puppy-pair img{width:43px;height:43px}
+main .piggy-content{min-width:0}
+main .piggy-sweating{border-color:#eac56d;background:linear-gradient(135deg,#fff8e9,var(--card))}
+main .piggy-broken{border-color:#eaa3ad;background:linear-gradient(135deg,#fff0f1,var(--card))}
+main .puppy-pair.puppy-sweating::after,main .puppy-pair.puppy-broken::after{position:absolute;top:0;right:0;display:grid;place-items:center;width:25px;height:25px;border-radius:50%;font-size:15px;box-shadow:0 2px 8px #00000014}
+main .puppy-pair.puppy-sweating::after{content:"💦";background:#fff7df}
+main .puppy-pair.puppy-broken::after{content:"💥";background:#ffebed}
+main .piggy-sweating .piggy-status{color:#987018}
+main .piggy-broken .piggy-status{color:#b74358}
+@media(max-width:370px){main{padding-left:12px;padding-right:12px}main .bottom-nav{width:calc(100% - 12px);padding:5px;gap:2px}main .bottom-nav button{font-size:10px}main .topbar{gap:5px}main .brand small{font-size:10px}}
+@media(min-width:561px){main{border-inline:1px solid var(--line)}}
+
+/* Input shortcuts reuse the exact SVG paths from the draft/edit type selector. */
+main .entry-mode-row .manual-add-button{min-height:44px;gap:7px}
+main .entry-mode-row .entry-mode-icon{background:transparent;color:var(--blue-dark);border-radius:0;flex:0 0 19px;width:19px;height:19px}
+main .entry-mode-row .entry-mode-icon .ui-line-icon{width:19px;height:19px}
+
+.investment-principal{display:grid;gap:3px;padding:12px 14px;margin:0 0 14px;border-radius:14px;background:var(--tint);color:var(--ink)}
+.investment-principal strong{font-size:21px;font-variant-numeric:tabular-nums}
+.investment-principal small{font-size:11px;color:var(--muted)}
 </style>

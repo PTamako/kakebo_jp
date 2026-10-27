@@ -15,6 +15,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Run targeted QUICPay OCR regression tests
-        run: node --test scripts/parse.test.js scripts/qp-card-regression.test.js scripts/qp-normalized-regression.test.js scripts/qp-ocr-compact-amounts.test.js scripts/qp-row-by-row-regression.test.js
+      - name: Report dependency audit
+        run: |
+          npm audit || true
+          npm audit --omit=dev || true
+      - name: Run complete parsing and API integrity regression suite
+        run: npm run test:parse
       - run: npm run build

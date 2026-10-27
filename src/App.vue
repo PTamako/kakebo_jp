@@ -829,7 +829,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .brand-mark img{width:27px;height:27px;object-fit:contain;display:block}
 .brand-mark img+img{margin-left:-5px}
 .puppy-pair{gap:0;letter-spacing:0;padding:3px}
-.puppy-pair img{display:block;width:43px;height:43px;object-fit:contain;flex:none;filter:drop-shadow(0 2px 1px #7a4c3010);transition:transform .2s,filter .2s}
+.puppy-pair img{display:block;width:64px;height:64px;max-width:50%;object-fit:contain;flex:none;filter:drop-shadow(0 2px 1px #7a4c3010);transition:transform .2s,filter .2s}
 .puppy-pair img+img{margin-left:-5px}
 .puppy-sweating img{transform:rotate(4deg) translateY(-2px)}
 .puppy-broken img:first-child{transform:rotate(-8deg) translateY(2px);filter:grayscale(.35)}
@@ -851,7 +851,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .piggy-card{background:linear-gradient(135deg,#fff8e9,#fff);border-color:#f6e6d3}
 .piggy-sweating{background:linear-gradient(135deg,#fff0f4,#fff);border-color:#f5c5d4}
 .piggy-broken{background:linear-gradient(135deg,#fff0f0,#fff);border-color:#f1b6c2}
-.puppy-pair{display:flex;align-items:center;justify-content:center;gap:0;position:relative;flex:none;width:90px;height:76px;border-radius:23px;background:linear-gradient(135deg,#fff0e4,#ffeef4);font-size:28px;letter-spacing:-7px;padding-right:7px;transition:transform .2s,background .2s}
+.puppy-pair{display:flex;align-items:center;justify-content:center;gap:0;position:relative;flex:none;width:132px;height:108px;border-radius:25px;background:linear-gradient(135deg,#fff0e4,#ffeef4);font-size:28px;letter-spacing:-7px;padding:5px 7px 5px 0;transition:transform .2s,background .2s}
 .puppy-pair span{display:inline-block;filter:drop-shadow(0 2px 1px #7a4c3010)}
 .puppy-pair small{position:absolute;left:0;right:0;bottom:3px;text-align:center;font-size:8px;letter-spacing:.02em;color:#a77a85;font-weight:800}
 .puppy-sweating{background:linear-gradient(135deg,#fff0dc,#ffe8ef);animation:puppy-bob .6s ease-in-out infinite alternate}

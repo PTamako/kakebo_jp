@@ -64,7 +64,7 @@ function recognize() {
   forms.value = parseEntries(input.value, rules.value).map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, bindRule: false }
+    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, bindRule: false }
   })
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }

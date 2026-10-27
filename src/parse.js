@@ -219,7 +219,16 @@ export function parseEntries(raw, rules) {
       }
     }
     if (!found) continue
-    const merchant = cleanMerchant(line.slice(0, found.index))
+    // Some card apps put parenthetical merchant details on the line after the amount.
+    // Keep that continuation with the merchant when the next line is the transaction date.
+    let merchantSource = line.slice(0, found.index)
+    if (i + 1 < lines.length && /^\s*[（(]/.test(lines[i + 1]) &&
+        !dateLine(lines[i + 1]) && !extractTrailingAmount(lines[i + 1]) &&
+        i + 2 < lines.length && dateLine(lines[i + 2])) {
+      merchantSource += lines[i + 1]
+      i++
+    }
+    const merchant = cleanMerchant(merchantSource)
     if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) continue
     activeMerchantRow = { merchant, amount: found.amount, amountRaw: found.raw }
     merchantRows.push(activeMerchantRow)

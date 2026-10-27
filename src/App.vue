@@ -334,7 +334,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <span class="brand-mark" aria-label="しろちゃんとちび毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="しろちゃん" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="ちび毛" /></span>
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
-      <input v-if="tab !== 'year'" type="month" v-model="month" class="month" aria-label="集計月" />
+      <input v-if="tab !== 'year' && !(tab === 'list' && detailFilter?.period === 'year')" type="month" v-model="month" class="month" aria-label="集計月" />
     </header>
     <div class="theme-switcher" role="group" aria-label="配色">
       <span>配色</span>

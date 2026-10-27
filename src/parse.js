@@ -112,29 +112,44 @@ export function parseEntries(raw, rules) {
     .replace(/[Nn]\s*$/g, '')
     .replace(/[\s,，、。．.]+$/g, '')
     .trim()
-  // Some card apps place the date, payment method, and yen amount together on the line below the merchant.
-  // Example: "Suicaチャージ（楽天ペイ） 705507" followed by "2026/10/17 1回払い ¥1,000".
+  // Some issuers put merchant and reference on one line, then date/cardholder/payment/amount on another.
+  // Other issuers put amount beside merchant and date on a separate line. Keep these layouts distinct.
+  const isCardMetadata = line => /^(?:ご本人|本人|家族|家族会員|1回払い|一回払い|分割払い|リボ払い|ボーナス払い|ご本人\s+1回払い|本人\s+1回払い)$/i
+    .test(line.replace(/[\s＞>]/g, ''))
   const pairedStatementRows = []
   for (let i = 0; i < lines.length; i++) {
     const detailLine = lines[i]
     if (!dateLine(detailLine) || !/[¥￥]\s*[\d,]+/.test(detailLine)) continue
-    let merchantLine = ''
-    for (let j = i - 1; j >= 0; j--) {
-      if (dateLine(lines[j]) || amountLine(lines[j]) || paymentLine(lines[j])) continue
-      if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(lines[j])) {
-        merchantLine = cleanMerchant(lines[j])
-        break
-      }
-    }
     const amountMatch = detailLine.match(/[¥￥]\s*([\d,]+)/)
-    if (!merchantLine || !amountMatch) continue
+    if (!amountMatch) continue
     const amount = Number(amountMatch[1].replace(/,/g, ''))
     if (amount <= 0 || amount > 9999999) continue
+
+    // Collect merchant text directly above this detail line. Skip cardholder/payment metadata,
+    // and join OCR-wrapped suffixes such as "マクドナルドモバイルオーダ" + "ー".
+    const parts = []
+    for (let j = i - 1; j >= 0; j--) {
+      const candidate = lines[j]
+      if (dateLine(candidate)) break
+      if (isCardMetadata(candidate) || paymentLine(candidate) || amountLine(candidate)) continue
+      if (/^(?:ご本人|本人|家族|1回払い|一回払い|分割払い|リボ払い|ボーナス払い)$/.test(candidate.replace(/[\s＞>]/g, ''))) continue
+      if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(candidate)) {
+        // Ignore standalone reference numbers and other OCR noise.
+        if (/^\d{4,}$/.test(candidate)) continue
+        break
+      }
+      parts.unshift(candidate)
+      // Usually merchant names occupy one or two lines; don't absorb unrelated page headings.
+      if (parts.length >= 3) break
+    }
+    if (!parts.length) continue
+    const merchantLine = cleanMerchant(parts.join(''))
+    if (!merchantLine || isCardMetadata(merchantLine)) continue
     const { category, keyword } = classify(merchantLine, rules)
     pairedStatementRows.push({
       date: findDate(detailLine), time: '', amount, category,
       merchant: merchantLine.slice(0, 60), note: '',
-      raw: merchantLine + '\\n' + detailLine,
+      raw: merchantLine + '\n' + detailLine,
       suggested: category, keyword
     })
   }

@@ -6,9 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "cf:dev": "vite build && wrangler pages dev dist"
+    "cf:dev": "vite build && wrangler pages dev dist",
+    "test:parse": "node --test scripts/parse-regression.test.js"
   },
-  "dependencies": { "tesseract.js": "^5.1.0", "vue": "^3.4.38" },
+  "dependencies": {
+    "tesseract.js": "^5.1.0",
+    "vue": "^3.4.38"
+  },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.0",
     "vite": "^5.4.0",

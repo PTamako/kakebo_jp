@@ -32,6 +32,14 @@ const DEFAULT_RULES = {
     'Uber Eats','ウーバーイーツ','出前館','menuデリバリー','Wolt','ウォルト','Rocket Now','ロケットナウ','マックデリバリー','ピザハット','ドミノ・ピザ','ピザーラ','ナポリの窯','銀のさら',
     '食べログ','ぐるなび','ホットペッパーグルメ','Oisix','オイシックス','ヨシケイ','パルシステム','コープデリ','生協宅配','らでぃっしゅぼーや'
   ],
+  '饮食料品': [
+    'まいばすけっと','まいばす','イオン','AEON','マックスバリュ','ダイエー','ライフ','LIFE','サミットストア','サミット','マルエツ','西友','SEIYU',
+    'オーケーストア','オーケー','OKストア','ベルク','ヤオコー','オオゼキ','いなげや','コモディイイダ','アコレ','ビッグ・エー','ビッグエー','ロピア',
+    '業務スーパー','業務スーパ','イトーヨーカドー','イトーヨーカ堂','ヨークフーズ','ヨークマート','ヨークプライス','マルエツプチ','ミニピアゴ','肉のハナマサ',
+    'ハナマサ','食品館あおば','アタック','全日食チェーン','トライアル','スーパーセンタートライアル','成城石井','紀ノ国屋','KINOKUNIYA',
+    'クイーンズ伊勢丹','北野エース','東急ストア','京王ストア','京急ストア','小田急OX','文化堂','スーパーバリュー','ベルクス','コープ','生協',
+    'セブン-イレブン','セブンイレブン','セブンーイレブン','ローソン','ファミリーマート','ファミマ','ミニストップ','デイリーヤマザキ','NewDays','ニューデイズ'
+  ],
   '日用品': [
     'マツモトキヨシ','マツキヨ','ウエルシア','ウェルシア','ツルハドラッグ','スギ薬局','サンドラッグ','ココカラファイン',
     'クリエイトSD','クリエイトエス・ディー','トモズ','ぱぱす','コスモス薬品','薬の福太郎','くすりの福太郎','クスリのアオキ',
@@ -150,7 +158,7 @@ export async function onRequest({ request, env, params }) {
     }
     if (a === 'categories') {
       if (m === 'GET') {
-        const base = ['餐饮','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
+        const base = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
         const { results } = await db.prepare("SELECT DISTINCT category FROM rules WHERE substr(keyword, 1, 13) = '__category__:' ORDER BY category").all()
         return json([...new Set([...base, ...results.map(r => r.category)])])
       }
@@ -158,7 +166,7 @@ export async function onRequest({ request, env, params }) {
         const body = await request.json()
         const name = String(body.name || '').trim().slice(0, 20)
         if (name.length < 1) return json({ error: '分类名称不能为空' }, 400)
-        const reserved = ['餐饮','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
+        const reserved = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
         if (reserved.includes(name)) return json({ ok: true, category: name })
         await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name).run()
         return json({ ok: true, category: name })

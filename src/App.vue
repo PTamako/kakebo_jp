@@ -279,13 +279,13 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
         <span class="brand-mark" aria-label="小白和鸡毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="小白" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="鸡毛" /></span>
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>和小白、鸡毛一起记账</small></div>
       </div>
-      <input type="month" v-model="month" class="month" aria-label="统计月份" />
+      <input v-if="tab !== 'year'" type="month" v-model="month" class="month" aria-label="统计月份" />
     </header>
 
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
 
     <section v-if="tab === 'add'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">NEW ENTRY</p><h1>记一笔</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ 新增分类</button></div>
+      <div class="page-heading"><div><p class="eyebrow">新增记录</p><h1>记一笔</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ 新增分类</button></div>
       <div class="entry-mode-row">
         <button class="button-secondary manual-add-button" @click="addBlank('expense')">✍️ 手动添加支出</button>
         <button class="button-secondary manual-add-button income-add-button" @click="addBlank('income')">＋ 记录收入</button>
@@ -328,7 +328,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
     </section>
 
     <section v-else-if="tab === 'list'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">TRANSACTIONS</p><h1>收支明细</h1></div><span class="heading-icon">≡</span></div>
+      <div class="page-heading"><div><p class="eyebrow">收支记录</p><h1>收支明细</h1></div><span class="heading-icon">≡</span></div>
       <section class="month-calendar" aria-label="月度消费日历">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><button v-if="selectedDay" class="calendar-reset" @click="selectedDay = ''">查看整月</button></div>
         <div class="calendar-weekdays"><span v-for="weekday in ['一', '二', '三', '四', '五', '六', '日']" :key="weekday">{{ weekday }}</span></div>
@@ -372,7 +372,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
     </section>
 
     <section v-else-if="tab === 'stat'" class="page-section stats-page">
-      <div class="page-heading"><div><p class="eyebrow">MONTHLY OVERVIEW</p><h1>支出统计</h1><p class="heading-subtitle">{{ monthLabel }} · 消费概览</p></div><span class="heading-icon">↗</span></div>
+      <div class="page-heading"><div><p class="eyebrow">月度概览</p><h1>支出统计</h1><p class="heading-subtitle">{{ monthLabel }} · 消费概览</p></div><span class="heading-icon">↗</span></div>
       <div class="hero-total">
         <span>本月总支出</span>
         <strong>{{ yen(stats?.total) }}</strong>
@@ -395,7 +395,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
             <div v-for="(c, i) in categoryRows" :key="c.category" class="category-row">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ c.category }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span :class="'bar-fill fill-' + (i % 6)" :style="{ width: Math.max(2, (c.amount / maxCat) * 100) + '%' }"></span></div>
-              <small class="category-share">{{ stats.total ? Math.round(c.amount / stats.total * 100) : 0 }}% of total</small>
+              <small class="category-share">{{ stats.total ? Math.round(c.amount / stats.total * 100) : 0 }}% 占本月总支出</small>
             </div>
           </div>
         </div>
@@ -413,7 +413,7 @@ const ratioLabel = ratio => ratio === null ? '暂无收入数据' : Math.round(r
     </section>
 
     <section v-else-if="tab === 'year'" class="page-section stats-page annual-page">
-      <div class="page-heading"><div><p class="eyebrow">YEARLY OVERVIEW</p><h1>年度统计</h1><p class="heading-subtitle">按年份汇总全年消费</p></div><span class="heading-icon">⌁</span></div>
+      <div class="page-heading"><div><p class="eyebrow">年度概览</p><h1>年度统计</h1><p class="heading-subtitle">按年份汇总全年消费</p></div><span class="heading-icon">⌁</span></div>
       <label class="year-picker"><span>统计年份</span><select v-model.number="selectedYear" aria-label="统计年份"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select></label>
       <div class="hero-total annual-hero">
         <span>{{ selectedYear }}年总支出</span><strong>{{ yen(annualStats?.total) }}</strong>

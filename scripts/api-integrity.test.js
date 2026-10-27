@@ -5,7 +5,8 @@ import { onRequest } from '../functions/api/[[path]].js'
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = [] }
+  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = [] }
+  async batch(statements) { for (const statement of statements) await statement.run() }
   prepare(sql) {
     const db = this
     return {
@@ -18,9 +19,13 @@ class LedgerDb {
           return db.entries.find(e => e.id === this.args[0]) || null
         if (sql.startsWith('SELECT amount, transfer_target'))
           return db.entries.find(e => e.id === this.args[0]) || null
+        if (sql.startsWith('SELECT keyword FROM rules WHERE keyword')) return db.seeded ? { keyword: this.args[0] } : null
         return { exists: true }
       },
       async all() {
+        if (sql.startsWith('SELECT keyword, category FROM rules WHERE substr')) return { results: db.rules }
+        if (sql.startsWith('SELECT * FROM rules WHERE keyword')) return { results: db.rules }
+        if (sql.startsWith('SELECT keyword, category FROM custom_rules')) return { results: db.customRules }
         if (sql.includes('AS invested_total FROM investment_snapshots')) return { results: [{
           platform: 'sbi', current_value: db.snapshot, pnl: 10000, updated_at: null,
           invested_total: db.entries.filter(e => e.type === 'transfer' && e.transfer_target === 'sbi' && e.transfer_applied === 1)
@@ -44,6 +49,12 @@ class LedgerDb {
           const e = db.entries.find(e => e.id === this.args[0]); if (e) e.transfer_applied = 1
         }
         if (sql.startsWith('DELETE FROM entries')) db.entries = db.entries.filter(e => e.id !== this.args[0])
+        if (sql.startsWith('DELETE FROM rules')) throw Error('migration attempted to delete user rules')
+        if (sql.startsWith('INSERT OR REPLACE INTO rules')) throw Error('migration attempted to overwrite user rules')
+        if (sql.startsWith('INSERT OR IGNORE INTO custom_rules') && !db.customRules.some(r => r.keyword === this.args[0]))
+          db.customRules.push({ keyword: this.args[0], category: this.args[1] })
+        if (sql.startsWith('INSERT OR IGNORE INTO rules') && !db.rules.some(r => r.keyword === this.args[0]))
+          db.rules.push({ keyword: this.args[0], category: this.args[1] })
         return { meta: { changes: 1 } }
       }
     }
@@ -53,7 +64,7 @@ class LedgerDb {
 const call = async (db, path, method = 'GET', payload, options = {}) => {
   const body = payload === undefined ? undefined : JSON.stringify(payload)
   const request = new Request('https://example.test/api/' + path, {
-    method, headers: { 'x-token': options.token ?? 'test-secret', 'content-type': 'application/json' }, body
+    method, headers: { 'x-token': options.token ?? 'test-secret', 'content-type': 'application/json', ...(options.confirmId ? { 'x-confirm-delete': String(options.confirmId) } : {}) }, body
   })
   const response = await onRequest({ request, env: { DB: db, AUTH_TOKEN: options.auth ?? 'test-secret' },
     params: { path: path.split('?')[0].split('/') } })
@@ -92,7 +103,9 @@ test('investment transfers do not mutate manually entered market valuations', as
   const a = await call(db, 'investments')
   assert.equal(a.body[0].invested_total, 15000)
   assert.equal(a.body[0].current_value, 120000)
-  await call(db, 'entries/1', 'DELETE')
+  assert.equal((await call(db, 'entries/1', 'DELETE')).status, 428)
+  assert.equal(db.entries.length, 1)
+  assert.equal((await call(db, 'entries/1', 'DELETE', undefined, { confirmId: 1 })).status, 200)
   const b = await call(db, 'investments')
   assert.equal(b.body[0].invested_total, 0)
   assert.equal(b.body[0].current_value, 120000)
@@ -118,4 +131,28 @@ test('rejects impossible dates and invalid reporting periods', async () => {
   assert.equal((await call(db, 'entries?month=2026-13')).status, 400)
   assert.equal((await call(db, 'entries?year=20x6')).status, 400)
   assert.equal((await call(db, 'entries?year=2026&offset=-5')).status, 400)
+})
+
+test('upgrade preserves all saved transactions and custom classification rules', async () => {
+  const db = new LedgerDb()
+  db.seeded = false
+  db.entries.push({ id: 42, date: '2026-09-12', amount: 8820, type: 'expense',
+    category: '日用品', merchant: '保存している店舗', transfer_target: null, transfer_applied: 0 })
+  db.rules.push({ keyword: '個人専用の店', category: 'ペット' })
+  const original = JSON.parse(JSON.stringify(db.entries))
+  const originalRule = { ...db.rules[0] }
+  const answer = await call(db, 'rules')
+  assert.equal(answer.status, 200)
+  assert.deepEqual(db.entries, original)
+  assert.ok(db.rules.some(r => r.keyword === originalRule.keyword && r.category === originalRule.category))
+  assert.ok(db.sql.every(sql => !/^\\s*(?:DELETE|DROP|TRUNCATE|REPLACE)\\b/i.test(sql)))
+})
+test('deletion is refused unless a matching single entry ID is explicitly confirmed', async () => {
+  const db = new LedgerDb()
+  db.entries.push({ id: 31, date: '2026-10-01', amount: 350, type: 'expense' })
+  assert.equal((await call(db, 'entries/31', 'DELETE')).status, 428)
+  assert.equal((await call(db, 'entries/31', 'DELETE', undefined, { confirmId: 30 })).status, 428)
+  assert.equal(db.entries.length, 1)
+  assert.equal((await call(db, 'entries/31', 'DELETE', undefined, { confirmId: 31 })).status, 200)
+  assert.equal(db.entries.length, 0)
 })

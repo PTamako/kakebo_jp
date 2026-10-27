@@ -43,9 +43,32 @@ function findAmount(t) {
   return all.length ? Math.max(...all) : 0
 }
 
+// Supermarket names must be checked before generic keywords such as 「バス」.
+// 「まいばすけっと」 contains the characters 「バス」, but is a supermarket, not transport.
+const SUPERMARKET_KEYWORDS = [
+  'まいばすけっと', 'まいばす', 'イオン', 'AEON', 'マックスバリュ', 'ダイエー',
+  'ライフ', 'LIFE', 'サミットストア', 'サミット', 'マルエツ', '西友', 'SEIYU',
+  'オーケーストア', 'オーケー', 'OKストア', 'ベルク', 'ヤオコー', 'オオゼキ',
+  'いなげや', 'コモディイイダ', 'アコレ', 'ビッグ・エー', 'ビッグエー', 'ロピア',
+  '業務スーパー', '業務スーパ', 'イトーヨーカドー', 'イトーヨーカ堂', 'ヨークフーズ',
+  'ヨークマート', 'ヨークプライス', 'マルエツプチ', 'ミニピアゴ', '肉のハナマサ',
+  'ハナマサ', '食品館あおば', 'アタック', '全日食チェーン', 'トライアル',
+  'スーパーセンタートライアル', '成城石井', '紀ノ国屋', 'KINOKUNIYA',
+  'クイーンズ伊勢丹', '北野エース', '東急ストア', '京王ストア', '京急ストア',
+  '小田急OX', '文化堂', 'スーパーバリュー', 'ベルクス', 'コープ', '生協',
+  'コンビニ', 'セブン-イレブン', 'セブンイレブン', 'ローソン', 'ファミリーマート',
+  'ファミマ', 'ミニストップ'
+]
+
 export function classify(text, rules) {
+  const normalizedText = normalize(text).toLowerCase()
+  const supermarket = [...SUPERMARKET_KEYWORDS]
+    .sort((a, b) => b.length - a.length)
+    .find(keyword => normalizedText.includes(normalize(keyword).toLowerCase()))
+  if (supermarket) return { category: '餐饮', keyword: supermarket }
+
   const hit = [...rules].sort((a, b) => b.keyword.length - a.keyword.length)
-    .find(r => text.toLowerCase().includes(r.keyword.toLowerCase()))
+    .find(r => normalizedText.includes(normalize(r.keyword).toLowerCase()))
   return hit ? { category: hit.category, keyword: hit.keyword } : { category: '日用品', keyword: '' }
 }
 

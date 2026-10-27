@@ -468,6 +468,7 @@ const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCatego
   .map(item => ({ category: item.category || '其他收入', amount: Number(item.amount || 0) }))
   .sort((a, b) => b.amount - a.amount))
 const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
+function openMonthDetails(point) { month.value = point.month; tab.value = 'list' }
 function selectIncomeMonth(point) {
   // Tapping the currently selected month again closes its breakdown.
   selectedIncomeMonth.value = selectedIncomeMonth.value === point.month ? '' : point.month
@@ -685,7 +686,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polygon v-if="expenseTrendArea" :points="expenseTrendArea" class="expense-chart-area" />
             <polyline :points="expenseTrendLine" class="chart-line expense-chart-line" />
-            <circle v-for="point in expenseTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="3.5" class="chart-point expense-chart-point" />
+            <circle v-for="point in expenseTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point expense-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '支出 ' + yen(point.amount) + '。タップして明細を表示'" @click="openMonthDetails(point)" @keydown.enter.prevent="openMonthDetails(point)" @keydown.space.prevent="openMonthDetails(point)" />
           </svg>
           <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
         </div>
@@ -695,9 +696,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年収入の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
-            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedIncomeMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '収入 ' + yen(point.income) + '。タップしてカテゴリを確認'" @click="selectIncomeMonth(point)" @keydown.enter.prevent="selectIncomeMonth(point)" @keydown.space.prevent="selectIncomeMonth(point)" />
+            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '収入 ' + yen(point.income) + '。タップして明細を表示'" @click="openMonthDetails(point)" @keydown.enter.prevent="openMonthDetails(point)" @keydown.space.prevent="openMonthDetails(point)" />
           </svg>
-          <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" :class="{ 'trend-month-selected': selectedIncomeMonth === item.month }" @click="selectIncomeMonth(item)">{{ Number(item.month.slice(5)) }}</button></div>
+          <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" @click="openMonthDetails(item)">{{ Number(item.month.slice(5)) }}</button></div>
           <p class="trend-note">グラフの月をタップすると、その月のカテゴリ別収入を確認できます。</p>
           <div v-if="selectedIncomeMonthRow" class="income-month-breakdown">
             <div class="income-breakdown-heading"><div><h3>{{ selectedIncomeMonthRow.label }}収入カテゴリ</h3><p>{{ selectedYear }}年 · {{ selectedIncomeCategories.length }}カテゴリ</p></div><strong>{{ yen(selectedIncomeMonthRow.income) }}</strong></div>
@@ -732,10 +733,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="stats-card">
           <div class="section-title"><div><h2>年度カテゴリ収入</h2><p>年間合計の多い順</p></div></div>
           <div v-if="annualIncomeCategories.length" class="category-pie" :style="{ background: annualIncomePie }" role="img" aria-label="年度カテゴリ収入の割合"></div>
-          <div v-if="annualIncomeCategories.length" class="category-list">
+          <div v-if="annualIncomeCategories.length" class="category-list annual-income-bars">
             <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'income' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'income', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'income', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'income', 'year')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
-              <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
+              <div class="bar-track"><span class="bar-fill income-category-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
               <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}%（年間収入に占める割合） · タップして明細</small>
             </div>
           </div>
@@ -747,7 +748,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="category-list">
             <div v-for="(c, i) in (annualStats?.byCategory || [])" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'expense' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'expense', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'expense', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'expense', 'year')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji">{{ categoryIcon(c.category) }}</span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
-              <div class="bar-track"><span class="bar-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(annualStats?.total || 0)) * 100) + '%' }"></span></div>
+              <div class="bar-track"><span class="bar-fill expense-category-fill" :class="'fill-' + (i % 6)" :style="{ width: Math.max(2, Number(c.amount) / Math.max(1, Number(annualStats?.total || 0)) * 100) + '%' }"></span></div>
               <small class="category-share">{{ annualStats?.total ? Math.round(Number(c.amount) / Number(annualStats.total) * 100) : 0 }}%（年間支出に占める割合） · タップして明細</small>
             </div>
           </div>

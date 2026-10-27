@@ -284,7 +284,7 @@ const displayEntries = computed(() => {
   const narrowed = detailFilter.value
     ? source.filter(entry => detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer'))
     : source
-  return narrowed.filter(entryMatchesType)
+  return narrowed.filter(entryMatchesType).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
 })
 function setEntryTypeFilter(value) {
   entryTypeFilter.value = value
@@ -382,7 +382,7 @@ const calendarDays = computed(() => {
 const visibleCalendarDays = computed(() => {
   if (calendarExpanded.value) return calendarDays.value
   const today = new Date().toLocaleDateString('sv-SE')
-  const target = selectedDay.value.startsWith(month.value) ? selectedDay.value : (today.startsWith(month.value) ? today : calendarDays.value.find(day => !day.blank)?.date)
+  const target = today.startsWith(month.value) ? today : (selectedDay.value.startsWith(month.value) ? selectedDay.value : calendarDays.value.find(day => !day.blank)?.date)
   const index = calendarDays.value.findIndex(day => day.date === target)
   const start = Math.max(0, Math.floor(Math.max(0, index) / 7) * 7)
   return calendarDays.value.slice(start, start + 7)
@@ -653,7 +653,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
     <section v-else-if="tab === 'stat' && statsPeriod === 'month'" class="page-section stats-page">
       <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ monthLabel }}の収支を分析</p></div><span class="heading-icon">↗</span></div>
-      <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月度</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年度</button></div>
+      <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月次</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年次</button></div>
       <div class="hero-total">
         <span>今月の支出合計</span>
         <strong>{{ yen(stats?.total) }}</strong>
@@ -698,7 +698,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
     <section v-else-if="tab === 'stat' && statsPeriod === 'year'" class="page-section stats-page annual-page">
       <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ selectedYear }}年の収支を分析</p></div><span class="heading-icon">⌁</span></div>
-      <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月度</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年度</button></div>
+      <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月次</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年次</button></div>
       <div class="hero-total annual-hero">
         <span>{{ selectedYear }}年の支出合計</span><strong>{{ yen(annualStats?.total) }}</strong>
         <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件の支出記録</div>
@@ -724,7 +724,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <polyline :points="expenseTrendLine" class="chart-line expense-chart-line" />
             <circle v-for="point in expenseTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point expense-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '支出 ' + yen(point.amount) + '。タップして明細を表示'" @click="openMonthDetails(point, 'expense')" @keydown.enter.prevent="openMonthDetails(point, 'expense')" @keydown.space.prevent="openMonthDetails(point, 'expense')" />
           </svg>
-          <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
+          <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" @click="openMonthDetails(item, 'expense')">{{ Number(item.month.slice(5)) }}</button></div>
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>収入の推移</h2><p>月ごとの年間収入の推移</p></div></div>
@@ -734,7 +734,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
             <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '収入 ' + yen(point.income) + '。タップして明細を表示'" @click="openMonthDetails(point, 'income')" @keydown.enter.prevent="openMonthDetails(point, 'income')" @keydown.space.prevent="openMonthDetails(point, 'income')" />
           </svg>
-<div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
+<div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" @click="openMonthDetails(item, 'income')">{{ Number(item.month.slice(5)) }}</button></div>
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入。破線は80%と100%の目安</p></div></div>

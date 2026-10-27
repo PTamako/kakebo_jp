@@ -124,7 +124,20 @@ export async function onRequest({ request, env, params }) {
     if (b === 'login' && m === 'POST') {
       let body
       try { body = await request.json() } catch { return json({ error: '入力内容を確認してください' }, 400) }
-      if (typeof body?.code !== 'string' || body.code !== env.AUTH_TOKEN) return json({ error: 'アクセスコードを確認してください' }, 401)
+      // Rate-limit failed access-code attempts per client IP.
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+      const ipHash = await sessionHash(ip)
+      try {
+        await db.prepare('CREATE TABLE IF NOT EXISTS login_attempts (ip_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at INTEGER NOT NULL)').run()
+        const now = Date.now()
+        const attempt = await db.prepare('SELECT attempts, reset_at FROM login_attempts WHERE ip_hash = ?1').bind(ipHash).first()
+        if (attempt && attempt.reset_at > now && attempt.attempts >= 5) return json({ error: 'しばらくしてから再度お試しください' }, 429)
+        if (typeof body?.code !== 'string' || body.code !== env.AUTH_TOKEN) {
+          await db.prepare('INSERT INTO login_attempts (ip_hash, attempts, reset_at) VALUES (?1, 1, ?2) ON CONFLICT(ip_hash) DO UPDATE SET attempts = CASE WHEN reset_at <= ?3 THEN 1 ELSE attempts + 1 END, reset_at = CASE WHEN reset_at <= ?3 THEN ?2 ELSE reset_at END').bind(ipHash, now + 15 * 60 * 1000, now).run()
+          return json({ error: 'アクセスコードを確認してください' }, 401)
+        }
+        await db.prepare('DELETE FROM login_attempts WHERE ip_hash = ?1').bind(ipHash).run()
+      } catch { return json({ error: 'ログイン処理に失敗しました' }, 503) }
       const session = Array.from(crypto.getRandomValues(new Uint8Array(32)), x => x.toString(16).padStart(2, '0')).join('')
       const hash = await sessionHash(session)
       const expires = Date.now() + 30 * 24 * 60 * 60 * 1000

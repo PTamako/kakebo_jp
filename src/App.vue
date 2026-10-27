@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 
 const tab = ref('add')
+const statsPeriod = ref('month')
 const theme = ref(localStorage.getItem('kakeibo-theme') || 'pink')
 const themes = [{ id: 'pink', label: 'ピンク', color: '#d96f91' }, { id: 'blue', label: 'ブルー', color: '#78a9d6' }, { id: 'yellow', label: 'イエロー', color: '#d9b957' }, { id: 'green', label: 'グリーン', color: '#78ad91' }]
 function setTheme(value) { theme.value = value; localStorage.setItem('kakeibo-theme', value) }
@@ -55,12 +56,13 @@ async function loadYear() {
 }
 onMounted(() => { load(); loadYear(); loadInvestments(); loadTransfers() })
 
-watch(month, async () => { selectedDay.value = ''; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
+watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
 watch(tab, value => {
-  if (value === 'year') loadYear()
+  if (value === 'stat' && statsPeriod.value === 'year') loadYear()
   if (value === 'list') visibleEntryCount.value = 20
 })
+watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') loadYear() })
 
 function recognize() {
   if (!input.value.trim()) return
@@ -267,6 +269,8 @@ const annualIncomePie = computed(() => pieGradient(annualIncomeCategories.value 
 const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette))
 
 const selectedDay = ref('')
+const entryTypeFilter = ref('all')
+const calendarExpanded = ref(false)
 const swipedEntryId = ref(null)
 const filteredEntries = computed(() => selectedDay.value ? entries.value.filter(e => e.date === selectedDay.value) : entries.value)
 const detailFilter = ref(null)
@@ -274,12 +278,24 @@ const detailSourceEntries = ref([])
 const detailLoading = ref(false)
 const visibleEntryCount = ref(20)
 const listPageSize = 20
+const entryMatchesType = entry => entryTypeFilter.value === 'all' ||
+  (entryTypeFilter.value === 'income' && entry.type === 'income') ||
+  (entryTypeFilter.value === 'expense' && entry.type !== 'income' && entry.type !== 'transfer') ||
+  (entryTypeFilter.value === 'transfer' && entry.type === 'transfer')
 const displayEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : filteredEntries.value
-  return detailFilter.value
-    ? source.filter(entry => detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income'))
+  const narrowed = detailFilter.value
+    ? source.filter(entry => detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer'))
     : source
+  return narrowed.filter(entryMatchesType)
 })
+function setEntryTypeFilter(value) {
+  entryTypeFilter.value = value
+  detailFilter.value = null
+  detailSourceEntries.value = []
+  selectedDay.value = ''
+  visibleEntryCount.value = 20
+}
 const sortedDisplayEntries = computed(() => [...displayEntries.value].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.time || '').localeCompare(String(a.time || ''))))
 const pagedEntries = computed(() => sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
 function loadMoreEntries() { visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize) }
@@ -310,6 +326,7 @@ watch(visibleEntryCount, () => {
 })
 async function openCategoryDetails(category, type, period) {
   detailFilter.value = { category, type, period }
+  entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
   selectedDay.value = ''
   detailSourceEntries.value = []
   visibleEntryCount.value = 20
@@ -341,11 +358,22 @@ const dayRows = computed(() => [...(stats.value?.byDay || [])].sort((a, b) => a.
 let touchStartX = 0
 let touchStartY = 0
 let suppressRowClick = false
+const calendarEntries = computed(() => {
+  const source = detailFilter.value ? detailSourceEntries.value : entries.value
+  return source.filter(entryMatchesType).filter(entry => !detailFilter.value || (
+    detailFilter.value.type === 'transfer' ? entry.type === 'transfer' :
+    entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer')
+  )).filter(entry => String(entry.date || '').startsWith(month.value))
+})
 const calendarDays = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
   const daysInMonth = new Date(year, monthNumber, 0).getDate()
   const firstDayOffset = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7
-  const amounts = new Map(dayRows.value.map(day => [day.date, Number(day.amount || 0)]))
+  const amounts = new Map()
+  for (const entry of calendarEntries.value) {
+    const key = String(entry.date || '').slice(0, 10)
+    amounts.set(key, (amounts.get(key) || 0) + Number(entry.amount || 0))
+  }
   const days = Array.from({ length: firstDayOffset }, (_, i) => ({ key: `blank-${i}`, blank: true }))
   for (let day = 1; day <= daysInMonth; day++) {
     const date = `${year}-${String(monthNumber).padStart(2, '0')}-${String(day).padStart(2, '0')}`
@@ -353,6 +381,14 @@ const calendarDays = computed(() => {
   }
   while (days.length % 7) days.push({ key: `blank-end-${days.length}`, blank: true })
   return days
+})
+const visibleCalendarDays = computed(() => {
+  if (calendarExpanded.value) return calendarDays.value
+  const today = new Date().toLocaleDateString('sv-SE')
+  const target = today.startsWith(month.value) ? today : calendarDays.value.find(day => !day.blank)?.date
+  const index = calendarDays.value.findIndex(day => day.date === target)
+  const start = Math.max(0, Math.floor(Math.max(0, index) / 7) * 7)
+  return calendarDays.value.slice(start, start + 7)
 })
 function toggleDay(date) {
   if (selectedDay.value === date) selectedDay.value = ''
@@ -469,6 +505,15 @@ const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCatego
   .sort((a, b) => b.amount - a.amount))
 const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
 function openMonthDetails(point) { month.value = point.month; tab.value = 'list' }
+function openMonthDetails(point, type) {
+  detailFilter.value = null
+  detailSourceEntries.value = []
+  selectedDay.value = ''
+  calendarExpanded.value = false
+  entryTypeFilter.value = type
+  if (month.value !== point.month) month.value = point.month
+  tab.value = 'list'
+}
 function selectIncomeMonth(point) {
   // Tapping the currently selected month again closes its breakdown.
   selectedIncomeMonth.value = selectedIncomeMonth.value === point.month ? '' : point.month
@@ -494,8 +539,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
       <span v-if="tab === 'add'" class="today-date">{{ todayLabel }}</span>
-      <div v-else-if="tab === 'list' || tab === 'stat'" class="topbar-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div>
-      <label v-else-if="tab === 'year'" class="topbar-year-wrap"><input v-model.number="selectedYear" class="topbar-year" type="number" min="1900" max="9999" step="1" inputmode="numeric" aria-label="集計年" /><span>年</span></label>
+      <div v-else-if="tab === 'list' || (tab === 'stat' && statsPeriod === 'month')" class="topbar-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div>
+      <label v-else-if="tab === 'stat' && statsPeriod === 'year'" class="topbar-year-wrap"><input v-model.number="selectedYear" class="topbar-year" type="number" min="1900" max="9999" step="1" inputmode="numeric" aria-label="集計年" /><span>年</span></label>
     </header>
     <div class="theme-switcher" role="group" aria-label="配色">
       <span>配色</span>
@@ -556,16 +601,17 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
     <section v-else-if="tab === 'list'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">収支記録</p><h1>収支明細</h1></div><span class="heading-icon">≡</span></div>
+      <div class="entry-type-filter" role="group" aria-label="明細の種類"><button v-for="option in [{value: 'all', label: '全部'}, {value: 'income', label: '収入'}, {value: 'expense', label: '支出'}, {value: 'transfer', label: '資産移動'}]" :key="option.value" type="button" :class="{ selected: entryTypeFilter === option.value }" :aria-pressed="entryTypeFilter === option.value" @click="setEntryTypeFilter(option.value)">{{ option.label }}</button></div>
       <section v-if="!detailFilter" class="month-calendar" aria-label="月間支出カレンダー">
-        <div class="calendar-heading"><strong>{{ monthLabel }}</strong><button v-if="selectedDay" class="calendar-reset" @click="selectedDay = ''">月全体を表示</button></div>
+        <div class="calendar-heading"><strong>{{ monthLabel }}</strong><div class="calendar-actions"><button type="button" class="calendar-reset" @click="calendarExpanded = !calendarExpanded">{{ calendarExpanded ? '週のみ表示' : '月全体を表示' }}</button><button v-if="selectedDay" type="button" class="calendar-reset" @click="selectedDay = ''">日付解除</button></div></div>
         <div class="calendar-weekdays"><span v-for="weekday in ['一', '二', '三', '四', '五', '六', '日']" :key="weekday">{{ weekday }}</span></div>
         <div class="calendar-grid">
-          <button v-for="day in calendarDays" :key="day.key" type="button" class="calendar-day" :class="{ 'calendar-blank': day.blank, 'calendar-selected': selectedDay === day.date, 'calendar-has-spend': day.amount > 0 }" :disabled="day.blank" @click="toggleDay(day.date)" :aria-label="day.blank ? undefined : day.date + ' 支出 ' + yen(day.amount)">
+          <button v-for="day in visibleCalendarDays" :key="day.key" type="button" class="calendar-day" :class="{ 'calendar-blank': day.blank, 'calendar-selected': selectedDay === day.date, 'calendar-has-spend': day.amount > 0 }" :disabled="day.blank" @click="toggleDay(day.date)" :aria-label="day.blank ? undefined : day.date + ' 記録額 ' + yen(day.amount)">
             <template v-if="!day.blank"><span class="calendar-day-number">{{ day.day }}</span><small v-if="day.amount > 0">{{ yen(day.amount) }}</small><small v-else class="calendar-no-spend">—</small></template>
           </button>
         </div>
       </section>
-      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + (detailFilter.type === 'transfer' ? '資産移動' : categoryLabel(detailFilter.category) + 'の' + (detailFilter.type === 'income' ? '収入' : '支出')) : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
+      <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · カテゴリ明細' : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel + ' · ' + ({all: '全部', income: '収入', expense: '支出', transfer: '資産移動'}[entryTypeFilter])) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
       <div v-if="detailFilter" class="detail-filter-strip"><span>{{ detailFilter.type === 'transfer' ? '資産移動で絞り込み中' : 'カテゴリで絞り込み中' }}</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
       <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
       <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><p>{{ detailFilter ? '条件に一致する記録はありません。' : '「入力」から最初の記録を追加できます。' }}</p><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
@@ -618,8 +664,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
     </section>
 
-    <section v-else-if="tab === 'stat'" class="page-section stats-page">
-      <div class="page-heading"><div><p class="eyebrow">月間サマリー</p><h1>支出集計</h1><p class="heading-subtitle">{{ monthLabel }} · 支出サマリー</p></div><span class="heading-icon">↗</span></div>
+    <section v-else-if="tab === 'stat' && statsPeriod === 'month'" class="page-section stats-page">
+      <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ monthLabel }}の収支を分析</p></div><span class="heading-icon">↗</span></div>
+      <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月度</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年度</button></div>
       <div class="hero-total">
         <span>今月の支出合計</span>
         <strong>{{ yen(stats?.total) }}</strong>
@@ -661,8 +708,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </template>
     </section>
 
-    <section v-else-if="tab === 'year'" class="page-section stats-page annual-page">
-      <div class="page-heading"><div><p class="eyebrow">年間サマリー</p><h1>年間集計</h1><p class="heading-subtitle">年ごとの支出を集計</p></div><span class="heading-icon">⌁</span></div>
+    <section v-else-if="tab === 'stat' && statsPeriod === 'year'" class="page-section stats-page annual-page">
+      <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ selectedYear }}年の収支を分析</p></div><span class="heading-icon">⌁</span></div>
+      <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月度</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年度</button></div>
       <div class="hero-total annual-hero">
         <span>{{ selectedYear }}年の支出合計</span><strong>{{ yen(annualStats?.total) }}</strong>
         <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件の支出記録</div>
@@ -686,7 +734,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polygon v-if="expenseTrendArea" :points="expenseTrendArea" class="expense-chart-area" />
             <polyline :points="expenseTrendLine" class="chart-line expense-chart-line" />
-            <circle v-for="point in expenseTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point expense-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '支出 ' + yen(point.amount) + '。タップして明細を表示'" @click="openMonthDetails(point)" @keydown.enter.prevent="openMonthDetails(point)" @keydown.space.prevent="openMonthDetails(point)" />
+            <circle v-for="point in expenseTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point expense-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '支出 ' + yen(point.amount) + '。タップして明細を表示'" @click="openMonthDetails(point, 'expense')" @keydown.enter.prevent="openMonthDetails(point, 'expense')" @keydown.space.prevent="openMonthDetails(point, 'expense')" />
           </svg>
           <div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
         </div>
@@ -696,9 +744,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年収入の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
-            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '収入 ' + yen(point.income) + '。タップして明細を表示'" @click="openMonthDetails(point)" @keydown.enter.prevent="openMonthDetails(point)" @keydown.space.prevent="openMonthDetails(point)" />
+            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '収入 ' + yen(point.income) + '。タップして明細を表示'" @click="openMonthDetails(point, 'income')" @keydown.enter.prevent="openMonthDetails(point, 'income')" @keydown.space.prevent="openMonthDetails(point, 'income')" />
           </svg>
-          <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" @click="openMonthDetails(item)">{{ Number(item.month.slice(5)) }}</button></div>
+<div class="trend-month-labels"><span v-for="item in yearMonthRows" :key="item.month">{{ Number(item.month.slice(5)) }}</span></div>
           <p class="trend-note">グラフの月をタップすると、その月のカテゴリ別収入を確認できます。</p>
           <div v-if="selectedIncomeMonthRow" class="income-month-breakdown">
             <div class="income-breakdown-heading"><div><h3>{{ selectedIncomeMonthRow.label }}収入カテゴリ</h3><p>{{ selectedYear }}年 · {{ selectedIncomeCategories.length }}カテゴリ</p></div><strong>{{ yen(selectedIncomeMonthRow.income) }}</strong></div>
@@ -787,8 +835,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button :class="{ active: tab === 'list' }" @click="tab = 'list'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>
-      <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.5 19.5h15"/><rect x="6" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10" rx="1"/><rect x="14.8" y="4.5" width="3.2" height="13" rx="1"/></svg></span><span>月間集計</span></button>
-      <button :class="{ active: tab === 'year' }" @click="tab = 'year'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="15" rx="2.5"/><path d="M8 3.5v4M16 3.5v4M4 9.5h16M8 13h2M13 13h3M8 16.5h2"/></svg></span><span>年間集計</span></button>
+      <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.5 19.5h15"/><rect x="6" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10" rx="1"/><rect x="14.8" y="4.5" width="3.2" height="13" rx="1"/></svg></span><span>統計</span></button>
       <button :class="{ active: tab === 'investments' }" @click="tab = 'investments'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2.5"/><path d="M3.5 10h17M7 4.5h10M15.5 14.5h2"/></svg></span><span>資産・投資</span></button>
     </nav>
   </main>
@@ -946,5 +993,5 @@ main.theme-green .brand-mark{background:linear-gradient(135deg,#edf8ef,#dcefe0);
 
 .day-group-list{display:grid;gap:10px;width:100%;box-sizing:border-box;margin:0;padding:0;background:transparent;border:0;box-shadow:none;overflow:visible}.entry-day-group{overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:14px}.entry-day-heading{display:grid;grid-template-columns:18px auto auto 1fr;align-items:center;gap:8px;width:100%;padding:13px 12px;border:0;background:var(--card);color:var(--ink);text-align:left}.entry-day-chevron{color:var(--blue-dark);font-size:16px}.entry-day-heading strong{font-size:13px}.entry-day-count{font-size:11px;color:var(--muted)}.entry-day-total{text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}.entry-day-items{margin:0;border:0;border-radius:0;box-shadow:none}.entry-day-items li:first-child{border-top:1px solid var(--line)}.entry-day-items li{padding-left:10px;padding-right:10px}.detail-filter-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 14px;color:var(--muted);font-size:12px}.detail-filter-strip button{min-height:34px;padding:7px 10px;font-size:12px;white-space:nowrap} .load-more-wrap{display:flex;justify-content:center;padding:14px 0 28px}.load-more-button{width:100%;max-width:320px;padding:12px 16px;font-size:13px;font-weight:700}
 
-.category-pie{width:min(52vw,176px);aspect-ratio:1;border-radius:50%;margin:10px auto 16px;border:5px solid var(--card);box-shadow:0 4px 18px #20324b16}.pie-legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}.pie-legend .category-row{min-width:0;padding:7px 8px;border-radius:10px;background:color-mix(in srgb,var(--line) 28%,transparent)}.pie-legend .category-row-top{align-items:flex-start;gap:6px}.pie-legend .category-name{font-size:12px;min-width:0}.pie-legend .category-row-top strong{font-size:12px;white-space:nowrap}.pie-legend .bar-track,.pie-legend .category-share{display:none}.annual-income-bars .category-row{padding:8px 0}.clickable-chart-point{cursor:pointer;outline:none}.clickable-chart-point:focus-visible{stroke:var(--ink);stroke-width:3}
+.pie-chart-layout{display:grid;grid-template-columns:minmax(100px,132px) minmax(0,1fr);align-items:center;gap:14px}.category-pie{width:100%;aspect-ratio:1;border-radius:50%;margin:0;border:5px solid var(--card);box-shadow:0 4px 18px #20324b16}.pie-legend{display:grid;gap:5px;min-width:0}.pie-legend-row{display:flex;align-items:center;justify-content:space-between;gap:7px;min-width:0;padding:6px 7px;border-radius:9px;background:color-mix(in srgb,var(--line) 24%,transparent)}.pie-legend-name{display:flex;align-items:center;gap:7px;min-width:0;font-size:11px;font-weight:700}.pie-legend-name>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pie-legend-dot{display:block;flex:none;width:10px;height:10px;border-radius:3px;box-shadow:0 0 0 2px #fff}.pie-legend-values{display:flex;flex:none;align-items:flex-end;flex-direction:column;gap:0}.pie-legend-values strong{font-size:10px;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}.pie-legend-values small{font-size:10px;font-weight:800;color:var(--muted)}.annual-income-bars .category-row{padding:8px 0}.clickable-chart-point{cursor:pointer;outline:none}.clickable-chart-point:focus-visible{stroke:var(--ink);stroke-width:3}.stats-period-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin:0 0 14px;border-radius:13px;background:#f4e8ec}.stats-period-tabs button{min-height:38px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-size:13px;font-weight:750}.stats-period-tabs button.selected{background:#fff;color:var(--blue-dark);box-shadow:0 2px 8px #4b23300d}.entry-type-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:0 0 12px;padding:4px;border-radius:13px;background:#f5e9ed}.entry-type-filter button{min-width:0;min-height:38px;padding:7px 3px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-size:12px;font-weight:750;white-space:nowrap}.entry-type-filter button.selected{background:#fff;color:var(--blue-dark);box-shadow:0 2px 8px #4b23300d}.calendar-actions{display:flex;align-items:center;gap:5px}@media(max-width:390px){.pie-chart-layout{grid-template-columns:minmax(92px,108px) minmax(0,1fr);gap:9px}.pie-legend-row{padding:5px 4px;gap:4px}.pie-legend-name{font-size:10px;gap:5px}.pie-legend-values strong,.pie-legend-values small{font-size:9px}}
 </style>

@@ -382,7 +382,6 @@ const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
   return `${y}年${Number(m)}月`
 })
-const yearOptions = computed(() => Array.from({ length: 31 }, (_, i) => new Date().getFullYear() - i))
 const yearMonthRows = computed(() => {
   const expenses = new Map((annualStats.value?.byMonth || []).map(item => [item.month, Number(item.amount)]))
   const incomes = new Map((annualStats.value?.incomeByMonth || []).map(item => [item.month, Number(item.amount)]))
@@ -441,7 +440,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <span v-if="tab === 'add'" class="today-date">{{ todayLabel }}</span>
       <div v-else-if="tab === 'list' || tab === 'stat'" class="topbar-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div>
-      <select v-else-if="tab === 'year'" v-model.number="selectedYear" class="topbar-year" aria-label="集計年"><option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option></select>
+      <label v-else-if="tab === 'year'" class="topbar-year-wrap"><input v-model.number="selectedYear" class="topbar-year" type="number" min="1900" max="9999" step="1" inputmode="numeric" aria-label="集計年" /><span>年</span></label>
     </header>
     <div class="theme-switcher" role="group" aria-label="配色">
       <span>配色</span>
@@ -747,7 +746,7 @@ input,select,textarea{width:100%;min-width:0;border:1px solid #e0e6ed;border-rad
 input:focus,select:focus,textarea:focus{border-color:#8da9e8;box-shadow:0 0 0 3px #315fbd18}
 .month{width:142px;padding:9px 8px;font-size:12px;font-weight:650;background:#fff}
 .page-section{animation:appear .18s ease-out}@keyframes appear{from{opacity:.6;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
-.page-heading{display:flex;align-items:center;justify-content:space-between;margin:0 0 18px}.today-date{font-size:12px;font-weight:750;color:var(--muted);white-space:nowrap;padding:8px 0 8px 8px}.topbar-period{display:flex;align-items:center;gap:5px}.period-reset{flex:none;padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}.topbar-year{width:auto;max-width:116px;padding:9px 8px;font-size:12px;font-weight:750;background:var(--card)}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.15em;color:var(--blue);margin:0 0 4px}.page-heading h1{font-size:27px;line-height:1.2;letter-spacing:-.045em;margin:0;font-weight:800}.heading-subtitle{font-size:12px;color:var(--muted);margin:7px 0 0}.heading-icon{display:grid;place-items:center;width:43px;height:43px;border-radius:15px;background:#e9efff;color:var(--blue);font-size:25px;font-weight:500}
+.page-heading{display:flex;align-items:center;justify-content:space-between;margin:0 0 18px}.today-date{font-size:12px;font-weight:750;color:var(--muted);white-space:nowrap;padding:8px 0 8px 8px}.topbar-period{display:flex;align-items:center;gap:5px}.period-reset{flex:none;padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}.topbar-year-wrap{display:flex;align-items:center;gap:3px;padding:0 8px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--muted);font-size:12px;font-weight:750}.topbar-year{width:58px;min-width:0;padding:9px 0;border:0;background:transparent;font-size:13px;font-weight:750;text-align:right;appearance:textfield;-moz-appearance:textfield}.topbar-year::-webkit-inner-spin-button,.topbar-year::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.15em;color:var(--blue);margin:0 0 4px}.page-heading h1{font-size:27px;line-height:1.2;letter-spacing:-.045em;margin:0;font-weight:800}.heading-subtitle{font-size:12px;color:var(--muted);margin:7px 0 0}.heading-icon{display:grid;place-items:center;width:43px;height:43px;border-radius:15px;background:#e9efff;color:var(--blue);font-size:25px;font-weight:500}
 .panel,.entry-card,.stats-card,.metric-card{background:var(--card);border:1px solid #edf0f4;border-radius:18px;box-shadow:0 5px 20px #24354b08}
 .capture-panel{padding:16px}.field-label{display:block;font-size:13px;font-weight:750;margin-bottom:9px}
 textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;background:#fbfcfe;border-color:#e8edf3}

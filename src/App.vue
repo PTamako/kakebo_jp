@@ -1062,7 +1062,6 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <p class="investment-updated">最終更新：{{ investments[item.id].updatedAt ? new Date(investments[item.id].updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '未更新' }}</p>
         <button class="button-primary investment-save" :disabled="investmentBusy" @click="saveInvestment(item)">最新データを保存</button>
       </article>
-      <p class="investment-footnote">評価額は手動更新できます。振替先を指定した資産移動は登録時に自動加算されます。相場・評価損益の自動取得や日次履歴の保存は行いません。</p>
     </section>
 
     <nav class="bottom-nav" aria-label="メインメニュー">

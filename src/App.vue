@@ -438,7 +438,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <section v-if="tab === 'add'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
       <div class="entry-mode-row">
-        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')">✍️ 支出</button>
+        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')">➖ 支出</button>
         <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')">＋ 収入</button>
         <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')">↗ 資産移動</button>
       </div>

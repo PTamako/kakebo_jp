@@ -80,7 +80,7 @@ async function onImage(e) {
 }
 function addBlank(type = 'expense') {
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
-  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), time: '', amount: 0, type, category, merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   form.type = type
@@ -127,7 +127,7 @@ function startEdit(entry) {
   editingEntry.value = {
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
-    transferTarget: entry.transfer_target || '',
+    transferTarget: entry.transfer_target || '', transferDate: entry.transfer_date || entry.date,
     category: entry.category || '日用品', merchant: entry.merchant || '',
     note: entry.note || '', raw: entry.raw || ''
   }
@@ -443,6 +443,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : f.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
           <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
         </div>
+        <div v-if="f.type === 'transfer'" class="field-grid transfer-schedule-fields">
+          <label class="form-field"><span>振替先</span><select v-model="f.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option><option value="paypay">PayPayポイント運用</option></select></label>
+          <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="f.transferDate" type="date" required /></label>
+        </div>
         <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
         <label v-if="f.type !== 'income' && f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>この店舗を選択したカテゴリに登録し、次回から自動判定する</span></label>
       </div>
@@ -498,7 +502,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : editingEntry.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
             <label class="form-field"><span>店舗</span><input v-model="editingEntry.merchant" /></label>
           </div>
-          <label v-if="editingEntry.type === 'transfer'" class="form-field"><span>振替先</span><select v-model="editingEntry.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option><option value="paypay">PayPayポイント運用</option></select></label>
+          <div v-if="editingEntry.type === 'transfer'" class="field-grid transfer-schedule-fields">
+            <label class="form-field"><span>振替先</span><select v-model="editingEntry.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option><option value="paypay">PayPayポイント運用</option></select></label>
+            <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="editingEntry.transferDate" type="date" required /></label>
+          </div>
           <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary">変更を保存</button></div>
         </form>

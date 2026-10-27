@@ -140,6 +140,30 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    // Track whether a transfer has already been applied to its destination balance.
+    try { await db.prepare('SELECT transfer_applied FROM entries LIMIT 1').first() }
+    catch (columnCheckError) {
+      try { await db.prepare('ALTER TABLE entries ADD COLUMN transfer_applied INTEGER NOT NULL DEFAULT 0').run() }
+      catch (migrationError) {
+        try { await db.prepare('SELECT transfer_applied FROM entries LIMIT 1').first() }
+        catch { throw migrationError }
+      }
+    }
+
+    // Investment balances exist independently from household income/expense totals.
+    await db.prepare(`CREATE TABLE IF NOT EXISTS investment_snapshots (
+      platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),
+      current_value INTEGER,
+      pnl INTEGER,
+      updated_at TEXT
+    )`).run()
+    await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL), ('paypay', NULL, NULL, NULL)").run()
+    const applyTransferDelta = async (target, delta) => {
+      if (!['sbi', 'paypay'].includes(target) || !delta) return
+      await db.prepare("UPDATE investment_snapshots SET current_value = MAX(0, COALESCE(current_value, 0) + ?1), updated_at = ?2 WHERE platform = ?3")
+        .bind(delta, new Date().toISOString(), target).run()
+    }
+
     // 既存のSBI投信積立明細も資産移動へ補正する（生活費統計から除外）。
     await db.prepare("UPDATE entries SET type = 'transfer', category = '投資・資産移動' WHERE (merchant LIKE '%証券投信積立サービス%' OR note LIKE '%証券投信積立サービス%' OR raw LIKE '%証券投信積立サービス%' OR merchant LIKE '%翌月買付分%' OR note LIKE '%翌月買付分%' OR raw LIKE '%翌月買付分%') AND type != 'transfer'").run()
 
@@ -157,9 +181,11 @@ export async function onRequest({ request, env, params }) {
         const amount = Math.round(Number(e.amount))
         if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
+        const target = transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null
         await db.prepare(
-          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null).run()
+          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, target ? 1 : 0).run()
+        if (target) await applyTransferDelta(target, amount)
         return json({ ok: true })
       }
       if (m === 'PUT' && b) {
@@ -169,13 +195,21 @@ export async function onRequest({ request, env, params }) {
         const amount = Math.round(Number(e.amount))
         if (!Number.isInteger(id) || id <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isFinite(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
+        const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied FROM entries WHERE id = ?1').bind(id).first()
+        if (!previous) return json({ error: '明細が見つかりません' }, 404)
+        const target = transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null
+        if (previous.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
         const result = await db.prepare(
-          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9 WHERE id = ?10'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), transfer && ['sbi', 'paypay'].includes(e.transferTarget) ? e.transferTarget : null, id).run()
+          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10 WHERE id = ?11'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, target ? 1 : 0, id).run()
+        if (target) await applyTransferDelta(target, amount)
         return json({ ok: true, changes: result.meta?.changes ?? null })
       }
       if (m === 'DELETE' && b) {
-        await db.prepare('DELETE FROM entries WHERE id = ?1').bind(Number(b)).run()
+        const id = Number(b)
+        const previous = await db.prepare('SELECT amount, transfer_target, transfer_applied FROM entries WHERE id = ?1').bind(id).first()
+        if (previous?.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
+        await db.prepare('DELETE FROM entries WHERE id = ?1').bind(id).run()
         return json({ ok: true })
       }
     }

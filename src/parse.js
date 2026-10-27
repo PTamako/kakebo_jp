@@ -178,7 +178,7 @@ export function parseEntries(raw, rules) {
     })
   }
   // Prefer the established parser when it recovered every row; use block recovery only for missing rows.
-  if (qpRows.length >= qpStarts.length && qpRows.length >= 2) return qpRows
+  if (qpRows.length >= lines.filter(line => /^(?:QUICPay\\s*利用\\s*)?QP\\s*\\//i.test(line)).length && qpRows.length >= 2) return qpRows
   // Robust transaction-block fallback for QUICPay OCR. Keep every detected transaction,
   // even if OCR misses its amount; zero-amount drafts remain editable instead of being dropped.
   const qpStart = line => /^(?:QUICPay\s*利用\s*)?QP\s*\//i.test(line)

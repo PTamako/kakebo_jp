@@ -194,7 +194,7 @@ export async function onRequest({ request, env, params }) {
 
     if (a === 'entries') {
       if (m === 'GET') {
-        const datePrefix = entriesYear && /^\\d{4}$/.test(entriesYear) ? entriesYear : month
+        const datePrefix = entriesYear && /^\d{4}$/.test(entriesYear) ? entriesYear : month
         const { results } = await db
           .prepare('SELECT * FROM entries WHERE date LIKE ?1 ORDER BY date DESC, time DESC, id DESC LIMIT 10000')
           .bind(datePrefix + '%').all()
@@ -209,7 +209,7 @@ export async function onRequest({ request, env, params }) {
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || e.date) : null
         if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
-        const today = new Date().toISOString().slice(0, 10)
+        const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
         const applied = target && transferDate <= today ? 1 : 0
         await db.prepare(
           'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)'
@@ -230,7 +230,7 @@ export async function onRequest({ request, env, params }) {
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
         if (transfer && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         if (previous.transfer_applied && previous.transfer_target) await applyTransferDelta(previous.transfer_target, -Number(previous.amount || 0))
-        const today = new Date().toISOString().slice(0, 10)
+        const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
         const applied = target && transferDate <= today ? 1 : 0
         const result = await db.prepare(
           'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11 WHERE id = ?12'

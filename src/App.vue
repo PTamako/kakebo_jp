@@ -4,6 +4,8 @@ import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
 import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
+import { compressReceiptImage } from './receipt-image.js'
+import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
 const statsPeriod = ref('month')
@@ -19,7 +21,34 @@ const selectedRatioMonth = ref('')
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
-const imageMode = ref('statement')
+const pendingReceiptImage = ref(null)
+const receiptImageIds = ref(new Set())
+const viewedReceiptUrl = ref('')
+const viewedReceiptId = ref(null)
+async function refreshReceiptImageIds() {
+  const visible = entries.value || []
+  const present = await Promise.all(visible.map(async entry => [entry.id, !!(await getReceiptImage(entry.id))]))
+  receiptImageIds.value = new Set(present.filter(([, found]) => found).map(([id]) => id))
+}
+async function viewReceipt(entryId) {
+  const blob = await getReceiptImage(entryId)
+  if (!blob) { receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => id !== entryId)); return flash('レシート画像は保存されていません') }
+  if (viewedReceiptUrl.value) URL.revokeObjectURL(viewedReceiptUrl.value)
+  viewedReceiptUrl.value = URL.createObjectURL(blob)
+  viewedReceiptId.value = entryId
+}
+function closeReceipt() {
+  if (viewedReceiptUrl.value) URL.revokeObjectURL(viewedReceiptUrl.value)
+  viewedReceiptUrl.value = ''
+  viewedReceiptId.value = null
+}
+async function removeReceiptImage() {
+  if (!confirm('レシート画像のみ削除します。記録は残ります。よろしいですか？')) return
+  await deleteReceiptImage(viewedReceiptId.value)
+  receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => id !== viewedReceiptId.value))
+  closeReceipt()
+  flash('レシート画像を削除しました。記録は残っています')
+}
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
 const CATEGORY_ICON_PATHS = {
@@ -190,6 +219,7 @@ async function load() {
     categories.value = nextCategories
     try { categoryIcons.value = await api('category-icons') } catch { /* Existing categories keep their default icons. */ }
     entries.value = nextEntries
+    refreshReceiptImageIds().catch(() => {})
     stats.value = nextStats
   } catch (e) { flash(e.message) }
 }
@@ -202,7 +232,7 @@ async function loadYear() {
     if (requestId === yearRequestId && year === selectedYear.value) annualStats.value = nextStats
   } catch (e) { if (requestId === yearRequestId) flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
-onMounted(() => { if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers() } })
+onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers() } })
 
 watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
@@ -215,6 +245,7 @@ watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') load
 function recognize(mode = 'statement') {
   if (!input.value.trim()) return
   const parsed = mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value)
+  if (mode !== 'receipt') pendingReceiptImage.value = null
   forms.value = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
@@ -228,7 +259,9 @@ async function onImage(e, mode = 'statement') {
   busy.value = '読み取り中 0%（初回は日本語データをダウンロードします）'
   try {
     input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
-    imageMode.value = mode
+    if (mode === 'receipt') {
+      pendingReceiptImage.value = await compressReceiptImage(f)
+    } else pendingReceiptImage.value = null
     recognize(mode)
   } catch (err) { flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
@@ -279,7 +312,15 @@ async function saveAll() {
       const f = forms.value[0]
       // Retain one stable ID across retries (including "saved on server, reply lost").
       if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
-      await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
+      const result = await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
+      if (pendingReceiptImage.value && result?.id && forms.value.length === 1 && f.type === 'expense') {
+        try {
+          await saveReceiptImage(Number(result.id), pendingReceiptImage.value)
+          receiptImageIds.value = new Set([...receiptImageIds.value, Number(result.id)])
+          flash('レシート画像を保存しました。写真アプリの元画像は削除できます')
+        } catch { flash('記録は保存しましたが、画像を保存できませんでした。元の写真を残してください') }
+        pendingReceiptImage.value = null
+      }
       forms.value.shift()
       saved++
       if (f.bindRule && f.merchant && f.merchant.trim().length >= 2) {
@@ -911,6 +952,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
+              <button v-if="receiptImageIds.has(e.id)" type="button" class="button-secondary" @click.stop="viewReceipt(e.id)">レシートを見る</button>
               <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -918,6 +960,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div v-if="!detailLoading && !annualDetailMode && visibleEntryCount < sortedDisplayEntries.length" class="load-more-wrap">
         <button type="button" class="button-secondary load-more-button" @click="loadMoreEntries">読み込みを続ける（{{ Math.min(listPageSize, sortedDisplayEntries.length - visibleEntryCount) }}件）</button>
+      </div>
+      <div v-if="viewedReceiptUrl" class="edit-overlay" @click.self="closeReceipt">
+        <div class="edit-dialog" role="dialog" aria-modal="true" aria-label="レシート画像">
+          <div class="edit-dialog-heading"><h2>レシート画像</h2><button type="button" class="icon-button" @click="closeReceipt" aria-label="閉じる">×</button></div>
+          <img :src="viewedReceiptUrl" alt="保存したレシート" style="width:100%;max-height:65vh;object-fit:contain" />
+          <p class="microcopy">画像はこの端末に30日間保存されます。記録は削除されません。</p>
+          <button type="button" class="button-secondary" @click="removeReceiptImage">画像のみ削除</button>
+        </div>
       </div>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
         <form class="edit-dialog" @submit.prevent="saveEdit" :aria-busy="editSaving">

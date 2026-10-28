@@ -106,6 +106,7 @@ const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 async function loadAll() {
+  if (busy.value) return
   busy.value=true; message.value=''
   try {
     const all=[]
@@ -209,7 +210,11 @@ async function applyRecurring(){
   }catch(e){recurringMessage.value='自動記録の確認に失敗しました：'+e.message}
   finally{recurringBusy.value=false}
 }
-onMounted(()=>{applyRecurring()})
+onMounted(async () => {
+  // Refresh after recurring entries are processed so the ledger includes any newly created rows.
+  await applyRecurring()
+  await loadAll()
+})
 function removePlan(id){plans.value=plans.value.filter(x=>x.id!==id);localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value))}
 const monthExpenses=(period,source)=>period ? rows.value.filter(e=>e.date>=period.start&&e.date<=period.end&&e.type==='expense'&&e.payment_source===source) : []
 const cardTransactions=computed(()=>monthExpenses(cardPeriod.value,bill.value.name))

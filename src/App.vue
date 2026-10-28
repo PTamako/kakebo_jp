@@ -288,16 +288,17 @@ watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') load
 
 const recognitionMode = ref('statement')
 const entryInputMode = ref('manual')
-function recognize(mode = recognitionMode.value) {
+function recognize(mode = recognitionMode.value, append = false) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
   const parsed = mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value)
   if (mode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
-  forms.value = parsed.map(f => {
+  const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
     return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
   })
+  forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   entryInputMode.value = 'scan'
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
@@ -319,7 +320,7 @@ async function onImage(e, mode = 'statement') {
         receiptSaveError.value = '読み取りは成功しましたが、画像を保存用に準備できませんでした。下の「レシート画像を追加」から再選択してください。'
       }
     }
-    recognize(mode)
+    recognize(mode, true)
     entryInputMode.value = 'scan'
   } catch (err) { pendingReceiptImage.value = null; pendingReceiptFileName.value = ''; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
@@ -963,7 +964,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </div>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
         <div class="action-row">
-          <label class="button-primary upload-button">{{ recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
+          <label class="button-primary upload-button">{{ forms.length ? '別の画像を読み取る' : recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
         </div>
 
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
@@ -1003,7 +1004,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
-        <button class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
+        <button v-if="entryInputMode === 'manual'" class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>

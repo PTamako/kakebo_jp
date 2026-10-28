@@ -949,9 +949,6 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </form>
       </div>
       <div class="input-mode-switch" role="tablist" aria-label="入力方法"><button type="button" role="tab" :aria-selected="entryInputMode === 'manual'" :class="{ selected: entryInputMode === 'manual' }" @click="entryInputMode = 'manual'">手入力</button><button type="button" role="tab" :aria-selected="entryInputMode === 'scan'" :class="{ selected: entryInputMode === 'scan' }" @click="entryInputMode = 'scan'">画像から読み取る</button></div>
-      <div v-if="entryInputMode === 'manual' && !forms.length" class="entry-mode-row">
-        <button type="button" class="button-secondary" @click="addBlank('expense')">＋ 記録を追加</button>
-      </div>
       <div v-if="entryInputMode === 'manual'" class="panel text-paste-panel">
         <details class="text-entry-details">
           <summary>テキストを貼り付けて読み取る</summary>
@@ -965,9 +962,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div v-if="entryInputMode === 'scan'" class="panel capture-panel">
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
-        <div class="action-row">
-          <label class="button-primary upload-button">{{ forms.length ? '別の画像を読み取る' : recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
-        </div>
+
 
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
@@ -983,7 +978,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
-        <button v-if="entryInputMode === 'manual' && forms.length" type="button" class="button-secondary" @click="addBlank('expense')">＋ 記録を追加</button>
+        <button v-if="entryInputMode === 'manual'" type="button" class="button-secondary" @click="addBlank('expense')">＋ 記録を追加</button>
+        <label v-else class="button-secondary upload-button" :aria-disabled="!!busy">{{ forms.length ? '別の画像を読み取る' : recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>

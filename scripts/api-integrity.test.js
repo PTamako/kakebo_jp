@@ -107,7 +107,7 @@ class LedgerDb {
             transfer_target: a[8], transfer_applied: a[9], transfer_date: a[10], client_request_id: a[11], payment_source: a[12] })
           return { meta: { changes: 1 } }
         }
-        if (sql.startsWith('UPDATE entries SET payment_source =')) {
+        if (/^UPDATE entries SET payment_source\s*=/.test(sql)) {
           let changes = 0
           for (const e of db.entries) if (e.payment_source === this.args[1]) { e.payment_source = this.args[0]; changes++ }
           return { meta: { changes } }

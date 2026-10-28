@@ -22,6 +22,7 @@ const selectedRatioMonth = ref('')
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
+const paymentSources = ref(['現金', 'Suica', 'PayPay', '楽天カード', '三井住友カード', 'その他'])
 const pendingReceiptImage = ref(null)
 const receiptImageIds = ref(new Set())
 const viewedReceiptUrl = ref('')
@@ -252,7 +253,7 @@ function recognize(mode = recognitionMode.value) {
   forms.value = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, bindRule: false }
+    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', bindRule: false }
   })
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
@@ -276,7 +277,7 @@ async function copyOcrText(value) {
 }
 function addBlank(type = 'expense') {
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
-  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: '', merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   form.type = type
@@ -379,7 +380,7 @@ function startEdit(entry) {
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
     transferTarget: entry.transfer_target || '', transferDate: entry.transfer_date || entry.date,
-    category: entry.category || '日用品', merchant: entry.merchant || '',
+    category: entry.category || '日用品', paymentSource: entry.payment_source || '', merchant: entry.merchant || '',
     note: entry.note || '', raw: entry.raw || ''
   }
 }
@@ -850,6 +851,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <button v-for="item in themes" :key="item.id" type="button" :class="{ selected: theme === item.id }" :aria-pressed="theme === item.id" @click="setTheme(item.id)"><i :style="{ background: item.color }"></i>{{ item.label }}</button>
     </div>
 
+    <datalist id="payment-source-options"><option v-for="source in paymentSources" :key="source" :value="source"></option></datalist>
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
 
     <section v-if="tab === 'add'" class="page-section">
@@ -910,6 +912,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>時刻</span><input type="time" v-model="f.time" /></label>
           <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : f.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
           <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
+          <label class="form-field"><span>支払方法・カード</span><input v-model="f.paymentSource" list="payment-source-options" maxlength="80" placeholder="現金／カード名など" /></label>
         </div>
         <div v-if="f.type === 'transfer'" class="field-grid transfer-schedule-fields">
           <label class="form-field"><span>振替先</span><select v-model="f.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>
@@ -1012,6 +1015,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <label class="form-field"><span>時刻</span><input v-model="editingEntry.time" type="time" /></label>
             <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : editingEntry.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
             <label class="form-field"><span>店舗</span><input v-model="editingEntry.merchant" /></label>
+            <label class="form-field"><span>支払方法・カード</span><input v-model="editingEntry.paymentSource" list="payment-source-options" maxlength="80" placeholder="現金／カード名など" /></label>
           </div>
           <div v-if="editingEntry.type === 'transfer'" class="field-grid transfer-schedule-fields">
             <label class="form-field"><span>振替先</span><select v-model="editingEntry.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>

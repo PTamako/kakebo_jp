@@ -65,12 +65,15 @@ const viewedReceiptId = ref(null)
 async function refreshReceiptImageIds() {
   const visible = [...(entries.value || []), ...(displayEntries.value || [])]
   const ids = [...new Set(visible.map(entry => Number(entry.id)).filter(Number.isSafeInteger))]
-  const present = await Promise.all(ids.map(async id => [id, !!(await getReceiptImage(id))]))
+  const present = await Promise.all(ids.map(async id => {
+    try { return [id, !!(await getReceiptImage(id))] }
+    catch { return [id, false] }
+  }))
   receiptImageIds.value = new Set(present.filter(([, found]) => found).map(([id]) => id))
 }
 async function viewReceipt(entryId) {
   const blob = await getReceiptImage(entryId)
-  if (!blob) { receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => id !== entryId)); return flash('レシート画像は保存されていません') }
+  if (!blob) { receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => Number(id) !== Number(entryId))); return flash('レシート画像は保存されていません') }
   if (viewedReceiptUrl.value) URL.revokeObjectURL(viewedReceiptUrl.value)
   viewedReceiptUrl.value = URL.createObjectURL(blob)
   viewedReceiptId.value = entryId

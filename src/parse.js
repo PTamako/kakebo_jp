@@ -598,7 +598,7 @@ export async function ocrImage(file, onProgress) {
   })
   try {
     const primary = (await worker.recognize(file)).data.text
-    if (!/QUIC\s*Pay|QUICPay/i.test(primary)) return primary
+    if (!/QUIC\s*Pay|QUICPay|(?:^|[\s(（])QP\s*\//im.test(primary)) return primary
 
     let bitmap
     try {
@@ -638,7 +638,7 @@ export async function ocrImage(file, onProgress) {
           return match ? Number(match[1]) : null
         })
         .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
-      const qpCount = (primary.match(/QUIC\s*Pay|QUICPay/gi) || []).length
+      const qpCount = (primary.match(/QUIC\s*Pay|QUICPay|(?:^|[\s(（])QP\s*\//gim) || []).length
       if (qpCount >= 2 && amounts.length === qpCount) {
         return primary + '\n__QP_AMOUNT_COLUMN__\n' + amounts.join('\n')
       }

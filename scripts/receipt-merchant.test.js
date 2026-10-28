@@ -12,7 +12,7 @@ test('AI-labeled store name is not duplicated', () => {
 
 test('legacy two-line store name keeps one brand', () => {
   const result = parseReceipt('まいばすけっと\n南小岩8丁目店\n2026/10/28\n合計 ¥311')
-  assert.equal(result.merchant, 'まいばすけっと南小岩8丁目店')
+  assert.equal(result.merchant, 'まいばすけっと 南小岩8丁目店')
 })
 
 test('AI statement CSV row uses merchant-only draft title', () => {

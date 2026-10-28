@@ -198,9 +198,18 @@ export function parseReceipt(raw, rules = []) {
   }
   candidates.sort((a, b) => b.score - a.score || a.index - b.index)
   const amount = candidates[0]?.amount || 0
-  const merchant = lines.find(line => /セブン[ー－‐−-]イレブン|ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(line))
-    || lines.find(line => /(?:店|ストア|マーケット)$/.test(line) && !/電話|番号/.test(line))
-    || ''
+  // Normalize spaced and common OCR-misread convenience-store names without
+  // altering the statement parser. Prefer the branch printed near the header.
+  const compact = line => line.replace(/[\\s　・]/g, '')
+  const isSeven = line => /セ[ブフ][ン]?[-ー－‐−]?イ[レル]?ブ[ン]?|セブン[-ー－‐−]?イレブン/.test(compact(line))
+  const sevenFound = lines.some(isSeven)
+  const branch = lines.slice(0, Math.min(lines.length, 12))
+    .find(line => /店\\s*$/.test(line) && !/電話|番号|登録/.test(line))
+  const brand = sevenFound ? 'セブン-イレブン' : ''
+  const merchant = brand ? [brand, branch && compact(branch)].filter(Boolean).join(' ')
+    : (lines.find(line => /ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(compact(line)))
+      || lines.find(line => /(?:店|ストア|マーケット)$/.test(compact(line)) && !/電話|番号/.test(line))
+      || '')
   const categorySource = merchant || text.slice(0, 120)
   const { category, keyword } = classify(categorySource, rules)
   const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line)) || ''

@@ -120,7 +120,7 @@ async function applyRecurring(){
 onMounted(()=>{applyRecurring()})
 function removePlan(id){plans.value=plans.value.filter(x=>x.id!==id);localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value))}
 function addBill(){
-  if(!bill.value.name.trim()||!/^\d{4}-\d{2}$/.test(bill.value.month)||!(Number(bill.value.amount)>0))return
+  if(!props.paymentSources.includes(bill.value.name)||['現金','その他'].includes(bill.value.name)||!/^\d{4}-\d{2}$/.test(bill.value.month)||!(Number(bill.value.amount)>0))return
   bills.value.push({...bill.value,id:crypto.randomUUID(),amount:Number(bill.value.amount)})
   localStorage.setItem('kakeibo-bills',JSON.stringify(bills.value));bill.value={name:'',month:new Date().toISOString().slice(0,7),amount:''}
 }
@@ -150,7 +150,7 @@ const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.ty
     <h2>毎月の固定支出</h2>
     <p>毎月の指定日に支出明細へ自動追加します。アプリを開いた際に未処理月を確認します。閉じている間は実行されません。過去の予定にはさかのぼりません。</p>
     <div class="finance-inputs"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><input v-model="plan.amount" type="number" min="1" placeholder="金額" aria-label="固定支出額"><label>毎月の登録日<select v-model.number="plan.day" aria-label="毎月の登録日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label></div>
-    <div class="finance-inputs"><label>分類<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in props.categories" :key="category" :value="category">{{category}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option></select></label></div>
+    <div class="finance-inputs"><label>分類<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in props.categories" :key="category" :value="category">{{category}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
     <button @click="addPlan(); applyRecurring()">自動記録を登録</button>
     <button :disabled="recurringBusy" @click="applyRecurring">{{recurringBusy ? "確認中…" : "未記録分を確認"}}</button>
     <p role="status">{{recurringMessage}}</p>
@@ -159,7 +159,7 @@ const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.ty
   <article class="finance-panel">
     <h2>カード請求額の参考比較</h2>
     <p>明細に設定した支払方法・カード名と一致する支出だけを集計します。未設定の取引は含まれません。請求月と利用月の違いにご注意ください。</p>
-    <div class="finance-inputs"><input v-model="bill.name" placeholder="カード名" aria-label="カード名"><input v-model="bill.month" type="month" aria-label="対象月"><input v-model="bill.amount" type="number" min="1" placeholder="請求額" aria-label="請求額"></div>
+    <div class="finance-inputs"><select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in props.paymentSources.filter(x => !['現金','その他'].includes(x))" :key="source" :value="source">{{source}}</option></select><input v-model="bill.month" type="month" aria-label="対象月"><input v-model="bill.amount" type="number" min="1" placeholder="請求額" aria-label="請求額"></div>
     <button @click="addBill">請求額を追加</button>
     <div v-for="b in bills" :key="b.id" class="finance-row">{{b.name}} {{b.month}} 請求 {{yen(b.amount)}} <template v-if="loaded">／カード別支出 {{yen(reconcileStatement(monthExpenses(b.month,b.name),b.amount).sum)}}／差 {{yen(reconcileStatement(monthExpenses(b.month,b.name),b.amount).difference)}}</template> <button @click="removeBill(b.id)">削除</button></div>
   </article>

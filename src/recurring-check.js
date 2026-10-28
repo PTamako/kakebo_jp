@@ -7,8 +7,12 @@ export async function checkRecurringEntries(api) {
     let legacy = []
     try { legacy = JSON.parse(localStorage.getItem('kakeibo-plans') || '[]') } catch {}
     if (!Array.isArray(legacy)) legacy = []
-    await api('finance-settings/plans',{method:'POST',body:JSON.stringify({value:legacy})})
-    result = await api('finance-settings/plans')
+    // Never seed an empty configuration: another browser may still hold
+    // legacy schedules that need the first-write import opportunity.
+    if (legacy.length) {
+      await api('finance-settings/plans',{method:'POST',body:JSON.stringify({value:legacy})})
+      result = await api('finance-settings/plans')
+    }
   }
   const plans = result.value
   if (!Array.isArray(plans) || !plans.length) return 0

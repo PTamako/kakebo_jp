@@ -9,7 +9,7 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
 <template>
 <div class="transaction-form">
   <div class="type-switch" role="group" aria-label="記録の種類">
-    <button v-for="t in [{id:'expense',label:'支出'},{id:'income',label:'収入'},{id:'transfer',label:'資産移動'}]" :key="t.id" type="button" :class="{selected:(record.type || 'expense')===t.id}" @click="emit('change-type',t.id)">{{t.label}}</button>
+    <button v-for="t in [{id:'expense',label:'支出'},{id:'income',label:'収入'},{id:'transfer',label:'資産移動'}]" :key="t.id" type="button" :class="{selected:record.type===t.id}" @click="emit('change-type',t.id)">{{t.label}}</button>
   </div>
   <label class="form-field amount-field"><span>金額（円）</span><div class="amount-input-wrap"><span>¥</span><input v-model.number="record.amount" type="number" min="0" inputmode="numeric" required aria-label="金額（円）" /></div></label>
   <div v-if="!(Number(record.amount)>0)" class="amount-warning" role="alert">金額を確認してください。</div>

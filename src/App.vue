@@ -6,6 +6,7 @@ import { groupAnnualEntries } from './detail-pagination.js'
 import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
+import TransactionForm from './TransactionForm.vue'
 import { checkRecurringEntries } from './recurring-check.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
@@ -37,18 +38,20 @@ function updatePaymentSources(values) {
   localStorage.setItem('kakeibo-payment-sources', JSON.stringify(values))
 }
 const pendingReceiptImage = ref(null)
+const pendingReceiptFileName = ref('')
 const editReceiptImage = ref(null)
+const editReceiptFileName = ref('')
 const receiptSaveError = ref('')
 async function selectDraftReceipt(event, form) {
   const file = event.target.files?.[0]; event.target.value = ''
   if (!file) return
-  try { form.receiptImage = await compressReceiptImage(file); receiptSaveError.value = '' }
+  try { const blob = await compressReceiptImage(file); form.receiptImage = blob; form.receiptFileName = file.name; receiptSaveError.value = '' }
   catch { receiptSaveError.value = 'レシート画像を準備できませんでした。元の写真を保管してください。' }
 }
 async function selectEditReceipt(event) {
   const file = event.target.files?.[0]; event.target.value = ''
   if (!file) return
-  try { editReceiptImage.value = await compressReceiptImage(file); receiptSaveError.value = '' }
+  try { const blob = await compressReceiptImage(file); editReceiptImage.value = blob; editReceiptFileName.value = file.name; receiptSaveError.value = '' }
   catch { receiptSaveError.value = 'レシート画像を準備できませんでした。元の写真を保管してください。' }
 }
 async function persistReceipt(id, blob) {
@@ -285,16 +288,19 @@ watch(tab, value => {
 watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') loadYear() })
 
 const recognitionMode = ref('statement')
-function recognize(mode = recognitionMode.value) {
+const entryInputMode = ref('manual')
+function recognize(mode = recognitionMode.value, append = false) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
   const parsed = mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value)
-  if (mode !== 'receipt') pendingReceiptImage.value = null
-  forms.value = parsed.map(f => {
+  if (mode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
+  const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', bindRule: false }
+    return { ...f, type: transfer ? 'transfer' : mode === 'receipt' ? 'expense' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
   })
+  forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
+  entryInputMode.value = 'scan'
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
 async function onImage(e, mode = 'statement') {
@@ -304,14 +310,24 @@ async function onImage(e, mode = 'statement') {
   try {
     input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
     recognitionMode.value = mode
+    pendingReceiptImage.value = null
+    pendingReceiptFileName.value = ''
     if (mode === 'receipt') {
-      pendingReceiptImage.value = await compressReceiptImage(f)
-    } else pendingReceiptImage.value = null
-    recognize(mode)
-  } catch (err) { pendingReceiptImage.value = null; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
+      try {
+        pendingReceiptImage.value = await compressReceiptImage(f)
+        pendingReceiptFileName.value = f.name || '読み取ったレシート'
+        receiptSaveError.value = ''
+      } catch {
+        receiptSaveError.value = '読み取りは成功しましたが、画像を保存用に準備できませんでした。下の「レシート画像を追加」から再選択してください。'
+      }
+    }
+    recognize(mode, true)
+    entryInputMode.value = 'scan'
+  } catch (err) { pendingReceiptImage.value = null; pendingReceiptFileName.value = ''; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
 }
 function addBlank(type = 'expense') {
+  entryInputMode.value = 'manual'
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
   forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: '', merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
@@ -346,6 +362,8 @@ function removeDraft(i) { forms.value.splice(i, 1) }
 async function saveAll() {
   if (busy.value) return
   if (!forms.value.length) return flash('保存する記録がありません')
+  const invalidTransfer = forms.value.findIndex(f => f.type === 'transfer' && (!f.transferTarget || !/^\\d{4}-\\d{2}-\\d{2}$/.test(f.transferDate || '')))
+  if (invalidTransfer >= 0) return flash(`${invalidTransfer + 1}件目の振替先と適用日を確認してください`)
   const invalid = forms.value.findIndex(f => !(Number(f.amount) > 0))
   if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
   const uncertain = forms.value.filter(f => /要確認|不明瞭|読み取れません|確認してください/.test(f.note || ''))
@@ -366,7 +384,7 @@ async function saveAll() {
       // Retain one stable ID across retries (including "saved on server, reply lost").
       if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
       const result = await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
-      const receiptBlob = f.receiptImage || (forms.value.length === 1 && f.type === 'expense' ? pendingReceiptImage.value : null)
+      const receiptBlob = f.type === 'expense' ? f.receiptImage : null
       if (receiptBlob) {
         try { await persistReceipt(result?.id, receiptBlob) }
         catch { receiptImageWarning = ' レシート画像は保存できませんでした。元の写真を保管してください。'; receiptSaveError.value = '記録は保存されましたが、レシート画像の保存に失敗しました。元の写真を保管してください。' }
@@ -412,6 +430,7 @@ async function remove(id) {
 }
 function startEdit(entry) {
   editReceiptImage.value = null
+  editReceiptFileName.value = ''
   editingEntry.value = {
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
@@ -420,12 +439,16 @@ function startEdit(entry) {
     note: entry.note || '', raw: entry.raw || ''
   }
 }
-function cancelEdit() { if (!editSaving.value) { editingEntry.value = null; editReceiptImage.value = null } }
+function cancelEdit() { if (!editSaving.value) { editingEntry.value = null; editReceiptImage.value = null; editReceiptFileName.value = '' } }
 async function saveEdit() {
   const e = editingEntry.value
   if (!e || editSaving.value) return
   if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !(Number(e.amount) > 0)) {
     flash('日付と金額を確認してください')
+    return
+  }
+  if (e.type === 'transfer' && (!e.transferTarget || !/^\\d{4}-\\d{2}-\\d{2}$/.test(e.transferDate || ''))) {
+    flash('振替先と適用日を確認してください')
     return
   }
   editSaving.value = true
@@ -925,20 +948,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="categorySaving" @click="categoryDialog = false">キャンセル</button><button type="submit" class="button-primary" :disabled="categorySaving">{{ categorySaving ? '保存中…' : '追加する' }}</button></div>
         </form>
       </div>
-      <div class="entry-mode-row">
-        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
-        <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
-        <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
-      </div>
-      <div class="panel capture-panel">
-        <div class="receipt-mode-tabs" role="tablist" aria-label="読み取りモード">
-          <button type="button" role="tab" :aria-selected="recognitionMode === 'statement'" :class="{ selected: recognitionMode === 'statement' }" @click="recognitionMode = 'statement'">明細</button>
-          <button type="button" role="tab" :aria-selected="recognitionMode === 'receipt'" :class="{ selected: recognitionMode === 'receipt' }" @click="recognitionMode = 'receipt'">レシート</button>
-        </div>
-        <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
-        <div class="action-row">
-          <label class="button-primary upload-button">{{ recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
-        </div>
+      <div class="input-mode-switch" role="tablist" aria-label="入力方法"><button type="button" role="tab" :aria-selected="entryInputMode === 'manual'" :class="{ selected: entryInputMode === 'manual' }" @click="entryInputMode = 'manual'">手入力</button><button type="button" role="tab" :aria-selected="entryInputMode === 'scan'" :class="{ selected: entryInputMode === 'scan' }" @click="entryInputMode = 'scan'">画像から読み取る</button></div>
+      <div v-if="entryInputMode === 'manual'" class="panel text-paste-panel">
         <details class="text-entry-details">
           <summary>テキストを貼り付けて読み取る</summary>
           <label class="field-label" for="entry-text">テキスト入力</label>
@@ -947,44 +958,28 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
           </div>
         </details>
+      </div>
+      <div v-if="entryInputMode === 'scan'" class="panel capture-panel">
+        <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
+        <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
+
+
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
       </div>
 
       <div v-if="forms.length" class="draft-heading">
-        <div><h2>読み取り結果の確認</h2><p>保存前に金額と店舗名を確認してください</p></div>
+        <div><h2>{{ entryInputMode === 'scan' ? '読み取り結果の確認' : '入力内容の確認' }}</h2><p>金額・日付・店舗名を確認して保存してください</p></div>
         <span class="count-pill">{{ forms.length }}件</span>
       </div>
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
         <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新しい記録' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
-        <div class="type-switch" role="group" aria-label="記録の種類">
-          <button type="button" :class="{ selected: (f.type || 'expense') === 'expense' }" @click="setEntryType(f, 'expense')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
-          <button type="button" :class="{ selected: f.type === 'income' }" @click="setEntryType(f, 'income')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
-          <button type="button" :class="{ selected: f.type === 'transfer' }" @click="setEntryType(f, 'transfer')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
-        </div>
-        <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : f.type === 'transfer' ? '資産移動額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
-        <div v-if="!(Number(f.amount) > 0)" class="amount-warning" role="alert">
-          <p>合計金額を特定できませんでした。レシートの「合計」を確認してください。</p>
-          
-        </div>
-        <div class="field-grid">
-          <label class="form-field"><span>日付</span><input type="date" v-model="f.date" /></label>
-          <label class="form-field"><span>時刻</span><input type="time" v-model="f.time" /></label>
-          <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : f.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
-          <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
-          <label class="form-field"><span>支払方法・カード</span><select v-model="f.paymentSource"><option value="">未設定</option><option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option><option v-if="f.paymentSource && !paymentSources.includes(f.paymentSource)" :value="f.paymentSource">{{f.paymentSource}}（既存の設定）</option></select></label>
-        </div>
-        <div v-if="f.type === 'transfer'" class="field-grid transfer-schedule-fields">
-          <label class="form-field"><span>振替先</span><select v-model="f.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>
-          <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="f.transferDate" type="date" required /></label>
-        </div>
-        <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
-        <label v-if="f.type === 'expense'" class="form-field"><span>レシート画像（任意）</span><input type="file" accept="image/*" @change="selectDraftReceipt($event, f)" /><small v-if="f.receiptImage">画像を選択しました</small></label>
-        <label v-if="f.type !== 'income' && f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>この店舗を選択したカテゴリに登録し、次回から自動判定する</span></label>
+        <TransactionForm :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="entryInputMode === 'manual' || f.showReceiptAttachment === true" @change-type="setEntryType(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''" />
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
-        <button class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
+        <button v-if="entryInputMode === 'manual'" type="button" class="button-secondary" :disabled="!!busy" @click="addBlank('expense')">＋ 記録を追加</button>
+        <label v-else class="button-secondary upload-button" :class="{ 'upload-disabled': !!busy }" :aria-disabled="!!busy">{{ forms.length ? '別の画像を読み取る' : recognitionMode === 'statement' ? '明細を読み取る' : 'レシートを読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>
@@ -1069,25 +1064,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
           <div class="edit-dialog-heading"><h2>記録を編集</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="閉じる">×</button></div>
           <fieldset class="edit-fields" :disabled="editSaving">
-          <div class="type-switch" role="group" aria-label="記録の種類">
-            <button type="button" :class="{ selected: editingEntry.type === 'expense' }" @click="setEntryType(editingEntry, 'expense')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
-            <button type="button" :class="{ selected: editingEntry.type === 'income' }" @click="setEntryType(editingEntry, 'income')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
-            <button type="button" :class="{ selected: editingEntry.type === 'transfer' }" @click="setEntryType(editingEntry, 'transfer')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
-          </div>
-          <label class="form-field"><span>金額（円）</span><input v-model.number="editingEntry.amount" type="number" min="1" inputmode="numeric" required /></label>
-          <div class="field-grid">
-            <label class="form-field"><span>日付</span><input v-model="editingEntry.date" type="date" required /></label>
-            <label class="form-field"><span>時刻</span><input v-model="editingEntry.time" type="time" /></label>
-            <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : editingEntry.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
-            <label class="form-field"><span>店舗</span><input v-model="editingEntry.merchant" /></label>
-            <label class="form-field"><span>支払方法・カード</span><select v-model="editingEntry.paymentSource"><option value="">未設定</option><option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option><option v-if="editingEntry.paymentSource && !paymentSources.includes(editingEntry.paymentSource)" :value="editingEntry.paymentSource">{{editingEntry.paymentSource}}（既存の設定）</option></select></label>
-          </div>
-          <div v-if="editingEntry.type === 'transfer'" class="field-grid transfer-schedule-fields">
-            <label class="form-field"><span>振替先</span><select v-model="editingEntry.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>
-            <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="editingEntry.transferDate" type="date" required /></label>
-          </div>
-          <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
-          <label v-if="editingEntry.type === 'expense'" class="form-field"><span>レシート画像（任意・追加／差し替え）</span><input type="file" accept="image/*" @change="selectEditReceipt($event)" /><small v-if="editReceiptImage">画像を選択しました</small></label>
+          <TransactionForm :record="editingEntry" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :existing-receipt="receiptImageIds.has(Number(editingEntry.id))" :receipt-name="editReceiptFileName" :receipt-enabled="true" edit-mode @change-type="setEntryType(editingEntry, $event)" @select-receipt="selectEditReceipt" @clear-receipt="editReceiptImage = null; editReceiptFileName = ''" />
           </fieldset>
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="editSaving" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary" :disabled="editSaving">{{ editSaving ? '保存中…' : '変更を保存' }}</button></div>
         </form>
@@ -1298,7 +1275,7 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .draft-heading{display:flex;align-items:center;justify-content:space-between;margin:24px 2px 10px}.draft-heading h2{font-size:17px;margin:0}.draft-heading p{font-size:12px;color:var(--muted);margin:3px 0 0}.count-pill{background:#e7f5f2;color:#11796f;padding:6px 10px;border-radius:99px;font-size:12px;font-weight:800}
 .entry-card{padding:15px;margin-top:11px;display:grid;gap:13px}.entry-card-heading{display:flex;align-items:center;gap:9px;min-width:0}.entry-card-heading strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;font-size:14px}.entry-number{display:grid;place-items:center;flex:none;width:30px;height:30px;background:#eef2ff;color:var(--blue);border-radius:10px;font-size:11px;font-weight:800}
 .icon-button{border:0;background:transparent;color:#9ba5b2;display:grid;place-items:center;width:30px;height:30px;border-radius:9px;font-size:23px;padding:0;flex:none}.icon-button:active{background:#f1f3f6}.form-field{display:grid;gap:6px;min-width:0}.form-field>span{font-size:11px;color:#7c8795;font-weight:650}.form-field input,.form-field select{font-size:13px;padding:10px;border-radius:10px}.amount-warning{margin:-4px 0 2px;color:#b45309;font-size:12px;font-weight:700}.amount-input-wrap{display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid #e0e6ed;border-radius:12px;background:#fbfcff}.amount-input-wrap>span{font-size:18px;color:var(--blue);font-weight:800}.amount-input-wrap input{border:0;box-shadow:none;background:transparent;padding:11px 0;font-size:26px;font-weight:800;letter-spacing:-.04em;color:var(--ink)}.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.batch-actions{display:grid;grid-template-columns:.8fr 1.2fr;gap:9px;margin-top:14px}.batch-actions button{width:100%}
+.batch-actions{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:9px;margin-top:14px;align-items:stretch}.batch-actions button,.batch-actions .upload-button{width:100%;min-width:0;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center}
 .summary-strip{display:flex;justify-content:space-between;align-items:center;margin:-3px 0 12px;color:var(--muted);font-size:12px}.summary-strip strong{color:#536174;font-weight:700}
 .month-calendar{margin:0 0 14px;padding:14px 12px 12px;background:#fff;border:1px solid #f3e2e7;border-radius:18px;box-shadow:0 5px 20px #a75d740a}.calendar-heading{display:flex;align-items:center;justify-content:space-between;margin:0 3px 12px}.calendar-heading strong{font-size:14px;font-weight:850}.calendar-reset{border:0;background:#fff0f4;color:#b95478;border-radius:9px;padding:6px 9px;font-size:11px;font-weight:750}.calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.calendar-weekdays{margin-bottom:5px}.calendar-weekdays span{text-align:center;font-size:10px;color:#9b8790;font-weight:750;padding:3px 0}.calendar-day{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;min-width:0;min-height:54px;padding:6px 1px 4px;border:1px solid transparent;border-radius:10px;background:#fff9fa;color:#55464b}.calendar-day:disabled{background:transparent}.calendar-day-number{font-size:12px;font-weight:750;line-height:1.1}.calendar-day small{display:block;max-width:100%;font-size:8px;line-height:1.1;color:#bd6b88;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:-.04em}.calendar-day .calendar-no-spend{color:#d7cbd0}.calendar-day.calendar-has-spend{background:#fff0f4;border-color:#f8dce5}.calendar-day.calendar-selected{background:#d96f91;border-color:#d96f91;color:#fff;box-shadow:0 3px 8px #d96f9128}.calendar-day.calendar-selected small{color:#fff}.calendar-day:active:not(:disabled){transform:scale(.96)}.ledger{list-style:none;margin:0;padding:3px 14px;background:#fff;border:1px solid #edf0f4;border-radius:17px;box-shadow:0 5px 20px #24354b08}.ledger li{position:relative;overflow:hidden;border-bottom:1px solid #eff2f6;min-width:0}.ledger li:last-child{border-bottom:0}.ledger-row-content{position:relative;z-index:1;display:flex;align-items:center;gap:11px;padding:13px 0;background:#fff;min-width:0;transition:transform .2s ease;cursor:pointer;touch-action:pan-y}.ledger li.swiped-open .ledger-row-content{transform:translateX(-68px)}.swipe-delete{position:absolute;top:0;right:0;bottom:0;width:64px;border:0;border-radius:10px;background:#e86e86;color:#fff;font-size:12px;font-weight:800;letter-spacing:.02em}.filtered-empty{margin-bottom:10px}.category-dot{display:grid;place-items:center;flex:none;width:39px;height:39px;border-radius:13px;background:#edf2ff;color:#315fbd;font-size:14px;font-weight:800}.cat-2{background:#e8f7f2;color:#16836f}.cat-3{background:#fff2df;color:#b87518}.cat-4{background:#f3eaff;color:#8755bd}.cat-5{background:#e8f5fb;color:#267da0}.cat-6{background:#ffecef;color:#c45569}.cat-7{background:#fff0e5;color:#bd6c39}.cat-8{background:#fcebdc;color:#a65b2a}.cat-9{background:#eef1f5;color:#667384}.ledger-info{min-width:0;flex:1}.ledger-info b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ledger-info small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.ledger-amount{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}.delete-button{font-size:20px;width:24px}
 .hero-total{position:relative;overflow:hidden;background:linear-gradient(130deg,#315fbd 0%,#284d9b 100%);border-radius:21px;padding:22px 21px 18px;color:#fff;box-shadow:0 10px 24px #315fbd24}.hero-total:after{content:"";position:absolute;width:155px;height:155px;border:1px solid #ffffff1c;border-radius:50%;right:-38px;top:-74px;box-shadow:0 0 0 22px #ffffff08,0 0 0 45px #ffffff06}.hero-total>span{display:block;font-size:12px;color:#dbe5ff}.hero-total>strong{display:block;font-size:clamp(29px,8vw,39px);line-height:1.25;letter-spacing:-.045em;margin:8px 0 15px;font-variant-numeric:tabular-nums}.hero-footer{display:flex;align-items:center;gap:7px;font-size:11px;color:#dbe5ff}.hero-dot{width:6px;height:6px;border-radius:50%;background:#76e0c1}
@@ -1561,3 +1538,18 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 <style>.receipt-save-error{color:#9b2938;background:#fff0f1;border:1px solid #e9aab2;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700}</style>
 
 <style>.receipt-error-banner{position:fixed;z-index:9999;top:calc(env(safe-area-inset-top,0px) + 8px);left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border:1px solid #df9aa6;border-radius:12px;background:#fff1f3;color:#8d2336;box-shadow:0 5px 22px #42202522;font-weight:700;font-size:13px}.receipt-error-banner button{border:0;background:transparent;color:inherit;font-size:24px;cursor:pointer}</style>
+
+<style>.receipt-attachment-field{display:flex;flex-wrap:wrap;align-items:center;gap:9px;padding:10px 0}.receipt-attachment-label{width:100%;font-size:13px;font-weight:700}.receipt-attachment-button{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:9px 13px;border-radius:10px}.receipt-attachment-status{font-size:12px;color:var(--muted)}</style>
+
+<style>.receipt-attachment-clear{border:0;background:transparent;color:#397e9b;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;padding:5px}.receipt-attachment-status{overflow-wrap:anywhere}</style>
+
+<style>.entry-card>.receipt-attachment-field{display:flex!important;visibility:visible!important;opacity:1!important;position:relative;min-height:70px;flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0;padding:12px;border:1px solid #dbe4ef;border-radius:12px;background:#f7f9fc}.entry-card>.receipt-attachment-field .receipt-attachment-label{display:block;width:100%;font-weight:700;color:#475569}.receipt-attachment-disabled{opacity:.5;pointer-events:none}</style>
+
+<style>.input-mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px;margin:10px 0 14px;background:var(--line);border-radius:15px}.input-mode-switch button{border:0;border-radius:11px;background:transparent;padding:12px 7px;color:var(--muted);font-size:14px;font-weight:800;cursor:pointer}.input-mode-switch button.selected{background:var(--card);color:var(--blue-dark);box-shadow:0 2px 9px #00000012,inset 0 0 0 1px var(--blue)}.capture-panel{margin-bottom:15px}@media(max-width:480px){.input-mode-switch button{min-height:44px}}</style>
+
+<style>.text-paste-panel{margin:10px 0 14px;padding:12px 14px}.text-paste-panel .text-entry-details{margin:0}
+/* Keep both primary entry actions in a stable, narrow-screen row. */
+.batch-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;min-width:0;width:100%}
+.batch-actions>*{min-width:0;max-width:100%;width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;overflow-wrap:anywhere;min-height:44px}
+.batch-actions .upload-disabled{opacity:.55;pointer-events:none;cursor:not-allowed}
+</style>

@@ -285,10 +285,6 @@ async function onImage(e, mode = 'statement') {
   } catch (err) { flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
 }
-async function copyOcrText(value) {
-  try { await navigator.clipboard.writeText(value); flash('読み取り文字をコピーしました') }
-  catch { flash('コピーできませんでした。文字を選択してコピーしてください') }
-}
 function addBlank(type = 'expense') {
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
   forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: '', merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
@@ -910,11 +906,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="action-row">
           <label class="button-primary upload-button">{{ recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
         </div>
-        <label class="field-label" for="entry-text">テキスト読み取り</label>
-        <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? 'カード利用明細などの複数の取引を貼り付けられます。' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
-        <div class="action-row">
-          <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
-        </div>
+        <details class="text-entry-details">
+          <summary>テキストを貼り付けて読み取る</summary>
+          <label class="field-label" for="entry-text">テキスト入力</label>
+          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? 'カード利用明細などの複数の取引を貼り付けられます。' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
+          <div class="action-row">
+            <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
+          </div>
+        </details>
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
       </div>
@@ -933,7 +932,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : f.type === 'transfer' ? '資産移動額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
         <div v-if="!(Number(f.amount) > 0)" class="amount-warning" role="alert">
           <p>合計金額を特定できませんでした。レシートの「合計」を確認してください。</p>
-          <details v-if="f.raw"><summary>読み取った文字を確認・コピー</summary><textarea :value="f.raw" readonly rows="8" style="width:100%;font-size:12px" aria-label="OCR読み取り結果"></textarea><button type="button" class="button-secondary" @click="copyOcrText(f.raw)">読み取り文字をコピー</button></details>
+          
         </div>
         <div class="field-grid">
           <label class="form-field"><span>日付</span><input type="date" v-model="f.date" /></label>
@@ -1502,4 +1501,4 @@ main .bottom-nav button{min-width:0;max-width:100%;white-space:nowrap;overflow:h
 main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
 main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
-.payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}</style>
+.payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}</style>

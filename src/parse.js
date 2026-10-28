@@ -196,25 +196,31 @@ export function parseReceipt(raw, rules = []) {
       }
     }
   }
-  // An OCR payment amount may be wrong (e.g. ¥311 read as Y911).
-  // Use payment text only when corroborated by an independent subtotal + tax.
+  // Reconstruct a damaged total from an explicit subtotal and consumption tax.
+  // The OCR payment figure may be corrupted independently (e.g. Y911 instead of ¥311).
   if (!candidates.length) {
-    const subtotal = lines.map(line => {
-      if (!/(?:小\\s*計|小\\s*言十)/.test(line)) return 0
-      const m = line.match(/[¥￥\\\\]\\s*([\\d,，]{1,7})/)
+    const readYen = line => {
+      const m = line.match(/[¥￥\\]\s*([\d,，]{1,7})(?!\d)/)
       return m ? money(m[1]) : 0
-    }).find(Boolean) || 0
-    const tax = lines.map(line => {
-      if (!/(?:外\\s*税|消費税)/.test(line) || /対象|税率/.test(line)) return 0
-      const m = line.match(/[¥￥\\\\]\\s*([\\d,，]{1,7})/)
+    }
+    const subtotal = lines.filter(line => /小\s*計/.test(line)).map(readYen).find(Boolean) || 0
+    const tax = lines.filter(line => /(?:外\s*税|消費税)/.test(line) && !/対象|税率/.test(line)).map(readYen).find(Boolean) || 0
+    const taxBase = lines.filter(line => /(?:外\s*税|消費税)/.test(line) && /対象|税率/.test(line)).map(readYen).find(Boolean) || 0
+    if (subtotal > 0 && tax > 0 && taxBase === subtotal && subtotal <= 9999999 - tax && Math.abs(tax - Math.floor(subtotal * 0.08)) <= 1) {
+      candidates.push({ amount: subtotal + tax, score: 1, index: lines.length, reconstructed: true })
+    }
+  }
+  // OCR may lose the subtotal label while retaining the 8% tax base and tax.
+  // Use only an explicit taxable base and tax, not an isolated payment number.
+  if (!candidates.length) {
+    const yen = line => {
+      const m = line.match(/[¥￥\\]\s*([\d,，]{1,7})(?!\d)/)
       return m ? money(m[1]) : 0
-    }).find(Boolean) || 0
-    const paymentAmounts = lines.filter(line => /QUICPay\\s*(?:支払|お支払|決済)/i.test(line)).map(line => {
-      const m = line.match(/[¥￥\\\\Yy]\\s*([\\d,，]{1,7})(?!\\d)/)
-      return m ? money(m[1]) : 0
-    }).filter(Boolean)
-    if (subtotal > 0 && tax > 0 && paymentAmounts.includes(subtotal + tax)) {
-      candidates.push({ amount: subtotal + tax, score: 1, index: lines.length, paymentFallback: true })
+    }
+    const base = lines.filter(line => /(?:外\s*税|税率|8\s*%)/.test(line) && /対象|対象額/.test(line)).map(yen).find(Boolean) || 0
+    const tax = lines.filter(line => /外\s*税|消費税/.test(line) && !/対象|対象額|税率/.test(line)).map(yen).find(Boolean) || 0
+    if (base > 0 && tax > 0 && base <= 9999999 - tax && Math.abs(tax - Math.floor(base * 0.08)) <= 1) {
+      candidates.push({ amount: base + tax, score: 1, index: lines.length, reconstructed: true })
     }
   }
   candidates.sort((a, b) => b.score - a.score || a.index - b.index)
@@ -227,20 +233,35 @@ export function parseReceipt(raw, rules = []) {
   const branch = lines.slice(0, Math.min(lines.length, 12))
     .find(line => /店\s*$/.test(line) && !/電話|番号|登録/.test(line))
   const brand = sevenFound ? 'セブン-イレブン' : ''
-  const merchant = brand ? [brand, branch && compact(branch)].filter(Boolean).join(' ')
+  const isMyBasket = lines.slice(0, 8).some(line => /まいば[すき]けっと|まいばす|マイバスケット/.test(compact(line)))
+  const merchant = isMyBasket ? ['まいばすけっと', branch && compact(branch)].filter(Boolean).join(' ')
+    : brand ? [brand, branch && compact(branch)].filter(Boolean).join(' ')
     : (lines.find(line => /ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(compact(line)))
       || lines.find(line => /(?:店|ストア|マーケット)$/.test(compact(line)) && !/電話|番号/.test(line))
       || '')
   const categorySource = merchant || text.slice(0, 120)
   const { category, keyword } = classify(categorySource, rules)
   const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line)) || ''
+  let receiptDate = dateLine ? findDate(dateLine) : ''
+  let dateCorrected = false
+  // OCR can read 2026 as 2006. Correct only with two independent clues:
+  // the receipt month/day is today and another line contains the current year.
+  if (receiptDate) {
+    const today = new Date()
+    const oldYear = today.getFullYear() - 20
+    const expected = `${oldYear}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+    if (receiptDate === expected && lines.some(line => new RegExp(`(?<!\\d)${today.getFullYear()}(?!\\d)`).test(line))) {
+      receiptDate = ymd(today)
+      dateCorrected = true
+    }
+  }
   return {
-    date: dateLine ? findDate(dateLine) : '',
+    date: receiptDate,
     time: dateLine ? findTime(dateLine) : '',
     amount,
     category,
     merchant: merchant.slice(0, 60),
-    note: candidates[0]?.paymentFallback ? '要確認：小計・税額・QUICPay支払額の一致から推定しました' : amount ? '' : '要確認：合計金額を読み取れませんでした',
+    note: [dateCorrected ? '要確認：日付の年をOCR誤認識として補正しました' : '', candidates[0]?.reconstructed ? '要確認：小計と消費税から合計金額を推定しました' : amount ? '' : '要確認：合計金額を読み取れませんでした'].filter(Boolean).join(' / '),
     raw: text, suggested: category, keyword
   }
 }

@@ -40,4 +40,14 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
 .transaction-form .receipt-attachment-status{overflow-wrap:anywhere}
 .transaction-form .transaction-details{min-width:0;width:100%}
 @media(max-width:390px){.transaction-form .field-grid{gap:10px}.transaction-form .field-grid>.form-field{font-size:13px}.transaction-form .form-field input,.transaction-form .form-field select{font-size:16px;padding-inline:9px}.transaction-form .transfer-schedule-fields{grid-template-columns:minmax(0,1fr)}}
+
+/* iOS Safari date/time controls have an intrinsic minimum width; avoid paired columns. */
+.transaction-form{width:100%;max-width:100%;min-width:0;overflow:visible}
+.transaction-form .field-grid,.transaction-form .transfer-schedule-fields,.transaction-form .transaction-details .field-grid{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:12px;width:100%;min-width:0;max-width:100%}
+.transaction-form .form-field{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;max-width:100%;width:100%}
+.transaction-form .form-field input,.transaction-form .form-field select{width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box;display:block}
+.transaction-form input[type=date],.transaction-form input[type=time]{-webkit-appearance:none;appearance:none;min-height:46px;max-width:100%;text-align:left}
+.transaction-form .amount-field input{min-width:0!important}
+.transaction-form .receipt-attachment-field{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+.transaction-form .receipt-attachment-label{flex-basis:100%}
 </style>

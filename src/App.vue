@@ -293,7 +293,7 @@ function recognize(mode = recognitionMode.value) {
   forms.value = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', bindRule: false }
+    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, bindRule: false }
   })
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
@@ -366,7 +366,7 @@ async function saveAll() {
       // Retain one stable ID across retries (including "saved on server, reply lost").
       if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
       const result = await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
-      const receiptBlob = f.receiptImage || (forms.value.length === 1 && f.type === 'expense' ? pendingReceiptImage.value : null)
+      const receiptBlob = f.type === 'expense' ? f.receiptImage : null
       if (receiptBlob) {
         try { await persistReceipt(result?.id, receiptBlob) }
         catch { receiptImageWarning = ' レシート画像は保存できませんでした。元の写真を保管してください。'; receiptSaveError.value = '記録は保存されましたが、レシート画像の保存に失敗しました。元の写真を保管してください。' }
@@ -979,7 +979,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="f.transferDate" type="date" required /></label>
         </div>
         <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
-        <label v-if="f.type === 'expense'" class="form-field"><span>レシート画像（任意）</span><input type="file" accept="image/*" @change="selectDraftReceipt($event, f)" /><small v-if="f.receiptImage">画像を選択しました</small></label>
+        <div v-if="f.type === 'expense'" class="receipt-attachment-field"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{ f.receiptImage ? '画像を変更する' : 'レシート画像を追加' }}<input type="file" accept="image/*" @change="selectDraftReceipt($event, f)" hidden /></label><span class="receipt-attachment-status">{{ f.receiptImage ? '画像を保存する準備ができました' : '画像は未選択です' }}</span></div>
         <label v-if="f.type !== 'income' && f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>この店舗を選択したカテゴリに登録し、次回から自動判定する</span></label>
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
@@ -1087,7 +1087,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="editingEntry.transferDate" type="date" required /></label>
           </div>
           <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
-          <label v-if="editingEntry.type === 'expense'" class="form-field"><span>レシート画像（任意・追加／差し替え）</span><input type="file" accept="image/*" @change="selectEditReceipt($event)" /><small v-if="editReceiptImage">画像を選択しました</small></label>
+          <div v-if="editingEntry.type === 'expense'" class="receipt-attachment-field"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{ editReceiptImage || receiptImageIds.has(Number(editingEntry.id)) ? '画像を変更する' : 'レシート画像を追加' }}<input type="file" accept="image/*" @change="selectEditReceipt($event)" hidden /></label><span class="receipt-attachment-status">{{ editReceiptImage ? '画像を保存する準備ができました' : receiptImageIds.has(Number(editingEntry.id)) ? '保存済みの画像があります' : '画像は未選択です' }}</span></div>
           </fieldset>
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="editSaving" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary" :disabled="editSaving">{{ editSaving ? '保存中…' : '変更を保存' }}</button></div>
         </form>
@@ -1561,3 +1561,5 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 <style>.receipt-save-error{color:#9b2938;background:#fff0f1;border:1px solid #e9aab2;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700}</style>
 
 <style>.receipt-error-banner{position:fixed;z-index:9999;top:calc(env(safe-area-inset-top,0px) + 8px);left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border:1px solid #df9aa6;border-radius:12px;background:#fff1f3;color:#8d2336;box-shadow:0 5px 22px #42202522;font-weight:700;font-size:13px}.receipt-error-banner button{border:0;background:transparent;color:inherit;font-size:24px;cursor:pointer}</style>
+
+<style>.receipt-attachment-field{display:flex;flex-wrap:wrap;align-items:center;gap:9px;padding:10px 0}.receipt-attachment-label{width:100%;font-size:13px;font-weight:700}.receipt-attachment-button{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:9px 13px;border-radius:10px}.receipt-attachment-status{font-size:12px;color:var(--muted)}</style>

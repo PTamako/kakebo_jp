@@ -287,6 +287,7 @@ watch(tab, value => {
 watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') loadYear() })
 
 const recognitionMode = ref('statement')
+const entryInputMode = ref('manual')
 function recognize(mode = recognitionMode.value) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
@@ -297,6 +298,7 @@ function recognize(mode = recognitionMode.value) {
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
     return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
   })
+  entryInputMode.value = 'scan'
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
 async function onImage(e, mode = 'statement') {
@@ -318,10 +320,12 @@ async function onImage(e, mode = 'statement') {
       }
     }
     recognize(mode)
+    entryInputMode.value = 'scan'
   } catch (err) { pendingReceiptImage.value = null; pendingReceiptFileName.value = ''; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
 }
 function addBlank(type = 'expense') {
+  entryInputMode.value = 'manual'
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
   forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: '', merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
@@ -936,12 +940,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="categorySaving" @click="categoryDialog = false">キャンセル</button><button type="submit" class="button-primary" :disabled="categorySaving">{{ categorySaving ? '保存中…' : '追加する' }}</button></div>
         </form>
       </div>
-      <div class="entry-mode-row">
+      <div class="input-mode-switch" role="tablist" aria-label="入力方法"><button type="button" role="tab" :aria-selected="entryInputMode === 'manual'" :class="{ selected: entryInputMode === 'manual' }" @click="entryInputMode = 'manual'">手入力</button><button type="button" role="tab" :aria-selected="entryInputMode === 'scan'" :class="{ selected: entryInputMode === 'scan' }" @click="entryInputMode = 'scan'">画像から読み取る</button></div>
+      <div v-if="entryInputMode === 'manual'" class="entry-mode-row">
         <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
         <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
         <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
       </div>
-      <div class="panel capture-panel">
+      <div v-if="entryInputMode === 'scan'" class="panel capture-panel">
         <div class="receipt-mode-tabs" role="tablist" aria-label="読み取りモード">
           <button type="button" role="tab" :aria-selected="recognitionMode === 'statement'" :class="{ selected: recognitionMode === 'statement' }" @click="recognitionMode = 'statement'">明細</button>
           <button type="button" role="tab" :aria-selected="recognitionMode === 'receipt'" :class="{ selected: recognitionMode === 'receipt' }" @click="recognitionMode = 'receipt'">レシート</button>
@@ -963,7 +968,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
 
       <div v-if="forms.length" class="draft-heading">
-        <div><h2>読み取り結果の確認</h2><p>保存前に金額と店舗名を確認してください</p></div>
+        <div><h2>{{ entryInputMode === 'scan' ? '読み取り結果の確認' : '入力内容の確認' }}</h2><p>金額・日付・店舗名を確認して保存してください</p></div>
         <span class="count-pill">{{ forms.length }}件</span>
       </div>
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
@@ -1578,3 +1583,5 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 <style>.receipt-attachment-clear{border:0;background:transparent;color:#397e9b;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;padding:5px}.receipt-attachment-status{overflow-wrap:anywhere}</style>
 
 <style>.entry-card>.receipt-attachment-field{display:flex!important;visibility:visible!important;opacity:1!important;position:relative;min-height:70px;flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0;padding:12px;border:1px solid #dbe4ef;border-radius:12px;background:#f7f9fc}.entry-card>.receipt-attachment-field .receipt-attachment-label{display:block;width:100%;font-weight:700;color:#475569}.receipt-attachment-disabled{opacity:.5;pointer-events:none}</style>
+
+<style>.input-mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px;margin:10px 0 14px;background:#f0f2f7;border-radius:15px}.input-mode-switch button{border:0;border-radius:11px;background:transparent;padding:12px 7px;color:#677286;font-size:14px;font-weight:800;cursor:pointer}.input-mode-switch button.selected{background:#fff;color:#b64e72;box-shadow:0 2px 9px #00000012}.capture-panel{margin-bottom:15px}@media(max-width:480px){.input-mode-switch button{min-height:44px}}</style>

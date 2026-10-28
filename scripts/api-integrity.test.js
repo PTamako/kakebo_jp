@@ -5,7 +5,7 @@ import { onRequest } from '../functions/api/[[path]].js'
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
+  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
   async batch(statements) { for (const statement of statements) await statement.run() }
   prepare(sql) {
     const db = this
@@ -13,6 +13,9 @@ class LedgerDb {
       args: [],
       bind(...args) { this.args = args; return this },
       async first() {
+        if (sql.includes("name='closing-days-migrated-v1'")) return db.financeSettings.has('closing-days-migrated-v1') ? {value:'true'} : null
+        if (sql.includes("name='closing-days'")) return db.financeSettings.has('closing-days') ? {value:db.financeSettings.get('closing-days')} : null
+        if (sql.startsWith('SELECT COUNT(*) AS n FROM payment_sources')) return {n:db.paymentSources.size}
         if (sql.startsWith('SELECT value FROM finance_settings WHERE name=')) return db.financeSettings.has(this.args[0]) ? { value: db.financeSettings.get(this.args[0]) } : null
         if (sql.startsWith('SELECT name FROM payment_sources WHERE name=')) return db.paymentSources.has(this.args[0]) ? { name: this.args[0] } : null
         if (sql.startsWith('SELECT token_hash FROM device_sessions')) return (db.sessions.get(this.args[0]) || 0) > this.args[1] ? { token_hash: this.args[0] } : null
@@ -30,6 +33,8 @@ class LedgerDb {
         return { exists: true }
       },
       async all() {
+        if (sql.startsWith('PRAGMA table_info(payment_sources)')) return {results:[{name:'closing_day'}]}
+        if (sql.startsWith('SELECT name, is_default, closing_day FROM payment_sources')) return {results:[...db.paymentSources].map(name=>({name,is_default:0,closing_day:db.paymentClosingDays.has(name)?db.paymentClosingDays.get(name):null}))}
         if (sql.startsWith('SELECT category, icon FROM category_icons')) return { results: db.icons }
         if (sql.startsWith('SELECT keyword, category FROM rules WHERE substr')) return { results: db.rules }
         if (sql.startsWith('SELECT * FROM rules WHERE keyword')) return { results: db.rules }
@@ -43,13 +48,22 @@ class LedgerDb {
       },
       async run() {
         db.sql.push(sql)
+        if (sql.includes("VALUES('closing-days-migrated-v1','true')")) db.financeSettings.set('closing-days-migrated-v1','true')
+        if (sql.startsWith('UPDATE payment_sources SET closing_day=')) {
+          const [day,name] = this.args
+          if (db.paymentSources.has(name) && (sql.includes('closing_day IS NULL') ? !db.paymentClosingDays.has(name) : true)) {
+            db.paymentClosingDays.set(name,day)
+            return {meta:{changes:1}}
+          }
+          return {meta:{changes:0}}
+        }
         if (sql.startsWith('INSERT OR IGNORE INTO finance_settings')) {
           if (!db.financeSettings.has(this.args[0])) db.financeSettings.set(this.args[0], this.args[1])
         }
         if (sql.startsWith('INSERT INTO finance_settings')) db.financeSettings.set(this.args[0], this.args[1])
         if (sql.startsWith('INSERT OR IGNORE INTO payment_sources')) db.paymentSources.add(this.args[0])
         if (sql.startsWith('UPDATE payment_sources SET name=')) {
-          if (db.paymentSources.delete(this.args[1])) db.paymentSources.add(this.args[0])
+          if (db.paymentSources.delete(this.args[1])) { db.paymentSources.add(this.args[0]); if (db.paymentClosingDays.has(this.args[1])) {db.paymentClosingDays.set(this.args[0],db.paymentClosingDays.get(this.args[1])); db.paymentClosingDays.delete(this.args[1])} }
         }
         if (sql.startsWith('INSERT INTO device_sessions')) db.sessions.set(this.args[0], this.args[1])
         if (sql.startsWith('DELETE FROM device_sessions')) db.sessions.delete(this.args[0])
@@ -309,4 +323,33 @@ test('PWA theme persists in D1 while rejecting unknown theme values', async () =
   assert.deepEqual((await call(db,'finance-settings/theme')).body,{exists:true,value:'green'})
   assert.equal((await call(db,'finance-settings/theme','PUT',{value:'unknown'})).status,400)
   assert.equal((await call(db,'finance-settings/theme')).body.value,'green')
+})
+
+test('legacy closing dates migrate to payment_sources and preserve independent settings', async () => {
+  const db = new LedgerDb()
+  for (const name of ['PayPay','楽天カード','三井住友カード','セブンカード・プラス','セゾンカード']) db.paymentSources.add(name)
+  const old={'PayPay':'末日','楽天カード':'末日','三井住友カード':'末日','セブンカード・プラス':'15','セゾンカード':'10'}
+  db.financeSettings.set('closing-days',JSON.stringify(old))
+  db.financeSettings.set('theme',JSON.stringify('green'))
+  db.financeSettings.set('plans',JSON.stringify([{name:'家賃',amount:101500}]))
+  const response = await call(db,'payment-sources')
+  assert.equal(response.status,200)
+  assert.deepEqual(Object.fromEntries(response.body.map(x=>[x.name,x.closing_day])),{'PayPay':0,'楽天カード':0,'三井住友カード':0,'セブンカード・プラス':15,'セゾンカード':10})
+  assert.equal(db.financeSettings.get('closing-days'),JSON.stringify(old))
+  assert.equal(db.financeSettings.get('theme'),JSON.stringify('green'))
+  assert.deepEqual(JSON.parse(db.financeSettings.get('plans')),[{name:'家賃',amount:101500}])
+  assert.equal((await call(db,'payment-sources/closing-day','POST',{name:'楽天カード',closingDay:25})).status,200)
+  assert.equal((await call(db,'payment-sources')).body.find(x=>x.name==='楽天カード').closing_day,25)
+  assert.equal((await call(db,'payment-sources/closing-day','POST',{name:'楽天カード',closingDay:40})).status,400)
+  assert.equal((await call(db,'payment-sources/closing-day','POST',{name:'存在しないカード',closingDay:10})).status,404)
+})
+
+test('closing day migration is deferred when there are no card records', async () => {
+  const db = new LedgerDb()
+  db.financeSettings.set('closing-days',JSON.stringify({'セゾンカード':'10'}))
+  assert.equal((await call(db,'payment-sources')).status,200)
+  assert.equal(db.financeSettings.has('closing-days-migrated-v1'),false)
+  db.paymentSources.add('セゾンカード')
+  const response=await call(db,'payment-sources')
+  assert.equal(response.body[0].closing_day,10)
 })

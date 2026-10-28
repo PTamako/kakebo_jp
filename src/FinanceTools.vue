@@ -1,32 +1,31 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { validateBackup, transactionKey, nextScheduledDate } from './finance-tools.js'
-const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] } })
+const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh'])
 
 const cardMode = ref('')
 const selectedCard = ref('')
 const editedCardName = ref('')
-const closingDays = ref({})
+const closingDays = computed(() => props.paymentClosingDays)
 const defaultClosingDay = name => {
   const normalized = String(name || '').normalize('NFKC').toLowerCase().replace(/[\\s　・（）()_-]/g, '')
   if (/セゾン|saison/.test(normalized)) return '10'
   if (/セブンカード|7card/.test(normalized)) return '15'
   return '末日'
 }
-const closingDayFor = name => closingDays.value[name] || defaultClosingDay(name)
+const closingDayFor = name => closingDays.value[name] === 0 ? '末日' : closingDays.value[name] == null ? defaultClosingDay(name) : String(closingDays.value[name])
 function selectCardForEdit() {
   if (!selectedCard.value) return
   editedCardName.value = selectedCard.value
   cardMode.value = 'edit'
 }
 async function saveClosingDay(name, day) {
-  if (!name || (day !== '' && day !== '末日' && !(Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31))) return
+  if (!name || (day !== '末日' && !(Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31))) return
   try {
-    const next = {...closingDays.value, [name]: day}
-    await props.api('finance-settings/closing-days', { method:'PUT', body:JSON.stringify({value:next}) })
-    closingDays.value = next
-    cardMessage.value = '締め日を更新しました。利用額は新しい締め期間で再計算されます'
+    await props.api('payment-sources/closing-day',{method:'POST',body:JSON.stringify({name,closingDay:day === '末日' ? 0 : Number(day)})})
+    emit('payment-settings-refresh')
+    cardMessage.value = '締め日を更新しました'
   } catch(e) { cardMessage.value = '締め日の保存に失敗しました：'+e.message }
 }
 async function renameCard() {
@@ -47,10 +46,7 @@ async function renameCard() {
       const renamedBills = bills.value.map(record => record.name === old ? {...record, name} : record)
       await props.api('finance-settings/bills',{method:'PUT',body:JSON.stringify({value:renamedBills})})
       bills.value = renamedBills
-      const updated = {...closingDays.value,[name]:closingDays.value[old] || ''}
-      delete updated[old]
-      closingDays.value = updated
-      await props.api('finance-settings/closing-days',{method:'PUT',body:JSON.stringify({value:updated})})
+      // Closing day follows the renamed payment_sources row automatically.
       // D1 already renamed the card, its merchant bindings and historical payments.
       // Refresh the card list; never interpret a rename as delete + insert.
       emit('payment-settings-refresh')
@@ -171,8 +167,7 @@ async function loadFinanceSettings() {
   }
   const specs = [
     ['plans','kakeibo-plans',[]],
-    ['bills','kakeibo-bills',[]],
-    ['closing-days','kakeibo-card-closing-days',{}]
+    ['bills','kakeibo-bills',[]]
   ]
   const loaded = {}
   for (const [name,key,fallback] of specs) {
@@ -190,7 +185,6 @@ async function loadFinanceSettings() {
   }
   plans.value = Array.isArray(loaded.plans) ? loaded.plans : []
   bills.value = Array.isArray(loaded.bills) ? loaded.bills : []
-  closingDays.value = loaded['closing-days'] || {}
   settingsReady.value = true
 }
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')

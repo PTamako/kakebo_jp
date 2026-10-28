@@ -62,6 +62,7 @@ function readLegacyPaymentSources() {
   return []
 }
 const paymentSources = ref([])
+const paymentClosingDays = ref({})
 async function updatePaymentSources(values) {
   const removed = paymentSources.value.filter(name => !values.includes(name))
   const added = values.filter(name => !paymentSources.value.includes(name))
@@ -86,6 +87,7 @@ async function loadPaymentSettings() {
       cards = await api('payment-sources')
     }
     paymentSources.value = cards.map(x => x.name)
+    paymentClosingDays.value = Object.fromEntries(cards.filter(x => x.closing_day !== null && x.closing_day !== undefined).map(x => [x.name, x.closing_day]))
     defaultPaymentSource.value = cards.find(x => x.is_default)?.name || ''
     merchantPaymentRules.value = await api('merchant-payment-rules')
     customCategoryRules.value = await api('custom-rules')
@@ -1368,7 +1370,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </article>
     </section>
 
-    <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
+    <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button :class="{ active: tab === 'list' }" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

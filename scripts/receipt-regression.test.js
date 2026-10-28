@@ -30,3 +30,25 @@ test('receipt without explicit total needs review rather than guessing largest a
  assert.equal(result.amount, 0)
  assert.match(result.note, /要確認/)
 })
+
+test('OCR damaged total label is recovered from matching tax-inclusive amount, not wrong Suica payment', () => {
+ const ocr = `セフン - イルブン
+那覇旭町金秀ビル前店
+2026 年 05 月 04 日 (月 ) 20:00 %122
+い・ろ・は・す天然水 540ml *118
+小計 ( 税抜 8%) \\222
+消費税等 ( 8%) \\17
+= =t ¥239
+(税率 8% え対象 \\239)
+Suica 支払 ¥539
+Suica 残高 ¥9, 126`
+ const result = parseReceipt(ocr)
+ assert.equal(result.amount, 239)
+ assert.equal(result.date, '2026-05-04')
+ assert.equal(result.time, '20:00')
+})
+
+test('OCR damaged total without independent corroboration requires review', () => {
+ const result = parseReceipt('小計 ¥222\\n消費税 ¥17\\n= =t ¥239\\nSuica 支払 ¥539')
+ assert.equal(result.amount, 0)
+})

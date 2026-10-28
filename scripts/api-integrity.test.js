@@ -5,8 +5,8 @@ import { onRequest } from '../functions/api/[[path]].js'
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
-  async batch(statements) { for (const statement of statements) await statement.run() }
+  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.recurringPlans = new Map(); this.cardBills = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
+  async batch(statements) { const results=[]; for (const statement of statements) results.push(await statement.run()); return results }
   prepare(sql) {
     const db = this
     return {
@@ -16,6 +16,7 @@ class LedgerDb {
         if (sql.includes("name='closing-days-migrated-v1'")) return db.financeSettings.has('closing-days-migrated-v1') ? {value:'true'} : null
         if (sql.includes("name='closing-days'")) return db.financeSettings.has('closing-days') ? {value:db.financeSettings.get('closing-days')} : null
         if (sql.startsWith('SELECT COUNT(*) AS n FROM payment_sources')) return {n:db.paymentSources.size}
+        if (sql.startsWith('SELECT 1 AS found FROM card_bills')) return [...db.cardBills.values()].some(v=>v.name===this.args[0] && [...db.cardBills.values()].some(w=>w.name===this.args[1] && w.month===v.month)) ? {found:1} : null
         if (sql.startsWith('SELECT value FROM finance_settings WHERE name=')) return db.financeSettings.has(this.args[0]) ? { value: db.financeSettings.get(this.args[0]) } : null
         if (sql.startsWith('SELECT name FROM payment_sources WHERE name=')) return db.paymentSources.has(this.args[0]) ? { name: this.args[0] } : null
         if (sql.startsWith('SELECT token_hash FROM device_sessions')) return (db.sessions.get(this.args[0]) || 0) > this.args[1] ? { token_hash: this.args[0] } : null
@@ -35,6 +36,8 @@ class LedgerDb {
       async all() {
         if (sql.startsWith('PRAGMA table_info(payment_sources)')) return {results:[{name:'closing_day'}]}
         if (sql.startsWith('SELECT name, is_default, closing_day FROM payment_sources')) return {results:[...db.paymentSources].map(name=>({name,is_default:0,closing_day:db.paymentClosingDays.has(name)?db.paymentClosingDays.get(name):null}))}
+        if (sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans')) return {results:[...db.recurringPlans.values()].map(p=>({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0}))}
+        if (sql.startsWith('SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills')) return {results:[...db.cardBills.values()].map(v=>({payment_source:v.name,bill_month:v.month,period_start:v.start,period_end:v.end,total_amount:v.total,transaction_count:v.count}))}
         if (sql.startsWith('SELECT category, icon FROM category_icons')) return { results: db.icons }
         if (sql.startsWith('SELECT keyword, category FROM rules WHERE substr')) return { results: db.rules }
         if (sql.startsWith('SELECT * FROM rules WHERE keyword')) return { results: db.rules }
@@ -48,6 +51,31 @@ class LedgerDb {
       },
       async run() {
         db.sql.push(sql)
+        if (sql.startsWith('INSERT OR IGNORE INTO recurring_plans')) {
+          const [id,name,amount,day,category,paymentSource,startMonth,enabled]=this.args
+          if (!db.recurringPlans.has(id)) {db.recurringPlans.set(id,{id,name,amount,day,category,paymentSource,startMonth,enabled:!!enabled}); return {meta:{changes:1}}}
+          return {meta:{changes:0}}
+        }
+        if (sql.startsWith('DELETE FROM recurring_plans')) {
+          db.recurringPlans.delete(this.args[0]); return {meta:{changes:1}}
+        }
+        if (sql.startsWith('INSERT OR IGNORE INTO card_bills') || sql.startsWith('INSERT INTO card_bills')) {
+          const [name,month,start,end,total,count]=this.args
+          const key=name+'|'+month
+          if (!db.cardBills.has(key) || sql.startsWith('INSERT INTO card_bills')) db.cardBills.set(key,{name,month,start,end,total,count})
+          return {meta:{changes:1}}
+        }
+        if (sql.startsWith('DELETE FROM card_bills')) {
+          db.cardBills.delete(this.args[0]+'|'+this.args[1]); return {meta:{changes:1}}
+        }
+        if (sql.startsWith('UPDATE recurring_plans SET payment_source=')) {
+          for (const plan of db.recurringPlans.values()) if(plan.paymentSource===this.args[1]) plan.paymentSource=this.args[0]
+          return {meta:{changes:1}}
+        }
+        if (sql.startsWith('UPDATE card_bills SET payment_source=')) {
+          for (const [key,bill] of [...db.cardBills]) if(bill.name===this.args[1]) {db.cardBills.delete(key); bill.name=this.args[0]; db.cardBills.set(bill.name+'|'+bill.month,bill)}
+          return {meta:{changes:1}}
+        }
         if (sql.includes("VALUES('closing-days-migrated-v1','true')")) db.financeSettings.set('closing-days-migrated-v1','true')
         if (sql.startsWith('UPDATE payment_sources SET closing_day=')) {
           const [day,name] = this.args
@@ -352,4 +380,34 @@ test('closing day migration is deferred when there are no card records', async (
   db.paymentSources.add('セゾンカード')
   const response=await call(db,'payment-sources')
   assert.equal(response.body[0].closing_day,10)
+})
+
+test('normalized D1 plans preserve IDs and allow deleting only a schedule', async () => {
+  const db=new LedgerDb()
+  const p={name:'家賃',amount:101500,day:27,category:'居住',paymentSource:'現金',id:'2a23e8e5-d621-4e2b-b858-460b52407ca2',startMonth:'2026-10',enabled:true}
+  db.financeSettings.set('plans',JSON.stringify([p]))
+  db.entries.push({id:1,amount:101500,client_request_id:'recurring_2a23e8e5d6214e2bb858460b52407ca2_202610'})
+  const first=await call(db,'recurring-plans')
+  assert.equal(first.status,200)
+  assert.deepEqual(first.body,[p])
+  const again=await call(db,'recurring-plans')
+  assert.deepEqual(again.body,[p])
+  assert.equal((await call(db,'recurring-plans/'+p.id,'DELETE')).status,200)
+  assert.deepEqual((await call(db,'recurring-plans')).body,[])
+  assert.equal(db.entries.length,1)
+  assert.equal(db.financeSettings.get('plans'),JSON.stringify([p]))
+})
+
+test('normalized D1 bills support update and delete without editing ledger', async () => {
+  const db=new LedgerDb()
+  const bill={name:'セゾンカード',month:'2026-10',start:'2026-09-11',end:'2026-10-10',total:45000,count:18}
+  db.financeSettings.set('bills',JSON.stringify([bill]))
+  db.entries.push({id:1,amount:3000,payment_source:'セゾンカード'})
+  assert.deepEqual((await call(db,'card-bills')).body,[bill])
+  assert.equal((await call(db,'card-bills','PUT',{...bill,total:46000})).status,200)
+  assert.equal((await call(db,'card-bills')).body[0].total,46000)
+  assert.equal((await call(db,'card-bills?name=%E3%82%BB%E3%82%BE%E3%83%B3%E3%82%AB%E3%83%BC%E3%83%89&month=2026-10','DELETE')).status,200)
+  assert.deepEqual((await call(db,'card-bills')).body,[])
+  assert.equal(db.entries[0].amount,3000)
+  assert.equal(db.financeSettings.get('bills'),JSON.stringify([bill]))
 })

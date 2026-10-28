@@ -86,13 +86,13 @@ const CATEGORY_ICON_PATHS = {
  '投資・資産移動':'M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4'
 }
 const ICON_LIBRARY = [
-  { id:'food', label:'食料品', path:CATEGORY_ICON_PATHS['饮食料品'] },
+  { id:'food', label:'飲食料品', path:CATEGORY_ICON_PATHS['饮食料品'] },
   { id:'dining', label:'外食', path:CATEGORY_ICON_PATHS['餐饮'] },
   { id:'daily', label:'日用品', path:CATEGORY_ICON_PATHS['日用品'] },
   { id:'transport', label:'交通', path:CATEGORY_ICON_PATHS['交通'] },
   { id:'shopping', label:'買い物', path:CATEGORY_ICON_PATHS['购物'] },
-  { id:'home', label:'住居', path:CATEGORY_ICON_PATHS['居住'] },
-  { id:'medical', label:'医療', path:CATEGORY_ICON_PATHS['医疗'] },
+  { id:'home', label:'住居費', path:CATEGORY_ICON_PATHS['居住'] },
+  { id:'medical', label:'医療費', path:CATEGORY_ICON_PATHS['医疗'] },
   { id:'pet', label:'ペット', path:CATEGORY_ICON_PATHS['宠物'] },
   { id:'beauty', label:'美容', path:'M9 3h6v5H9zM8 8h8v12H8zM10 12h4M18 3v4M16 5h4' },
   { id:'education', label:'教育', path:'M2 9l10-5 10 5-10 5-10-5ZM6 11v5c3 3 9 3 12 0v-5M21 10v6' },

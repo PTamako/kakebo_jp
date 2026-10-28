@@ -60,7 +60,7 @@ async function restore(){
       const payload=JSON.stringify([e.id,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note])
       const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
       const key='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
-      await props.api('entries',{method:'POST',body:JSON.stringify({...e,clientRequestId:key,transferTarget:e.transfer_target||'',transferDate:e.transfer_date||e.date})})
+      await props.api('entries',{method:'POST',body:JSON.stringify({...e,clientRequestId:key,transferTarget:e.transfer_target||'',transferDate:e.transfer_date||e.date,paymentSource:e.payment_source||''})})
       restoreRows.value.shift();count++
     }
     loaded.value=false;message.value=count+'件追加しました。全明細を再読み込みしてください'
@@ -84,7 +84,7 @@ function addBill(){
   localStorage.setItem('kakeibo-bills',JSON.stringify(bills.value));bill.value={name:'',month:new Date().toISOString().slice(0,7),amount:''}
 }
 function removeBill(id){bills.value=bills.value.filter(x=>x.id!==id);localStorage.setItem('kakeibo-bills',JSON.stringify(bills.value))}
-const monthExpenses=m=>rows.value.filter(e=>e.date?.startsWith(m)&&e.type==='expense')
+const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.type==='expense'&&e.payment_source===source)
 </script>
 <template>
 <section class="finance-tools">
@@ -114,10 +114,10 @@ const monthExpenses=m=>rows.value.filter(e=>e.date?.startsWith(m)&&e.type==='exp
   </article>
   <article class="finance-panel">
     <h2>カード請求額の参考比較</h2>
-    <p>決済カード別の情報は明細にないため、同じ月の全支出との参考比較です。カード別の確定照合ではありません。</p>
+    <p>明細に設定した支払方法・カード名と一致する支出だけを集計します。未設定の取引は含まれません。請求月と利用月の違いにご注意ください。</p>
     <div class="finance-inputs"><input v-model="bill.name" placeholder="カード名" aria-label="カード名"><input v-model="bill.month" type="month" aria-label="対象月"><input v-model="bill.amount" type="number" min="1" placeholder="請求額" aria-label="請求額"></div>
     <button @click="addBill">請求額を追加</button>
-    <div v-for="b in bills" :key="b.id" class="finance-row">{{b.name}} {{b.month}} 請求 {{yen(b.amount)}} <template v-if="loaded">／月の全支出 {{yen(reconcileStatement(monthExpenses(b.month),b.amount).sum)}}／差 {{yen(reconcileStatement(monthExpenses(b.month),b.amount).difference)}}</template> <button @click="removeBill(b.id)">削除</button></div>
+    <div v-for="b in bills" :key="b.id" class="finance-row">{{b.name}} {{b.month}} 請求 {{yen(b.amount)}} <template v-if="loaded">／カード別支出 {{yen(reconcileStatement(monthExpenses(b.month,b.name),b.amount).sum)}}／差 {{yen(reconcileStatement(monthExpenses(b.month,b.name),b.amount).difference)}}</template> <button @click="removeBill(b.id)">削除</button></div>
   </article>
 </section>
 </template>

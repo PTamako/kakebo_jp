@@ -1,4 +1,4 @@
-export const normalizeMerchant = name => String(name || '').normalize('NFKC').toLowerCase().replace(/[\\s　・]/g, '')
+export const normalizeMerchant = name => String(name || '').normalize('NFKC').toLowerCase().replace(/[\s　・]/g, '')
 export function paymentForDraft({ merchant = '', recognized = '', importSource = '', rules = [], defaultSource = '', type = 'expense' }) {
   if (type !== 'expense') return ''
   if (importSource) return importSource

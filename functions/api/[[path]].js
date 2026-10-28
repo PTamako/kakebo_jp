@@ -306,12 +306,53 @@ export async function onRequest({ request, env, params }) {
       }
     }
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
-      await db.prepare("CREATE TABLE IF NOT EXISTS payment_sources (name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)))").run()
+      await db.prepare("CREATE TABLE IF NOT EXISTS payment_sources (name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)), closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31))").run()
       await db.prepare("CREATE TABLE IF NOT EXISTS merchant_payment_rules (keyword TEXT PRIMARY KEY, payment_source TEXT NOT NULL)").run()
     }
+    if (a === 'payment-sources') {
+      // Existing D1 installations lack closing_day. Leave all card records intact.
+      const columns = await db.prepare('PRAGMA table_info(payment_sources)').all()
+      if (!(columns.results || []).some(column => column.name === 'closing_day')) {
+        try {
+          await db.prepare('ALTER TABLE payment_sources ADD COLUMN closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31)').run()
+        } catch (e) {
+          // A concurrent first request may have added the field already.
+          if (!/duplicate column name/i.test(String(e))) throw e
+        }
+      }
+    }
     if (a === 'payment-sources' && !b && m === 'GET') {
-      const { results } = await db.prepare('SELECT name, is_default FROM payment_sources ORDER BY sort_order, name').all()
+      // One-time additive migration from finance_settings. Old JSON remains as backup.
+      await db.prepare("CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)").run()
+      const marker = await db.prepare("SELECT value FROM finance_settings WHERE name='closing-days-migrated-v1'").first()
+      if (!marker) {
+        const legacy = await db.prepare("SELECT value FROM finance_settings WHERE name='closing-days'").first()
+        if (legacy) {
+          let closingDays
+          try { closingDays = JSON.parse(legacy.value) } catch { return json({error:'締め日設定の移行元が不正です'},500) }
+          if (!closingDays || typeof closingDays !== 'object' || Array.isArray(closingDays)) return json({error:'締め日設定の形式が不正です'},500)
+          const updates = []
+          for (const [name, value] of Object.entries(closingDays)) {
+            const day = value === '末日' ? 0 : Number(value)
+            if (!name || !Number.isInteger(day) || day < 0 || day > 31 || (value !== '末日' && String(value) !== String(day)))
+              return json({error:'締め日設定を確認してください'},500)
+            updates.push(db.prepare('UPDATE payment_sources SET closing_day=?1 WHERE name=?2 AND closing_day IS NULL').bind(day,name))
+          }
+          if (updates.length) await db.batch(updates)
+        }
+        await db.prepare("INSERT OR IGNORE INTO finance_settings(name,value) VALUES('closing-days-migrated-v1','true')").run()
+      }
+      const { results } = await db.prepare('SELECT name, is_default, closing_day FROM payment_sources ORDER BY sort_order, name').all()
       return json(results)
+    }
+    if (a === 'payment-sources' && b === 'closing-day' && m === 'POST') {
+      const body = await request.json()
+      const name = typeof body?.name === 'string' ? body.name.trim() : ''
+      const day = body?.closingDay
+      if (!name || !Number.isInteger(day) || day < 0 || day > 31) return json({error:'カードと締め日を確認してください'},400)
+      const result = await db.prepare('UPDATE payment_sources SET closing_day=?1 WHERE name=?2').bind(day,name).run()
+      if (!result.meta?.changes) return json({error:'カードが見つかりません'},404)
+      return json({ok:true})
     }
     if (a === 'payment-sources' && b === 'initialize' && m === 'POST') {
       const body = await request.json()

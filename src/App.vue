@@ -6,6 +6,7 @@ import { groupAnnualEntries } from './detail-pagination.js'
 import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
+import { checkRecurringEntries } from './recurring-check.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
@@ -165,6 +166,7 @@ async function signIn(code) {
   localStorage.removeItem('kakeibo-logged-out')
   sessionStorage.removeItem('kakeibo-token')
   locked.value = false
+  checkRecurringEntries(api).then(() => { load(); loadYear() }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message))
 }
 async function logout() {
   if (busy.value || editSaving.value || investmentBusy.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
@@ -246,7 +248,7 @@ async function loadYear() {
     if (requestId === yearRequestId && year === selectedYear.value) annualStats.value = nextStats
   } catch (e) { if (requestId === yearRequestId) flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
-onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers() } })
+onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers(); checkRecurringEntries(api).then(count => { if (count) { load(); loadYear() } }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message)) } })
 
 watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })

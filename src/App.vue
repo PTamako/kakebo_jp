@@ -365,6 +365,8 @@ watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear()
 watch(tab, value => {
   if (value === 'stat' && statsPeriod.value === 'year') loadYear()
   if (value === 'list') visibleEntryCount.value = 20
+  // Reset the vertical position on tab changes like a native app.
+  window.scrollTo(0, 0)
 })
 watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') loadYear() })
 
@@ -1063,12 +1065,20 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
       <span v-if="tab === 'add'" class="today-date">{{ todayLabel }}</span>
-      <button type="button" class="header-logout" @click="logout">ログアウト</button>
+      <div class="header-actions">
+        <details class="theme-picker">
+          <summary aria-label="テーマカラーを選ぶ" title="配色を変更">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H13a1.5 1.5 0 0 1 0-3h3.5A4.5 4.5 0 0 0 21 9.5 9 9 0 0 0 12 3Z"/><circle cx="7.5" cy="10" r="1"/><circle cx="11" cy="6.5" r="1"/><circle cx="16" cy="8.5" r="1"/></svg>
+            <span class="theme-indicator" :style="{ background: themes.find(item => item.id === theme)?.color }"></span>
+          </summary>
+          <div class="theme-switcher" role="group" aria-label="配色">
+            <strong>テーマカラー</strong>
+            <button v-for="item in themes" :key="item.id" type="button" :class="{ selected: theme === item.id }" :aria-pressed="theme === item.id" @click="setTheme(item.id); $event.currentTarget.closest('details').open = false"><i :style="{ background: item.color }"></i>{{ item.label }}</button>
+          </div>
+        </details>
+        <button type="button" class="header-logout" @click="logout" aria-label="ログアウト"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6"/></svg><span>ログアウト</span></button>
+      </div>
     </header>
-    <div class="theme-switcher" role="group" aria-label="配色">
-      <span>配色</span>
-      <button v-for="item in themes" :key="item.id" type="button" :class="{ selected: theme === item.id }" :aria-pressed="theme === item.id" @click="setTheme(item.id)"><i :style="{ background: item.color }"></i>{{ item.label }}</button>
-    </div>
 
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
 
@@ -1375,11 +1385,11 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
     <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
-      <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
-      <button :class="{ active: tab === 'list' }" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>
-      <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.5 19.5h15"/><rect x="6" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10" rx="1"/><rect x="14.8" y="4.5" width="3.2" height="13" rx="1"/></svg></span><span>統計</span></button>
-      <button :class="{ active: tab === 'investments' }" @click="tab = 'investments'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2.5"/><path d="M3.5 10h17M7 4.5h10M15.5 14.5h2"/></svg></span><span>資産・投資</span></button>
-      <button :class="{ active: tab === 'finance' }" @click="tab = 'finance'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span><span>管理</span></button>
+      <button type="button" :class="{ active: tab === 'add' }" :aria-current="tab === 'add' ? 'page' : undefined" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
+      <button type="button" :class="{ active: tab === 'list' }" :aria-current="tab === 'list' ? 'page' : undefined" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>
+      <button type="button" :class="{ active: tab === 'stat' }" :aria-current="tab === 'stat' ? 'page' : undefined" @click="tab = 'stat'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.5 19.5h15"/><rect x="6" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10" rx="1"/><rect x="14.8" y="4.5" width="3.2" height="13" rx="1"/></svg></span><span>統計</span></button>
+      <button type="button" :class="{ active: tab === 'investments' }" :aria-current="tab === 'investments' ? 'page' : undefined" aria-label="資産・投資" @click="tab = 'investments'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2.5"/><path d="M3.5 10h17M7 4.5h10M15.5 14.5h2"/></svg></span><span>資産</span></button>
+      <button type="button" :class="{ active: tab === 'finance' }" :aria-current="tab === 'finance' ? 'page' : undefined" @click="tab = 'finance'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span><span>管理</span></button>
     </nav>
   </main>
 </template>

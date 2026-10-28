@@ -234,11 +234,20 @@ export function parseReceipt(raw, rules = []) {
     .find(line => /店\s*$/.test(line) && !/電話|番号|登録/.test(line))
   const brand = sevenFound ? 'セブン-イレブン' : ''
   const isMyBasket = lines.slice(0, 8).some(line => /まいば[すき]けっと|まいばす|マイバスケット/.test(compact(line)))
-  const merchant = isMyBasket ? ['まいばすけっと', branch && compact(branch)].filter(Boolean).join(' ')
-    : brand ? [brand, branch && compact(branch)].filter(Boolean).join(' ')
-    : (lines.find(line => /ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(compact(line)))
-      || lines.find(line => /(?:店|ストア|マーケット)$/.test(compact(line)) && !/電話|番号/.test(line))
-      || '')
+  // AI transcription can already contain the brand in a labeled full store name.
+  // Avoid prefixing the same brand twice (e.g. まいばすけっと 店名:まいばすけっと南小岩8丁目店).
+  const labeledMerchant = lines.find(line => /^店名\\s*[:：]/.test(line))
+    ?.replace(/^店名\\s*[:：]\\s*/, '').trim() || ''
+  const branchName = branch ? compact(branch.replace(/^店名\\s*[:：]\\s*/, '')) : ''
+  const withBrand = (name, detail) => detail
+    ? (compact(detail).startsWith(compact(name)) ? detail : name + ' ' + detail)
+    : name
+  const merchant = labeledMerchant
+    || (isMyBasket ? withBrand('まいばすけっと', branchName)
+      : brand ? withBrand(brand, branchName)
+      : (lines.find(line => /ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(compact(line)))
+        || lines.find(line => /(?:店|ストア|マーケット)$/.test(compact(line)) && !/電話|番号/.test(line))
+        || ''))
   const categorySource = merchant || text.slice(0, 120)
   const { category, keyword } = classify(categorySource, rules)
   const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line)) || ''

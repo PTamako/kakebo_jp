@@ -354,6 +354,12 @@ async function remove(id) {
   pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
   try {
     await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
+    // Only remove the local receipt after the server confirms deletion.
+    try {
+      await deleteReceiptImage(id)
+      receiptImageIds.value = new Set([...receiptImageIds.value].filter(imageId => Number(imageId) !== Number(id)))
+      if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
+    } catch { flash('記録は削除しましたが、端末内のレシート画像を削除できませんでした') }
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadInvestments(), loadTransfers()])
     flash('記録を削除しました')
   } catch (error) { flash('削除に失敗しました：' + error.message) }

@@ -29,3 +29,18 @@ test('does not treat unverified QUICPay Y911 as receipt total', () => {
   const row = parseReceipt('まいばすけっと\\n合 &f rrelilly\\nQUICPay 支払 Y911')
   assert.equal(row.amount, 0)
 })
+
+test('corrects 20-year OCR error only when receipt date is today and current year appears separately', () => {
+  const today = new Date()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  const wrongYear = today.getFullYear() - 20
+  const raw = `まいばすけっと
+${wrongYear}/${month}/${day} 12:37
+外税 8% 対象額 ¥288
+外税 8% ¥23
+お取扱日 ${today.getFullYear()} 年 1 月 5 日`
+  const row = parseReceipt(raw)
+  assert.equal(row.date, `${today.getFullYear()}-${month}-${day}`)
+  assert.match(row.note, /日付の年/)
+})

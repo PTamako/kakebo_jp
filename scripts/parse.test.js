@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseEntries } from '../src/parse.js'
+import { parseEntries } from './category-rule-test-helpers.js'
 
 test('parses multiple QUICPay statement rows even when OCR adds a prefix before QP/', () => {
   const input = `QUICPay 利用 (QP/ マイバスケット ) 628gm |

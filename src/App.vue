@@ -16,7 +16,32 @@ const tab = ref('add')
 const statsPeriod = ref('month')
 const theme = ref(localStorage.getItem('kakeibo-theme') || 'pink')
 const themes = [{ id: 'pink', label: 'ピンク', color: '#d96f91' }, { id: 'blue', label: 'ブルー', color: '#78a9d6' }, { id: 'yellow', label: 'イエロー', color: '#d9b957' }, { id: 'green', label: 'グリーン', color: '#78ad91' }]
-function setTheme(value) { theme.value = value; localStorage.setItem('kakeibo-theme', value) }
+async function setTheme(value) {
+  if (!themes.some(item => item.id === value)) return
+  const previous = theme.value
+  theme.value = value
+  try {
+    await api('finance-settings/theme', { method:'PUT', body:JSON.stringify({value}) })
+    localStorage.removeItem('kakeibo-theme')
+  } catch (e) {
+    theme.value = previous
+    flash('テーマを保存できませんでした：' + e.message)
+  }
+}
+async function loadThemeSetting() {
+  let settings = await api('finance-settings/theme')
+  if (!settings.exists) {
+    const legacy = localStorage.getItem('kakeibo-theme')
+    if (legacy && themes.some(item => item.id === legacy)) {
+      await api('finance-settings/theme',{method:'POST',body:JSON.stringify({value:legacy})})
+      settings = await api('finance-settings/theme')
+    }
+  }
+  if (settings.exists && themes.some(item => item.id === settings.value)) {
+    theme.value = settings.value
+    localStorage.removeItem('kakeibo-theme')
+  }
+}
 const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 const month = ref(currentMonth())
 function resetMonth() { month.value = currentMonth() }
@@ -27,15 +52,16 @@ const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([.
 const input = ref(''), busy = ref(''), msg = ref('')
 const ocrEngine = ref(''), ocrWarning = ref('')
 const forms = ref([])
-const defaultPaymentSources = ['現金', 'Suica', 'PayPay', '楽天カード', '三井住友カード', 'セブンカード・プラス', 'セゾンカード', 'その他']
-function readPaymentSources() {
+// D1 is the single source of truth for payment methods.
+// Read old browser settings only once when the server table is still empty.
+function readLegacyPaymentSources() {
   try {
     const stored = JSON.parse(localStorage.getItem('kakeibo-payment-sources') || 'null')
-    if (Array.isArray(stored)) return ['現金', ...new Set(stored.filter(x => typeof x === 'string' && x.trim() && x !== '現金'))]
+    if (Array.isArray(stored)) return [...new Set(stored.filter(x => typeof x === 'string' && x.trim()).map(x => x.trim()))]
   } catch {}
-  return [...defaultPaymentSources]
+  return []
 }
-const paymentSources = ref(readPaymentSources())
+const paymentSources = ref([])
 async function updatePaymentSources(values) {
   const removed = paymentSources.value.filter(name => !values.includes(name))
   const added = values.filter(name => !paymentSources.value.includes(name))
@@ -56,14 +82,14 @@ async function loadPaymentSettings() {
   paymentSettingsLoading = (async () => {
     let cards = await api('payment-sources')
     if (!cards.length && !paymentSettingsLoaded) {
-      await api('payment-sources/initialize', { method: 'POST', body: JSON.stringify({ names: paymentSources.value }) })
+      await api('payment-sources/initialize', { method: 'POST', body: JSON.stringify({ names: readLegacyPaymentSources() }) })
       cards = await api('payment-sources')
     }
     paymentSources.value = cards.map(x => x.name)
-    localStorage.setItem('kakeibo-payment-sources', JSON.stringify(paymentSources.value))
     defaultPaymentSource.value = cards.find(x => x.is_default)?.name || ''
     merchantPaymentRules.value = await api('merchant-payment-rules')
     customCategoryRules.value = await api('custom-rules')
+    await loadThemeSetting()
     paymentSettingsLoaded = true
   })().finally(() => { paymentSettingsLoading = null })
   return paymentSettingsLoading
@@ -1342,7 +1368,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </article>
     </section>
 
-    <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
+    <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button :class="{ active: tab === 'list' }" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

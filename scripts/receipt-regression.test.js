@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseReceipt } from '../src/parse.js'
+import { parseReceipt } from './category-rule-test-helpers.js'
 
 const receipt = `セブン-イレブン
 那覇旭町金秀ビル前店

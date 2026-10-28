@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseReceipt, parseEntries } from '../src/parse.js'
+import { parseReceipt, parseEntries } from './category-rule-test-helpers.js'
 
 test('AI-labeled store name is not duplicated', () => {
   const receipt = '店名: まいばすけっと 南小岩８丁目店\n日付: 2026/10/28\n合計: ¥311\n支払方法: QUICPay\n小計 ¥288\n外税 8% ¥23'

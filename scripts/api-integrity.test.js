@@ -55,6 +55,11 @@ class LedgerDb {
             transfer_target: a[8], transfer_applied: a[9], transfer_date: a[10], client_request_id: a[11], payment_source: a[12] })
           return { meta: { changes: 1 } }
         }
+        if (sql.startsWith('UPDATE entries SET payment_source =')) {
+          let changes = 0
+          for (const e of db.entries) if (e.payment_source === this.args[1]) { e.payment_source = this.args[0]; changes++ }
+          return { meta: { changes } }
+        }
         if (sql.startsWith('UPDATE entries SET date =')) {
           const a = this.args
           const e = db.entries.find(row => row.id === a[12])
@@ -233,4 +238,17 @@ test('wrong access codes are rate limited without exposing ledger', async () => 
   for (let i = 0; i < 5; i++) assert.equal((await call(db, 'auth/login', 'POST', { code: 'wrong' }, { token: 'login-request' })).status, 401)
   assert.equal((await call(db, 'auth/login', 'POST', { code: 'wrong' }, { token: 'login-request' })).status, 429)
   assert.equal(db.entries.length, 0)
+})
+
+test('renaming a card rebinds historical payments without altering amounts or investments', async () => {
+  const db = new LedgerDb()
+  await call(db,'entries','POST',{date:'2026-10-01',amount:1200,type:'expense',paymentSource:'旧カード',clientRequestId:'rename-test-001'})
+  await call(db,'entries','POST',{date:'2026-10-02',amount:15000,type:'transfer',transferTarget:'sbi',paymentSource:'旧カード',clientRequestId:'rename-test-002'})
+  const before = db.entries.map(e=>({id:e.id,amount:e.amount,type:e.type,transfer_target:e.transfer_target}))
+  const response = await call(db,'payment-sources/rename','POST',{oldName:'旧カード',newName:'新カード'})
+  assert.equal(response.status,200)
+  assert.equal(response.body.changes,2)
+  assert.deepEqual(db.entries.map(e=>({id:e.id,amount:e.amount,type:e.type,transfer_target:e.transfer_target})),before)
+  assert.ok(db.entries.every(e=>e.payment_source==='新カード'))
+  assert.equal(db.snapshot,120000)
 })

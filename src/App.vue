@@ -14,32 +14,35 @@ import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptIm
 
 const tab = ref('add')
 const statsPeriod = ref('month')
-const theme = ref(localStorage.getItem('kakeibo-theme') || 'pink')
 const themes = [{ id: 'pink', label: 'ピンク', color: '#d96f91' }, { id: 'blue', label: 'ブルー', color: '#78a9d6' }, { id: 'yellow', label: 'イエロー', color: '#d9b957' }, { id: 'green', label: 'グリーン', color: '#78ad91' }]
-async function setTheme(value) {
+const storedTheme = localStorage.getItem('kakeibo-theme')
+const theme = ref(themes.some(item => item.id === storedTheme) ? storedTheme : 'pink')
+function setTheme(value) {
   if (!themes.some(item => item.id === value)) return
-  const previous = theme.value
-  theme.value = value
+  // Visual preferences are device-specific. Never update D1 for a theme change.
   try {
-    await api('finance-settings/theme', { method:'PUT', body:JSON.stringify({value}) })
-    localStorage.removeItem('kakeibo-theme')
-  } catch (e) {
-    theme.value = previous
-    flash('テーマを保存できませんでした：' + e.message)
-  }
+    localStorage.setItem('kakeibo-theme', value)
+    localStorage.setItem('kakeibo-theme-local-v1', '1')
+    theme.value = value
+  } catch (e) { flash('テーマを保存できませんでした：' + e.message) }
 }
-async function loadThemeSetting() {
-  let settings = await api('finance-settings/theme')
-  if (!settings.exists) {
-    const legacy = localStorage.getItem('kakeibo-theme')
-    if (legacy && themes.some(item => item.id === legacy)) {
-      await api('finance-settings/theme',{method:'POST',body:JSON.stringify({value:legacy})})
-      settings = await api('finance-settings/theme')
-    }
+async function importLegacyThemeOnce() {
+  // Existing installs stored their theme only in D1. Recover it once, then
+  // keep all subsequent theme reads/writes local (including offline use).
+  if (localStorage.getItem('kakeibo-theme-local-v1') === '1') return
+  if (themes.some(item => item.id === localStorage.getItem('kakeibo-theme'))) {
+    localStorage.setItem('kakeibo-theme-local-v1', '1')
+    return
   }
-  if (settings.exists && themes.some(item => item.id === settings.value)) {
-    theme.value = settings.value
-    localStorage.removeItem('kakeibo-theme')
+  try {
+    const setting = await api('finance-settings/theme')
+    if (setting.exists && themes.some(item => item.id === setting.value)) {
+      localStorage.setItem('kakeibo-theme', setting.value)
+      theme.value = setting.value
+    }
+    localStorage.setItem('kakeibo-theme-local-v1', '1')
+  } catch {
+    // Do not mark migration complete if offline; retry on a later successful load.
   }
 }
 const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
@@ -91,7 +94,7 @@ async function loadPaymentSettings() {
     defaultPaymentSource.value = cards.find(x => x.is_default)?.name || ''
     merchantPaymentRules.value = await api('merchant-payment-rules')
     customCategoryRules.value = await api('custom-rules')
-    await loadThemeSetting()
+    await importLegacyThemeOnce()
     paymentSettingsLoaded = true
   })().finally(() => { paymentSettingsLoading = null })
   return paymentSettingsLoading

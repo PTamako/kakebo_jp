@@ -405,4 +405,27 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
 .merchant-rule-pagination{display:flex;align-items:center;justify-content:center;gap:14px}
 .merchant-rule-pagination button{min-width:44px;min-height:44px;font-size:20px}
 .merchant-rule-pagination span{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* Mobile-first sizing for finance settings, including iPhone SE width. */
+.finance-tools,.finance-panel,.merchant-rules-panel,.merchant-rule-row,.merchant-rule-fields{min-width:0;max-width:100%;box-sizing:border-box}
+.merchant-rules-summary{min-height:44px;touch-action:manipulation}
+.merchant-rule-row{padding-block:14px}
+.merchant-rule-row strong{font-size:14px;line-height:1.4;word-break:break-word}
+.merchant-rule-search input{font-size:16px;min-height:44px}
+.merchant-rule-fields select{font-size:16px!important;min-height:44px}
+.merchant-rule-pagination button{touch-action:manipulation}
+.card-main-controls>select{font-size:16px}
+.finance-panel .card-main-controls .card-icon-action{touch-action:manipulation}
+@media(max-width:380px){
+  .merchant-rule-fields{grid-template-columns:minmax(0,1fr);gap:10px}
+  .merchant-rule-fields label{min-width:0}
+  .finance-panel .merchant-rule-fields select{font-size:16px!important}
+  .merchant-rule-search{gap:6px}
+  .merchant-rule-search span{font-size:11px}
+  .card-main-controls{grid-template-columns:minmax(0,1fr) repeat(3,40px)!important;gap:4px}
+  .finance-panel .card-main-controls .card-icon-action{width:40px;min-width:40px;min-height:44px}
+}
+@media(min-width:381px) and (max-width:540px){
+  .merchant-rule-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+}
 </style>

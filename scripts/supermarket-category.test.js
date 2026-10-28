@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { classify } from '../src/parse.js'
+import { classify } from './category-rule-test-helpers.js'
 
 test('user-defined rules use fuzzy matching and override built-in defaults', () => {
   assert.deepEqual(

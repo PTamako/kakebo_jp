@@ -3,8 +3,8 @@ const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.te
 const json = (d, s = 200) =>
   new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
 
-// 初回访问和后续访问都会补齐默认规则；INSERT OR IGNORE 保留用户自己新增/修改的规则。
-// 关键词尽量采用店铺全名，避免「コジマ」误匹配「ペットのコジマ」。
+// 初回および以降のアクセスで既定ルールを補完する。INSERT OR IGNOREでユーザーの追加・変更ルールを保持する。
+// 店舗名はできる限り正式名称を使用し、部分一致による誤判定を防ぐ。
 const DEFAULT_RULES = {
   '餐饮': [
     'イトーヨーカドー','イトーヨーカ堂','ヨークフーズ','ヨークマート','ヨークプライス',
@@ -400,7 +400,7 @@ export async function onRequest({ request, env, params }) {
         const r = await request.json()
         const kw = String(r.keyword || '').trim()
         const category = String(r.category || '').trim()
-        if (kw.length < 2) return json({ error: '关键词太短' }, 400)
+        if (kw.length < 2) return json({ error: 'キーワードは2文字以上で入力してください' }, 400)
         if (!category) return json({ error: 'カテゴリーを指定してください' }, 400)
         await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
         await db.prepare('INSERT INTO custom_rules (keyword,category) VALUES (?1,?2) ON CONFLICT(keyword) DO UPDATE SET category = excluded.category').bind(kw, category).run()

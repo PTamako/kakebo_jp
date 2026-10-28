@@ -63,8 +63,9 @@ const receiptImageIds = ref(new Set())
 const viewedReceiptUrl = ref('')
 const viewedReceiptId = ref(null)
 async function refreshReceiptImageIds() {
-  const visible = entries.value || []
-  const present = await Promise.all(visible.map(async entry => [entry.id, !!(await getReceiptImage(entry.id))]))
+  const visible = [...(entries.value || []), ...(displayEntries.value || [])]
+  const ids = [...new Set(visible.map(entry => Number(entry.id)).filter(Number.isSafeInteger))]
+  const present = await Promise.all(ids.map(async id => [id, !!(await getReceiptImage(id))]))
   receiptImageIds.value = new Set(present.filter(([, found]) => found).map(([id]) => id))
 }
 async function viewReceipt(entryId) {
@@ -408,7 +409,6 @@ async function remove(id) {
 }
 function startEdit(entry) {
   editReceiptImage.value = null
-  receiptSaveError.value = ''
   editingEntry.value = {
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
@@ -761,7 +761,7 @@ function endSwipe(event, id) {
   const dy = event.changedTouches[0].clientY - touchStartY
   if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.25) {
     swipedEntryId.value = dx < 0 ? id : null
-    swipedReceiptId.value = dx > 0 && receiptImageIds.value.has(id) ? id : null
+    swipedReceiptId.value = dx > 0 && receiptImageIds.value.has(Number(id)) ? id : null
     suppressRowClick = true
     setTimeout(() => { suppressRowClick = false }, 350)
   }
@@ -890,6 +890,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 <template>
   <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong><p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
   <main v-else :class="`theme-${theme}`">
+    <div v-if="receiptSaveError" role="alert" class="receipt-error-banner"><span>{{ receiptSaveError }}</span><button type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button></div>
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-label="しろちゃんとちび毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="しろちゃん" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="ちび毛" /></span>
@@ -1012,13 +1013,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <span class="entry-day-total">{{ yen(group.total) }}</span>
           </button>
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(e.id), 'receipt-available': receiptImageIds.has(e.id) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(Number(e.id)), 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
                 <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.replace(/-/g, '/') }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }}</small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
-              <button v-if="receiptImageIds.has(e.id)" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
+              <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -1036,14 +1037,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <span class="entry-day-total">{{ yen(group.items.reduce((sum, entry) => sum + (entry.type === 'income' ? -Number(entry.amount || 0) : Number(entry.amount || 0)), 0)) }}</span>
           </button>
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(e.id), 'receipt-available': receiptImageIds.has(e.id) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(Number(e.id)), 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
                 <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
               
-              <button v-if="receiptImageIds.has(e.id)" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
+              <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -1545,3 +1546,5 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 </style>
 
 <style>.receipt-save-error{color:#9b2938;background:#fff0f1;border:1px solid #e9aab2;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700}</style>
+
+<style>.receipt-error-banner{position:fixed;z-index:9999;top:calc(env(safe-area-inset-top,0px) + 8px);left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border:1px solid #df9aa6;border-radius:12px;background:#fff1f3;color:#8d2336;box-shadow:0 5px 22px #42202522;font-weight:700;font-size:13px}.receipt-error-banner button{border:0;background:transparent;color:inherit;font-size:24px;cursor:pointer}</style>

@@ -17,24 +17,34 @@ function saveClosingDay(name, day) {
   closingDays.value = {...closingDays.value, [name]: day}
   localStorage.setItem('kakeibo-card-closing-days', JSON.stringify(closingDays.value))
 }
-function renameCard() {
+async function renameCard() {
   const name = editedCardName.value.trim(), old = selectedCard.value
   if (!old || old === '現金' || !name || name.length > 80 || (name !== old && props.paymentSources.includes(name))) {
     cardMessage.value = '名称を確認してください（重複・現金の変更不可）'
     return
   }
-  if (name !== old && (!loaded.value || rows.value.some(e => e.payment_source === old) || plans.value.some(p => p.paymentSource === old))) {
-    cardMessage.value = '過去の明細・固定支出を保護するため、この名称は変更できません。新しいカードを追加してください（全明細の読み込みが必要です）'
-    return
-  }
   if (name !== old) {
-    emit('update-payment-sources', props.paymentSources.map(x => x === old ? name : x))
-    const updated = {...closingDays.value, [name]:closingDays.value[old] || ''}
-    delete updated[old]
-    closingDays.value = updated
-    localStorage.setItem('kakeibo-card-closing-days', JSON.stringify(updated))
-    selectedCard.value = name
-    cardMessage.value = '名称を変更しました。過去の明細の支払方法は変更されません'
+    if (busy.value) return
+    busy.value = true
+    try {
+      // Commit the ledger rename on D1 before updating local display names.
+      const result = await props.api('payment-sources/rename', {method:'POST',body:JSON.stringify({oldName:old,newName:name})})
+      rows.value = rows.value.map(e => e.payment_source === old ? {...e,payment_source:name} : e)
+      plans.value = plans.value.map(p => p.paymentSource === old ? {...p,paymentSource:name} : p)
+      localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value))
+      const updated = {...closingDays.value,[name]:closingDays.value[old] || ''}
+      delete updated[old]
+      closingDays.value = updated
+      localStorage.setItem('kakeibo-card-closing-days',JSON.stringify(updated))
+      emit('update-payment-sources',props.paymentSources.map(x => x === old ? name : x))
+      if (bill.value.name === old) bill.value.name = name
+      selectedCard.value = name
+      cardMessage.value = '名称を変更し、過去の明細 '+(result?.changes ?? 0)+'件と固定支出の設定を引き継ぎました'
+      emit('ledger-updated')
+    } catch(e) {
+      cardMessage.value = '名称変更に失敗しました：'+e.message
+      return
+    } finally { busy.value = false }
   }
   cardMode.value = ''
 }

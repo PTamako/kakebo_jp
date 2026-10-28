@@ -1,4 +1,4 @@
-// 文字 / OCR 结果解析：日期、时间、金额、商家、分类（全部在浏览器本地完成，免费）
+// テキスト・OCR解析：日付、時刻、金額、店舗、カテゴリー（ブラウザ内で処理）
 export const CATEGORIES = ['餐饮', '饮食料品', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
 
 const pad = n => String(n).padStart(2, '0')
@@ -224,7 +224,7 @@ export function parseReceipt(raw, rules = []) {
   }
 }
 
-// 将一段粘贴文字或一张 OCR 图片拆分为多笔记录。
+// 貼り付けテキストまたはOCR画像から複数の明細を抽出する。
 export function parseEntries(raw, rules) {
   const marker = '\n__QP_AMOUNT_COLUMN__\n'
   let qpColumnAmounts = []
@@ -414,7 +414,7 @@ export function parseEntries(raw, rules) {
       recovered.forEach((row, index) => {
         row.amount = qpColumnAmounts[index]
         row.note = ''
-        row.raw += '\\n金额由右侧金额栏二次识别'
+        row.raw += '\\n右側の金額欄から金額を再認識'
       })
     }
     if (recovered.length > qpRows.length) return recovered
@@ -590,7 +590,7 @@ export function parseEntries(raw, rules) {
   if (hasCardPaymentMetadata && dateLines.length && !hasExplicitAmount) return [{ ...entry, amount: 0 }]
   return [entry]
 }
-// 图片 → 文字：Tesseract.js 在手机浏览器本地运行，不上传、不收费
+// 画像から文字を抽出：Tesseract.jsを端末のブラウザ内で実行し、画像はアップロードしない
 export async function ocrImage(file, onProgress) {
   const { createWorker } = await import('tesseract.js')
   const worker = await createWorker(['jpn', 'eng'], 1, {

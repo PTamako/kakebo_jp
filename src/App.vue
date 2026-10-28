@@ -6,6 +6,7 @@ import { groupAnnualEntries } from './detail-pagination.js'
 import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
+import { checkRecurringEntries } from './recurring-check.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
@@ -85,13 +86,13 @@ const CATEGORY_ICON_PATHS = {
  '投資・資産移動':'M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4'
 }
 const ICON_LIBRARY = [
-  { id:'food', label:'食料品', path:CATEGORY_ICON_PATHS['饮食料品'] },
+  { id:'food', label:'飲食料品', path:CATEGORY_ICON_PATHS['饮食料品'] },
   { id:'dining', label:'外食', path:CATEGORY_ICON_PATHS['餐饮'] },
   { id:'daily', label:'日用品', path:CATEGORY_ICON_PATHS['日用品'] },
   { id:'transport', label:'交通', path:CATEGORY_ICON_PATHS['交通'] },
   { id:'shopping', label:'買い物', path:CATEGORY_ICON_PATHS['购物'] },
-  { id:'home', label:'住居', path:CATEGORY_ICON_PATHS['居住'] },
-  { id:'medical', label:'医療', path:CATEGORY_ICON_PATHS['医疗'] },
+  { id:'home', label:'住居費', path:CATEGORY_ICON_PATHS['居住'] },
+  { id:'medical', label:'医療費', path:CATEGORY_ICON_PATHS['医疗'] },
   { id:'pet', label:'ペット', path:CATEGORY_ICON_PATHS['宠物'] },
   { id:'beauty', label:'美容', path:'M9 3h6v5H9zM8 8h8v12H8zM10 12h4M18 3v4M16 5h4' },
   { id:'education', label:'教育', path:'M2 9l10-5 10 5-10 5-10-5ZM6 11v5c3 3 9 3 12 0v-5M21 10v6' },
@@ -149,7 +150,7 @@ const availableIcons = computed(() => {
   return ICON_LIBRARY.filter(icon => icon.id === 'other' || (!used.has(icon.id) && !existingPaths.has(icon.path) && !existingLabels.has(icon.label)))
 })
 const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || CATEGORY_ICON_PATHS[name] || ICON_LIBRARY.at(-1).path
-const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
+const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'飲食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
 
 // Store only a revocable, 30-day device session; never persist the access code.
@@ -165,6 +166,7 @@ async function signIn(code) {
   localStorage.removeItem('kakeibo-logged-out')
   sessionStorage.removeItem('kakeibo-token')
   locked.value = false
+  checkRecurringEntries(api).then(() => { load(); loadYear() }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message))
 }
 async function logout() {
   if (busy.value || editSaving.value || investmentBusy.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
@@ -246,7 +248,7 @@ async function loadYear() {
     if (requestId === yearRequestId && year === selectedYear.value) annualStats.value = nextStats
   } catch (e) { if (requestId === yearRequestId) flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
-onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers() } })
+onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers(); checkRecurringEntries(api).then(count => { if (count) { load(); loadYear() } }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message)) } })
 
 watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })

@@ -1,0 +1,325 @@
+/* Mobile-first visual shell: presentation only, no persistence or financial logic. */
+html { -webkit-text-size-adjust: 100%; }
+main {
+  --mobile-gutter: clamp(12px, 3.7vw, 18px);
+  padding-inline: var(--mobile-gutter);
+  padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+}
+main .topbar {
+  position: relative;
+  z-index: 12;
+  min-width: 0;
+  min-height: 58px;
+  padding: 5px 0 14px;
+  gap: 8px;
+}
+main .brand { flex: 1 1 auto; min-width: 0; }
+main .brand-mark { flex: none; }
+main .brand > div { min-width: 0; }
+main .brand small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+main .header-actions { display: flex; align-items: center; gap: 7px; flex: none; }
+main .header-logout {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 9px 10px;
+  border-radius: 13px;
+  font-size: 12px;
+}
+main .header-logout svg { width: 18px; height: 18px; flex: none; }
+main .theme-picker { position: relative; flex: none; }
+main .theme-picker > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+main .theme-picker > summary::-webkit-details-marker { display: none; }
+main .theme-picker > summary svg { width: 19px; height: 19px; }
+main .theme-picker > summary .theme-indicator {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #0001;
+  border-radius: 50%;
+  margin-top: -17px;
+  margin-left: -5px;
+}
+main .theme-picker[open] > summary {
+  border-color: var(--blue);
+  color: var(--blue-dark);
+  background: var(--tint);
+}
+main .theme-picker > summary:focus-visible,
+main .theme-switcher button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+main .theme-picker .theme-switcher {
+  position: absolute;
+  z-index: 35;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  width: min(244px, calc(100vw - 28px));
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 14px 32px #34283c24;
+}
+main .theme-switcher strong {
+  grid-column: 1 / -1;
+  color: var(--ink);
+  font-size: 13px;
+}
+main .theme-picker .theme-switcher button {
+  min-height: 45px;
+  padding: 9px 7px;
+  justify-content: flex-start;
+  font-size: 12px;
+  background: var(--paper);
+  border-radius: 11px;
+}
+main .theme-switcher button i { width: 14px; height: 14px; flex: none; }
+main .theme-picker .theme-switcher button.selected {
+  border-color: var(--blue);
+  background: var(--tint);
+}
+
+/* Native-like bottom tabs, reliable minimum hit area and a visible current tab. */
+main .bottom-nav {
+  width: min(calc(100% - 16px), 510px);
+  max-width: 510px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  bottom: calc(7px + env(safe-area-inset-bottom, 0px));
+  border-radius: 20px;
+  padding: 6px;
+  gap: 3px;
+  box-shadow: 0 8px 28px #28243418;
+}
+main .bottom-nav button {
+  min-width: 0;
+  min-height: 55px;
+  gap: 3px;
+  border-radius: 14px;
+  padding: 6px 1px;
+  font-size: clamp(10px, 2.8vw, 12px);
+  line-height: 1.15;
+}
+main .bottom-nav button .nav-icon svg { width: 23px; height: 23px; }
+main .bottom-nav button.active { font-weight: 800; }
+main .bottom-nav button:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+
+/* Common card rhythm, controls and readable touch surfaces. */
+main .page-heading { min-width: 0; gap: 8px; margin-bottom: 14px; }
+main .page-heading > div:first-child { min-width: 0; }
+main .page-heading h1 { font-size: clamp(22px, 5.9vw, 25px); }
+main .heading-period { min-width: 0; }
+main .heading-period .month { font-size: 13px; }
+main .heading-period .period-reset { min-height: 44px; font-size: 12px; }
+main .panel, main .stats-card, main .entry-card, main .metric-card {
+  border-color: var(--line);
+  box-shadow: 0 3px 13px #2e29300b;
+}
+main input:not([type=checkbox]):not([type=radio]),
+main select, main textarea {
+  min-width: 0;
+  font-size: 16px;
+  max-width: 100%;
+  color: var(--ink);
+  caret-color: var(--blue-dark);
+}
+main input[type=date], main input[type=month], main input[type=time] { color-scheme: light; }
+main button, main select, main summary, main label { -webkit-tap-highlight-color: transparent; }
+main .button-primary, main .button-secondary, main .upload-button {
+  min-height: 46px;
+  border-radius: 12px;
+  line-height: 1.25;
+}
+main .manage-category { min-height: 44px; padding-inline: 10px; }
+main .icon-button { width: 44px; height: 44px; min-height: 44px; font-size: 23px; }
+main .input-mode-switch { margin: 8px 0 12px; }
+main .input-mode-switch button { min-height: 46px; font-size: 13px; }
+main .text-entry-details > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 13px;
+  font-weight: 650;
+}
+main .type-switch button { min-height: 46px; }
+main .entry-card { padding: 14px; gap: 11px; }
+main .entry-card-heading { min-height: 40px; }
+main .entry-card-heading .remove-button { flex: none; }
+main .draft-heading { margin-top: 16px; }
+main .transaction-form { gap: 10px; }
+main .transaction-form .amount-field input {
+  font-size: clamp(25px, 7.5vw, 32px);
+  font-variant-numeric: tabular-nums;
+}
+main .transaction-form .transaction-details > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+main .batch-actions:not(.batch-actions-empty) {
+  position: sticky;
+  z-index: 8;
+  bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+  gap: 9px;
+  padding: 9px;
+  margin: 12px -9px 0;
+  background: color-mix(in srgb, var(--paper) 93%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  box-shadow: 0 7px 22px #2d29371a;
+}
+main .batch-actions > * { min-width: 0; }
+main .batch-actions .button-primary { font-size: 14px; }
+
+/* Monthly ledger: one-thumb filters and clearer readable transaction rows. */
+main .entry-type-filter, main .stats-period-tabs { gap: 5px; padding: 4px; border-radius: 14px; }
+main .entry-type-filter button, main .stats-period-tabs button {
+  min-height: 46px;
+  padding: 7px 2px;
+  font-size: clamp(11px, 3vw, 13px);
+}
+main .month-calendar { padding: 12px 9px 10px; margin-bottom: 12px; }
+main .calendar-heading { gap: 8px; min-width: 0; }
+main .calendar-heading strong { min-width: 0; }
+main .calendar-actions { justify-content: flex-end; }
+main .calendar-reset { min-height: 40px; padding: 7px 8px; }
+main .calendar-day { min-height: 56px; padding: 7px 1px 5px; border-radius: 11px; }
+main .calendar-day-number { font-size: 13px; }
+main .calendar-day small { font-size: 9px; }
+main .entry-day-heading { min-height: 49px; padding: 12px 11px; }
+main .ledger-row-content { min-height: 64px; padding-block: 10px; }
+main .ledger-info { overflow: hidden; }
+main .ledger-info b { font-size: 14px; }
+main .ledger-info small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+main .ledger-amount { font-size: clamp(12px, 3.5vw, 15px); }
+main .swipe-delete, main .swipe-receipt { min-height: 48px; }
+main .load-more-button { width: 100%; max-width: none; min-height: 46px; }
+main .summary-strip { min-width: 0; gap: 6px; }
+main .summary-strip > span { min-width: 0; overflow-wrap: anywhere; }
+
+/* Analytics and investments: prevent cramped two-column values and sideways scrolling. */
+main .stats-page, main .annual-page, main .stats-card { min-width: 0; }
+main .stats-card { padding: 15px; }
+main .hero-total { padding: 20px 18px; }
+main .hero-total > strong { font-size: clamp(28px, 8vw, 37px); }
+main .metric-card { min-width: 0; }
+main .metric-card strong { font-size: clamp(17px, 5vw, 21px); }
+main .pie-chart-layout, main .donut-vertical { min-width: 0; }
+main .donut-vertical .pie-legend {
+  width: 100%;
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+main .donut-vertical .pie-legend-row { scroll-snap-align: start; min-height: 44px; }
+main .payment-method-stats-grid button { min-height: 87px; }
+main .investment-card { min-width: 0; padding: 15px; }
+main .investment-card .form-field input { font-size: 16px; min-height: 48px; }
+main .investment-summary > div { min-width: 0; }
+main .investment-summary strong { overflow-wrap: anywhere; }
+main .pending-refresh, main .pending-retry, main .pending-delete { min-height: 44px; }
+main .pending-delete { min-width: 44px; }
+
+/* Management favors daily-use controls; maintenance actions live in disclosures. */
+main .finance-tools { min-width: 0; gap: 12px; }
+main .finance-tools .finance-panel { padding: 14px; border-radius: 17px; }
+main .finance-tools .finance-panel h2 { font-size: 16px; }
+main .finance-tools .finance-global-load { min-height: 44px; }
+main .finance-tools .finance-inputs input,
+main .finance-tools .finance-inputs select,
+main .finance-tools .finance-panel input,
+main .finance-tools .finance-panel select { font-size: 16px; }
+main .finance-tools .finance-panel button { min-height: 44px; }
+main .finance-tools .card-billing-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 9px;
+}
+main .finance-tools .card-billing-fields > label:first-child { grid-column: 1 / -1; }
+main .finance-tools .card-billing-fields .card-usage-total {
+  font-size: 16px;
+  padding-inline: 10px;
+}
+main .finance-tools .finance-disclosure { display: block; }
+main .finance-tools .finance-disclosure > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  font-weight: 750;
+  font-size: 15px;
+  cursor: pointer;
+  list-style: none;
+}
+main .finance-tools .finance-disclosure > summary::-webkit-details-marker { display: none; }
+main .finance-tools .finance-disclosure > summary::after {
+  content: "⌄";
+  margin-left: auto;
+  color: var(--blue-dark);
+  font-size: 20px;
+}
+main .finance-tools .finance-disclosure[open] > summary::after { content: "⌃"; }
+main .finance-tools .finance-disclosure > summary > span { color: var(--muted); font-size: 11px; font-weight: 500; }
+main .finance-tools .finance-disclosure[open] > *:not(summary) { margin-top: 10px; }
+main .finance-tools .recurring-details { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+main .finance-tools .recurring-details > label:last-child { grid-column: 1 / -1; }
+main .finance-tools .finance-bill-history-row { min-height: 52px; }
+main .finance-tools .finance-bill-history-row button { min-height: 44px; }
+
+/* iPhone edit dialogs are bottom sheets with a reliable safe-area footer. */
+@media (max-width: 560px) {
+  main .edit-overlay { align-items: flex-end; padding: 0; }
+  main .edit-dialog {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 18px - env(safe-area-inset-top, 0px));
+    border-radius: 22px 22px 0 0;
+    padding: 18px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  main .edit-dialog-actions { position: sticky; bottom: 0; z-index: 2; background: var(--card); padding-block: 8px; }
+}
+@media (max-width: 420px) {
+  main .today-date { display: none; }
+  main .header-logout { width: 44px; padding: 0; }
+  main .header-logout span { display: none; }
+  main .brand small { display: none; }
+  main .page-heading .heading-period .month { width: 114px; min-width: 0; }
+  main .page-heading .heading-period .period-reset { padding-inline: 7px; }
+  main .finance-tools .finance-global-load { max-width: 53%; font-size: 11px; }
+  main .finance-tools .finance-panel { padding: 12px; }
+}
+@media (max-width: 355px) {
+  main .calendar-weekdays, main .calendar-grid { gap: 2px; }
+  main .calendar-day small { font-size: 8px; }
+  main .page-heading h1 { font-size: 21px; }
+  main .page-heading .heading-period .month { width: 108px; }
+  main .finance-tools .card-main-controls { gap: 4px; }
+  main .finance-tools .finance-inputs.recurring-details { grid-template-columns: minmax(0, 1fr); }
+  main .finance-tools .recurring-details > label:last-child { grid-column: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  main .page-section, main .bottom-nav button, main .ledger-row-content { animation: none; transition: none; }
+}

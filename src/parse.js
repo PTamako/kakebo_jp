@@ -340,13 +340,12 @@ export function parseEntries(raw, rules) {
     const m = body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV|]+\s*$/i)
       || body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)\s*$/i)
     if (!m || !m[1].trim()) continue
-    let token = m[2]
-      // In this QP statement font, OCR commonly confuses 6 with "o"; "]" is a noisy thousands separator.
-      .replace(/[oOｏＯ]/g, '6')
-      .replace(/[\]\[]/g, '')
-      .replace(/[\s,，.]/g, '')
-    const amount = Number(token)
-    if (!Number.isFinite(amount) || amount < 1 || amount > 999999) continue
+    // Ambiguous OCR glyphs (O/o) must not be guessed as the digit 6.
+    // Keep the row for manual review rather than silently recording a wrong charge.
+    const ambiguousAmount = /[oOｏＯ]/.test(m[2])
+    const token = m[2].replace(/[\]\[]/g, '').replace(/[\s,，.]/g, '')
+    const amount = ambiguousAmount ? 0 : Number(token)
+    if (!Number.isFinite(amount) || amount < 0 || amount > 999999) continue
     let nextDate = null
     for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
       if (/^QP\s*\//i.test(lines[j])) break
@@ -358,7 +357,7 @@ export function parseEntries(raw, rules) {
     const { category, keyword } = classify(merchant, rules)
     qpRows.push({
       date: findDate(nextDate), time: '', amount, category,
-      merchant: merchant.slice(0, 60), note: '',
+      merchant: merchant.slice(0, 60), note: amount ? '' : '要確認：金額の数字が不明瞭です',
       raw: merchant + '\n' + nextDate + '\n' + m[2],
       suggested: category, keyword
     })

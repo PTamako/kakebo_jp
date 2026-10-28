@@ -411,6 +411,7 @@ async function saveAll() {
 const pendingEntryIds = ref(new Set())
 const editSaving = ref(false)
 async function remove(id) {
+  const operatedDate = entries.value.find(entry => Number(entry.id) === Number(id))?.date?.slice(0, 10)
   if (pendingEntryIds.value.has(id)) return
   if (!confirm('この記録を削除しますか？')) return
   pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
@@ -423,6 +424,7 @@ async function remove(id) {
       receiptImageIds.value = new Set([...receiptImageIds.value].filter(imageId => Number(imageId) !== Number(id)))
       if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
     } catch { receiptDeleteWarning = ' 端末内のレシート画像は削除できませんでした。'; receiptSaveError.value = '記録は削除されましたが、端末内のレシート画像を削除できませんでした。' }
+    preserveOperatedDay.value = operatedDate || ''
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadInvestments(), loadTransfers()])
     flash('記録を削除しました' + receiptDeleteWarning)
   } catch (error) { flash('削除に失敗しました：' + error.message) }
@@ -461,6 +463,7 @@ async function saveEdit() {
       try { await persistReceipt(e.id, editReceiptImage.value); editReceiptImage.value = null }
       catch { receiptSaveError.value = '記録は更新されましたが、レシート画像を保存できませんでした。元の写真を保管してください。' }
     }
+    preserveOperatedDay.value = e.date.slice(0, 10)
     editingEntry.value = null
     flash(receiptSaveError.value || '記録を更新しました')
     await load()
@@ -661,6 +664,7 @@ watch(annualMonthGroups, groups => {
 })
 function loadMoreEntries() { visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize) }
 const expandedEntryDays = ref(new Set())
+const preserveOperatedDay = ref('')
 const groupedPagedEntries = computed(() => {
   const groups = new Map()
   for (const entry of pagedEntries.value) {
@@ -678,9 +682,14 @@ watch([displayEntries, detailFilter, selectedDay], () => {
   visibleEntryCount.value = 20
   const days = [...new Set(displayEntries.value.map(entry => String(entry.date || '').slice(0, 10)).filter(Boolean))].sort((a, b) => b.localeCompare(a))
   const today = new Date().toLocaleDateString('sv-SE')
-  const defaultDay = detailFilter.value ? days[0] : (days.includes(today) ? today : days[0])
+  const operatedDay = preserveOperatedDay.value
+  const defaultDay = operatedDay && days.includes(operatedDay) ? operatedDay : (detailFilter.value ? days[0] : (days.includes(today) ? today : days[0]))
   expandedEntryDays.value = new Set(defaultDay ? [defaultDay] : [])
-  visibleEntryCount.value = 20
+  if (operatedDay && days.includes(operatedDay)) {
+    const index = sortedDisplayEntries.value.findIndex(entry => String(entry.date || '').slice(0, 10) === operatedDay)
+    visibleEntryCount.value = Math.max(20, index + 1)
+  }
+  preserveOperatedDay.value = ''
 }, { deep: true })
 watch(visibleEntryCount, () => {
   const days = groupedPagedEntries.value.map(group => group.date)

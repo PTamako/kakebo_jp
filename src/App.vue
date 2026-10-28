@@ -1193,7 +1193,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <button :class="{ active: tab === 'list' }" @click="tab = 'list'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>
       <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.5 19.5h15"/><rect x="6" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10" rx="1"/><rect x="14.8" y="4.5" width="3.2" height="13" rx="1"/></svg></span><span>統計</span></button>
       <button :class="{ active: tab === 'investments' }" @click="tab = 'investments'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2.5"/><path d="M3.5 10h17M7 4.5h10M15.5 14.5h2"/></svg></span><span>資産・投資</span></button>
-      <button :class="{ active: tab === 'finance' }" @click="tab = 'finance'"><span class="nav-icon" aria-hidden="true">☷</span><span>管理</span></button>
+      <button :class="{ active: tab === 'finance' }" @click="tab = 'finance'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span><span>管理</span></button>
     </nav>
   </main>
 </template>
@@ -1466,4 +1466,10 @@ main .capture-panel .receipt-mode-tabs button.selected{background:var(--card);bo
 main .capture-panel .receipt-mode-tabs button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 main .capture-panel .action-row .upload-button,main .capture-panel .action-row>button{min-height:44px}
 @media(max-width:360px){main .capture-panel .receipt-mode-tabs button{font-size:13px;padding:9px 6px}}
+/* Five equal bottom tabs: maintain a single row on narrow iPhones. */
+main .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr));max-width:460px}
+main .bottom-nav button{min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-inline:2px}
+main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
+main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
 </style>

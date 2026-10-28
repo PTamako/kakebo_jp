@@ -36,7 +36,7 @@ async function renameCard() {
     return
   }
   if (name !== old) {
-    if (busy.value) return
+    if (busy.value || !settingsReady.value) return
     busy.value = true
     try {
       // Commit the ledger rename on D1 before updating local display names.
@@ -44,6 +44,9 @@ async function renameCard() {
       rows.value = rows.value.map(e => e.payment_source === old ? {...e,payment_source:name} : e)
       plans.value = plans.value.map(p => p.paymentSource === old ? {...p,paymentSource:name} : p)
       await props.api('finance-settings/plans',{method:'PUT',body:JSON.stringify({value:plans.value})})
+      const renamedBills = bills.value.map(record => record.name === old ? {...record, name} : record)
+      await props.api('finance-settings/bills',{method:'PUT',body:JSON.stringify({value:renamedBills})})
+      bills.value = renamedBills
       const updated = {...closingDays.value,[name]:closingDays.value[old] || ''}
       delete updated[old]
       closingDays.value = updated

@@ -5,7 +5,7 @@ import { onRequest } from '../functions/api/[[path]].js'
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
+  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
   async batch(statements) { for (const statement of statements) await statement.run() }
   prepare(sql) {
     const db = this
@@ -13,6 +13,7 @@ class LedgerDb {
       args: [],
       bind(...args) { this.args = args; return this },
       async first() {
+        if (sql.startsWith('SELECT value FROM finance_settings WHERE name=')) return db.financeSettings.has(this.args[0]) ? { value: db.financeSettings.get(this.args[0]) } : null
         if (sql.startsWith('SELECT name FROM payment_sources WHERE name=')) return db.paymentSources.has(this.args[0]) ? { name: this.args[0] } : null
         if (sql.startsWith('SELECT token_hash FROM device_sessions')) return (db.sessions.get(this.args[0]) || 0) > this.args[1] ? { token_hash: this.args[0] } : null
         if (sql.startsWith('SELECT attempts, reset_at FROM login_attempts')) return db.attempts.get(this.args[0]) || null
@@ -42,6 +43,10 @@ class LedgerDb {
       },
       async run() {
         db.sql.push(sql)
+        if (sql.startsWith('INSERT OR IGNORE INTO finance_settings')) {
+          if (!db.financeSettings.has(this.args[0])) db.financeSettings.set(this.args[0], this.args[1])
+        }
+        if (sql.startsWith('INSERT INTO finance_settings')) db.financeSettings.set(this.args[0], this.args[1])
         if (sql.startsWith('INSERT OR IGNORE INTO payment_sources')) db.paymentSources.add(this.args[0])
         if (sql.startsWith('UPDATE payment_sources SET name=')) {
           if (db.paymentSources.delete(this.args[1])) db.paymentSources.add(this.args[0])
@@ -267,4 +272,32 @@ test('renaming a card rebinds historical payments without altering amounts or in
   assert.deepEqual(db.entries.map(e=>({id:e.id,amount:e.amount,type:e.type,transfer_target:e.transfer_target})),before)
   assert.ok(db.entries.every(e=>e.payment_source==='新カード'))
   assert.equal(db.snapshot,120000)
+})
+
+test('D1 finance settings migrate once and protect pre-existing plans', async () => {
+  const db = new LedgerDb()
+  const plan = { id:'fixed-rent',name:'家賃',amount:102000,day:25,category:'居住',paymentSource:'口座振替',startMonth:'2026-06',enabled:true }
+  let x = await call(db,'finance-settings/plans')
+  assert.equal(x.status,200)
+  assert.equal(x.body.exists,false)
+  assert.equal((await call(db,'finance-settings/plans','POST',{value:[plan]})).status,200)
+  assert.equal((await call(db,'finance-settings/plans','POST',{value:[]})).status,200)
+  x = await call(db,'finance-settings/plans')
+  assert.equal(x.body.exists,true)
+  assert.deepEqual(x.body.value,[plan])
+  assert.equal(db.entries.length,0)
+})
+
+test('D1 closing days and card bills survive retrieval and reject wrong data', async () => {
+  const db = new LedgerDb()
+  const closing = {'セゾンカード':'10','セブンカード・プラス':'15'}
+  assert.equal((await call(db,'finance-settings/closing-days','PUT',{value:closing})).status,200)
+  assert.deepEqual((await call(db,'finance-settings/closing-days')).body.value,closing)
+  const bills = [{ name:'セゾンカード',month:'2026-10',total:31000,start:'2026-09-11',end:'2026-10-10',count:12 }]
+  assert.equal((await call(db,'finance-settings/bills','PUT',{value:bills})).status,200)
+  assert.deepEqual((await call(db,'finance-settings/bills')).body.value,bills)
+  assert.equal((await call(db,'finance-settings/closing-days','PUT',{value:{card:500}})).status,400)
+  assert.deepEqual((await call(db,'finance-settings/closing-days')).body.value,closing)
+  assert.equal((await call(db,'finance-settings/unknown','GET')).status,400)
+  assert.equal(db.entries.length,0)
 })

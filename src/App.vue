@@ -467,14 +467,14 @@ async function saveEdit() {
     const editedDay = e.date.slice(0, 10)
     const destinationMonth = editedEntryMonth(e.date)
     preserveOperatedDay.value = editedDay
+    // An edited type/category can no longer match the previous detail filters.
+    detailRequestId++
+    detailFilter.value = null
+    detailSourceEntries.value = []
+    entryTypeFilter.value = 'all'
+    selectedDay.value = ''
     editingEntry.value = null
-    if (destinationMonth && destinationMonth !== month.value) {
-      detailRequestId++
-      detailFilter.value = null
-      detailSourceEntries.value = []
-      selectedDay.value = ''
-      month.value = destinationMonth
-    }
+    if (destinationMonth && destinationMonth !== month.value) month.value = destinationMonth
     flash(receiptSaveError.value || '記録を更新しました')
     await load()
     await refreshDetailSource()

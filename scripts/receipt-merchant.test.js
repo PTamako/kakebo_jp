@@ -75,3 +75,22 @@ test('eight space-delimited AI card rows keep merchant titles and amounts', () =
   assert.deepEqual(rows.map(row => row.amount), [2992, 420, 744, 15000, 4096, 9590, 1990, 3677])
   assert.deepEqual(rows.map(row => row.date), ['2026-10-18', '2026-10-16', '2026-10-16', '2026-10-14', '2026-10-14', '2026-10-12', '2026-10-09', '2026-10-04'])
 })
+
+test('eight yen-prefixed AI statement rows parse cleanly', () => {
+  const input = [
+    '2026/10/18, サンドラッグダイレックスアプリ, ¥1,011, 1回払い',
+    '2026/10/17, Suicaチャージ（楽天ペイ）, ¥1,000, 1回払い',
+    '2026/10/16, Suicaチャージ（楽天ペイ）, ¥1,000, 1回払い',
+    '2026/10/13, Suicaチャージ（楽天ペイ）, ¥1,000, 1回払い',
+    '2026/10/08, Suicaチャージ（楽天ペイ）, ¥1,000, 1回払い',
+    '2026/10/04, Suicaチャージ（楽天ペイ）, ¥1,000, 1回払い',
+    '2026/10/03, サンドラッグダイレックスアプリ, ¥1,265, 1回払い',
+    '2026/10/02, Suicaチャージ（楽天ペイ）, ¥1,000, 1回払い'
+  ].join('\n')
+  const rows = parseEntries(input)
+  assert.equal(rows.length, 8)
+  assert.deepEqual(rows.map(row => row.amount), [1011, 1000, 1000, 1000, 1000, 1000, 1265, 1000])
+  assert.equal(rows[0].merchant, 'サンドラッグダイレックスアプリ')
+  assert.equal(rows[1].merchant, 'Suicaチャージ(楽天ペイ)')
+  assert.equal(rows[7].date, '2026-10-02')
+})

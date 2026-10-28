@@ -206,7 +206,7 @@ export function parseReceipt(raw, rules = []) {
     const subtotal = lines.filter(line => /小\s*計/.test(line)).map(readYen).find(Boolean) || 0
     const tax = lines.filter(line => /(?:外\s*税|消費税)/.test(line) && !/対象|税率/.test(line)).map(readYen).find(Boolean) || 0
     const taxBase = lines.filter(line => /(?:外\s*税|消費税)/.test(line) && /対象|税率/.test(line)).map(readYen).find(Boolean) || 0
-    if (subtotal > 0 && tax > 0 && subtotal <= 9999999 - tax && (!taxBase || taxBase === subtotal)) {
+    if (subtotal > 0 && tax > 0 && taxBase === subtotal && subtotal <= 9999999 - tax && Math.abs(tax - Math.floor(subtotal * 0.08)) <= 1) {
       candidates.push({ amount: subtotal + tax, score: 1, index: lines.length, reconstructed: true })
     }
   }

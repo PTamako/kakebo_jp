@@ -27,15 +27,16 @@ const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([.
 const input = ref(''), busy = ref(''), msg = ref('')
 const ocrEngine = ref(''), ocrWarning = ref('')
 const forms = ref([])
-const defaultPaymentSources = ['現金', 'Suica', 'PayPay', '楽天カード', '三井住友カード', 'セブンカード・プラス', 'セゾンカード', 'その他']
-function readPaymentSources() {
+// D1 is the single source of truth for payment methods.
+// Read old browser settings only once when the server table is still empty.
+function readLegacyPaymentSources() {
   try {
     const stored = JSON.parse(localStorage.getItem('kakeibo-payment-sources') || 'null')
-    if (Array.isArray(stored)) return ['現金', ...new Set(stored.filter(x => typeof x === 'string' && x.trim() && x !== '現金'))]
+    if (Array.isArray(stored)) return [...new Set(stored.filter(x => typeof x === 'string' && x.trim()).map(x => x.trim()))]
   } catch {}
-  return [...defaultPaymentSources]
+  return []
 }
-const paymentSources = ref(readPaymentSources())
+const paymentSources = ref([])
 async function updatePaymentSources(values) {
   const removed = paymentSources.value.filter(name => !values.includes(name))
   const added = values.filter(name => !paymentSources.value.includes(name))
@@ -56,11 +57,10 @@ async function loadPaymentSettings() {
   paymentSettingsLoading = (async () => {
     let cards = await api('payment-sources')
     if (!cards.length && !paymentSettingsLoaded) {
-      await api('payment-sources/initialize', { method: 'POST', body: JSON.stringify({ names: paymentSources.value }) })
+      await api('payment-sources/initialize', { method: 'POST', body: JSON.stringify({ names: readLegacyPaymentSources() }) })
       cards = await api('payment-sources')
     }
     paymentSources.value = cards.map(x => x.name)
-    localStorage.setItem('kakeibo-payment-sources', JSON.stringify(paymentSources.value))
     defaultPaymentSource.value = cards.find(x => x.is_default)?.name || ''
     merchantPaymentRules.value = await api('merchant-payment-rules')
     customCategoryRules.value = await api('custom-rules')

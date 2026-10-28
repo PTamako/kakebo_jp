@@ -2,7 +2,24 @@
 import { ref, computed, onMounted } from 'vue'
 import { validateBackup, transactionKey, reconcileStatement, nextScheduledDate } from './finance-tools.js'
 const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] } })
-const emit = defineEmits(['ledger-updated'])
+const emit = defineEmits(['ledger-updated', 'update-payment-sources'])
+const newPaymentSource = ref('')
+const cardMessage = ref('')
+function addPaymentSource() {
+  const name = newPaymentSource.value.trim()
+  if (!name || name.length > 80) { cardMessage.value = '名称は1～80文字で入力してください'; return }
+  if (props.paymentSources.includes(name)) { cardMessage.value = '同じ名前が登録されています'; return }
+  emit('update-payment-sources', [...props.paymentSources, name])
+  newPaymentSource.value = ''
+  cardMessage.value = name + 'を追加しました'
+}
+function removePaymentSource(name) {
+  if (name === '現金') return
+  if (!confirm(name + 'を選択肢から削除しますか？過去の明細や固定支出、請求データは削除されません。')) return
+  emit('update-payment-sources', props.paymentSources.filter(x => x !== name))
+  cardMessage.value = name + 'を選択肢から削除しました。過去の記録は保持されます'
+}
+
 const rows = ref([])
 const loaded = ref(false)
 const busy = ref(false)
@@ -130,6 +147,17 @@ const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.ty
 <template>
 <section class="finance-tools">
   <h1>管理・照合</h1>
+  <article class="finance-panel">
+    <h2>支払方法・カード管理</h2>
+    <p>ここで追加・削除した選択肢は、明細入力・編集・固定支出・カード請求照合のすべてに反映されます。削除しても過去の取引は変更されません。現金は削除できません。</p>
+    <div class="finance-inputs"><input v-model="newPaymentSource" maxlength="80" placeholder="新しいカード名・支払方法" aria-label="新しい支払方法"><button type="button" @click="addPaymentSource">追加</button></div>
+    <div v-for="source in props.paymentSources" :key="source" class="finance-row">
+      <span>{{source}}</span>
+      <button v-if="source !== '現金'" type="button" @click="removePaymentSource(source)">削除</button>
+    </div>
+    <p role="status">{{cardMessage}}</p>
+    <p>選択肢はこの端末に保存されます。別の端末とは自動同期されません。</p>
+  </article>
   <article class="finance-panel">
     <h2>バックアップ・復元</h2>
     <p>明細の JSON バックアップです。レシート画像・SBI 評価額・カテゴリ設定は対象外です。復元は追加のみで、既存の記録を変更しません。</p>

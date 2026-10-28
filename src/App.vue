@@ -311,6 +311,12 @@ async function saveAll() {
   if (!forms.value.length) return flash('保存する記録がありません')
   const invalid = forms.value.findIndex(f => !(Number(f.amount) > 0))
   if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
+  const uncertain = forms.value.filter(f => /要確認|不明瞭|読み取れません|確認してください/.test(f.note || ''))
+  if (uncertain.length) return flash('金額・内容を確認し、要確認の表示を修正してください')
+  const key = f => [f.date, f.time || '', Number(f.amount), f.merchant?.trim() || ''].join('|')
+  const seen = new Set()
+  const possibleDuplicates = forms.value.filter(f => { const k = key(f); const duplicate = seen.has(k) || entries.value.some(e => key(e) === k); seen.add(k); return duplicate })
+  if (possibleDuplicates.length && !confirm(`同じ日付・金額・店名の記録が${possibleDuplicates.length}件あります。実際に別の取引なら保存できます。続行しますか？`)) return
   busy.value = 'saving'
   let saved = 0
   let ruleFailures = 0

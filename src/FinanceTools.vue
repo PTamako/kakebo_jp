@@ -413,7 +413,7 @@ async function removeCardBill(record) {
     </div>
     <p v-else>カードと締め月を選択し、カード管理で締め日を設定してください。</p>
     <button type="button" :disabled="!settingsReady || !loaded || !bill.name || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
-    <div v-for="record in bills.slice().reverse().slice(0,12)" :key="record.name+'-'+record.month" class="finance-row">{{record.name}} · {{record.month}} · {{yen(record.total)}}</div>
+    <div v-for="record in bills.slice(0,12)" :key="record.name+'-'+record.month" class="finance-row"><span>{{record.name}} · {{record.month}} · {{yen(record.total)}}</span><button type="button" class="finance-compact-action" @click="removeCardBill(record)" :aria-label="record.name+' '+record.month+' の請求額を削除'">削除</button></div>
   </article>
 </section>
 </template>

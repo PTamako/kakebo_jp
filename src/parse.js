@@ -638,7 +638,7 @@ export async function ocrImage(file, onProgress) {
           return match ? Number(match[1]) : null
         })
         .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
-      const qpCount = (primary.match(/QUIC\s*Pay|QUICPay|(?:^|[\s(（])QP\s*\//gim) || []).length
+      const qpCount = primary.split(/\r?\n/).filter(line => /QUIC\s*Pay|QP\s*\//i.test(line)).length
       if (qpCount >= 2 && amounts.length === qpCount) {
         return primary + '\n__QP_AMOUNT_COLUMN__\n' + amounts.join('\n')
       }

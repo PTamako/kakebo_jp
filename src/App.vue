@@ -851,7 +851,6 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <button v-for="item in themes" :key="item.id" type="button" :class="{ selected: theme === item.id }" :aria-pressed="theme === item.id" @click="setTheme(item.id)"><i :style="{ background: item.color }"></i>{{ item.label }}</button>
     </div>
 
-    <datalist id="payment-source-options"><option v-for="source in paymentSources" :key="source" :value="source"></option></datalist>
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
 
     <section v-if="tab === 'add'" class="page-section">
@@ -912,7 +911,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>時刻</span><input type="time" v-model="f.time" /></label>
           <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : f.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
           <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
-          <label class="form-field"><span>支払方法・カード</span><input v-model="f.paymentSource" list="payment-source-options" maxlength="80" placeholder="現金／カード名など" /></label>
+          <label class="form-field"><span>支払方法・カード</span><select v-model="f.paymentSource"><option value="">未設定</option><option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option><option v-if="f.paymentSource && !paymentSources.includes(f.paymentSource)" :value="f.paymentSource">{{f.paymentSource}}（既存の設定）</option></select></label>
         </div>
         <div v-if="f.type === 'transfer'" class="field-grid transfer-schedule-fields">
           <label class="form-field"><span>振替先</span><select v-model="f.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>
@@ -1015,7 +1014,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <label class="form-field"><span>時刻</span><input v-model="editingEntry.time" type="time" /></label>
             <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : editingEntry.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
             <label class="form-field"><span>店舗</span><input v-model="editingEntry.merchant" /></label>
-            <label class="form-field"><span>支払方法・カード</span><input v-model="editingEntry.paymentSource" list="payment-source-options" maxlength="80" placeholder="現金／カード名など" /></label>
+            <label class="form-field"><span>支払方法・カード</span><select v-model="editingEntry.paymentSource"><option value="">未設定</option><option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option><option v-if="editingEntry.paymentSource && !paymentSources.includes(editingEntry.paymentSource)" :value="editingEntry.paymentSource">{{editingEntry.paymentSource}}（既存の設定）</option></select></label>
           </div>
           <div v-if="editingEntry.type === 'transfer'" class="field-grid transfer-schedule-fields">
             <label class="form-field"><span>振替先</span><select v-model="editingEntry.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>

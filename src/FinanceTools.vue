@@ -85,8 +85,8 @@ const merchantRulesCombined = computed(() => {
   return [...items.values()].sort((a, b) => a.keyword.localeCompare(b.keyword, 'ja'))
 })
 const merchantRuleSearch = ref('')
-const merchantRulePage = ref(1)
-const merchantRulePageSize = 8
+const visibleMerchantRuleCount = ref(8)
+const merchantRuleBatchSize = 8
 const filteredMerchantRules = computed(() => {
   const key = merchantRuleSearch.value.normalize('NFKC').trim().toLowerCase()
   return key ? merchantRulesCombined.value.filter(rule =>
@@ -94,13 +94,9 @@ const filteredMerchantRules = computed(() => {
       String(value || '').normalize('NFKC').toLowerCase().includes(key))
   ) : merchantRulesCombined.value
 })
-const merchantRulePageCount = computed(() => Math.max(1, Math.ceil(filteredMerchantRules.value.length / merchantRulePageSize)))
-const currentMerchantRulePage = computed(() => Math.min(merchantRulePage.value, merchantRulePageCount.value))
-const visibleMerchantRules = computed(() => filteredMerchantRules.value.slice(
-  (currentMerchantRulePage.value - 1) * merchantRulePageSize,
-  currentMerchantRulePage.value * merchantRulePageSize
-))
-function searchMerchantRules(value) { merchantRuleSearch.value = value; merchantRulePage.value = 1 }
+const visibleMerchantRules = computed(() => filteredMerchantRules.value.slice(0, visibleMerchantRuleCount.value))
+function searchMerchantRules(value) { merchantRuleSearch.value = value; visibleMerchantRuleCount.value = merchantRuleBatchSize }
+function showMoreMerchantRules() { visibleMerchantRuleCount.value += merchantRuleBatchSize }
 async function changeCategoryRule(rule, category) {
   if (category === rule.category) return
   try {
@@ -335,11 +331,10 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
         </label>
       </div>
     </div>
-    <nav v-if="filteredMerchantRules.length > merchantRulePageSize" class="merchant-rule-pagination" aria-label="店舗ルールのページ">
-      <button type="button" :disabled="currentMerchantRulePage <= 1" @click="merchantRulePage = currentMerchantRulePage - 1" aria-label="前のページ">‹</button>
-      <span>{{ currentMerchantRulePage }} / {{ merchantRulePageCount }}</span>
-      <button type="button" :disabled="currentMerchantRulePage >= merchantRulePageCount" @click="merchantRulePage = currentMerchantRulePage + 1" aria-label="次のページ">›</button>
-    </nav>
+    <div v-if="visibleMerchantRules.length < filteredMerchantRules.length" class="merchant-rule-more">
+      <button type="button" @click="showMoreMerchantRules">もっと見る</button>
+      <span>{{ visibleMerchantRules.length }} / {{ filteredMerchantRules.length }}件</span>
+    </div>
   </details>
   <article class="finance-panel">
     <h2>バックアップ・復元</h2>
@@ -428,4 +423,7 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
 @media(min-width:381px) and (max-width:540px){
   .merchant-rule-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 }
+.merchant-rule-more{display:flex;align-items:center;justify-content:center;gap:12px;min-width:0}
+.merchant-rule-more button{min-height:44px;padding:9px 20px}
+.merchant-rule-more span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 </style>

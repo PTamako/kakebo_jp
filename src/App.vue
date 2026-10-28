@@ -65,12 +65,15 @@ const viewedReceiptId = ref(null)
 async function refreshReceiptImageIds() {
   const visible = [...(entries.value || []), ...(displayEntries.value || [])]
   const ids = [...new Set(visible.map(entry => Number(entry.id)).filter(Number.isSafeInteger))]
-  const present = await Promise.all(ids.map(async id => [id, !!(await getReceiptImage(id))]))
+  const present = await Promise.all(ids.map(async id => {
+    try { return [id, !!(await getReceiptImage(id))] }
+    catch { return [id, false] }
+  }))
   receiptImageIds.value = new Set(present.filter(([, found]) => found).map(([id]) => id))
 }
 async function viewReceipt(entryId) {
   const blob = await getReceiptImage(entryId)
-  if (!blob) { receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => id !== entryId)); return flash('レシート画像は保存されていません') }
+  if (!blob) { receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => Number(id) !== Number(entryId))); return flash('レシート画像は保存されていません') }
   if (viewedReceiptUrl.value) URL.revokeObjectURL(viewedReceiptUrl.value)
   viewedReceiptUrl.value = URL.createObjectURL(blob)
   viewedReceiptId.value = entryId
@@ -1540,9 +1543,16 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 .payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}</style>
 
 <style>
-.ledger li.receipt-available:not(.swiped-open):not(.swiped-receipt) .ledger-row-content{transform:translateX(9px)}
-.ledger li.swiped-receipt .ledger-row-content{transform:translateX(80px)}
-.ledger .swipe-receipt{position:absolute;top:0;left:0;bottom:0;width:76px;border:0;border-radius:10px;background:#397e9b;color:#fff;font-size:12px;font-weight:800;cursor:pointer}
+/* Both swipe hints share the trailing edge; only the selected action opens. */
+.ledger li:not(.swiped-open):not(.swiped-receipt) .ledger-row-content{transform:translateX(-5px)}
+.ledger li.receipt-available:not(.swiped-open):not(.swiped-receipt) .ledger-row-content{transform:translateX(-11px)}
+.ledger li:not(.swiped-open):not(.swiped-receipt){background:#e86e86}
+.ledger li.receipt-available:not(.swiped-open):not(.swiped-receipt){background:linear-gradient(to left,#e86e86 0 5px,#397e9b 5px 11px,#fff 11px)}
+.ledger li.swiped-receipt .ledger-row-content{transform:translateX(-80px)}
+.ledger .swipe-receipt{position:absolute;top:0;right:0;bottom:0;width:76px;border:0;border-radius:10px;background:#397e9b;color:#fff;font-size:12px;font-weight:800;cursor:pointer}
+.ledger li.swiped-receipt .swipe-delete{visibility:hidden;pointer-events:none}
+.ledger li.swiped-open .swipe-receipt{visibility:hidden;pointer-events:none}
+.ledger li:not(.swiped-receipt) .swipe-receipt{visibility:hidden;pointer-events:none}
 </style>
 
 <style>.receipt-save-error{color:#9b2938;background:#fff0f1;border:1px solid #e9aab2;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700}</style>

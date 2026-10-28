@@ -272,6 +272,69 @@ export async function onRequest({ request, env, params }) {
     // Never rewrite or delete existing ledger rows during migration.
     // SBI valuation entries remain untouched unless the user explicitly edits them.
 
+    // Settings are independent of historical ledger rows and safe to create on existing D1.
+    if (a === 'payment-sources' || a === 'merchant-payment-rules') {
+      await db.prepare("CREATE TABLE IF NOT EXISTS payment_sources (name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)))").run()
+      await db.prepare("CREATE TABLE IF NOT EXISTS merchant_payment_rules (keyword TEXT PRIMARY KEY, payment_source TEXT NOT NULL)").run()
+    }
+    if (a === 'payment-sources' && !b && m === 'GET') {
+      const { results } = await db.prepare('SELECT name, is_default FROM payment_sources ORDER BY sort_order, name').all()
+      return json(results)
+    }
+    if (a === 'payment-sources' && b === 'initialize' && m === 'POST') {
+      const body = await request.json()
+      const names = Array.isArray(body?.names) ? [...new Set(body.names.filter(x => typeof x === 'string').map(x => x.trim()))] : []
+      if (names.length > 100 || names.some(x => !x || x.length > 80)) return json({ error: 'カード名を確認してください' }, 400)
+      const existing = await db.prepare('SELECT COUNT(*) AS n FROM payment_sources').first()
+      if (!existing?.n) {
+        const items = ['現金', ...names.filter(x => x !== '現金')]
+        for (let i = 0; i < items.length; i++) await db.prepare('INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,?2)').bind(items[i],i).run()
+      }
+      return json({ ok: true })
+    }
+    if (a === 'payment-sources' && !b && m === 'POST') {
+      const body = await request.json()
+      const name = typeof body?.name === 'string' ? body.name.trim() : ''
+      if (!name || name.length > 80) return json({ error: 'カード名を確認してください' }, 400)
+      await db.prepare('INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,(SELECT COALESCE(MAX(sort_order),0)+1 FROM payment_sources))').bind(name).run()
+      return json({ ok: true })
+    }
+    if (a === 'payment-sources' && b === 'default' && m === 'POST') {
+      const body = await request.json()
+      const name = typeof body?.name === 'string' ? body.name.trim() : ''
+      if (name && !(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(name).first())) return json({ error: '登録済みのカードを選択してください' }, 400)
+      await db.prepare('UPDATE payment_sources SET is_default=0 WHERE is_default=1').run()
+      if (name) await db.prepare('UPDATE payment_sources SET is_default=1 WHERE name=?1').bind(name).run()
+      return json({ ok: true })
+    }
+    if (a === 'payment-sources' && b === 'remove' && m === 'POST') {
+      const body = await request.json()
+      const name = typeof body?.name === 'string' ? body.name.trim() : ''
+      if (!name || name === '現金') return json({ error: 'カード名を確認してください' }, 400)
+      await db.prepare('DELETE FROM merchant_payment_rules WHERE payment_source=?1').bind(name).run()
+      await db.prepare('DELETE FROM payment_sources WHERE name=?1').bind(name).run()
+      return json({ ok: true })
+    }
+    if (a === 'merchant-payment-rules' && m === 'GET') {
+      const { results } = await db.prepare('SELECT keyword, payment_source FROM merchant_payment_rules ORDER BY LENGTH(keyword) DESC').all()
+      return json(results)
+    }
+    if (a === 'merchant-payment-rules' && m === 'POST') {
+      const body = await request.json()
+      const keyword = typeof body?.keyword === 'string' ? body.keyword.trim() : ''
+      const name = typeof body?.paymentSource === 'string' ? body.paymentSource.trim() : ''
+      if (keyword.length < 2 || keyword.length > 80 || !name || name.length > 80) return json({ error: '店舗と支払方法を確認してください' }, 400)
+      if (!(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(name).first())) return json({ error: '登録済みの支払方法を選択してください' }, 400)
+      await db.prepare('INSERT INTO merchant_payment_rules(keyword,payment_source) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=excluded.payment_source').bind(keyword,name).run()
+      return json({ ok: true })
+    }
+    if (a === 'merchant-payment-rules' && m === 'DELETE') {
+      const keyword = url.searchParams.get('keyword') || ''
+      if (!keyword || keyword.length > 80) return json({ error: '店舗名を確認してください' }, 400)
+      await db.prepare('DELETE FROM merchant_payment_rules WHERE keyword=?1').bind(keyword).run()
+      return json({ ok: true })
+    }
+
     if (a === 'payment-sources' && b === 'rename' && m === 'POST') {
       const body = await request.json()
       const oldName = typeof body?.oldName === 'string' ? body.oldName.trim() : ''
@@ -279,6 +342,9 @@ export async function onRequest({ request, env, params }) {
       if (!oldName || !newName || oldName === '現金' || oldName.length > 80 || newName.length > 80)
         return json({ error: 'カード名を確認してください' }, 400)
       if (oldName === newName) return json({ ok: true, changes: 0 })
+      if (await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(newName).first()) return json({ error: '同じカード名が登録されています' }, 409)
+      await db.prepare('UPDATE payment_sources SET name=?1 WHERE name=?2').bind(newName,oldName).run()
+      await db.prepare('UPDATE merchant_payment_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName).run()
       const result = await db.prepare('UPDATE entries SET payment_source = ?1 WHERE payment_source = ?2').bind(newName, oldName).run()
       return json({ ok: true, changes: result.meta?.changes ?? 0 })
     }

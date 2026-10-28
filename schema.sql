@@ -49,9 +49,38 @@ CREATE TABLE IF NOT EXISTS investment_snapshots (
 CREATE TABLE IF NOT EXISTS payment_sources (
   name TEXT PRIMARY KEY,
   sort_order INTEGER NOT NULL DEFAULT 0,
-  is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1))
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)),
+  closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31)
 );
 CREATE TABLE IF NOT EXISTS merchant_payment_rules (
   keyword TEXT PRIMARY KEY,
   payment_source TEXT NOT NULL
+);
+
+-- Normalized recurring schedules preserve their IDs for duplicate-safe auto entries.
+CREATE TABLE IF NOT EXISTS recurring_plans (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  amount INTEGER NOT NULL CHECK(amount > 0),
+  day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31),
+  category TEXT NOT NULL,
+  payment_source TEXT NOT NULL,
+  start_month TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1))
+);
+
+-- Saved statement totals are snapshots; deleting a bill must not touch entries.
+CREATE TABLE IF NOT EXISTS card_bills (
+  payment_source TEXT NOT NULL,
+  bill_month TEXT NOT NULL,
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  total_amount INTEGER NOT NULL CHECK(total_amount >= 0),
+  transaction_count INTEGER NOT NULL CHECK(transaction_count >= 0),
+  PRIMARY KEY (payment_source,bill_month)
+);
+
+CREATE TABLE IF NOT EXISTS finance_settings (
+  name TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );

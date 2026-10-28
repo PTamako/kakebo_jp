@@ -552,6 +552,16 @@ const selectDonutSlice = (event, period) => {
 const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette, donutSelected('month')?.category))
 const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette, donutSelected('year')?.category))
 
+async function openDuplicateDate(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return
+  clearDetailFilter()
+  entryTypeFilter.value = 'all'
+  calendarExpanded.value = true
+  selectedDay.value = date
+  month.value = date.slice(0, 7)
+  tab.value = 'list'
+  await load()
+}
 const selectedDay = ref('')
 const entryTypeFilter = ref('all')
 const calendarExpanded = ref(false)
@@ -1198,7 +1208,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </article>
     </section>
 
-    <FinanceTools v-if="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" @update-payment-sources="updatePaymentSources" @ledger-updated="load(); loadYear()" />
+    <FinanceTools v-if="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" @update-payment-sources="updatePaymentSources" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button :class="{ active: tab === 'list' }" @click="tab = 'list'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

@@ -590,7 +590,7 @@ export function parseEntries(raw, rules) {
   if (hasCardPaymentMetadata && dateLines.length && !hasExplicitAmount) return [{ ...entry, amount: 0 }]
   return [entry]
 }
-// 图片 → 文字：Tesseract.js 在手机浏览器本地运行，不上传、不收费
+// 画像から文字を抽出：Tesseract.jsを端末のブラウザ内で実行し、画像はアップロードしない
 export async function ocrImage(file, onProgress) {
   const { createWorker } = await import('tesseract.js')
   const worker = await createWorker(['jpn', 'eng'], 1, {

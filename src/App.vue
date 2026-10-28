@@ -321,9 +321,9 @@ async function onImage(e, mode = 'statement') {
   } catch (err) { pendingReceiptImage.value = null; pendingReceiptFileName.value = ''; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
 }
-function addBlank(type = 'expense', showReceiptAttachment = false) {
+function addBlank(type = 'expense') {
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
-  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: '', merchant: '', note: '', raw: '', suggested: category, keyword: '', showReceiptAttachment, bindRule: false })
+  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: '', merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   form.type = type
@@ -937,7 +937,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </form>
       </div>
       <div class="entry-mode-row">
-        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense', true)"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
+        <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
         <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
         <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
       </div>
@@ -990,7 +990,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="f.transferDate" type="date" required /></label>
         </div>
         <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
-        <div v-if="f.showReceiptAttachment && f.type === 'expense'" class="receipt-attachment-field" role="group" aria-label="レシート画像の添付"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button" :class="{ 'receipt-attachment-disabled': f.type !== 'expense' }">{{ f.receiptImage ? '画像を変更する' : 'レシート画像を追加' }}<input type="file" accept="image/*" :disabled="f.type !== 'expense'" @change="selectDraftReceipt($event, f)" hidden /></label><span class="receipt-attachment-status">{{ f.type !== 'expense' ? 'レシート画像は支出の記録に添付できます' : f.receiptImage ? `画像を選択しました${f.receiptFileName ? '：' + f.receiptFileName : ''}` : '画像は未選択です' }}</span><button v-if="f.receiptImage" type="button" class="receipt-attachment-clear" @click="f.receiptImage = null; f.receiptFileName = ''">選択を解除</button></div>
+        <div v-if="recognitionMode === 'receipt' && f.type === 'expense'" class="receipt-attachment-field" role="group" aria-label="レシート画像の添付"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button" :class="{ 'receipt-attachment-disabled': f.type !== 'expense' }">{{ f.receiptImage ? '画像を変更する' : 'レシート画像を追加' }}<input type="file" accept="image/*" :disabled="f.type !== 'expense'" @change="selectDraftReceipt($event, f)" hidden /></label><span class="receipt-attachment-status">{{ f.type !== 'expense' ? 'レシート画像は支出の記録に添付できます' : f.receiptImage ? `画像を選択しました${f.receiptFileName ? '：' + f.receiptFileName : ''}` : '画像は未選択です' }}</span><button v-if="f.receiptImage" type="button" class="receipt-attachment-clear" @click="f.receiptImage = null; f.receiptFileName = ''">選択を解除</button></div>
         <label v-if="f.type !== 'income' && f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>この店舗を選択したカテゴリに登録し、次回から自動判定する</span></label>
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>

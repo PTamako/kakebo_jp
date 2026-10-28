@@ -5,7 +5,7 @@ import { onRequest } from '../functions/api/[[path]].js'
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
+  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
   async batch(statements) { for (const statement of statements) await statement.run() }
   prepare(sql) {
     const db = this
@@ -13,6 +13,7 @@ class LedgerDb {
       args: [],
       bind(...args) { this.args = args; return this },
       async first() {
+        if (sql.startsWith('SELECT name FROM payment_sources WHERE name=')) return db.paymentSources.has(this.args[0]) ? { name: this.args[0] } : null
         if (sql.startsWith('SELECT token_hash FROM device_sessions')) return (db.sessions.get(this.args[0]) || 0) > this.args[1] ? { token_hash: this.args[0] } : null
         if (sql.startsWith('SELECT attempts, reset_at FROM login_attempts')) return db.attempts.get(this.args[0]) || null
         if (sql.startsWith('SELECT id, amount, transfer_target, transfer_applied, transfer_date, date FROM entries'))
@@ -41,6 +42,10 @@ class LedgerDb {
       },
       async run() {
         db.sql.push(sql)
+        if (sql.startsWith('INSERT OR IGNORE INTO payment_sources')) db.paymentSources.add(this.args[0])
+        if (sql.startsWith('UPDATE payment_sources SET name=')) {
+          if (db.paymentSources.delete(this.args[1])) db.paymentSources.add(this.args[0])
+        }
         if (sql.startsWith('INSERT INTO device_sessions')) db.sessions.set(this.args[0], this.args[1])
         if (sql.startsWith('DELETE FROM device_sessions')) db.sessions.delete(this.args[0])
         if (sql.startsWith('DELETE FROM login_attempts')) db.attempts.delete(this.args[0])
@@ -240,6 +245,17 @@ test('wrong access codes are rate limited without exposing ledger', async () => 
   assert.equal(db.entries.length, 0)
 })
 
+test('renaming a card rejects existing destination without touching transactions', async () => {
+  const db = new LedgerDb()
+  db.paymentSources.add('旧カード')
+  db.paymentSources.add('既存カード')
+  await call(db,'entries','POST',{date:'2026-10-01',amount:1200,type:'expense',paymentSource:'旧カード',clientRequestId:'collision-001'})
+  const response = await call(db,'payment-sources/rename','POST',{oldName:'旧カード',newName:'既存カード'})
+  assert.equal(response.status,409)
+  assert.equal(db.entries[0].payment_source,'旧カード')
+  assert.equal(db.entries[0].amount,1200)
+  assert.ok(db.paymentSources.has('旧カード'))
+})
 test('renaming a card rebinds historical payments without altering amounts or investments', async () => {
   const db = new LedgerDb()
   await call(db,'entries','POST',{date:'2026-10-01',amount:1200,type:'expense',paymentSource:'旧カード',clientRequestId:'rename-test-001'})

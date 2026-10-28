@@ -47,6 +47,7 @@ async function updatePaymentSources(values) {
 }
 const defaultPaymentSource = ref('')
 const merchantPaymentRules = ref([])
+const customCategoryRules = ref([])
 const importPaymentSource = ref('')
 let paymentSettingsLoaded = false
 let paymentSettingsLoading = null
@@ -62,6 +63,7 @@ async function loadPaymentSettings() {
     localStorage.setItem('kakeibo-payment-sources', JSON.stringify(paymentSources.value))
     defaultPaymentSource.value = cards.find(x => x.is_default)?.name || ''
     merchantPaymentRules.value = await api('merchant-payment-rules')
+    customCategoryRules.value = await api('custom-rules')
     paymentSettingsLoaded = true
   })().finally(() => { paymentSettingsLoading = null })
   return paymentSettingsLoading
@@ -74,6 +76,10 @@ function applyMerchantPayment(form) {
   form.paymentSource = suggestedPayment(form.merchant, form.recognizedPayment)
 }
 function manualPayment(form, value) { form.paymentSource = value; form.paymentManuallySelected = true }
+async function refreshMerchantRules() {
+  rules.value = await api('rules')
+  await loadPaymentSettings()
+}
 async function setDefaultPaymentSource(name) {
   try {
     await api('payment-sources/default', { method: 'POST', body: JSON.stringify({ name }) })
@@ -1336,7 +1342,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </article>
     </section>
 
-    <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
+    <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button :class="{ active: tab === 'list' }" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

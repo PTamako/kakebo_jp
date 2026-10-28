@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { validateBackup, transactionKey, nextScheduledDate } from './finance-tools.js'
-const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] } })
-const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed'])
+const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] } })
+const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed'])
 
 const cardMode = ref('')
 const selectedCard = ref('')
@@ -74,6 +74,36 @@ const cardPeriod = computed(() => {
 })
 const newPaymentSource = ref('')
 const cardMessage = ref('')
+const merchantRulesCombined = computed(() => {
+  const items = new Map()
+  for (const r of props.categoryRules) items.set(r.keyword, { keyword: r.keyword, category: r.category, payment_source: '' })
+  for (const r of props.merchantPaymentRules) {
+    const item = items.get(r.keyword) || { keyword: r.keyword, category: '', payment_source: '' }
+    item.payment_source = r.payment_source
+    items.set(r.keyword, item)
+  }
+  return [...items.values()].sort((a, b) => a.keyword.localeCompare(b.keyword, 'ja'))
+})
+async function changeCategoryRule(rule, category) {
+  if (category === rule.category) return
+  try {
+    if (category) await props.api('rules', { method: 'POST', body: JSON.stringify({ keyword: rule.keyword, category }) })
+    else if (rule.category && confirm(rule.keyword + 'のカテゴリルールを解除しますか？'))
+      await props.api('custom-rules?keyword=' + encodeURIComponent(rule.keyword), { method: 'DELETE' })
+    else return
+    emit('merchant-rules-changed')
+  } catch (e) { cardMessage.value = 'カテゴリルールを更新できませんでした：' + e.message; emit('merchant-rules-changed') }
+}
+async function changePaymentRule(rule, name) {
+  if (name === rule.payment_source) return
+  try {
+    if (name) await props.api('merchant-payment-rules', { method: 'POST', body: JSON.stringify({ keyword: rule.keyword, paymentSource: name }) })
+    else if (rule.payment_source && confirm(rule.keyword + 'の支払方法ルールを解除しますか？'))
+      await props.api('merchant-payment-rules?keyword=' + encodeURIComponent(rule.keyword), { method: 'DELETE' })
+    else return
+    emit('merchant-rules-changed')
+  } catch (e) { cardMessage.value = '支払方法ルールを更新できませんでした：' + e.message; emit('merchant-rules-changed') }
+}
 async function removeMerchantRule(keyword) {
   if (!confirm(keyword + 'の支払方法ルールを解除しますか？')) return
   try {
@@ -262,10 +292,26 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
     <p v-if="cardMessage" role="status">{{cardMessage}}</p>
   </article>
   <article class="finance-panel">
-    <h2>店舗の支払方法ルール</h2>
-    <div v-for="rule in merchantPaymentRules" :key="rule.keyword" class="finance-row">
-      <span>{{ rule.keyword }} → {{ rule.payment_source }}</span>
-      <button type="button" @click="removeMerchantRule(rule.keyword)">解除</button>
+    <h2>店舗ルール管理</h2>
+    <p v-if="!merchantRulesCombined.length">記憶した店舗ルールはありません。</p>
+    <div v-for="rule in merchantRulesCombined" :key="rule.keyword" class="merchant-rule-row">
+      <strong>{{ rule.keyword }}</strong>
+      <div class="merchant-rule-fields">
+        <label>カテゴリ
+          <select :value="rule.category" :aria-label="rule.keyword + 'のカテゴリ'" @change="changeCategoryRule(rule, $event.target.value)">
+            <option value="">ルールなし</option>
+            <option v-for="category in categories" :key="category" :value="category">{{ categoryLabel(category) }}</option>
+            <option v-if="rule.category && !categories.includes(rule.category)" :value="rule.category">{{ categoryLabel(rule.category) }}</option>
+          </select>
+        </label>
+        <label>支払方法
+          <select :value="rule.payment_source" :aria-label="rule.keyword + 'の支払方法'" @change="changePaymentRule(rule, $event.target.value)">
+            <option value="">ルールなし</option>
+            <option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option>
+            <option v-if="rule.payment_source && !paymentSources.includes(rule.payment_source)" :value="rule.payment_source">{{ rule.payment_source }}</option>
+          </select>
+        </label>
+      </div>
     </div>
   </article>
   <article class="finance-panel">
@@ -313,4 +359,10 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
 .finance-panel .card-main-controls .card-icon-action{display:inline-flex;align-items:center;justify-content:center;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border-radius:10px}
 .card-icon-action svg{width:19px;height:19px;flex:none}
 @media(max-width:360px){.card-main-controls{grid-template-columns:minmax(0,1fr) repeat(3,40px)!important;gap:4px}.finance-panel .card-main-controls .card-icon-action{width:40px;min-width:40px;height:44px}}
+.merchant-rule-row{display:grid;gap:8px;padding:12px 0;border-bottom:1px solid var(--line);min-width:0}
+.merchant-rule-row:last-child{border-bottom:none}
+.merchant-rule-row strong{font-size:13px;overflow-wrap:anywhere}
+.merchant-rule-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
+.merchant-rule-fields label{display:grid;gap:5px;min-width:0;color:var(--muted);font-size:12px}
+.finance-panel .merchant-rule-fields select{width:100%;min-width:0;height:44px;font-size:13px;padding:0 6px}
 </style>

@@ -503,10 +503,18 @@ export async function onRequest({ request, env, params }) {
         return json({ error: 'カード名を確認してください' }, 400)
       if (oldName === newName) return json({ ok: true, changes: 0 })
       if (await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(newName).first()) return json({ error: '同じカード名が登録されています' }, 409)
-      await db.prepare('UPDATE payment_sources SET name=?1 WHERE name=?2').bind(newName,oldName).run()
-      await db.prepare('UPDATE merchant_payment_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName).run()
-      const result = await db.prepare('UPDATE entries SET payment_source = ?1 WHERE payment_source = ?2').bind(newName, oldName).run()
-      return json({ ok: true, changes: result.meta?.changes ?? 0 })
+      // D1 batch keeps ledger, card and normalized finance references consistent.
+      // A saved bill for the destination name/month must not be silently overwritten.
+      const collision = await db.prepare('SELECT 1 AS found FROM card_bills WHERE payment_source=?1 AND bill_month IN (SELECT bill_month FROM card_bills WHERE payment_source=?2) LIMIT 1').bind(newName,oldName).first()
+      if (collision) return json({error:'変更先に同月のカード請求が存在します'},409)
+      const result = await db.batch([
+        db.prepare('UPDATE payment_sources SET name=?1 WHERE name=?2').bind(newName,oldName),
+        db.prepare('UPDATE merchant_payment_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
+        db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
+        db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
+        db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName)
+      ])
+      return json({ ok: true, changes: result[2]?.meta?.changes ?? 0 })
     }
     if (a === 'entries') {
       if (m === 'GET') {

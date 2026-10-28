@@ -309,7 +309,21 @@ async function onImage(e, mode = 'statement') {
   if (!f || busy.value) return
   busy.value = '読み取り中 0%（初回は日本語データをダウンロードします）'
   try {
-    input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
+    // Prefer Gemma 4; keep the existing on-device OCR as an offline/free fallback.
+    try {
+      busy.value = 'AIで画像を読み取り中'
+      const data = new FormData()
+      data.append('image', await compressReceiptImage(f), 'receipt.webp')
+      data.append('mode', mode)
+      const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': session.value }, body: data })
+      if (!response.ok) throw new Error('AIを利用できません')
+      const result = await response.json()
+      if (!result.text?.trim()) throw new Error('認識結果がありません')
+      input.value = result.text
+    } catch {
+      busy.value = '通常のOCRで読み取り中'
+      input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
+    }
     recognitionMode.value = mode
     pendingReceiptImage.value = null
     pendingReceiptFileName.value = ''

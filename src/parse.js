@@ -155,6 +155,75 @@ export function parseEntry(raw, rules) {
   }
 }
 
+// Receipts are single purchases: never use the largest yen value (often a balance).
+export function parseReceipt(raw, rules = []) {
+  const text = normalize(raw)
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
+  const money = value => Number(value.replace(/[,，\s]/g, ''))
+  const amountIn = line => {
+    const s = line.replace(/[OoＯｏ](?=\d)/g, '0')
+    const m = s.match(/[¥￥]\s*([\d,，]+)|([\d,，]+)\s*円|(?:^|\s)(\d{1,3}(?:[,，]\d{3})*|\d{1,6})(?=\s*(?:$|[税込]))/)
+    const amount = m ? money(m[1] || m[2] || m[3]) : 0
+    return Number.isSafeInteger(amount) && amount > 0 && amount <= 9999999 ? amount : 0
+  }
+  const totalLabel = /(?:合\s*計|お\s*買\s*上(?:げ)?(?:金額)?|お\s*支\s*払(?:い)?(?:金額)?|ご\s*請\s*求\s*額|総\s*合\s*計|TOTAL)/i
+  const excluded = /(?:税率|対象|内消費税|税込対象|小計|お預り|お釣り|釣銭|残高|クーポン|値引|割引|ポイント)/
+  const candidates = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!totalLabel.test(line) || excluded.test(line)) continue
+    const score = /(?:総\s*合\s*計|お\s*支\s*払(?:い)?(?:金額)?|ご\s*請\s*求\s*額)/i.test(line) ? 3 : /合\s*計|TOTAL/i.test(line) ? 2 : 1
+    // Read the value after the label; never accidentally read a date or register number before it.
+    const suffix = line.slice(line.search(totalLabel)).replace(totalLabel, '').replace(/^[\s:：=\-]+/, '')
+    let amount = amountIn(suffix)
+    if (!amount && i + 1 < lines.length && !/[一-龯ぁ-んァ-ヶ]/.test(lines[i + 1].replace(/円/g, ''))) amount = amountIn(lines[i + 1])
+    if (amount) candidates.push({ amount, score, index: i })
+  }
+  // OCR may turn 合計 into punctuation (e.g. '= =t ¥239').
+  // Only trust a malformed total when the same amount is independently present
+  // in a tax-inclusive line, and the candidate is adjacent to the tax breakdown.
+  if (!candidates.length) {
+    const inclusive = new Set(lines.filter(line => /(?:税率|対象)/.test(line) && !/内消費税|消費税等/.test(line))
+      .map(line => [...line.matchAll(/[¥￥\\]\s*([\d,，]+)(?!\d)/g)].map(m => money(m[1]))).flat())
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (!/^[\s=＝・\-tT]+[¥￥\\]\s*[\d,，]+\s*$/.test(line)) continue
+      const m = line.match(/[¥￥\\]\s*([\d,，]+)/)
+      const value = m ? money(m[1]) : 0
+      const preceding = lines.slice(Math.max(0, i - 4), i).join(' ')
+      if (value > 0 && inclusive.has(value) && /小計|消費税|税抜/.test(preceding)) {
+        candidates.push({ amount: value, score: 2, index: i })
+      }
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score || a.index - b.index)
+  const amount = candidates[0]?.amount || 0
+  // Normalize spaced and common OCR-misread convenience-store names without
+  // altering the statement parser. Prefer the branch printed near the header.
+  const compact = line => line.replace(/[\s　・]/g, '')
+  const isSeven = line => /セ[ブフ][ン]?[-ー－‐−]?イ[レル]?ブ[ン]?|セブン[-ー－‐−]?イレブン/.test(compact(line))
+  const sevenFound = lines.some(isSeven)
+  const branch = lines.slice(0, Math.min(lines.length, 12))
+    .find(line => /店\s*$/.test(line) && !/電話|番号|登録/.test(line))
+  const brand = sevenFound ? 'セブン-イレブン' : ''
+  const merchant = brand ? [brand, branch && compact(branch)].filter(Boolean).join(' ')
+    : (lines.find(line => /ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(compact(line)))
+      || lines.find(line => /(?:店|ストア|マーケット)$/.test(compact(line)) && !/電話|番号/.test(line))
+      || '')
+  const categorySource = merchant || text.slice(0, 120)
+  const { category, keyword } = classify(categorySource, rules)
+  const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line)) || ''
+  return {
+    date: dateLine ? findDate(dateLine) : '',
+    time: dateLine ? findTime(dateLine) : '',
+    amount,
+    category,
+    merchant: merchant.slice(0, 60),
+    note: amount ? '' : '要確認：合計金額を読み取れませんでした',
+    raw: text, suggested: category, keyword
+  }
+}
+
 // 将一段粘贴文字或一张 OCR 图片拆分为多笔记录。
 export function parseEntries(raw, rules) {
   const marker = '\n__QP_AMOUNT_COLUMN__\n'
@@ -271,13 +340,12 @@ export function parseEntries(raw, rules) {
     const m = body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV|]+\s*$/i)
       || body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)\s*$/i)
     if (!m || !m[1].trim()) continue
-    let token = m[2]
-      // In this QP statement font, OCR commonly confuses 6 with "o"; "]" is a noisy thousands separator.
-      .replace(/[oOｏＯ]/g, '6')
-      .replace(/[\]\[]/g, '')
-      .replace(/[\s,，.]/g, '')
-    const amount = Number(token)
-    if (!Number.isFinite(amount) || amount < 1 || amount > 999999) continue
+    // Ambiguous OCR glyphs (O/o) must not be guessed as the digit 6.
+    // Keep the row for manual review rather than silently recording a wrong charge.
+    const ambiguousAmount = /[oOｏＯ]/.test(m[2])
+    const token = m[2].replace(/[\]\[]/g, '').replace(/[\s,，.]/g, '')
+    const amount = ambiguousAmount ? 0 : Number(token)
+    if (!Number.isFinite(amount) || amount < 0 || amount > 999999) continue
     let nextDate = null
     for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
       if (/^QP\s*\//i.test(lines[j])) break
@@ -289,7 +357,7 @@ export function parseEntries(raw, rules) {
     const { category, keyword } = classify(merchant, rules)
     qpRows.push({
       date: findDate(nextDate), time: '', amount, category,
-      merchant: merchant.slice(0, 60), note: '',
+      merchant: merchant.slice(0, 60), note: amount ? '' : '要確認：金額の数字が不明瞭です',
       raw: merchant + '\n' + nextDate + '\n' + m[2],
       suggested: category, keyword
     })
@@ -314,10 +382,10 @@ export function parseEntries(raw, rules) {
       let amount = 0
       for (const candidate of amountSources) {
         const stripped = candidate.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
-        const matches = [...stripped.matchAll(/(\d[\d,，.]{0,7})\s*(円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])/ig)]
+        const matches = [...stripped.matchAll(/([\doOｏＯ][\doOｏＯ,，.]{0,7})\s*(円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])/ig)]
         if (matches.length) {
           const rawAmount = matches[matches.length - 1][1]
-          const parsed = Number(rawAmount.replace(/[,，.]/g, '').replace(/[oOｏＯ]/g, '6'))
+          const parsed = /[oOｏＯ]/.test(rawAmount) ? 0 : Number(rawAmount.replace(/[,，.]/g, ''))
           if (parsed > 0 && parsed <= 999999) { amount = parsed; break }
         }
       }
@@ -530,7 +598,7 @@ export async function ocrImage(file, onProgress) {
   })
   try {
     const primary = (await worker.recognize(file)).data.text
-    if (!/QUIC\s*Pay|QUICPay/i.test(primary)) return primary
+    if (!/QUIC\s*Pay|QUICPay|(?:^|[\s(（])QP\s*\//im.test(primary)) return primary
 
     let bitmap
     try {
@@ -570,7 +638,7 @@ export async function ocrImage(file, onProgress) {
           return match ? Number(match[1]) : null
         })
         .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
-      const qpCount = (primary.match(/QUIC\s*Pay|QUICPay/gi) || []).length
+      const qpCount = primary.split(/\r?\n/).filter(line => /QUIC\s*Pay|QP\s*\//i.test(line)).length
       if (qpCount >= 2 && amounts.length === qpCount) {
         return primary + '\n__QP_AMOUNT_COLUMN__\n' + amounts.join('\n')
       }

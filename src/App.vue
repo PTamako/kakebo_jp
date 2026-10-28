@@ -3,7 +3,9 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
-import { parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
+import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
+import { compressReceiptImage } from './receipt-image.js'
+import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
 const statsPeriod = ref('month')
@@ -19,6 +21,34 @@ const selectedRatioMonth = ref('')
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
+const pendingReceiptImage = ref(null)
+const receiptImageIds = ref(new Set())
+const viewedReceiptUrl = ref('')
+const viewedReceiptId = ref(null)
+async function refreshReceiptImageIds() {
+  const visible = entries.value || []
+  const present = await Promise.all(visible.map(async entry => [entry.id, !!(await getReceiptImage(entry.id))]))
+  receiptImageIds.value = new Set(present.filter(([, found]) => found).map(([id]) => id))
+}
+async function viewReceipt(entryId) {
+  const blob = await getReceiptImage(entryId)
+  if (!blob) { receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => id !== entryId)); return flash('レシート画像は保存されていません') }
+  if (viewedReceiptUrl.value) URL.revokeObjectURL(viewedReceiptUrl.value)
+  viewedReceiptUrl.value = URL.createObjectURL(blob)
+  viewedReceiptId.value = entryId
+}
+function closeReceipt() {
+  if (viewedReceiptUrl.value) URL.revokeObjectURL(viewedReceiptUrl.value)
+  viewedReceiptUrl.value = ''
+  viewedReceiptId.value = null
+}
+async function removeReceiptImage() {
+  if (!confirm('レシート画像のみ削除します。記録は残ります。よろしいですか？')) return
+  await deleteReceiptImage(viewedReceiptId.value)
+  receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => id !== viewedReceiptId.value))
+  closeReceipt()
+  flash('レシート画像を削除しました。記録は残っています')
+}
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
 const CATEGORY_ICON_PATHS = {
@@ -189,6 +219,7 @@ async function load() {
     categories.value = nextCategories
     try { categoryIcons.value = await api('category-icons') } catch { /* Existing categories keep their default icons. */ }
     entries.value = nextEntries
+    refreshReceiptImageIds().catch(() => {})
     stats.value = nextStats
   } catch (e) { flash(e.message) }
 }
@@ -201,7 +232,7 @@ async function loadYear() {
     if (requestId === yearRequestId && year === selectedYear.value) annualStats.value = nextStats
   } catch (e) { if (requestId === yearRequestId) flash('年間集計の読み込みに失敗しました：' + e.message) }
 }
-onMounted(() => { if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers() } })
+onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers() } })
 
 watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
@@ -211,24 +242,36 @@ watch(tab, value => {
 })
 watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') loadYear() })
 
-function recognize() {
+const recognitionMode = ref('statement')
+function recognize(mode = recognitionMode.value) {
+  recognitionMode.value = mode
   if (!input.value.trim()) return
-  forms.value = parseEntries(input.value, rules.value).map(f => {
+  const parsed = mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value)
+  if (mode !== 'receipt') pendingReceiptImage.value = null
+  forms.value = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
     return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, bindRule: false }
   })
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
-async function onImage(e) {
+async function onImage(e, mode = 'statement') {
   const f = e.target.files[0]; e.target.value = ''
   if (!f || busy.value) return
   busy.value = '読み取り中 0%（初回は日本語データをダウンロードします）'
   try {
     input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
-    recognize()
+    recognitionMode.value = mode
+    if (mode === 'receipt') {
+      pendingReceiptImage.value = await compressReceiptImage(f)
+    } else pendingReceiptImage.value = null
+    recognize(mode)
   } catch (err) { flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
+}
+async function copyOcrText(value) {
+  try { await navigator.clipboard.writeText(value); flash('読み取り文字をコピーしました') }
+  catch { flash('コピーできませんでした。文字を選択してコピーしてください') }
 }
 function addBlank(type = 'expense') {
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
@@ -270,13 +313,22 @@ async function saveAll() {
   busy.value = 'saving'
   let saved = 0
   let ruleFailures = 0
+  let receiptImageWarning = ''
   try {
     // Remove each successfully saved draft immediately so retry never resubmits it.
     while (forms.value.length) {
       const f = forms.value[0]
       // Retain one stable ID across retries (including "saved on server, reply lost").
       if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
-      await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
+      const result = await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
+      if (pendingReceiptImage.value && result?.id && forms.value.length === 1 && f.type === 'expense') {
+        try {
+          await saveReceiptImage(Number(result.id), pendingReceiptImage.value)
+          receiptImageIds.value = new Set([...receiptImageIds.value, Number(result.id)])
+          // Report the transaction and image save together after all drafts finish.
+        } catch { receiptImageWarning = ' レシート画像は保存できませんでした。元の写真を残してください。' }
+        pendingReceiptImage.value = null
+      }
       forms.value.shift()
       saved++
       if (f.bindRule && f.merchant && f.merchant.trim().length >= 2) {
@@ -286,7 +338,7 @@ async function saveAll() {
       }
     }
     input.value = ''
-    flash(`${saved}件の記録を保存しました${ruleFailures ? '（分類ルールの保存に一部失敗しました）' : ''}`)
+    flash(`${saved}件の記録を保存しました${ruleFailures ? '（分類ルールの保存に一部失敗しました）' : ''}${receiptImageWarning}`)
   } catch (e) {
     flash(`${saved}件を保存しました。未保存の${forms.value.length}件は入力欄に残っています：${e.message}`)
   } finally {
@@ -303,8 +355,15 @@ async function remove(id) {
   pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
   try {
     await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
+    // Only remove the local receipt after the server confirms deletion.
+    let receiptDeleteWarning = ''
+    try {
+      await deleteReceiptImage(id)
+      receiptImageIds.value = new Set([...receiptImageIds.value].filter(imageId => Number(imageId) !== Number(id)))
+      if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
+    } catch { receiptDeleteWarning = ' 端末内のレシート画像は削除できませんでした。' }
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadInvestments(), loadTransfers()])
-    flash('記録を削除しました')
+    flash('記録を削除しました' + receiptDeleteWarning)
   } catch (error) { flash('削除に失敗しました：' + error.message) }
   finally { const next = new Set(pendingEntryIds.value); next.delete(id); pendingEntryIds.value = next }
 }
@@ -806,11 +865,18 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
       </div>
       <div class="panel capture-panel">
-        <label class="field-label" for="entry-text">テキスト読み取り</label>
-        <textarea id="entry-text" v-model="input" rows="4" placeholder="例：昨日 コンビニ 680円&#10;&#10;複数の支出を貼り付けたり、レシート画像をアップロードしたりできます。"></textarea>
+        <div class="receipt-mode-tabs" role="tablist" aria-label="読み取りモード">
+          <button type="button" role="tab" :aria-selected="recognitionMode === 'statement'" :class="{ selected: recognitionMode === 'statement' }" @click="recognitionMode = 'statement'">明細</button>
+          <button type="button" role="tab" :aria-selected="recognitionMode === 'receipt'" :class="{ selected: recognitionMode === 'receipt' }" @click="recognitionMode = 'receipt'">レシート</button>
+        </div>
+        <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
         <div class="action-row">
-          <button class="button-primary" @click="recognize" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
-          <label class="button-secondary upload-button">撮影／画像を選択<input type="file" accept="image/*" @change="onImage" :disabled="!!busy" hidden /></label>
+          <label class="button-primary upload-button">{{ recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
+        </div>
+        <label class="field-label" for="entry-text">テキスト読み取り</label>
+        <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? 'カード利用明細などの複数の取引を貼り付けられます。' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
+        <div class="action-row">
+          <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
         </div>
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
@@ -828,7 +894,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <button type="button" :class="{ selected: f.type === 'transfer' }" @click="setEntryType(f, 'transfer')"><span class="type-action-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
         </div>
         <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : f.type === 'transfer' ? '資産移動額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
-        <p v-if="!(Number(f.amount) > 0)" class="amount-warning" role="alert">金額を読み取れませんでした。明細を確認して金額を入力してください。</p>
+        <div v-if="!(Number(f.amount) > 0)" class="amount-warning" role="alert">
+          <p>合計金額を特定できませんでした。レシートの「合計」を確認してください。</p>
+          <details v-if="f.raw"><summary>読み取った文字を確認・コピー</summary><textarea :value="f.raw" readonly rows="8" style="width:100%;font-size:12px" aria-label="OCR読み取り結果"></textarea><button type="button" class="button-secondary" @click="copyOcrText(f.raw)">読み取り文字をコピー</button></details>
+        </div>
         <div class="field-grid">
           <label class="form-field"><span>日付</span><input type="date" v-model="f.date" /></label>
           <label class="form-field"><span>時刻</span><input type="time" v-model="f.time" /></label>
@@ -904,6 +973,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
+              <button v-if="receiptImageIds.has(e.id)" type="button" class="button-secondary" @click.stop="viewReceipt(e.id)">レシートを見る</button>
               <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -911,6 +981,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div v-if="!detailLoading && !annualDetailMode && visibleEntryCount < sortedDisplayEntries.length" class="load-more-wrap">
         <button type="button" class="button-secondary load-more-button" @click="loadMoreEntries">読み込みを続ける（{{ Math.min(listPageSize, sortedDisplayEntries.length - visibleEntryCount) }}件）</button>
+      </div>
+      <div v-if="viewedReceiptUrl" class="edit-overlay" @click.self="closeReceipt">
+        <div class="edit-dialog" role="dialog" aria-modal="true" aria-label="レシート画像">
+          <div class="edit-dialog-heading"><h2>レシート画像</h2><button type="button" class="icon-button" @click="closeReceipt" aria-label="閉じる">×</button></div>
+          <img :src="viewedReceiptUrl" alt="保存したレシート" style="width:100%;max-height:65vh;object-fit:contain" />
+          <p class="microcopy">画像はこの端末に30日間保存されます。記録は削除されません。</p>
+          <button type="button" class="button-secondary" @click="removeReceiptImage">画像のみ削除</button>
+        </div>
       </div>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
         <form class="edit-dialog" @submit.prevent="saveEdit" :aria-busy="editSaving">
@@ -1367,4 +1445,12 @@ main .entry-mode-row .entry-mode-icon .ui-line-icon{width:19px;height:19px}
 .investment-principal{display:grid;gap:3px;padding:12px 14px;margin:0 0 14px;border-radius:14px;background:var(--tint);color:var(--ink)}
 .investment-principal strong{font-size:21px;font-variant-numeric:tabular-nums}
 .investment-principal small{font-size:11px;color:var(--muted)}
+
+/* Receipt/statement OCR mode tabs: equal-width and theme-aware. */
+main .capture-panel .receipt-mode-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;width:100%;padding:5px;margin-bottom:12px;border:1px solid var(--line);border-radius:15px;background:var(--tint)}
+main .capture-panel .receipt-mode-tabs button{appearance:none;display:flex;align-items:center;justify-content:center;min-width:0;width:100%;min-height:44px;padding:10px 12px;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--muted);font-size:14px;font-weight:750;line-height:1.3;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s}
+main .capture-panel .receipt-mode-tabs button.selected{background:var(--card);border-color:var(--blue);color:var(--blue-dark);box-shadow:0 2px 9px color-mix(in srgb,var(--blue) 14%,transparent)}
+main .capture-panel .receipt-mode-tabs button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+main .capture-panel .action-row .upload-button,main .capture-panel .action-row>button{min-height:44px}
+@media(max-width:360px){main .capture-panel .receipt-mode-tabs button{font-size:13px;padding:9px 6px}}
 </style>

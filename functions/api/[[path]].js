@@ -272,7 +272,10 @@ export async function onRequest({ request, env, params }) {
         const inserted = await db.prepare(
           'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(client_request_id) DO NOTHING'
         ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied, transferDate, clientRequestId).run()
-        return json({ ok: true, duplicate: inserted.meta?.changes === 0 })
+        const savedEntry = clientRequestId
+          ? await db.prepare('SELECT id FROM entries WHERE client_request_id = ?1').bind(clientRequestId).first()
+          : await db.prepare('SELECT id FROM entries WHERE id = ?1').bind(inserted.meta.last_row_id).first()
+        return json({ ok: true, duplicate: inserted.meta?.changes === 0, id: savedEntry?.id || null })
       }
       if (m === 'PUT' && b) {
         const e = await request.json()

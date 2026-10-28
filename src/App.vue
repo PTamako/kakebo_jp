@@ -950,7 +950,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div class="input-mode-switch" role="tablist" aria-label="入力方法"><button type="button" role="tab" :aria-selected="entryInputMode === 'manual'" :class="{ selected: entryInputMode === 'manual' }" @click="entryInputMode = 'manual'">手入力</button><button type="button" role="tab" :aria-selected="entryInputMode === 'scan'" :class="{ selected: entryInputMode === 'scan' }" @click="entryInputMode = 'scan'">画像から読み取る</button></div>
       <div v-if="entryInputMode === 'manual' && !forms.length" class="entry-mode-row">
-        <button type="button" class="button-secondary" @click="addBlank('expense')">＋ 新規追加</button>
+        <button type="button" class="button-secondary" @click="addBlank('expense')">＋ 記録を追加</button>
       </div>
       <div v-if="entryInputMode === 'manual'" class="panel text-paste-panel">
         <details class="text-entry-details">
@@ -986,6 +986,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
+        <button v-if="entryInputMode === 'manual' && forms.length" type="button" class="button-secondary" @click="addBlank('expense')">＋ 記録を追加</button>
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>

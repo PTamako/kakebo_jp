@@ -857,7 +857,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
       </div>
       <div class="panel capture-panel">
-        <div class="type-switch" role="tablist" aria-label="読み取りモード">
+        <div class="receipt-mode-tabs" role="tablist" aria-label="読み取りモード">
           <button type="button" role="tab" :aria-selected="recognitionMode === 'statement'" :class="{ selected: recognitionMode === 'statement' }" @click="recognitionMode = 'statement'">明細</button>
           <button type="button" role="tab" :aria-selected="recognitionMode === 'receipt'" :class="{ selected: recognitionMode === 'receipt' }" @click="recognitionMode = 'receipt'">レシート</button>
         </div>
@@ -1437,4 +1437,12 @@ main .entry-mode-row .entry-mode-icon .ui-line-icon{width:19px;height:19px}
 .investment-principal{display:grid;gap:3px;padding:12px 14px;margin:0 0 14px;border-radius:14px;background:var(--tint);color:var(--ink)}
 .investment-principal strong{font-size:21px;font-variant-numeric:tabular-nums}
 .investment-principal small{font-size:11px;color:var(--muted)}
+
+/* Receipt/statement OCR mode tabs: equal-width and theme-aware. */
+main .capture-panel .receipt-mode-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;width:100%;padding:5px;margin-bottom:12px;border:1px solid var(--line);border-radius:15px;background:var(--tint)}
+main .capture-panel .receipt-mode-tabs button{appearance:none;display:flex;align-items:center;justify-content:center;min-width:0;width:100%;min-height:44px;padding:10px 12px;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--muted);font-size:14px;font-weight:750;line-height:1.3;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s}
+main .capture-panel .receipt-mode-tabs button.selected{background:var(--card);border-color:var(--blue);color:var(--blue-dark);box-shadow:0 2px 9px color-mix(in srgb,var(--blue) 14%,transparent)}
+main .capture-panel .receipt-mode-tabs button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+main .capture-panel .action-row .upload-button,main .capture-panel .action-row>button{min-height:44px}
+@media(max-width:360px){main .capture-panel .receipt-mode-tabs button{font-size:13px;padding:9px 6px}}
 </style>

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
-import { parseEntry, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
+import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 
 const tab = ref('add')
 const statsPeriod = ref('month')
@@ -214,7 +214,7 @@ watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') load
 
 function recognize(mode = 'statement') {
   if (!input.value.trim()) return
-  const parsed = mode === 'receipt' ? [parseEntry(input.value, rules.value)] : parseEntries(input.value, rules.value)
+  const parsed = mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value)
   forms.value = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))

@@ -277,6 +277,90 @@ export async function onRequest({ request, env, params }) {
 
     // Settings are independent of historical ledger rows and safe to create on existing D1.
     // Personal finance configuration is kept on D1, not in browser storage.
+    if (a === 'recurring-plans' || a === 'card-bills') {
+      await db.prepare('CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)').run()
+      await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
+      await db.prepare('CREATE TABLE IF NOT EXISTS card_bills (payment_source TEXT NOT NULL, bill_month TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL, total_amount INTEGER NOT NULL CHECK(total_amount >= 0), transaction_count INTEGER NOT NULL CHECK(transaction_count >= 0), PRIMARY KEY(payment_source,bill_month))').run()
+      const marker = 'normalized-' + (a === 'recurring-plans' ? 'plans' : 'bills') + '-v1'
+      const saved = await db.prepare('SELECT value FROM finance_settings WHERE name=?1').bind(marker).first()
+      if (!saved) {
+        const legacyName = a === 'recurring-plans' ? 'plans' : 'bills'
+        const legacy = await db.prepare('SELECT value FROM finance_settings WHERE name=?1').bind(legacyName).first()
+        let items = []
+        if (legacy) {
+          try { items = JSON.parse(legacy.value) } catch { return json({error:'旧設定の読み込みに失敗しました'},500) }
+          if (!Array.isArray(items)) return json({error:'旧設定の形式が不正です'},500)
+        }
+        const statements = []
+        for (const item of items) {
+          if (a === 'recurring-plans') {
+            if (typeof item?.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name ||
+                !Number.isSafeInteger(Number(item.amount)) || Number(item.amount) <= 0 ||
+                !Number.isInteger(Number(item.day)) || Number(item.day) < 1 || Number(item.day) > 31 ||
+                !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || ''))
+              return json({error:'旧固定支出データを確認してください'},500)
+            statements.push(db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(item.id,item.name,Number(item.amount),Number(item.day),item.category || 'その他',item.paymentSource || '',item.startMonth,item.enabled ? 1 : 0))
+          } else {
+            if (typeof item?.name !== 'string' || !item.name || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
+                !/^\\d{4}-\\d{2}-\\d{2}$/.test(item.start || '') || !/^\\d{4}-\\d{2}-\\d{2}$/.test(item.end || '') ||
+                !Number.isSafeInteger(Number(item.total)) || Number(item.total) < 0 ||
+                !Number.isSafeInteger(Number(item.count)) || Number(item.count) < 0)
+              return json({error:'旧カード請求データを確認してください'},500)
+            statements.push(db.prepare('INSERT OR IGNORE INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6)').bind(item.name,item.month,item.start,item.end,Number(item.total),Number(item.count)))
+          }
+        }
+        // Batch the imports and the marker atomically so a partial import is never marked complete.
+        statements.push(db.prepare('INSERT OR IGNORE INTO finance_settings(name,value) VALUES(?1,?2)').bind(marker,'true'))
+        await db.batch(statements)
+      }
+      if (m === 'GET' && !b) {
+        if (a === 'recurring-plans') {
+          const {results} = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY name,id').all()
+          return json(results.map(p => ({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled})))
+        }
+        const {results} = await db.prepare('SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY bill_month DESC,payment_source').all()
+        return json(results.map(x => ({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})))
+      }
+      if (a === 'recurring-plans') {
+        if (m === 'POST' && !b) {
+          const item = await request.json()
+          if (typeof item?.id !== 'string' || !/^[a-zA-Z0-9-]{8,80}$/.test(item.id) ||
+              typeof item.name !== 'string' || !item.name.trim() || item.name.length > 120 ||
+              !Number.isSafeInteger(item.amount) || item.amount <= 0 ||
+              !Number.isInteger(item.day) || item.day < 1 || item.day > 31 ||
+              typeof item.category !== 'string' || !item.category || typeof item.paymentSource !== 'string' ||
+              !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') || typeof item.enabled !== 'boolean')
+            return json({error:'固定支出の入力を確認してください'},400)
+          const result = await db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(item.id,item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled ? 1 : 0).run()
+          return json({ok:true,created:!!result.meta?.changes})
+        }
+        if (m === 'DELETE' && b && /^[a-zA-Z0-9-]{8,80}$/.test(b)) {
+          await db.prepare('DELETE FROM recurring_plans WHERE id=?1').bind(b).run()
+          return json({ok:true})
+        }
+      } else {
+        if (m === 'PUT' && !b) {
+          const item = await request.json()
+          if (typeof item?.name !== 'string' || !item.name || item.name.length > 80 ||
+              !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
+              !/^\\d{4}-\\d{2}-\\d{2}$/.test(item.start || '') ||
+              !/^\\d{4}-\\d{2}-\\d{2}$/.test(item.end || '') ||
+              item.start > item.end || !Number.isSafeInteger(item.total) || item.total < 0 ||
+              !Number.isSafeInteger(item.count) || item.count < 0)
+            return json({error:'カード請求額を確認してください'},400)
+          await db.prepare('INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(payment_source,bill_month) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,total_amount=excluded.total_amount,transaction_count=excluded.transaction_count').bind(item.name,item.month,item.start,item.end,item.total,item.count).run()
+          return json({ok:true})
+        }
+        if (m === 'DELETE' && !b) {
+          const name = url.searchParams.get('name') || ''
+          const month = url.searchParams.get('month') || ''
+          if (!name || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({error:'削除対象の請求を確認してください'},400)
+          await db.prepare('DELETE FROM card_bills WHERE payment_source=?1 AND bill_month=?2').bind(name,month).run()
+          return json({ok:true})
+        }
+      }
+      return json({error:'未対応の操作です'},405)
+    }
     if (a === 'finance-settings') {
       await db.prepare('CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)').run()
       const allowed = new Set(['plans', 'bills', 'closing-days', 'theme'])

@@ -249,6 +249,16 @@ export async function onRequest({ request, env, params }) {
     // Never rewrite or delete existing ledger rows during migration.
     // SBI valuation entries remain untouched unless the user explicitly edits them.
 
+    if (a === 'payment-sources' && b === 'rename' && m === 'POST') {
+      const body = await request.json()
+      const oldName = typeof body?.oldName === 'string' ? body.oldName.trim() : ''
+      const newName = typeof body?.newName === 'string' ? body.newName.trim() : ''
+      if (!oldName || !newName || oldName === '現金' || oldName.length > 80 || newName.length > 80)
+        return json({ error: 'カード名を確認してください' }, 400)
+      if (oldName === newName) return json({ ok: true, changes: 0 })
+      const result = await db.prepare('UPDATE entries SET payment_source = ?1 WHERE payment_source = ?2').bind(newName, oldName).run()
+      return json({ ok: true, changes: result.meta?.changes ?? 0 })
+    }
     if (a === 'entries') {
       if (m === 'GET') {
         if ((entriesYear && !/^\d{4}$/.test(entriesYear)) ||

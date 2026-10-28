@@ -143,11 +143,31 @@ export function classify(text, rules = []) {
   return { category: '日用品', keyword: '' }
 }
 
+function parseAiCsvRow(raw, rules) {
+  const line = normalize(raw).trim()
+  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日))\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*(?:円)?\s*(?:[,，]\s*(.*))?$/)
+  if (!m) return null
+  const merchant = m[2].replace(/^QP\s*[/／]\s*/i, '').trim()
+  const amount = Number(m[3].replace(/[^\d]/g, ''))
+  if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
+  const { category, keyword } = classify(merchant, rules)
+  return { date: findDate(m[1]), time: '', amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
+}
 export function parseEntry(raw, rules) {
+  const ai = parseAiCsvRow(raw, rules)
+  if (ai) return ai
   const text = normalize(raw)
   const { category, keyword } = classify(text, rules)
   const firstLine = text.split('\n').map(s => s.trim()).find(s => s.length >= 2 && !/^[\d¥\s:\/.\-]+$/.test(s)) || ''
-  const merchant = firstLine.slice(0, 40) || keyword
+  // AI card statements often use CSV-like rows: date, merchant, amount, payment plan.
+  // The card title must contain only the merchant, never the whole transaction.
+  const csvParts = firstLine.split(/[,，]\\s*/).map(part => part.trim())
+  const csvDate = /^(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}$/
+  const csvAmount = /^(?:[¥￥]\\s*)?\\d[\\d,，]*(?:\\s*円)?$/
+  const structuredMerchant = csvParts.length >= 3 && csvDate.test(csvParts[0])
+    && csvParts.slice(2).some(part => csvAmount.test(part))
+    ? csvParts[1] : ''
+  const merchant = (structuredMerchant || firstLine.slice(0, 40) || keyword).slice(0, 60)
   return {
     date: findDate(text), time: findTime(text), amount: findAmount(text),
     category, merchant, note: text.length <= 40 ? text.replace(/\s+/g, ' ') : '',
@@ -234,11 +254,20 @@ export function parseReceipt(raw, rules = []) {
     .find(line => /店\s*$/.test(line) && !/電話|番号|登録/.test(line))
   const brand = sevenFound ? 'セブン-イレブン' : ''
   const isMyBasket = lines.slice(0, 8).some(line => /まいば[すき]けっと|まいばす|マイバスケット/.test(compact(line)))
-  const merchant = isMyBasket ? ['まいばすけっと', branch && compact(branch)].filter(Boolean).join(' ')
-    : brand ? [brand, branch && compact(branch)].filter(Boolean).join(' ')
-    : (lines.find(line => /ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(compact(line)))
-      || lines.find(line => /(?:店|ストア|マーケット)$/.test(compact(line)) && !/電話|番号/.test(line))
-      || '')
+  // AI transcription can already contain the brand in a labeled full store name.
+  // Avoid prefixing the same brand twice (e.g. まいばすけっと 店名:まいばすけっと南小岩8丁目店).
+  const labeledMerchant = lines.find(line => /^店名\s*[:：]/.test(line))
+    ?.replace(/^店名\s*[:：]\s*/, '').trim() || ''
+  const branchName = branch ? compact(branch.replace(/^店名\s*[:：]\s*/, '')) : ''
+  const withBrand = (name, detail) => detail
+    ? (compact(detail).startsWith(compact(name)) ? detail : name + ' ' + detail)
+    : name
+  const merchant = labeledMerchant
+    || (isMyBasket ? withBrand('まいばすけっと', branchName)
+      : brand ? withBrand(brand, branchName)
+      : (lines.find(line => /ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(compact(line)))
+        || lines.find(line => /(?:店|ストア|マーケット)$/.test(compact(line)) && !/電話|番号/.test(line))
+        || ''))
   const categorySource = merchant || text.slice(0, 120)
   const { category, keyword } = classify(categorySource, rules)
   const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line)) || ''
@@ -279,8 +308,34 @@ export function parseEntries(raw, rules) {
       .map(value => Number(value.replace(/[,，.]/g, '')))
       .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
   }
+  // Preserve original word boundaries for space-delimited AI statements.
+  const originalLines = String(raw).split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const originalSpacedRows = originalLines.map(line => {
+    const m = line.normalize('NFKC').match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2})\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)$/)
+    if (!m) return null
+    const merchant = m[2].trim()
+    const amount = Number(m[3].replace(/[^\d]/g, ''))
+    if (!merchant || amount <= 0 || amount > 9999999) return null
+    const { category, keyword } = classify(merchant, rules)
+    return { date: findDate(m[1]), time: '', amount, category, merchant, note: '', raw: line, suggested: category, keyword }
+  })
+  if (originalSpacedRows.length && originalSpacedRows.every(Boolean)) return originalSpacedRows
   const text = normalize(raw)
   if (!text) return []
+  const csvLines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const csvRows = csvLines.map(line => parseAiCsvRow(line, rules))
+  if (csvRows.length && csvRows.every(Boolean)) return csvRows
+  // Space-delimited AI card rows: date, merchant, yen amount, installment count.
+  const spacedRows = csvLines.map(line => {
+    const match = line.match(/^((?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2})\\s+(.+?)\\s+([¥￥]?\\d{1,3}(?:[,，]\\d{3})*|[¥￥]?\\d+)\\s*円\\s+(?:\\d+回払い|一回払い|分割払い|リボ払い)\\s*$/)
+    if (!match) return null
+    const merchant = match[2].trim()
+    const amount = Number(match[3].replace(/[^\\d]/g, ''))
+    if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
+    const { category, keyword } = classify(merchant, rules)
+    return { date: findDate(match[1]), time: '', amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
+  })
+  if (spacedRows.length && spacedRows.every(Boolean)) return spacedRows
 
   // Normalize card-statement rows such as "QUICPay 利用 (QP/ マイバスケット ) 628gm"
   // into the existing QP-row format before parsing each transaction independently.

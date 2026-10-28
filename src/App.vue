@@ -1018,7 +1018,6 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p v-if="ocrEngine" class="microcopy" role="status">読み取りエンジン：{{ ocrEngine }}</p>
         <p v-if="ocrWarning" class="microcopy" role="alert">{{ ocrWarning }}</p>
-        <p class="microcopy">画像はCloudflare Workers AIに送信して文字を読み取ります。AIが利用できない場合は端末内OCRを試します。</p>
       </div>
 
       <div v-if="forms.length" class="draft-heading">

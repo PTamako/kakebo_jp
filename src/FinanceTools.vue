@@ -247,7 +247,7 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
   </article>
   <article class="finance-panel">
     <h2>重複の可能性</h2>
-    <p v-if="!loaded">上部の「全期間の明細を読み込む」で表示します。</p>
+    <p v-if="!loaded">上部の「全明細を更新」で表示します。</p>
     <p v-else-if="!duplicates.length">重複候補はありません。</p>
     <button v-for="(group,i) in duplicates.slice(0,30)" :key="i" type="button" class="finance-row duplicate-link" @click="emit('open-duplicate', group[0].date)">{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件 <span>明細を見る ›</span></button>
   </article>
@@ -267,7 +267,7 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
       <label>締め月<input class="card-closing-month" v-model="bill.month" type="month" aria-label="締め月"></label>
       <label>利用額<output class="card-usage-total" aria-live="polite">{{loaded && bill.name && cardPeriod ? yen(cardTotal) : "—"}}</output></label>
     </div>
-    <p v-if="!loaded">集計するには「全期間の明細を読み込む」を押してください。</p>
+    <p v-if="!loaded">集計するには「全明細を更新」を押してください。</p>
     <div v-else-if="bill.name && cardPeriod" class="finance-row">
       <strong>{{bill.name}} · {{bill.month}}締め</strong><span>{{cardPeriod.start}} ～ {{cardPeriod.end}}</span>
       <strong>{{yen(cardTotal)}}</strong>

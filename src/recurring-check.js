@@ -1,6 +1,8 @@
 // Run due recurring entries on app open. Existing records remain untouched.
 export async function checkRecurringEntries(api) {
-  // Normalized D1 plan records are the only source of recurring schedules.\n  const plans = await api('recurring-plans')\n  if (!Array.isArray(plans) || !plans.length) return 0
+  // Normalized D1 plan records are the only source of recurring schedules.
+  const plans = await api('recurring-plans')
+  if (!Array.isArray(plans) || !plans.length) return 0
   const now = new Date()
   const today = [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-')
   let checked = 0

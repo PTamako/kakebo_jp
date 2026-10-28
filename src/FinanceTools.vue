@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { validateBackup, transactionKey, nextScheduledDate } from './finance-tools.js'
-const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] } })
+const props = defineProps({ active: { type: Boolean, default: false }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh'])
 
 const cardMode = ref('')
@@ -277,12 +277,21 @@ async function applyRecurring(){
   }catch(e){recurringMessage.value='自動記録の確認に失敗しました：'+e.message}
   finally{recurringBusy.value=false}
 }
-onMounted(async () => {
-  // Refresh after recurring entries are processed so the ledger includes any newly created rows.
-  try { await loadFinanceSettings(); await applyRecurring() }
-  catch(e) { message.value='設定の読込に失敗しました：'+e.message }
-  await loadAll()
-})
+let financeInitialized = false
+async function initializeFinance() {
+  if (financeInitialized) return
+  financeInitialized = true
+  try {
+    await loadFinanceSettings()
+    await applyRecurring()
+    await loadAll()
+  } catch(e) {
+    financeInitialized = false
+    message.value = '設定の読込に失敗しました：' + e.message
+  }
+}
+onMounted(() => { if (props.active) void initializeFinance() })
+watch(() => props.active, active => { if (active) void initializeFinance() })
 async function removePlan(id) {
   if (!settingsReady.value) return
   try {
@@ -381,18 +390,6 @@ async function removeCardBill(record) {
     </div>
   </details>
   <article class="finance-panel">
-    <h2>バックアップ・復元</h2>
-    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||!loaded" @click="downloadBackup">JSON を保存</button><label class="backup-upload" :class="{ 'is-disabled': busy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||!loaded" @change="preview"></label></div>
-    <button v-if="restoreRows.length" :disabled="busy" @click="restore">追加候補 {{restoreRows.length}} 件を確認して復元</button>
-    <p v-if="message" role="status">{{message}}</p>
-  </article>
-  <article class="finance-panel">
-    <h2>重複の可能性</h2>
-    <p v-if="!loaded">上部の「全明細を更新」で表示します。</p>
-    <p v-else-if="!duplicates.length">重複候補はありません。</p>
-    <button v-for="(group,i) in duplicates.slice(0,30)" :key="i" type="button" class="finance-row duplicate-link" @click="emit('open-duplicate', group[0].date)">{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件 <span>明細を見る ›</span></button>
-  </article>
-  <article class="finance-panel">
     <h2>毎月の固定支出</h2>
     <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><input v-model="plan.amount" type="number" min="1" placeholder="金額" aria-label="固定支出額"></div>
     <div class="finance-inputs recurring-details"><label>毎月の登録日<select v-model.number="plan.day" aria-label="毎月の登録日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリー<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in props.categories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
@@ -430,6 +427,18 @@ async function removeCardBill(record) {
       </div>
     </details>
   </article>
+  <details class="finance-panel finance-disclosure">
+    <summary>バックアップ・復元<span>必要なときに開く</span></summary>
+    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||!loaded" @click="downloadBackup">JSON を保存</button><label class="backup-upload" :class="{ 'is-disabled': busy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||!loaded" @change="preview"></label></div>
+    <button v-if="restoreRows.length" :disabled="busy" @click="restore">追加候補 {{restoreRows.length}} 件を確認して復元</button>
+    <p v-if="message" role="status">{{message}}</p>
+  </details>
+  <details class="finance-panel finance-disclosure">
+    <summary>重複の可能性<span>確認する</span></summary>
+    <p v-if="!loaded">上部の「全明細を更新」で表示します。</p>
+    <p v-else-if="!duplicates.length">重複候補はありません。</p>
+    <button v-for="(group,i) in duplicates.slice(0,30)" :key="i" type="button" class="finance-row duplicate-link" @click="emit('open-duplicate', group[0].date)">{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件 <span>明細を見る ›</span></button>
+  </details>
 </section>
 </template>
 <style scoped>

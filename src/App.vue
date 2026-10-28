@@ -5,6 +5,7 @@ import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
 import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
+import FinanceTools from './FinanceTools.vue'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
@@ -21,6 +22,19 @@ const selectedRatioMonth = ref('')
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
+const defaultPaymentSources = ['現金', 'Suica', 'PayPay', '楽天カード', '三井住友カード', 'セブンカード・プラス', 'セゾンカード', 'その他']
+function readPaymentSources() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('kakeibo-payment-sources') || 'null')
+    if (Array.isArray(stored)) return ['現金', ...new Set(stored.filter(x => typeof x === 'string' && x.trim() && x !== '現金'))]
+  } catch {}
+  return [...defaultPaymentSources]
+}
+const paymentSources = ref(readPaymentSources())
+function updatePaymentSources(values) {
+  paymentSources.value = values
+  localStorage.setItem('kakeibo-payment-sources', JSON.stringify(values))
+}
 const pendingReceiptImage = ref(null)
 const receiptImageIds = ref(new Set())
 const viewedReceiptUrl = ref('')
@@ -251,7 +265,7 @@ function recognize(mode = recognitionMode.value) {
   forms.value = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, bindRule: false }
+    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', bindRule: false }
   })
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
@@ -275,7 +289,7 @@ async function copyOcrText(value) {
 }
 function addBlank(type = 'expense') {
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
-  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: '', merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   form.type = type
@@ -310,6 +324,12 @@ async function saveAll() {
   if (!forms.value.length) return flash('保存する記録がありません')
   const invalid = forms.value.findIndex(f => !(Number(f.amount) > 0))
   if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
+  const uncertain = forms.value.filter(f => /要確認|不明瞭|読み取れません|確認してください/.test(f.note || ''))
+  if (uncertain.length) return flash('金額・内容を確認し、要確認の表示を修正してください')
+  const key = f => [f.date, f.time || '', Number(f.amount), f.merchant?.trim() || ''].join('|')
+  const seen = new Set()
+  const possibleDuplicates = forms.value.filter(f => { const k = key(f); const duplicate = seen.has(k) || entries.value.some(e => key(e) === k); seen.add(k); return duplicate })
+  if (possibleDuplicates.length && !confirm(`同じ日付・金額・店名の記録が${possibleDuplicates.length}件あります。実際に別の取引なら保存できます。続行しますか？`)) return
   busy.value = 'saving'
   let saved = 0
   let ruleFailures = 0
@@ -372,7 +392,7 @@ function startEdit(entry) {
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
     transferTarget: entry.transfer_target || '', transferDate: entry.transfer_date || entry.date,
-    category: entry.category || '日用品', merchant: entry.merchant || '',
+    category: entry.category || '日用品', paymentSource: entry.payment_source || '', merchant: entry.merchant || '',
     note: entry.note || '', raw: entry.raw || ''
   }
 }
@@ -532,6 +552,16 @@ const selectDonutSlice = (event, period) => {
 const monthlyCategoryPie = computed(() => pieGradient(categoryRows.value, expensePalette, donutSelected('month')?.category))
 const annualExpensePie = computed(() => pieGradient(annualStats.value?.byCategory || [], expensePalette, donutSelected('year')?.category))
 
+async function openDuplicateDate(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return
+  clearDetailFilter()
+  entryTypeFilter.value = 'all'
+  calendarExpanded.value = true
+  selectedDay.value = date
+  month.value = date.slice(0, 7)
+  tab.value = 'list'
+  await load()
+}
 const selectedDay = ref('')
 const entryTypeFilter = ref('all')
 const calendarExpanded = ref(false)
@@ -903,6 +933,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>時刻</span><input type="time" v-model="f.time" /></label>
           <label class="form-field"><span>カテゴリ</span><select v-model="f.category"><option v-for="c in (f.type === 'income' ? INCOME_CATEGORIES : f.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
           <label class="form-field"><span>店舗</span><input v-model="f.merchant" /></label>
+          <label class="form-field"><span>支払方法・カード</span><select v-model="f.paymentSource"><option value="">未設定</option><option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option><option v-if="f.paymentSource && !paymentSources.includes(f.paymentSource)" :value="f.paymentSource">{{f.paymentSource}}（既存の設定）</option></select></label>
         </div>
         <div v-if="f.type === 'transfer'" class="field-grid transfer-schedule-fields">
           <label class="form-field"><span>振替先</span><select v-model="f.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>
@@ -1005,6 +1036,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <label class="form-field"><span>時刻</span><input v-model="editingEntry.time" type="time" /></label>
             <label class="form-field"><span>カテゴリ</span><select v-model="editingEntry.category"><option v-for="c in (editingEntry.type === 'income' ? INCOME_CATEGORIES : editingEntry.type === 'transfer' ? ['投資・資産移動'] : categories)" :key="c" :value="c">{{ categoryLabel(c) }}</option></select></label>
             <label class="form-field"><span>店舗</span><input v-model="editingEntry.merchant" /></label>
+            <label class="form-field"><span>支払方法・カード</span><select v-model="editingEntry.paymentSource"><option value="">未設定</option><option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option><option v-if="editingEntry.paymentSource && !paymentSources.includes(editingEntry.paymentSource)" :value="editingEntry.paymentSource">{{editingEntry.paymentSource}}（既存の設定）</option></select></label>
           </div>
           <div v-if="editingEntry.type === 'transfer'" class="field-grid transfer-schedule-fields">
             <label class="form-field"><span>振替先</span><select v-model="editingEntry.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label>
@@ -1176,11 +1208,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </article>
     </section>
 
+    <FinanceTools v-if="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" @update-payment-sources="updatePaymentSources" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button :class="{ active: tab === 'list' }" @click="tab = 'list'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>
       <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.5 19.5h15"/><rect x="6" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10" rx="1"/><rect x="14.8" y="4.5" width="3.2" height="13" rx="1"/></svg></span><span>統計</span></button>
       <button :class="{ active: tab === 'investments' }" @click="tab = 'investments'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2.5"/><path d="M3.5 10h17M7 4.5h10M15.5 14.5h2"/></svg></span><span>資産・投資</span></button>
+      <button :class="{ active: tab === 'finance' }" @click="tab = 'finance'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span><span>管理</span></button>
     </nav>
   </main>
 </template>
@@ -1453,4 +1487,10 @@ main .capture-panel .receipt-mode-tabs button.selected{background:var(--card);bo
 main .capture-panel .receipt-mode-tabs button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 main .capture-panel .action-row .upload-button,main .capture-panel .action-row>button{min-height:44px}
 @media(max-width:360px){main .capture-panel .receipt-mode-tabs button{font-size:13px;padding:9px 6px}}
+/* Five equal bottom tabs: maintain a single row on narrow iPhones. */
+main .bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr));max-width:460px}
+main .bottom-nav button{min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-inline:2px}
+main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
+main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
 </style>

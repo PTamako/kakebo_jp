@@ -23,6 +23,10 @@ function renameCard() {
     cardMessage.value = '名称を確認してください（重複・現金の変更不可）'
     return
   }
+  if (name !== old && (!loaded.value || rows.value.some(e => e.payment_source === old) || plans.value.some(p => p.paymentSource === old))) {
+    cardMessage.value = '過去の明細・固定支出を保護するため、この名称は変更できません。新しいカードを追加してください（全明細の読み込みが必要です）'
+    return
+  }
   if (name !== old) {
     emit('update-payment-sources', props.paymentSources.map(x => x === old ? name : x))
     const updated = {...closingDays.value, [name]:closingDays.value[old] || ''}

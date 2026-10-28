@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { validateBackup, transactionKey, reconcileStatement, nextScheduledDate } from './finance-tools.js'
+import { validateBackup, transactionKey, nextScheduledDate } from './finance-tools.js'
 const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate'])
 const newPaymentSource = ref('')
@@ -28,7 +28,7 @@ const restoreRows = ref([])
 const plans = ref(JSON.parse(localStorage.getItem('kakeibo-plans') || '[]'))
 const bills = ref(JSON.parse(localStorage.getItem('kakeibo-bills') || '[]'))
 const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
-const bill = ref({name:'',month:new Date().toISOString().slice(0,7),amount:''})
+const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 async function loadAll() {
   busy.value=true; message.value=''
@@ -136,13 +136,9 @@ async function applyRecurring(){
 }
 onMounted(()=>{applyRecurring()})
 function removePlan(id){plans.value=plans.value.filter(x=>x.id!==id);localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value))}
-function addBill(){
-  if(!props.paymentSources.includes(bill.value.name)||['現金','その他'].includes(bill.value.name)||!/^\d{4}-\d{2}$/.test(bill.value.month)||!(Number(bill.value.amount)>0))return
-  bills.value.push({...bill.value,id:crypto.randomUUID(),amount:Number(bill.value.amount)})
-  localStorage.setItem('kakeibo-bills',JSON.stringify(bills.value));bill.value={name:'',month:new Date().toISOString().slice(0,7),amount:''}
-}
-function removeBill(id){bills.value=bills.value.filter(x=>x.id!==id);localStorage.setItem('kakeibo-bills',JSON.stringify(bills.value))}
 const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.type==='expense'&&e.payment_source===source)
+const cardTransactions=computed(()=>monthExpenses(bill.value.month,bill.value.name))
+const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
 </script>
 <template>
 <section class="finance-tools">
@@ -185,11 +181,19 @@ const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.ty
     <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 毎月{{p.day}}日 · {{p.paymentSource || "未設定"}} · 次回 {{nextScheduledDate(p.day)}} <button @click="removePlan(p.id)">削除</button></div>
   </article>
   <article class="finance-panel">
-    <h2>カード請求額の参考比較</h2>
-    <p>明細に設定した支払方法・カード名と一致する支出だけを集計します。未設定の取引は含まれません。請求月と利用月の違いにご注意ください。</p>
-    <div class="finance-inputs"><select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in props.paymentSources.filter(x => !['現金','その他'].includes(x))" :key="source" :value="source">{{source}}</option></select><input v-model="bill.month" type="month" aria-label="対象月"><input v-model="bill.amount" type="number" min="1" placeholder="請求額" aria-label="請求額"></div>
-    <button @click="addBill">請求額を追加</button>
-    <div v-for="b in bills" :key="b.id" class="finance-row">{{b.name}} {{b.month}} 請求 {{yen(b.amount)}} <template v-if="loaded">／カード別支出 {{yen(reconcileStatement(monthExpenses(b.month,b.name),b.amount).sum)}}／差 {{yen(reconcileStatement(monthExpenses(b.month,b.name),b.amount).difference)}}</template> <button @click="removeBill(b.id)">削除</button></div>
+    <h2>カード別利用額</h2>
+    <p>家計簿の明細に記録された支出を、カードと利用月で集計します。カード会社の請求確定額とは異なる場合があります。未設定の明細は集計されません。</p>
+    <div class="finance-inputs">
+      <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in props.paymentSources.filter(x => !['現金','その他','Suica','PayPay'].includes(x))" :key="source" :value="source">{{source}}</option><option v-if="bill.name && !props.paymentSources.includes(bill.name)" :value="bill.name">{{bill.name}}（既存の設定）</option></select></label>
+      <label>利用月<input v-model="bill.month" type="month" aria-label="利用月"></label>
+    </div>
+    <p v-if="!loaded">集計するには「全期間の明細を読み込む」を押してください。</p>
+    <div v-else-if="bill.name && /^\\d{4}-\\d{2}$/.test(bill.month)" class="finance-row">
+      <strong>{{bill.name}} · {{bill.month}}</strong>
+      <strong>{{yen(cardTotal)}}</strong>
+      <span>{{cardTransactions.length}}件の支出</span>
+    </div>
+    <p v-else>カードと利用月を選択してください。</p>
   </article>
 </section>
 </template>

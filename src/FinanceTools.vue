@@ -179,8 +179,12 @@ async function loadFinanceSettings() {
     let result = await props.api('finance-settings/'+name)
     if (!result.exists) {
       // Only import browser data if D1 has no value. Never silently overwrite D1.
-      await props.api('finance-settings/'+name,{method:'POST',body:JSON.stringify({value:legacy(key,fallback)})})
-      result = await props.api('finance-settings/'+name)
+      const previous = legacy(key,fallback)
+      // An empty new device must not block an old device from importing real data.
+      if (Array.isArray(previous) ? previous.length > 0 : Object.keys(previous).length > 0) {
+        await props.api('finance-settings/'+name,{method:'POST',body:JSON.stringify({value:previous})})
+        result = await props.api('finance-settings/'+name)
+      }
     }
     loaded[name] = result.value
   }

@@ -74,7 +74,6 @@ const busy = ref(false)
 const message = ref('')
 const restoreRows = ref([])
 const plans = ref(JSON.parse(localStorage.getItem('kakeibo-plans') || '[]'))
-const bills = ref(JSON.parse(localStorage.getItem('kakeibo-bills') || '[]'))
 const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
@@ -96,7 +95,7 @@ async function loadAll() {
 }
 function downloadBackup(){
   if(!loaded.value)return
-  const data={format:'kakeibo-ledger-backup',version:1,exportedAt:new Date().toISOString(),entries:rows.value,plans:plans.value,bills:bills.value}
+  const data={format:'kakeibo-ledger-backup',version:1,exportedAt:new Date().toISOString(),entries:rows.value,plans:plans.value}
   const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
   const a=document.createElement('a');a.href=url;a.download='kakeibo-ledger-'+new Date().toISOString().slice(0,10)+'.json';a.click()
   setTimeout(()=>URL.revokeObjectURL(url),30000)
@@ -193,7 +192,6 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
   <h1>管理・照合</h1>
   <article class="finance-panel">
     <h2>支払方法・カード管理</h2>
-    <p>ここで追加・削除した選択肢は、明細入力・編集・固定支出・カード請求照合のすべてに反映されます。削除しても過去の取引は変更されません。現金は削除できません。</p>
     <div class="finance-inputs card-controls">
       <select v-model="selectedCard" aria-label="管理するカード"><option value="" disabled>支払方法・カードを選択</option><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option></select>
       <button type="button" :disabled="!selectedCard" @click="selectCardForEdit">編集</button>
@@ -218,11 +216,9 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
       </div>
     </div>
     <p role="status">{{cardMessage}}</p>
-    <p>選択肢はこの端末に保存されます。別の端末とは自動同期されません。</p>
   </article>
   <article class="finance-panel">
     <h2>バックアップ・復元</h2>
-    <p>明細の JSON バックアップです。レシート画像・SBI 評価額・カテゴリ設定は対象外です。復元は追加のみで、既存の記録を変更しません。</p>
     <button :disabled="busy" @click="loadAll">{{busy?'読み込み中…':'全期間の明細を読み込む'}}</button>
     <button :disabled="busy||!loaded" @click="downloadBackup">JSON を保存</button>
     <label>バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||!loaded" @change="preview"></label>
@@ -231,14 +227,12 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
   </article>
   <article class="finance-panel">
     <h2>重複の可能性</h2>
-    <p>同じ日時・店名・金額・カテゴリの候補です。自動削除はしません。</p>
     <p v-if="!loaded">全明細を読み込むと表示します。</p>
     <p v-else-if="!duplicates.length">重複候補はありません。</p>
     <button v-for="(group,i) in duplicates.slice(0,30)" :key="i" type="button" class="finance-row duplicate-link" @click="emit('open-duplicate', group[0].date)">{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件 <span>明細を見る ›</span></button>
   </article>
   <article class="finance-panel">
     <h2>毎月の固定支出</h2>
-    <p>毎月の指定日に支出明細へ自動追加します。アプリを開いた際に未処理月を確認します。閉じている間は実行されません。過去の予定にはさかのぼりません。</p>
     <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><input v-model="plan.amount" type="number" min="1" placeholder="金額" aria-label="固定支出額"></div>
     <div class="finance-inputs recurring-details"><label>毎月の登録日<select v-model.number="plan.day" aria-label="毎月の登録日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>分類<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in props.categories" :key="category" :value="category">{{category}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
     <button @click="addPlan(); applyRecurring()">自動記録を登録</button>
@@ -248,7 +242,6 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
   </article>
   <article class="finance-panel">
     <h2>カード別利用額</h2>
-    <p>家計簿の明細に記録された支出を、カードごとの締め日と締め月で集計します。カード会社の請求確定額とは異なる場合があります。未設定の明細は集計されません。</p>
     <div class="finance-inputs">
       <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in props.paymentSources.filter(x => !['現金','その他','Suica','PayPay'].includes(x))" :key="source" :value="source">{{source}}</option><option v-if="bill.name && !props.paymentSources.includes(bill.name)" :value="bill.name">{{bill.name}}（既存の設定）</option></select></label>
       <label>締め月<input v-model="bill.month" type="month" aria-label="締め月"></label>

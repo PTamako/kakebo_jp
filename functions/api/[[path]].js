@@ -280,7 +280,7 @@ export async function onRequest({ request, env, params }) {
         const transfer = e.type === 'transfer' || (!['income', 'expense'].includes(e.type) && isInvestmentTransfer(e))
         const amount = Number(e.amount)
         if (!validDate(e.date) || !Number.isSafeInteger(Number(e.amount)) || !Number.isSafeInteger(amount) || amount <= 0)
-          return json({ error: '日期或金额不正确' }, 400)
+          return json({ error: '日付または金額が正しくありません' }, 400)
         const paymentSource = e.paymentSource == null ? '' : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
@@ -305,7 +305,7 @@ export async function onRequest({ request, env, params }) {
         const id = Number(b)
         const amount = Number(e.amount)
         if (!Number.isSafeInteger(id) || id <= 0 || !validDate(e.date) || !Number.isSafeInteger(amount) || amount <= 0)
-          return json({ error: '日期或金额不正确' }, 400)
+          return json({ error: '日付または金額が正しくありません' }, 400)
         const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date, payment_source FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
         const paymentSource = e.paymentSource == null ? (previous.payment_source || '') : String(e.paymentSource).trim()
@@ -345,7 +345,7 @@ export async function onRequest({ request, env, params }) {
       if (m === 'POST') {
         const body = await request.json()
         const name = String(body.name || '').trim().slice(0, 20)
-        if (name.length < 1) return json({ error: '分类名称不能为空' }, 400)
+        if (name.length < 1) return json({ error: 'カテゴリー名を入力してください' }, 400)
         const reserved = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
         const icon = String(body.icon || 'other')
         const validIcons = ['food','dining','daily','transport','shopping','home','medical','pet','beauty','education','insurance','utilities','phone','tax','travel','subscriptions','gift','electricity','water','gas','rent','internet','hair','cosmetics','clothes','shoes','books','lessons','childcare','family','car','bicycle','fuel','parking','fitness','health','medicine','dental','cafe','hobby','music','movie','electronics','furniture','repair','charity','bank','savings','fees','delivery','cleaning','events','work','phone-device','other']
@@ -369,7 +369,7 @@ export async function onRequest({ request, env, params }) {
         const marker = '__kakeibo_japanese_rules_v9_initialized__'
         const seeded = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(marker).first()
         if (!seeded) {
-          // 旧规则表无法区分默认规则与个人规则：保留非默认关键词，以及被用户改过分类的默认关键词。
+          // 旧ルールでは既定と個人設定を区別できないため、既定外のキーワードと変更済みの分類を保持する。
           const defaultCategories = new Map(DEFAULT_RULE_ROWS.map(([keyword, category]) => [keyword, category]))
           const legacy = await db.prepare("SELECT keyword, category FROM rules WHERE substr(keyword, 1, 13) != '__category__:'").all()
           for (const rule of (legacy.results || []).filter(rule =>
@@ -401,7 +401,7 @@ export async function onRequest({ request, env, params }) {
         const kw = String(r.keyword || '').trim()
         const category = String(r.category || '').trim()
         if (kw.length < 2) return json({ error: '关键词太短' }, 400)
-        if (!category) return json({ error: '分类不能为空' }, 400)
+        if (!category) return json({ error: 'カテゴリーを指定してください' }, 400)
         await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
         await db.prepare('INSERT INTO custom_rules (keyword,category) VALUES (?1,?2) ON CONFLICT(keyword) DO UPDATE SET category = excluded.category').bind(kw, category).run()
         return json({ ok: true, keyword: kw, category })

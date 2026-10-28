@@ -38,17 +38,18 @@ function updatePaymentSources(values) {
 }
 const pendingReceiptImage = ref(null)
 const editReceiptImage = ref(null)
+const editReceiptFileName = ref('')
 const receiptSaveError = ref('')
 async function selectDraftReceipt(event, form) {
   const file = event.target.files?.[0]; event.target.value = ''
   if (!file) return
-  try { form.receiptImage = await compressReceiptImage(file); receiptSaveError.value = '' }
+  try { const blob = await compressReceiptImage(file); form.receiptImage = blob; form.receiptFileName = file.name; receiptSaveError.value = '' }
   catch { receiptSaveError.value = 'レシート画像を準備できませんでした。元の写真を保管してください。' }
 }
 async function selectEditReceipt(event) {
   const file = event.target.files?.[0]; event.target.value = ''
   if (!file) return
-  try { editReceiptImage.value = await compressReceiptImage(file); receiptSaveError.value = '' }
+  try { const blob = await compressReceiptImage(file); editReceiptImage.value = blob; editReceiptFileName.value = file.name; receiptSaveError.value = '' }
   catch { receiptSaveError.value = 'レシート画像を準備できませんでした。元の写真を保管してください。' }
 }
 async function persistReceipt(id, blob) {
@@ -412,6 +413,7 @@ async function remove(id) {
 }
 function startEdit(entry) {
   editReceiptImage.value = null
+  editReceiptFileName.value = ''
   editingEntry.value = {
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
@@ -420,7 +422,7 @@ function startEdit(entry) {
     note: entry.note || '', raw: entry.raw || ''
   }
 }
-function cancelEdit() { if (!editSaving.value) { editingEntry.value = null; editReceiptImage.value = null } }
+function cancelEdit() { if (!editSaving.value) { editingEntry.value = null; editReceiptImage.value = null; editReceiptFileName.value = '' } }
 async function saveEdit() {
   const e = editingEntry.value
   if (!e || editSaving.value) return
@@ -979,7 +981,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="f.transferDate" type="date" required /></label>
         </div>
         <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
-        <div v-if="f.type === 'expense'" class="receipt-attachment-field"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{ f.receiptImage ? '画像を変更する' : 'レシート画像を追加' }}<input type="file" accept="image/*" @change="selectDraftReceipt($event, f)" hidden /></label><span class="receipt-attachment-status">{{ f.receiptImage ? '画像を保存する準備ができました' : '画像は未選択です' }}</span></div>
+        <div v-if="f.type === 'expense'" class="receipt-attachment-field"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{ f.receiptImage ? '画像を変更する' : 'レシート画像を追加' }}<input type="file" accept="image/*" @change="selectDraftReceipt($event, f)" hidden /></label><span class="receipt-attachment-status">{{ f.receiptImage ? `画像を選択しました${f.receiptFileName ? '：' + f.receiptFileName : ''}` : '画像は未選択です' }}</span><button v-if="f.receiptImage" type="button" class="receipt-attachment-clear" @click="f.receiptImage = null; f.receiptFileName = ''">選択を解除</button></div>
         <label v-if="f.type !== 'income' && f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>この店舗を選択したカテゴリに登録し、次回から自動判定する</span></label>
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
@@ -1087,7 +1089,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="editingEntry.transferDate" type="date" required /></label>
           </div>
           <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
-          <div v-if="editingEntry.type === 'expense'" class="receipt-attachment-field"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{ editReceiptImage || receiptImageIds.has(Number(editingEntry.id)) ? '画像を変更する' : 'レシート画像を追加' }}<input type="file" accept="image/*" @change="selectEditReceipt($event)" hidden /></label><span class="receipt-attachment-status">{{ editReceiptImage ? '画像を保存する準備ができました' : receiptImageIds.has(Number(editingEntry.id)) ? '保存済みの画像があります' : '画像は未選択です' }}</span></div>
+          <div v-if="editingEntry.type === 'expense'" class="receipt-attachment-field"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{ editReceiptImage || receiptImageIds.has(Number(editingEntry.id)) ? '画像を変更する' : 'レシート画像を追加' }}<input type="file" accept="image/*" @change="selectEditReceipt($event)" hidden /></label><span class="receipt-attachment-status">{{ editReceiptImage ? `画像を選択しました：${editReceiptFileName}` : receiptImageIds.has(Number(editingEntry.id)) ? '保存済みの画像があります' : '画像は未選択です' }}</span><button v-if="editReceiptImage" type="button" class="receipt-attachment-clear" @click="editReceiptImage = null; editReceiptFileName = ''">選択を解除</button></div>
           </fieldset>
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="editSaving" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary" :disabled="editSaving">{{ editSaving ? '保存中…' : '変更を保存' }}</button></div>
         </form>
@@ -1563,3 +1565,5 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 <style>.receipt-error-banner{position:fixed;z-index:9999;top:calc(env(safe-area-inset-top,0px) + 8px);left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border:1px solid #df9aa6;border-radius:12px;background:#fff1f3;color:#8d2336;box-shadow:0 5px 22px #42202522;font-weight:700;font-size:13px}.receipt-error-banner button{border:0;background:transparent;color:inherit;font-size:24px;cursor:pointer}</style>
 
 <style>.receipt-attachment-field{display:flex;flex-wrap:wrap;align-items:center;gap:9px;padding:10px 0}.receipt-attachment-label{width:100%;font-size:13px;font-weight:700}.receipt-attachment-button{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:9px 13px;border-radius:10px}.receipt-attachment-status{font-size:12px;color:var(--muted)}</style>
+
+<style>.receipt-attachment-clear{border:0;background:transparent;color:#397e9b;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;padding:5px}.receipt-attachment-status{overflow-wrap:anywhere}</style>

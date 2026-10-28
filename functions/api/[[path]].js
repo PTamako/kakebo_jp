@@ -296,8 +296,10 @@ export async function onRequest({ request, env, params }) {
         const amount = Number(e.amount)
         if (!Number.isSafeInteger(id) || id <= 0 || !validDate(e.date) || !Number.isSafeInteger(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
-        const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date FROM entries WHERE id = ?1').bind(id).first()
+        const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date, payment_source FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
+        const paymentSource = e.paymentSource == null ? (previous.payment_source || '') : String(e.paymentSource).trim()
+        if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)

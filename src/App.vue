@@ -963,10 +963,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </details>
       </div>
       <div v-if="entryInputMode === 'scan'" class="panel capture-panel">
-        <div class="receipt-mode-tabs" role="tablist" aria-label="読み取りモード">
-          <button type="button" role="tab" :aria-selected="recognitionMode === 'statement'" :class="{ selected: recognitionMode === 'statement' }" @click="recognitionMode = 'statement'">明細</button>
-          <button type="button" role="tab" :aria-selected="recognitionMode === 'receipt'" :class="{ selected: recognitionMode === 'receipt' }" @click="recognitionMode = 'receipt'">レシート</button>
-        </div>
+        <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
         <div class="action-row">
           <label class="button-primary upload-button">{{ forms.length ? '別の画像を読み取る' : recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>

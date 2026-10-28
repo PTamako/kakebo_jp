@@ -498,17 +498,14 @@ async function retryTransfer(item) {
   } catch (e) { flash('処理に失敗しました：' + e.message) }
   finally { transferActionId.value = null }
 }
-async function deleteTransfer(item) {
+async function dismissTransferReminder(item) {
   if (transferActionId.value !== null) return
-  if (!confirm('この待処理事項を削除しますか？家計簿の記録も削除されます。')) return
   transferActionId.value = item.id
   try {
-    await api('entries/' + item.id, { method: 'DELETE', headers: { 'x-confirm-delete': String(item.id) } })
-    await loadTransfers()
-    await load()
-    await loadInvestments()
-    flash('記録を削除しました')
-  } catch (e) { flash('削除に失敗しました：' + e.message) }
+    await api('transfers/' + item.id + '/dismiss', { method: 'POST' })
+    pendingTransfers.value = pendingTransfers.value.filter(row => row.id !== item.id)
+    flash('振替予定の表示を閉じました')
+  } catch (e) { flash('表示の更新に失敗しました：' + e.message) }
   finally { transferActionId.value = null }
 }
 
@@ -1211,7 +1208,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div v-else class="pending-transfer-list">
           <div v-for="item in pendingTransfers" :key="item.id" class="pending-transfer-row">
             <div class="pending-transfer-main"><strong>{{ item.merchant || item.note || 'SBI証券への資産移動' }}</strong><span>予定日 {{ item.transfer_date || item.date }} · ¥{{ Number(item.amount || 0).toLocaleString('ja-JP') }}</span></div>
-            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" :disabled="transferActionId !== null" aria-label="削除" title="削除" @click="deleteTransfer(item)">×</button><button v-else-if="transferDue(item)" class="pending-retry" :disabled="transferActionId !== null" @click="retryTransfer(item)">手動処理</button></div>
+            <div class="pending-transfer-actions"><span class="pending-transfer-status" :class="transferStatusClass(item)">{{ transferStatus(item) }}</span><button v-if="Number(item.transfer_applied) === 1" class="pending-delete" :disabled="transferActionId !== null" aria-label="通知を閉じる" title="通知を閉じる" @click="dismissTransferReminder(item)">×</button><button v-else-if="transferDue(item)" class="pending-retry" :disabled="transferActionId !== null" @click="retryTransfer(item)">手動処理</button></div>
           </div>
         </div>
       </article>

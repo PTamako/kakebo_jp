@@ -1,21 +1,6 @@
 // Run due recurring entries on app open. Existing records remain untouched.
 export async function checkRecurringEntries(api) {
-  // D1 is the authoritative schedule source on every device.
-  // On first use, import the legacy browser schedules only if D1 is empty.
-  let result = await api('finance-settings/plans')
-  if (!result.exists) {
-    let legacy = []
-    try { legacy = JSON.parse(localStorage.getItem('kakeibo-plans') || '[]') } catch {}
-    if (!Array.isArray(legacy)) legacy = []
-    // Never seed an empty configuration: another browser may still hold
-    // legacy schedules that need the first-write import opportunity.
-    if (legacy.length) {
-      await api('finance-settings/plans',{method:'POST',body:JSON.stringify({value:legacy})})
-      result = await api('finance-settings/plans')
-    }
-  }
-  const plans = result.value
-  if (!Array.isArray(plans) || !plans.length) return 0
+  // Normalized D1 plan records are the only source of recurring schedules.\n  const plans = await api('recurring-plans')\n  if (!Array.isArray(plans) || !plans.length) return 0
   const now = new Date()
   const today = [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-')
   let checked = 0

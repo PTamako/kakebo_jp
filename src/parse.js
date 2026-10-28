@@ -210,6 +210,19 @@ export function parseReceipt(raw, rules = []) {
       candidates.push({ amount: subtotal + tax, score: 1, index: lines.length, reconstructed: true })
     }
   }
+  // OCR may lose the subtotal label while retaining the 8% tax base and tax.
+  // Use only an explicit taxable base and tax, not an isolated payment number.
+  if (!candidates.length) {
+    const yen = line => {
+      const m = line.match(/[¥￥\\]\s*([\d,，]{1,7})(?!\d)/)
+      return m ? money(m[1]) : 0
+    }
+    const base = lines.filter(line => /(?:外\s*税|税率|8\s*%)/.test(line) && /対象|対象額/.test(line)).map(yen).find(Boolean) || 0
+    const tax = lines.filter(line => /外\s*税|消費税/.test(line) && !/対象|対象額|税率/.test(line)).map(yen).find(Boolean) || 0
+    if (base > 0 && tax > 0 && base <= 9999999 - tax && Math.abs(tax - Math.floor(base * 0.08)) <= 1) {
+      candidates.push({ amount: base + tax, score: 1, index: lines.length, reconstructed: true })
+    }
+  }
   candidates.sort((a, b) => b.score - a.score || a.index - b.index)
   const amount = candidates[0]?.amount || 0
   // Normalize spaced and common OCR-misread convenience-store names without

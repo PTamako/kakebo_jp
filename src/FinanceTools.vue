@@ -74,6 +74,7 @@ const busy = ref(false)
 const message = ref('')
 const restoreRows = ref([])
 const plans = ref(JSON.parse(localStorage.getItem('kakeibo-plans') || '[]'))
+const bills = ref(JSON.parse(localStorage.getItem('kakeibo-bills') || '[]'))
 const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
@@ -95,7 +96,7 @@ async function loadAll() {
 }
 function downloadBackup(){
   if(!loaded.value)return
-  const data={format:'kakeibo-ledger-backup',version:1,exportedAt:new Date().toISOString(),entries:rows.value,plans:plans.value}
+  const data={format:'kakeibo-ledger-backup',version:1,exportedAt:new Date().toISOString(),entries:rows.value,plans:plans.value,bills:bills.value}
   const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
   const a=document.createElement('a');a.href=url;a.download='kakeibo-ledger-'+new Date().toISOString().slice(0,10)+'.json';a.click()
   setTimeout(()=>URL.revokeObjectURL(url),30000)

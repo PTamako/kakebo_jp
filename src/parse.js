@@ -143,7 +143,19 @@ export function classify(text, rules = []) {
   return { category: '日用品', keyword: '' }
 }
 
+function parseAiCsvRow(raw, rules) {
+  const line = normalize(raw).trim()
+  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日))\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*円\s*(?:[,，]\s*(.*))?$/)
+  if (!m) return null
+  const merchant = m[2].replace(/^QP\s*[/／]\s*/i, '').trim()
+  const amount = Number(m[3].replace(/[^\d]/g, ''))
+  if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
+  const { category, keyword } = classify(merchant, rules)
+  return { date: findDate(m[1]), time: '', amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
+}
 export function parseEntry(raw, rules) {
+  const ai = parseAiCsvRow(raw, rules)
+  if (ai) return ai
   const text = normalize(raw)
   const { category, keyword } = classify(text, rules)
   const firstLine = text.split('\n').map(s => s.trim()).find(s => s.length >= 2 && !/^[\d¥\s:\/.\-]+$/.test(s)) || ''
@@ -298,6 +310,9 @@ export function parseEntries(raw, rules) {
   }
   const text = normalize(raw)
   if (!text) return []
+  const csvLines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const csvRows = csvLines.map(line => parseAiCsvRow(line, rules))
+  if (csvRows.length && csvRows.every(Boolean)) return csvRows
 
   // Normalize card-statement rows such as "QUICPay 利用 (QP/ マイバスケット ) 628gm"
   // into the existing QP-row format before parsing each transaction independently.

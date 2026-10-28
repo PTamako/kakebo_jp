@@ -362,6 +362,8 @@ function removeDraft(i) { forms.value.splice(i, 1) }
 async function saveAll() {
   if (busy.value) return
   if (!forms.value.length) return flash('保存する記録がありません')
+  const invalidTransfer = forms.value.findIndex(f => f.type === 'transfer' && (!f.transferTarget || !/^\\d{4}-\\d{2}-\\d{2}$/.test(f.transferDate || '')))
+  if (invalidTransfer >= 0) return flash(`${invalidTransfer + 1}件目の振替先と適用日を確認してください`)
   const invalid = forms.value.findIndex(f => !(Number(f.amount) > 0))
   if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
   const uncertain = forms.value.filter(f => /要確認|不明瞭|読み取れません|確認してください/.test(f.note || ''))
@@ -443,6 +445,10 @@ async function saveEdit() {
   if (!e || editSaving.value) return
   if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !(Number(e.amount) > 0)) {
     flash('日付と金額を確認してください')
+    return
+  }
+  if (e.type === 'transfer' && (!e.transferTarget || !/^\\d{4}-\\d{2}-\\d{2}$/.test(e.transferDate || ''))) {
+    flash('振替先と適用日を確認してください')
     return
   }
   editSaving.value = true

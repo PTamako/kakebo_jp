@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
-import { parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
+import { parseEntry, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 
 const tab = ref('add')
 const statsPeriod = ref('month')
@@ -19,6 +19,7 @@ const selectedRatioMonth = ref('')
 const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
 const input = ref(''), busy = ref(''), msg = ref('')
 const forms = ref([])
+const imageMode = ref('statement')
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
 const CATEGORY_ICON_PATHS = {
@@ -211,22 +212,24 @@ watch(tab, value => {
 })
 watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') loadYear() })
 
-function recognize() {
+function recognize(mode = 'statement') {
   if (!input.value.trim()) return
-  forms.value = parseEntries(input.value, rules.value).map(f => {
+  const parsed = mode === 'receipt' ? [parseEntry(input.value, rules.value)] : parseEntries(input.value, rules.value)
+  forms.value = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
     return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, bindRule: false }
   })
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
-async function onImage(e) {
+async function onImage(e, mode = 'statement') {
   const f = e.target.files[0]; e.target.value = ''
   if (!f || busy.value) return
   busy.value = '読み取り中 0%（初回は日本語データをダウンロードします）'
   try {
     input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
-    recognize()
+    imageMode.value = mode
+    recognize(mode)
   } catch (err) { flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
 }
@@ -806,11 +809,15 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
       </div>
       <div class="panel capture-panel">
+        <div class="action-row" role="group" aria-label="画像の読み取り方法">
+          <label class="button-primary upload-button">明細読み取り<input type="file" accept="image/*" @change="onImage($event, 'statement')" :disabled="!!busy" hidden /></label>
+          <label class="button-secondary upload-button">レシート読み取り<input type="file" accept="image/*" @change="onImage($event, 'receipt')" :disabled="!!busy" hidden /></label>
+        </div>
+        <p class="microcopy">明細は複数件、レシートは合計を1件として確認します。保存前に日付・金額を確認してください。</p>
         <label class="field-label" for="entry-text">テキスト読み取り</label>
-        <textarea id="entry-text" v-model="input" rows="4" placeholder="例：昨日 コンビニ 680円&#10;&#10;複数の支出を貼り付けたり、レシート画像をアップロードしたりできます。"></textarea>
+        <textarea id="entry-text" v-model="input" rows="4" placeholder="例：昨日 コンビニ 680円&#10;&#10;カード利用明細などの複数の取引を貼り付けられます。"></textarea>
         <div class="action-row">
-          <button class="button-primary" @click="recognize" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
-          <label class="button-secondary upload-button">撮影／画像を選択<input type="file" accept="image/*" @change="onImage" :disabled="!!busy" hidden /></label>
+          <button class="button-secondary" @click="recognize('statement')" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
         </div>
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>

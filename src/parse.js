@@ -200,11 +200,11 @@ export function parseReceipt(raw, rules = []) {
   const amount = candidates[0]?.amount || 0
   // Normalize spaced and common OCR-misread convenience-store names without
   // altering the statement parser. Prefer the branch printed near the header.
-  const compact = line => line.replace(/[\\s　・]/g, '')
+  const compact = line => line.replace(/[\s　・]/g, '')
   const isSeven = line => /セ[ブフ][ン]?[-ー－‐−]?イ[レル]?ブ[ン]?|セブン[-ー－‐−]?イレブン/.test(compact(line))
   const sevenFound = lines.some(isSeven)
   const branch = lines.slice(0, Math.min(lines.length, 12))
-    .find(line => /店\\s*$/.test(line) && !/電話|番号|登録/.test(line))
+    .find(line => /店\s*$/.test(line) && !/電話|番号|登録/.test(line))
   const brand = sevenFound ? 'セブン-イレブン' : ''
   const merchant = brand ? [brand, branch && compact(branch)].filter(Boolean).join(' ')
     : (lines.find(line => /ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(compact(line)))

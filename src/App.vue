@@ -313,6 +313,7 @@ async function saveAll() {
   busy.value = 'saving'
   let saved = 0
   let ruleFailures = 0
+  let receiptImageWarning = ''
   try {
     // Remove each successfully saved draft immediately so retry never resubmits it.
     while (forms.value.length) {
@@ -324,8 +325,8 @@ async function saveAll() {
         try {
           await saveReceiptImage(Number(result.id), pendingReceiptImage.value)
           receiptImageIds.value = new Set([...receiptImageIds.value, Number(result.id)])
-          flash('レシート画像を保存しました。写真アプリの元画像は削除できます')
-        } catch { flash('記録は保存しましたが、画像を保存できませんでした。元の写真を残してください') }
+          // Report the transaction and image save together after all drafts finish.
+        } catch { receiptImageWarning = ' レシート画像は保存できませんでした。元の写真を残してください。' }
         pendingReceiptImage.value = null
       }
       forms.value.shift()
@@ -337,7 +338,7 @@ async function saveAll() {
       }
     }
     input.value = ''
-    flash(`${saved}件の記録を保存しました${ruleFailures ? '（分類ルールの保存に一部失敗しました）' : ''}`)
+    flash(`${saved}件の記録を保存しました${ruleFailures ? '（分類ルールの保存に一部失敗しました）' : ''}${receiptImageWarning}`)
   } catch (e) {
     flash(`${saved}件を保存しました。未保存の${forms.value.length}件は入力欄に残っています：${e.message}`)
   } finally {
@@ -355,13 +356,14 @@ async function remove(id) {
   try {
     await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
     // Only remove the local receipt after the server confirms deletion.
+    let receiptDeleteWarning = ''
     try {
       await deleteReceiptImage(id)
       receiptImageIds.value = new Set([...receiptImageIds.value].filter(imageId => Number(imageId) !== Number(id)))
       if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
-    } catch { flash('記録は削除しましたが、端末内のレシート画像を削除できませんでした') }
+    } catch { receiptDeleteWarning = ' 端末内のレシート画像は削除できませんでした。' }
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadInvestments(), loadTransfers()])
-    flash('記録を削除しました')
+    flash('記録を削除しました' + receiptDeleteWarning)
   } catch (error) { flash('削除に失敗しました：' + error.message) }
   finally { const next = new Set(pendingEntryIds.value); next.delete(id); pendingEntryIds.value = next }
 }

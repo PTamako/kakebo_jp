@@ -55,7 +55,13 @@ export function classify(text, rules = []) {
   }
   const candidates = rules.filter(r => r?.keyword && r?.category && !String(r.keyword).startsWith('__'))
     .sort((a,b) => normalize(b.keyword).length - normalize(a.keyword).length)
-  const chosen = candidates.find(r => r.is_custom !== false && matches(r))
+  const matchedDefaults = candidates.filter(r => r.is_custom === false && matches(r))
+  // 「まいばすけっと」 must not match a generic 「バス」 transit
+  // rule when the database contains a more precise supermarket rule.
+  const isGenericBusCollision = rule => normalize(rule.keyword).toLowerCase() === 'バス'
+    && matchedDefaults.some(base => normalize(base.keyword).toLowerCase().includes('まいばす'))
+  const chosen = candidates.find(r => r.is_custom !== false && matches(r) && !isGenericBusCollision(r))
+    || matchedDefaults[0]
     || candidates.find(matches)
   return chosen ? { category: chosen.category, keyword: chosen.keyword } : { category: '日用品', keyword: '' }
 }

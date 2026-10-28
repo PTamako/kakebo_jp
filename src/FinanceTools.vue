@@ -314,7 +314,7 @@ const monthExpenses=(period,source)=>period ? rows.value.filter(e=>e.date>=perio
 const cardTransactions=computed(()=>monthExpenses(cardPeriod.value,bill.value.name))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
 async function saveCardBill() {
-  if (!settingsReady.value || !loaded.value || !bill.value.name || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(bill.value.month) || !cardPeriod.value) {
+  if (!settingsReady.value || !loaded.value || !bill.value.name || !/^\d{4}-(0[1-9]|1[0-2])$/.test(bill.value.month) || !cardPeriod.value) {
     message.value='カード・締め月・明細を確認してください'; return
   }
   const record={name:bill.value.name,month:bill.value.month,start:cardPeriod.value.start,end:cardPeriod.value.end,total:cardTotal.value,count:cardTransactions.value.length}

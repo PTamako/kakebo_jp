@@ -978,7 +978,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
         <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新しい記録' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
-        <TransactionForm :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="entryInputMode === 'manual' || recognitionMode === 'receipt'" @change-type="setEntryType(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''" />
+        <TransactionForm :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="entryInputMode === 'manual' || f.showReceiptAttachment === true" @change-type="setEntryType(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''" />
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">

@@ -256,9 +256,9 @@ export function parseReceipt(raw, rules = []) {
   const isMyBasket = lines.slice(0, 8).some(line => /まいば[すき]けっと|まいばす|マイバスケット/.test(compact(line)))
   // AI transcription can already contain the brand in a labeled full store name.
   // Avoid prefixing the same brand twice (e.g. まいばすけっと 店名:まいばすけっと南小岩8丁目店).
-  const labeledMerchant = lines.find(line => /^店名\\s*[:：]/.test(line))
-    ?.replace(/^店名\\s*[:：]\\s*/, '').trim() || ''
-  const branchName = branch ? compact(branch.replace(/^店名\\s*[:：]\\s*/, '')) : ''
+  const labeledMerchant = lines.find(line => /^店名\s*[:：]/.test(line))
+    ?.replace(/^店名\s*[:：]\s*/, '').trim() || ''
+  const branchName = branch ? compact(branch.replace(/^店名\s*[:：]\s*/, '')) : ''
   const withBrand = (name, detail) => detail
     ? (compact(detail).startsWith(compact(name)) ? detail : name + ' ' + detail)
     : name

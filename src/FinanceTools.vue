@@ -84,6 +84,23 @@ const merchantRulesCombined = computed(() => {
   }
   return [...items.values()].sort((a, b) => a.keyword.localeCompare(b.keyword, 'ja'))
 })
+const merchantRuleSearch = ref('')
+const merchantRulePage = ref(1)
+const merchantRulePageSize = 8
+const filteredMerchantRules = computed(() => {
+  const key = merchantRuleSearch.value.normalize('NFKC').trim().toLowerCase()
+  return key ? merchantRulesCombined.value.filter(rule =>
+    [rule.keyword, categoryLabel(rule.category), rule.payment_source].some(value =>
+      String(value || '').normalize('NFKC').toLowerCase().includes(key))
+  ) : merchantRulesCombined.value
+})
+const merchantRulePageCount = computed(() => Math.max(1, Math.ceil(filteredMerchantRules.value.length / merchantRulePageSize)))
+const currentMerchantRulePage = computed(() => Math.min(merchantRulePage.value, merchantRulePageCount.value))
+const visibleMerchantRules = computed(() => filteredMerchantRules.value.slice(
+  (currentMerchantRulePage.value - 1) * merchantRulePageSize,
+  currentMerchantRulePage.value * merchantRulePageSize
+))
+function searchMerchantRules(value) { merchantRuleSearch.value = value; merchantRulePage.value = 1 }
 async function changeCategoryRule(rule, category) {
   if (category === rule.category) return
   try {
@@ -291,10 +308,15 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
     </div>
     <p v-if="cardMessage" role="status">{{cardMessage}}</p>
   </article>
-  <article class="finance-panel">
-    <h2>店舗ルール管理</h2>
+  <details class="finance-panel merchant-rules-panel">
+    <summary class="merchant-rules-summary"><span>店舗ルール管理</span><span class="merchant-rules-count">{{ merchantRulesCombined.length }}件</span></summary>
+    <div v-if="merchantRulesCombined.length" class="merchant-rule-search">
+      <input type="search" :value="merchantRuleSearch" @input="searchMerchantRules($event.target.value)" placeholder="店舗名・カテゴリ・カードで検索" aria-label="店舗ルールを検索" />
+      <span>{{ filteredMerchantRules.length }}件</span>
+    </div>
     <p v-if="!merchantRulesCombined.length">記憶した店舗ルールはありません。</p>
-    <div v-for="rule in merchantRulesCombined" :key="rule.keyword" class="merchant-rule-row">
+    <p v-else-if="!filteredMerchantRules.length">該当するルールはありません。</p>
+    <div v-for="rule in visibleMerchantRules" :key="rule.keyword" class="merchant-rule-row">
       <strong>{{ rule.keyword }}</strong>
       <div class="merchant-rule-fields">
         <label>カテゴリ
@@ -313,7 +335,12 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
         </label>
       </div>
     </div>
-  </article>
+    <nav v-if="filteredMerchantRules.length > merchantRulePageSize" class="merchant-rule-pagination" aria-label="店舗ルールのページ">
+      <button type="button" :disabled="currentMerchantRulePage <= 1" @click="merchantRulePage = currentMerchantRulePage - 1" aria-label="前のページ">‹</button>
+      <span>{{ currentMerchantRulePage }} / {{ merchantRulePageCount }}</span>
+      <button type="button" :disabled="currentMerchantRulePage >= merchantRulePageCount" @click="merchantRulePage = currentMerchantRulePage + 1" aria-label="次のページ">›</button>
+    </nav>
+  </details>
   <article class="finance-panel">
     <h2>バックアップ・復元</h2>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||!loaded" @click="downloadBackup">JSON を保存</button><label class="backup-upload" :class="{ 'is-disabled': busy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||!loaded" @change="preview"></label></div>
@@ -365,4 +392,17 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
 .merchant-rule-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
 .merchant-rule-fields label{display:grid;gap:5px;min-width:0;color:var(--muted);font-size:12px}
 .finance-panel .merchant-rule-fields select{width:100%;min-width:0;height:44px;font-size:13px;padding:0 6px}
+.merchant-rules-panel{gap:10px}
+.merchant-rules-summary{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;min-height:32px;font-weight:700;font-size:17px;list-style:none}
+.merchant-rules-summary::-webkit-details-marker{display:none}
+.merchant-rules-summary::before{content:'›';font-size:21px;transform:rotate(0deg);transition:transform .15s;color:var(--muted)}
+.merchant-rules-panel[open] .merchant-rules-summary::before{transform:rotate(90deg)}
+.merchant-rules-summary>span:first-of-type{flex:1}
+.merchant-rules-count{font-size:12px;font-weight:600;color:var(--muted)}
+.merchant-rule-search{display:flex;align-items:center;gap:9px;min-width:0}
+.merchant-rule-search input{flex:1;min-width:0;width:100%;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink)}
+.merchant-rule-search span{flex:none;white-space:nowrap;font-size:12px;color:var(--muted)}
+.merchant-rule-pagination{display:flex;align-items:center;justify-content:center;gap:14px}
+.merchant-rule-pagination button{min-width:44px;min-height:44px;font-size:20px}
+.merchant-rule-pagination span{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
 </style>

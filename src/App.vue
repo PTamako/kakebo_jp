@@ -307,7 +307,7 @@ function recognize(mode = recognitionMode.value, append = false) {
 async function onImage(e, mode = 'statement') {
   const f = e.target.files[0]; e.target.value = ''
   if (!f || busy.value) return
-  busy.value = '読み取り中 0%（初回は日本語データをダウンロードします）'
+  busy.value = '画像を準備中'
   try {
     // Prefer Gemma 4; keep the existing on-device OCR as an offline/free fallback.
     try {
@@ -317,13 +317,17 @@ async function onImage(e, mode = 'statement') {
       data.append('image', image, image.type === 'image/jpeg' ? 'receipt.jpg' : 'receipt.webp')
       data.append('mode', mode)
       const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': token.value }, body: data })
-      if (!response.ok) throw new Error('AIを利用できません')
+      if (!response.ok) { const errorBody = await response.json().catch(() => ({})); throw new Error(errorBody.error || `AI画像認識に失敗しました（HTTP ${response.status}）`) }
       const result = await response.json()
       if (!result.text?.trim()) throw new Error('認識結果がありません')
       input.value = result.text
-    } catch {
+    } catch (aiError) {
       busy.value = '通常のOCRで読み取り中'
-      input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
+      try {
+        input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
+      } catch (localError) {
+        throw new Error(`${aiError.message}。端末内OCRも利用できませんでした。ページを再読み込みして再試行してください。`)
+      }
     }
     recognitionMode.value = mode
     pendingReceiptImage.value = null
@@ -1005,7 +1009,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
 
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
-        <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
+        <p class="microcopy">画像はCloudflare Workers AIに送信して文字を読み取ります。AIが利用できない場合は端末内OCRを試します。</p>
       </div>
 
       <div v-if="forms.length" class="draft-heading">

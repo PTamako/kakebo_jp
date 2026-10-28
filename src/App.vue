@@ -906,11 +906,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="action-row">
           <label class="button-primary upload-button">{{ recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
         </div>
-        <label class="field-label" for="entry-text">テキスト読み取り</label>
-        <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? 'カード利用明細などの複数の取引を貼り付けられます。' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
-        <div class="action-row">
-          <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
-        </div>
+        <details class="text-entry-details">
+          <summary>テキストを貼り付けて読み取る</summary>
+          <label class="field-label" for="entry-text">テキスト入力</label>
+          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? 'カード利用明細などの複数の取引を貼り付けられます。' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
+          <div class="action-row">
+            <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
+          </div>
+        </details>
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
       </div>
@@ -1498,4 +1501,4 @@ main .bottom-nav button{min-width:0;max-width:100%;white-space:nowrap;overflow:h
 main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
 main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
-.payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}</style>
+.payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}</style>

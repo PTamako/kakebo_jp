@@ -499,16 +499,22 @@ export async function onRequest({ request, env, params }) {
         const v10Marker = '__kakeibo_d1_category_rules_v10__'
         if (!(await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(v10Marker).first())) {
           const legacyDefaults = new Map(LEGACY_DEFAULT_RULE_ROWS)
-          // Batch D1 writes to avoid one network round trip per keyword.
-          const updates = []
-          for (const [keyword, category] of DEFAULT_RULE_ROWS) {
-            const oldCategory = legacyDefaults.get(keyword)
-            if (oldCategory && oldCategory !== category)
-              updates.push(db.prepare('UPDATE rules SET category = ?1 WHERE keyword = ?2 AND category = ?3').bind(category, keyword, oldCategory))
-            updates.push(db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category))
+          // A few multi-row SQL statements rather than hundreds of D1 queries.
+          // All values remain parameter-bound; INSERT OR IGNORE never overwrites data.
+          const allDefaults = [...DEFAULT_RULE_ROWS, [v10Marker, '其他']]
+          for (let i = 0; i < allDefaults.length; i += 25) {
+            const chunk = allDefaults.slice(i, i + 25)
+            const placeholders = chunk.map(() => '(?, ?)').join(', ')
+            await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES ' + placeholders)
+              .bind(...chunk.flat()).run()
           }
-          updates.push(db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(v10Marker, '其他'))
-          for (let i = 0; i < updates.length; i += 40) await db.batch(updates.slice(i, i + 40))
+          const corrections = DEFAULT_RULE_ROWS.flatMap(([keyword, category]) => {
+            const oldCategory = legacyDefaults.get(keyword)
+            return oldCategory && oldCategory !== category
+              ? [db.prepare('UPDATE rules SET category = ?1 WHERE keyword = ?2 AND category = ?3').bind(category, keyword, oldCategory)]
+              : []
+          })
+          for (let i = 0; i < corrections.length; i += 40) await db.batch(corrections.slice(i, i + 40))
         }
         const [baseResult, customResult] = await Promise.all([
           db.prepare("SELECT * FROM rules WHERE keyword NOT IN (?1, ?2) AND substr(keyword, 1, 13) != ?3").bind(marker, v10Marker, '__category__:').all(),

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false } })
-const emit = defineEmits(['change-type','select-receipt','clear-receipt'])
+const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
 const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receiptName || props.existingReceipt)
@@ -16,12 +16,13 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
   <div class="field-grid">
     <label class="form-field"><span>日付</span><input v-model="record.date" type="date" required /></label>
     <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><select v-model="record.category"><option v-for="c in (record.type==='income'?incomeCategories:record.type==='transfer'?['投資・資産移動']:categories)" :key="c" :value="c">{{categoryLabel(c)}}</option></select></label>
-    <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" /></label>
-    <label v-if="record.type==='expense'" class="form-field"><span>支払方法・カード</span><select v-model="record.paymentSource"><option value="">未設定</option><option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option><option v-if="record.paymentSource && !paymentSources.includes(record.paymentSource)" :value="record.paymentSource">{{record.paymentSource}}（既存の設定）</option></select></label>
+    <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
+    <label v-if="record.type==='expense'" class="form-field"><span>支払方法・カード</span><select :value="record.paymentSource" @change="emit('payment-change', $event.target.value)"><option value="">未設定</option><option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option><option v-if="record.paymentSource && !paymentSources.includes(record.paymentSource)" :value="record.paymentSource">{{record.paymentSource}}（既存の設定）</option></select></label>
   </div>
   <div v-if="record.type==='transfer'" class="field-grid transfer-schedule-fields"><label class="form-field"><span>振替先</span><select v-model="record.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label><label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="record.transferDate" type="date" required /></label></div>
   <div v-if="record.type==='expense' && receiptEnabled" class="receipt-attachment-field" role="group" aria-label="レシート画像の添付"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{hasReceipt?'画像を変更する':'レシート画像を追加'}}<input type="file" accept="image/*" @change="emit('select-receipt',$event)" hidden /></label><span class="receipt-attachment-status">{{record.receiptImage?'画像を選択しました'+(record.receiptFileName?'：'+record.receiptFileName:''):receiptName?'画像を選択しました：'+receiptName:existingReceipt?'保存済みの画像があります':'画像は未選択です'}}</span><button v-if="record.receiptImage || receiptName" type="button" class="receipt-attachment-clear" @click="emit('clear-receipt')">選択を解除</button></div>
   <label v-if="!editMode && record.type!=='income' && record.type!=='transfer'" class="bind-rule transaction-bind-rule"><input v-model="record.bindRule" type="checkbox" :disabled="!record.merchant || record.merchant.trim().length<2" /><span>この店舗のカテゴリを次回から自動判定する</span></label>
+  <label v-if="!editMode && record.type==='expense'" class="bind-rule transaction-bind-rule"><input v-model="record.bindPaymentRule" type="checkbox" :disabled="!record.merchant || record.merchant.trim().length<2 || !record.paymentSource" /><span>この店舗の支払方法として記憶する</span></label>
   <details class="transaction-details" :open="detailsOpen" @toggle="detailsOpen=$event.target.open"><summary>詳細項目</summary><div class="field-grid"><label v-if="record.type==='expense'" class="form-field"><span>時刻</span><input v-model="record.time" type="time" /></label><label class="form-field"><span>メモ</span><input v-model="record.note" placeholder="任意" /></label></div></details>
 </div>
 </template>

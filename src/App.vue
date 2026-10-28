@@ -8,6 +8,7 @@ import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } f
 import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
 import TransactionForm from './TransactionForm.vue'
+import { paymentForDraft } from './payment-rules.js'
 import { checkRecurringEntries } from './recurring-check.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
@@ -35,9 +36,49 @@ function readPaymentSources() {
   return [...defaultPaymentSources]
 }
 const paymentSources = ref(readPaymentSources())
-function updatePaymentSources(values) {
-  paymentSources.value = values
-  localStorage.setItem('kakeibo-payment-sources', JSON.stringify(values))
+async function updatePaymentSources(values) {
+  const removed = paymentSources.value.filter(name => !values.includes(name))
+  const added = values.filter(name => !paymentSources.value.includes(name))
+  try {
+    for (const name of added) await api('payment-sources', { method: 'POST', body: JSON.stringify({ name }) })
+    for (const name of removed) await api('payment-sources/remove', { method: 'POST', body: JSON.stringify({ name }) })
+    await loadPaymentSettings()
+  } catch (e) { flash('カード設定の保存に失敗しました：' + e.message); await loadPaymentSettings() }
+}
+const defaultPaymentSource = ref('')
+const merchantPaymentRules = ref([])
+const importPaymentSource = ref('')
+let paymentSettingsLoaded = false
+let paymentSettingsLoading = null
+async function loadPaymentSettings() {
+  if (paymentSettingsLoading) return paymentSettingsLoading
+  paymentSettingsLoading = (async () => {
+    let cards = await api('payment-sources')
+    if (!cards.length && !paymentSettingsLoaded) {
+      await api('payment-sources/initialize', { method: 'POST', body: JSON.stringify({ names: paymentSources.value }) })
+      cards = await api('payment-sources')
+    }
+    paymentSources.value = cards.map(x => x.name)
+    localStorage.setItem('kakeibo-payment-sources', JSON.stringify(paymentSources.value))
+    defaultPaymentSource.value = cards.find(x => x.is_default)?.name || ''
+    merchantPaymentRules.value = await api('merchant-payment-rules')
+    paymentSettingsLoaded = true
+  })().finally(() => { paymentSettingsLoading = null })
+  return paymentSettingsLoading
+}
+const suggestedPayment = (merchant, source = '', type = 'expense', imported = '') => paymentForDraft({
+  merchant, recognized: source, importSource: imported, rules: merchantPaymentRules.value, defaultSource: defaultPaymentSource.value, type
+})
+function applyMerchantPayment(form) {
+  if (form.type !== 'expense' || form.paymentManuallySelected || form.importPaymentLocked) return
+  form.paymentSource = suggestedPayment(form.merchant, form.recognizedPayment)
+}
+function manualPayment(form, value) { form.paymentSource = value; form.paymentManuallySelected = true }
+async function setDefaultPaymentSource(name) {
+  try {
+    await api('payment-sources/default', { method: 'POST', body: JSON.stringify({ name }) })
+    await loadPaymentSettings()
+  } catch (e) { flash('デフォルト設定に失敗しました：' + e.message) }
 }
 const pendingReceiptImage = ref(null)
 const pendingReceiptFileName = ref('')
@@ -261,6 +302,7 @@ async function load() {
   const requestedMonth = month.value
   try {
     if (!rules.value.length) rules.value = await api('rules')
+    if (!paymentSettingsLoaded) await loadPaymentSettings()
     const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), api('entries?month=' + requestedMonth), api('stats?month=' + requestedMonth)])
     if (requestId !== loadRequestId || requestedMonth !== month.value) return
     categories.value = nextCategories
@@ -299,7 +341,9 @@ function recognize(mode = recognitionMode.value, append = false) {
   const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    return { ...f, type: transfer ? 'transfer' : mode === 'receipt' ? 'expense' : normalizedDraftType(f.type), category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
+    const type = transfer ? 'transfer' : mode === 'receipt' ? 'expense' : normalizedDraftType(f.type)
+    const imported = mode === 'statement' ? importPaymentSource.value : ''
+    return { ...f, type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: suggestedPayment(f.merchant, f.paymentSource, type, imported), recognizedPayment: f.paymentSource || '', importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   entryInputMode.value = 'scan'
@@ -356,13 +400,14 @@ async function onImage(e, mode = 'statement') {
 function addBlank(type = 'expense') {
   entryInputMode.value = 'manual'
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
-  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: '', merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   form.type = type
   if (type === 'income') form.category = INCOME_CATEGORIES.includes(form.category) ? form.category : '工资'
   else if (type === 'transfer') form.category = '投資・資産移動'
   else if (INCOME_CATEGORIES.includes(form.category) || form.category === '投資・資産移動') form.category = '日用品'
+  if (type === 'expense' && !form.paymentSource) applyMerchantPayment(form)
 }
 const categoryDialog = ref(false)
 const categoryName = ref('')
@@ -419,6 +464,10 @@ async function saveAll() {
       if (forms.value.length === 1) pendingReceiptImage.value = null
       forms.value.shift()
       saved++
+      if (f.bindPaymentRule && f.type === 'expense' && f.merchant?.trim().length >= 2 && f.paymentSource) {
+        try { await api('merchant-payment-rules', { method: 'POST', body: JSON.stringify({ keyword: f.merchant.trim(), paymentSource: f.paymentSource }) }) }
+        catch { ruleFailures++ }
+      }
       if (f.bindRule && f.merchant && f.merchant.trim().length >= 2) {
         try {
           await api('rules', { method: 'POST', body: JSON.stringify({ keyword: f.merchant.trim(), category: f.category }) })
@@ -431,6 +480,7 @@ async function saveAll() {
     flash(`${saved}件を保存しました。未保存の${forms.value.length}件は入力欄に残っています：${e.message}`)
   } finally {
     try { rules.value = await api('rules') } catch { /* Keep existing rules when temporarily offline. */ }
+    try { await loadPaymentSettings() } catch {}
     await Promise.allSettled([load(), loadYear(), loadInvestments(), loadTransfers()])
     busy.value = ''
   }
@@ -1004,6 +1054,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <details class="text-entry-details">
           <summary>テキストを貼り付けて読み取る</summary>
           <label class="field-label" for="entry-text">テキスト入力</label>
+          <label class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
           <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? 'カード利用明細などの複数の取引を貼り付けられます。' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
           <div class="action-row">
             <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
@@ -1012,6 +1063,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div v-if="entryInputMode === 'scan'" class="panel capture-panel">
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
+        <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
 
 
@@ -1026,7 +1078,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
         <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新しい記録' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
-        <TransactionForm :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="entryInputMode === 'manual' || f.showReceiptAttachment === true" @change-type="setEntryType(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''" />
+        <TransactionForm :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="entryInputMode === 'manual' || f.showReceiptAttachment === true" @change-type="setEntryType(f, $event)" @merchant-change="applyMerchantPayment(f)" @payment-change="manualPayment(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''" />
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
@@ -1284,7 +1336,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </article>
     </section>
 
-    <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" @update-payment-sources="updatePaymentSources" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
+    <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button :class="{ active: tab === 'list' }" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

@@ -44,3 +44,14 @@ CREATE TABLE IF NOT EXISTS investment_snapshots (
 );
 
 -- SBI投信積立などの資金移動は entries.type='transfer' とし、生活費統計から除外する。
+
+-- Payment settings are independent from immutable historical transaction amounts.
+CREATE TABLE IF NOT EXISTS payment_sources (
+  name TEXT PRIMARY KEY,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1))
+);
+CREATE TABLE IF NOT EXISTS merchant_payment_rules (
+  keyword TEXT PRIMARY KEY,
+  payment_source TEXT NOT NULL
+);

@@ -147,7 +147,15 @@ export function parseEntry(raw, rules) {
   const text = normalize(raw)
   const { category, keyword } = classify(text, rules)
   const firstLine = text.split('\n').map(s => s.trim()).find(s => s.length >= 2 && !/^[\d¥\s:\/.\-]+$/.test(s)) || ''
-  const merchant = firstLine.slice(0, 40) || keyword
+  // AI card statements often use CSV-like rows: date, merchant, amount, payment plan.
+  // The card title must contain only the merchant, never the whole transaction.
+  const csvParts = firstLine.split(/[,，]\\s*/).map(part => part.trim())
+  const csvDate = /^(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}$/
+  const csvAmount = /^(?:[¥￥]\\s*)?\\d[\\d,，]*(?:\\s*円)?$/
+  const structuredMerchant = csvParts.length >= 3 && csvDate.test(csvParts[0])
+    && csvParts.slice(2).some(part => csvAmount.test(part))
+    ? csvParts[1] : ''
+  const merchant = (structuredMerchant || firstLine.slice(0, 40) || keyword).slice(0, 60)
   return {
     date: findDate(text), time: findTime(text), amount: findAmount(text),
     category, merchant, note: text.length <= 40 ? text.replace(/\s+/g, ' ') : '',

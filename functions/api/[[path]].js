@@ -279,16 +279,18 @@ export async function onRequest({ request, env, params }) {
     // Personal finance configuration is kept on D1, not in browser storage.
     if (a === 'finance-settings') {
       await db.prepare('CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)').run()
-      const allowed = new Set(['plans', 'bills', 'closing-days'])
+      const allowed = new Set(['plans', 'bills', 'closing-days', 'theme'])
       if (!allowed.has(b)) return json({ error: '設定名が不正です' }, 400)
       if (m === 'GET') {
         const row = await db.prepare('SELECT value FROM finance_settings WHERE name=?1').bind(b).first()
-        return json({ exists: !!row, value: row ? JSON.parse(row.value) : (b === 'closing-days' ? {} : []) })
+        return json({ exists: !!row, value: row ? JSON.parse(row.value) : (b === 'closing-days' ? {} : b === 'theme' ? 'pink' : []) })
       }
       if (m === 'POST' || m === 'PUT') {
         const body = await request.json()
         const value = body?.value
-        const valid = b === 'closing-days'
+        const valid = b === 'theme'
+          ? ['pink','blue','yellow','green'].includes(value)
+          : b === 'closing-days'
           ? value && typeof value === 'object' && !Array.isArray(value) &&
             Object.entries(value).every(([name,day]) => name.length <= 80 && (day === '' || day === '末日' || (Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31)))
           : Array.isArray(value) && value.length <= 500 && value.every(item => item && typeof item === 'object' && !Array.isArray(item))

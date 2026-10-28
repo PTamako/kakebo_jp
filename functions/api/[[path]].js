@@ -408,7 +408,7 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
-    if (a === 'transfers' && b && c === 'dismiss' && m === 'POST') {
+    if (a === 'transfers' && b && params.path?.[2] === 'dismiss' && m === 'POST') {
       const id = Number(b)
       if (!Number.isSafeInteger(id) || id <= 0) return json({ error: '明細IDが正しくありません' }, 400)
       const entry = await db.prepare("SELECT id FROM entries WHERE id = ?1 AND type = 'transfer' AND transfer_target = 'sbi'").bind(id).first()

@@ -385,7 +385,7 @@ export function parseEntries(raw, rules) {
         const matches = [...stripped.matchAll(/([\doOｏＯ][\doOｏＯ,，.]{0,7})\s*(円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])/ig)]
         if (matches.length) {
           const rawAmount = matches[matches.length - 1][1]
-          const parsed = Number(rawAmount.replace(/[,，.]/g, '').replace(/[oOｏＯ]/g, '6'))
+          const parsed = /[oOｏＯ]/.test(rawAmount) ? 0 : Number(rawAmount.replace(/[,，.]/g, ''))
           if (parsed > 0 && parsed <= 999999) { amount = parsed; break }
         }
       }

@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { validateBackup, transactionKey, reconcileStatement, nextScheduledDate } from './finance-tools.js'
 const props = defineProps({ api: { type: Function, required: true } })
+const emit = defineEmits(['ledger-updated'])
 const rows = ref([])
 const loaded = ref(false)
 const busy = ref(false)
@@ -9,7 +10,7 @@ const message = ref('')
 const restoreRows = ref([])
 const plans = ref(JSON.parse(localStorage.getItem('kakeibo-plans') || '[]'))
 const bills = ref(JSON.parse(localStorage.getItem('kakeibo-bills') || '[]'))
-const plan = ref({name:'',amount:'',day:1})
+const plan = ref({name:'',amount:'',day:1,category:'その他',paymentSource:'現金'})
 const bill = ref({name:'',month:new Date().toISOString().slice(0,7),amount:''})
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 async function loadAll() {
@@ -74,9 +75,49 @@ const duplicates=computed(()=>{
 })
 function addPlan(){
   if(!plan.value.name.trim()||!(Number(plan.value.amount)>0)||Number(plan.value.day)<1||Number(plan.value.day)>31)return
-  plans.value.push({...plan.value,id:crypto.randomUUID(),amount:Number(plan.value.amount)})
-  localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value));plan.value={name:'',amount:'',day:1}
+  plans.value.push({...plan.value,id:crypto.randomUUID(),amount:Number(plan.value.amount),startMonth:new Date().toLocaleDateString('sv-SE').slice(0,7),enabled:true})
+  localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value));plan.value={name:'',amount:'',day:1,category:'その他',paymentSource:'現金'}
 }
+const recurringBusy = ref(false)
+const recurringMessage = ref('')
+const localToday = () => new Date().toLocaleDateString('sv-SE')
+function scheduledDate(year,month,day){
+  const last=new Date(year,month,0).getDate()
+  return [year,String(month).padStart(2,'0'),String(Math.min(Number(day),last)).padStart(2,'0')].join('-')
+}
+async function applyRecurring(){
+  if(recurringBusy.value)return
+  recurringBusy.value=true
+  let created=0
+  try{
+    const today=localToday()
+    for(const p of plans.value){
+      if(!p.enabled||!p.startMonth)continue
+      const [startYear,startMonth]=p.startMonth.split('-').map(Number)
+      let y=startYear,m=startMonth
+      let count=0
+      while(y<Number(today.slice(0,4))||(y===Number(today.slice(0,4))&&m<=Number(today.slice(5,7)))){
+        if(++count>120)throw Error('自動記録の対象期間が長すぎます')
+        const date=scheduledDate(y,m,p.day)
+        if(date<=today){
+          // Stable idempotency key prevents duplicates on retries, devices and reloads.
+          const clientRequestId='recurring_'+p.id.replace(/-/g,'')+'_'+String(y)+String(m).padStart(2,'0')
+          await props.api('entries',{method:'POST',body:JSON.stringify({
+            date,time:'',amount:Number(p.amount),type:'expense',category:p.category||'その他',
+            merchant:p.name,note:'毎月の固定支出（自動記録）',paymentSource:p.paymentSource||'',
+            clientRequestId
+          })})
+          created++
+        }
+        m++;if(m===13){m=1;y++}
+      }
+    }
+    if(created)emit('ledger-updated')
+    recurringMessage.value=created?'固定支出の対象月を確認しました（'+created+'件処理）。':'追加対象の固定支出はありません'
+  }catch(e){recurringMessage.value='自動記録の確認に失敗しました：'+e.message}
+  finally{recurringBusy.value=false}
+}
+onMounted(()=>{applyRecurring()})
 function removePlan(id){plans.value=plans.value.filter(x=>x.id!==id);localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value))}
 function addBill(){
   if(!bill.value.name.trim()||!/^\d{4}-\d{2}$/.test(bill.value.month)||!(Number(bill.value.amount)>0))return
@@ -107,10 +148,13 @@ const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.ty
   </article>
   <article class="finance-panel">
     <h2>毎月の固定支出</h2>
-    <p>予定だけを端末に保存します。自動で支出を追加しません。</p>
+    <p>毎月の指定日に支出明細へ自動追加します。アプリを開いた際に未処理月を確認します。閉じている間は実行されません。過去の予定にはさかのぼりません。</p>
     <div class="finance-inputs"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><input v-model="plan.amount" type="number" min="1" placeholder="金額" aria-label="固定支出額"><input v-model="plan.day" type="number" min="1" max="31" aria-label="引落日"></div>
-    <button @click="addPlan">予定を追加</button>
-    <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 次回 {{nextScheduledDate(p.day)}} <button @click="removePlan(p.id)">削除</button></div>
+    <div class="finance-inputs"><input v-model="plan.category" placeholder="カテゴリ" aria-label="固定支出カテゴリ"><input v-model="plan.paymentSource" placeholder="支払方法・カード" aria-label="固定支出支払方法"></div>
+    <button @click="addPlan(); applyRecurring()">自動記録を登録</button>
+    <button :disabled="recurringBusy" @click="applyRecurring">{{recurringBusy ? "確認中…" : "未記録分を確認"}}</button>
+    <p role="status">{{recurringMessage}}</p>
+    <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 毎月{{p.day}}日 · {{p.paymentSource || "未設定"}} · 次回 {{nextScheduledDate(p.day)}} <button @click="removePlan(p.id)">削除</button></div>
   </article>
   <article class="finance-panel">
     <h2>カード請求額の参考比較</h2>

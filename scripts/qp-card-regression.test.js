@@ -23,7 +23,9 @@ QP/ ダ イ ソ ー 220 m 、
     '2026-10-07', '2026-10-07', '2026-10-06', '2026-10-06',
     '2026-10-06', '2026-10-05', '2026-10-05'
   ])
-  assert.deepEqual(rows.map(row => row.amount).filter(Boolean).length, 7)
+  assert.deepEqual(rows.map(row => row.amount).filter(Boolean).length, 6)
+  assert.equal(rows[3].amount, 0)
+  assert.match(rows[3].note, /確認|不明瞭/)
   assert.match(rows[0].merchant, /イトーヨーカドータカサゴテン/)
   assert.match(rows[1].merchant, /ダイソー/)
   assert.match(rows[4].merchant, /マイバスケット/)

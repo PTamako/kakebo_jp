@@ -328,7 +328,7 @@ async function removeCardBill(record) {
 <template>
 <section class="finance-tools">
   <div class="finance-page-heading"><h1 class="finance-heading">管理・照合</h1><button type="button" class="finance-global-load" :disabled="busy" @click="loadAll"><span aria-hidden="true" class="finance-refresh-icon">↻</span>{{busy ? "読み込み中…" : "全明細を更新"}}</button></div>
-  <p class="finance-last-loaded" role="status">{{loaded ? "最終更新："+lastLoadedLabel+" · "+rows.length+"件読み込み済み" : "全明細は未読み込みです"}}</p>
+  <p class="finance-last-loaded" role="status">{{loaded ? "最終更新："+lastLoadedLabel+" · "+rows.length+"件読み込み済み" : busy ? "明細を読み込み中…" : "明細は未読み込みです"}}</p>
   <div class="finance-section-tabs" role="group" aria-label="管理項目">
     <button type="button" :class="{ selected: managementTab === 'cards' }" :aria-pressed="managementTab === 'cards'" @click="managementTab = 'cards'">カード</button>
     <button type="button" :class="{ selected: managementTab === 'plans' }" :aria-pressed="managementTab === 'plans'" @click="managementTab = 'plans'">固定支出</button>

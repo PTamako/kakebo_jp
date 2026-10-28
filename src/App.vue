@@ -313,9 +313,10 @@ async function onImage(e, mode = 'statement') {
     try {
       busy.value = 'AIで画像を読み取り中'
       const data = new FormData()
-      data.append('image', await compressReceiptImage(f), 'receipt.webp')
+      const image = await compressReceiptImage(f)
+      data.append('image', image, image.type === 'image/jpeg' ? 'receipt.jpg' : 'receipt.webp')
       data.append('mode', mode)
-      const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': session.value }, body: data })
+      const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': token.value }, body: data })
       if (!response.ok) throw new Error('AIを利用できません')
       const result = await response.json()
       if (!result.text?.trim()) throw new Error('認識結果がありません')

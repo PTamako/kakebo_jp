@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { validateBackup, transactionKey, nextScheduledDate } from './finance-tools.js'
-const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] } })
-const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate'])
+const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] } })
+const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed'])
 
 const cardMode = ref('')
 const selectedCard = ref('')
@@ -46,6 +46,7 @@ async function renameCard() {
       closingDays.value = updated
       localStorage.setItem('kakeibo-card-closing-days',JSON.stringify(updated))
       emit('update-payment-sources',props.paymentSources.map(x => x === old ? name : x))
+      emit('settings-changed')
       if (bill.value.name === old) bill.value.name = name
       selectedCard.value = name
       cardMessage.value = '名称を変更し、過去の明細 '+(result?.changes ?? 0)+'件と固定支出の設定を引き継ぎました'
@@ -73,6 +74,13 @@ const cardPeriod = computed(() => {
 })
 const newPaymentSource = ref('')
 const cardMessage = ref('')
+async function removeMerchantRule(keyword) {
+  if (!confirm(keyword + 'の支払方法ルールを解除しますか？')) return
+  try {
+    await props.api('merchant-payment-rules?keyword=' + encodeURIComponent(keyword), { method: 'DELETE' })
+    emit('settings-changed')
+  } catch (e) { cardMessage.value = 'ルールを解除できませんでした：' + e.message }
+}
 function addPaymentSource() {
   const name = newPaymentSource.value.trim()
   if (!name || name.length > 80) { cardMessage.value = '名称は1～80文字で入力してください'; return }
@@ -82,7 +90,7 @@ function addPaymentSource() {
   cardMode.value = ''
   cardMessage.value = name + 'を追加しました'
 }
-function removePaymentSource(name) {
+async function removePaymentSource(name) {
   if (name === '現金') return
   if (!confirm(name + 'を選択肢から削除しますか？過去の明細や固定支出、請求データは削除されません。')) return
   emit('update-payment-sources', props.paymentSources.filter(x => x !== name))
@@ -228,9 +236,11 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
     <h2>支払方法・カード管理</h2>
     <div class="finance-inputs card-controls">
       <select v-model="selectedCard" aria-label="管理するカード"><option value="" disabled>支払方法・カードを選択</option><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option></select>
+      <button type="button" :disabled="!selectedCard || selectedCard === defaultPaymentSource" @click="emit('set-default-payment-source', selectedCard)">デフォルトに設定</button>
       <button type="button" :disabled="!selectedCard" @click="selectCardForEdit">編集</button>
       <button type="button" @click="cardMode = 'add'">追加</button>
     </div>
+    <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
     <div v-if="cardMode === 'add'" class="finance-inputs card-controls">
       <input v-model="newPaymentSource" maxlength="80" placeholder="新しいカード名・支払方法" aria-label="新しい支払方法">
       <button type="button" @click="addPaymentSource">保存</button>
@@ -250,6 +260,13 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
       </div>
     </div>
     <p v-if="cardMessage" role="status">{{cardMessage}}</p>
+  </article>
+  <article class="finance-panel">
+    <h2>店舗の支払方法ルール</h2>
+    <div v-for="rule in merchantPaymentRules" :key="rule.keyword" class="finance-row">
+      <span>{{ rule.keyword }} → {{ rule.payment_source }}</span>
+      <button type="button" @click="removeMerchantRule(rule.keyword)">解除</button>
+    </div>
   </article>
   <article class="finance-panel">
     <h2>バックアップ・復元</h2>

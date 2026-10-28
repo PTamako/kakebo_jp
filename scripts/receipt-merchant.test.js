@@ -57,3 +57,21 @@ test('seven QUICPay AI rows yield seven clean titles and exact amounts', () => {
   assert.deepEqual(rows.map(row => row.amount), [550, 392, 417, 315, 4888, 1580, 254])
   assert.deepEqual(rows.map(row => row.date.slice(5)), ['10-21', '10-21', '10-20', '10-19', '10-18', '10-17', '10-17'])
 })
+
+test('eight space-delimited AI card rows keep merchant titles and amounts', () => {
+  const input = [
+    '26.10.18 はま寿司 2,992円 1回払い',
+    '26.10.16 マクドナルドモバイルオーダー 420円 1回払い',
+    '26.10.16 セブンーイレブン 744円 1回払い',
+    '26.10.14 SBI証券投信積立サービス(翌月買付分) 15,000円 1回払い',
+    '26.10.14 東京都水道局 4,096円 1回払い',
+    '26.10.12 ネスレツィポン オンライン 9,590円 1回払い',
+    '26.10.09 ガスト 1,990円 1回払い',
+    '26.10.04 ジョナサン 3,677円 1回払い'
+  ].join('\n')
+  const rows = parseEntries(input)
+  assert.equal(rows.length, 8)
+  assert.deepEqual(rows.map(row => row.merchant), ['はま寿司', 'マクドナルドモバイルオーダー', 'セブンーイレブン', 'SBI証券投信積立サービス(翌月買付分)', '東京都水道局', 'ネスレツィポン オンライン', 'ガスト', 'ジョナサン'])
+  assert.deepEqual(rows.map(row => row.amount), [2992, 420, 744, 15000, 4096, 9590, 1990, 3677])
+  assert.deepEqual(rows.map(row => row.date), ['2026-10-18', '2026-10-16', '2026-10-16', '2026-10-14', '2026-10-14', '2026-10-12', '2026-10-09', '2026-10-04'])
+})

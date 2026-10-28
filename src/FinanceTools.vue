@@ -3,6 +3,51 @@ import { ref, computed, onMounted } from 'vue'
 import { validateBackup, transactionKey, nextScheduledDate } from './finance-tools.js'
 const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate'])
+
+const cardMode = ref('')
+const selectedCard = ref('')
+const editedCardName = ref('')
+const closingDays = ref((() => { try { return JSON.parse(localStorage.getItem('kakeibo-card-closing-days') || '{}') || {} } catch { return {} } })())
+function selectCardForEdit() {
+  if (!selectedCard.value) return
+  editedCardName.value = selectedCard.value
+  cardMode.value = 'edit'
+}
+function saveClosingDay(name, day) {
+  closingDays.value = {...closingDays.value, [name]: day}
+  localStorage.setItem('kakeibo-card-closing-days', JSON.stringify(closingDays.value))
+}
+function renameCard() {
+  const name = editedCardName.value.trim(), old = selectedCard.value
+  if (!old || old === '現金' || !name || name.length > 80 || (name !== old && props.paymentSources.includes(name))) {
+    cardMessage.value = '名称を確認してください（重複・現金の変更不可）'
+    return
+  }
+  if (name !== old) {
+    emit('update-payment-sources', props.paymentSources.map(x => x === old ? name : x))
+    const updated = {...closingDays.value, [name]:closingDays.value[old] || ''}
+    delete updated[old]
+    closingDays.value = updated
+    localStorage.setItem('kakeibo-card-closing-days', JSON.stringify(updated))
+    selectedCard.value = name
+    cardMessage.value = '名称を変更しました。過去の明細の支払方法は変更されません'
+  }
+  cardMode.value = ''
+}
+const cardPeriod = computed(() => {
+  const match = /^(\d{4})-(\d{2})$/.exec(bill.value.month)
+  const day = closingDays.value[bill.value.name]
+  if (!match || !day) return null
+  const year = Number(match[1]), month = Number(match[2])
+  if (month < 1 || month > 12) return null
+  const last = (y,m) => new Date(Date.UTC(y,m,0)).getUTCDate()
+  const cutoff = (y,m) => day === '末日' ? last(y,m) : Math.min(Number(day),last(y,m))
+  const previous = new Date(Date.UTC(year,month-2,1))
+  const py = previous.getUTCFullYear(), pm = previous.getUTCMonth()+1
+  const start = new Date(Date.UTC(py,pm-1,cutoff(py,pm)+1)).toISOString().slice(0,10)
+  const end = [year,String(month).padStart(2,'0'),String(cutoff(year,month)).padStart(2,'0')].join('-')
+  return {start,end}
+})
 const newPaymentSource = ref('')
 const cardMessage = ref('')
 function addPaymentSource() {
@@ -11,12 +56,15 @@ function addPaymentSource() {
   if (props.paymentSources.includes(name)) { cardMessage.value = '同じ名前が登録されています'; return }
   emit('update-payment-sources', [...props.paymentSources, name])
   newPaymentSource.value = ''
+  cardMode.value = ''
   cardMessage.value = name + 'を追加しました'
 }
 function removePaymentSource(name) {
   if (name === '現金') return
   if (!confirm(name + 'を選択肢から削除しますか？過去の明細や固定支出、請求データは削除されません。')) return
   emit('update-payment-sources', props.paymentSources.filter(x => x !== name))
+  selectedCard.value = ''
+  cardMode.value = ''
   cardMessage.value = name + 'を選択肢から削除しました。過去の記録は保持されます'
 }
 
@@ -136,8 +184,8 @@ async function applyRecurring(){
 }
 onMounted(()=>{applyRecurring()})
 function removePlan(id){plans.value=plans.value.filter(x=>x.id!==id);localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value))}
-const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.type==='expense'&&e.payment_source===source)
-const cardTransactions=computed(()=>monthExpenses(bill.value.month,bill.value.name))
+const monthExpenses=(period,source)=>period ? rows.value.filter(e=>e.date>=period.start&&e.date<=period.end&&e.type==='expense'&&e.payment_source===source) : []
+const cardTransactions=computed(()=>monthExpenses(cardPeriod.value,bill.value.name))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
 </script>
 <template>
@@ -146,10 +194,28 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
   <article class="finance-panel">
     <h2>支払方法・カード管理</h2>
     <p>ここで追加・削除した選択肢は、明細入力・編集・固定支出・カード請求照合のすべてに反映されます。削除しても過去の取引は変更されません。現金は削除できません。</p>
-    <div class="finance-inputs"><input v-model="newPaymentSource" maxlength="80" placeholder="新しいカード名・支払方法" aria-label="新しい支払方法"><button type="button" @click="addPaymentSource">追加</button></div>
-    <div v-for="source in props.paymentSources" :key="source" class="finance-row">
-      <span>{{source}}</span>
-      <button v-if="source !== '現金'" type="button" @click="removePaymentSource(source)">削除</button>
+    <div class="finance-inputs card-controls">
+      <select v-model="selectedCard" aria-label="管理するカード"><option value="" disabled>支払方法・カードを選択</option><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option></select>
+      <button type="button" :disabled="!selectedCard" @click="selectCardForEdit">編集</button>
+      <button type="button" @click="cardMode = 'add'">追加</button>
+    </div>
+    <div v-if="cardMode === 'add'" class="finance-inputs">
+      <input v-model="newPaymentSource" maxlength="80" placeholder="新しいカード名・支払方法" aria-label="新しい支払方法">
+      <button type="button" @click="addPaymentSource">保存</button>
+      <button type="button" @click="cardMode = ''">キャンセル</button>
+    </div>
+    <div v-if="cardMode === 'edit' && selectedCard" class="card-editor">
+      <label>名称<input v-model="editedCardName" maxlength="80" :disabled="selectedCard === '現金'" aria-label="カード名を編集"></label>
+      <label v-if="!['現金','その他','Suica','PayPay'].includes(selectedCard)">締め日
+        <select :value="closingDays[selectedCard] || ''" @change="saveClosingDay(selectedCard,$event.target.value)">
+          <option value="">未設定</option><option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
+        </select>
+      </label>
+      <div class="finance-inputs">
+        <button type="button" @click="renameCard">保存</button>
+        <button type="button" @click="cardMode = ''">閉じる</button>
+        <button v-if="selectedCard !== '現金'" type="button" @click="removePaymentSource(selectedCard)">削除</button>
+      </div>
     </div>
     <p role="status">{{cardMessage}}</p>
     <p>選択肢はこの端末に保存されます。別の端末とは自動同期されません。</p>
@@ -182,21 +248,21 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
   </article>
   <article class="finance-panel">
     <h2>カード別利用額</h2>
-    <p>家計簿の明細に記録された支出を、カードと利用月で集計します。カード会社の請求確定額とは異なる場合があります。未設定の明細は集計されません。</p>
+    <p>家計簿の明細に記録された支出を、カードごとの締め日と締め月で集計します。カード会社の請求確定額とは異なる場合があります。未設定の明細は集計されません。</p>
     <div class="finance-inputs">
       <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in props.paymentSources.filter(x => !['現金','その他','Suica','PayPay'].includes(x))" :key="source" :value="source">{{source}}</option><option v-if="bill.name && !props.paymentSources.includes(bill.name)" :value="bill.name">{{bill.name}}（既存の設定）</option></select></label>
-      <label>利用月<input v-model="bill.month" type="month" aria-label="利用月"></label>
+      <label>締め月<input v-model="bill.month" type="month" aria-label="締め月"></label>
     </div>
     <p v-if="!loaded">集計するには「全期間の明細を読み込む」を押してください。</p>
-    <div v-else-if="bill.name && /^\\d{4}-\\d{2}$/.test(bill.month)" class="finance-row">
-      <strong>{{bill.name}} · {{bill.month}}</strong>
+    <div v-else-if="bill.name && cardPeriod" class="finance-row">
+      <strong>{{bill.name}} · {{bill.month}}締め</strong><span>{{cardPeriod.start}} ～ {{cardPeriod.end}}</span>
       <strong>{{yen(cardTotal)}}</strong>
       <span>{{cardTransactions.length}}件の支出</span>
     </div>
-    <p v-else>カードと利用月を選択してください。</p>
+    <p v-else>カードと締め月を選択し、カード管理で締め日を設定してください。</p>
   </article>
 </section>
 </template>
 <style scoped>
 .finance-tools{display:grid;gap:14px}.finance-panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px;display:grid;gap:10px}.finance-panel h2{font-size:17px;margin:0}.finance-panel p{font-size:13px;color:var(--muted);margin:0}.finance-panel button{border:1px solid var(--line);border-radius:10px;background:var(--tint);color:var(--ink);padding:9px}.finance-panel label{font-size:13px}.finance-panel input[type=file]{display:block;max-width:100%}.finance-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.finance-inputs input,.finance-inputs select{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px 5px;background:var(--card);color:var(--ink)}.finance-inputs label{min-width:0;font-size:12px;color:var(--muted)}.finance-inputs label select{display:block;color:var(--ink)}.finance-row{font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}.finance-row button{margin-left:6px}
-.duplicate-link{width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left;cursor:pointer;border:1px solid var(--line);background:var(--card);color:inherit;border-radius:10px;padding:10px}.duplicate-link span{white-space:nowrap;color:var(--blue-dark);font-weight:700;margin-left:8px}</style>
+.duplicate-link{width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left;cursor:pointer;border:1px solid var(--line);background:var(--card);color:inherit;border-radius:10px;padding:10px}.duplicate-link span{white-space:nowrap;color:var(--blue-dark);font-weight:700;margin-left:8px}.card-controls{grid-template-columns:minmax(0,1fr) auto auto}.card-editor{display:grid;gap:10px}.card-editor label{display:grid;gap:4px}.card-editor input,.card-editor select{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px;background:var(--card);color:var(--ink)}</style>

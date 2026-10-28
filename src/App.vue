@@ -568,6 +568,11 @@ const calendarExpanded = ref(false)
 const swipedEntryId = ref(null)
 const filteredEntries = computed(() => entries.value.filter(e => String(e.date || '').startsWith(month.value) && (!selectedDay.value || String(e.date || '').slice(0, 10) === selectedDay.value)))
 const detailFilter = ref(null)
+const paymentMethodMatches = (entry, method) => method === '現金' ? entry.payment_source === '現金' : method === '未設定' ? !String(entry.payment_source || '').trim() : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
+async function openPaymentMethodDetails(method, period) {
+  await openCategoryDetails('', 'expense', period)
+  if (detailFilter.value) detailFilter.value = {...detailFilter.value, paymentMethod:method}
+}
 const detailSourceEntries = ref([])
 const detailLoading = ref(false)
 let detailRequestId = 0
@@ -580,7 +585,7 @@ const entryMatchesType = entry => entryTypeFilter.value === 'all' ||
 const displayEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : filteredEntries.value
   const narrowed = detailFilter.value
-    ? source.filter(entry => detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer'))
+    ? source.filter(entry => detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) : detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer'))
     : source
   return narrowed.filter(entryMatchesType).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
 })
@@ -1063,6 +1068,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div class="income-expense-strip"><div><small>今月の収入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>今月の支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>差引残高</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
       <div class="income-expense-strip transfer-summary"><div><small>今月の資産移動</small><strong>{{ yen(stats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'month')" aria-label="今月の資産移動明細を表示">{{ stats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div></div>
+      <div class="payment-method-stats"><h2>支払方法別</h2><div class="payment-method-stats-grid"><button v-for="item in (stats?.paymentMethods || [])" :key="item.method" type="button" @click="openPaymentMethodDetails(item.method,'month')"><span>{{item.method}}</span><strong>{{yen(item.amount)}}</strong><small>{{item.count}}件 · 明細を見る ›</small></button></div></div>
       <div class="metric-grid">
         <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>支出件数</small><strong>{{ stats?.count || 0 }}<em>件</em></strong></div>
         <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span><small>1日平均支出（支出があった日）</small><strong>{{ yen(averageDaily) }}</strong></div>
@@ -1108,6 +1114,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div class="income-expense-strip annual-income-strip"><div><small>年間収入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>年間支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>年間収支</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
       <div class="income-expense-strip transfer-summary"><div><small>年間の資産移動</small><strong>{{ yen(annualStats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'year')" aria-label="年間の資産移動明細を表示">{{ annualStats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div></div>
+      <div class="payment-method-stats"><h2>支払方法別</h2><div class="payment-method-stats-grid"><button v-for="item in (annualStats?.paymentMethods || [])" :key="item.method" type="button" @click="openPaymentMethodDetails(item.method,'year')"><span>{{item.method}}</span><strong>{{yen(item.amount)}}</strong><small>{{item.count}}件 · 明細を見る ›</small></button></div></div>
       <div class="metric-grid">
         <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>月平均支出（12か月で計算）</small><strong>{{ yen(annualAverage) }}</strong></div>
         <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span><small>支出が最も多い月</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
@@ -1493,4 +1500,4 @@ main .bottom-nav button{min-width:0;max-width:100%;white-space:nowrap;overflow:h
 main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
 main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
-</style>
+.payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}</style>

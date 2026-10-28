@@ -568,7 +568,7 @@ const calendarExpanded = ref(false)
 const swipedEntryId = ref(null)
 const filteredEntries = computed(() => entries.value.filter(e => String(e.date || '').startsWith(month.value) && (!selectedDay.value || String(e.date || '').slice(0, 10) === selectedDay.value)))
 const detailFilter = ref(null)
-const paymentMethodMatches = (entry, method) => method === '現金' ? entry.payment_source === '現金' : method === '未設定' ? !String(entry.payment_source || '').trim() : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
+const paymentMethodMatches = (entry, method) => method === '現金' ? !String(entry.payment_source || '').trim() || entry.payment_source === '現金' : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
 async function openPaymentMethodDetails(method, period) {
   await openCategoryDetails('', 'expense', period)
   if (detailFilter.value) detailFilter.value = {...detailFilter.value, paymentMethod:method}

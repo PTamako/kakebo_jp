@@ -41,11 +41,8 @@ async function renameCard() {
       // Commit the ledger rename on D1 before updating local display names.
       const result = await props.api('payment-sources/rename', {method:'POST',body:JSON.stringify({oldName:old,newName:name})})
       rows.value = rows.value.map(e => e.payment_source === old ? {...e,payment_source:name} : e)
-      plans.value = plans.value.map(p => p.paymentSource === old ? {...p,paymentSource:name} : p)
-      await props.api('finance-settings/plans',{method:'PUT',body:JSON.stringify({value:plans.value})})
-      const renamedBills = bills.value.map(record => record.name === old ? {...record, name} : record)
-      await props.api('finance-settings/bills',{method:'PUT',body:JSON.stringify({value:renamedBills})})
-      bills.value = renamedBills
+      // Payment source references are changed server-side with the card rename.
+      await loadFinanceSettings()
       // Closing day follows the renamed payment_sources row automatically.
       // D1 already renamed the card, its merchant bindings and historical payments.
       // Refresh the card list; never interpret a rename as delete + insert.
@@ -161,30 +158,10 @@ const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
 const settingsReady = ref(false)
 async function loadFinanceSettings() {
-  const legacy = (key, fallback) => {
-    try { const value = JSON.parse(localStorage.getItem(key) || 'null'); return value ?? fallback }
-    catch { return fallback }
-  }
-  const specs = [
-    ['plans','kakeibo-plans',[]],
-    ['bills','kakeibo-bills',[]]
-  ]
-  const loaded = {}
-  for (const [name,key,fallback] of specs) {
-    let result = await props.api('finance-settings/'+name)
-    if (!result.exists) {
-      // Only import browser data if D1 has no value. Never silently overwrite D1.
-      const previous = legacy(key,fallback)
-      // An empty new device must not block an old device from importing real data.
-      if (Array.isArray(previous) ? previous.length > 0 : Object.keys(previous).length > 0) {
-        await props.api('finance-settings/'+name,{method:'POST',body:JSON.stringify({value:previous})})
-        result = await props.api('finance-settings/'+name)
-      }
-    }
-    loaded[name] = result.value
-  }
-  plans.value = Array.isArray(loaded.plans) ? loaded.plans : []
-  bills.value = Array.isArray(loaded.bills) ? loaded.bills : []
+  const [loadedPlans,loadedBills] = await Promise.all([props.api('recurring-plans'),props.api('card-bills')])
+  if (!Array.isArray(loadedPlans) || !Array.isArray(loadedBills)) throw Error('保存データの形式が不正です')
+  plans.value = loadedPlans
+  bills.value = loadedBills
   settingsReady.value = true
 }
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
@@ -252,10 +229,11 @@ const duplicates=computed(()=>{
 async function addPlan(){
   if(!plan.value.name.trim()||!(Number(plan.value.amount)>0)||!Number.isInteger(Number(plan.value.day))||Number(plan.value.day)<1||Number(plan.value.day)>31||!props.categories.includes(plan.value.category)||!props.paymentSources.includes(plan.value.paymentSource)){message.value='名称・金額・登録日・カテゴリー・支払方法を選択してください';return}
   if (!settingsReady.value) { message.value='設定を読み込み中です'; return }
-  const next = [...plans.value,{...plan.value,id:crypto.randomUUID(),amount:Number(plan.value.amount),startMonth:new Date().toLocaleDateString('sv-SE').slice(0,7),enabled:true}]
+  const item={...plan.value,id:crypto.randomUUID(),amount:Number(plan.value.amount),day:Number(plan.value.day),startMonth:new Date().toLocaleDateString('sv-SE').slice(0,7),enabled:true}
   try {
-    await props.api('finance-settings/plans',{method:'PUT',body:JSON.stringify({value:next})})
-    plans.value=next
+    const saved = await props.api('recurring-plans',{method:'POST',body:JSON.stringify(item)})
+    if (!saved.ok) throw Error('保存処理を確認できませんでした')
+    plans.value = await props.api('recurring-plans')
     plan.value={name:'',amount:'',day:1,category:'',paymentSource:'現金'}
     await applyRecurring()
   } catch(e) { message.value='固定支出の保存に失敗しました：'+e.message }
@@ -307,9 +285,10 @@ onMounted(async () => {
 })
 async function removePlan(id) {
   if (!settingsReady.value) return
-  const next=plans.value.filter(x=>x.id!==id)
-  try { await props.api('finance-settings/plans',{method:'PUT',body:JSON.stringify({value:next})});plans.value=next }
-  catch(e) { message.value='固定支出の削除に失敗しました：'+e.message }
+  try {
+    await props.api('recurring-plans/'+encodeURIComponent(id),{method:'DELETE'})
+    plans.value = plans.value.filter(x=>x.id!==id)
+  } catch(e) { message.value='固定支出の削除に失敗しました：'+e.message }
 }
 const monthExpenses=(period,source)=>period ? rows.value.filter(e=>e.date>=period.start&&e.date<=period.end&&e.type==='expense'&&e.payment_source===source) : []
 const cardTransactions=computed(()=>monthExpenses(cardPeriod.value,bill.value.name))
@@ -319,11 +298,18 @@ async function saveCardBill() {
     message.value='カード・締め月・明細を確認してください'; return
   }
   const record={name:bill.value.name,month:bill.value.month,start:cardPeriod.value.start,end:cardPeriod.value.end,total:cardTotal.value,count:cardTransactions.value.length}
-  const next=[...bills.value.filter(x=>!(x.name===record.name && x.month===record.month)),record]
   try {
-    await props.api('finance-settings/bills',{method:'PUT',body:JSON.stringify({value:next})})
-    bills.value=next;message.value='カード利用額の記録を保存しました'
+    await props.api('card-bills',{method:'PUT',body:JSON.stringify(record)})
+    bills.value=await props.api('card-bills');message.value='カード利用額の記録を保存しました'
   } catch(e) { message.value='カード利用額を保存できませんでした：'+e.message }
+}
+async function removeCardBill(record) {
+  if (!record?.name || !record?.month || !confirm(record.name+' '+record.month+' の保存済み請求額を削除しますか？明細は削除されません。')) return
+  try {
+    await props.api('card-bills?name='+encodeURIComponent(record.name)+'&month='+encodeURIComponent(record.month),{method:'DELETE'})
+    bills.value=await props.api('card-bills')
+    message.value='保存済みの請求額を削除しました（明細はそのままです）'
+  } catch(e) { message.value='カード請求額を削除できませんでした：'+e.message }
 }
 </script>
 <template>

@@ -8,6 +8,13 @@ const cardMode = ref('')
 const selectedCard = ref('')
 const editedCardName = ref('')
 const closingDays = ref((() => { try { return JSON.parse(localStorage.getItem('kakeibo-card-closing-days') || '{}') || {} } catch { return {} } })())
+const defaultClosingDay = name => {
+  const normalized = String(name || '').normalize('NFKC').toLowerCase().replace(/[\\s　・（）()_-]/g, '')
+  if (/セゾン|saison/.test(normalized)) return '10'
+  if (/セブンカード|7card/.test(normalized)) return '15'
+  return '末日'
+}
+const closingDayFor = name => closingDays.value[name] || defaultClosingDay(name)
 function selectCardForEdit() {
   if (!selectedCard.value) return
   editedCardName.value = selectedCard.value
@@ -17,7 +24,7 @@ function saveClosingDay(name, day) {
   if (!name || (day !== '' && day !== '末日' && !(Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31))) return
   closingDays.value = {...closingDays.value, [name]: day}
   localStorage.setItem('kakeibo-card-closing-days', JSON.stringify(closingDays.value))
-  cardMessage.value = day ? '締め日を更新しました。利用額は新しい締め期間で再計算されます' : '締め日を未設定にしました'
+  cardMessage.value = '締め日を更新しました。利用額は新しい締め期間で再計算されます'
 }
 async function renameCard() {
   const name = editedCardName.value.trim(), old = selectedCard.value
@@ -52,7 +59,7 @@ async function renameCard() {
 }
 const cardPeriod = computed(() => {
   const match = /^(\d{4})-(\d{2})$/.exec(bill.value.month)
-  const day = closingDays.value[bill.value.name]
+  const day = closingDayFor(bill.value.name)
   if (!match || !day) return null
   const year = Number(match[1]), month = Number(match[2])
   if (month < 1 || month > 12) return null
@@ -227,8 +234,8 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
     <div v-if="cardMode === 'edit' && selectedCard" class="card-editor">
       <label>名称<input v-model="editedCardName" maxlength="80" :disabled="selectedCard === '現金'" aria-label="カード名を編集"></label>
       <label v-if="!['現金','その他','Suica'].includes(selectedCard)">締め日
-        <select :value="closingDays[selectedCard] || ''" @change="saveClosingDay(selectedCard,$event.target.value)">
-          <option value="">未設定</option><option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
+        <select :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
+          <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
         </select>
       </label>
       <div class="finance-inputs card-edit-actions">

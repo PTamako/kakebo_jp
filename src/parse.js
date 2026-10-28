@@ -382,7 +382,7 @@ export function parseEntries(raw, rules) {
       let amount = 0
       for (const candidate of amountSources) {
         const stripped = candidate.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
-        const matches = [...stripped.matchAll(/(\d[\d,，.]{0,7})\s*(円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])/ig)]
+        const matches = [...stripped.matchAll(/([\doOｏＯ][\doOｏＯ,，.]{0,7})\s*(円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])/ig)]
         if (matches.length) {
           const rawAmount = matches[matches.length - 1][1]
           const parsed = Number(rawAmount.replace(/[,，.]/g, '').replace(/[oOｏＯ]/g, '6'))

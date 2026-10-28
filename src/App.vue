@@ -978,8 +978,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
-        <button v-if="entryInputMode === 'manual'" type="button" class="button-secondary" @click="addBlank('expense')">＋ 記録を追加</button>
-        <label v-else class="button-secondary upload-button" :aria-disabled="!!busy">{{ forms.length ? '別の画像を読み取る' : recognitionMode === 'statement' ? '明細を読み取る' : 'レシートを読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
+        <button v-if="entryInputMode === 'manual'" type="button" class="button-secondary" :disabled="!!busy" @click="addBlank('expense')">＋ 記録を追加</button>
+        <label v-else class="button-secondary upload-button" :class="{ 'upload-disabled': !!busy }" :aria-disabled="!!busy">{{ forms.length ? '別の画像を読み取る' : recognitionMode === 'statement' ? '明細を読み取る' : 'レシートを読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>
@@ -1547,4 +1547,9 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 
 <style>.input-mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px;margin:10px 0 14px;background:var(--line);border-radius:15px}.input-mode-switch button{border:0;border-radius:11px;background:transparent;padding:12px 7px;color:var(--muted);font-size:14px;font-weight:800;cursor:pointer}.input-mode-switch button.selected{background:var(--card);color:var(--blue-dark);box-shadow:0 2px 9px #00000012,inset 0 0 0 1px var(--blue)}.capture-panel{margin-bottom:15px}@media(max-width:480px){.input-mode-switch button{min-height:44px}}</style>
 
-<style>.text-paste-panel{margin:10px 0 14px;padding:12px 14px}.text-paste-panel .text-entry-details{margin:0}</style>
+<style>.text-paste-panel{margin:10px 0 14px;padding:12px 14px}.text-paste-panel .text-entry-details{margin:0}
+/* Keep both primary entry actions in a stable, narrow-screen row. */
+.batch-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;min-width:0;width:100%}
+.batch-actions>*{min-width:0;max-width:100%;width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;overflow-wrap:anywhere;min-height:44px}
+.batch-actions .upload-disabled{opacity:.55;pointer-events:none;cursor:not-allowed}
+</style>

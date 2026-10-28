@@ -285,10 +285,6 @@ async function onImage(e, mode = 'statement') {
   } catch (err) { flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
 }
-async function copyOcrText(value) {
-  try { await navigator.clipboard.writeText(value); flash('読み取り文字をコピーしました') }
-  catch { flash('コピーできませんでした。文字を選択してコピーしてください') }
-}
 function addBlank(type = 'expense') {
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
   forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: '', merchant: '', note: '', raw: '', suggested: category, keyword: '', bindRule: false })
@@ -933,7 +929,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <label class="form-field amount-field"><span>{{ f.type === 'income' ? '収入金額（円）' : f.type === 'transfer' ? '資産移動額（円）' : '支出金額（円）' }}</span><div class="amount-input-wrap" :class="{ 'income-amount-wrap': f.type === 'income' }"><span>¥</span><input type="number" min="0" inputmode="numeric" v-model.number="f.amount" aria-label="金額（円）" /></div></label>
         <div v-if="!(Number(f.amount) > 0)" class="amount-warning" role="alert">
           <p>合計金額を特定できませんでした。レシートの「合計」を確認してください。</p>
-          <details v-if="f.raw"><summary>読み取った文字を確認・コピー</summary><textarea :value="f.raw" readonly rows="8" style="width:100%;font-size:12px" aria-label="OCR読み取り結果"></textarea><button type="button" class="button-secondary" @click="copyOcrText(f.raw)">読み取り文字をコピー</button></details>
+          
         </div>
         <div class="field-grid">
           <label class="form-field"><span>日付</span><input type="date" v-model="f.date" /></label>

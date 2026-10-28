@@ -297,7 +297,7 @@ function recognize(mode = recognitionMode.value, append = false) {
   const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    return { ...f, type: transfer ? 'transfer' : mode === 'receipt' ? 'expense' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
+    return { ...f, type: transfer ? 'transfer' : mode === 'receipt' ? 'expense' : (f.type === 'income' ? 'income' : f.type === 'transfer' ? 'transfer' : 'expense'), category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   entryInputMode.value = 'scan'

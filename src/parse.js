@@ -242,13 +242,26 @@ export function parseReceipt(raw, rules = []) {
   const categorySource = merchant || text.slice(0, 120)
   const { category, keyword } = classify(categorySource, rules)
   const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line)) || ''
+  let receiptDate = dateLine ? findDate(dateLine) : ''
+  let dateCorrected = false
+  // OCR can read 2026 as 2006. Correct only with two independent clues:
+  // the receipt month/day is today and another line contains the current year.
+  if (receiptDate) {
+    const today = new Date()
+    const oldYear = today.getFullYear() - 20
+    const expected = `${oldYear}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+    if (receiptDate === expected && lines.some(line => new RegExp(`(?<!\\d)${today.getFullYear()}(?!\\d)`).test(line))) {
+      receiptDate = ymd(today)
+      dateCorrected = true
+    }
+  }
   return {
-    date: dateLine ? findDate(dateLine) : '',
+    date: receiptDate,
     time: dateLine ? findTime(dateLine) : '',
     amount,
     category,
     merchant: merchant.slice(0, 60),
-    note: candidates[0]?.reconstructed ? '要確認：小計と消費税から合計金額を推定しました' : amount ? '' : '要確認：合計金額を読み取れませんでした',
+    note: [dateCorrected ? '要確認：日付の年をOCR誤認識として補正しました' : '', candidates[0]?.reconstructed ? '要確認：小計と消費税から合計金額を推定しました' : amount ? '' : '要確認：合計金額を読み取れませんでした'].filter(Boolean).join(' / '),
     raw: text, suggested: category, keyword
   }
 }

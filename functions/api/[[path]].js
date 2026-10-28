@@ -297,12 +297,12 @@ export async function onRequest({ request, env, params }) {
             if (typeof item?.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name ||
                 !Number.isSafeInteger(Number(item.amount)) || Number(item.amount) <= 0 ||
                 !Number.isInteger(Number(item.day)) || Number(item.day) < 1 || Number(item.day) > 31 ||
-                !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || ''))
+                !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || ''))
               return json({error:'旧固定支出データを確認してください'},500)
             statements.push(db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(item.id,item.name,Number(item.amount),Number(item.day),item.category || 'その他',item.paymentSource || '',item.startMonth,item.enabled ? 1 : 0))
           } else {
-            if (typeof item?.name !== 'string' || !item.name || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
-                !/^\\d{4}-\\d{2}-\\d{2}$/.test(item.start || '') || !/^\\d{4}-\\d{2}-\\d{2}$/.test(item.end || '') ||
+            if (typeof item?.name !== 'string' || !item.name || !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
+                !/^\d{4}-\d{2}-\d{2}$/.test(item.start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(item.end || '') ||
                 !Number.isSafeInteger(Number(item.total)) || Number(item.total) < 0 ||
                 !Number.isSafeInteger(Number(item.count)) || Number(item.count) < 0)
               return json({error:'旧カード請求データを確認してください'},500)
@@ -329,7 +329,7 @@ export async function onRequest({ request, env, params }) {
               !Number.isSafeInteger(item.amount) || item.amount <= 0 ||
               !Number.isInteger(item.day) || item.day < 1 || item.day > 31 ||
               typeof item.category !== 'string' || !item.category || typeof item.paymentSource !== 'string' ||
-              !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') || typeof item.enabled !== 'boolean')
+              !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') || typeof item.enabled !== 'boolean')
             return json({error:'固定支出の入力を確認してください'},400)
           const result = await db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(item.id,item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled ? 1 : 0).run()
           return json({ok:true,created:!!result.meta?.changes})
@@ -342,9 +342,9 @@ export async function onRequest({ request, env, params }) {
         if (m === 'PUT' && !b) {
           const item = await request.json()
           if (typeof item?.name !== 'string' || !item.name || item.name.length > 80 ||
-              !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
-              !/^\\d{4}-\\d{2}-\\d{2}$/.test(item.start || '') ||
-              !/^\\d{4}-\\d{2}-\\d{2}$/.test(item.end || '') ||
+              !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
+              !/^\d{4}-\d{2}-\d{2}$/.test(item.start || '') ||
+              !/^\d{4}-\d{2}-\d{2}$/.test(item.end || '') ||
               item.start > item.end || !Number.isSafeInteger(item.total) || item.total < 0 ||
               !Number.isSafeInteger(item.count) || item.count < 0)
             return json({error:'カード請求額を確認してください'},400)
@@ -354,7 +354,7 @@ export async function onRequest({ request, env, params }) {
         if (m === 'DELETE' && !b) {
           const name = url.searchParams.get('name') || ''
           const month = url.searchParams.get('month') || ''
-          if (!name || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({error:'削除対象の請求を確認してください'},400)
+          if (!name || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({error:'削除対象の請求を確認してください'},400)
           await db.prepare('DELETE FROM card_bills WHERE payment_source=?1 AND bill_month=?2').bind(name,month).run()
           return json({ok:true})
         }

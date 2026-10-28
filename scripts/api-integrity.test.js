@@ -301,3 +301,12 @@ test('D1 closing days and card bills survive retrieval and reject wrong data', a
   assert.equal((await call(db,'finance-settings/unknown','GET')).status,400)
   assert.equal(db.entries.length,0)
 })
+
+test('PWA theme persists in D1 while rejecting unknown theme values', async () => {
+  const db = new LedgerDb()
+  assert.equal((await call(db,'finance-settings/theme')).body.exists,false)
+  assert.equal((await call(db,'finance-settings/theme','PUT',{value:'green'})).status,200)
+  assert.deepEqual((await call(db,'finance-settings/theme')).body,{exists:true,value:'green'})
+  assert.equal((await call(db,'finance-settings/theme','PUT',{value:'unknown'})).status,400)
+  assert.equal((await call(db,'finance-settings/theme')).body.value,'green')
+})

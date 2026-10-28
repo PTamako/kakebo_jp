@@ -276,6 +276,33 @@ export async function onRequest({ request, env, params }) {
     // SBI valuation entries remain untouched unless the user explicitly edits them.
 
     // Settings are independent of historical ledger rows and safe to create on existing D1.
+    // Personal finance configuration is kept on D1, not in browser storage.
+    if (a === 'finance-settings') {
+      await db.prepare('CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)').run()
+      const allowed = new Set(['plans', 'bills', 'closing-days'])
+      if (!allowed.has(b)) return json({ error: '設定名が不正です' }, 400)
+      if (m === 'GET') {
+        const row = await db.prepare('SELECT value FROM finance_settings WHERE name=?1').bind(b).first()
+        return json({ exists: !!row, value: row ? JSON.parse(row.value) : (b === 'closing-days' ? {} : []) })
+      }
+      if (m === 'POST' || m === 'PUT') {
+        const body = await request.json()
+        const value = body?.value
+        const valid = b === 'closing-days'
+          ? value && typeof value === 'object' && !Array.isArray(value) &&
+            Object.entries(value).every(([name,day]) => name.length <= 80 && (day === '' || day === '末日' || (Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31)))
+          : Array.isArray(value) && value.length <= 500 && value.every(item => item && typeof item === 'object' && !Array.isArray(item))
+        if (!valid || JSON.stringify(value).length > 150000) return json({ error: '設定データが不正です' }, 400)
+        const encoded = JSON.stringify(value)
+        if (m === 'POST') {
+          // Import legacy browser data only once, never overwrite D1 records.
+          await db.prepare('INSERT OR IGNORE INTO finance_settings(name,value) VALUES(?1,?2)').bind(b,encoded).run()
+        } else {
+          await db.prepare('INSERT INTO finance_settings(name,value) VALUES(?1,?2) ON CONFLICT(name) DO UPDATE SET value=excluded.value').bind(b,encoded).run()
+        }
+        return json({ ok: true })
+      }
+    }
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
       await db.prepare("CREATE TABLE IF NOT EXISTS payment_sources (name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)))").run()
       await db.prepare("CREATE TABLE IF NOT EXISTS merchant_payment_rules (keyword TEXT PRIMARY KEY, payment_source TEXT NOT NULL)").run()

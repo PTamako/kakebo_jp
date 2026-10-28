@@ -313,6 +313,17 @@ export function parseEntries(raw, rules) {
   const csvLines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   const csvRows = csvLines.map(line => parseAiCsvRow(line, rules))
   if (csvRows.length && csvRows.every(Boolean)) return csvRows
+  // Space-delimited AI card rows: date, merchant, yen amount, installment count.
+  const spacedRows = csvLines.map(line => {
+    const match = line.match(/^((?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2})\\s+(.+?)\\s+([¥￥]?\\d{1,3}(?:[,，]\\d{3})*|[¥￥]?\\d+)\\s*円\\s+(?:\\d+回払い|一回払い|分割払い|リボ払い)\\s*$/)
+    if (!match) return null
+    const merchant = match[2].trim()
+    const amount = Number(match[3].replace(/[^\\d]/g, ''))
+    if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
+    const { category, keyword } = classify(merchant, rules)
+    return { date: findDate(match[1]), time: '', amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
+  })
+  if (spacedRows.length && spacedRows.every(Boolean)) return spacedRows
 
   // Normalize card-statement rows such as "QUICPay 利用 (QP/ マイバスケット ) 628gm"
   // into the existing QP-row format before parsing each transaction independently.

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseEntries } from '../src/parse.js'
+import { parseEntries } from './category-rule-test-helpers.js'
 
 test('parses eight card rows when amount lines end in OCR symbols', () => {
   const input = `はま寿司

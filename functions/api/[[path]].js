@@ -177,6 +177,16 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    // Optional per-transaction payment source. Existing records remain unassigned.
+    try { await db.prepare('SELECT payment_source FROM entries LIMIT 1').first() }
+    catch (columnCheckError) {
+      try { await db.prepare("ALTER TABLE entries ADD COLUMN payment_source TEXT NOT NULL DEFAULT ''").run() }
+      catch (migrationError) {
+        try { await db.prepare('SELECT payment_source FROM entries LIMIT 1').first() }
+        catch { throw migrationError }
+      }
+    }
+
     // transfer_target stores the destination account for asset-transfer entries.
     try { await db.prepare('SELECT transfer_target FROM entries LIMIT 1').first() }
     catch (columnCheckError) {
@@ -261,6 +271,8 @@ export async function onRequest({ request, env, params }) {
         const amount = Number(e.amount)
         if (!validDate(e.date) || !Number.isSafeInteger(Number(e.amount)) || !Number.isSafeInteger(amount) || amount <= 0)
           return json({ error: '日期或金额不正确' }, 400)
+        const paymentSource = e.paymentSource == null ? '' : String(e.paymentSource).trim()
+        if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
         const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
         const transferDate = transfer ? (e.transferDate || e.date) : null
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
@@ -270,8 +282,8 @@ export async function onRequest({ request, env, params }) {
         if (clientRequestId && !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
           return json({ error: '記録IDの形式が正しくありません' }, 400)
         const inserted = await db.prepare(
-          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(client_request_id) DO NOTHING'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied, transferDate, clientRequestId).run()
+          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied, transferDate, clientRequestId, paymentSource).run()
         const savedEntry = clientRequestId
           ? await db.prepare('SELECT id FROM entries WHERE client_request_id = ?1').bind(clientRequestId).first()
           : await db.prepare('SELECT id FROM entries WHERE id = ?1').bind(inserted.meta.last_row_id).first()
@@ -292,8 +304,8 @@ export async function onRequest({ request, env, params }) {
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
         const applied = target && transferDate <= today ? 1 : 0
         const result = await db.prepare(
-          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11 WHERE id = ?12'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied ? 1 : 0, transferDate, id).run()
+          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11, payment_source = ?12 WHERE id = ?13'
+        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied ? 1 : 0, transferDate, paymentSource, id).run()
         return json({ ok: true, changes: result.meta?.changes ?? null })
       }
       if (m === 'DELETE' && b) {

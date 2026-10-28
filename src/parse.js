@@ -179,6 +179,23 @@ export function parseReceipt(raw, rules = []) {
     if (!amount && i + 1 < lines.length && !/[一-龯ぁ-んァ-ヶ]/.test(lines[i + 1].replace(/円/g, ''))) amount = amountIn(lines[i + 1])
     if (amount) candidates.push({ amount, score, index: i })
   }
+  // OCR may turn 合計 into punctuation (e.g. '= =t ¥239').
+  // Only trust a malformed total when the same amount is independently present
+  // in a tax-inclusive line, and the candidate is adjacent to the tax breakdown.
+  if (!candidates.length) {
+    const inclusive = new Set(lines.filter(line => /(?:税率|対象)/.test(line) && !/内消費税|消費税等/.test(line))
+      .map(line => [...line.matchAll(/[¥￥\\]\s*([\d,，]+)(?!\d)/g)].map(m => money(m[1]))).flat())
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (!/^[\s=＝・\-tT]+[¥￥\\]\s*[\d,，]+\s*$/.test(line)) continue
+      const m = line.match(/[¥￥\\]\s*([\d,，]+)/)
+      const value = m ? money(m[1]) : 0
+      const preceding = lines.slice(Math.max(0, i - 4), i).join(' ')
+      if (value > 0 && inclusive.has(value) && /小計|消費税|税抜/.test(preceding)) {
+        candidates.push({ amount: value, score: 2, index: i })
+      }
+    }
+  }
   candidates.sort((a, b) => b.score - a.score || a.index - b.index)
   const amount = candidates[0]?.amount || 0
   const merchant = lines.find(line => /セブン[ー－‐−-]イレブン|ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(line))

@@ -155,6 +155,31 @@ export function parseEntry(raw, rules) {
   }
 }
 
+// Receipts are single purchases: never use the largest yen value (often a balance).
+export function parseReceipt(raw, rules = []) {
+  const text = normalize(raw)
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
+  const money = value => Number(value.replace(/[,，\s]/g, ''))
+  const totalLine = lines.find(line => /(?:^|\s)合\s*計(?:\s|[¥￥:]|$)|お買上(?:げ)?(?:金額)?|ご請求額|総\s*合\s*計|^TOTAL\b/i.test(line) && !/税率|対象|内消費税|税込対象/.test(line))
+  const match = totalLine?.match(/[¥￥]\s*([\d,，]+)/) || totalLine?.match(/([\d,，]+)\s*円/)
+  const amount = match ? money(match[1]) : 0
+  const merchant = lines.find(line => /セブン[ー－‐−-]イレブン|ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(line))
+    || lines.find(line => /(?:店|ストア|マーケット)$/.test(line) && !/電話|番号/.test(line))
+    || ''
+  const categorySource = merchant || text.slice(0, 120)
+  const { category, keyword } = classify(categorySource, rules)
+  const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line)) || ''
+  return {
+    date: dateLine ? findDate(dateLine) : '',
+    time: dateLine ? findTime(dateLine) : '',
+    amount,
+    category,
+    merchant: merchant.slice(0, 60),
+    note: amount ? '' : '要確認：合計金額を読み取れませんでした',
+    raw: text, suggested: category, keyword
+  }
+}
+
 // 将一段粘贴文字或一张 OCR 图片拆分为多笔记录。
 export function parseEntries(raw, rules) {
   const marker = '\n__QP_AMOUNT_COLUMN__\n'

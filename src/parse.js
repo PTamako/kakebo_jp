@@ -160,9 +160,27 @@ export function parseReceipt(raw, rules = []) {
   const text = normalize(raw)
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
   const money = value => Number(value.replace(/[,，\s]/g, ''))
-  const totalLine = lines.find(line => /(?:^|\s)合\s*計(?:\s|[¥￥:]|$)|お買上(?:げ)?(?:金額)?|ご請求額|総\s*合\s*計|^TOTAL\b/i.test(line) && !/税率|対象|内消費税|税込対象/.test(line))
-  const match = totalLine?.match(/[¥￥]\s*([\d,，]+)/) || totalLine?.match(/([\d,，]+)\s*円/)
-  const amount = match ? money(match[1]) : 0
+  const amountIn = line => {
+    const s = line.replace(/[OoＯｏ](?=\d)/g, '0')
+    const m = s.match(/[¥￥]\s*([\d,，]+)|([\d,，]+)\s*円|(?:^|\s)(\d{1,3}(?:[,，]\d{3})*|\d{1,6})(?=\s*(?:$|[税込]))/)
+    const amount = m ? money(m[1] || m[2] || m[3]) : 0
+    return Number.isSafeInteger(amount) && amount > 0 && amount <= 9999999 ? amount : 0
+  }
+  const totalLabel = /(?:合\s*計|お\s*買\s*上(?:げ)?(?:金額)?|お\s*支\s*払(?:い)?(?:金額)?|ご\s*請\s*求\s*額|総\s*合\s*計|TOTAL)/i
+  const excluded = /(?:税率|対象|内消費税|税込対象|小計|お預り|お釣り|釣銭|残高|クーポン|値引|割引|ポイント)/
+  const candidates = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!totalLabel.test(line) || excluded.test(line)) continue
+    const score = /(?:総\s*合\s*計|お\s*支\s*払(?:い)?(?:金額)?|ご\s*請\s*求\s*額)/i.test(line) ? 3 : /合\s*計|TOTAL/i.test(line) ? 2 : 1
+    // Read the value after the label; never accidentally read a date or register number before it.
+    const suffix = line.slice(line.search(totalLabel)).replace(totalLabel, '').replace(/^[\s:：=\-]+/, '')
+    let amount = amountIn(suffix)
+    if (!amount && i + 1 < lines.length && !/[一-龯ぁ-んァ-ヶ]/.test(lines[i + 1].replace(/円/g, ''))) amount = amountIn(lines[i + 1])
+    if (amount) candidates.push({ amount, score, index: i })
+  }
+  candidates.sort((a, b) => b.score - a.score || a.index - b.index)
+  const amount = candidates[0]?.amount || 0
   const merchant = lines.find(line => /セブン[ー－‐−-]イレブン|ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(line))
     || lines.find(line => /(?:店|ストア|マーケット)$/.test(line) && !/電話|番号/.test(line))
     || ''

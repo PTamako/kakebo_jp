@@ -764,7 +764,7 @@ function endSwipe(event, id) {
   const dy = event.changedTouches[0].clientY - touchStartY
   if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.25) {
     swipedEntryId.value = dx < 0 ? id : null
-    swipedReceiptId.value = dx > 0 && receiptImageIds.value.has(Number(id)) ? id : null
+    swipedReceiptId.value = null
     suppressRowClick = true
     setTimeout(() => { suppressRowClick = false }, 350)
   }
@@ -1016,13 +1016,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <span class="entry-day-total">{{ yen(group.total) }}</span>
           </button>
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(Number(e.id)), 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
                 <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.replace(/-/g, '/') }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }}</small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
-              <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
+              <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedEntryId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -1040,14 +1040,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <span class="entry-day-total">{{ yen(group.items.reduce((sum, entry) => sum + (entry.type === 'income' ? -Number(entry.amount || 0) : Number(entry.amount || 0)), 0)) }}</span>
           </button>
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(Number(e.id)), 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
                 <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
               
-              <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
+              <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedEntryId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -1543,16 +1543,19 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 .payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}</style>
 
 <style>
-/* Both swipe hints share the trailing edge; only the selected action opens. */
-.ledger li:not(.swiped-open):not(.swiped-receipt) .ledger-row-content{transform:translateX(-5px)}
-.ledger li.receipt-available:not(.swiped-open):not(.swiped-receipt) .ledger-row-content{transform:translateX(-11px)}
-.ledger li:not(.swiped-open):not(.swiped-receipt){background:#e86e86}
-.ledger li.receipt-available:not(.swiped-open):not(.swiped-receipt){background:linear-gradient(to left,#e86e86 0 5px,#397e9b 5px 11px,#fff 11px)}
-.ledger li.swiped-receipt .ledger-row-content{transform:translateX(-80px)}
-.ledger .swipe-receipt{position:absolute;top:0;right:0;bottom:0;width:76px;border:0;border-radius:10px;background:#397e9b;color:#fff;font-size:12px;font-weight:800;cursor:pointer}
-.ledger li.swiped-receipt .swipe-delete{visibility:hidden;pointer-events:none}
-.ledger li.swiped-open .swipe-receipt{visibility:hidden;pointer-events:none}
-.ledger li:not(.swiped-receipt) .swipe-receipt{visibility:hidden;pointer-events:none}
+/* Right-side swipe actions: both buttons open with one left swipe. */
+.ledger li{background:#fff}
+.ledger li .ledger-row-content{transform:translateX(0);box-sizing:border-box;width:100%}
+.ledger li:not(.swiped-open) .ledger-row-content{transform:translateX(-5px)}
+.ledger li.receipt-available:not(.swiped-open) .ledger-row-content{transform:translateX(-10px)}
+.ledger li.swiped-open .ledger-row-content{transform:translateX(-68px)}
+.ledger li.swiped-open.receipt-available .ledger-row-content{transform:translateX(-144px)}
+.ledger li .swipe-delete{right:0;width:64px;visibility:hidden}
+.ledger li.swiped-open .swipe-delete{visibility:visible}
+.ledger li .swipe-receipt{position:absolute;top:0;right:68px;bottom:0;width:72px;border:0;border-radius:10px;background:#397e9b;color:#fff;font-size:12px;font-weight:800;cursor:pointer;visibility:hidden}
+.ledger li.swiped-open.receipt-available .swipe-receipt{visibility:visible}
+.ledger li:not(.swiped-open)::after{content:'';position:absolute;right:0;top:0;bottom:0;width:5px;background:#e86e86;pointer-events:none}
+.ledger li.receipt-available:not(.swiped-open)::after{width:10px;background:linear-gradient(to right,#397e9b 0 5px,#e86e86 5px 10px)}
 </style>
 
 <style>.receipt-save-error{color:#9b2938;background:#fff0f1;border:1px solid #e9aab2;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700}</style>

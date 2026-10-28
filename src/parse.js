@@ -196,6 +196,27 @@ export function parseReceipt(raw, rules = []) {
       }
     }
   }
+  // An OCR payment amount may be wrong (e.g. ¥311 read as Y911).
+  // Use payment text only when corroborated by an independent subtotal + tax.
+  if (!candidates.length) {
+    const subtotal = lines.map(line => {
+      if (!/(?:小\\s*計|小\\s*言十)/.test(line)) return 0
+      const m = line.match(/[¥￥\\\\]\\s*([\\d,，]{1,7})/)
+      return m ? money(m[1]) : 0
+    }).find(Boolean) || 0
+    const tax = lines.map(line => {
+      if (!/(?:外\\s*税|消費税)/.test(line) || /対象|税率/.test(line)) return 0
+      const m = line.match(/[¥￥\\\\]\\s*([\\d,，]{1,7})/)
+      return m ? money(m[1]) : 0
+    }).find(Boolean) || 0
+    const paymentAmounts = lines.filter(line => /QUICPay\\s*(?:支払|お支払|決済)/i.test(line)).map(line => {
+      const m = line.match(/[¥￥\\\\Yy]\\s*([\\d,，]{1,7})(?!\\d)/)
+      return m ? money(m[1]) : 0
+    }).filter(Boolean)
+    if (subtotal > 0 && tax > 0 && paymentAmounts.includes(subtotal + tax)) {
+      candidates.push({ amount: subtotal + tax, score: 1, index: lines.length, paymentFallback: true })
+    }
+  }
   candidates.sort((a, b) => b.score - a.score || a.index - b.index)
   const amount = candidates[0]?.amount || 0
   // Normalize spaced and common OCR-misread convenience-store names without
@@ -219,7 +240,7 @@ export function parseReceipt(raw, rules = []) {
     amount,
     category,
     merchant: merchant.slice(0, 60),
-    note: amount ? '' : '要確認：合計金額を読み取れませんでした',
+    note: candidates[0]?.paymentFallback ? '要確認：小計・税額・QUICPay支払額の一致から推定しました' : amount ? '' : '要確認：合計金額を読み取れませんでした',
     raw: text, suggested: category, keyword
   }
 }

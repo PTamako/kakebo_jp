@@ -7,7 +7,7 @@ const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-dupl
 const cardMode = ref('')
 const selectedCard = ref('')
 const editedCardName = ref('')
-const closingDays = ref((() => { try { return JSON.parse(localStorage.getItem('kakeibo-card-closing-days') || '{}') || {} } catch { return {} } })())
+const closingDays = ref({})
 const defaultClosingDay = name => {
   const normalized = String(name || '').normalize('NFKC').toLowerCase().replace(/[\\s　・（）()_-]/g, '')
   if (/セゾン|saison/.test(normalized)) return '10'
@@ -20,11 +20,14 @@ function selectCardForEdit() {
   editedCardName.value = selectedCard.value
   cardMode.value = 'edit'
 }
-function saveClosingDay(name, day) {
+async function saveClosingDay(name, day) {
   if (!name || (day !== '' && day !== '末日' && !(Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31))) return
-  closingDays.value = {...closingDays.value, [name]: day}
-  localStorage.setItem('kakeibo-card-closing-days', JSON.stringify(closingDays.value))
-  cardMessage.value = '締め日を更新しました。利用額は新しい締め期間で再計算されます'
+  try {
+    const next = {...closingDays.value, [name]: day}
+    await props.api('finance-settings/closing-days', { method:'PUT', body:JSON.stringify({value:next}) })
+    closingDays.value = next
+    cardMessage.value = '締め日を更新しました。利用額は新しい締め期間で再計算されます'
+  } catch(e) { cardMessage.value = '締め日の保存に失敗しました：'+e.message }
 }
 async function renameCard() {
   const name = editedCardName.value.trim(), old = selectedCard.value
@@ -40,11 +43,11 @@ async function renameCard() {
       const result = await props.api('payment-sources/rename', {method:'POST',body:JSON.stringify({oldName:old,newName:name})})
       rows.value = rows.value.map(e => e.payment_source === old ? {...e,payment_source:name} : e)
       plans.value = plans.value.map(p => p.paymentSource === old ? {...p,paymentSource:name} : p)
-      localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value))
+      await props.api('finance-settings/plans',{method:'PUT',body:JSON.stringify({value:plans.value})})
       const updated = {...closingDays.value,[name]:closingDays.value[old] || ''}
       delete updated[old]
       closingDays.value = updated
-      localStorage.setItem('kakeibo-card-closing-days',JSON.stringify(updated))
+      await props.api('finance-settings/closing-days',{method:'PUT',body:JSON.stringify({value:updated})})
       // D1 already renamed the card, its merchant bindings and historical payments.
       // Refresh the card list; never interpret a rename as delete + insert.
       emit('payment-settings-refresh')
@@ -151,12 +154,38 @@ const lastLoadedLabel = computed(() => lastLoadedAt.value ? new Intl.DateTimeFor
 const busy = ref(false)
 const message = ref('')
 const restoreRows = ref([])
-const plans = ref(JSON.parse(localStorage.getItem('kakeibo-plans') || '[]'))
-const bills = ref(JSON.parse(localStorage.getItem('kakeibo-bills') || '[]'))
+const plans = ref([])
+const bills = ref([])
 const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費'}
 const categoryLabel = category => categoryJapaneseLabels[category] || category
 const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
+const settingsReady = ref(false)
+async function loadFinanceSettings() {
+  const legacy = (key, fallback) => {
+    try { const value = JSON.parse(localStorage.getItem(key) || 'null'); return value ?? fallback }
+    catch { return fallback }
+  }
+  const specs = [
+    ['plans','kakeibo-plans',[]],
+    ['bills','kakeibo-bills',[]],
+    ['closing-days','kakeibo-card-closing-days',{}]
+  ]
+  const loaded = {}
+  for (const [name,key,fallback] of specs) {
+    let result = await props.api('finance-settings/'+name)
+    if (!result.exists) {
+      // Only import browser data if D1 has no value. Never silently overwrite D1.
+      await props.api('finance-settings/'+name,{method:'POST',body:JSON.stringify({value:legacy(key,fallback)})})
+      result = await props.api('finance-settings/'+name)
+    }
+    loaded[name] = result.value
+  }
+  plans.value = Array.isArray(loaded.plans) ? loaded.plans : []
+  bills.value = Array.isArray(loaded.bills) ? loaded.bills : []
+  closingDays.value = loaded['closing-days'] || {}
+  settingsReady.value = true
+}
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 async function loadAll() {
   if (busy.value) return
@@ -219,10 +248,16 @@ const duplicates=computed(()=>{
   for(const e of rows.value){const key=transactionKey(e);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e)}
   return [...groups.values()].filter(g=>g.length>1)
 })
-function addPlan(){
+async function addPlan(){
   if(!plan.value.name.trim()||!(Number(plan.value.amount)>0)||!Number.isInteger(Number(plan.value.day))||Number(plan.value.day)<1||Number(plan.value.day)>31||!props.categories.includes(plan.value.category)||!props.paymentSources.includes(plan.value.paymentSource)){message.value='名称・金額・登録日・カテゴリー・支払方法を選択してください';return}
-  plans.value.push({...plan.value,id:crypto.randomUUID(),amount:Number(plan.value.amount),startMonth:new Date().toLocaleDateString('sv-SE').slice(0,7),enabled:true})
-  localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value));plan.value={name:'',amount:'',day:1,category:'',paymentSource:'現金'}
+  if (!settingsReady.value) { message.value='設定を読み込み中です'; return }
+  const next = [...plans.value,{...plan.value,id:crypto.randomUUID(),amount:Number(plan.value.amount),startMonth:new Date().toLocaleDateString('sv-SE').slice(0,7),enabled:true}]
+  try {
+    await props.api('finance-settings/plans',{method:'PUT',body:JSON.stringify({value:next})})
+    plans.value=next
+    plan.value={name:'',amount:'',day:1,category:'',paymentSource:'現金'}
+    await applyRecurring()
+  } catch(e) { message.value='固定支出の保存に失敗しました：'+e.message }
 }
 const recurringBusy = ref(false)
 const recurringMessage = ref('')
@@ -232,7 +267,7 @@ function scheduledDate(year,month,day){
   return [year,String(month).padStart(2,'0'),String(Math.min(Number(day),last)).padStart(2,'0')].join('-')
 }
 async function applyRecurring(){
-  if(recurringBusy.value)return
+  if(recurringBusy.value || !settingsReady.value)return
   recurringBusy.value=true
   let created=0
   try{
@@ -265,10 +300,16 @@ async function applyRecurring(){
 }
 onMounted(async () => {
   // Refresh after recurring entries are processed so the ledger includes any newly created rows.
-  await applyRecurring()
+  try { await loadFinanceSettings(); await applyRecurring() }
+  catch(e) { message.value='設定の読込に失敗しました：'+e.message }
   await loadAll()
 })
-function removePlan(id){plans.value=plans.value.filter(x=>x.id!==id);localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value))}
+async function removePlan(id) {
+  if (!settingsReady.value) return
+  const next=plans.value.filter(x=>x.id!==id)
+  try { await props.api('finance-settings/plans',{method:'PUT',body:JSON.stringify({value:next})});plans.value=next }
+  catch(e) { message.value='固定支出の削除に失敗しました：'+e.message }
+}
 const monthExpenses=(period,source)=>period ? rows.value.filter(e=>e.date>=period.start&&e.date<=period.end&&e.type==='expense'&&e.payment_source===source) : []
 const cardTransactions=computed(()=>monthExpenses(cardPeriod.value,bill.value.name))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
@@ -354,8 +395,8 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
     <h2>毎月の固定支出</h2>
     <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><input v-model="plan.amount" type="number" min="1" placeholder="金額" aria-label="固定支出額"></div>
     <div class="finance-inputs recurring-details"><label>毎月の登録日<select v-model.number="plan.day" aria-label="毎月の登録日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリー<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in props.categories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
-    <div class="finance-actions"><button @click="addPlan(); applyRecurring()">自動記録を登録</button>
-    <button :disabled="recurringBusy" @click="applyRecurring">{{recurringBusy ? "確認中…" : "未記録分を確認"}}</button></div>
+    <div class="finance-actions"><button @click="addPlan" :disabled="!settingsReady">自動記録を登録</button>
+    <button :disabled="recurringBusy || !settingsReady" @click="applyRecurring">{{recurringBusy ? "確認中…" : "未記録分を確認"}}</button></div>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
     <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 毎月{{p.day}}日 · {{p.paymentSource || "未設定"}} · 次回 {{nextScheduledDate(p.day)}} <button @click="removePlan(p.id)">削除</button></div>
   </article>

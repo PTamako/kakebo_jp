@@ -776,6 +776,17 @@ const visibleCalendarDays = computed(() => {
   const start = Math.max(0, Math.floor(Math.max(0, index) / 7) * 7)
   return calendarDays.value.slice(start, start + 7)
 })
+function openLedgerFromNav() {
+  detailFilter.value = null
+  entryTypeFilter.value = 'all'
+  selectedDay.value = ''
+  detailSourceEntries.value = []
+  calendarExpanded.value = false
+  visibleEntryCount.value = 20
+  preserveOperatedDay.value = ''
+  tab.value = 'list'
+}
+
 function toggleDay(date) {
   if (selectedDay.value === date) selectedDay.value = ''
   else selectedDay.value = date
@@ -1239,7 +1250,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <FinanceTools v-show="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" @update-payment-sources="updatePaymentSources" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button :class="{ active: tab === 'add' }" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
-      <button :class="{ active: tab === 'list' }" @click="tab = 'list'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>
+      <button :class="{ active: tab === 'list' }" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>
       <button :class="{ active: tab === 'stat' }" @click="tab = 'stat'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.5 19.5h15"/><rect x="6" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10" rx="1"/><rect x="14.8" y="4.5" width="3.2" height="13" rx="1"/></svg></span><span>統計</span></button>
       <button :class="{ active: tab === 'investments' }" @click="tab = 'investments'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2.5"/><path d="M3.5 10h17M7 4.5h10M15.5 14.5h2"/></svg></span><span>資産・投資</span></button>
       <button :class="{ active: tab === 'finance' }" @click="tab = 'finance'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span><span>管理</span></button>

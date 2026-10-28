@@ -93,7 +93,7 @@ const message = ref('')
 const restoreRows = ref([])
 const plans = ref(JSON.parse(localStorage.getItem('kakeibo-plans') || '[]'))
 const bills = ref(JSON.parse(localStorage.getItem('kakeibo-bills') || '[]'))
-const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居','医疗':'医療','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通'}
+const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費'}
 const categoryLabel = category => categoryJapaneseLabels[category] || category
 const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})

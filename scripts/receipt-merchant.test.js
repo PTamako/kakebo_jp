@@ -40,3 +40,20 @@ test('AI Japanese date rows preserve comma-separated yen amounts', () => {
   assert.deepEqual(rows.map(row => row.merchant), ['ベルク葛飾高砂店', 'KFCネットオーダー青砥駅店'])
   assert.deepEqual(rows.map(row => row.amount), [8323, 2380])
 })
+
+test('seven QUICPay AI rows yield seven clean titles and exact amounts', () => {
+  const input = [
+    '10月21日, ダイソー, 550円, QUICPay',
+    '10月21日, イトーヨーカドー タカサゴテン, 392円, QUICPay',
+    '10月20日, マイバスケット, 417円, QUICPay',
+    '10月19日, マイバスケット, 315円, QUICPay',
+    '10月18日, ベルク, 4,888円, QUICPay',
+    '10月17日, ケンタッキーフライドチキン, 1,580円, QUICPay',
+    '10月17日, イオンフーズタイル, 254円, QUICPay'
+  ].join('\n')
+  const rows = parseEntries(input)
+  assert.equal(rows.length, 7)
+  assert.deepEqual(rows.map(row => row.merchant), ['ダイソー', 'イトーヨーカドー タカサゴテン', 'マイバスケット', 'マイバスケット', 'ベルク', 'ケンタッキーフライドチキン', 'イオンフーズタイル'])
+  assert.deepEqual(rows.map(row => row.amount), [550, 392, 417, 315, 4888, 1580, 254])
+  assert.deepEqual(rows.map(row => row.date.slice(5)), ['10-21', '10-21', '10-20', '10-19', '10-18', '10-17', '10-17'])
+})

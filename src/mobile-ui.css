@@ -356,3 +356,20 @@ main .finance-tools .finance-section-tabs button:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
+
+/* Avoid iOS Safari zooming a month picker, and keep card controls legible. */
+main .finance-tools .card-billing-fields input.card-closing-month {
+  font-size: 16px !important;
+  padding-inline: 8px !important;
+}
+/* While typing, release the screen edge for the on-screen keyboard. */
+@media (max-width: 560px) {
+  main:has(input:focus, textarea:focus, select:focus) .bottom-nav {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, calc(100% + 24px));
+  }
+  main:has(input:focus, textarea:focus, select:focus) .batch-actions:not(.batch-actions-empty) {
+    position: static;
+  }
+}

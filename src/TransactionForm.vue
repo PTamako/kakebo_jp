@@ -27,4 +27,17 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
 </template>
 <style scoped>
 .transaction-form{display:grid;gap:12px;min-width:0}.transaction-details{border-top:1px solid var(--border,#e5e7eb);padding-top:12px}.transaction-details summary{cursor:pointer;font-weight:600;padding:8px 2px}.transaction-details[open] .field-grid{margin-top:12px}.transaction-form .amount-field input{font-size:1.6rem;font-weight:700}.transaction-bind-rule{display:flex;align-items:center;gap:10px;min-height:44px}.transaction-bind-rule input{accent-color:var(--blue)}.transaction-bind-rule:has(input:disabled){opacity:.6}
+
+/* All native controls must shrink inside a two-column mobile grid. */
+.transaction-form,.transaction-form *{box-sizing:border-box}
+.transaction-form .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0;width:100%}
+.transaction-form .field-grid>.form-field{min-width:0;width:100%;max-width:100%}
+.transaction-form .form-field input,.transaction-form .form-field select{display:block;width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+.transaction-form .form-field>span{overflow-wrap:anywhere}
+.transaction-form .amount-input-wrap{width:100%;min-width:0;box-sizing:border-box}
+.transaction-form .amount-input-wrap input{width:100%;min-width:0;flex:1}
+.transaction-form .receipt-attachment-field{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.transaction-form .receipt-attachment-status{overflow-wrap:anywhere}
+.transaction-form .transaction-details{min-width:0;width:100%}
+@media(max-width:390px){.transaction-form .field-grid{gap:10px}.transaction-form .field-grid>.form-field{font-size:13px}.transaction-form .form-field input,.transaction-form .form-field select{font-size:16px;padding-inline:9px}.transaction-form .transfer-schedule-fields{grid-template-columns:minmax(0,1fr)}}
 </style>

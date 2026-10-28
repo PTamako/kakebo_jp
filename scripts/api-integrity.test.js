@@ -52,13 +52,13 @@ class LedgerDb {
           const a = this.args
           if (a[11] && db.entries.some(e => e.client_request_id === a[11])) return { meta: { changes: 0 } }
           db.entries.push({ id: db.nextId++, date: a[0], amount: a[2], type: a[7],
-            transfer_target: a[8], transfer_applied: a[9], transfer_date: a[10], client_request_id: a[11] })
+            transfer_target: a[8], transfer_applied: a[9], transfer_date: a[10], client_request_id: a[11], payment_source: a[12] })
           return { meta: { changes: 1 } }
         }
         if (sql.startsWith('UPDATE entries SET date =')) {
           const a = this.args
-          const e = db.entries.find(row => row.id === a[11])
-          if (e) Object.assign(e, { date: a[0], amount: a[2], category: a[3], merchant: a[4], type: a[7], transfer_target: a[8], transfer_applied: a[9], transfer_date: a[10] })
+          const e = db.entries.find(row => row.id === a[12])
+          if (e) Object.assign(e, { date: a[0], amount: a[2], category: a[3], merchant: a[4], type: a[7], transfer_target: a[8], transfer_applied: a[9], transfer_date: a[10], payment_source: a[11] })
           return { meta: { changes: e ? 1 : 0 } }
         }
         if (sql.startsWith('UPDATE entries SET transfer_applied = 1 WHERE type')) {

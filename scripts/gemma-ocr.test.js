@@ -19,3 +19,7 @@ test('Gemma receives Japanese OCR instructions and an image', async () => {
   assert.equal(called.model, GEMMA_MODEL)
   assert.equal(called.options.messages[0].content[1].type, 'image_url')
 })
+
+test('Gemma multimodal description response is accepted', () => {
+  assert.equal(normalizeGemmaText({ description: '店名: まいばすけっと' }), '店名: まいばすけっと')
+})

@@ -1,7 +1,7 @@
 // No receipt images or extracted payment data are persisted on the server.
 export const GEMMA_MODEL = '@cf/google/gemma-4-26b-a4b-it'
 export function normalizeGemmaText(result) {
-  const raw = typeof result === 'string' ? result : (result?.response || result?.output_text || result?.choices?.[0]?.message?.content || '')
+  const raw = typeof result === 'string' ? result : (result?.response || result?.description || result?.output_text || result?.choices?.[0]?.message?.content || '')
   if (typeof raw !== 'string' || !raw.trim()) throw new Error('画像から文字を読み取れませんでした')
   // Preserve lines so the existing Japanese receipt/statement parser can handle them.
   return raw.trim().slice(0, 16000)
@@ -21,6 +21,7 @@ export async function recognizeWithGemma(ai, bytes, mime, mode) {
       { type: 'image_url', image_url: { url: imageUrl } }
     ] }],
     max_completion_tokens: 2048,
+    chat_template_kwargs: { enable_thinking: false },
     temperature: 0
   })
   return normalizeGemmaText(result)

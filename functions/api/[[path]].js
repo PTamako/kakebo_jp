@@ -178,8 +178,11 @@ export async function onRequest({ request, env, params }) {
       const text = await recognizeWithGemma(env.AI, await file.arrayBuffer(), file.type, mode)
       return json({ text, engine: 'gemma4' })
     } catch (error) {
-      console.error('Gemma OCR failed', error?.name || 'error')
-      return json({ error: 'AI画像認識に失敗しました。通常のOCRをお試しください' }, 502)
+      const detail = String(error?.message || '')
+      const category = /429|3040|capacity|rate.limit/i.test(detail) ? 'capacity' : /quota|credit|limit.exceeded/i.test(detail) ? 'quota' : /401|403|unauthoriz|permission/i.test(detail) ? 'permission' : /timeout|timed.out|deadline/i.test(detail) ? 'timeout' : /image|format|invalid|schema|input|400/i.test(detail) ? 'input' : /文字を読み取れません|empty|response/i.test(detail) ? 'empty_response' : 'unknown'
+      console.error('Gemma OCR failed', { category, name: error?.name || 'Error', message: detail.slice(0, 400) })
+      const messages = { capacity: 'AIが混雑しています。時間をおいて再試行してください', quota: 'AIの利用枠を確認してください', permission: 'AIの利用権限を確認してください', timeout: 'AIの応答がタイムアウトしました', input: 'AIが画像入力を受け付けませんでした', empty_response: 'AIの応答から文字を取得できませんでした', unknown: 'AI画像認識に失敗しました' }
+      return json({ error: messages[category], code: category }, 502)
     }
   }
   const month = url.searchParams.get('month') || ''

@@ -302,7 +302,7 @@ export async function onRequest({ request, env, params }) {
             statements.push(db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(item.id,item.name,Number(item.amount),Number(item.day),item.category || 'その他',item.paymentSource || '',item.startMonth,item.enabled ? 1 : 0))
           } else {
             if (typeof item?.name !== 'string' || !item.name || !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
-                !/^\d{4}-\d{2}-\d{2}$/.test(item.start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(item.end || '') ||
+                !validDate(item.start) || !validDate(item.end) || item.start > item.end ||
                 !Number.isSafeInteger(Number(item.total)) || Number(item.total) < 0 ||
                 !Number.isSafeInteger(Number(item.count)) || Number(item.count) < 0)
               return json({error:'旧カード請求データを確認してください'},500)
@@ -343,9 +343,7 @@ export async function onRequest({ request, env, params }) {
           const item = await request.json()
           if (typeof item?.name !== 'string' || !item.name || item.name.length > 80 ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
-              !/^\d{4}-\d{2}-\d{2}$/.test(item.start || '') ||
-              !/^\d{4}-\d{2}-\d{2}$/.test(item.end || '') ||
-              item.start > item.end || !Number.isSafeInteger(item.total) || item.total < 0 ||
+              !validDate(item.start) || !validDate(item.end) || item.start > item.end || !Number.isSafeInteger(item.total) || item.total < 0 ||
               !Number.isSafeInteger(item.count) || item.count < 0)
             return json({error:'カード請求額を確認してください'},400)
           await db.prepare('INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(payment_source,bill_month) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,total_amount=excluded.total_amount,transaction_count=excluded.transaction_count').bind(item.name,item.month,item.start,item.end,item.total,item.count).run()

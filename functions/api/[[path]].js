@@ -340,7 +340,10 @@ export async function onRequest({ request, env, params }) {
           }
           if (updates.length) await db.batch(updates)
         }
-        await db.prepare("INSERT OR IGNORE INTO finance_settings(name,value) VALUES('closing-days-migrated-v1','true')").run()
+        // A brand-new database may not have cards yet; retry after card initialization.
+        const cardCount = await db.prepare('SELECT COUNT(*) AS n FROM payment_sources').first()
+        if (cardCount?.n > 0)
+          await db.prepare("INSERT OR IGNORE INTO finance_settings(name,value) VALUES('closing-days-migrated-v1','true')").run()
       }
       const { results } = await db.prepare('SELECT name, is_default, closing_day FROM payment_sources ORDER BY sort_order, name').all()
       return json(results)

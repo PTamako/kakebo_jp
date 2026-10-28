@@ -401,7 +401,7 @@ async function remove(id) {
       await deleteReceiptImage(id)
       receiptImageIds.value = new Set([...receiptImageIds.value].filter(imageId => Number(imageId) !== Number(id)))
       if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
-    } catch { receiptDeleteWarning = ' 端末内のレシート画像は削除できませんでした。' }
+    } catch { receiptDeleteWarning = ' 端末内のレシート画像は削除できませんでした。'; receiptSaveError.value = '記録は削除されましたが、端末内のレシート画像を削除できませんでした。' }
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadInvestments(), loadTransfers()])
     flash('記録を削除しました' + receiptDeleteWarning)
   } catch (error) { flash('削除に失敗しました：' + error.message) }

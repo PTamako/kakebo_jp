@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { validateBackup, transactionKey, reconcileStatement, nextScheduledDate } from './finance-tools.js'
 const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] } })
-const emit = defineEmits(['ledger-updated', 'update-payment-sources'])
+const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate'])
 const newPaymentSource = ref('')
 const cardMessage = ref('')
 function addPaymentSource() {
@@ -172,7 +172,7 @@ const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.ty
     <p>同じ日時・店名・金額・カテゴリの候補です。自動削除はしません。</p>
     <p v-if="!loaded">全明細を読み込むと表示します。</p>
     <p v-else-if="!duplicates.length">重複候補はありません。</p>
-    <div v-for="(group,i) in duplicates.slice(0,30)" :key="i" class="finance-row">{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件</div>
+    <button v-for="(group,i) in duplicates.slice(0,30)" :key="i" type="button" class="finance-row duplicate-link" @click="emit('open-duplicate', group[0].date)">{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件 <span>明細を見る ›</span></button>
   </article>
   <article class="finance-panel">
     <h2>毎月の固定支出</h2>
@@ -195,4 +195,4 @@ const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.ty
 </template>
 <style scoped>
 .finance-tools{display:grid;gap:14px}.finance-panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px;display:grid;gap:10px}.finance-panel h2{font-size:17px;margin:0}.finance-panel p{font-size:13px;color:var(--muted);margin:0}.finance-panel button{border:1px solid var(--line);border-radius:10px;background:var(--tint);color:var(--ink);padding:9px}.finance-panel label{font-size:13px}.finance-panel input[type=file]{display:block;max-width:100%}.finance-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.finance-inputs input,.finance-inputs select{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px 5px;background:var(--card);color:var(--ink)}.finance-inputs label{min-width:0;font-size:12px;color:var(--muted)}.finance-inputs label select{display:block;color:var(--ink)}.finance-row{font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}.finance-row button{margin-left:6px}
-</style>
+.duplicate-link{width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left;cursor:pointer;border:1px solid var(--line);background:var(--card);color:inherit;border-radius:10px;padding:10px}.duplicate-link span{white-space:nowrap;color:var(--blue-dark);font-weight:700;margin-left:8px}</style>

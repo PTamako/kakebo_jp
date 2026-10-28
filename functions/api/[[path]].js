@@ -501,7 +501,7 @@ export async function onRequest({ request, env, params }) {
           const legacyDefaults = new Map(LEGACY_DEFAULT_RULE_ROWS)
           // A few multi-row SQL statements rather than hundreds of D1 queries.
           // All values remain parameter-bound; INSERT OR IGNORE never overwrites data.
-          const allDefaults = [...DEFAULT_RULE_ROWS, [v10Marker, '其他']]
+          const allDefaults = DEFAULT_RULE_ROWS
           for (let i = 0; i < allDefaults.length; i += 25) {
             const chunk = allDefaults.slice(i, i + 25)
             const placeholders = chunk.map(() => '(?, ?)').join(', ')
@@ -515,6 +515,8 @@ export async function onRequest({ request, env, params }) {
               : []
           })
           for (let i = 0; i < corrections.length; i += 40) await db.batch(corrections.slice(i, i + 40))
+          // Mark completion last so a partial migration can be retried safely.
+          await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(v10Marker, '其他').run()
         }
         const [baseResult, customResult] = await Promise.all([
           db.prepare("SELECT * FROM rules WHERE keyword NOT IN (?1, ?2) AND substr(keyword, 1, 13) != ?3").bind(marker, v10Marker, '__category__:').all(),

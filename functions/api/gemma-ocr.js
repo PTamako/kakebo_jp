@@ -13,7 +13,7 @@ export async function recognizeWithGemma(ai, bytes, mime, mode) {
   const base64 = Array.from(new Uint8Array(bytes), b => String.fromCharCode(b)).join('')
   const imageUrl = 'data:' + mime + ';base64,' + btoa(base64)
   const instruction = mode === 'receipt'
-    ? '日本語レシートの印字内容を、元の順序で正確に文字起こししてください。店名、購入日、合計金額、支払方法を含めてください。商品金額と合計を混同しないでください。'
+    ? '日本語レシートの印字内容を、元の順序で正確に文字起こししてください。店名、購入日、合計金額、支払方法を優先してください。各項目は「店名:」「日付:」「合計:」「支払方法:」で1行ずつ書き、判読できない項目は「不明」としてください。商品明細はその後に書いてください。商品金額、税額、釣銭、決済端末の控えにある金額とレシートの合計を混同しないでください。'
     : '日本語のカード・決済明細画像を文字起こししてください。複数取引は各行を分け、各取引の日付、店舗名、金額、支払方法を対応させてください。'
   const result = await ai.run(GEMMA_MODEL, {
     messages: [{ role: 'user', content: [

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { validateBackup, transactionKey, reconcileStatement, nextScheduledDate } from './finance-tools.js'
-const props = defineProps({ api: { type: Function, required: true } })
+const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] } })
 const emit = defineEmits(['ledger-updated'])
 const rows = ref([])
 const loaded = ref(false)
@@ -10,7 +10,7 @@ const message = ref('')
 const restoreRows = ref([])
 const plans = ref(JSON.parse(localStorage.getItem('kakeibo-plans') || '[]'))
 const bills = ref(JSON.parse(localStorage.getItem('kakeibo-bills') || '[]'))
-const plan = ref({name:'',amount:'',day:1,category:'その他',paymentSource:'現金'})
+const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const bill = ref({name:'',month:new Date().toISOString().slice(0,7),amount:''})
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 async function loadAll() {
@@ -74,9 +74,9 @@ const duplicates=computed(()=>{
   return [...groups.values()].filter(g=>g.length>1)
 })
 function addPlan(){
-  if(!plan.value.name.trim()||!(Number(plan.value.amount)>0)||Number(plan.value.day)<1||Number(plan.value.day)>31)return
+  if(!plan.value.name.trim()||!(Number(plan.value.amount)>0)||!Number.isInteger(Number(plan.value.day))||Number(plan.value.day)<1||Number(plan.value.day)>31||!props.categories.includes(plan.value.category)||!props.paymentSources.includes(plan.value.paymentSource)){message.value='名称・金額・登録日・分類・支払方法を選択してください';return}
   plans.value.push({...plan.value,id:crypto.randomUUID(),amount:Number(plan.value.amount),startMonth:new Date().toLocaleDateString('sv-SE').slice(0,7),enabled:true})
-  localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value));plan.value={name:'',amount:'',day:1,category:'その他',paymentSource:'現金'}
+  localStorage.setItem('kakeibo-plans',JSON.stringify(plans.value));plan.value={name:'',amount:'',day:1,category:'',paymentSource:'現金'}
 }
 const recurringBusy = ref(false)
 const recurringMessage = ref('')
@@ -149,8 +149,8 @@ const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.ty
   <article class="finance-panel">
     <h2>毎月の固定支出</h2>
     <p>毎月の指定日に支出明細へ自動追加します。アプリを開いた際に未処理月を確認します。閉じている間は実行されません。過去の予定にはさかのぼりません。</p>
-    <div class="finance-inputs"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><input v-model="plan.amount" type="number" min="1" placeholder="金額" aria-label="固定支出額"><input v-model="plan.day" type="number" min="1" max="31" aria-label="引落日"></div>
-    <div class="finance-inputs"><input v-model="plan.category" placeholder="カテゴリ" aria-label="固定支出カテゴリ"><input v-model="plan.paymentSource" placeholder="支払方法・カード" aria-label="固定支出支払方法"></div>
+    <div class="finance-inputs"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><input v-model="plan.amount" type="number" min="1" placeholder="金額" aria-label="固定支出額"><label>毎月の登録日<select v-model.number="plan.day" aria-label="毎月の登録日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label></div>
+    <div class="finance-inputs"><label>分類<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in props.categories" :key="category" :value="category">{{category}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option></select></label></div>
     <button @click="addPlan(); applyRecurring()">自動記録を登録</button>
     <button :disabled="recurringBusy" @click="applyRecurring">{{recurringBusy ? "確認中…" : "未記録分を確認"}}</button>
     <p role="status">{{recurringMessage}}</p>
@@ -166,5 +166,5 @@ const monthExpenses=(m,source)=>rows.value.filter(e=>e.date?.startsWith(m)&&e.ty
 </section>
 </template>
 <style scoped>
-.finance-tools{display:grid;gap:14px}.finance-panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px;display:grid;gap:10px}.finance-panel h2{font-size:17px;margin:0}.finance-panel p{font-size:13px;color:var(--muted);margin:0}.finance-panel button{border:1px solid var(--line);border-radius:10px;background:var(--tint);color:var(--ink);padding:9px}.finance-panel label{font-size:13px}.finance-panel input[type=file]{display:block;max-width:100%}.finance-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.finance-inputs input{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px 5px;background:var(--card);color:var(--ink)}.finance-row{font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}.finance-row button{margin-left:6px}
+.finance-tools{display:grid;gap:14px}.finance-panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px;display:grid;gap:10px}.finance-panel h2{font-size:17px;margin:0}.finance-panel p{font-size:13px;color:var(--muted);margin:0}.finance-panel button{border:1px solid var(--line);border-radius:10px;background:var(--tint);color:var(--ink);padding:9px}.finance-panel label{font-size:13px}.finance-panel input[type=file]{display:block;max-width:100%}.finance-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.finance-inputs input,.finance-inputs select{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px 5px;background:var(--card);color:var(--ink)}.finance-inputs label{min-width:0;font-size:12px;color:var(--muted)}.finance-inputs label select{display:block;color:var(--ink)}.finance-row{font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}.finance-row button{margin-left:6px}
 </style>

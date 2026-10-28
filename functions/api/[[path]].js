@@ -1,3 +1,4 @@
+import { isAppliedSbiTransfer } from './investment-transfer.js'
 // Cloudflare Pages Functions：/api/*
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 const json = (d, s = 200) =>
@@ -287,7 +288,7 @@ export async function onRequest({ request, env, params }) {
         const transferDate = transfer ? (e.transferDate || e.date) : null
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-        const applied = target && transferDate <= today ? 1 : 0
+        const applied = isAppliedSbiTransfer({ type: transfer ? 'transfer' : e.type, transferTarget: target, transferDate, date: e.date }, today) ? 1 : 0
         const clientRequestId = e.clientRequestId == null ? null : String(e.clientRequestId).trim()
         if (clientRequestId && !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
           return json({ error: '記録IDの形式が正しくありません' }, 400)

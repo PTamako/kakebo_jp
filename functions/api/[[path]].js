@@ -1,4 +1,5 @@
 import { isAppliedSbiTransfer } from './investment-transfer.js'
+import { recognizeWithGemma } from './gemma-ocr.js'
 // Cloudflare Pages Functions：/api/*
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 const json = (d, s = 200) =>
@@ -163,6 +164,24 @@ export async function onRequest({ request, env, params }) {
   try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
   catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
   if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
+  if (a === 'ai-ocr' && m === 'POST') {
+    if (!env.AI) return json({ error: 'AI接続が未設定です。Cloudflare PagesのAIバインディングを確認してください' }, 503)
+    const size = Number(request.headers.get('content-length') || 0)
+    if (size > 5 * 1024 * 1024) return json({ error: '画像サイズが大きすぎます' }, 413)
+    let body
+    try { body = await request.formData() } catch { return json({ error: '画像を読み込めませんでした' }, 400) }
+    const file = body.get('image')
+    const mode = body.get('mode') === 'receipt' ? 'receipt' : 'statement'
+    if (!file || typeof file.arrayBuffer !== 'function' || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024)
+      return json({ error: 'JPEG・PNG・WebP画像（4MB以下）を選択してください' }, 400)
+    try {
+      const text = await recognizeWithGemma(env.AI, await file.arrayBuffer(), file.type, mode)
+      return json({ text, engine: 'gemma4' })
+    } catch (error) {
+      console.error('Gemma OCR failed', error?.name || 'error')
+      return json({ error: 'AI画像認識に失敗しました。通常のOCRをお試しください' }, 502)
+    }
+  }
   const month = url.searchParams.get('month') || ''
   const entriesYear = url.searchParams.get('year') || ''
 

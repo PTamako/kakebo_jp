@@ -242,7 +242,9 @@ watch(tab, value => {
 })
 watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') loadYear() })
 
-function recognize(mode = 'statement') {
+const recognitionMode = ref('statement')
+function recognize(mode = recognitionMode.value) {
+  recognitionMode.value = mode
   if (!input.value.trim()) return
   const parsed = mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value)
   if (mode !== 'receipt') pendingReceiptImage.value = null
@@ -259,6 +261,7 @@ async function onImage(e, mode = 'statement') {
   busy.value = '読み取り中 0%（初回は日本語データをダウンロードします）'
   try {
     input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
+    recognitionMode.value = mode
     if (mode === 'receipt') {
       pendingReceiptImage.value = await compressReceiptImage(f)
     } else pendingReceiptImage.value = null
@@ -862,7 +865,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <label class="field-label" for="entry-text">テキスト読み取り</label>
         <textarea id="entry-text" v-model="input" rows="4" placeholder="例：昨日 コンビニ 680円&#10;&#10;カード利用明細などの複数の取引を貼り付けられます。"></textarea>
         <div class="action-row">
-          <button class="button-secondary" @click="recognize('statement')" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
+          <button class="button-secondary" @click="recognize()" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
         </div>
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>

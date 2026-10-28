@@ -946,6 +946,16 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
         <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
       </div>
+      <div v-if="entryInputMode === 'manual'" class="panel text-paste-panel">
+        <details class="text-entry-details">
+          <summary>テキストを貼り付けて読み取る</summary>
+          <label class="field-label" for="entry-text">テキスト入力</label>
+          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? 'カード利用明細などの複数の取引を貼り付けられます。' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
+          <div class="action-row">
+            <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
+          </div>
+        </details>
+      </div>
       <div v-if="entryInputMode === 'scan'" class="panel capture-panel">
         <div class="receipt-mode-tabs" role="tablist" aria-label="読み取りモード">
           <button type="button" role="tab" :aria-selected="recognitionMode === 'statement'" :class="{ selected: recognitionMode === 'statement' }" @click="recognitionMode = 'statement'">明細</button>
@@ -955,14 +965,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="action-row">
           <label class="button-primary upload-button">{{ recognitionMode === 'statement' ? '明細画像を読み取る' : 'レシート画像を読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
         </div>
-        <details class="text-entry-details">
-          <summary>テキストを貼り付けて読み取る</summary>
-          <label class="field-label" for="entry-text">テキスト入力</label>
-          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? 'カード利用明細などの複数の取引を貼り付けられます。' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
-          <div class="action-row">
-            <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
-          </div>
-        </details>
+
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
         <p class="microcopy">画像はこの端末内で処理され、外部のOCRサービスには送信されません。</p>
       </div>
@@ -1585,3 +1588,5 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 <style>.entry-card>.receipt-attachment-field{display:flex!important;visibility:visible!important;opacity:1!important;position:relative;min-height:70px;flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0;padding:12px;border:1px solid #dbe4ef;border-radius:12px;background:#f7f9fc}.entry-card>.receipt-attachment-field .receipt-attachment-label{display:block;width:100%;font-weight:700;color:#475569}.receipt-attachment-disabled{opacity:.5;pointer-events:none}</style>
 
 <style>.input-mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px;margin:10px 0 14px;background:#f0f2f7;border-radius:15px}.input-mode-switch button{border:0;border-radius:11px;background:transparent;padding:12px 7px;color:#677286;font-size:14px;font-weight:800;cursor:pointer}.input-mode-switch button.selected{background:#fff;color:#b64e72;box-shadow:0 2px 9px #00000012}.capture-panel{margin-bottom:15px}@media(max-width:480px){.input-mode-switch button{min-height:44px}}</style>
+
+<style>.text-paste-panel{margin:10px 0 14px;padding:12px 14px}.text-paste-panel .text-entry-details{margin:0}</style>

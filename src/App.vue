@@ -949,7 +949,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </form>
       </div>
       <div class="input-mode-switch" role="tablist" aria-label="入力方法"><button type="button" role="tab" :aria-selected="entryInputMode === 'manual'" :class="{ selected: entryInputMode === 'manual' }" @click="entryInputMode = 'manual'">手入力</button><button type="button" role="tab" :aria-selected="entryInputMode === 'scan'" :class="{ selected: entryInputMode === 'scan' }" @click="entryInputMode = 'scan'">画像から読み取る</button></div>
-      <div v-if="entryInputMode === 'manual'" class="entry-mode-row">
+      <div v-if="entryInputMode === 'manual' && !forms.length" class="entry-mode-row">
         <button class="button-secondary manual-add-button" aria-label="支出を追加" @click="addBlank('expense')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15m-5-5 5 5 5-5"/><path d="M4 7h16"/></svg></span><span>支出</span></button>
         <button class="button-secondary manual-add-button income-add-button" aria-label="収入を追加" @click="addBlank('income')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5m-5 5 5-5 5 5"/><path d="M4 17h16"/></svg></span><span>収入</span></button>
         <button class="button-secondary manual-add-button" aria-label="資産移動を追加" @click="addBlank('transfer')"><span class="entry-mode-icon" aria-hidden="true"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4"/></svg></span><span>資産移動</span></button>
@@ -988,7 +988,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
-        <button v-if="entryInputMode === 'manual'" class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
+        <button v-if="entryInputMode === 'manual' && forms.length" class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>

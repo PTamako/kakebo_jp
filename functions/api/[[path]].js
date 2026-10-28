@@ -451,6 +451,19 @@ export async function onRequest({ request, env, params }) {
         return json({ ok: true, category: name })
       }
     }
+    if (a === 'custom-rules') {
+      await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
+      if (m === 'GET') {
+        const { results } = await db.prepare('SELECT keyword, category FROM custom_rules ORDER BY keyword').all()
+        return json(results)
+      }
+      if (m === 'DELETE') {
+        const keyword = url.searchParams.get('keyword') || ''
+        if (keyword.length < 2 || keyword.length > 80) return json({ error: '店舗名を確認してください' }, 400)
+        await db.prepare('DELETE FROM custom_rules WHERE keyword=?1').bind(keyword).run()
+        return json({ ok: true })
+      }
+    }
     if (a === 'rules') {
       if (m === 'GET') {
         // デフォルトルールとユーザー上書きルールを分離し、初期化や再デプロイで個人設定を消さない。

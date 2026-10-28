@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseEntries } from '../src/parse.js'
+import { parseEntries } from './category-rule-test-helpers.js'
 
 test('parses every QP card transaction instead of falling back to one entry', () => {
   const input = `QP/ イ トー ヨー カド ー タカ サ ゴ テン 537 m

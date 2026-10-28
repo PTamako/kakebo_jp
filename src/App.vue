@@ -986,7 +986,6 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
-        <button v-if="entryInputMode === 'manual' && forms.length" class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>

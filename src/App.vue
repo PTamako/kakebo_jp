@@ -37,6 +37,7 @@ function updatePaymentSources(values) {
   localStorage.setItem('kakeibo-payment-sources', JSON.stringify(values))
 }
 const pendingReceiptImage = ref(null)
+const pendingReceiptFileName = ref('')
 const editReceiptImage = ref(null)
 const editReceiptFileName = ref('')
 const receiptSaveError = ref('')
@@ -290,11 +291,11 @@ function recognize(mode = recognitionMode.value) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
   const parsed = mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value)
-  if (mode !== 'receipt') pendingReceiptImage.value = null
+  if (mode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
   forms.value = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, bindRule: false }
+    return { ...f, type: transfer ? 'transfer' : f.type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', bindRule: false }
   })
   flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
@@ -305,11 +306,19 @@ async function onImage(e, mode = 'statement') {
   try {
     input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
     recognitionMode.value = mode
+    pendingReceiptImage.value = null
+    pendingReceiptFileName.value = ''
     if (mode === 'receipt') {
-      pendingReceiptImage.value = await compressReceiptImage(f)
-    } else pendingReceiptImage.value = null
+      try {
+        pendingReceiptImage.value = await compressReceiptImage(f)
+        pendingReceiptFileName.value = f.name || '読み取ったレシート'
+        receiptSaveError.value = ''
+      } catch {
+        receiptSaveError.value = '読み取りは成功しましたが、画像を保存用に準備できませんでした。下の「レシート画像を追加」から再選択してください。'
+      }
+    }
     recognize(mode)
-  } catch (err) { pendingReceiptImage.value = null; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
+  } catch (err) { pendingReceiptImage.value = null; pendingReceiptFileName.value = ''; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
 }
 function addBlank(type = 'expense') {

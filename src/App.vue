@@ -250,7 +250,7 @@ async function loadYear() {
 }
 onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers(); checkRecurringEntries(api).then(count => { if (count) { load(); loadYear() } }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message)) } })
 
-watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
+watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; swipedReceiptId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
 watch(tab, value => {
   if (value === 'stat' && statsPeriod.value === 'year') loadYear()
@@ -564,6 +564,7 @@ const selectedDay = ref('')
 const entryTypeFilter = ref('all')
 const calendarExpanded = ref(false)
 const swipedEntryId = ref(null)
+const swipedReceiptId = ref(null)
 const filteredEntries = computed(() => entries.value.filter(e => String(e.date || '').startsWith(month.value) && (!selectedDay.value || String(e.date || '').slice(0, 10) === selectedDay.value)))
 const detailFilter = ref(null)
 const paymentMethodMatches = (entry, method) => method === '現金' ? !String(entry.payment_source || '').trim() || entry.payment_source === '現金' : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
@@ -720,7 +721,7 @@ function toggleDay(date) {
   if (selectedDay.value === date) selectedDay.value = ''
   else selectedDay.value = date
   visibleEntryCount.value = 20
-  swipedEntryId.value = null
+  swipedEntryId.value = null; swipedReceiptId.value = null
 }
 function startSwipe(event) {
   if (event.touches?.length !== 1) return
@@ -733,17 +734,18 @@ function endSwipe(event, id) {
   const dy = event.changedTouches[0].clientY - touchStartY
   if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.25) {
     swipedEntryId.value = dx < 0 ? id : null
+    swipedReceiptId.value = dx > 0 && receiptImageIds.value.has(id) ? id : null
     suppressRowClick = true
     setTimeout(() => { suppressRowClick = false }, 350)
   }
 }
 function handleEntryClick(entry) {
   if (suppressRowClick) return
-  if (swipedEntryId.value === entry.id) {
-    swipedEntryId.value = null
+  if (swipedEntryId.value === entry.id || swipedReceiptId.value === entry.id) {
+    swipedEntryId.value = null; swipedReceiptId.value = null
     return
   }
-  swipedEntryId.value = null
+  swipedEntryId.value = null; swipedReceiptId.value = null
   startEdit(entry)
 }
 // Monthly statistics are grouped into Monday–Sunday weeks, clipped to the selected month.
@@ -981,12 +983,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <span class="entry-day-total">{{ yen(group.total) }}</span>
           </button>
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(e.id) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
                 <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.replace(/-/g, '/') }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }}</small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
+              <button v-if="receiptImageIds.has(e.id)" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -1004,13 +1007,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <span class="entry-day-total">{{ yen(group.items.reduce((sum, entry) => sum + (entry.type === 'income' ? -Number(entry.amount || 0) : Number(entry.amount || 0)), 0)) }}</span>
           </button>
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(e.id) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
                 <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
-              <button v-if="receiptImageIds.has(e.id)" type="button" class="button-secondary" @click.stop="viewReceipt(e.id)">レシートを見る</button>
+              
+              <button v-if="receiptImageIds.has(e.id)" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -1502,3 +1506,8 @@ main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
 main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
 .payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}</style>
+
+<style>
+.ledger li.swiped-receipt .ledger-row-content{transform:translateX(80px)}
+.ledger .swipe-receipt{position:absolute;top:0;left:0;bottom:0;width:76px;border:0;border-radius:10px;background:#397e9b;color:#fff;font-size:12px;font-weight:800;cursor:pointer}
+</style>

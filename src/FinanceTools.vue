@@ -14,8 +14,10 @@ function selectCardForEdit() {
   cardMode.value = 'edit'
 }
 function saveClosingDay(name, day) {
+  if (!name || (day !== '' && day !== '末日' && !(Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31))) return
   closingDays.value = {...closingDays.value, [name]: day}
   localStorage.setItem('kakeibo-card-closing-days', JSON.stringify(closingDays.value))
+  cardMessage.value = day ? '締め日を更新しました。利用額は新しい締め期間で再計算されます' : '締め日を未設定にしました'
 }
 async function renameCard() {
   const name = editedCardName.value.trim(), old = selectedCard.value

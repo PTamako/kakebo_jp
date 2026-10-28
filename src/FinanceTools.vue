@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { validateBackup, transactionKey, nextScheduledDate } from './finance-tools.js'
 const props = defineProps({ api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] } })
-const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed'])
+const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh'])
 
 const cardMode = ref('')
 const selectedCard = ref('')
@@ -45,7 +45,9 @@ async function renameCard() {
       delete updated[old]
       closingDays.value = updated
       localStorage.setItem('kakeibo-card-closing-days',JSON.stringify(updated))
-      emit('update-payment-sources',props.paymentSources.map(x => x === old ? name : x))
+      // D1 already renamed the card, its merchant bindings and historical payments.
+      // Refresh the card list; never interpret a rename as delete + insert.
+      emit('payment-settings-refresh')
       emit('settings-changed')
       if (bill.value.name === old) bill.value.name = name
       selectedCard.value = name

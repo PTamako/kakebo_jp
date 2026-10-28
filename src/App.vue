@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
+import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
 import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
@@ -297,7 +298,7 @@ function recognize(mode = recognitionMode.value, append = false) {
   const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    return { ...f, type: transfer ? 'transfer' : mode === 'receipt' ? 'expense' : (f.type === 'income' ? 'income' : f.type === 'transfer' ? 'transfer' : 'expense'), category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
+    return { ...f, type: transfer ? 'transfer' : mode === 'receipt' ? 'expense' : normalizedDraftType(f.type), category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: f.paymentSource || '', receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   entryInputMode.value = 'scan'
@@ -463,8 +464,17 @@ async function saveEdit() {
       try { await persistReceipt(e.id, editReceiptImage.value); editReceiptImage.value = null }
       catch { receiptSaveError.value = '記録は更新されましたが、レシート画像を保存できませんでした。元の写真を保管してください。' }
     }
-    preserveOperatedDay.value = e.date.slice(0, 10)
+    const editedDay = e.date.slice(0, 10)
+    const destinationMonth = editedEntryMonth(e.date)
+    preserveOperatedDay.value = editedDay
     editingEntry.value = null
+    if (destinationMonth && destinationMonth !== month.value) {
+      detailRequestId++
+      detailFilter.value = null
+      detailSourceEntries.value = []
+      selectedDay.value = ''
+      month.value = destinationMonth
+    }
     flash(receiptSaveError.value || '記録を更新しました')
     await load()
     await refreshDetailSource()
@@ -689,7 +699,7 @@ watch([displayEntries, detailFilter, selectedDay], () => {
     const index = sortedDisplayEntries.value.findIndex(entry => String(entry.date || '').slice(0, 10) === operatedDay)
     visibleEntryCount.value = Math.max(20, index + 1)
   }
-  preserveOperatedDay.value = ''
+  if (!operatedDay || days.includes(operatedDay)) preserveOperatedDay.value = ''
 }, { deep: true })
 watch(visibleEntryCount, () => {
   const days = groupedPagedEntries.value.map(group => group.date)

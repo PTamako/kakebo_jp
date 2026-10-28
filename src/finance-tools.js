@@ -8,7 +8,7 @@ export function validateBackup(value) {
   if (!value || value.format !== 'kakeibo-ledger-backup' || value.version !== backupVersion || !Array.isArray(value.entries)) throw Error('対応していないバックアップ形式です')
   if (value.entries.length > 100000) throw Error('バックアップ件数が多すぎます')
   for (const e of value.entries) {
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(e.date) || !Number.isSafeInteger(Number(e.amount)) || Number(e.amount) <= 0 || !['income','expense','transfer'].includes(e.type)) throw Error('取引データに不正な値があります')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isSafeInteger(Number(e.amount)) || Number(e.amount) <= 0 || !['income','expense','transfer'].includes(e.type)) throw Error('取引データに不正な値があります')
   }
   return value
 }

@@ -1,5 +1,6 @@
 import { createApp, nextTick } from 'vue'
 import App from './App.vue'
+import './mobile-ui.css'
 
 function describeError(error) {
   const parts = []

@@ -94,3 +94,30 @@ test('eight yen-prefixed AI statement rows parse cleanly', () => {
   assert.equal(rows[1].merchant, 'Suicaチャージ(楽天ペイ)')
   assert.equal(rows[7].date, '2026-10-02')
 })
+
+test('eight Seven-Eleven and Ario AI statement rows retain branches and separate same-day entries', () => {
+  const input = [
+    '2026/10/1, セブンイレブン葛飾柴又４丁目店, 270円, 1回払い',
+    '2026/10/4, セブンイレブン葛飾高砂７丁目店, 452円, 1回払い',
+    '2026/10/5, セブンイレブン葛飾高砂２丁目店, 388円, 1回払い',
+    '2026/10/6, セブンイレブン江戸川東葛西９丁目店, 532円, 1回払い',
+    '2026/10/8, セブンイレブン葛飾高砂７丁目店, 775円, 1回払い',
+    '2026/10/9, マクドナルド葛西店, 930円, 1回払い',
+    '2026/10/10, イトーヨーカドーアリオ亀有店, 3,512円, 1回払い',
+    '2026/10/10, アリオ亀有, 5,931円, 1回払い'
+  ].join('\n')
+  const rows = parseEntries(input)
+  assert.equal(rows.length, 8)
+  assert.deepEqual(rows.map(row => row.amount), [270, 452, 388, 532, 775, 930, 3512, 5931])
+  assert.deepEqual(rows.map(row => row.merchant), [
+    'セブンイレブン葛飾柴又4丁目店',
+    'セブンイレブン葛飾高砂7丁目店',
+    'セブンイレブン葛飾高砂2丁目店',
+    'セブンイレブン江戸川東葛西9丁目店',
+    'セブンイレブン葛飾高砂7丁目店',
+    'マクドナルド葛西店',
+    'イトーヨーカドーアリオ亀有店',
+    'アリオ亀有'
+  ])
+  assert.deepEqual(rows.map(row => row.date), ['2026-10-01','2026-10-04','2026-10-05','2026-10-06','2026-10-08','2026-10-09','2026-10-10','2026-10-10'])
+})

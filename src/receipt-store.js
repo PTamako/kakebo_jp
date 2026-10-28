@@ -22,7 +22,7 @@ async function operate(mode, callback) {
   } finally { db.close() }
 }
 export async function saveReceiptImage(entryId, blob) {
-  if (!Number.isSafeInteger(entryId) || entryId <= 0 || blob?.type !== 'image/webp' || blob.size > 200 * 1024) throw new Error('画像を保存できません')
+  if (!Number.isSafeInteger(entryId) || entryId <= 0 || !['image/webp', 'image/jpeg'].includes(blob?.type) || blob.size > 200 * 1024) throw new Error('画像を保存できません')
   await operate('readwrite', store => store.put({ entryId, blob, expiresAt: Date.now() + TTL }))
 }
 export async function getReceiptImage(entryId) {

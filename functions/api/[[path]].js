@@ -503,6 +503,9 @@ export async function onRequest({ request, env, params }) {
         return json({ error: 'カード名を確認してください' }, 400)
       if (oldName === newName) return json({ ok: true, changes: 0 })
       if (await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(newName).first()) return json({ error: '同じカード名が登録されています' }, 409)
+      // Ensure normalized tables exist even if this is the first API call after deployment.
+      await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
+      await db.prepare('CREATE TABLE IF NOT EXISTS card_bills (payment_source TEXT NOT NULL, bill_month TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL, total_amount INTEGER NOT NULL CHECK(total_amount >= 0), transaction_count INTEGER NOT NULL CHECK(transaction_count >= 0), PRIMARY KEY(payment_source,bill_month))').run()
       // D1 batch keeps ledger, card and normalized finance references consistent.
       // A saved bill for the destination name/month must not be silently overwritten.
       const collision = await db.prepare('SELECT 1 AS found FROM card_bills WHERE payment_source=?1 AND bill_month IN (SELECT bill_month FROM card_bills WHERE payment_source=?2) LIMIT 1').bind(newName,oldName).first()

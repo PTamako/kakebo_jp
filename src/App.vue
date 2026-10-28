@@ -37,12 +37,35 @@ function updatePaymentSources(values) {
   localStorage.setItem('kakeibo-payment-sources', JSON.stringify(values))
 }
 const pendingReceiptImage = ref(null)
+const editReceiptImage = ref(null)
+const receiptSaveError = ref('')
+async function selectDraftReceipt(event, form) {
+  const file = event.target.files?.[0]; event.target.value = ''
+  if (!file) return
+  try { form.receiptImage = await compressReceiptImage(file); receiptSaveError.value = '' }
+  catch { receiptSaveError.value = 'レシート画像を準備できませんでした。元の写真を保管してください。' }
+}
+async function selectEditReceipt(event) {
+  const file = event.target.files?.[0]; event.target.value = ''
+  if (!file) return
+  try { editReceiptImage.value = await compressReceiptImage(file); receiptSaveError.value = '' }
+  catch { receiptSaveError.value = 'レシート画像を準備できませんでした。元の写真を保管してください。' }
+}
+async function persistReceipt(id, blob) {
+  const entryId = Number(id)
+  if (!Number.isSafeInteger(entryId) || entryId <= 0) throw new Error('記録IDを確認できません')
+  await saveReceiptImage(entryId, blob)
+  if (!await getReceiptImage(entryId)) throw new Error('保存した画像を確認できません')
+  receiptImageIds.value = new Set([...receiptImageIds.value, entryId])
+}
+
 const receiptImageIds = ref(new Set())
 const viewedReceiptUrl = ref('')
 const viewedReceiptId = ref(null)
 async function refreshReceiptImageIds() {
-  const visible = entries.value || []
-  const present = await Promise.all(visible.map(async entry => [entry.id, !!(await getReceiptImage(entry.id))]))
+  const visible = [...(entries.value || []), ...(displayEntries.value || [])]
+  const ids = [...new Set(visible.map(entry => Number(entry.id)).filter(Number.isSafeInteger))]
+  const present = await Promise.all(ids.map(async id => [id, !!(await getReceiptImage(id))]))
   receiptImageIds.value = new Set(present.filter(([, found]) => found).map(([id]) => id))
 }
 async function viewReceipt(entryId) {
@@ -250,7 +273,7 @@ async function loadYear() {
 }
 onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers(); checkRecurringEntries(api).then(count => { if (count) { load(); loadYear() } }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message)) } })
 
-watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
+watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; swipedReceiptId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
 watch(tab, value => {
   if (value === 'stat' && statsPeriod.value === 'year') loadYear()
@@ -282,7 +305,7 @@ async function onImage(e, mode = 'statement') {
       pendingReceiptImage.value = await compressReceiptImage(f)
     } else pendingReceiptImage.value = null
     recognize(mode)
-  } catch (err) { flash('画像の読み取りに失敗しました：' + err.message) }
+  } catch (err) { pendingReceiptImage.value = null; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
 }
 function addBlank(type = 'expense') {
@@ -332,6 +355,7 @@ async function saveAll() {
   let saved = 0
   let ruleFailures = 0
   let receiptImageWarning = ''
+  receiptSaveError.value = ''
   try {
     // Remove each successfully saved draft immediately so retry never resubmits it.
     while (forms.value.length) {
@@ -339,14 +363,12 @@ async function saveAll() {
       // Retain one stable ID across retries (including "saved on server, reply lost").
       if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
       const result = await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
-      if (pendingReceiptImage.value && result?.id && forms.value.length === 1 && f.type === 'expense') {
-        try {
-          await saveReceiptImage(Number(result.id), pendingReceiptImage.value)
-          receiptImageIds.value = new Set([...receiptImageIds.value, Number(result.id)])
-          // Report the transaction and image save together after all drafts finish.
-        } catch { receiptImageWarning = ' レシート画像は保存できませんでした。元の写真を残してください。' }
-        pendingReceiptImage.value = null
+      const receiptBlob = f.receiptImage || (forms.value.length === 1 && f.type === 'expense' ? pendingReceiptImage.value : null)
+      if (receiptBlob) {
+        try { await persistReceipt(result?.id, receiptBlob) }
+        catch { receiptImageWarning = ' レシート画像は保存できませんでした。元の写真を保管してください。'; receiptSaveError.value = '記録は保存されましたが、レシート画像の保存に失敗しました。元の写真を保管してください。' }
       }
+      if (forms.value.length === 1) pendingReceiptImage.value = null
       forms.value.shift()
       saved++
       if (f.bindRule && f.merchant && f.merchant.trim().length >= 2) {
@@ -379,13 +401,14 @@ async function remove(id) {
       await deleteReceiptImage(id)
       receiptImageIds.value = new Set([...receiptImageIds.value].filter(imageId => Number(imageId) !== Number(id)))
       if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
-    } catch { receiptDeleteWarning = ' 端末内のレシート画像は削除できませんでした。' }
+    } catch { receiptDeleteWarning = ' 端末内のレシート画像は削除できませんでした。'; receiptSaveError.value = '記録は削除されましたが、端末内のレシート画像を削除できませんでした。' }
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadInvestments(), loadTransfers()])
     flash('記録を削除しました' + receiptDeleteWarning)
   } catch (error) { flash('削除に失敗しました：' + error.message) }
   finally { const next = new Set(pendingEntryIds.value); next.delete(id); pendingEntryIds.value = next }
 }
 function startEdit(entry) {
+  editReceiptImage.value = null
   editingEntry.value = {
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
@@ -394,7 +417,7 @@ function startEdit(entry) {
     note: entry.note || '', raw: entry.raw || ''
   }
 }
-function cancelEdit() { if (!editSaving.value) editingEntry.value = null }
+function cancelEdit() { if (!editSaving.value) { editingEntry.value = null; editReceiptImage.value = null } }
 async function saveEdit() {
   const e = editingEntry.value
   if (!e || editSaving.value) return
@@ -408,8 +431,12 @@ async function saveEdit() {
       method: 'PUT',
       body: JSON.stringify({ ...e, amount: Number(e.amount) })
     })
+    if (editReceiptImage.value) {
+      try { await persistReceipt(e.id, editReceiptImage.value); editReceiptImage.value = null }
+      catch { receiptSaveError.value = '記録は更新されましたが、レシート画像を保存できませんでした。元の写真を保管してください。' }
+    }
     editingEntry.value = null
-    flash('記録を更新しました')
+    flash(receiptSaveError.value || '記録を更新しました')
     await load()
     await refreshDetailSource()
     await loadYear()
@@ -564,6 +591,7 @@ const selectedDay = ref('')
 const entryTypeFilter = ref('all')
 const calendarExpanded = ref(false)
 const swipedEntryId = ref(null)
+const swipedReceiptId = ref(null)
 const filteredEntries = computed(() => entries.value.filter(e => String(e.date || '').startsWith(month.value) && (!selectedDay.value || String(e.date || '').slice(0, 10) === selectedDay.value)))
 const detailFilter = ref(null)
 const paymentMethodMatches = (entry, method) => method === '現金' ? !String(entry.payment_source || '').trim() || entry.payment_source === '現金' : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
@@ -720,7 +748,7 @@ function toggleDay(date) {
   if (selectedDay.value === date) selectedDay.value = ''
   else selectedDay.value = date
   visibleEntryCount.value = 20
-  swipedEntryId.value = null
+  swipedEntryId.value = null; swipedReceiptId.value = null
 }
 function startSwipe(event) {
   if (event.touches?.length !== 1) return
@@ -733,17 +761,18 @@ function endSwipe(event, id) {
   const dy = event.changedTouches[0].clientY - touchStartY
   if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.25) {
     swipedEntryId.value = dx < 0 ? id : null
+    swipedReceiptId.value = dx > 0 && receiptImageIds.value.has(Number(id)) ? id : null
     suppressRowClick = true
     setTimeout(() => { suppressRowClick = false }, 350)
   }
 }
 function handleEntryClick(entry) {
   if (suppressRowClick) return
-  if (swipedEntryId.value === entry.id) {
-    swipedEntryId.value = null
+  if (swipedEntryId.value === entry.id || swipedReceiptId.value === entry.id) {
+    swipedEntryId.value = null; swipedReceiptId.value = null
     return
   }
-  swipedEntryId.value = null
+  swipedEntryId.value = null; swipedReceiptId.value = null
   startEdit(entry)
 }
 // Monthly statistics are grouped into Monday–Sunday weeks, clipped to the selected month.
@@ -861,6 +890,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 <template>
   <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong><p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
   <main v-else :class="`theme-${theme}`">
+    <div v-if="receiptSaveError" role="alert" class="receipt-error-banner"><span>{{ receiptSaveError }}</span><button type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button></div>
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-label="しろちゃんとちび毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="しろちゃん" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="ちび毛" /></span>
@@ -946,8 +976,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="f.transferDate" type="date" required /></label>
         </div>
         <label class="form-field"><span>メモ</span><input v-model="f.note" placeholder="任意" /></label>
+        <label v-if="f.type === 'expense'" class="form-field"><span>レシート画像（任意）</span><input type="file" accept="image/*" @change="selectDraftReceipt($event, f)" /><small v-if="f.receiptImage">画像を選択しました</small></label>
         <label v-if="f.type !== 'income' && f.merchant && f.merchant.trim().length >= 2" class="bind-rule"><input v-model="f.bindRule" type="checkbox" /> <span>この店舗を選択したカテゴリに登録し、次回から自動判定する</span></label>
       </div>
+      <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
         <button class="button-secondary" @click="addBlank('expense')">＋ もう1件追加</button>
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
@@ -981,12 +1013,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <span class="entry-day-total">{{ yen(group.total) }}</span>
           </button>
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(Number(e.id)), 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
                 <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.replace(/-/g, '/') }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }}</small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
+              <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -1004,13 +1037,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <span class="entry-day-total">{{ yen(group.items.reduce((sum, entry) => sum + (entry.type === 'income' ? -Number(entry.amount || 0) : Number(entry.amount || 0)), 0)) }}</span>
           </button>
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'swiped-receipt': swipedReceiptId === e.id && receiptImageIds.has(Number(e.id)), 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null; swipedReceiptId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
                 <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : '' }}</template></small></div>
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
-              <button v-if="receiptImageIds.has(e.id)" type="button" class="button-secondary" @click.stop="viewReceipt(e.id)">レシートを見る</button>
+              
+              <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedReceiptId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
@@ -1029,6 +1063,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">
         <form class="edit-dialog" @submit.prevent="saveEdit" :aria-busy="editSaving">
+          <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
           <div class="edit-dialog-heading"><h2>記録を編集</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="閉じる">×</button></div>
           <fieldset class="edit-fields" :disabled="editSaving">
           <div class="type-switch" role="group" aria-label="記録の種類">
@@ -1049,6 +1084,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <label class="form-field"><span>適用日（この日に残高へ反映）</span><input v-model="editingEntry.transferDate" type="date" required /></label>
           </div>
           <label class="form-field"><span>メモ</span><input v-model="editingEntry.note" /></label>
+          <label v-if="editingEntry.type === 'expense'" class="form-field"><span>レシート画像（任意・追加／差し替え）</span><input type="file" accept="image/*" @change="selectEditReceipt($event)" /><small v-if="editReceiptImage">画像を選択しました</small></label>
           </fieldset>
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="editSaving" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary" :disabled="editSaving">{{ editSaving ? '保存中…' : '変更を保存' }}</button></div>
         </form>
@@ -1502,3 +1538,13 @@ main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
 main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
 .payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}</style>
+
+<style>
+.ledger li.receipt-available:not(.swiped-open):not(.swiped-receipt) .ledger-row-content{transform:translateX(9px)}
+.ledger li.swiped-receipt .ledger-row-content{transform:translateX(80px)}
+.ledger .swipe-receipt{position:absolute;top:0;left:0;bottom:0;width:76px;border:0;border-radius:10px;background:#397e9b;color:#fff;font-size:12px;font-weight:800;cursor:pointer}
+</style>
+
+<style>.receipt-save-error{color:#9b2938;background:#fff0f1;border:1px solid #e9aab2;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700}</style>
+
+<style>.receipt-error-banner{position:fixed;z-index:9999;top:calc(env(safe-area-inset-top,0px) + 8px);left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border:1px solid #df9aa6;border-radius:12px;background:#fff1f3;color:#8d2336;box-shadow:0 5px 22px #42202522;font-weight:700;font-size:13px}.receipt-error-banner button{border:0;background:transparent;color:inherit;font-size:24px;cursor:pointer}</style>

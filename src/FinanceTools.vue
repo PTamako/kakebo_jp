@@ -313,6 +313,17 @@ async function removePlan(id) {
 const monthExpenses=(period,source)=>period ? rows.value.filter(e=>e.date>=period.start&&e.date<=period.end&&e.type==='expense'&&e.payment_source===source) : []
 const cardTransactions=computed(()=>monthExpenses(cardPeriod.value,bill.value.name))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
+async function saveCardBill() {
+  if (!settingsReady.value || !loaded.value || !bill.value.name || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(bill.value.month) || !cardPeriod.value) {
+    message.value='カード・締め月・明細を確認してください'; return
+  }
+  const record={name:bill.value.name,month:bill.value.month,start:cardPeriod.value.start,end:cardPeriod.value.end,total:cardTotal.value,count:cardTransactions.value.length}
+  const next=[...bills.value.filter(x=>!(x.name===record.name && x.month===record.month)),record]
+  try {
+    await props.api('finance-settings/bills',{method:'PUT',body:JSON.stringify({value:next})})
+    bills.value=next;message.value='カード利用額の記録を保存しました'
+  } catch(e) { message.value='カード利用額を保存できませんでした：'+e.message }
+}
 </script>
 <template>
 <section class="finance-tools">
@@ -414,6 +425,8 @@ const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e
       <span>{{cardTransactions.length}}件の支出</span>
     </div>
     <p v-else>カードと締め月を選択し、カード管理で締め日を設定してください。</p>
+    <button type="button" :disabled="!settingsReady || !loaded || !bill.name || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
+    <div v-for="record in bills.slice().reverse().slice(0,12)" :key="record.name+'-'+record.month" class="finance-row">{{record.name}} · {{record.month}} · {{yen(record.total)}}</div>
   </article>
 </section>
 </template>

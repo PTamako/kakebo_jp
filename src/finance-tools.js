@@ -1,5 +1,5 @@
 // Read-only financial checks and portable backup format. Never mutate ledger records here.
-export const backupVersion = 3
+export const backupVersion = 4
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 
@@ -33,7 +33,7 @@ export function prepareRestoreRows(existing, incoming) {
 
 export function validateBackup(value) {
   if (!value || value.format !== 'kakeibo-ledger-backup' ||
-      ![1, 2, backupVersion].includes(value.version) || !Array.isArray(value.entries)) {
+      ![1, 2, 3, backupVersion].includes(value.version) || !Array.isArray(value.entries)) {
     throw Error('対応していないバックアップ形式です')
   }
   if (value.entries.length > 100000) throw Error('バックアップ件数が多すぎます')
@@ -43,7 +43,7 @@ export function validateBackup(value) {
       throw Error('取引データに不正な値があります')
     }
   }
-  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata']
+  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks']
   for (const name of arrayNames) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
@@ -92,6 +92,25 @@ export function validateBackup(value) {
   if (value.categoryIcons != null && (typeof value.categoryIcons !== 'object' || Array.isArray(value.categoryIcons))) {
     throw Error('バックアップのアイコン情報が不正です')
   }
+  const fundCode=x=>typeof x==='string' && /^[A-Z0-9]{8}$/.test(x)
+  const account=x=>x==='growth'||x==='tsumitate'
+  const validPlanPortfolio=p=>p && fundCode(p.fund_code) && account(p.account_type) &&
+    isText(p.fund_name,120) && safeAmount(p.monthly_amount) && p.monthly_amount<=100000000 &&
+    Number.isInteger(p.order_day) && p.order_day>=1 && p.order_day<=28 && [0,1].includes(p.enabled)
+  const checks=[
+    ['investmentPlans',p=>validPlanPortfolio(p)],
+    ['investmentPlanHistory',p=>validPlanPortfolio(p) && month(p.effective_month)],
+    ['investmentHoldings',p=>p && fundCode(p.fund_code) && account(p.account_type) &&
+      isText(p.fund_name,120) && safeAmount(p.units) && safeAmount(p.acquisition_cost) &&
+      p.units<=1000000000000 && p.acquisition_cost<=1000000000000],
+    ['fundPrices',p=>p && fundCode(p.fund_code) && safeAmount(p.nav_per_10000) &&
+      p.nav_per_10000>0 && p.nav_per_10000<=1000000000 && validDate(p.price_date) &&
+      isText(p.source,80)],
+    ['transferLinks',p=>p && Number.isSafeInteger(p.entry_id) && p.entry_id>0 && month(p.purchase_month)]
+  ]
+  for(const [name,check] of checks)
+    if(Array.isArray(value[name]) && value[name].some(x=>!check(x)))
+      throw Error('バックアップの'+name+'に不正な設定があります')
   if (Array.isArray(value.investments)) for (const item of value.investments) {
     if (!item || typeof item.platform !== 'string' ||
       (item.current_value != null && (!Number.isSafeInteger(item.current_value) || item.current_value < 0)) ||

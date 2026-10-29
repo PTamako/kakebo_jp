@@ -29,16 +29,16 @@ async function clearLocalReceiptImages() {
     const latest = await countReceiptImages()
     if (latest !== localReceiptCount.value) {
       localReceiptCount.value = latest
-      receiptImagePrivacyMessage.value = '画像の件数が変わりました。内容を確認してもう一度操作してください。'
+      receiptImagePrivacyMessage.value = '画像の件数が変わりました。再確認してください。'
       return
     }
     if (!latest) return
-    if (!confirm('この端末に保存されたレシート画像 ' + latest +
-      '件をすべて削除します。削除した画像は復元できません。記録・支出額・SBI評価額は変更されません。よろしいですか？')) return
+    if (!confirm('レシート画像 ' + latest +
+      '件を削除しますか？画像は復元できません。明細・SBI評価額は残ります。')) return
     // This only clears the local IndexedDB receipt-image store. Never call D1 APIs.
     await clearAllReceiptImages()
     localReceiptCount.value = 0
-    receiptImagePrivacyMessage.value = '端末内のレシート画像を削除しました。記録とSBI評価額はそのままです。'
+    receiptImagePrivacyMessage.value = '画像を削除しました（明細は保持）'
     emit('receipt-images-cleared')
   } catch (e) {
     receiptImagePrivacyMessage.value = '画像の削除に失敗しました：' + e.message
@@ -97,7 +97,7 @@ async function renameCard() {
       emit('settings-changed')
       if (bill.value.name === old) bill.value.name = name
       selectedCard.value = name
-      cardMessage.value = '名称を変更し、過去の明細 '+(result?.changes ?? 0)+'件と固定支出の設定を引き継ぎました'
+      cardMessage.value = '名称を変更しました（明細 '+(result?.changes ?? 0)+'件も更新）'
       emit('ledger-updated')
     } catch(e) {
       cardMessage.value = '名称変更に失敗しました：'+e.message
@@ -194,14 +194,14 @@ async function addPaymentSource() {
 }
 async function removePaymentSource(name) {
   if (name === '現金' || busy.value) return
-  if (!confirm(name + 'を選択肢から削除しますか？過去の明細や請求データは削除されません。')) return
+  if (!confirm(name + 'を削除しますか？明細・請求履歴は残ります。')) return
   busy.value = true
   try {
     await props.api('payment-sources/remove',{method:'POST',body:JSON.stringify({name})})
     emit('payment-settings-refresh')
     selectedCard.value = ''
     cardMode.value = ''
-    cardMessage.value = name + 'を選択肢から削除しました。過去の記録は保持されます'
+    cardMessage.value = name + 'を削除しました（明細は保持）'
   } catch(e) { cardMessage.value = 'カードを削除できませんでした：' + e.message }
   finally { busy.value = false }
 }
@@ -259,7 +259,7 @@ async function togglePlanEnabled(item) {
     await props.api('recurring-plans/'+encodeURIComponent(item.id),{method:'PUT',body:JSON.stringify({...item,enabled:!item.enabled})})
     plans.value=await props.api('recurring-plans')
     recurringPreview.value=[]
-    recurringMessage.value=item.enabled?'固定支出を停止しました。既存の記録は削除しません。':'固定支出を再開しました。入帳する前に未記録分を確認してください。'
+    recurringMessage.value=item.enabled?'固定支出を停止しました':'固定支出を再開しました。登録前に確認してください'
     if(editingPlanId.value===item.id)cancelPlanEdit()
   }catch(e){recurringMessage.value='固定支出の状態を変更できませんでした：'+e.message}
   finally{recurringBusy.value=false}
@@ -336,7 +336,7 @@ async function downloadBackup(){
     const a=document.createElement('a')
     a.href=url;a.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+'.json';a.click()
     setTimeout(()=>URL.revokeObjectURL(url),30000)
-    message.value='帳簿・設定JSONを保存しました（端末内レシート画像を除く）'
+    message.value='帳簿JSONを保存しました'
   } catch(e) { message.value='バックアップを作成できませんでした：'+e.message }
   finally { backupBusy.value=false }
 }
@@ -355,14 +355,14 @@ async function preview(event){
     restoreConflicts.value=result.conflicts
     backupPreview.value=backup
     const settingsCount=(backup.plans?.length||0)+(backup.bills?.length||0)+(backup.paymentSources?.length||0)+(backup.customRules?.length||0)
-    message.value=backup.entries.length+'件中、追加候補 '+restoreRows.value.length+'件・重複確認 '+restoreConflicts.value.length+'件。設定データ '+settingsCount+'件を確認できます'
+    message.value=backup.entries.length+'件 · 追加 '+restoreRows.value.length+'件 · 重複 '+restoreConflicts.value.length+'件 · 設定 '+settingsCount+'件'
   }catch(e){backupPreview.value=null;message.value='確認失敗：'+e.message}
 }
 async function restore(){
   const backup=backupPreview.value
   if(!backup || busy.value || backupBusy.value)return
   const selectedRows=[...restoreRows.value,...(restoreIncludeConflicts.value?restoreConflicts.value:[])]
-  const descriptions=selectedRows.length+'件の明細と、未登録の設定・空欄のSBI評価額のみを追加します。既存データは上書きしません。'
+  const descriptions=selectedRows.length+'件の明細を追加します。既存データは保持します。'
   if(!confirm(descriptions+' 続けますか？'))return
   if(restoreIncludeConflicts.value && restoreConflicts.value.length &&
       !confirm('同一内容の取引 '+restoreConflicts.value.length+'件を別の取引として追加します。本当に登録しますか？')) return
@@ -370,7 +370,7 @@ async function restore(){
   if(!(await loadAll())) {message.value='最新の明細を再取得できません。復元を中止しました';return}
   if(backupLedgerFingerprint.value!==unrelatedLedgerFingerprint(rows.value)){
     backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
-    message.value='確認後に明細が更新されました。安全のため復元を中止しました。バックアップを選び直してください'
+    message.value='明細が変更されました。バックアップを選び直してください'
     return
   }
   busy.value=true
@@ -468,9 +468,9 @@ async function restore(){
     await loadFinanceSettings()
     loaded.value=false;backupPreview.value=null;restoreIncludeConflicts.value=false
     restoreOwnKeys.value=new Map()
-    message.value='明細 '+count+'件・設定 '+settingsCount+'件を追加しました。既存の情報は上書きしていません。スキップ '+skipped+'件。全明細を更新してください'
+    message.value='復元完了：明細 '+count+'件・設定 '+settingsCount+'件（重複除外 '+skipped+'件）'
     emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
-  }catch(e){message.value='明細 '+count+'件・設定 '+settingsCount+'件追加済み。残りは再試行できます：'+e.message}
+  }catch(e){message.value='一部復元済み：明細 '+count+'件・設定 '+settingsCount+'件。再試行：'+e.message}
   finally{busy.value=false}
 }
 const duplicates=computed(()=>{
@@ -497,7 +497,7 @@ async function addPlan(){
     plans.value=await props.api('recurring-plans')
     cancelPlanEdit()
     recurringPreview.value=[]
-    recurringMessage.value=updated?'固定支出を更新しました。以前の取引は変更しません。':'固定支出を登録しました。自動入帳するには内容を確認してください'
+    recurringMessage.value=updated?'固定支出を更新しました':'固定支出を登録しました。入帳前に確認してください'
   }catch(e){message.value='固定支出の保存に失敗しました：'+e.message}
   finally {recurringBusy.value=false}
 }
@@ -510,22 +510,22 @@ function reviewRecurring() {
   const current = new Date().toLocaleDateString('sv-SE').slice(0,7)
   recurringSelected.value = new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
   const conflicts=preview.filter(x=>x.conflict).length
-  recurringMessage.value=preview.length ? '未記録候補 '+preview.length+'件（重複確認 '+conflicts+'件）。確認するまで追加されません。' : '対象期間に未記録の固定支出はありません'
+  recurringMessage.value=preview.length ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）' : '未記録の固定支出はありません'
 }
 async function applyRecurring(){
   if(recurringBusy.value || !loaded.value || !recurringPreview.value.length)return
   const safe=selectedRecurring.value
-  if(!safe.length){recurringMessage.value='同一内容の記録があるため自動登録しません。必要な場合は明細から確認してください。';return}
+  if(!safe.length){recurringMessage.value='重複候補は登録できません。明細を確認してください';return}
   const summary=safe.length+'件、合計 '+yen(safe.reduce((sum,row)=>sum+row.amount,0))+
     ' の固定支出を登録します。日付と金額を確認しましたか？'
   if(!confirm(summary))return
   recurringBusy.value=true
   try{
     const result=await postApprovedRecurringEntries(props.api,safe)
-    recurringMessage.value='登録 '+result.created+'件、他の記録と重複 '+result.conflicts+'件。既存記録は変更していません'
+    recurringMessage.value='登録 '+result.created+'件 · 重複除外 '+result.conflicts+'件'
     recurringPreview.value=[]
     if(result.created){emit('ledger-updated');await loadAll()}
-  }catch(e){recurringMessage.value='処理が途中で停止しました。明細を再読込して確認してください：'+e.message}
+  }catch(e){recurringMessage.value='処理中断。明細を更新してください：'+e.message}
   finally{recurringBusy.value=false}
 }
 let financeInitialized = false
@@ -559,7 +559,7 @@ watch(() => props.active, active => {
 async function removePlan(id) {
   if (!settingsReady.value || recurringBusy.value) return
   const target=plans.value.find(p=>p.id===id)
-  if (!confirm('固定支出「'+(target?.name||'')+'」の計画を削除しますか？停止だけなら「停止」を選んでください。既存の明細は削除されません。')) return
+  if (!confirm('固定支出「'+(target?.name||'')+'」を削除しますか？明細は残ります。')) return
   try {
     await props.api('recurring-plans/'+encodeURIComponent(id),{method:'DELETE'})
     plans.value = plans.value.filter(x=>x.id!==id)
@@ -585,19 +585,19 @@ async function saveCardBill() {
   } catch(e) { message.value='カード利用額を保存できませんでした：'+e.message }
 }
 async function removeCardBill(record) {
-  if (!record?.name || !record?.month || !confirm(record.name+' '+record.month+' の保存済み請求額を削除しますか？明細は削除されません。')) return
+  if (!record?.name || !record?.month || !confirm(record.name+' '+record.month+' の請求額を削除しますか？明細は残ります。')) return
   try {
     await props.api('card-bills?name='+encodeURIComponent(record.name)+'&month='+encodeURIComponent(record.month),{method:'DELETE'})
     bills.value=await props.api('card-bills')
-    message.value='保存済みの請求額を削除しました（明細はそのままです）'
+    message.value='請求額を削除しました（明細は保持）'
   } catch(e) { message.value='カード請求額を削除できませんでした：'+e.message }
 }
 </script>
 <template>
 <section class="finance-tools">
   <div class="finance-page-heading"><h1 class="finance-heading">管理・照合</h1><button type="button" class="finance-global-load" :disabled="busy" @click="loadAll"><span aria-hidden="true" class="finance-refresh-icon">↻</span>{{busy ? "読み込み中…" : "全明細を更新"}}</button></div>
-  <p class="finance-last-loaded" role="status">{{loaded ? "最終更新："+lastLoadedLabel+" · "+rows.length+"件読み込み済み" : busy ? "明細を読み込み中…" : "明細は未読み込みです"}}</p>
-  <p v-if="loadError" class="finance-load-error" role="alert">{{ loadError }}。再試行するには「全明細を更新」を押してください。</p>
+  <p class="finance-last-loaded" role="status">{{loaded ? "更新："+lastLoadedLabel+" · "+rows.length+"件" : busy ? "明細を読み込み中…" : "未読み込み"}}</p>
+  <p v-if="loadError" class="finance-load-error" role="alert">{{ loadError }}</p>
   <div class="finance-section-tabs" role="group" aria-label="管理項目">
     <button type="button" :class="{ selected: managementTab === 'cards' }" :aria-pressed="managementTab === 'cards'" @click="managementTab = 'cards'">カード</button>
     <button type="button" :class="{ selected: managementTab === 'plans' }" :aria-pressed="managementTab === 'plans'" @click="managementTab = 'plans'">固定支出</button>
@@ -673,7 +673,7 @@ async function removeCardBill(record) {
     <label class="form-field"><span>未記録を確認する期間</span><select v-model.number="recurringHistoricalMonths" @change="recurringPreview=[]"><option :value="0">今月のみ（初期設定）</option><option :value="3">過去3か月も確認</option><option :value="12">過去12か月も確認</option><option :value="119">過去10年分も確認</option></select></label>
     <div class="finance-actions"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
     <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
-    <p v-if="recurringPreview.length" class="microcopy" role="status">候補：{{recurringPreview.length}}件 · 登録予定：{{yen(recurringPreviewTotal)}}。重複候補は登録しません。</p>
+    <p v-if="recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
     <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
     <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 毎月{{p.day}}日 · {{p.paymentSource || "未設定"}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true) : '停止中'}} <button type="button" :disabled="recurringBusy" @click="beginEditPlan(p)">編集</button> <button type="button" :disabled="recurringBusy" @click="togglePlanEnabled(p)">{{p.enabled ? '停止' : '再開'}}</button> <button type="button" :disabled="recurringBusy" @click="removePlan(p.id)">削除</button></div>
@@ -685,13 +685,13 @@ async function removeCardBill(record) {
       <label>締め月<input class="card-closing-month" v-model="bill.month" type="month" aria-label="締め月"></label>
       <label>利用額<output class="card-usage-total" aria-live="polite">{{loaded && bill.name && cardPeriod ? yen(cardTotal) : "—"}}</output></label>
     </div>
-    <p v-if="!loaded">集計するには「全明細を更新」を押してください。</p>
+    <p v-if="!loaded">全明細を更新してください。</p>
     <div v-else-if="bill.name && cardPeriod" class="finance-row">
       <strong>{{bill.name}} · {{bill.month}}締め</strong><span>{{cardPeriod.start}} ～ {{cardPeriod.end}}</span>
       <strong>{{yen(cardTotal)}}</strong>
       <span>{{cardTransactions.length}}件の支出</span>
     </div>
-    <p v-else>カードと締め月を選択し、カード管理で締め日を設定してください。</p>
+    <p v-else>カードと締め月を選択してください。</p>
     <button type="button" :disabled="!settingsReady || !loaded || !bill.name || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
     <div v-if="selectedSavedBill" class="finance-saved-bill">
       <div class="finance-saved-bill-text"><span class="finance-saved-bill-caption">保存済みの請求額 · {{selectedSavedBill.month}}</span><strong>{{yen(selectedSavedBill.total)}}</strong><span v-if="savedBillDifference !== null" role="status">{{savedBillDifference === 0 ? '現在の明細と一致' : '現在の明細との差額：'+yen(savedBillDifference)+'（再保存すると更新）'}}</span></div>
@@ -708,7 +708,7 @@ async function removeCardBill(record) {
     </details>
   </article>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure device-privacy-panel">
-    <summary>端末のプライバシー設定<span>ログイン・画像の管理</span></summary>
+    <summary>端末のプライバシー設定</summary>
     <div class="device-privacy-section">
       <label class="device-login-field"><span>ログイン状態</span>
         <select :value="props.rememberDevice ? 'remember' : 'session'" aria-label="ログイン状態の保存方法" @change="emit('change-remember-device', $event.target.value === 'remember')">
@@ -716,14 +716,14 @@ async function removeCardBill(record) {
           <option value="session">このセッション内のみ保存</option>
         </select>
       </label>
-      <p>設定はこの端末だけに反映されます。セッションの終了時期はブラウザやiPhoneの動作により異なります。</p>
+      
     </div>
     <div class="device-privacy-section">
       <div class="device-privacy-row">
         <strong>保存済みレシート画像</strong>
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
       </div>
-      <p>この端末に保存されたレシート画像だけを管理します。通常は30日後に期限切れとなります。画像を消しても明細やSBI評価額は消えません。</p>
+      <p>端末保存・30日（明細は保持）</p>
       <div class="finance-actions device-receipt-actions">
         <button type="button" :disabled="receiptImagesBusy" @click="refreshLocalReceiptCount">{{receiptImagesBusy ? '確認中…' : '件数を更新'}}</button>
         <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
@@ -732,20 +732,20 @@ async function removeCardBill(record) {
     </div>
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
-    <summary>バックアップ・復元<span>必要なときに開く</span></summary>
-    <p>全明細・SBI評価額と損益・固定支出・カード設定・通知状態をJSONで保存します。端末内レシート写真は含まれません。復元が途中で停止した場合は、表示された登録件数を確認してから再試行してください。</p>
+    <summary>バックアップ・復元</summary>
+    <p>帳簿・設定をJSON保存（レシート画像は対象外）</p>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div v-if="backupPreview" class="restore-preview">
-      <p>新しい明細 {{restoreRows.length}}件・重複の可能性 {{restoreConflicts.length}}件。既存の取引や資産評価額は上書きしません。</p>
-      <details v-if="restoreConflicts.length"><summary>重複候補を確認（{{restoreConflicts.length}}件）</summary><p v-for="e in restoreConflicts.slice(0,30)" :key="e.backupIndex">{{e.date}} · {{e.merchant || e.category}} · {{yen(e.amount)}} · {{e.payment_source || '未設定'}}</p><p v-if="restoreConflicts.length>30">最初の30件のみ表示しています。</p></details>
+      <p>追加 {{restoreRows.length}}件 · 重複候補 {{restoreConflicts.length}}件（既存データは保持）</p>
+      <details v-if="restoreConflicts.length"><summary>重複候補を確認（{{restoreConflicts.length}}件）</summary><p v-for="e in restoreConflicts.slice(0,30)" :key="e.backupIndex">{{e.date}} · {{e.merchant || e.category}} · {{yen(e.amount)}} · {{e.payment_source || '未設定'}}</p><p v-if="restoreConflicts.length>30">30件まで表示</p></details>
       <label v-if="restoreConflicts.length" class="restore-confirm-duplicates"><input type="checkbox" v-model="restoreIncludeConflicts" />重複候補も別取引として追加する（再確認あり）</label>
       <button type="button" :disabled="busy||backupBusy" @click="restore">未登録の設定と明細を確認して復元</button>
     </div>
     <p v-if="message" role="status">{{message}}</p>
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
-    <summary>重複の可能性<span>確認する</span></summary>
-    <p v-if="!loaded">上部の「全明細を更新」で表示します。</p>
+    <summary>重複の可能性</summary>
+    <p v-if="!loaded">全明細を更新してください。</p>
     <p v-else-if="!duplicates.length">重複候補はありません。</p>
     <button v-for="(group,i) in duplicates.slice(0,30)" :key="i" type="button" class="finance-row duplicate-link" @click="emit('open-duplicate', group[0].date)">{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件 <span>明細を見る ›</span></button>
   </details>

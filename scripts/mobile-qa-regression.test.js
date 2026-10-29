@@ -44,7 +44,7 @@ test('failed finance loads cannot be exported as stale complete backups', () => 
   assert.match(finance, /financeInitialized = await loadAll\(\)/)
   assert.match(finance, /v-if="loadError" class="finance-load-error" role="alert"/)
   assert.match(finance, /:disabled="busy\|\|backupBusy\|\|!loaded" @click="downloadBackup"/)
-  assert.match(finance, /SBI評価額と損益/)
+  assert.match(finance, /帳簿・設定をJSON保存（レシート画像は対象外）/)
 })
 
 test('mobile navigation, keyboard and charts retain touch-safe affordances', () => {

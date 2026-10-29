@@ -225,7 +225,10 @@ test('verified isolated Pages preview still rejects financial mutation',async()=
 test('actual SQLite: restore insert-only cannot overwrite newer card bills and category rules',async()=>{
   const {db,call}=await createClient()
   try {
-    await call('payment-sources','POST',{name:'カードA'})
+    assert.equal((await call('payment-sources','POST',{name:'カードA'})).status,200)
+    // A blank test D1 has no "現金" row unless the fixture registers it.
+    // The initial POST below must succeed for PUT insert-only semantics to be tested.
+    assert.equal((await call('payment-sources','POST',{name:'現金'})).status,200)
     assert.equal((await call('payment-sources/restore-missing','POST',{name:'カードB',closingDay:10})).body.created,true)
     assert.equal((await call('payment-sources/restore-missing','POST',{name:'カードB',closingDay:27})).body.created,false)
     assert.equal((await call('payment-sources')).body.find(x=>x.name==='カードB').closing_day,10)
@@ -238,7 +241,8 @@ test('actual SQLite: restore insert-only cannot overwrite newer card bills and c
     const stored=(await call('custom-rules')).body.find(row=>row.keyword==='テストスーパー')
     assert.equal(stored.category,'饮食料品')
 
-    await call('merchant-payment-rules','POST',{keyword:'テスト店',paymentSource:'現金'})
+    assert.equal((await call('merchant-payment-rules','POST',{keyword:'テスト店',paymentSource:'現金'})).status,200)
+    assert.equal((await call('merchant-payment-rules')).body.find(row=>row.keyword==='テスト店').payment_source,'現金')
     const payment=await call('merchant-payment-rules','PUT',{keyword:'テスト店',paymentSource:'カードA'})
     assert.equal(payment.status,200)
     assert.equal((await call('merchant-payment-rules')).body.find(row=>row.keyword==='テスト店').payment_source,'現金')

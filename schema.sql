@@ -86,10 +86,6 @@ CREATE TABLE IF NOT EXISTS card_bills (
   PRIMARY KEY (payment_source,bill_month)
 );
 
-CREATE TABLE IF NOT EXISTS finance_settings (
-  name TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
 
 -- New installations can bootstrap these tables immediately; old installations
 -- retain their existing tables and are upgraded additively.

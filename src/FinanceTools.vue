@@ -362,7 +362,7 @@ async function restore(){
   const backup=backupPreview.value
   if(!backup || busy.value || backupBusy.value)return
   const selectedRows=[...restoreRows.value,...(restoreIncludeConflicts.value?restoreConflicts.value:[])]
-  const descriptions=selectedRows.length+'件の明細と、未登録の設定・空欄のSBI評価額のみを追加します。既存データは上書きしません。'
+  const descriptions=selectedRows.length+'件の明細を追加します。既存データは保持します。'
   if(!confirm(descriptions+' 続けますか？'))return
   if(restoreIncludeConflicts.value && restoreConflicts.value.length &&
       !confirm('同一内容の取引 '+restoreConflicts.value.length+'件を別の取引として追加します。本当に登録しますか？')) return
@@ -596,8 +596,8 @@ async function removeCardBill(record) {
 <template>
 <section class="finance-tools">
   <div class="finance-page-heading"><h1 class="finance-heading">管理・照合</h1><button type="button" class="finance-global-load" :disabled="busy" @click="loadAll"><span aria-hidden="true" class="finance-refresh-icon">↻</span>{{busy ? "読み込み中…" : "全明細を更新"}}</button></div>
-  <p class="finance-last-loaded" role="status">{{loaded ? "最終更新："+lastLoadedLabel+" · "+rows.length+"件読み込み済み" : busy ? "明細を読み込み中…" : "明細は未読み込みです"}}</p>
-  <p v-if="loadError" class="finance-load-error" role="alert">{{ loadError }}。再試行するには「全明細を更新」を押してください。</p>
+  <p class="finance-last-loaded" role="status">{{loaded ? "更新："+lastLoadedLabel+" · "+rows.length+"件" : busy ? "明細を読み込み中…" : "未読み込み"}}</p>
+  <p v-if="loadError" class="finance-load-error" role="alert">{{ loadError }}</p>
   <div class="finance-section-tabs" role="group" aria-label="管理項目">
     <button type="button" :class="{ selected: managementTab === 'cards' }" :aria-pressed="managementTab === 'cards'" @click="managementTab = 'cards'">カード</button>
     <button type="button" :class="{ selected: managementTab === 'plans' }" :aria-pressed="managementTab === 'plans'" @click="managementTab = 'plans'">固定支出</button>
@@ -716,14 +716,14 @@ async function removeCardBill(record) {
           <option value="session">このセッション内のみ保存</option>
         </select>
       </label>
-      <p>この端末のみの設定です。</p>
+      
     </div>
     <div class="device-privacy-section">
       <div class="device-privacy-row">
         <strong>保存済みレシート画像</strong>
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
       </div>
-      <p>画像は端末保存・30日。削除しても明細は残ります。</p>
+      <p>端末保存・30日（明細は保持）</p>
       <div class="finance-actions device-receipt-actions">
         <button type="button" :disabled="receiptImagesBusy" @click="refreshLocalReceiptCount">{{receiptImagesBusy ? '確認中…' : '件数を更新'}}</button>
         <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>

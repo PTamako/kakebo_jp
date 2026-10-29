@@ -1143,7 +1143,20 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </details>
       </div>
       <div v-if="entryInputMode === 'scan'" class="panel capture-panel">
-        <label class="ai-ocr-mode"><input type="checkbox" :checked="aiOcrEnabled" @change="setAiOcrEnabled($event.target.checked)" /> AI画像認識を利用する（Cloudflare AI・利用枠に影響。未選択なら端末内OCR）</label>
+        <div class="ocr-engine-picker" role="group" aria-label="画像の読み取り方法">
+          <span class="ocr-engine-title">読み取り方法</span>
+          <div class="ocr-engine-options">
+            <button type="button" :class="{ selected: !aiOcrEnabled }" :aria-pressed="!aiOcrEnabled" :disabled="!!busy" @click="setAiOcrEnabled(false)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 18h4"/></svg>
+              <span>端末内</span>
+            </button>
+            <button type="button" :class="{ selected: aiOcrEnabled }" :aria-pressed="aiOcrEnabled" :disabled="!!busy" @click="setAiOcrEnabled(true)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/></svg>
+              <span>AI</span>
+            </button>
+          </div>
+        </div>
+        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">画像をCloudflare AIへ送信します。利用枠を消費します。</p>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>

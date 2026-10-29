@@ -31,7 +31,7 @@ const editingTransfer = ref(null)
 const newPurchaseMonth = ref('')
 const yen = value => '¥' + Number(value || 0).toLocaleString('ja-JP')
 const signYen = value => (value > 0 ? '+' : '') + yen(value)
-const accountLabel = code => code === 'growth' ? '成長投資枠' : 'つみたて投資枠'
+const accountLabel = code => code === 'growth' ? '成長投資枠' : code === 'combined' ? '成長＋つみたて（合算）' : 'つみたて投資枠'
 const availableFunds = computed(() => {
   const items = new Map(knownFunds.map(item => [item.code,item]))
   for(const p of [...(data.value?.plans || []),...(data.value?.holdings || [])]){
@@ -41,7 +41,7 @@ const availableFunds = computed(() => {
 })
 function fillFund(target) {
   const match = availableFunds.value.find(item=>item.code===target.fundCode)
-  if(match){target.fundName=match.name;target.accountType=match.account}
+  if(match){target.fundName=match.name; if(editing.value==='plan')target.accountType=match.account}
 }
 async function load() {
   loading.value = true
@@ -165,6 +165,7 @@ onMounted(load)
         <div class="sbi-line-heading"><h3>投資信託の保有</h3><button class="sbi-plain-button" type="button" @click="editHolding(null)">＋ 保有を追加</button></div>
         <p v-if="data.valuation.value!==null" class="sbi-value">{{yen(data.valuation.value)}} <small :class="data.valuation.pnl>=0?'sbi-positive':'sbi-negative'">損益 {{signYen(data.valuation.pnl)}}</small></p>
         <p v-else class="sbi-hint">保有口数・取得金額・基準価額の登録後に評価額を計算します。</p>
+        <p v-if="data.holdings.some(h=>h.valuation_source==='sbi_screenshot')" class="sbi-hint">初期の評価額は2026/10/30のSBI画面から登録した値です。基準価額・口数の更新後は自動計算に切り替わります。</p>
         <p v-if="!data.holdings.length" class="sbi-empty">保有情報は未登録です（以前の手入力評価額は保存されています）</p>
         <div v-for="h in data.holdings" :key="h.fund_code+h.account_type" class="sbi-fund-row">
           <div class="sbi-fund-info">
@@ -179,7 +180,7 @@ onMounted(load)
             <button type="button" class="sbi-plain-button" @click="editPrice(h)">基準価額</button>
           </div>
         </div>
-        <p class="sbi-hint">現在、基準価額は手動登録です。自動取得は利用条件を確認後に追加します。積立設定を変えても保有口数は自動増加しません。</p>
+        <p class="sbi-hint">現在、基準価額は手動登録です。自動取得は利用条件を確認後に追加します。毎月の振替は買付予定と照合しますが、実際の約定口数・取得金額はSBIで確認して更新してください。</p>
       </article>
     </template>
 
@@ -199,7 +200,7 @@ onMounted(load)
         <div class="sbi-line-heading"><h3>保有口数・取得金額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
         <label>銘柄コード<input v-model.trim="holding.fundCode" maxlength="8" required :disabled="existingIdentity" @input="holding.fundCode=holding.fundCode.toUpperCase();fillFund(holding)" /></label>
         <label>銘柄名<input v-model.trim="holding.fundName" maxlength="120" required /></label>
-        <label>口座区分<select v-model="holding.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option></select></label>
+        <label>口座区分<select v-model="holding.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option><option value="combined">NISA（成長＋つみたて 合算）</option></select></label>
         <label>保有口数<input v-model.number="holding.units" type="number" min="0" step="1" required /></label>
         <label>取得金額（円）<input v-model.number="holding.acquisitionCost" type="number" min="0" step="1" required /></label>
         <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>

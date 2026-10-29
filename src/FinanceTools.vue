@@ -174,6 +174,14 @@ const restoreConflicts = ref([])
 const restoreIncludeConflicts = ref(false)
 const backupPreview = ref(null)
 const backupLedgerFingerprint = ref('')
+// Restore progress survives a recoverable API error in this page, without ever modifying existing records.
+const restoreOwnKeys = ref(new Map())
+function unrelatedLedgerFingerprint(items) {
+  return ledgerFingerprint(items.filter(row => {
+    const expected = restoreOwnKeys.value.get(row.client_request_id)
+    return !expected || transactionKey(row) !== expected
+  }))
+}
 const ledgerFingerprint = items => items.map(x=>[x.id,transactionKey(x),x.raw||'',x.transfer_applied||0].join('|')).sort().join('\n')
 const backupBusy = ref(false)
 const plans = ref([])
@@ -286,6 +294,7 @@ async function downloadBackup(){
 async function preview(event){
   const file=event.target.files?.[0];event.target.value=''
   restoreRows.value=[];restoreConflicts.value=[];backupPreview.value=null;restoreIncludeConflicts.value=false
+  restoreOwnKeys.value=new Map()
   if(!file)return
   try{
     if(!loaded.value)throw Error('先に全明細を読み込んでください')
@@ -310,7 +319,7 @@ async function restore(){
       !confirm('同一内容の取引 '+restoreConflicts.value.length+'件を別の取引として追加します。本当に登録しますか？')) return
   // Re-fetch before writing: preview must still refer to the same server ledger.
   if(!(await loadAll())) {message.value='最新の明細を再取得できません。復元を中止しました';return}
-  if(backupLedgerFingerprint.value!==ledgerFingerprint(rows.value)){
+  if(backupLedgerFingerprint.value!==unrelatedLedgerFingerprint(rows.value)){
     backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
     message.value='確認後に明細が更新されました。安全のため復元を中止しました。バックアップを選び直してください'
     return
@@ -376,6 +385,9 @@ async function restore(){
       const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
       const key='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
       const {backupIndex,...entry}=e
+      // Register this precise intended row before the network request: even a lost response
+      // can be checked against its idempotency ID on the next read.
+      restoreOwnKeys.value = new Map([...restoreOwnKeys.value,[key,transactionKey(entry)]])
       const result=await props.api('entries',{method:'POST',body:JSON.stringify({...entry,clientRequestId:key,transferTarget:e.transfer_target||'',transferDate:e.transfer_date||e.date,paymentSource:e.payment_source||''})})
       if(result.duplicate)skipped++;else count++
       if(e.id && result?.id)restoredIds.set(Number(e.id),Number(result.id))
@@ -406,6 +418,7 @@ async function restore(){
     }
     await loadFinanceSettings()
     loaded.value=false;backupPreview.value=null;restoreIncludeConflicts.value=false
+    restoreOwnKeys.value=new Map()
     message.value='明細 '+count+'件・設定 '+settingsCount+'件を追加しました。既存の情報は上書きしていません。スキップ '+skipped+'件。全明細を更新してください'
     emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
   }catch(e){message.value='明細 '+count+'件・設定 '+settingsCount+'件追加済み。残りは再試行できます：'+e.message}

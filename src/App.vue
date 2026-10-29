@@ -1248,7 +1248,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <summary>テキストを貼り付けて読み取る</summary>
           <label class="field-label" for="entry-text">テキスト入力</label>
           <label class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
-          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? '例：10月每周五 花费100元（各日付の明細を確認して保存）' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
+          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? '例：10月の毎週金曜日に100円使った（内容を確認して保存）' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
           <div class="action-row">
             <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
           </div>

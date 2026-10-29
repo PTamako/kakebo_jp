@@ -6,7 +6,7 @@ const respond=(value,status=200)=>new Response(JSON.stringify(value),{
 });
 const codeOk=value=>typeof value==='string' && /^[A-Z0-9]{8}$/.test(value);
 const monthOk=value=>typeof value==='string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
-const dayOk=value=>typeof value==='string' && /^\d{4}-(0[1-9]|[12]\d|3[01])$/.test(value) && !Number.isNaN(Date.parse(value+'T00:00:00Z')) && new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+const dayOk=value=>typeof value==='string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value) && !Number.isNaN(Date.parse(value+'T00:00:00Z')) && new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
 const accountOk=value=>value==='growth'||value==='tsumitate';
 const holdingAccountOk=value=>accountOk(value)||value==='combined';
 const yenOk=value=>Number.isSafeInteger(value) && value>=0;

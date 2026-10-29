@@ -210,6 +210,25 @@ test('SBI screenshot bootstrap stores exact reported values and preserves existi
   }finally{db.close()}
 })
 
+test('NAV accepts real ISO dates but rejects impossible calendar days',async()=>{
+  const {db,call}=await client()
+  try{
+    for(const invalid of ['2026-10-00','2026-10-32','2026-02-30','2026-13-01','2026-1030']){
+      const response=await call('investment-portfolio/price','PUT',{
+        fundCode:'03311187',navPer10000:35000,priceDate:invalid
+      })
+      assert.equal(response.status,400,'invalid price date '+invalid)
+    }
+    const valid=await call('investment-portfolio/price','PUT',{
+      fundCode:'03311187',navPer10000:35000,priceDate:'2026-10-30'
+    })
+    assert.equal(valid.status,200)
+    assert.equal((await call('investment-portfolio/price','PUT',{
+      fundCode:'03311187',navPer10000:34999,priceDate:'2026-10-29'
+    })).status,409,'older official NAV must not roll back market values')
+  }finally{db.close()}
+})
+
 test('purchase month estimates are explicit, not an assertion that a buy was filled',()=>{
   assert.equal(inferredPurchaseMonth('2026-10-05',9),'2026-10')
   assert.equal(inferredPurchaseMonth('2026-10-27',9),'2026-11')

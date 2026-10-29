@@ -130,6 +130,10 @@ export async function onRequest({ request, env, params }) {
   // even if a dashboard binding accidentally points to the production DB.
   // Login/logout stay usable for read-only preview QA.
   const isPagesPreview = /^[^.]+\.kakeibo-f17\.pages\.dev$/.test(url.hostname)
+  // Preview bindings cannot be inspected from this repo. Fail closed on ALL preview
+  // API access until a dedicated Preview D1 binding is explicitly verified.
+  if (isPagesPreview && env.PREVIEW_D1_ISOLATED !== 'true')
+    return json({error:'プレビュー環境のテスト専用DBが未確認です。本番のデータを保護するためAPIを停止しています',code:'preview_db_not_verified'},503)
   if (isPagesPreview && m !== 'GET' && a !== 'auth')
     return json({error:'プレビュー画面では明細・設定を更新できません。本番サイトをご利用ください',code:'preview_read_only'},403)
   if (a === 'auth') {

@@ -344,7 +344,7 @@ function scheduledDate(year,month,day){
 async function applyRecurring(){
   if(recurringBusy.value || !settingsReady.value)return
   recurringBusy.value=true
-  let created=0
+  let created=0, conflicts=0
   try{
     const today=localToday()
     for(const p of plans.value){
@@ -356,20 +356,16 @@ async function applyRecurring(){
         if(++count>120)throw Error('自動記録の対象期間が長すぎます')
         const date=scheduledDate(y,m,p.day)
         if(date<=today){
-          // Stable idempotency key prevents duplicates on retries, devices and reloads.
-          const clientRequestId='recurring_'+p.id.replace(/-/g,'')+'_'+String(y)+String(m).padStart(2,'0')
-          await props.api('entries',{method:'POST',body:JSON.stringify({
-            date,time:'',amount:Number(p.amount),type:'expense',category:p.category||'その他',
-            merchant:p.name,note:'毎月の固定支出（自動記録）',paymentSource:p.paymentSource||'',
-            clientRequestId
-          })})
-          created++
+          // The server checks existing manual transactions atomically before adding.
+          const result=await props.api('recurring-post',{method:'POST',body:JSON.stringify({planId:p.id,month:y+'-'+String(m).padStart(2,'0')})})
+          if(result.created)created++
+          if(result.conflict)conflicts++
         }
         m++;if(m===13){m=1;y++}
       }
     }
     if(created)emit('ledger-updated')
-    recurringMessage.value=created?'固定支出の対象月を確認しました（'+created+'件処理）。':'追加対象の固定支出はありません'
+    recurringMessage.value='新規登録 '+created+'件'+(conflicts?'。既存の手入力明細と重なる '+conflicts+'件は自動登録しませんでした':'。重複登録はありません')
   }catch(e){recurringMessage.value='自動記録の確認に失敗しました：'+e.message}
   finally{recurringBusy.value=false}
 }
@@ -544,9 +540,14 @@ async function removeCardBill(record) {
   </article>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
     <summary>バックアップ・復元<span>必要なときに開く</span></summary>
-    <p>収支明細・固定支出・カード請求のバックアップです。SBI証券の評価額は含まれません。</p>
-    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||!loaded" @click="downloadBackup">JSON を保存</button><label class="backup-upload" :class="{ 'is-disabled': busy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||!loaded" @change="preview"></label></div>
-    <button v-if="restoreRows.length" :disabled="busy" @click="restore">追加候補 {{restoreRows.length}} 件を確認して復元</button>
+    <p>全明細・SBI証券の評価額と損益・固定支出・カード請求・カード設定・店舗ルールを保存します。レシート写真は端末内にあるため含まれません。</p>
+    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '完全JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
+    <div v-if="backupPreview" class="restore-preview">
+      <p>新しい明細 {{restoreRows.length}}件・重複の可能性 {{restoreConflicts.length}}件。既存の取引や資産評価額は上書きしません。</p>
+      <details v-if="restoreConflicts.length"><summary>重複候補を確認（{{restoreConflicts.length}}件）</summary><p v-for="e in restoreConflicts.slice(0,30)" :key="e.backupIndex">{{e.date}} · {{e.merchant || e.category}} · {{yen(e.amount)}} · {{e.payment_source || '未設定'}}</p><p v-if="restoreConflicts.length>30">最初の30件のみ表示しています。</p></details>
+      <label v-if="restoreConflicts.length" class="restore-confirm-duplicates"><input type="checkbox" v-model="restoreIncludeConflicts" />重複候補も別取引として追加する（再確認あり）</label>
+      <button type="button" :disabled="busy||backupBusy" @click="restore">未登録の設定と明細を確認して復元</button>
+    </div>
     <p v-if="message" role="status">{{message}}</p>
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">

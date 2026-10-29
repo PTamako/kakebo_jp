@@ -34,7 +34,13 @@ test('cross-month duplicate navigation selects date after month watcher resets i
 test('finance management starts loading only when tab is active and refreshes on revisit', () => {
   assert.match(app, /<FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'"/)
   assert.match(finance, /onMounted\(\(\) => \{ if \(props\.active\) void initializeFinance\(\) \}\)/)
-  assert.match(finance, /watch\(\(\) => props\.active, active => \{[\s\S]*?if \(!active\) return[\s\S]*?void loadAll\(\)[\s\S]*?void initializeFinance\(\)/)
+  // Revisit reuses a fresh ledger; mutations, expiration and explicit backup force refresh.
+  assert.match(finance, /watch\(\(\) => props\.ledgerRevision, \(\) => \{/)
+  assert.match(finance, /ledgerDirty = props\.ledgerRevision !== startingRevision/)
+  assert.match(finance, /if \(ledgerDirty \|\| !lastLoadedAt\.value \|\|/)
+  assert.match(finance, /Date\.now\(\) - lastLoadedAt\.value\.getTime\(\) >= MANAGEMENT_LEDGER_TTL_MS/)
+  assert.match(finance, /void loadAll\(\)/)
+  assert.match(finance, /async function downloadBackup\(\)\{[\s\S]*?if \(!\(await loadAll\(\)\)\) throw Error/)
 })
 
 test('failed finance loads cannot be exported as stale complete backups', () => {

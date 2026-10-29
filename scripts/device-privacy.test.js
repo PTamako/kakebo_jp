@@ -23,7 +23,7 @@ test('image clearing is explicitly confirmed, local only, and synchronizes the v
   const store = source('src/receipt-store.js')
   assert.match(management, /await countReceiptImages\(\)/)
   assert.match(management, /if \(latest !== localReceiptCount\.value\)/)
-  assert.match(management, /if \(!confirm\('この端末に保存されたレシート画像/)
+  assert.match(management, /if \(!confirm\('レシート画像 /)
   assert.match(management, /await clearAllReceiptImages\(\)/)
   assert.match(management, /emit\('receipt-images-cleared'\)/)
   assert.doesNotMatch(management.slice(management.indexOf('async function clearLocalReceiptImages()'),management.indexOf('watch([() => props.active')), /props\.api\(/)

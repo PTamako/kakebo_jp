@@ -455,3 +455,15 @@ main .capture-panel .ocr-engine-note {
   main .capture-panel .ocr-engine-options { width: 154px; }
   main .capture-panel .ocr-engine-options button { gap: 3px; font-size: 11px; padding-inline: 2px; }
 }
+
+
+/* Header puppy artwork: reliably sized SVG fallback when the sticker CDN is unavailable. */
+main .brand-mark .brand-doodle {
+  display: block;
+  flex: none;
+  width: 42px;
+  height: 35px;
+  max-width: 100%;
+  margin-right: -6px;
+  color: var(--blue-dark);
+}

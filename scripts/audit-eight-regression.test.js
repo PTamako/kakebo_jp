@@ -15,7 +15,7 @@ test('legacy built-in categories are not loaded into the runtime defaults',()=>{
   assert.equal(classify('コジマ',rules).category,'购物')
   assert.equal(classify('ペットのコジマ',rules).category,'宠物')
   assert.equal(classify('コジマ×ビックカメラ',rules).category,'购物')
-  assert.ok(!DEFAULT_RULE_ROWS.some(([k,v])=>k==='UNIQLO'&&v==='购物'))
+  assert.ok(DEFAULT_RULE_ROWS.some(([k,v])=>k==='UNIQLO'&&v==='购物'))
 })
 
 test('stable cursor listing avoids mutable OFFSET paging on browser reads',()=>{
@@ -34,7 +34,8 @@ test('restore is atomic for bounded archives and never deletes real records',()=
   assert.match(api,/current_value IS NULL AND pnl IS NULL/)
   assert.match(api,/INSERT OR IGNORE INTO category_icons/)
   assert.doesNotMatch(api,/DELETE FROM entries|DROP TABLE|REPLACE INTO entries/)
-  assert.match(ui,/selectedRows\.length<=500/)
+  assert.match(ui,/const BATCH_SIZE=150/)
+  assert.match(ui,/settingTotal<=500/)
 })
 
 test('preview requires separate DB identity and automatic build requires production security audit',()=>{

@@ -24,3 +24,17 @@
 
 ## 发布验证
 Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=dev --audit-level=high`、Vite 生产构建。这样即使 GitHub Actions 配额暂不可用，高危/严重生产依赖告警仍阻止 Pages 构建。
+
+
+## 2026-10-29: 新版增强与真实环境限制
+
+- 生产请求中执行的一次性旧库兼容补列将记录 `schema_migrations.api-compat-v1`；以后优先查询此标记，跳过反复的列探测和索引 DDL。原有数据和分类不会被覆盖。**其他功能表的受控迁移仍需要独立验收**。
+- 有条件的备份优先使用 `GET /api/backup-snapshot`：10 组 SELECT 在同一个 D1 `batch()` 读事务中执行，避免跨设备写入造成账本和设置读取时间不一致。如果交易数超过 10,000，则退回原有的双重核验备份方式。
+- 大型恢复按最多 150 条明细分批执行 `POST /api/restore-atomic`。单批失败可以回滚该批；此前成功的批次保留，重试根据幂等请求 ID 去重。设置项超过 500 继续原有逐项恢复，整体不宣称跨多批原子。
+- `migrations/0003_preview_d1_identity.sql` **只能在专用 Preview D1 中运行**。先从 Cloudflare 面板记录 Preview 和生产真实 D1 UUID，并在测试 D1 中插入对应 `environment_identity.database_id` 值。服务端会在允许 Preview GET 之前读取实际绑定数据库里的值，不存在或不一致均返回 503。只填环境变量而未核实数据库标记将无法访问。
+- Preview 使用自定义域名时需要 `APP_ENV=preview` 或由平台提供非 main 的 `CF_PAGES_BRANCH`。不能仅依靠域名猜测环境。上线前应在 Cloudflare 平台核验所有绑定、域名和变量。
+- 浏览器端新实时秒钟表、日历最大收支标记、自然语言周期文本解析均只影响 UI/待确认草稿，不会运行生产 D1 删除/更新脚本。
+
+### 正式部署前数据库验收
+
+先对独立复制的 D1 检查 `entries` 数量、SBI `current_value` / `pnl`、自定义规则、固定支出和历史账单；分别验证一次性兼容版本标记与新事务化备份恢复。**没有独立 D1 账户授权时，不能宣称生产库已完成物理迁移或 Preview 独立绑定。**

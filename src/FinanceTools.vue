@@ -338,6 +338,21 @@ async function downloadBackup(){
   if (busy.value || backupBusy.value) return
   backupBusy.value = true
   try {
+    // One server-side D1 read transaction avoids cross-table mixed snapshots.
+    // Oversized archives retain the existing twice-verified resumable export.
+    let atomicBackup=null
+    try { atomicBackup=await props.api('backup-snapshot') }
+    catch(e) { if(!/snapshot_too_large|大容量|413/.test(String(e.message)))throw e }
+    if(atomicBackup){
+      const validated=validateBackup(atomicBackup)
+      const sealed=await sealBackup(validated)
+      const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
+      const anchor=document.createElement('a')
+      anchor.href=url;anchor.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+'.json';anchor.click()
+      setTimeout(()=>URL.revokeObjectURL(url),30000)
+      message.value='D1の同一時点の帳簿と設定を保存しました'
+      return
+    }
     // Refresh ledger and D1 metadata immediately before export. A partial fetch
     // must not be mistaken for a complete, safe recovery archive.
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
@@ -410,28 +425,51 @@ async function restore(){
     message.value='明細が変更されました。バックアップを選び直してください'
     return
   }
-  // A bounded import commits ALL rows/settings in a single D1 batch.
-  // Large archives retain the existing resumable path without losing any data.
-  const settingTotal=['plans','bills','paymentSources','merchantPaymentRules','customRules','categories','investments','dismissedTransfers']
-    .reduce((n,k)=>n+(backup[k]?.length||0),0)+Object.keys(backup.categoryIcons||{}).length
-  if(selectedRows.length<=500 && settingTotal<=500){
+  // Restore in independently atomic, idempotent batches. A failure preserves
+  // committed batches and leaves uncommitted drafts visible for safe retry.
+  const BATCH_SIZE=150
+  if(settingTotal<=500){
     busy.value=true
+    let completed=0,settingsRestored=0,alreadyPresent=0
     try{
-      const atomicRows=[]
-      for(const e of selectedRows){
-        const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
-        const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
-        const clientRequestId='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
-        atomicRows.push({...e,clientRequestId})
+      const sourceRows=selectedRows.length ? selectedRows : [null]
+      for(let offset=0;offset<sourceRows.length;offset+=BATCH_SIZE){
+        const subset=sourceRows.slice(offset,offset+BATCH_SIZE).filter(Boolean)
+        const atomicRows=[]
+        for(const e of subset){
+          const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
+          const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
+          const clientRequestId='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
+          atomicRows.push({...e,clientRequestId})
+          restoreOwnKeys.value=new Map([...restoreOwnKeys.value,[clientRequestId,transactionKey(e)]])
+        }
+        const first=offset===0
+        const oldIds=new Set(subset.map(e=>Number(e.id)))
+        const scopedArchive={...backup,integrity:undefined,entries:atomicRows,
+          plans:first?backup.plans:[],bills:first?backup.bills:[],
+          paymentSources:first?backup.paymentSources:[],merchantPaymentRules:first?backup.merchantPaymentRules:[],
+          customRules:first?backup.customRules:[],categories:first?backup.categories:[],
+          investments:first?backup.investments:[],categoryIcons:first?backup.categoryIcons:{},
+          dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id)))}
+        const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify(scopedArchive)})
+        completed+=result.created
+        settingsRestored+=result.settings
+        alreadyPresent+=result.skipped
+        for(const e of subset){
+          restoreRows.value=restoreRows.value.filter(row=>row.backupIndex!==e.backupIndex)
+          restoreConflicts.value=restoreConflicts.value.filter(row=>row.backupIndex!==e.backupIndex)
+        }
+        message.value=`復元中 ${Math.min(offset+BATCH_SIZE,sourceRows.length)}/${sourceRows.length}件`
       }
-      const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify({...backup,integrity:undefined,entries:atomicRows})})
       loaded.value=false;backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
       restoreIncludeConflicts.value=false;restoreOwnKeys.value=new Map()
-      message.value='復元完了：明細 '+result.created+'件・設定 '+result.settings+'件（重複除外 '+result.skipped+'件）'
+      message.value=`復元完了：明細 ${completed}件・設定 ${settingsRestored}件（重複除外 ${alreadyPresent}件）`
       await loadFinanceSettings()
       emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
-    }catch(e){message.value='一括復元を中止しました。登録済みデータは保持されます：'+e.message}
-    finally{busy.value=false}
+    }catch(e){
+      ledgerDirty=true
+      message.value=`復元を中断しました。完了済み ${completed}件は保持されます。再試行可能：${e.message}`
+    }finally{busy.value=false}
     return
   }
   busy.value=true
@@ -657,11 +695,18 @@ async function saveCardBill() {
   if (!settingsReady.value || !loaded.value || !bill.value.name || !/^\d{4}-(0[1-9]|1[0-2])$/.test(bill.value.month) || !cardPeriod.value) {
     message.value='カード・締め月・明細を確認してください'; return
   }
-  const record={name:bill.value.name,month:bill.value.month,start:cardPeriod.value.start,end:cardPeriod.value.end,total:cardTotal.value,count:cardTransactions.value.length}
+  const record={name:bill.value.name,month:bill.value.month,start:cardPeriod.value.start,end:cardPeriod.value.end}
+  if(busy.value)return
+  busy.value=true
   try {
-    await props.api('card-bills',{method:'PUT',body:JSON.stringify(record)})
-    bills.value=await props.api('card-bills');message.value='カード利用額の記録を保存しました'
+    const latest=await props.api('card-bills/recalculate',{method:'POST',body:JSON.stringify(record)})
+    bills.value=await props.api('card-bills')
+    ledgerDirty=true
+    message.value='D1の最新明細で計算しました：'+yen(latest.total)+'（'+latest.count+'件）'
   } catch(e) { message.value='カード利用額を保存できませんでした：'+e.message }
+  finally{busy.value=false}
+  // loadAll refuses requests while busy; refresh only after it is released.
+  await loadAll()
 }
 async function removeCardBill(record) {
   if (!record?.name || !record?.month || !confirm(record.name+' '+record.month+' の請求額を削除しますか？明細は残ります。')) return

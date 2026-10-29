@@ -108,7 +108,8 @@ const PARSER_DEFAULT_RULE_ROWS = [["マクドナルド","餐饮"],["マック","
 // New defaults are authoritative. Legacy rules are migration reference only and
 // NEVER participate in classification; custom_rules remains user-owned.
 export const DEFAULT_RULE_ROWS = [...new Map([...PARSER_DEFAULT_RULE_ROWS,
-  ['セブン','饮食料品'], ['スーパー','饮食料品'], ['コジマ','购物']]
+  ['セブン','饮食料品'], ['スーパー','饮食料品'], ['コジマ','购物'],
+  ['Amazon','购物'],['AMAZON','购物'],['アマゾン','购物'],['楽天','购物'],['ユニクロ','购物'],['UNIQLO','购物']]
   .map(([keyword, category]) => [keyword, [keyword, category]])).values()]
 
 
@@ -152,6 +153,17 @@ export async function onRequest({ request, env, params }) {
     env.PREVIEW_D1_ID.toLowerCase() !== env.PRODUCTION_D1_ID.toLowerCase()
   if (isPagesPreview && !previewDbVerified)
     return json({error:'プレビュー環境のテスト専用DBが未確認です。本番のデータを保護するためAPIを停止しています',code:'preview_db_not_verified'},503)
+  // Verify the ID stored INSIDE the actual bound D1, not just variables.
+  // A Preview accidentally bound to production has no matching identity and
+  // fails CLOSED before session/auth or other data is accessible.
+  if (isPagesPreview) {
+    let actualIdentity
+    try {
+      actualIdentity=await db.prepare("SELECT value FROM environment_identity WHERE name='database_id'").first()
+    }catch { return json({error:'テスト用DBの識別情報がありません',code:'preview_db_not_verified'},503) }
+    if(actualIdentity?.value?.toLowerCase()!==env.PREVIEW_D1_ID.toLowerCase())
+      return json({error:'テスト用DBの識別情報が一致しません',code:'preview_db_not_verified'},503)
+  }
   if (isPagesPreview && m !== 'GET' && a !== 'auth')
     return json({error:'プレビュー画面では明細・設定を更新できません。本番サイトをご利用ください',code:'preview_read_only'},403)
   if (a === 'auth') {
@@ -236,6 +248,19 @@ export async function onRequest({ request, env, params }) {
   const entriesYear = url.searchParams.get('year') || ''
 
   try {
+    const tokyoToday = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const applyDueTransfers = async () => {
+      await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
+        .bind(tokyoToday()).run()
+    }
+    // Versioned, fail-safe compatibility migration: one cheap read after
+    // completion, rather than six column probes and a DDL index per request.
+    let compatibilityReady=false
+    try {
+      const recorded=await db.prepare("SELECT version FROM schema_migrations WHERE version='api-compat-v1'").first()
+      compatibilityReady=!!recorded
+    }catch { /* Very old DB has no migration ledger yet. */ }
+    if(!compatibilityReady){
     // Automatic one-time migration: existing rows default to expenses.
     try { await db.prepare('SELECT type FROM entries LIMIT 1').first() }
     catch (columnCheckError) {
@@ -292,11 +317,7 @@ export async function onRequest({ request, env, params }) {
     // Applied transfers are ledger facts, NOT investment valuations.
     // Do not mutate investment_snapshots.current_value here: it is a manually
     // entered market valuation that may already include the purchase.
-    const tokyoToday = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    const applyDueTransfers = async () => {
-      await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
-        .bind(tokyoToday()).run()
-    }
+
     // Transfer state is applied only by the explicit POST transfers/process-due endpoint.
 
     // D1 unique index makes OCR retries idempotent even when a response is lost.
@@ -309,6 +330,9 @@ export async function onRequest({ request, env, params }) {
       }
     }
     await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_client_request_id ON entries(client_request_id)').run()
+    await db.prepare('CREATE TABLE IF NOT EXISTS schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, description TEXT NOT NULL)').run()
+    await db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES('api-compat-v1','Safe additive ledger columns and request-id index')").run()
+    }
 
     // Never rewrite or delete existing ledger rows during migration.
     // SBI valuation entries remain untouched unless the user explicitly edits them.
@@ -392,6 +416,24 @@ export async function onRequest({ request, env, params }) {
           return json({ok:true})
         }
       } else {
+        if (m === 'POST' && b === 'recalculate') {
+          const item=await request.json()
+          if(typeof item?.name!=='string'||!item.name.trim()||item.name.length>80||
+             !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month||'')||
+             !validDate(item.start)||!validDate(item.end)||item.start>item.end)
+            return json({error:'カードの対象期間を確認してください'},400)
+          // One SQL statement calculates and writes the bill from authoritative
+          // D1 entries. A stale browser cache can never overwrite this total.
+          await db.prepare(`INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count)
+            SELECT ?1,?2,?3,?4,COALESCE(SUM(amount),0),COUNT(*)
+            FROM entries WHERE date>=?3 AND date<=?4 AND type='expense' AND payment_source=?1
+            ON CONFLICT(payment_source,bill_month) DO UPDATE SET
+              period_start=excluded.period_start,period_end=excluded.period_end,
+              total_amount=excluded.total_amount,transaction_count=excluded.transaction_count`)
+            .bind(item.name,item.month,item.start,item.end).run()
+          const latest=await db.prepare('SELECT total_amount AS total,transaction_count AS count FROM card_bills WHERE payment_source=?1 AND bill_month=?2').bind(item.name,item.month).first()
+          return json({ok:true,total:latest.total,count:latest.count})
+        }
         if ((m === 'PUT' || m === 'POST') && !b) {
           const item = await request.json()
           if (typeof item?.name !== 'string' || !item.name || item.name.length > 80 ||
@@ -415,6 +457,37 @@ export async function onRequest({ request, env, params }) {
         }
       }
       return json({error:'未対応の操作です'},405)
+    }
+    if (a === 'backup-snapshot' && m === 'GET') {
+      // db.batch() executes all SELECTs inside one D1 transaction, preventing
+      // mixed ledger/settings snapshots between requests or devices.
+      const size=await db.prepare('SELECT COUNT(*) AS total FROM entries').first()
+      if(Number(size.total)>10000)return json({error:'大容量のバックアップは段階的に作成してください',code:'snapshot_too_large'},413)
+      const statements=[
+        'SELECT * FROM entries ORDER BY id',
+        'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
+        'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
+        'SELECT platform,current_value,pnl,updated_at FROM investment_snapshots ORDER BY platform',
+        'SELECT name,closing_day,is_default,sort_order FROM payment_sources ORDER BY sort_order,name',
+        'SELECT keyword,payment_source FROM merchant_payment_rules ORDER BY keyword',
+        'SELECT keyword,category FROM custom_rules ORDER BY keyword',
+        "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
+        'SELECT category,icon FROM category_icons ORDER BY category',
+        'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id'
+      ].map(sql=>db.prepare(sql))
+      const results=await db.batch(statements)
+      const rows=n=>results[n]?.results||[]
+      return json({
+        format:'kakeibo-ledger-backup',version:3,exportedAt:new Date().toISOString(),
+        entries:rows(0),
+        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled})),
+        bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
+        investments:rows(3),paymentSources:rows(4),merchantPaymentRules:rows(5),
+        customRules:rows(6),
+        categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(7).map(x=>x.category)])],
+        categoryIcons:Object.fromEntries(rows(8).map(x=>[x.category,x.icon])),
+        dismissedTransfers:rows(9).map(x=>x.entry_id)
+      })
     }
     if (a === 'restore-atomic' && m === 'POST') {
       const size=Number(request.headers.get('content-length')||0)

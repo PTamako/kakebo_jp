@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { parseRepeatedExpense } from './natural-repeat.js'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
@@ -413,7 +414,10 @@ onUnmounted(() => { clearTimeout(draftSaveTimer) })
 function recognize(mode = recognitionMode.value, append = false) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
-  const parsed = mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value)
+  // Scheduled-looking text expands into *drafts* only. Explicit review/save
+  // and ordinary duplicate protections remain mandatory.
+  const repeated = mode === 'statement' ? parseRepeatedExpense(input.value) : null
+  const parsed = repeated || (mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value))
   if (mode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
   const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
@@ -424,7 +428,7 @@ function recognize(mode = recognitionMode.value, append = false) {
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   entryInputMode.value = 'scan'
-  flash(forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
+  flash(repeated ? `毎週の支出を${repeated.length}件に展開しました。日付・内容・金額を確認してから保存してください` : forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
 async function onImage(e, mode = 'statement') {
   const f = e.target.files[0]; e.target.value = ''
@@ -986,22 +990,32 @@ const calendarDays = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
   const daysInMonth = new Date(year, monthNumber, 0).getDate()
   const firstDayOffset = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7
-  const amounts = new Map()
+  const amounts = new Map(), expenses = new Map(), incomes = new Map()
+  // Dates and monthly peaks must reflect the saved ledger, not draft entries.
+  for (const entry of entries.value.filter(e=>String(e.date||'').startsWith(month.value))) {
+    const key=String(entry.date||'').slice(0,10),amount=Number(entry.amount||0)
+    if(entry.type==='expense')expenses.set(key,(expenses.get(key)||0)+amount)
+    if(entry.type==='income')incomes.set(key,(incomes.get(key)||0)+amount)
+  }
   for (const entry of calendarEntries.value) {
     const key = String(entry.date || '').slice(0, 10)
     amounts.set(key, (amounts.get(key) || 0) + Number(entry.amount || 0))
   }
+  const maxExpense=Math.max(0,...expenses.values()),maxIncome=Math.max(0,...incomes.values())
+  const today=liveNow.value.toLocaleDateString('sv-SE')
   const days = Array.from({ length: firstDayOffset }, (_, i) => ({ key: `blank-${i}`, blank: true }))
   for (let day = 1; day <= daysInMonth; day++) {
     const date = `${year}-${String(monthNumber).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    days.push({ key: date, date, day, amount: amounts.get(date) || 0, blank: false })
+    days.push({ key: date, date, day, amount: amounts.get(date) || 0,
+      isToday:date===today, topExpense:maxExpense>0 && expenses.get(date)===maxExpense,
+      topIncome:maxIncome>0 && incomes.get(date)===maxIncome, blank:false })
   }
   while (days.length % 7) days.push({ key: `blank-end-${days.length}`, blank: true })
   return days
 })
 const visibleCalendarDays = computed(() => {
   if (calendarExpanded.value) return calendarDays.value
-  const today = new Date().toLocaleDateString('sv-SE')
+  const today = liveNow.value.toLocaleDateString('sv-SE')
   const target = today.startsWith(month.value) ? today : (selectedDay.value.startsWith(month.value) ? selectedDay.value : calendarDays.value.find(day => !day.blank)?.date)
   const index = calendarDays.value.findIndex(day => day.date === target)
   const start = Math.max(0, Math.floor(Math.max(0, index) / 7) * 7)
@@ -1088,7 +1102,18 @@ const weekRows = computed(() => {
 })
 const maxWeek = computed(() => Math.max(1, ...weekRows.value.map(w => w.amount)))
 const averageDaily = computed(() => dayRows.value.length ? Math.round(Number(stats.value?.total || 0) / dayRows.value.length) : 0)
-const todayLabel = computed(() => { const d = new Date(); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日` })
+const liveNow = ref(new Date())
+let clockTimer = null
+const todayLabel = computed(() => {
+  const d=liveNow.value, pad=n=>String(n).padStart(2,'0')
+  return `${d.getFullYear()}年${pad(d.getMonth()+1)}月${pad(d.getDate())}日 ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+})
+const liveClockIso = computed(() => {
+  const d=liveNow.value, pad=n=>String(n).padStart(2,'0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+})
+onMounted(() => { liveNow.value = new Date(); clockTimer = setInterval(() => { liveNow.value = new Date() }, 1000) })
+onUnmounted(() => { if (clockTimer) clearInterval(clockTimer) })
 const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
   return `${y}年${Number(m)}月`
@@ -1183,7 +1208,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </span>
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
-      <span v-if="tab === 'add'" class="today-date">{{ todayLabel }}</span>
+      
       <div class="header-actions">
         <details class="theme-picker">
           <summary aria-label="テーマカラーを選ぶ" title="配色を変更">
@@ -1204,7 +1229,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <div v-if="tab === 'stat' && statsPeriod === 'year' && annualLoadError" class="panel" role="alert"><span>{{annualLoadError}}</span> <button type="button" class="button-secondary" @click="loadYear">再読み込み</button></div>
 
     <section v-if="tab === 'add'" class="page-section">
-      <div class="page-heading"><div><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
+      <div class="page-heading"><div><h1>入力</h1><time class="entry-live-clock" :datetime="liveClockIso" aria-label="現在の日時">{{ todayLabel }}</time></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
       <fieldset class="draft-controls" :disabled="busy === 'saving'" :aria-busy="busy === 'saving'">
       <div v-if="categoryDialog" class="edit-overlay" @click.self="!categorySaving && (categoryDialog = false)">
         <form class="edit-dialog category-dialog" @submit.prevent="saveCategory" aria-label="カテゴリを追加">
@@ -1223,7 +1248,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <summary>テキストを貼り付けて読み取る</summary>
           <label class="field-label" for="entry-text">テキスト入力</label>
           <label class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
-          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? 'カード利用明細などの複数の取引を貼り付けられます。' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
+          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? '例：10月の毎週金曜日に100円使った（内容を確認して保存）' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
           <div class="action-row">
             <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
           </div>
@@ -1283,10 +1308,11 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div class="entry-type-filter" role="group" aria-label="明細の種類"><button v-for="option in [{value: 'all', label: 'すべて'}, {value: 'income', label: '収入'}, {value: 'expense', label: '支出'}, {value: 'transfer', label: '資産移動'}]" :key="option.value" type="button" :class="{ selected: entryTypeFilter === option.value }" :aria-pressed="entryTypeFilter === option.value" @click="setEntryTypeFilter(option.value)">{{ option.label }}</button></div>
       <section v-if="!detailFilter" class="month-calendar" aria-label="月間明細カレンダー">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><div class="calendar-actions"><button type="button" class="calendar-reset" @click="calendarExpanded = !calendarExpanded">{{ calendarExpanded ? '週のみ表示' : '月全体を表示' }}</button><button v-if="selectedDay" type="button" class="calendar-reset" @click="selectedDay = ''">日付解除</button></div></div>
+        <div class="calendar-legend" aria-label="日付マークの説明"><span><i class="legend-today"></i>今日</span><span><i class="calendar-peak-expense">支</i>支出最多</span><span><i class="calendar-peak-income">収</i>収入最多</span></div>
         <div class="calendar-weekdays"><span v-for="weekday in ['一', '二', '三', '四', '五', '六', '日']" :key="weekday">{{ weekday }}</span></div>
         <div class="calendar-grid">
-          <button v-for="day in visibleCalendarDays" :key="day.key" type="button" class="calendar-day" :class="{ 'calendar-blank': day.blank, 'calendar-selected': selectedDay === day.date, 'calendar-has-spend': day.amount > 0 }" :disabled="day.blank" @click="toggleDay(day.date)" :aria-label="day.blank ? undefined : day.date + ' 記録額 ' + yen(day.amount)">
-            <template v-if="!day.blank"><span class="calendar-day-number">{{ day.day }}</span><small v-if="day.amount > 0">{{ yen(day.amount) }}</small><small v-else class="calendar-no-spend">—</small></template>
+          <button v-for="day in visibleCalendarDays" :key="day.key" type="button" class="calendar-day" :class="{ 'calendar-blank': day.blank, 'calendar-selected': selectedDay === day.date, 'calendar-has-spend': day.amount > 0, 'calendar-today':day.isToday, 'calendar-top-expense':day.topExpense, 'calendar-top-income':day.topIncome }" :disabled="day.blank" @click="toggleDay(day.date)" :aria-current="day.isToday ? 'date' : undefined" :aria-label="day.blank ? undefined : day.date + (day.isToday?' 今日':'') + (day.topExpense?' 支出最多':'') + (day.topIncome?' 収入最多':'') + ' 記録額 ' + yen(day.amount)">
+            <template v-if="!day.blank"><span class="calendar-day-number">{{ day.day }}</span><span class="calendar-day-badges"><i v-if="day.topExpense" class="calendar-peak-expense" title="支出最多" aria-hidden="true">支</i><i v-if="day.topIncome" class="calendar-peak-income" title="収入最多" aria-hidden="true">収</i></span><small v-if="day.amount > 0">{{ yen(day.amount) }}</small><small v-else class="calendar-no-spend">—</small></template>
           </button>
         </div>
       </section>

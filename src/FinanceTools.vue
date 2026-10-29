@@ -362,10 +362,10 @@ async function downloadBackup(){
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
     const snapshot = rows.value.map(row=>({...row}))
     const before = ledgerFingerprint(snapshot)
-    const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers] = await Promise.all([
+    const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata] = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders')
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source')
     ])
     // Reject mixed-time exports when another device edited the ledger during metadata reads.
     if (!(await loadAll()) || ledgerFingerprint(rows.value)!==before)
@@ -379,12 +379,12 @@ async function downloadBackup(){
     ])
     if (JSON.stringify(currentSettings) !== JSON.stringify([
       nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,
-      customRules,categories,categoryIcons,dismissedTransfers
+      customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata
     ])) throw Error('設定がバックアップ中に変更されました。もう一度実行してください')
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
       entries:snapshot,plans:nextPlans,bills:nextBills,investments,
-      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers
+      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata
     })
     const sealed = await sealBackup(data)
     const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
@@ -433,7 +433,7 @@ async function restore(){
   // committed batches and leaves uncommitted drafts visible for safe retry.
   const BATCH_SIZE=150
   // Use the same settings bound as restoreAtomic; guard before any writes.
-  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers']
+  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata']
     .reduce((n,key)=>n+(Array.isArray(backup[key])?backup[key].length:0),0)
     + Object.keys(backup.categoryIcons||{}).length
   if(settingTotal<=500){
@@ -458,6 +458,7 @@ async function restore(){
           paymentSources:first?backup.paymentSources:[],merchantPaymentRules:first?backup.merchantPaymentRules:[],
           customRules:first?backup.customRules:[],categories:first?backup.categories:[],
           investments:first?backup.investments:[],categoryIcons:first?backup.categoryIcons:{},
+          categoryMetadata:first?backup.categoryMetadata:[],
           dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id)))}
         const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify(scopedArchive)})
         completed+=result.created

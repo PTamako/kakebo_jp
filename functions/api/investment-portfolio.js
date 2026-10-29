@@ -92,7 +92,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
         valuation:{valued_count:valued.length,holdings_count:positions.length,
           value:valued.length===positions.length&&positions.length?valued.reduce((n,p)=>n+p.market_value,0):null,
           pnl:valued.length===positions.length&&positions.length?valued.reduce((n,p)=>n+p.pnl,0):null},
-        note:'資産移動の到期処理は帳簿上の反映であり、SBI口座への着金や約定を保証しません。自動紐付け月は推定です。'
+        note:'資産移動の期日処理は帳簿上の反映であり、SBI口座への着金や約定を保証しません。自動紐付け月は推定です。'
       });
     }
     if(sub==='initialize'&&method==='POST'){

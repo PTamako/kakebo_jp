@@ -287,7 +287,7 @@ export async function onRequest({ request, env, params }) {
       await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
         .bind(tokyoToday()).run()
     }
-    await applyDueTransfers()
+    // Transfer state is applied only by the explicit POST transfers/process-due endpoint.
 
     // D1 unique index makes OCR retries idempotent even when a response is lost.
     try { await db.prepare('SELECT client_request_id FROM entries LIMIT 1').first() }
@@ -802,6 +802,11 @@ export async function onRequest({ request, env, params }) {
         await db.prepare('INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) VALUES(?1)').bind(id).run()
         return json({ok:true})
       }
+    }
+    if (a === 'transfers' && b === 'process-due' && m === 'POST') {
+      // Explicit mutation: ordinary GET requests no longer silently modify entries.
+      await applyDueTransfers()
+      return json({ok:true})
     }
     if (a === 'transfers' && b && params.path?.[2] === 'dismiss' && m === 'POST') {
       const id = Number(b)

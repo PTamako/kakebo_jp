@@ -194,8 +194,14 @@ export function parseReceipt(raw, rules = []) {
         || ''))
   const categorySource = merchant || text.slice(0, 120)
   const { category, keyword } = classify(categorySource, rules)
-  const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line)) || ''
-  let receiptDate = dateLine ? findDate(dateLine) : ''
+  // Receipts also print compact two-digit years (26.10.29) and Japanese era dates.
+  const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line))
+    || lines.find(line => /(?<!\d)\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?!\d)/.test(line))
+    || lines.find(line => /令和\s*(?:元|\d{1,2})\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?/.test(line)) || ''
+  const era = dateLine.match(/令和\s*(元|\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})/)
+  let receiptDate = era
+    ? `${2018+(era[1]==='元'?1:Number(era[1]))}-${pad(era[2])}-${pad(era[3])}`
+    : dateLine ? findDate(dateLine) : ''
   let dateCorrected = false
   // OCR can read 2026 as 2006. Correct only with two independent clues:
   // the receipt month/day is today and another line contains the current year.

@@ -2,10 +2,48 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion } from './finance-tools.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
-const props = defineProps({ active: { type: Boolean, default: false }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] } })
-const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh'])
+import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
+const props = defineProps({ active: { type: Boolean, default: false }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
+const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
 const managementTab = ref('cards')
+const localReceiptCount = ref(null)
+const receiptImagesBusy = ref(false)
+const receiptImagePrivacyMessage = ref('')
+async function refreshLocalReceiptCount() {
+  if (receiptImagesBusy.value) return
+  receiptImagesBusy.value = true
+  try {
+    localReceiptCount.value = await countReceiptImages()
+    receiptImagePrivacyMessage.value = ''
+  } catch (e) {
+    localReceiptCount.value = null
+    receiptImagePrivacyMessage.value = '画像の件数を確認できません：' + e.message
+  } finally { receiptImagesBusy.value = false }
+}
+async function clearLocalReceiptImages() {
+  if (receiptImagesBusy.value) return
+  const count = localReceiptCount.value
+  if (!Number.isSafeInteger(count) || count < 1) return
+  if (!confirm('この端末に保存されたレシート画像 ' + count +
+    '件をすべて削除します。削除した画像は復元できません。記録・支出額・SBI評価額は変更されません。よろしいですか？')) return
+  receiptImagesBusy.value = true
+  try {
+    // This only clears the local IndexedDB receipt-image store. Never call D1 APIs.
+    await clearAllReceiptImages()
+    localReceiptCount.value = 0
+    receiptImagePrivacyMessage.value = '端末内のレシート画像を削除しました。記録とSBI評価額はそのままです。'
+    emit('receipt-images-cleared')
+  } catch (e) {
+    receiptImagePrivacyMessage.value = '画像の削除に失敗しました：' + e.message
+  } finally {
+    receiptImagesBusy.value = false
+  }
+}
+watch([() => props.active, managementTab], ([active,tab]) => {
+  if(active && tab === 'tools') void refreshLocalReceiptCount()
+})
+
 const cardMode = ref('')
 const selectedCard = ref('')
 const editedCardName = ref('')
@@ -663,6 +701,30 @@ async function removeCardBill(record) {
       </div>
     </details>
   </article>
+  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure device-privacy-panel">
+    <summary>端末のプライバシー設定<span>ログイン・画像の管理</span></summary>
+    <div class="device-privacy-section">
+      <label class="device-login-field"><span>ログイン状態</span>
+        <select :value="props.rememberDevice ? 'remember' : 'session'" aria-label="ログイン状態の保存方法" @change="emit('change-remember-device', $event.target.value === 'remember')">
+          <option value="remember">この端末に保存（最長30日）</option>
+          <option value="session">このセッション内のみ保存</option>
+        </select>
+      </label>
+      <p>設定はこの端末だけに反映されます。セッションの終了時期はブラウザやiPhoneの動作により異なります。</p>
+    </div>
+    <div class="device-privacy-section">
+      <div class="device-privacy-row">
+        <strong>保存済みレシート画像</strong>
+        <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
+      </div>
+      <p>この端末に保存されたレシート画像だけを管理します。通常は30日後に期限切れとなります。画像を消しても明細やSBI評価額は消えません。</p>
+      <div class="finance-actions device-receipt-actions">
+        <button type="button" :disabled="receiptImagesBusy" @click="refreshLocalReceiptCount">{{receiptImagesBusy ? '確認中…' : '件数を更新'}}</button>
+        <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
+      </div>
+      <p v-if="receiptImagePrivacyMessage" role="status">{{receiptImagePrivacyMessage}}</p>
+    </div>
+  </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
     <summary>バックアップ・復元<span>必要なときに開く</span></summary>
     <p>全明細・SBI評価額と損益・固定支出・カード設定・通知状態をJSONで保存します。端末内レシート写真は含まれません。復元が途中で停止した場合は、表示された登録件数を確認してから再試行してください。</p>
@@ -736,4 +798,16 @@ async function removeCardBill(record) {
 .merchant-rule-more button{min-height:44px;padding:9px 20px}
 .merchant-rule-more span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .finance-saved-bill{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--tint);min-width:0}.finance-saved-bill-text{display:grid;gap:3px;min-width:0}.finance-saved-bill-caption{font-size:12px;color:var(--muted)}.finance-saved-bill-text strong{font-size:17px;font-variant-numeric:tabular-nums}.finance-bill-history{min-width:0;border:1px solid var(--line);border-radius:11px;background:var(--card)}.finance-bill-history summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;padding:10px 12px;cursor:pointer;font-size:13px;font-weight:650;list-style:none}.finance-bill-history summary::-webkit-details-marker{display:none}.finance-bill-history summary:after{content:'⌄';margin-left:4px;color:var(--muted)}.finance-bill-history[open] summary:after{content:'⌃'}.finance-bill-history summary span{margin-left:auto;color:var(--muted);font-weight:500}.finance-bill-history-scroll{max-height:280px;overflow-y:auto;overscroll-behavior:contain;padding:0 12px 6px}.finance-bill-history-row{display:flex;align-items:center;justify-content:space-between;gap:8px}.finance-bill-history-row span{min-width:0;overflow-wrap:anywhere}
+
+/* The privacy controls share the finance-page panels, typography and 44px actions. */
+.device-privacy-panel .device-privacy-section{display:grid;gap:8px;min-width:0}
+.device-privacy-panel .device-privacy-section + .device-privacy-section{border-top:1px solid var(--line);padding-top:13px;margin-top:5px}
+.device-login-field{display:grid;gap:6px}
+.device-privacy-panel .device-login-field select{width:100%;min-width:0;background:var(--card);color:var(--ink);padding:0 12px;border:1px solid var(--line);border-radius:10px;font-size:16px}
+.device-privacy-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}
+.device-privacy-row strong{font-size:14px}
+.device-privacy-count{font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
+.device-receipt-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+.device-privacy-panel .device-receipt-clear{color:var(--blue-dark);background:var(--card)}
+@media(max-width:360px){.device-privacy-panel .device-receipt-actions button{font-size:12px;padding-inline:5px}}
 </style>

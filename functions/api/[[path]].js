@@ -1,4 +1,5 @@
 import { isAppliedSbiTransfer } from './investment-transfer.js'
+import { handlePortfolio } from './investment-portfolio.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
@@ -797,6 +798,10 @@ export async function onRequest({ request, env, params }) {
     if (a === 'transfers' && m === 'GET') {
       const { results } = await db.prepare("SELECT id, date, amount, merchant, note, transfer_target, transfer_applied, transfer_date FROM entries WHERE type = 'transfer' AND transfer_target = 'sbi' AND NOT EXISTS (SELECT 1 FROM dismissed_transfer_reminders d WHERE d.entry_id = entries.id) AND (COALESCE(transfer_date, date) >= date('now', '-60 days') OR COALESCE(transfer_applied, 0) = 0) ORDER BY COALESCE(transfer_date, date) ASC, id DESC LIMIT 100").all()
       return json(results)
+    }
+
+    if (a === 'investment-portfolio') {
+      return handlePortfolio({db,request,method:m,sub:b,url})
     }
 
     if (a === 'investments') {

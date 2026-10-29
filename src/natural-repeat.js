@@ -15,6 +15,7 @@ export function parseRepeatedExpense(text, now=new Date()) {
   const year=when[1]?Number(when[1]):now.getFullYear(),month=Number(when[2])
   if(year<2000||year>2100)return null
   const weekday=weekdayNumber[repeated[1]]
+  const japaneseWeekday=['日','月','火','水','木','金','土'][weekday]
   if(weekday===undefined)return null
   // Never infer a payment source, merchant or an account transfer from a sentence.
   const drafts=[]
@@ -22,7 +23,7 @@ export function parseRepeatedExpense(text, now=new Date()) {
     const date=new Date(year,month-1,day)
     if(date.getDay()!==weekday)continue
     const iso=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
-    drafts.push({date:iso,time:'',amount,category:'日用品',merchant:'',note:`毎週${repeated[1]}曜日の支出（内容を確認）`,raw:input,suggested:'日用品',keyword:'',type:'expense'})
+    drafts.push({date:iso,time:'',amount,category:'日用品',merchant:'',note:`毎週${japaneseWeekday}曜日の支出（内容を確認）`,raw:input,suggested:'日用品',keyword:'',type:'expense'})
   }
   return drafts.length?drafts:null
 }

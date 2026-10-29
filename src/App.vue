@@ -1126,7 +1126,7 @@ const pigState = ratio => ratio === null ? 'empty' : ratio >= 1 ? 'broken' : rat
 // Statistical illustrations are bundled local assets; do not rely on image CDNs.
 const puppyExpression = ratio => ratio >= 1 ? puppyCrying : puppyWorried
 function puppyFallback(event) { event.target.onerror = null; event.target.src = puppyWorried }
-const pigLabel = ratio => ratio === null ? 'まず収入を記録して、収支バランスを確認しましょう' : ratio >= 1 ? '大変！支出が収入以上になっています！' : ratio >= .8 ? '予算オーバーに注意しましょう！' : 'いい感じです。この調子でいきましょう'
+const pigLabel = ratio => ratio === null ? '収入の記録がありません' : ratio >= 1 ? '支出が収入以上です' : ratio >= .8 ? '支出割合が高めです' : '良好な収支バランス'
 const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.round(ratio * 100) + '%'
 </script>
 
@@ -1201,10 +1201,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             </button>
           </div>
         </div>
-        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">Cloudflare AIへ送信します。1日の回数上限は料金上限ではありません。<span v-if="aiQuota">本日の残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
+        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">Cloudflare AIに画像を送信（回数上限≠料金上限）<span v-if="aiQuota">本日の残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
-        <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
+        <p class="microcopy">{{ recognitionMode === 'statement' ? '明細を複数件読み取り' : 'レシートの合計を1件読み取り' }}</p>
 
 
         <div v-if="busy" class="progress-wrap"><span class="spinner"></span><span>{{ busy }}</span></div>
@@ -1215,7 +1215,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <p v-if="draftRecoveryInfo && (forms.length || input.trim())" class="microcopy" role="status">{{draftRecoveryInfo}}</p>
       <button v-if="forms.length || input.trim()" type="button" class="draft-clear" :disabled="!!busy" @click="clearLocalDraft">未保存の入力をこの端末から破棄</button>
       <div v-if="forms.length" class="draft-heading">
-        <div><h2>{{ entryInputMode === 'scan' ? '読み取り結果の確認' : '入力内容の確認' }}</h2><p>金額・日付・店舗名を確認して保存してください</p></div>
+        <div><h2>{{ entryInputMode === 'scan' ? '読み取り結果の確認' : '入力内容の確認' }}</h2><p>保存前に金額・日付を確認</p></div>
         <span class="count-pill">{{ forms.length }}件</span>
       </div>
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
@@ -1246,7 +1246,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div class="summary-strip"><span>{{ detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + ({income:'収入',expense:'支出',transfer:'資産移動'}[detailFilter.type] || 'すべて') + ' · ' + (detailFilter.type === 'transfer' ? '資産移動' : categoryLabel(detailFilter.category)) : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel + ' · ' + ({all: 'すべて', income: '収入', expense: '支出', transfer: '資産移動'}[entryTypeFilter])) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
       <div v-if="detailFilter" class="detail-filter-strip"><span>{{ detailFilter.type === 'transfer' ? '資産移動で絞り込み中' : 'カテゴリで絞り込み中' }}</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
       <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
-      <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><p>{{ detailFilter ? '条件に一致する記録はありません。' : '「入力」から最初の記録を追加できます。' }}</p><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
+      <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
       
       <div v-if="!detailLoading && displayEntries.length && annualDetailMode" class="ledger annual-month-list">
         <section v-for="group in annualMonthGroups" :key="group.month" class="entry-day-group">
@@ -1301,7 +1301,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="edit-dialog" role="dialog" aria-modal="true" aria-label="レシート画像">
           <div class="edit-dialog-heading"><h2>レシート画像</h2><button type="button" class="icon-button" @click="closeReceipt" aria-label="閉じる">×</button></div>
           <img :src="viewedReceiptUrl" alt="保存したレシート" style="width:100%;max-height:65vh;object-fit:contain" />
-          <p class="microcopy">画像はこの端末に30日間保存されます。記録は削除されません。</p>
+          <p class="microcopy">画像は端末内に30日保存</p>
           <button type="button" class="button-secondary" @click="removeReceiptImage">画像のみ削除</button>
         </div>
       </div>
@@ -1318,7 +1318,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </section>
 
     <section v-else-if="tab === 'stat' && statsPeriod === 'month'" class="page-section stats-page">
-      <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ monthLabel }}の収支を分析</p></div><div class="heading-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div></div>
+      <div class="page-heading"><div><h1>統計</h1></div><div class="heading-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div></div>
       <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月次</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年次</button></div>
       <div class="hero-total">
         <span>今月の支出合計</span>
@@ -1336,10 +1336,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>支出件数</small><strong>{{ stats?.count || 0 }}<em>件</em></strong></div>
         <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span><small>1日平均支出（支出があった日）</small><strong>{{ yen(averageDaily) }}</strong></div>
       </div>
-      <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>集計データがありません</strong><p>支出を記録すると、ここに内訳が表示されます。</p><button class="button-primary" @click="tab = 'add'">入力</button></div>
+      <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>集計データがありません</strong><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div class="stats-card">
-          <div class="section-title"><div><h2>カテゴリ支出</h2><p>何にお金を使ったか確認しましょう</p></div></div>
+          <div class="section-title"><div><h2>カテゴリ支出</h2></div></div>
           <div class="pie-chart-layout donut-vertical">
             <div class="category-pie donut-chart" :style="{ background: monthlyCategoryPie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'なし') + ' ' + donutPercent('month') + '%'" @click="selectDonutSlice($event, 'month')">
               <div class="donut-center"><span>{{ donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('month')?.amount || 0) }}</strong><small>{{ donutPercent('month') }}%</small></div>
@@ -1352,7 +1352,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </div>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>週別支出</h2><p>月曜日から日曜日で集計（最初と最後の週は当月の日付で計算）</p></div></div>
+          <div class="section-title"><div><h2>週別支出</h2></div></div>
           <div class="daily-list">
             <div v-for="(w, i) in weekRows" :key="w.key" class="daily-row weekly-row">
               <div class="daily-date week-index"><strong>第{{ i + 1 }}</strong><span>週</span></div>
@@ -1365,7 +1365,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </section>
 
     <section v-else-if="tab === 'stat' && statsPeriod === 'year'" class="page-section stats-page annual-page">
-      <div class="page-heading"><div><p class="eyebrow">家計の分析</p><h1>統計</h1><p class="heading-subtitle">{{ selectedYear }}年の収支を分析</p></div><label class="heading-year"><input v-model.number="selectedYear" class="topbar-year" type="number" min="1900" max="9999" step="1" inputmode="numeric" aria-label="集計年" /><span>年</span></label></div>
+      <div class="page-heading"><div><h1>統計</h1></div><label class="heading-year"><input v-model.number="selectedYear" class="topbar-year" type="number" min="1900" max="9999" step="1" inputmode="numeric" aria-label="集計年" /><span>年</span></label></div>
       <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月次</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年次</button></div>
       <div class="hero-total annual-hero">
         <span>{{ selectedYear }}年の支出合計</span><strong>{{ yen(annualStats?.total) }}</strong>
@@ -1382,7 +1382,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>月平均支出（12か月で計算）</small><strong>{{ yen(annualAverage) }}</strong></div>
         <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span><small>支出が最も多い月</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
       </div>
-      <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><p>別の年を選ぶか、記録を追加してください。</p><button class="button-primary" @click="tab = 'add'">入力</button></div>
+      <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div v-if="annualStats?.count" class="stats-card">
           <div class="section-title"><div><h2>支出の推移</h2><p>{{ selectedYear }}年1月〜12月</p></div></div>
@@ -1397,7 +1397,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" @click="openMonthDetails(item, 'expense')">{{ Number(item.month.slice(5)) }}</button></div>
         </div>
         <div class="stats-card trend-card">
-          <div class="section-title"><div><h2>収入の推移</h2><p>月ごとの年間収入の推移</p></div></div>
+          <div class="section-title"><div><h2>収入の推移</h2></div></div>
           <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>月間最高収入</span></div>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年収入の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
@@ -1408,9 +1408,9 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" @click="openMonthDetails(item, 'income')">{{ Number(item.month.slice(5)) }}</button></div>
         </div>
         <div class="stats-card trend-card">
-          <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入。破線は80%と100%の目安</p></div></div>
+          <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入 · 破線：80% / 100%</p></div></div>
           <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>月間最高の支出割合</span></div>
-          <p v-if="ratioTrendMax > 1.5" class="trend-note">150%を超える月はグラフ上端に表示します。正確な割合は月を選択して確認してください。</p>
+          <p v-if="ratioTrendMax > 1.5" class="trend-note">150%超は上端に表示</p>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出割合の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <line x1="16" y1="64.27" x2="304" y2="64.27" class="chart-reference-line" />
@@ -1423,23 +1423,23 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <div v-if="selectedRatioMonthRow" class="income-month-breakdown ratio-month-breakdown">
             <div class="income-breakdown-heading"><div><h3>{{ selectedRatioMonthRow.month.replace('-', '年') }}月の収支</h3><p>支出 ÷ 収入</p></div><strong>{{ selectedRatio === null ? '計算できません' : Math.round(selectedRatio * 100) + '%' }}</strong></div>
             <div class="ratio-detail-amounts"><div><span>当月の収入</span><strong>{{ yen(selectedRatioMonthRow.income) }}</strong></div><div><span>当月の支出</span><strong>{{ yen(selectedRatioMonthRow.amount) }}</strong></div></div>
-            <p v-if="selectedRatio === null" class="trend-note">この月は収入記録がないため、支出割合を計算できません。</p>
+            <p v-if="selectedRatio === null" class="trend-note">収入なし・割合算出不可</p>
           </div>
-          <p class="trend-note">収入がない月は割合を計算しません。縦軸は0〜150%で、150%を超える点は上限に表示されます。</p>
+          <p class="trend-note"></p>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>年度カテゴリ収入</h2><p>年間合計の多い順</p></div></div>
+          <div class="section-title"><div><h2>年度カテゴリ収入</h2></div></div>
           <div v-if="annualIncomeCategories.length" class="category-list annual-income-bars">
             <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'income' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'income', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'income', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'income', 'year')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(c.category)"/></svg></span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
               <div class="bar-track"><span class="bar-fill income-category-fill" :style="{ width: Math.max(2, Number(c.amount) / maxAnnualIncomeCategory * 100) + '%' }"></span></div>
-              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}%（年間収入に占める割合） · タップして明細</small>
+              <small class="category-share">{{ annualStats?.income ? Math.round(Number(c.amount) / Number(annualStats.income) * 100) : 0 }}% · タップで明細</small>
             </div>
           </div>
           <p v-else class="trend-note">この年の収入記録はありません。</p>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>年度カテゴリ支出</h2><p>年間合計の多い順</p></div></div>
+          <div class="section-title"><div><h2>年度カテゴリ支出</h2></div></div>
           <div class="pie-chart-layout donut-vertical">
             <div class="category-pie donut-chart" :style="{ background: annualExpensePie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'なし') + ' ' + donutPercent('year') + '%'" @click="selectDonutSlice($event, 'year')">
               <div class="donut-center"><span>{{ donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('year')?.amount || 0) }}</strong><small>{{ donutPercent('year') }}%</small></div>
@@ -1458,7 +1458,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <section v-else-if="tab === 'investments'" class="page-section">
       <article class="panel pending-transfer-panel">
         <div class="pending-transfer-heading"><h2>振替予定</h2><button class="pending-refresh" :disabled="transferLoading" @click="loadTransfers" aria-label="振替予定を更新" title="更新">↻ 更新</button></div>
-        <p class="microcopy">振替予定日になった資産移動は、起動時・再読込時に自動反映されます。SBIの手入力評価額は変更しません。</p>
+        <p class="microcopy">予定日到来で自動反映（SBI評価額は変更なし）</p>
         <div v-if="transferLoading" class="pending-transfer-empty">読み込み中…</div>
         <div v-else-if="!pendingTransfers.length" class="pending-transfer-empty">確認が必要な振替はありません</div>
         <div v-else class="pending-transfer-list">
@@ -1468,10 +1468,10 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           </div>
         </div>
       </article>
-      <div class="page-heading"><div><p class="eyebrow">資産の記録</p><h1>資産・投資</h1><p class="heading-subtitle">積立額は明細から計算し、評価額・損益は手動管理します</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
+      <div class="page-heading"><div><h1>資産・投資</h1><p class="heading-subtitle">積立額は自動集計 · 評価額は手動</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
         <div class="investment-card-heading"><div><h2>{{ item.label }}</h2><p>{{ item.detail }}</p></div><span class="investment-unit">{{ item.unit }}</span></div>
-        <div class="investment-principal"><small>家計簿から確認できる積立累計</small><strong>{{ yen(investments[item.id].investedTotal) }}</strong><small>振替先を設定した登録済み明細から集計</small></div>
+        <div class="investment-principal"><small>積立累計</small><strong>{{ yen(investments[item.id].investedTotal) }}</strong></div>
         <label class="form-field"><span>現在の評価額（{{ item.unit }}）</span><input v-model.number="investments[item.id].currentValue" type="number" min="0" step="1" inputmode="numeric" placeholder="現在の評価額" /></label>
         <label class="form-field"><span>評価損益（{{ item.unit }}）</span><input v-model.number="investments[item.id].pnl" type="number" step="1" inputmode="numeric" placeholder="例：-1339" /></label>
         <div class="investment-summary">

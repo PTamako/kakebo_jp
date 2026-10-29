@@ -57,7 +57,7 @@ test('N07: backup rejects malformed child settings before touching the database'
 test('N04/N09/N10/N11/logo: safe preview gate, transfer disclosure, no logo border',()=>{
   const api=text('functions/api/[[path]].js')
   const app=text('src/App.vue')
-  assert.match(api,/PREVIEW_D1_ISOLATED !== 'true'/)
+  assert.match(api,/env\.PREVIEW_D1_ISOLATED === 'true'/)
   assert.match(app,/予定日到来で自動反映（SBI評価額は変更なし）/)
   assert.match(app,/回数上限≠料金上限/)
   assert.match(app,/main\.theme-green \.brand-mark\{[\s\S]*?background:transparent;[\s\S]*?box-shadow:none;/)

@@ -18,7 +18,7 @@ test('investment GET is read only while a fresh schema has an empty SBI record',
   const end = api.indexOf("if (a === 'stats'", start)
   assert.ok(start >= 0 && end > start)
   const investments = api.slice(start,end)
-  assert.doesNotMatch(investments.slice(0,investments.indexOf("if (m === 'POST')")), /INSERT|UPDATE|DELETE|CREATE TABLE/)
+  assert.doesNotMatch(investments.slice(0,investments.indexOf("if (m === 'POST' && b === 'restore-empty')")), /INSERT|UPDATE|DELETE|CREATE TABLE/)
   assert.match(schema, /INSERT OR IGNORE INTO investment_snapshots\(platform,current_value,pnl,updated_at\) VALUES\('sbi',NULL,NULL,NULL\)/)
 })
 

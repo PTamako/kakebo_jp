@@ -296,7 +296,7 @@ test('D1 atomic restore rolls back all inserted settings and entries after SQL f
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries").get().n,2)
     assert.equal(db.db.prepare("SELECT category FROM merchant_rules WHERE keyword='個人試験店'").get().category,'宠物')
     assert.equal(db.db.prepare("SELECT closing_day FROM payment_sources WHERE name='安全テストカード'").get().closing_day,15)
-    assert.equal(db.db.prepare("SELECT icon FROM category_icons WHERE category='饮食料品'").get().icon,'food')
+    assert.equal(db.db.prepare("SELECT icon FROM category_source WHERE category='饮食料品'").get().icon,'food')
   }finally{db.close()}
 })
 
@@ -336,6 +336,10 @@ test('merged rule migration copies both old columns once and leaves old tables i
     // Repeating the migration must not restore stale pre-upgrade preferences.
     await call('merchant-payment-rules')
     assert.deepEqual({...db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='既存共通店'").get()},{category:'医疗',payment_source:'カードB'})
+    // Once the migration marker and data are verified, the current APIs no longer need old tables.
+    db.db.exec('DROP TABLE merchant_payment_rules; DROP TABLE custom_rules;')
+    assert.equal((await call('custom-rules')).body.find(r=>r.keyword==='既存共通店').category,'医疗')
+    assert.equal((await call('merchant-payment-rules')).body.find(r=>r.keyword==='既存共通店').payment_source,'カードB')
   }finally{db.close()}
 })
 
@@ -449,14 +453,14 @@ test('actual SQLite: custom categories rank ahead of persisted 99999 Other even 
     assert.equal(res.status,200)
     assert.equal(res.body.at(-1),'其他')
     assert.ok(res.body.indexOf('旧分類')<res.body.indexOf('其他'))
-    assert.equal(db.db.prepare("SELECT sort_order FROM category_sort_order WHERE category='其他'").get().sort_order,99999)
-    assert.equal(db.db.prepare("SELECT sort_order FROM category_sort_order WHERE category='其他收入'").get().sort_order,99999)
+    assert.equal(db.db.prepare("SELECT sort_order FROM category_source WHERE category='其他'").get().sort_order,99999)
+    assert.equal(db.db.prepare("SELECT sort_order FROM category_source WHERE category='其他收入'").get().sort_order,99999)
     assert.equal((await call('categories','POST',{name:'新分類',icon:'books'})).status,200)
     res=await call('categories')
     assert.equal(res.body.at(-1),'其他')
     assert.ok(res.body.indexOf('旧分類')<res.body.indexOf('新分類'))
     for(const name of ['旧分類','新分類']){
-      assert.ok(db.db.prepare('SELECT sort_order FROM category_sort_order WHERE category=?').get(name).sort_order<99999)
+      assert.ok(db.db.prepare('SELECT sort_order FROM category_source WHERE category=?').get(name).sort_order<99999)
     }
     const icon=(await call('category-icons')).body
     assert.equal(icon['新分類'],'books')
@@ -464,18 +468,43 @@ test('actual SQLite: custom categories rank ahead of persisted 99999 Other even 
   }finally{db.close()}
 })
 
-test('actual SQLite migration: 0004 is idempotent and leaves financial records intact',async()=>{
+test('actual SQLite: current category_source migration preserves historical records and ranks',async()=>{
   const {db,call}=await createClient()
   try{
     await call('entries','POST',{date:'2026-10-29',amount:888,type:'expense',category:'其他',merchant:'既存明細'})
     db.db.prepare("INSERT INTO payment_sources(name,sort_order) VALUES('その他',3),('追加カード',4)").run()
-    db.db.prepare("UPDATE category_sort_order SET sort_order=10 WHERE category='其他'").run()
-    const migration=readFileSync(new URL('../migrations/0004_other_last_sort_order.sql',import.meta.url),'utf8')
-    db.db.exec(migration)
-    db.db.exec(migration)
+    db.db.prepare("UPDATE category_source SET sort_order=10 WHERE category='其他'").run()
+    assert.equal((await call('categories')).status,200)
+    assert.equal((await call('categories')).status,200)
+    assert.equal((await call('payment-sources')).status,200)
     assert.equal(db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='その他'").get().sort_order,99999)
-    assert.equal(db.db.prepare("SELECT sort_order FROM category_sort_order WHERE category='其他'").get().sort_order,99999)
+    assert.equal(db.db.prepare("SELECT sort_order FROM category_source WHERE category='其他'").get().sort_order,99999)
     assert.equal(db.db.prepare("SELECT amount FROM entries WHERE merchant='既存明細'").get().amount,888)
     assert.equal(db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='追加カード'").get().sort_order,4)
+  }finally{db.close()}
+})
+
+test('actual SQLite: legacy category icon and rank data is copied into one table and survives dropping historical tables',async()=>{
+  const {db,call}=await createClient()
+  try {
+    // Simulate a production installation upgraded from the two old tables.
+    db.db.exec("CREATE TABLE category_sort_order(category TEXT PRIMARY KEY,sort_order INTEGER NOT NULL)")
+    db.db.exec("CREATE TABLE category_icons(category TEXT PRIMARY KEY,icon TEXT NOT NULL)")
+    db.db.exec("INSERT INTO category_sort_order(category,sort_order) VALUES('旧自作カテゴリ',18),('其他',10)")
+    db.db.exec("INSERT INTO category_icons(category,icon) VALUES('旧自作カテゴリ','books'),('アイコンだけ','pet')")
+    db.db.exec("INSERT INTO rules(keyword,category) VALUES('__category__:旧自作カテゴリ','旧自作カテゴリ')")
+    assert.equal((await call('categories')).status,200)
+    assert.equal(db.db.prepare("SELECT sort_order FROM category_source WHERE category='旧自作カテゴリ'").get().sort_order,18)
+    assert.equal(db.db.prepare("SELECT icon FROM category_source WHERE category='旧自作カテゴリ'").get().icon,'books')
+    assert.equal(db.db.prepare("SELECT icon FROM category_source WHERE category='アイコンだけ'").get().icon,'pet')
+    assert.equal(db.db.prepare("SELECT sort_order FROM category_source WHERE category='其他'").get().sort_order,99999)
+    assert.equal(db.db.prepare("SELECT version FROM schema_migrations WHERE version='category-source-v1'").get().version,'category-source-v1')
+    db.db.exec("DROP TABLE category_sort_order;DROP TABLE category_icons;")
+    const current=await call('category-icons')
+    assert.equal(current.status,200)
+    assert.equal(current.body['旧自作カテゴリ'],'books')
+    assert.equal(current.body['アイコンだけ'],'pet')
+    assert.equal((await call('categories')).body.includes('旧自作カテゴリ'),true)
+    assert.equal((await call('backup-snapshot')).body.categoryIcons['旧自作カテゴリ'],'books')
   }finally{db.close()}
 })

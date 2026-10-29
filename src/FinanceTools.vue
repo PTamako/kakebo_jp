@@ -191,6 +191,18 @@ function beginEditPlan(item) {
   recurringPreview.value = []
 }
 function cancelPlanEdit() { editingPlanId.value = ''; plan.value = {name:'',amount:'',day:1,category:'',paymentSource:'現金'} }
+async function togglePlanEnabled(item) {
+  if(recurringBusy.value || !settingsReady.value)return
+  recurringBusy.value=true
+  try {
+    await props.api('recurring-plans/'+encodeURIComponent(item.id),{method:'PUT',body:JSON.stringify({...item,enabled:!item.enabled})})
+    plans.value=await props.api('recurring-plans')
+    recurringPreview.value=[]
+    recurringMessage.value=item.enabled?'固定支出を停止しました。既存の記録は削除しません。':'固定支出を再開しました。入帳する前に未記録分を確認してください。'
+    if(editingPlanId.value===item.id)cancelPlanEdit()
+  }catch(e){recurringMessage.value='固定支出の状態を変更できませんでした：'+e.message}
+  finally{recurringBusy.value=false}
+}
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
 const settingsReady = ref(false)
 async function loadFinanceSettings() {
@@ -579,7 +591,7 @@ async function removeCardBill(record) {
     <p v-if="recurringPreview.length" class="microcopy" role="status">候補：{{recurringPreview.length}}件 · 登録予定：{{yen(recurringPreviewTotal)}}。重複候補は登録しません。</p>
     <div v-for="candidate in recurringPreview" :key="candidate.planId+'-'+candidate.month" class="finance-row" :class="{'recurring-conflict':candidate.conflict}">{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細と重複（対象外）' : '· 登録予定'}}</div>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
-    <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 毎月{{p.day}}日 · {{p.paymentSource || "未設定"}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true) : '停止中'}} <button type="button" @click="beginEditPlan(p)">編集</button> <button type="button" @click="removePlan(p.id)">削除</button></div>
+    <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 毎月{{p.day}}日 · {{p.paymentSource || "未設定"}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true) : '停止中'}} <button type="button" :disabled="recurringBusy" @click="beginEditPlan(p)">編集</button> <button type="button" :disabled="recurringBusy" @click="togglePlanEnabled(p)">{{p.enabled ? '停止' : '再開'}}</button> <button type="button" :disabled="recurringBusy" @click="removePlan(p.id)">削除</button></div>
   </article>
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>カード別利用額</h2>

@@ -380,9 +380,13 @@ test('D1 restore of a missing category icon does not overwrite a user icon',asyn
   const {db,call}=await createClient()
   try{
     const path='category-icons/restore-missing'
-    assert.equal((await call(path,'POST',{category:'居住',icon:'home'})).body.created,true)
-    assert.equal((await call(path,'POST',{category:'居住',icon:'water'})).body.created,false)
-    assert.equal((await call('category-icons')).body['居住'],'home')
+    // Built-in icon IDs are now preseeded from D1 metadata; testing an
+    // unknown category proves restore-missing remains insert-only.
+    assert.equal((await call(path,'POST',{category:'テスト分類',icon:'home'})).body.created,true)
+    assert.equal((await call(path,'POST',{category:'テスト分類',icon:'water'})).body.created,false)
+    const icons=(await call('category-icons')).body
+    assert.equal(icons['テスト分類'],'home')
+    assert.equal(icons['居住'],'home')
   }finally{db.close()}
 })
 

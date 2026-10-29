@@ -2,6 +2,7 @@ import { isAppliedSbiTransfer } from './investment-transfer.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
+import { restoreAtomic } from './restore-atomic.js'
 // Cloudflare Pages Functions：/api/*
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 const json = (d, s = 200) =>
@@ -103,8 +104,12 @@ const DEFAULT_RULES = {
 
 const LEGACY_DEFAULT_RULE_ROWS = [...new Map(Object.entries(DEFAULT_RULES).flatMap(([category, keywords]) => keywords.map(keyword => [keyword, [keyword, category]]) )).values()]
 // Prior browser-only recognizers are now seeded into D1; browser code does no category fallback.
-const PARSER_DEFAULT_RULE_ROWS = [["マクドナルド","餐饮"],["マック","餐饮"],["モスバーガー","餐饮"],["ケンタッキー","餐饮"],["KFC","餐饮"],["ミスタードーナツ","餐饮"],["ミスド","餐饮"],["スターバックス","餐饮"],["スタバ","餐饮"],["ドトール","餐饮"],["タリーズ","餐饮"],["コメダ珈琲","餐饮"],["サイゼリヤ","餐饮"],["ガスト","餐饮"],["バーミヤン","餐饮"],["ジョナサン","餐饮"],["デニーズ","餐饮"],["すかいらーく","餐饮"],["吉野家","餐饮"],["すき家","餐饮"],["松屋","餐饮"],["なか卯","餐饮"],["丸亀製麺","餐饮"],["はなまるうどん","餐饮"],["日高屋","餐饮"],["餃子の王将","餐饮"],["大阪王将","餐饮"],["くら寿司","餐饮"],["スシロー","餐饮"],["はま寿司","餐饮"],["かっぱ寿司","餐饮"],["焼肉きんぐ","餐饮"],["牛角","餐饮"],["鳥貴族","餐饮"],["Uber Eats","餐饮"],["ウーバーイーツ","餐饮"],["出前館","餐饮"],["menu","餐饮"],["ピザハット","餐饮"],["ドミノ・ピザ","餐饮"],["ほっともっと","餐饮"],["オリジン弁当","餐饮"],["ほっかほっか亭","餐饮"],["食べログ","餐饮"],["マツモトキヨシ","日用品"],["マツキヨ","日用品"],["ウエルシア","日用品"],["ウェルシア","日用品"],["ツルハドラッグ","日用品"],["スギ薬局","日用品"],["ココカラファイン","日用品"],["サンドラッグ","日用品"],["クリエイトSD","日用品"],["クスリのアオキ","日用品"],["コスモス薬品","日用品"],["ダイソー","日用品"],["DAISO","日用品"],["セリア","日用品"],["Seria","日用品"],["キャンドゥ","日用品"],["Can★Do","日用品"],["ワッツ","日用品"],["ニトリ","日用品"],["無印良品","日用品"],["MUJI","日用品"],["カインズ","日用品"],["コーナン","日用品"],["DCM","日用品"],["ビバホーム","日用品"],["ドン・キホーテ","日用品"],["ドンキ","日用品"],["ロフト","日用品"],["LOFT","日用品"],["ハンズ","日用品"],["東急ハンズ","日用品"],["ユニクロ","日用品"],["UNIQLO","日用品"],["GU","日用品"],["しまむら","日用品"],["西松屋","日用品"],["アカチャンホンポ","日用品"],["赤ちゃん本舗","日用品"],["Suica","交通"],["PASMO","交通"],["ICOCA","交通"],["モバイルSuica","交通"],["モバイルPASMO","交通"],["JR東日本","交通"],["JR東海","交通"],["JR西日本","交通"],["東京メトロ","交通"],["都営地下鉄","交通"],["京成電鉄","交通"],["京急","交通"],["東急電鉄","交通"],["小田急電鉄","交通"],["京王電鉄","交通"],["東武鉄道","交通"],["西武鉄道","交通"],["タクシー","交通"],["GOタクシー","交通"],["DiDi","交通"],["日本交通","交通"],["Times駐車場","交通"],["タイムズ","交通"],["三井のリパーク","交通"],["ENEOS","交通"],["出光","交通"],["apollostation","交通"],["コスモ石油","交通"],["東京電力","居住"],["TEPCO","居住"],["東京ガス","居住"],["大阪ガス","居住"],["東邦ガス","居住"],["ENEOSでんき","居住"],["オクトパスエナジー","居住"],["Octopus Energy","居住"],["SoftBank 光","居住"],["ソフトバンク光","居住"],["ソフトバンク","居住"],["NTTファイナンス","居住"],["水道料金","居住"],["家賃","居住"],["管理費","居住"],["住宅ローン","居住"],["病院","医疗"],["クリニック","医疗"],["診療所","医疗"],["歯科","医疗"],["歯医者","医疗"],["調剤薬局","医疗"],["薬局","医疗"],["処方箋","医疗"],["日本調剤","医疗"],["クオール薬局","医疗"],["アイン薬局","医疗"],["スギ薬局調剤","医疗"],["眼科","医疗"],["整形外科","医疗"],["皮膚科","医疗"],["Netflix","娱乐"],["ネットフリックス","娱乐"],["Amazon Prime","娱乐"],["Prime Video","娱乐"],["Disney+","娱乐"],["ディズニープラス","娱乐"],["YouTube Premium","娱乐"],["Spotify","娱乐"],["Apple Music","娱乐"],["Nintendo","娱乐"],["PlayStation","娱乐"],["Steam","娱乐"],["カラオケ","娱乐"],["ビッグエコー","娱乐"],["まねきねこ","娱乐"],["ラウンドワン","娱乐"],["映画館","娱乐"],["TOHOシネマズ","娱乐"],["ユナイテッド・シネマ","娱乐"],["チケットぴあ","娱乐"],["イープラス","娱乐"],["ペットショップ","宠物"],["ペットのコジマ","宠物"],["コジマ","宠物"],["イオンペット","宠物"],["PETEMO","宠物"],["ペテモ","宠物"],["動物病院","宠物"],["獣医","宠物"],["ペットホテル","宠物"],["トリミング","宠物"],["チャーム","宠物"],["charm","宠物"],["Amazon.co.jp","购物"],["楽天市場","购物"],["Yahoo!ショッピング","购物"],["ヨドバシカメラ","购物"],["ビックカメラ","购物"],["ヤマダデンキ","购物"],["エディオン","购物"],["ケーズデンキ","购物"],["Apple Store","购物"],["ZARA","购物"],["H&M","购物"],["ABC-MART","购物"],["アディダス","购物"],["adidas","购物"],["ナイキ","购物"],["NIKE","购物"],["高島屋","购物"],["伊勢丹","购物"],["三越","购物"],["大丸","购物"],["松坂屋","购物"],["ルミネ","购物"],["パルコ","购物"],["PARCO","购物"],["ららぽーと","购物"],["まいばすけっと","饮食料品"],["まいばす","饮食料品"],["マイバスケット","饮食料品"],["マイバスケツト","饮食料品"],["マイバス","饮食料品"],["イオン","饮食料品"],["AEON","饮食料品"],["マックスバリュ","饮食料品"],["ダイエー","饮食料品"],["ライフ","饮食料品"],["LIFE","饮食料品"],["サミットストア","饮食料品"],["サミット","饮食料品"],["マルエツ","饮食料品"],["西友","饮食料品"],["SEIYU","饮食料品"],["オーケーストア","饮食料品"],["オーケー","饮食料品"],["OKストア","饮食料品"],["ベルク","饮食料品"],["ヤオコー","饮食料品"],["オオゼキ","饮食料品"],["いなげや","饮食料品"],["コモディイイダ","饮食料品"],["アコレ","饮食料品"],["ビッグ・エー","饮食料品"],["ビッグエー","饮食料品"],["ロピア","饮食料品"],["業務スーパー","饮食料品"],["業務スーパ","饮食料品"],["イトーヨーカドー","饮食料品"],["イトーヨーカ堂","饮食料品"],["ヨークフーズ","饮食料品"],["ヨークマート","饮食料品"],["ヨークプライス","饮食料品"],["マルエツプチ","饮食料品"],["ミニピアゴ","饮食料品"],["肉のハナマサ","饮食料品"],["ハナマサ","饮食料品"],["食品館あおば","饮食料品"],["アタック","饮食料品"],["全日食チェーン","饮食料品"],["トライアル","饮食料品"],["スーパーセンタートライアル","饮食料品"],["成城石井","饮食料品"],["紀ノ国屋","饮食料品"],["KINOKUNIYA","饮食料品"],["クイーンズ伊勢丹","饮食料品"],["北野エース","饮食料品"],["東急ストア","饮食料品"],["京王ストア","饮食料品"],["京急ストア","饮食料品"],["小田急OX","饮食料品"],["文化堂","饮食料品"],["スーパーバリュー","饮食料品"],["ベルクス","饮食料品"],["コープ","饮食料品"],["生協","饮食料品"],["コンビニ","饮食料品"],["セブン-イレブン","饮食料品"],["セブンイレブン","饮食料品"],["セブンーイレブン","饮食料品"],["セブンｰイレブン","饮食料品"],["セブン‐イレブン","饮食料品"],["セブン−イレブン","饮食料品"],["セブン－イレブン","饮食料品"],["7-Eleven","饮食料品"],["7-ELEVEN","饮食料品"],["7-11","饮食料品"],["ローソン","饮食料品"],["ファミリーマート","饮食料品"],["ファミマ","饮食料品"],["ミニストップ","饮食料品"],["NewDays","饮食料品"],["ニューデイズ","饮食料品"],["デイリーヤマザキ","饮食料品"],["ポプラ","饮食料品"]]
-export const DEFAULT_RULE_ROWS = [...new Map([...LEGACY_DEFAULT_RULE_ROWS, ...PARSER_DEFAULT_RULE_ROWS, ['セブン','饮食料品'], ['スーパー','饮食料品']].map(([keyword, category]) => [keyword, [keyword, category]])).values()]
+const PARSER_DEFAULT_RULE_ROWS = [["マクドナルド","餐饮"],["マック","餐饮"],["モスバーガー","餐饮"],["ケンタッキー","餐饮"],["KFC","餐饮"],["ミスタードーナツ","餐饮"],["ミスド","餐饮"],["スターバックス","餐饮"],["スタバ","餐饮"],["ドトール","餐饮"],["タリーズ","餐饮"],["コメダ珈琲","餐饮"],["サイゼリヤ","餐饮"],["ガスト","餐饮"],["バーミヤン","餐饮"],["ジョナサン","餐饮"],["デニーズ","餐饮"],["すかいらーく","餐饮"],["吉野家","餐饮"],["すき家","餐饮"],["松屋","餐饮"],["なか卯","餐饮"],["丸亀製麺","餐饮"],["はなまるうどん","餐饮"],["日高屋","餐饮"],["餃子の王将","餐饮"],["大阪王将","餐饮"],["くら寿司","餐饮"],["スシロー","餐饮"],["はま寿司","餐饮"],["かっぱ寿司","餐饮"],["焼肉きんぐ","餐饮"],["牛角","餐饮"],["鳥貴族","餐饮"],["Uber Eats","餐饮"],["ウーバーイーツ","餐饮"],["出前館","餐饮"],["menu","餐饮"],["ピザハット","餐饮"],["ドミノ・ピザ","餐饮"],["ほっともっと","餐饮"],["オリジン弁当","餐饮"],["ほっかほっか亭","餐饮"],["食べログ","餐饮"],["マツモトキヨシ","日用品"],["マツキヨ","日用品"],["ウエルシア","日用品"],["ウェルシア","日用品"],["ツルハドラッグ","日用品"],["スギ薬局","日用品"],["ココカラファイン","日用品"],["サンドラッグ","日用品"],["クリエイトSD","日用品"],["クスリのアオキ","日用品"],["コスモス薬品","日用品"],["ダイソー","日用品"],["DAISO","日用品"],["セリア","日用品"],["Seria","日用品"],["キャンドゥ","日用品"],["Can★Do","日用品"],["ワッツ","日用品"],["ニトリ","日用品"],["無印良品","日用品"],["MUJI","日用品"],["カインズ","日用品"],["コーナン","日用品"],["DCM","日用品"],["ビバホーム","日用品"],["ドン・キホーテ","日用品"],["ドンキ","日用品"],["ロフト","日用品"],["LOFT","日用品"],["ハンズ","日用品"],["東急ハンズ","日用品"],["ユニクロ","日用品"],["UNIQLO","日用品"],["GU","日用品"],["しまむら","日用品"],["西松屋","日用品"],["アカチャンホンポ","日用品"],["赤ちゃん本舗","日用品"],["Suica","交通"],["PASMO","交通"],["ICOCA","交通"],["モバイルSuica","交通"],["モバイルPASMO","交通"],["JR東日本","交通"],["JR東海","交通"],["JR西日本","交通"],["東京メトロ","交通"],["都営地下鉄","交通"],["京成電鉄","交通"],["京急","交通"],["東急電鉄","交通"],["小田急電鉄","交通"],["京王電鉄","交通"],["東武鉄道","交通"],["西武鉄道","交通"],["タクシー","交通"],["GOタクシー","交通"],["DiDi","交通"],["日本交通","交通"],["Times駐車場","交通"],["タイムズ","交通"],["三井のリパーク","交通"],["ENEOS","交通"],["出光","交通"],["apollostation","交通"],["コスモ石油","交通"],["東京電力","居住"],["TEPCO","居住"],["東京ガス","居住"],["大阪ガス","居住"],["東邦ガス","居住"],["ENEOSでんき","居住"],["オクトパスエナジー","居住"],["Octopus Energy","居住"],["SoftBank 光","居住"],["ソフトバンク光","居住"],["ソフトバンク","居住"],["NTTファイナンス","居住"],["水道料金","居住"],["家賃","居住"],["管理費","居住"],["住宅ローン","居住"],["病院","医疗"],["クリニック","医疗"],["診療所","医疗"],["歯科","医疗"],["歯医者","医疗"],["調剤薬局","医疗"],["薬局","医疗"],["処方箋","医疗"],["日本調剤","医疗"],["クオール薬局","医疗"],["アイン薬局","医疗"],["スギ薬局調剤","医疗"],["眼科","医疗"],["整形外科","医疗"],["皮膚科","医疗"],["Netflix","娱乐"],["ネットフリックス","娱乐"],["Amazon Prime","娱乐"],["Prime Video","娱乐"],["Disney+","娱乐"],["ディズニープラス","娱乐"],["YouTube Premium","娱乐"],["Spotify","娱乐"],["Apple Music","娱乐"],["Nintendo","娱乐"],["PlayStation","娱乐"],["Steam","娱乐"],["カラオケ","娱乐"],["ビッグエコー","娱乐"],["まねきねこ","娱乐"],["ラウンドワン","娱乐"],["映画館","娱乐"],["TOHOシネマズ","娱乐"],["ユナイテッド・シネマ","娱乐"],["チケットぴあ","娱乐"],["イープラス","娱乐"],["ペットショップ","宠物"],["ペットのコジマ","宠物"],["イオンペット","宠物"],["PETEMO","宠物"],["ペテモ","宠物"],["動物病院","宠物"],["獣医","宠物"],["ペットホテル","宠物"],["トリミング","宠物"],["チャーム","宠物"],["charm","宠物"],["Amazon.co.jp","购物"],["楽天市場","购物"],["Yahoo!ショッピング","购物"],["ヨドバシカメラ","购物"],["ビックカメラ","购物"],["ヤマダデンキ","购物"],["エディオン","购物"],["ケーズデンキ","购物"],["Apple Store","购物"],["ZARA","购物"],["H&M","购物"],["ABC-MART","购物"],["アディダス","购物"],["adidas","购物"],["ナイキ","购物"],["NIKE","购物"],["高島屋","购物"],["伊勢丹","购物"],["三越","购物"],["大丸","购物"],["松坂屋","购物"],["ルミネ","购物"],["パルコ","购物"],["PARCO","购物"],["ららぽーと","购物"],["まいばすけっと","饮食料品"],["まいばす","饮食料品"],["マイバスケット","饮食料品"],["マイバスケツト","饮食料品"],["マイバス","饮食料品"],["イオン","饮食料品"],["AEON","饮食料品"],["マックスバリュ","饮食料品"],["ダイエー","饮食料品"],["ライフ","饮食料品"],["LIFE","饮食料品"],["サミットストア","饮食料品"],["サミット","饮食料品"],["マルエツ","饮食料品"],["西友","饮食料品"],["SEIYU","饮食料品"],["オーケーストア","饮食料品"],["オーケー","饮食料品"],["OKストア","饮食料品"],["ベルク","饮食料品"],["ヤオコー","饮食料品"],["オオゼキ","饮食料品"],["いなげや","饮食料品"],["コモディイイダ","饮食料品"],["アコレ","饮食料品"],["ビッグ・エー","饮食料品"],["ビッグエー","饮食料品"],["ロピア","饮食料品"],["業務スーパー","饮食料品"],["業務スーパ","饮食料品"],["イトーヨーカドー","饮食料品"],["イトーヨーカ堂","饮食料品"],["ヨークフーズ","饮食料品"],["ヨークマート","饮食料品"],["ヨークプライス","饮食料品"],["マルエツプチ","饮食料品"],["ミニピアゴ","饮食料品"],["肉のハナマサ","饮食料品"],["ハナマサ","饮食料品"],["食品館あおば","饮食料品"],["アタック","饮食料品"],["全日食チェーン","饮食料品"],["トライアル","饮食料品"],["スーパーセンタートライアル","饮食料品"],["成城石井","饮食料品"],["紀ノ国屋","饮食料品"],["KINOKUNIYA","饮食料品"],["クイーンズ伊勢丹","饮食料品"],["北野エース","饮食料品"],["東急ストア","饮食料品"],["京王ストア","饮食料品"],["京急ストア","饮食料品"],["小田急OX","饮食料品"],["文化堂","饮食料品"],["スーパーバリュー","饮食料品"],["ベルクス","饮食料品"],["コープ","饮食料品"],["生協","饮食料品"],["コンビニ","饮食料品"],["セブン-イレブン","饮食料品"],["セブンイレブン","饮食料品"],["セブンーイレブン","饮食料品"],["セブンｰイレブン","饮食料品"],["セブン‐イレブン","饮食料品"],["セブン−イレブン","饮食料品"],["セブン－イレブン","饮食料品"],["7-Eleven","饮食料品"],["7-ELEVEN","饮食料品"],["7-11","饮食料品"],["ローソン","饮食料品"],["ファミリーマート","饮食料品"],["ファミマ","饮食料品"],["ミニストップ","饮食料品"],["NewDays","饮食料品"],["ニューデイズ","饮食料品"],["デイリーヤマザキ","饮食料品"],["ポプラ","饮食料品"]]
+// New defaults are authoritative. Legacy rules are migration reference only and
+// NEVER participate in classification; custom_rules remains user-owned.
+export const DEFAULT_RULE_ROWS = [...new Map([...PARSER_DEFAULT_RULE_ROWS,
+  ['セブン','饮食料品'], ['スーパー','饮食料品'], ['コジマ','购物']]
+  .map(([keyword, category]) => [keyword, [keyword, category]])).values()]
 
 
 // SBIの投信積立引落は資産移動として扱い、生活支出から除外する。
@@ -138,7 +143,14 @@ export async function onRequest({ request, env, params }) {
     (typeof env.CF_PAGES_BRANCH === 'string' && !!env.CF_PAGES_BRANCH && env.CF_PAGES_BRANCH !== 'main')
   // Preview bindings cannot be inspected from this repo. Fail closed on ALL preview
   // API access until a dedicated Preview D1 binding is explicitly verified.
-  if (isPagesPreview && env.PREVIEW_D1_ISOLATED !== 'true')
+  // A single opt-in flag is not evidence that the DB bindings are separate.
+  // Both IDs must be recorded in the Preview environment, verified in the
+  // dashboard, and different. This still cannot inspect the binding itself.
+  const previewDbVerified = env.PREVIEW_D1_ISOLATED === 'true' &&
+    typeof env.PREVIEW_D1_ID === 'string' && /^[a-f0-9-]{36}$/i.test(env.PREVIEW_D1_ID) &&
+    typeof env.PRODUCTION_D1_ID === 'string' && /^[a-f0-9-]{36}$/i.test(env.PRODUCTION_D1_ID) &&
+    env.PREVIEW_D1_ID.toLowerCase() !== env.PRODUCTION_D1_ID.toLowerCase()
+  if (isPagesPreview && !previewDbVerified)
     return json({error:'プレビュー環境のテスト専用DBが未確認です。本番のデータを保護するためAPIを停止しています',code:'preview_db_not_verified'},503)
   if (isPagesPreview && m !== 'GET' && a !== 'auth')
     return json({error:'プレビュー画面では明細・設定を更新できません。本番サイトをご利用ください',code:'preview_read_only'},403)
@@ -404,6 +416,19 @@ export async function onRequest({ request, env, params }) {
       }
       return json({error:'未対応の操作です'},405)
     }
+    if (a === 'restore-atomic' && m === 'POST') {
+      const size=Number(request.headers.get('content-length')||0)
+      if(size>2*1024*1024)return json({error:'一括復元のサイズ上限を超えました'},413)
+      const payload=await request.json()
+      try {
+        const result=await restoreAtomic(db,payload)
+        return json(result)
+      }catch(e){
+        if(/atomic_restore_too_large/.test(String(e)))return json({error:'一括復元の安全上限を超えました。小分け復元を使用してください'},413)
+        if(/atomic_restore_invalid|バックアップ|不正|形式|取引/.test(String(e)))return json({error:'復元データを確認してください'},400)
+        throw e
+      }
+    }
     if (a === 'finance-settings') {
       await db.prepare('CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)').run()
       const allowed = new Set(['plans', 'bills', 'closing-days', 'theme'])
@@ -665,9 +690,26 @@ export async function onRequest({ request, env, params }) {
         const clientRequestId = e.clientRequestId == null ? null : String(e.clientRequestId).trim()
         if (clientRequestId && !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
           return json({ error: '記録IDの形式が正しくありません' }, 400)
-        const inserted = await db.prepare(
-          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied, transferDate, clientRequestId, paymentSource).run()
+        // Advisory prechecks in the browser can race with another device. Make
+        // the final duplicate decision in ONE SQL insert on D1. Explicitly
+        // confirmed legitimate repeats remain possible.
+        const type = transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense')
+        const checkDuplicate = e.duplicatePolicy === 'check' && e.allowDuplicate !== true
+        const insertSql = checkDuplicate
+          ? `INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
+            SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13
+            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND COALESCE(time,'')=?2 AND amount=?3
+              AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13)
+            ON CONFLICT(client_request_id) DO NOTHING`
+          : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
+        const inserted = await db.prepare(insertSql).bind(e.date, e.time || '', amount,
+          transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')),
+          e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000),
+          type, target, applied, transferDate, clientRequestId, paymentSource).run()
+        if (checkDuplicate && inserted.meta?.changes === 0) {
+          const ownRetry = clientRequestId && await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first()
+          if (!ownRetry) return json({error:'同じ日付・金額・店舗・支払方法の記録が追加されました。内容を再確認してください',code:'duplicate_candidate'},409)
+        }
         const savedEntry = clientRequestId
           ? await db.prepare('SELECT id FROM entries WHERE client_request_id = ?1').bind(clientRequestId).first()
           : await db.prepare('SELECT id FROM entries WHERE id = ?1').bind(inserted.meta.last_row_id).first()
@@ -705,10 +747,21 @@ export async function onRequest({ request, env, params }) {
         return json({ ok: true, changes: result.meta?.changes ?? 0 })
       }
     }
-    if (a === 'category-icons' && m === 'GET') {
+    if (a === 'category-icons') {
       await db.prepare('CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL)').run()
-      const { results } = await db.prepare('SELECT category, icon FROM category_icons').all()
-      return json(Object.fromEntries(results.map(r => [r.category, r.icon])))
+      if (m === 'GET') {
+        const { results } = await db.prepare('SELECT category, icon FROM category_icons').all()
+        return json(Object.fromEntries(results.map(r => [r.category, r.icon])))
+      }
+      if (m === 'POST' && b === 'restore-missing') {
+        const data = await request.json()
+        const category = typeof data?.category === 'string' ? data.category.trim() : ''
+        const icon = typeof data?.icon === 'string' ? data.icon.trim() : ''
+        if (!category || category.length > 20 || !/^[a-z][a-z-]{1,40}$/.test(icon))
+          return json({error:'復元するカテゴリーアイコンを確認してください'},400)
+        const result = await db.prepare('INSERT OR IGNORE INTO category_icons(category,icon) VALUES(?1,?2)').bind(category,icon).run()
+        return json({ok:true,created:!!result.meta?.changes})
+      }
     }
     if (a === 'categories') {
       if (m === 'GET') {
@@ -804,11 +857,10 @@ export async function onRequest({ request, env, params }) {
           // Mark completion last so a partial migration can be retried safely.
           await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(v10Marker, '其他').run()
         }
-        const [baseResult, customResult] = await Promise.all([
-          db.prepare("SELECT * FROM rules WHERE keyword NOT IN (?1, ?2) AND substr(keyword, 1, 13) != ?3").bind(marker, v10Marker, '__category__:').all(),
-          db.prepare('SELECT keyword, category FROM custom_rules').all()
-        ])
-        const merged = new Map((baseResult.results || []).map(rule => [rule.keyword, rule]))
+        // Ignore old persisted built-in rows. Historical categories and rule rows
+        // remain untouched in D1, but only the current dictionary is effective.
+        const customResult = await db.prepare('SELECT keyword, category FROM custom_rules').all()
+        const merged = new Map(DEFAULT_RULE_ROWS.map(([keyword,category]) => [keyword, {keyword,category,is_custom:false}]))
         for (const rule of (customResult.results || [])) merged.set(rule.keyword, { ...rule, is_custom: true })
         return json([...merged.values()].map(rule => ({ ...rule, is_custom: rule.is_custom === true })))
       }

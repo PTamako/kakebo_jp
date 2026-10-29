@@ -4,7 +4,7 @@ import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, 
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
-const props = defineProps({ active: { type: Boolean, default: false }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
+const props = defineProps({ active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
 const managementTab = ref('cards')
@@ -290,9 +290,14 @@ async function loadFinanceSettings() {
   settingsReady.value = true
 }
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
+// Keep the full ledger in memory during tab switches. A successful edit
+// invalidates it; explicit backup/export and restore still fetch fresh data.
+const MANAGEMENT_LEDGER_TTL_MS = 5 * 60 * 1000
+let ledgerDirty = false
 async function loadAll() {
   if (busy.value) return false
   busy.value=true; message.value=''; loadError.value=''
+  const startingRevision = props.ledgerRevision
   try {
     const all=[]
     const years = await props.api('entry-years')
@@ -315,11 +320,14 @@ async function loadAll() {
     }
     const latestYears=await props.api('entry-years')
     if(JSON.stringify(years)!==JSON.stringify(latestYears))throw Error('明細の件数が読み込み中に変わりました。再度実行してください')
-    rows.value=all;loaded.value=true;lastLoadedAt.value=new Date();message.value=all.length+'件の明細を読み込みました'
-    return true
+    rows.value=all;loaded.value=true;lastLoadedAt.value=new Date()
+    // A save completed during this download: do not call stale data fresh.
+    ledgerDirty = props.ledgerRevision !== startingRevision
+    message.value=all.length+'件の明細を読み込みました'
+    return !ledgerDirty
   }catch(e){
     // Never show or export stale data as if it were a complete ledger.
-    rows.value=[];loaded.value=false;lastLoadedAt.value=null
+    rows.value=[];loaded.value=false;lastLoadedAt.value=null;ledgerDirty=true
     loadError.value='全明細の読み込みに失敗しました：'+e.message
     message.value=loadError.value
     return false
@@ -402,6 +410,30 @@ async function restore(){
     message.value='明細が変更されました。バックアップを選び直してください'
     return
   }
+  // A bounded import commits ALL rows/settings in a single D1 batch.
+  // Large archives retain the existing resumable path without losing any data.
+  const settingTotal=['plans','bills','paymentSources','merchantPaymentRules','customRules','categories','investments','dismissedTransfers']
+    .reduce((n,k)=>n+(backup[k]?.length||0),0)+Object.keys(backup.categoryIcons||{}).length
+  if(selectedRows.length<=500 && settingTotal<=500){
+    busy.value=true
+    try{
+      const atomicRows=[]
+      for(const e of selectedRows){
+        const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
+        const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
+        const clientRequestId='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
+        atomicRows.push({...e,clientRequestId})
+      }
+      const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify({...backup,integrity:undefined,entries:atomicRows})})
+      loaded.value=false;backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
+      restoreIncludeConflicts.value=false;restoreOwnKeys.value=new Map()
+      message.value='復元完了：明細 '+result.created+'件・設定 '+result.settings+'件（重複除外 '+result.skipped+'件）'
+      await loadFinanceSettings()
+      emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
+    }catch(e){message.value='一括復元を中止しました。登録済みデータは保持されます：'+e.message}
+    finally{busy.value=false}
+    return
+  }
   busy.value=true
   let count=0,settingsCount=0,skipped=0
   try{
@@ -429,6 +461,15 @@ async function restore(){
       if(typeof name!=='string' || !name.trim() || name.length>20)continue
       await props.api('categories',{method:'POST',body:JSON.stringify({name,icon:backup.categoryIcons?.[name]||'other'})})
       settingsCount++
+    }
+    // A category may already exist while its restored icon is still missing.
+    // Restore missing icons independently; never overwrite the current choice.
+    const existingIcons=await props.api('category-icons')
+    const knownCategories=await props.api('categories')
+    for(const [category,icon] of Object.entries(backup.categoryIcons||{})){
+      if(!knownCategories.includes(category) || existingIcons[category])continue
+      const result=await props.api('category-icons/restore-missing',{method:'POST',body:JSON.stringify({category,icon})})
+      if(result.created)settingsCount++
     }
     const existingCategoryRules=await props.api('custom-rules')
     for(const rule of restoreMissingByKey(existingCategoryRules,backup.customRules||[],x=>x.keyword)){
@@ -578,11 +619,21 @@ async function initializeFinance() {
   finally { financeInitPromise = null }
 }
 onMounted(() => { if (props.active) void initializeFinance() })
+watch(() => props.ledgerRevision, () => {
+  ledgerDirty = true
+  // Avoid fetching during a restore or duplicate check; the next visit or
+  // explicit refresh will reconcile the current D1 ledger safely.
+  if (props.active && !busy.value) void loadAll()
+})
 watch(() => props.active, active => {
   if (!active) return
-  // A new visit should see newly added or edited transactions before exporting.
-  if (financeInitialized && loaded.value) void loadAll()
-  else void initializeFinance()
+  if (!financeInitialized || !loaded.value) return void initializeFinance()
+  if (ledgerDirty || !lastLoadedAt.value ||
+      Date.now() - lastLoadedAt.value.getTime() >= MANAGEMENT_LEDGER_TTL_MS) {
+    void loadFinanceSettings().catch(e => { loadError.value='設定を更新できませんでした：'+e.message })
+    void loadAll()
+  }
+  // Otherwise reuse the already loaded ledger: no D1 fetch on every tap.
 })
 async function removePlan(id) {
   if (!settingsReady.value || recurringBusy.value) return

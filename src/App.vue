@@ -281,10 +281,15 @@ let loadedMonth = ''
 let loadedYear = null
 async function fetchMonthEntries(targetMonth) {
   const all = []
-  for (let offset = 0; ; offset += 500) {
-    const page = await api('entries?month=' + targetMonth + '&offset=' + offset)
+  let cursor = 0
+  for (;;) {
+    const page = await api('entries?month=' + targetMonth + '&cursor=' + cursor)
     if (!Array.isArray(page)) throw Error('月別明細の形式が正しくありません')
-    all.push(...page)
+    for (const row of page) {
+      if (!Number.isSafeInteger(Number(row.id)) || Number(row.id) <= cursor) throw Error('読み込み順序が変更されました')
+      cursor = Number(row.id)
+      all.push(row)
+    }
     if (page.length < 500) return all
   }
 }
@@ -537,6 +542,7 @@ async function saveAll() {
   if (uncertain.length) return flash('金額・内容を確認し、要確認の表示を修正してください')
   // Check every month represented by the drafts, not just the currently displayed month.
   // This is an advisory check: two purchases with the same details can both be legitimate.
+  let duplicateConfirmed = false
   busy.value = '重複を確認中'
   try {
     const months = [...new Set(forms.value.map(f => String(f.date || '').slice(0, 7)))]
@@ -553,9 +559,12 @@ async function saveAll() {
       seen.add(k)
       return duplicate
     })
-    if (possibleDuplicates.length && !confirm(`対象月の既存明細と同じ日付・金額・店名・支払方法の候補が${possibleDuplicates.length}件あります。別の取引なら保存できます。続行しますか？`)) {
-      busy.value = ''
-      return
+    if (possibleDuplicates.length) {
+      if (!confirm(`対象月の既存明細と同じ日付・金額・店名・支払方法の候補が${possibleDuplicates.length}件あります。別の取引なら保存できます。続行しますか？`)) {
+        busy.value = ''
+        return
+      }
+      duplicateConfirmed = true
     }
   } catch (e) {
     busy.value = ''
@@ -572,7 +581,9 @@ async function saveAll() {
       const f = forms.value[0]
       // Retain one stable ID across retries (including "saved on server, reply lost").
       if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
-      const result = await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
+      const result = await api('entries', { method: 'POST', body: JSON.stringify({
+        ...f, amount: Number(f.amount), duplicatePolicy:'check', allowDuplicate:duplicateConfirmed
+      }) })
       const receiptBlob = f.type === 'expense' ? f.receiptImage : null
       if (receiptBlob) {
         try { await persistReceipt(result?.id, receiptBlob) }
@@ -596,12 +607,14 @@ async function saveAll() {
   } catch (e) {
     flash(`${saved}件を保存しました。未保存の${forms.value.length}件は入力欄に残っています：${e.message}`)
   } finally {
+    if (saved > 0) ledgerRevision.value++ // Also invalidate partial-success imports.
     try { rules.value = await api('rules') } catch { /* Keep existing rules when temporarily offline. */ }
     try { await loadPaymentSettings() } catch {}
     await Promise.allSettled([load(), loadYear(), loadInvestments(), loadTransfers()])
     busy.value = ''
   }
 }
+const ledgerRevision = ref(0)
 const pendingEntryIds = ref(new Set())
 const editSaving = ref(false)
 async function remove(id) {
@@ -611,6 +624,7 @@ async function remove(id) {
   pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
   try {
     await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
+    ledgerRevision.value++
     // Only remove the local receipt after the server confirms deletion.
     let receiptDeleteWarning = ''
     try {
@@ -653,6 +667,7 @@ async function saveEdit() {
       method: 'PUT',
       body: JSON.stringify({ ...e, amount: Number(e.amount) })
     })
+    ledgerRevision.value++
     if (editReceiptImage.value) {
       try { await persistReceipt(e.id, editReceiptImage.value); editReceiptImage.value = null }
       catch { receiptSaveError.value = '記録は更新されましたが、レシート画像を保存できませんでした。元の写真を保管してください。' }
@@ -909,11 +924,16 @@ async function fetchPeriodDetailRows(period, requestId = null) {
   if (period !== 'year') return fetchMonthEntries(month.value)
   const year = selectedYear.value
   const rows = []
-  for (let offset = 0; ; offset += 500) {
+  let cursor = 0
+  for (;;) {
     if (requestId !== null && requestId !== detailRequestId) return []
-    const page = await api('entries?year=' + year + '&offset=' + offset)
+    const page = await api('entries?year=' + year + '&cursor=' + cursor)
     if (!Array.isArray(page)) throw new Error('年間明細の形式が正しくありません')
-    rows.push(...page)
+    for (const entry of page) {
+      if (!Number.isSafeInteger(Number(entry.id)) || Number(entry.id) <= cursor) throw Error('明細の順序が変更されました')
+      cursor = Number(entry.id)
+      rows.push(entry)
+    }
     if (page.length < 500) break
   }
   return rows
@@ -1510,7 +1530,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </article>
     </section>
 
-    <FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
+    <FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'" :ledger-revision="ledgerRevision" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="ledgerRevision++; load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button type="button" :class="{ active: tab === 'add' }" :aria-current="tab === 'add' ? 'page' : undefined" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button type="button" :class="{ active: tab === 'list' }" :aria-current="tab === 'list' ? 'page' : undefined" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

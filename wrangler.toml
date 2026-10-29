@@ -18,3 +18,11 @@ binding = "AI"
 # binding has been verified as DIFFERENT from the production ledger.
 # Unverified Preview API requests fail closed (503); financial writes always
 # remain blocked (403) even after explicitly enabling safe preview reads.
+
+# Required in the Cloudflare Pages *Preview* environment to enable read-only QA:
+# APP_ENV=preview
+# PREVIEW_D1_ISOLATED=true
+# PREVIEW_D1_ID=<actual dedicated Preview DB UUID>
+# PRODUCTION_D1_ID=<production DB UUID>
+# All four values require manual dashboard verification first. Setting these
+# strings does not itself switch the D1 binding; mismatches must remain disabled.

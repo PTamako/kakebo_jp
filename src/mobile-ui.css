@@ -561,6 +561,19 @@ main .bottom-nav button.nav-add:focus-visible {
   outline: 3px solid var(--blue-dark);
   outline-offset: 3px;
 }
+/* Override older theme-wide tab .active selectors at higher specificity. */
+main.theme-blue .bottom-nav button.nav-add,
+main.theme-blue .bottom-nav button.nav-add.active,
+main.theme-green .bottom-nav button.nav-add,
+main.theme-green .bottom-nav button.nav-add.active,
+main.theme-yellow .bottom-nav button.nav-add,
+main.theme-yellow .bottom-nav button.nav-add.active {
+  background: linear-gradient(145deg, var(--blue), var(--blue-dark));
+  border-color: var(--card);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 40%, transparent),
+              0 6px 18px color-mix(in srgb, var(--blue-dark) 38%, transparent);
+  color: #fff;
+}
 main.theme-yellow .bottom-nav button.nav-add,
 main.theme-yellow .bottom-nav button.nav-add.active {
   color: #382a11;

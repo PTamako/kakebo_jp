@@ -1,7 +1,7 @@
 // TEMPORARY PR-only CI diagnostic. Remove before merging.
 import { spawnSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
-const run = spawnSync('npm',['run','test:parse'],{encoding:'utf8',maxBuffer:16*1024*1024})
+const run = spawnSync('node',['--test','scripts/api-integrity.test.js'],{encoding:'utf8',maxBuffer:16*1024*1024})
 const output=String(run.stdout||'')+'\n'+String(run.stderr||'')
 const lines=output.split(/\r?\n/)
 const filtered=[]
@@ -12,3 +12,5 @@ for (const line of lines) {
 }
 writeFileSync('public/__pr113_diagnostics.txt',filtered.join('\n').slice(0,45000)||'NO TEST FAILURES\n')
 console.log('Temporary test diagnostics written to preview artifact; result:',run.status)
+
+if (run.status !== 0) process.exit(1)

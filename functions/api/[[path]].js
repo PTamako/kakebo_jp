@@ -435,6 +435,37 @@ export async function onRequest({ request, env, params }) {
       }
       return json({error:'未対応の操作です'},405)
     }
+    if (a === 'backup-snapshot' && m === 'GET') {
+      // db.batch() executes all SELECTs inside one D1 transaction, preventing
+      // mixed ledger/settings snapshots between requests or devices.
+      const size=await db.prepare('SELECT COUNT(*) AS total FROM entries').first()
+      if(Number(size.total)>10000)return json({error:'大容量のバックアップは段階的に作成してください',code:'snapshot_too_large'},413)
+      const statements=[
+        'SELECT * FROM entries ORDER BY id',
+        'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
+        'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
+        'SELECT platform,current_value,pnl,updated_at FROM investment_snapshots ORDER BY platform',
+        'SELECT name,closing_day,is_default,sort_order FROM payment_sources ORDER BY sort_order,name',
+        'SELECT keyword,payment_source FROM merchant_payment_rules ORDER BY keyword',
+        'SELECT keyword,category FROM custom_rules ORDER BY keyword',
+        "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
+        'SELECT category,icon FROM category_icons ORDER BY category',
+        'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id'
+      ].map(sql=>db.prepare(sql))
+      const results=await db.batch(statements)
+      const rows=n=>results[n]?.results||[]
+      return json({
+        format:'kakeibo-ledger-backup',version:3,exportedAt:new Date().toISOString(),
+        entries:rows(0),
+        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled})),
+        bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
+        investments:rows(3),paymentSources:rows(4),merchantPaymentRules:rows(5),
+        customRules:rows(6),
+        categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(7).map(x=>x.category)])],
+        categoryIcons:Object.fromEntries(rows(8).map(x=>[x.category,x.icon])),
+        dismissedTransfers:rows(9).map(x=>x.entry_id)
+      })
+    }
     if (a === 'restore-atomic' && m === 'POST') {
       const size=Number(request.headers.get('content-length')||0)
       if(size>2*1024*1024)return json({error:'一括復元のサイズ上限を超えました'},413)

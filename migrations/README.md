@@ -1,3 +1,17 @@
+# 当前运行规则（2026-10-29：数据与表迁移已经完成）
+
+**以此节为准，下面保留的旧迁移说明仅作历史记录，不再适用于新版运行流程。**
+
+- 生产 D1 已经完成表与数据迁移。API 只使用现有的 `merchant_rules`、`category_source`、`payment_sources`、`recurring_plans`、`card_bills` 和其他现行表。
+- 已移除 `functions/api/merchant-rules-store.js` 和 `functions/api/category-source-store.js`：不再从 `custom_rules`、`merchant_payment_rules`、`category_sort_order`、`category_icons`、旧 `rules` 向新表复制历史内容，也不在 GET 请求中补插分类、图标、商家关键词、排序或迁移标记。
+- 不再在正常 API 请求中执行旧账本字段的 `ALTER TABLE`、支付结算日列的 `ALTER TABLE` 或旧版本兼容初始化。预期列缺失会报错，**不会自动重建或修改生产历史数据**。
+- `schema.sql` 用于手动初始化全新独立数据库，不是已迁移生产 D1 的启动时脚本，也不应在生产库再次运行其中的初始化插入。
+- 用户明确操作的新增/编辑/删除、JSON 备份恢复及资产移动照常写入新表；登录限流的 `login_attempts` 仍然保留使用。
+- 旧迁移 SQL 与以下历史记录可保留供审计，但**禁止自动部署或在生产环境重新执行**。
+- 本次仅修改代码/自动测试，不对 D1 线上数据运行迁移、补录或删除。
+
+---
+
 # D1 マイグレーション運用
 
 本番 D1 に接続している API は現在、旧インストールの列不足を検出して互換的に追加します。安全な移行手順が検証されるまで**この処理を一度に削除しない**でください。

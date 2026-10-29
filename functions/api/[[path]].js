@@ -3,8 +3,6 @@ import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
-import { ensureUnifiedMerchantRules } from './merchant-rules-store.js'
-import { ensureCategorySource } from './category-source-store.js'
 // Cloudflare Pages Functions：/api/*
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
@@ -256,96 +254,8 @@ export async function onRequest({ request, env, params }) {
       await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
         .bind(tokyoToday()).run()
     }
-    // Versioned, fail-safe compatibility migration: one cheap read after
-    // completion, rather than six column probes and a DDL index per request.
-    let compatibilityReady=false
-    try {
-      const recorded=await db.prepare("SELECT version FROM schema_migrations WHERE version='api-compat-v1'").first()
-      compatibilityReady=!!recorded
-    }catch { /* Very old DB has no migration ledger yet. */ }
-    if(!compatibilityReady){
-    // Automatic one-time migration: existing rows default to expenses.
-    try { await db.prepare('SELECT type FROM entries LIMIT 1').first() }
-    catch (columnCheckError) {
-      try { await db.prepare("ALTER TABLE entries ADD COLUMN type TEXT NOT NULL DEFAULT 'expense'").run() }
-      catch (migrationError) {
-        // Two first requests may race during the first deploy; accept it if the other request added the column.
-        try { await db.prepare('SELECT type FROM entries LIMIT 1').first() }
-        catch { throw migrationError }
-      }
-    }
-
-    // Optional per-transaction payment source. Existing records remain unassigned.
-    try { await db.prepare('SELECT payment_source FROM entries LIMIT 1').first() }
-    catch (columnCheckError) {
-      try { await db.prepare("ALTER TABLE entries ADD COLUMN payment_source TEXT NOT NULL DEFAULT ''").run() }
-      catch (migrationError) {
-        try { await db.prepare('SELECT payment_source FROM entries LIMIT 1').first() }
-        catch { throw migrationError }
-      }
-    }
-
-    // transfer_target stores the destination account for asset-transfer entries.
-    try { await db.prepare('SELECT transfer_target FROM entries LIMIT 1').first() }
-    catch (columnCheckError) {
-      try { await db.prepare('ALTER TABLE entries ADD COLUMN transfer_target TEXT').run() }
-      catch (migrationError) {
-        try { await db.prepare('SELECT transfer_target FROM entries LIMIT 1').first() }
-        catch { throw migrationError }
-      }
-    }
-
-    // Track whether a transfer has already been applied to its destination balance.
-    try { await db.prepare('SELECT transfer_applied FROM entries LIMIT 1').first() }
-    catch (columnCheckError) {
-      try { await db.prepare('ALTER TABLE entries ADD COLUMN transfer_applied INTEGER NOT NULL DEFAULT 0').run() }
-      catch (migrationError) {
-        try { await db.prepare('SELECT transfer_applied FROM entries LIMIT 1').first() }
-        catch { throw migrationError }
-      }
-    }
-
-    // transfer_date is the date the money/points actually arrive at the destination.
-    try { await db.prepare('SELECT transfer_date FROM entries LIMIT 1').first() }
-    catch (columnCheckError) {
-      try { await db.prepare('ALTER TABLE entries ADD COLUMN transfer_date TEXT').run() }
-      catch (migrationError) {
-        try { await db.prepare('SELECT transfer_date FROM entries LIMIT 1').first() }
-        catch { throw migrationError }
-      }
-    }
-
-    // Investment snapshots are initialized only by the /investments route.
-    // Ordinary ledger reads must not write to the investment table.
-    // Applied transfers are ledger facts, NOT investment valuations.
-    // Do not mutate investment_snapshots.current_value here: it is a manually
-    // entered market valuation that may already include the purchase.
-
-    // Transfer state is applied only by the explicit POST transfers/process-due endpoint.
-
-    // D1 unique index makes OCR retries idempotent even when a response is lost.
-    try { await db.prepare('SELECT client_request_id FROM entries LIMIT 1').first() }
-    catch (columnCheckError) {
-      try { await db.prepare('ALTER TABLE entries ADD COLUMN client_request_id TEXT').run() }
-      catch (migrationError) {
-        try { await db.prepare('SELECT client_request_id FROM entries LIMIT 1').first() }
-        catch { throw migrationError }
-      }
-    }
-    await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_client_request_id ON entries(client_request_id)').run()
-    await db.prepare('CREATE TABLE IF NOT EXISTS schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, description TEXT NOT NULL)').run()
-    await db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES('api-compat-v1','Safe additive ledger columns and request-id index')").run()
-    }
-
-    // Never rewrite or delete existing ledger rows during migration.
-    // SBI valuation entries remain untouched unless the user explicitly edits them.
-
-    // Only rule-dependent endpoints perform the additive one-time data migration.
-    // Old tables remain untouched for rollback; the unified table is authoritative.
-    if (['rules','custom-rules','merchant-payment-rules','payment-sources','backup-snapshot','restore-atomic'].includes(a))
-      await ensureUnifiedMerchantRules(db)
-    if (['categories','category-icons','category-source','backup-snapshot','restore-atomic'].includes(a))
-      await ensureCategorySource(db)
+    // D1 migration has been completed. Do not import, seed, or alter legacy
+    // data when handling a request. User-initiated writes remain available.
     // Normalized recurring plans and bills are the sole persistent stores.
     // Obsolete finance_settings is intentionally neither created nor queried.
     if (a === 'recurring-plans' || a === 'card-bills') {
@@ -482,26 +392,14 @@ export async function onRequest({ request, env, params }) {
       return json({error:'この旧設定APIは廃止されました。現在の管理画面をご利用ください',code:'deprecated_finance_settings'},410)
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
       await db.prepare("CREATE TABLE IF NOT EXISTS payment_sources (name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)), closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31))").run()
-      // Unified merchant_rules is created/migrated by ensureUnifiedMerchantRules.
-    }
-    if (a === 'payment-sources') {
-      // Existing D1 installations lack closing_day. Leave all card records intact.
-      const columns = await db.prepare('PRAGMA table_info(payment_sources)').all()
-      if (!(columns.results || []).some(column => column.name === 'closing_day')) {
-        try {
-          await db.prepare('ALTER TABLE payment_sources ADD COLUMN closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31)').run()
-        } catch (e) {
-          // A concurrent first request may have added the field already.
-          if (!/duplicate column name/i.test(String(e))) throw e
-        }
-      }
+      // Use the already migrated merchant_rules table; never re-import old mappings.
     }
     if (a === 'payment-sources' && !b && m === 'GET') {
       // Closing days are authoritative on payment_sources.closing_day.
       // Never recreate the deprecated finance_settings table.
       // Enforce the persisted sentinel on existing databases, without touching
       // transaction/payment references or any user-created payment method.
-      await db.prepare("UPDATE payment_sources SET sort_order=99999 WHERE name IN ('その他','其他') AND sort_order<>99999").run()
+      // The completed migration already persisted payment sorting. Read only.
       const { results } = await db.prepare("SELECT name, is_default, closing_day FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
       return json(results)
     }
@@ -777,21 +675,17 @@ export async function onRequest({ request, env, params }) {
       }
     }
     if (a === 'categories') {
-      // All category sorting and icons now live in category_source.
-      await db.prepare("INSERT INTO category_source(category,sort_order) VALUES('其他',99999),('其他收入',99999) ON CONFLICT(category) DO UPDATE SET sort_order=99999").run()
+      // Read from completed category_source. Do not write ranks or old defaults.
       if (m === 'GET') {
         const base = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
-        const { results } = await db.prepare("SELECT DISTINCT category FROM rules WHERE substr(keyword, 1, 13) = '__category__:' ORDER BY category").all()
-        // Old custom categories gain stable stored ranks without losing icons or rules.
-        for (const category of results.map(r => r.category)) {
-          if (category === '其他' || category === '其他收入') continue
-          await db.prepare("INSERT INTO category_source(category,sort_order) VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999)) ON CONFLICT(category) DO UPDATE SET sort_order=COALESCE(category_source.sort_order,excluded.sort_order)").bind(category).run()
-        }
-        const ranks = await db.prepare('SELECT category,sort_order FROM category_source').all()
-        const rankMap = new Map((ranks.results || []).map(row=>[row.category,row.sort_order]))
-        return json([...new Set([...base, ...results.map(r => r.category)])].sort((a,b)=>
-          (a === '其他' ? 99999 : (rankMap.get(a) ?? (base.includes(a) ? base.indexOf(a) : 10000))) -
-          (b === '其他' ? 99999 : (rankMap.get(b) ?? (base.includes(b) ? base.indexOf(b) : 10000))) ||
+        const { results } = await db.prepare(`SELECT category,sort_order FROM category_source
+          WHERE category IN ('餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他')
+             OR EXISTS(SELECT 1 FROM rules WHERE keyword='__category__:'||category_source.category)
+          ORDER BY CASE WHEN category='其他' THEN 99999 ELSE COALESCE(sort_order,10000) END,category`).all()
+        const ranks = new Map((results || []).map(row=>[row.category,row.sort_order]))
+        return json([...new Set([...base,...ranks.keys()])].sort((a,b)=>
+          (a==='其他' ? 99999 : (ranks.get(a) ?? base.indexOf(a))) -
+          (b==='其他' ? 99999 : (ranks.get(b) ?? base.indexOf(b))) ||
           a.localeCompare(b,'ja')
         ))
       }
@@ -847,51 +741,7 @@ export async function onRequest({ request, env, params }) {
     }
     if (a === 'rules') {
       if (m === 'GET') {
-        // デフォルトルールとユーザー上書きルールを分離し、初期化や再デプロイで個人設定を消さない。
-        // Custom categories and payment rules coexist in merchant_rules.
-        const marker = '__kakeibo_japanese_rules_v9_initialized__'
-        const seeded = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(marker).first()
-        if (!seeded) {
-          // 旧ルールでは既定と個人設定を区別できないため、既定外のキーワードと変更済みの分類を保持する。
-          const defaultCategories = new Map(LEGACY_DEFAULT_RULE_ROWS.map(([keyword, category]) => [keyword, category]))
-          const legacy = await db.prepare("SELECT keyword, category FROM rules WHERE substr(keyword, 1, 13) != '__category__:'").all()
-          for (const rule of (legacy.results || []).filter(rule =>
-            !defaultCategories.has(rule.keyword) || defaultCategories.get(rule.keyword) !== rule.category
-          )) {
-            await db.prepare('INSERT INTO merchant_rules (keyword, category) VALUES (?1, ?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)').bind(rule.keyword, rule.category).run()
-          }
-          // Never delete or overwrite legacy rules during a software upgrade.
-          // Add only missing defaults and a completion marker. Existing user data
-          // remains in the original table even after custom_rules is populated.
-          const rows = [...DEFAULT_RULE_ROWS, [marker, '其他']]
-          for (let i = 0; i < rows.length; i += 40) {
-            const batch = rows.slice(i, i + 40).map(([keyword, category]) =>
-              db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(keyword, category)
-            )
-            await db.batch(batch)
-          }
-        }
-        // One-time additive reconciliation of previously browser-only defaults.
-        // Correct an old default only if its stored value still equals the old
-        // shipped value; leave any user-edited category and custom_rules intact.
-        const v10Marker = '__kakeibo_d1_category_rules_v10__'
-        if (!(await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(v10Marker).first())) {
-          // A few multi-row SQL statements rather than hundreds of D1 queries.
-          // All values remain parameter-bound; INSERT OR IGNORE never overwrites data.
-          const allDefaults = DEFAULT_RULE_ROWS
-          for (let i = 0; i < allDefaults.length; i += 25) {
-            const chunk = allDefaults.slice(i, i + 25)
-            const placeholders = chunk.map(() => '(?, ?)').join(', ')
-            await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES ' + placeholders)
-              .bind(...chunk.flat()).run()
-          }
-          // Never overwrite an existing category mapping. A row equal to a shipped
-          // legacy default can also be a user's deliberate choice.
-          // Mark completion last so a partial migration can be retried safely.
-          await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(v10Marker, '其他').run()
-        }
-        // Ignore old persisted built-in rows. Historical categories and rule rows
-        // remain untouched in D1, but only the current dictionary is effective.
+        // Read only: do not seed built-in rules or re-import historical rules.
         const customResult = await db.prepare('SELECT keyword, category FROM merchant_rules WHERE category IS NOT NULL').all()
         const merged = new Map(DEFAULT_RULE_ROWS.map(([keyword,category]) => [keyword, {keyword,category,is_custom:false}]))
         for (const rule of (customResult.results || [])) merged.set(rule.keyword, { ...rule, is_custom: true })

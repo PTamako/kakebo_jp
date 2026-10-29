@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
-const app = source('src/App.vue')
+const app = source('src/App.vue')+'\n'+source('src/pages/LedgerPage.vue')+'\n'+source('src/pages/StatisticsPage.vue')
 const transactionForm = source('src/TransactionForm.vue')
 const finance = source('src/FinanceTools.vue')
 const mobile = source('src/mobile-ui.css')
@@ -32,7 +32,7 @@ test('cross-month duplicate navigation selects date after month watcher resets i
 })
 
 test('finance management starts loading only when tab is active and refreshes on revisit', () => {
-  assert.match(app, /<FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'"/)
+  assert.match(app, /<ManagementPage v-show="tab === 'finance'" :active="tab === 'finance'"/)
   assert.match(finance, /onMounted\(\(\) => \{ if \(props\.active\) void initializeFinance\(\) \}\)/)
   // Revisit reuses a fresh ledger; mutations, expiration and explicit backup force refresh.
   assert.match(finance, /watch\(\(\) => props\.ledgerRevision, \(\) => \{/)

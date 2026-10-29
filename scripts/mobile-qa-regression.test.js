@@ -64,3 +64,18 @@ test('Pages production build runs API and OCR regression suite before Vite', () 
   assert.equal(pkg.scripts.build, 'npm run test:parse && vite build')
   assert.equal(pkg.scripts['test:parse'], 'node --test scripts/*.test.js')
 })
+
+test('OCR engine uses a compact, accessible two-option selector without changing free default', () => {
+  const picker = app.match(/<div class="ocr-engine-picker"[\s\S]*?<\/div>\s*<p v-if="aiOcrEnabled"/)?.[0]
+  assert.ok(picker, 'the scanner shows a dedicated compact engine selector')
+  assert.match(picker, /role="group" aria-label="画像の読み取り方法"/)
+  assert.match(picker, /:aria-pressed="!aiOcrEnabled"/)
+  assert.match(picker, /:aria-pressed="aiOcrEnabled"/)
+  assert.match(picker, /@click="setAiOcrEnabled\(false\)"/)
+  assert.match(picker, /@click="setAiOcrEnabled\(true\)"/)
+  assert.match(picker, /:disabled="!!busy"/)
+  assert.doesNotMatch(app, /class="ai-ocr-mode"/)
+  assert.match(app, /if \(!aiOcrEnabled\.value\)/)
+  assert.match(mobile, /main \.capture-panel \.ocr-engine-options button \{/)
+  assert.match(mobile, /min-height: 44px/)
+})

@@ -377,3 +377,81 @@ main .finance-tools .card-billing-fields input.card-closing-month {
     position: static;
   }
 }
+
+
+/* OCR engine: a compact, native-style choice instead of a multiline checkbox. */
+main .capture-panel .ocr-engine-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 10px;
+}
+main .capture-panel .ocr-engine-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+main .capture-panel .ocr-engine-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 3px;
+  width: 172px;
+  min-width: 0;
+  padding: 4px;
+  background: var(--tint);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+}
+main .capture-panel .ocr-engine-options button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 6px 5px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.2;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+main .capture-panel .ocr-engine-options button svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+main .capture-panel .ocr-engine-options button.selected {
+  border-color: var(--line);
+  background: var(--card);
+  color: var(--blue-dark);
+  box-shadow: 0 2px 7px #38304312;
+}
+main .capture-panel .ocr-engine-options button:focus-visible {
+  outline: 2px solid var(--blue-dark);
+  outline-offset: 2px;
+}
+main .capture-panel .ocr-engine-options button:disabled { opacity: .6; cursor: default; }
+main .capture-panel .ocr-engine-note {
+  margin: -2px 0 10px;
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 355px) {
+  main .capture-panel .ocr-engine-title { font-size: 11px; }
+  main .capture-panel .ocr-engine-options { width: 154px; }
+  main .capture-panel .ocr-engine-options button { gap: 3px; font-size: 11px; padding-inline: 2px; }
+}

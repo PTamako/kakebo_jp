@@ -347,7 +347,7 @@ export async function onRequest({ request, env, params }) {
               !Number.isInteger(item.day) || item.day < 1 || item.day > 31 ||
               typeof item.category !== 'string' || !item.category.trim() ||
               typeof item.paymentSource !== 'string' ||
-              !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
+              !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
               typeof item.enabled !== 'boolean') return json({error:'固定支出の入力を確認してください'},400)
           const updated = await db.prepare('UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7 WHERE id=?8')
             .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,b).run()

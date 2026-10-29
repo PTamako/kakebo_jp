@@ -4,8 +4,8 @@ const respond=(value,status=200)=>new Response(JSON.stringify(value),{
   status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}
 });
 const codeOk=value=>typeof value==='string' && /^[A-Z0-9]{8}$/.test(value);
-const monthOk=value=>typeof value==='string' && /^\\d{4}-(0[1-9]|1[0-2])$/.test(value);
-const dayOk=value=>typeof value==='string' && /^\\d{4}-(0[1-9]|[12]\\d|3[01])$/.test(value) && !Number.isNaN(Date.parse(value));
+const monthOk=value=>typeof value==='string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+const dayOk=value=>typeof value==='string' && /^\d{4}-(0[1-9]|[12]\d|3[01])$/.test(value) && !Number.isNaN(Date.parse(value));
 const accountOk=value=>value==='growth'||value==='tsumitate';
 const yenOk=value=>Number.isSafeInteger(value) && value>=0;
 const nextMonth=month=>{
@@ -40,7 +40,11 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const month=url.searchParams.get('month')||new Date(Date.now()+9*3600000).toISOString().slice(0,7);
       if(!monthOk(month))return respond({error:'対象月を確認してください'},400);
       const [{results:plans},{results:holdings},{results:transfers}]=await Promise.all([
-        db.prepare('SELECT fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plans ORDER BY monthly_amount DESC,fund_code,account_type').all(),
+        db.prepare(`SELECT p.fund_code,p.account_type,p.fund_name,p.monthly_amount,p.order_day,p.enabled,p.effective_month,p.updated_at
+        FROM investment_plan_history p WHERE p.effective_month<=?1
+        AND p.effective_month=(SELECT MAX(h.effective_month) FROM investment_plan_history h
+          WHERE h.fund_code=p.fund_code AND h.account_type=p.account_type AND h.effective_month<=?1)
+        ORDER BY p.monthly_amount DESC,p.fund_code,p.account_type`).bind(month).all(),
         db.prepare('SELECT h.fund_code,h.account_type,h.fund_name,h.units,h.acquisition_cost,h.updated_at,p.nav_per_10000,p.price_date,p.source FROM investment_holdings h LEFT JOIN fund_prices p ON p.fund_code=h.fund_code ORDER BY h.fund_code,h.account_type').all(),
         db.prepare("SELECT e.id,e.date,e.transfer_date,e.amount,e.transfer_applied,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.type='transfer' AND e.transfer_target='sbi' ORDER BY e.id DESC LIMIT 1000").all()
       ]);
@@ -71,12 +75,16 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       });
     }
     if(sub==='initialize'&&method==='POST'){
-      const existing=await db.prepare('SELECT COUNT(*) AS n FROM investment_plans').first();
+      const existing=await db.prepare('SELECT COUNT(*) AS n FROM investment_plan_history').first();
       if(existing?.n)return respond({ok:true,created:false});
       const now=new Date().toISOString();
-      await db.batch(initialPlans.map(([code,account,name,amount,day])=>db.prepare(
-        'INSERT OR IGNORE INTO investment_plans(fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,1,?6)'
-      ).bind(code,account,name,amount,day,now)));
+      const month=new Date(Date.now()+9*3600000).toISOString().slice(0,7);
+      await db.batch(initialPlans.flatMap(([code,account,name,amount,day])=>[
+        db.prepare('INSERT OR IGNORE INTO investment_plans(fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,1,?6)')
+          .bind(code,account,name,amount,day,now),
+        db.prepare('INSERT OR IGNORE INTO investment_plan_history(fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,?6,1,?7)')
+          .bind(code,account,month,name,amount,day,now)
+      ]));
       return respond({ok:true,created:true});
     }
     if(sub==='plan'&&method==='PUT'){
@@ -84,7 +92,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       if(!codeOk(x.fundCode)||!accountOk(x.accountType)||typeof x.fundName!=='string'||
         !x.fundName.trim()||x.fundName.length>120||!yenOk(x.monthlyAmount)||
         !Number.isSafeInteger(x.orderDay)||x.orderDay<1||x.orderDay>28||
-        typeof x.enabled!=='boolean'||x.monthlyAmount>100000000)
+        typeof x.enabled!=='boolean'||x.monthlyAmount>100000000||!monthOk(x.effectiveMonth))
         return respond({error:'積立設定を確認してください'},400);
       await db.prepare(`INSERT INTO investment_plans
         (fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at)
@@ -93,6 +101,13 @@ export async function handlePortfolio({db,request,method,sub,url}) {
           fund_name=excluded.fund_name,monthly_amount=excluded.monthly_amount,
           order_day=excluded.order_day,enabled=excluded.enabled,updated_at=excluded.updated_at`)
         .bind(x.fundCode,x.accountType,x.fundName.trim(),x.monthlyAmount,x.orderDay,x.enabled?1:0,new Date().toISOString()).run();
+      await db.prepare(`INSERT INTO investment_plan_history
+        (fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at)
+        VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+        ON CONFLICT(fund_code,account_type,effective_month) DO UPDATE SET
+          fund_name=excluded.fund_name,monthly_amount=excluded.monthly_amount,
+          order_day=excluded.order_day,enabled=excluded.enabled,updated_at=excluded.updated_at`)
+        .bind(x.fundCode,x.accountType,x.effectiveMonth,x.fundName.trim(),x.monthlyAmount,x.orderDay,x.enabled?1:0,new Date().toISOString()).run();
       return respond({ok:true});
     }
     if(sub==='holding'&&method==='PUT'){
@@ -137,7 +152,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
     }
     return respond({error:'未対応の操作です'},405);
   }catch(err){
-    if(/no such table: (investment_plans|investment_holdings|fund_prices|sbi_transfer_links)/i.test(String(err)))
+    if(/no such table: (investment_plans|investment_plan_history|investment_holdings|fund_prices|sbi_transfer_links)/i.test(String(err)))
       return respond({error:'投資テーブルの移行が未実施です',code:'portfolio_migration_required'},503);
     console.error('SBIポートフォリオAPI',err);
     return respond({error:'投資情報を読み込めませんでした'},500);

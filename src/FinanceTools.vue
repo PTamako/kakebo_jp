@@ -338,6 +338,21 @@ async function downloadBackup(){
   if (busy.value || backupBusy.value) return
   backupBusy.value = true
   try {
+    // One server-side D1 read transaction avoids cross-table mixed snapshots.
+    // Oversized archives retain the existing twice-verified resumable export.
+    let atomicBackup=null
+    try { atomicBackup=await props.api('backup-snapshot') }
+    catch(e) { if(!/snapshot_too_large|大容量|413/.test(String(e.message)))throw e }
+    if(atomicBackup){
+      const validated=validateBackup(atomicBackup)
+      const sealed=await sealBackup(validated)
+      const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
+      const anchor=document.createElement('a')
+      anchor.href=url;anchor.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+'.json';anchor.click()
+      setTimeout(()=>URL.revokeObjectURL(url),30000)
+      message.value='D1の同一時点の帳簿と設定を保存しました'
+      return
+    }
     // Refresh ledger and D1 metadata immediately before export. A partial fetch
     // must not be mistaken for a complete, safe recovery archive.
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')

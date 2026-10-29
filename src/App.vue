@@ -503,7 +503,7 @@ function addBlank(type = 'expense') {
   const now = new Date()
   const today = now.toLocaleDateString('sv-SE')
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
-  forms.value.push({ date: today, transferDate: today, transferTarget: '', time: type === 'expense' ? localHHMM(now) : '', amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  forms.value.push({ date: today, transferDate: today, transferTarget: '', time: localHHMM(now), amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   if (form.type !== type) {
@@ -515,7 +515,6 @@ function setEntryType(form, type) {
       form.bindPaymentRule = false
       form.receiptImage = null
       form.receiptFileName = ''
-      form.time = ''
     }
     if (type !== 'transfer') form.transferTarget = ''
     if (type === 'transfer') form.transferDate = form.transferDate || form.date
@@ -565,7 +564,9 @@ async function saveAll() {
     const months = [...new Set(forms.value.map(f => String(f.date || '').slice(0, 7)))]
     if (months.some(m => !/^\d{4}-(0[1-9]|1[0-2])$/.test(m))) throw Error('日付を確認してください')
     const historical = (await Promise.all(months.map(fetchMonthEntries))).flat()
-    const key = f => [f.date, f.time || '', Number(f.amount), String(f.merchant || '').trim(),
+    // Time differs between a manual entry and an OCR scan of the same purchase.
+    // Use it for display, not as a reason to suppress a duplicate warning.
+    const key = f => [f.date, Number(f.amount), String(f.merchant || '').trim(),
       f.payment_source ?? f.paymentSource ?? '', f.type || 'expense'].join('|')
     const seen = new Set()
     const known = new Set(historical.map(key))

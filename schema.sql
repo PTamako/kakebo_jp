@@ -44,6 +44,9 @@ CREATE TABLE IF NOT EXISTS investment_snapshots (
   updated_at TEXT
 );
 
+-- First-time database provisioning only. Existing D1 values must never be replaced.
+INSERT OR IGNORE INTO investment_snapshots(platform,current_value,pnl,updated_at) VALUES('sbi',NULL,NULL,NULL);
+
 -- SBI投信積立などの資金移動は entries.type='transfer' とし、生活費統計から除外する。
 
 -- Payment settings are independent from immutable historical transaction amounts.

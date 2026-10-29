@@ -15,10 +15,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Report dependency audit
-        run: |
-          npm audit || true
-          npm audit --omit=dev || true
-      - name: Run complete parsing and API integrity regression suite
-        run: npm run test:parse
-      - run: npm run build
+      - name: Verify tests, production build and production dependency advisories
+        run: npm run verify:release
+      - name: Report all dependency advisories (non-blocking dev dependency inventory)
+        if: always()
+        run: npm audit --json > dependency-audit.json || true
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit
+          path: dependency-audit.json
+          if-no-files-found: ignore

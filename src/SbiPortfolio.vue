@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 
+const emit = defineEmits(['migration-status'])
 const props = defineProps({
   api: { type: Function, required: true },
   transferLoading: { type: Boolean, default: false }
@@ -56,10 +57,12 @@ async function load() {
     const response = await props.api('investment-portfolio?month=' + targetMonth)
     if (sequence !== loadSequence || targetMonth !== month.value) return
     data.value = response
+    emit('migration-status', false)
   } catch(e) {
     if (sequence !== loadSequence || targetMonth !== month.value) return
     error.value = e.message
     data.value = null
+    emit('migration-status', /投資テーブルの移行が未実施/.test(e.message))
   } finally {
     if (sequence === loadSequence) loading.value = false
   }
@@ -130,6 +133,7 @@ onMounted(load)
       <span v-if="loading">読込中…</span>
     </div>
     <p v-if="error" class="sbi-error" role="alert">{{error}}</p>
+    <p v-if="error && /投資テーブルの移行が未実施/.test(error)" class="sbi-hint">既存の家計簿・評価額はそのまま使えます。D1の追加テーブル適用後に更新してください。</p>
     <p v-if="notice" class="sbi-success" role="status">{{notice}}</p>
     <template v-if="data">
       <article class="panel sbi-reconcile">

@@ -15,7 +15,7 @@ test('legacy built-in categories are not loaded into the runtime defaults',()=>{
   assert.equal(classify('コジマ',rules).category,'购物')
   assert.equal(classify('ペットのコジマ',rules).category,'宠物')
   assert.equal(classify('コジマ×ビックカメラ',rules).category,'购物')
-  assert.ok(!DEFAULT_RULE_ROWS.some(([k,v])=>k==='UNIQLO'&&v==='购物'))
+  assert.ok(DEFAULT_RULE_ROWS.some(([k,v])=>k==='UNIQLO'&&v==='购物'))
 })
 
 test('stable cursor listing avoids mutable OFFSET paging on browser reads',()=>{

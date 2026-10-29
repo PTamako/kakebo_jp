@@ -36,6 +36,17 @@ const initialPlans=[
 ];
 export async function handlePortfolio({db,request,method,sub,url}) {
   try{
+    if(method==='GET'&&sub==='export'){
+      const rows=await db.batch([
+        db.prepare('SELECT fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plans'),
+        db.prepare('SELECT fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plan_history'),
+        db.prepare('SELECT fund_code,account_type,fund_name,units,acquisition_cost,updated_at FROM investment_holdings'),
+        db.prepare('SELECT fund_code,nav_per_10000,price_date,source,updated_at FROM fund_prices'),
+        db.prepare('SELECT entry_id,purchase_month FROM sbi_transfer_links')
+      ]);
+      return respond({investmentPlans:rows[0].results,investmentPlanHistory:rows[1].results,
+        investmentHoldings:rows[2].results,fundPrices:rows[3].results,transferLinks:rows[4].results});
+    }
     if(method==='GET'&&!sub){
       const month=url.searchParams.get('month')||new Date(Date.now()+9*3600000).toISOString().slice(0,7);
       if(!monthOk(month))return respond({error:'対象月を確認してください'},400);
@@ -60,7 +71,8 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const relevant=normalizedTransfers.filter(t=>t.effective_month===month||t.purchase_month===month).slice(0,20);
       const positions=holdings.map(h=>{
         const nav=h.nav_per_10000==null?null:Number(h.nav_per_10000);
-        const marketValue=nav==null?null:Math.round(Number(h.units)*nav/10000);
+        const calculated=nav==null?null:(BigInt(h.units)*BigInt(nav)+5000n)/10000n;
+        const marketValue=calculated==null||calculated>BigInt(Number.MAX_SAFE_INTEGER)?null:Number(calculated);
         return {...h,market_value:marketValue,pnl:marketValue==null?null:marketValue-Number(h.acquisition_cost)};
       });
       const valued=positions.filter(p=>p.market_value!=null);
@@ -130,6 +142,9 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       if(!codeOk(x.fundCode)||!yenOk(x.navPer10000)||x.navPer10000<1||
         x.navPer10000>1000000000||!dayOk(x.priceDate))
         return respond({error:'基準価額と基準日を確認してください'},400);
+      const stored=await db.prepare('SELECT price_date FROM fund_prices WHERE fund_code=?1').bind(x.fundCode).first();
+      if(stored?.price_date && stored.price_date>x.priceDate)
+        return respond({error:'現在の基準日より古い価格は登録できません'},409);
       await db.prepare(`INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source,updated_at)
         VALUES(?1,?2,?3,'manual',?4)
         ON CONFLICT(fund_code) DO UPDATE SET

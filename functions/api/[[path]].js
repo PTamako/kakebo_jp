@@ -355,12 +355,17 @@ export async function onRequest({ request, env, params }) {
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
         "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
         'SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category',
-        'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id'
+        'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id',
+        'SELECT fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plans ORDER BY fund_code,account_type',
+        'SELECT fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plan_history ORDER BY fund_code,account_type,effective_month',
+        'SELECT fund_code,account_type,fund_name,units,acquisition_cost,updated_at FROM investment_holdings ORDER BY fund_code,account_type',
+        'SELECT fund_code,nav_per_10000,price_date,source,updated_at FROM fund_prices ORDER BY fund_code',
+        'SELECT entry_id,purchase_month FROM sbi_transfer_links ORDER BY entry_id'
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
       const rows=n=>results[n]?.results||[]
       return json({
-        format:'kakeibo-ledger-backup',version:3,exportedAt:new Date().toISOString(),
+        format:'kakeibo-ledger-backup',version:4,exportedAt:new Date().toISOString(),
         entries:rows(0),
         plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
@@ -369,7 +374,9 @@ export async function onRequest({ request, env, params }) {
         categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(7).map(x=>x.category)])],
         categoryIcons:Object.fromEntries(rows(8).filter(x=>x.icon).map(x=>[x.category,x.icon])),
         categoryMetadata:rows(8),
-        dismissedTransfers:rows(9).map(x=>x.entry_id)
+        dismissedTransfers:rows(9).map(x=>x.entry_id),
+        investmentPlans:rows(10),investmentPlanHistory:rows(11),
+        investmentHoldings:rows(12),fundPrices:rows(13),transferLinks:rows(14)
       })
     }
     if (a === 'restore-atomic' && m === 'POST') {

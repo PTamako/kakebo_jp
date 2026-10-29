@@ -1195,7 +1195,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             </button>
           </div>
         </div>
-        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">Cloudflare AIへ送信します。1日あたりの使用回数に上限があります。<span v-if="aiQuota">本日の残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
+        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">Cloudflare AIへ送信します。1日の回数上限は料金上限ではありません。<span v-if="aiQuota">本日の残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
@@ -1452,6 +1452,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <section v-else-if="tab === 'investments'" class="page-section">
       <article class="panel pending-transfer-panel">
         <div class="pending-transfer-heading"><h2>振替予定</h2><button class="pending-refresh" :disabled="transferLoading" @click="loadTransfers" aria-label="振替予定を更新" title="更新">↻ 更新</button></div>
+        <p class="microcopy">振替予定日になった資産移動は、起動時・再読込時に自動反映されます。SBIの手入力評価額は変更しません。</p>
         <div v-if="transferLoading" class="pending-transfer-empty">読み込み中…</div>
         <div v-else-if="!pendingTransfers.length" class="pending-transfer-empty">確認が必要な振替はありません</div>
         <div v-else class="pending-transfer-list">

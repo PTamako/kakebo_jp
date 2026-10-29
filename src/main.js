@@ -29,13 +29,34 @@ function showStartupError(error, phase = 'Vue', info = '') {
   root.replaceChildren(panel)
 }
 
+let mounted = false
+function showRuntimeError(error, info = '') {
+  // Recoverable component events must not destroy the entire financial app.
+  // Keep underlying forms and unsaved drafts on screen; avoid displaying
+  // sensitive payloads or stack traces in the user-facing notification.
+  let note = document.querySelector('[data-runtime-error]')
+  if (!note) {
+    note = document.createElement('div')
+    note.dataset.runtimeError = 'true'
+    note.setAttribute('role', 'alert')
+    note.style.cssText = 'position:fixed;z-index:99999;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom, 0px));padding:12px 14px;border-radius:12px;background:#fff4f1;color:#7b2727;border:1px solid #e7a89b;box-shadow:0 6px 25px #0002;font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif'
+    document.body.append(note)
+  }
+  note.textContent = '操作中に問題が発生しました。入力内容はそのままです。必要に応じて画面を更新してください。'
+  console.error('[家計簿 component error]', info, error)
+}
+
 try {
   const app = createApp(App)
   app.config.errorHandler = (error, instance, info) => {
-    console.error('[家計簿 startup]', info, error, error?.cause)
-    showStartupError(error, 'Vue', info || '')
+    if (mounted) showRuntimeError(error, info || '')
+    else {
+      console.error('[家計簿 startup]', info, error, error?.cause)
+      showStartupError(error, 'Vue', info || '')
+    }
   }
   app.mount('#app')
+  mounted = true
   nextTick(() => {
     const root = document.getElementById('app')
     if (root && !root.childElementCount) {

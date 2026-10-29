@@ -267,3 +267,60 @@ test('actual request gate: custom-domain preview cannot read/write production D1
   assert.equal(response.status,503)
   assert.equal((await response.json()).code,'preview_db_not_verified')
 })
+
+test('D1 atomic restore rolls back all inserted settings and entries after SQL failure',async()=>{
+  const {db,call}=await createClient()
+  const backup={format:'kakeibo-ledger-backup',version:3,
+    entries:[
+      {date:'2026-10-03',amount:450,type:'expense',category:'饮食料品',merchant:'OK',clientRequestId:'restore_'+ 'a'.repeat(32)},
+      {date:'2026-10-04',amount:500,type:'expense',category:'饮食料品',merchant:'BAD',clientRequestId:'restore_'+ 'b'.repeat(32)}
+    ],paymentSources:[{name:'安全テストカード',closing_day:15}],customRules:[{keyword:'個人試験店',category:'宠物'}],
+    categoryIcons:{'饮食料品':'food'}
+  }
+  try{
+    db.db.exec("CREATE TRIGGER test_atomic_abort BEFORE INSERT ON entries WHEN NEW.merchant='BAD' BEGIN SELECT RAISE(ABORT,'intentional rollback'); END")
+    const response=await call('restore-atomic','POST',backup)
+    assert.equal(response.status,500)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries").get().n,0)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM custom_rules WHERE keyword='個人試験店'").get().n,0)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM payment_sources WHERE name='安全テストカード'").get().n,0)
+    db.db.exec('DROP TRIGGER test_atomic_abort')
+    const result=await call('restore-atomic','POST',backup)
+    assert.equal(result.status,200)
+    assert.equal(result.body.created,2)
+    assert.equal((await call('restore-atomic','POST',backup)).body.created,0)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries").get().n,2)
+    assert.equal(db.db.prepare("SELECT category FROM custom_rules WHERE keyword='個人試験店'").get().category,'宠物')
+    assert.equal(db.db.prepare("SELECT closing_day FROM payment_sources WHERE name='安全テストカード'").get().closing_day,15)
+    assert.equal(db.db.prepare("SELECT icon FROM category_icons WHERE category='饮食料品'").get().icon,'food')
+  }finally{db.close()}
+})
+
+test('D1 server prevents a second concurrent import without user approval',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const row={date:'2026-10-29',time:'11:30',amount:1900,merchant:'テスト店',category:'日用品',type:'expense',paymentSource:'現金',duplicatePolicy:'check'}
+    assert.equal((await call('entries','POST',{...row,clientRequestId:'dupe_check_one'})).status,200)
+    const blocked=await call('entries','POST',{...row,clientRequestId:'dupe_check_two'})
+    assert.equal(blocked.status,409)
+    assert.equal(blocked.body.code,'duplicate_candidate')
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM entries').get().n,1)
+    const permitted=await call('entries','POST',{...row,clientRequestId:'dupe_check_two',allowDuplicate:true})
+    assert.equal(permitted.status,200)
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM entries').get().n,2)
+    const retried=await call('entries','POST',{...row,clientRequestId:'dupe_check_two'})
+    assert.equal(retried.status,200)
+    assert.equal(retried.body.duplicate,true)
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM entries').get().n,2)
+  }finally{db.close()}
+})
+
+test('D1 restore of a missing category icon does not overwrite a user icon',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const path='category-icons/restore-missing'
+    assert.equal((await call(path,'POST',{category:'居住',icon:'home'})).body.created,true)
+    assert.equal((await call(path,'POST',{category:'居住',icon:'water'})).body.created,false)
+    assert.equal((await call('category-icons')).body['居住'],'home')
+  }finally{db.close()}
+})

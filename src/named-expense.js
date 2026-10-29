@@ -74,7 +74,7 @@ function splitFlexibleInlineNamedExpense(line) {
   // Comma-separated bank/card rows belong to the existing statement parser.
   if(remainder.includes(','))return null
   const name=remainder.replace(/^[\s:：・、|/\-]+|[\s:：・、|/\-]+$/g,'').trim()
-  if(!name||name.length>60||!/[^^\d\s¥￥,./-]/.test(name))return null
+  if(!name||name.length>60||!/[^\d\s¥￥,./-]/.test(name))return null
   return [name,date[0].trim(),price[0].trim()]
 }
 // null = unrelated text; {rows} = recognized; {error} = structured input invalid.
@@ -93,13 +93,13 @@ export function parseNamedExpenseBlocks(raw, now = new Date()) {
   const rows=[]
   for(let i=0;i<lines.length;i+=3){
     const group=lines.slice(i,i+3)
-    const dates=group.map((value,index)=>dateHint.test(value)?index:-1).filter(index=>index>=0)
-    if(dates.length!==1)return {error:`${i/3+1}組目の日付を確認してください`}
-    const when=group[dates[0]]
-    const amounts=group.map((value,index)=>index===dates[0]?-1:amountFromLine(value)!==null||/^[¥￥\d]/.test(value)?index:-1).filter(index=>index>=0)
+    const datePositions=group.map((value,index)=>dateHint.test(value)?index:-1).filter(index=>index>=0)
+    if(datePositions.length!==1)return {error:`${i/3+1}組目の日付を確認してください`}
+    const when=group[datePositions[0]]
+    const amounts=group.map((value,index)=>index===datePositions[0]?-1:amountFromLine(value)!==null||/^[¥￥\d]/.test(value)?index:-1).filter(index=>index>=0)
     if(amounts.length!==1)return {error:`${i/3+1}組目の金額を確認してください`}
     const price=group[amounts[0]]
-    const name=group[3-dates[0]-amounts[0]]
+    const name=group[3-datePositions[0]-amounts[0]]
     if(!name || name.length>60 || /^[\d¥￥,.\s]+$/.test(name))return {error:`${i/3+1}組目の名称を確認してください`}
     const amount=amountFromLine(price)
     if(amount===null)return {error:`${i/3+1}組目の金額を確認してください（円で入力）`}

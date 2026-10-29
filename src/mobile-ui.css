@@ -592,3 +592,108 @@ main.theme-yellow .bottom-nav button.nav-add.active {
   main .bottom-nav button.nav-add,
   main .bottom-nav button.nav-add.active { transition: none; }
 }
+
+
+/* Expanded cream themes and compact color-only picker.
+   Theme IDs and existing saved pink/blue/yellow/green values are preserved. */
+main.theme-lavender {
+  --ink:#51465b;--muted:#867992;--line:#ebe0f2;
+  --blue:#b697d1;--blue-dark:#8563a8;--paper:#faf5ff;--card:#fff;
+  --chart-1:#a57ac4;--chart-2:#dd9a95;--chart-3:#7faab0;--chart-4:#d3b16e;--chart-5:#a1b488;
+  --chart-6:#cf8ba9;--chart-7:#849bbd;--chart-8:#b39a82;--chart-9:#8fb8aa;--chart-10:#bb9db9;
+}
+main.theme-peach {
+  --ink:#604a40;--muted:#927d75;--line:#f3e2d6;
+  --blue:#df9c7e;--blue-dark:#b87458;--paper:#fff7f2;--card:#fff;
+  --chart-1:#d68c6a;--chart-2:#9bb898;--chart-3:#b38ec5;--chart-4:#d5ab66;--chart-5:#7fa9bf;
+  --chart-6:#c97e99;--chart-7:#8ead9b;--chart-8:#a395c5;--chart-9:#c1ad77;--chart-10:#9a918d;
+}
+main.theme-latte {
+  --ink:#554a42;--muted:#918277;--line:#ede1d6;
+  --blue:#b59a81;--blue-dark:#876a53;--paper:#fbf7f0;--card:#fff;
+  --chart-1:#ab856a;--chart-2:#91a88c;--chart-3:#aa90ba;--chart-4:#d1a16d;--chart-5:#82a8bb;
+  --chart-6:#bc8c8f;--chart-7:#87a79c;--chart-8:#bdad80;--chart-9:#9f99bb;--chart-10:#ac9388;
+}
+main.theme-slate {
+  --ink:#394f60;--muted:#768b99;--line:#dfe9ed;
+  --blue:#86a8bd;--blue-dark:#537d95;--paper:#f3f8fa;--card:#fff;
+  --chart-1:#719ab6;--chart-2:#c49b7a;--chart-3:#9c94c9;--chart-4:#7eaea0;--chart-5:#c6ad70;
+  --chart-6:#b58fa7;--chart-7:#83acc2;--chart-8:#a7b387;--chart-9:#ca968d;--chart-10:#8d9fb0;
+}
+/* New palettes inherit the shared component styles, with a matching hero and calendar. */
+main:is(.theme-lavender,.theme-peach,.theme-latte,.theme-slate) .hero-total {
+  background:linear-gradient(130deg,var(--blue),var(--blue-dark));
+}
+main:is(.theme-lavender,.theme-peach,.theme-latte,.theme-slate) .calendar-day.calendar-has-spend {
+  background:var(--tint);
+  border-color:var(--line);
+}
+main:is(.theme-lavender,.theme-peach,.theme-latte,.theme-slate) .calendar-day.calendar-selected {
+  background:var(--blue);
+  border-color:var(--blue);
+}
+main:is(.theme-lavender,.theme-peach,.theme-latte,.theme-slate) .bottom-nav button.nav-add,
+main:is(.theme-lavender,.theme-peach,.theme-latte,.theme-slate) .bottom-nav button.nav-add.active {
+  color:#fff;
+  background:linear-gradient(145deg,var(--blue),var(--blue-dark));
+  border-color:var(--card);
+}
+
+/* Eight unlabeled 44px touch targets in a compact 4 x 2 popover. */
+main .theme-picker .theme-switcher {
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:7px;
+  width:min(238px,calc(100vw - 28px));
+  padding:10px;
+}
+main .theme-picker .theme-switcher button.theme-swatch {
+  position:relative;
+  display:grid;
+  place-items:center;
+  justify-content:center;
+  width:100%;
+  min-height:44px;
+  height:44px;
+  padding:0;
+  border:1px solid transparent;
+  border-radius:13px;
+  background:transparent;
+  color:var(--ink);
+  -webkit-tap-highlight-color:transparent;
+}
+main .theme-picker .theme-switcher button.theme-swatch:hover {
+  background:var(--tint);
+}
+main .theme-picker .theme-switcher button.theme-swatch .theme-dot {
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  border:1px solid rgba(30,30,30,.08);
+  box-shadow:inset 0 1px 2px rgba(255,255,255,.38);
+}
+main .theme-picker .theme-switcher button.theme-swatch .theme-check {
+  position:absolute;
+  top:50%;
+  left:50%;
+  width:15px;
+  height:15px;
+  transform:translate(-50%,-50%);
+  fill:none;
+  stroke:#342f35;
+  stroke-width:3;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  pointer-events:none;
+}
+main .theme-picker .theme-switcher button.theme-swatch.selected {
+  border-color:var(--blue);
+  background:var(--tint);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--blue) 32%,transparent);
+}
+main .theme-picker .theme-switcher button.theme-swatch:focus-visible {
+  outline:3px solid var(--blue-dark);
+  outline-offset:2px;
+}
+@media (prefers-reduced-motion:reduce) {
+  main .theme-picker .theme-switcher button.theme-swatch { transition:none; }
+}

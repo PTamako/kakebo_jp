@@ -190,7 +190,7 @@ onMounted(load)
             <strong>{{h.fund_name}}</strong>
             <small>{{h.fund_code}} · {{accountLabel(h.account_type)}}</small>
             <small>保有 {{Number(h.units).toLocaleString('ja-JP')}}口 · 取得 {{yen(h.acquisition_cost)}}</small>
-            <small>基準価額：{{h.nav_per_10000 ? yen(h.nav_per_10000) : '未設定'}} {{h.price_date ? '('+(h.source==='sbi_screenshot'?'画面確認日 ':'基準日 ')+h.price_date+')' : ''}}</small>
+            <small>基準価額：{{h.nav_per_10000 ? yen(h.nav_per_10000) : '未設定'}} {{h.price_date ? '('+(h.source==='sbi_screenshot'?'画面確認日 ':'基準日 ')+h.price_date+')' : ''}} {{h.source==='official_mufg'?'· 公式自動更新':h.source==='manual'?'· 手入力':''}}</small>
           </div>
           <div class="sbi-fund-numbers"><strong>{{h.market_value===null?'—':yen(h.market_value)}}</strong>
             <small v-if="h.pnl!==null" :class="h.pnl>=0?'sbi-positive':'sbi-negative'">{{signYen(h.pnl)}}</small>
@@ -198,7 +198,7 @@ onMounted(load)
             <button type="button" class="sbi-plain-button" @click="editPrice(h)">基準価額</button>
           </div>
         </div>
-        <p class="sbi-hint">現在、基準価額は手動登録です。自動取得は利用条件を確認後に追加します。毎月の振替は買付予定と照合しますが、実際の約定口数・取得金額はSBIで確認して更新してください。</p>
+        <p class="sbi-hint">基準価額は三菱UFJ運用の3銘柄を自動更新します。NASDAQ100は引き続き手入力です。買付口数・取得金額はSBIで確認してください。</p>
       </article>
     </template>
 

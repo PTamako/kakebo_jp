@@ -1,0 +1,13 @@
+# Separate scheduled Worker; this does not replace Pages wrangler.toml.
+# One deploy creates a daily 06:30 JST Cron Trigger (21:30 UTC).
+name = "kakeibo-nav-sync"
+main = "workers/fund-nav-cron.js"
+compatibility_date = "2026-10-01"
+
+[triggers]
+crons = ["30 21 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kakeibo"
+database_id = "4d790915-fc06-4073-b660-bbb51dc74463"

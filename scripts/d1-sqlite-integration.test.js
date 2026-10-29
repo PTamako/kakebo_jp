@@ -286,7 +286,7 @@ test('D1 atomic restore rolls back all inserted settings and entries after SQL f
     const response=await call('restore-atomic','POST',backup)
     assert.equal(response.status,500)
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries").get().n,0)
-    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM custom_rules WHERE keyword='個人試験店'").get().n,0)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM merchant_rules WHERE keyword='個人試験店'").get().n,0)
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM payment_sources WHERE name='安全テストカード'").get().n,0)
     db.db.exec('DROP TRIGGER test_atomic_abort')
     const result=await call('restore-atomic','POST',backup)
@@ -294,9 +294,61 @@ test('D1 atomic restore rolls back all inserted settings and entries after SQL f
     assert.equal(result.body.created,2)
     assert.equal((await call('restore-atomic','POST',backup)).body.created,0)
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries").get().n,2)
-    assert.equal(db.db.prepare("SELECT category FROM custom_rules WHERE keyword='個人試験店'").get().category,'宠物')
+    assert.equal(db.db.prepare("SELECT category FROM merchant_rules WHERE keyword='個人試験店'").get().category,'宠物')
     assert.equal(db.db.prepare("SELECT closing_day FROM payment_sources WHERE name='安全テストカード'").get().closing_day,15)
     assert.equal(db.db.prepare("SELECT icon FROM category_icons WHERE category='饮食料品'").get().icon,'food')
+  }finally{db.close()}
+})
+
+test('merged merchant preferences preserve same-keyword category and card settings through edits',async()=>{
+  const {db,call}=await createClient()
+  try {
+    await call('payment-sources','POST',{name:'カードA'})
+    await call('payment-sources','POST',{name:'カードB'})
+    assert.equal((await call('rules','POST',{keyword:'併用テスト店',category:'饮食料品'})).status,200)
+    assert.equal((await call('merchant-payment-rules','POST',{keyword:'併用テスト店',paymentSource:'カードA'})).status,200)
+    assert.deepEqual(db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='併用テスト店'").get(),{category:'饮食料品',payment_source:'カードA'})
+    assert.equal((await call('merchant-payment-rules','POST',{keyword:'併用テスト店',paymentSource:'カードB'})).status,200)
+    assert.equal(db.db.prepare("SELECT payment_source FROM merchant_rules WHERE keyword='併用テスト店'").get().payment_source,'カードB')
+    assert.equal((await call('custom-rules?keyword='+encodeURIComponent('併用テスト店'),'DELETE')).status,200)
+    assert.deepEqual(db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='併用テスト店'").get(),{category:null,payment_source:'カードB'})
+  }finally{db.close()}
+})
+
+test('merged rule migration copies both old columns once and leaves old tables intact for rollback',async()=>{
+  const {db,call}=await createClient()
+  try {
+    // This fixture represents a pre-upgrade production D1 with populated tables.
+    db.db.exec("CREATE TABLE custom_rules(keyword TEXT PRIMARY KEY,category TEXT NOT NULL)")
+    db.db.exec("CREATE TABLE merchant_payment_rules(keyword TEXT PRIMARY KEY,payment_source TEXT NOT NULL)")
+    db.db.exec("INSERT INTO custom_rules VALUES('既存共通店','宠物'),('分類だけ店','购物')")
+    db.db.exec("INSERT INTO merchant_payment_rules VALUES('既存共通店','現金'),('カードだけ店','カードA')")
+    const first=await call('custom-rules')
+    assert.equal(first.status,200)
+    const combined=db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='既存共通店'").get()
+    assert.deepEqual(combined,{category:'宠物',payment_source:'現金'})
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM custom_rules").get().n,2)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM merchant_payment_rules").get().n,2)
+    await call('rules','POST',{keyword:'既存共通店',category:'医疗'})
+    await call('merchant-payment-rules','POST',{keyword:'既存共通店',paymentSource:'カードB'})
+    assert.deepEqual(db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='既存共通店'").get(),{category:'医疗',payment_source:'カードB'})
+    // Repeating the migration must not restore stale pre-upgrade preferences.
+    await call('merchant-payment-rules')
+    assert.deepEqual(db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='既存共通店'").get(),{category:'医疗',payment_source:'カードB'})
+  }finally{db.close()}
+})
+
+test('same-day same-merchant payment is warned regardless of a five-minute time change',async()=>{
+  const {db,call}=await createClient()
+  try {
+    const base={date:'2026-10-29',time:'18:30',amount:850,merchant:'ローソン',category:'饮食料品',type:'expense',paymentSource:'現金',duplicatePolicy:'check'}
+    assert.equal((await call('entries','POST',{...base,clientRequestId:'time-first-001'})).status,200)
+    const again=await call('entries','POST',{...base,time:'18:35',clientRequestId:'time-second-002'})
+    assert.equal(again.status,409)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE merchant='ローソン'").get().n,1)
+    assert.equal((await call('entries','POST',{...base,time:'18:35',allowDuplicate:true,clientRequestId:'time-second-003'})).status,200)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE merchant='ローソン'").get().n,2)
+    assert.equal((await call('entries','POST',{...base,time:'99:99',clientRequestId:'time-invalid-001'})).status,400)
   }finally{db.close()}
 })
 

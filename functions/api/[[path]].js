@@ -381,14 +381,18 @@ export async function onRequest({ request, env, params }) {
           return json({ok:true})
         }
       } else {
-        if (m === 'PUT' && !b) {
+        if ((m === 'PUT' || m === 'POST') && !b) {
           const item = await request.json()
           if (typeof item?.name !== 'string' || !item.name || item.name.length > 80 ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
               !validDate(item.start) || !validDate(item.end) || item.start > item.end || !Number.isSafeInteger(item.total) || item.total < 0 ||
               !Number.isSafeInteger(item.count) || item.count < 0)
             return json({error:'カード請求額を確認してください'},400)
-          await db.prepare('INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(payment_source,bill_month) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,total_amount=excluded.total_amount,transaction_count=excluded.transaction_count').bind(item.name,item.month,item.start,item.end,item.total,item.count).run()
+          // Restore uses POST (insert-only) so another device's saved bill always wins.
+          const statement = m === 'POST'
+            ? 'INSERT OR IGNORE INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6)'
+            : 'INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(payment_source,bill_month) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,total_amount=excluded.total_amount,transaction_count=excluded.transaction_count'
+          await db.prepare(statement).bind(item.name,item.month,item.start,item.end,item.total,item.count).run()
           return json({ok:true})
         }
         if (m === 'DELETE' && !b) {
@@ -525,13 +529,17 @@ export async function onRequest({ request, env, params }) {
       const { results } = await db.prepare('SELECT keyword, payment_source FROM merchant_payment_rules ORDER BY LENGTH(keyword) DESC').all()
       return json(results)
     }
-    if (a === 'merchant-payment-rules' && m === 'POST') {
+    if (a === 'merchant-payment-rules' && (m === 'POST' || m === 'PUT')) {
       const body = await request.json()
       const keyword = typeof body?.keyword === 'string' ? body.keyword.trim() : ''
       const name = typeof body?.paymentSource === 'string' ? body.paymentSource.trim() : ''
       if (keyword.length < 2 || keyword.length > 80 || !name || name.length > 80) return json({ error: '店舗と支払方法を確認してください' }, 400)
       if (!(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(name).first())) return json({ error: '登録済みの支払方法を選択してください' }, 400)
-      await db.prepare('INSERT INTO merchant_payment_rules(keyword,payment_source) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=excluded.payment_source').bind(keyword,name).run()
+      // PUT is reserved for insert-if-missing during restore. Normal POST keeps edit behavior.
+      const statement = m === 'PUT'
+        ? 'INSERT OR IGNORE INTO merchant_payment_rules(keyword,payment_source) VALUES(?1,?2)'
+        : 'INSERT INTO merchant_payment_rules(keyword,payment_source) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=excluded.payment_source'
+      await db.prepare(statement).bind(keyword,name).run()
       return json({ ok: true })
     }
     if (a === 'merchant-payment-rules' && m === 'DELETE') {
@@ -710,6 +718,16 @@ export async function onRequest({ request, env, params }) {
     }
     if (a === 'custom-rules') {
       await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
+      if (m === 'POST') {
+        const body = await request.json()
+        const keyword = typeof body?.keyword === 'string' ? body.keyword.trim() : ''
+        const category = typeof body?.category === 'string' ? body.category.trim() : ''
+        if (keyword.length < 2 || keyword.length > 120 || !category || category.length > 120)
+          return json({error:'カテゴリー規則を確認してください'},400)
+        // Only add missing keys when restoring. User-edited mappings are never overwritten.
+        await db.prepare('INSERT OR IGNORE INTO custom_rules(keyword,category) VALUES(?1,?2)').bind(keyword,category).run()
+        return json({ok:true})
+      }
       if (m === 'GET') {
         const { results } = await db.prepare('SELECT keyword, category FROM custom_rules ORDER BY keyword').all()
         return json(results)

@@ -4,7 +4,7 @@ import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, 
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
-const props = defineProps({ active: { type: Boolean, default: false }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
+const props = defineProps({ active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
 const managementTab = ref('cards')
@@ -290,9 +290,14 @@ async function loadFinanceSettings() {
   settingsReady.value = true
 }
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
+// Keep the full ledger in memory during tab switches. A successful edit
+// invalidates it; explicit backup/export and restore still fetch fresh data.
+const MANAGEMENT_LEDGER_TTL_MS = 5 * 60 * 1000
+let ledgerDirty = false
 async function loadAll() {
   if (busy.value) return false
   busy.value=true; message.value=''; loadError.value=''
+  const startingRevision = props.ledgerRevision
   try {
     const all=[]
     const years = await props.api('entry-years')
@@ -315,11 +320,14 @@ async function loadAll() {
     }
     const latestYears=await props.api('entry-years')
     if(JSON.stringify(years)!==JSON.stringify(latestYears))throw Error('明細の件数が読み込み中に変わりました。再度実行してください')
-    rows.value=all;loaded.value=true;lastLoadedAt.value=new Date();message.value=all.length+'件の明細を読み込みました'
-    return true
+    rows.value=all;loaded.value=true;lastLoadedAt.value=new Date()
+    // A save completed during this download: do not call stale data fresh.
+    ledgerDirty = props.ledgerRevision !== startingRevision
+    message.value=all.length+'件の明細を読み込みました'
+    return !ledgerDirty
   }catch(e){
     // Never show or export stale data as if it were a complete ledger.
-    rows.value=[];loaded.value=false;lastLoadedAt.value=null
+    rows.value=[];loaded.value=false;lastLoadedAt.value=null;ledgerDirty=true
     loadError.value='全明細の読み込みに失敗しました：'+e.message
     message.value=loadError.value
     return false
@@ -611,11 +619,21 @@ async function initializeFinance() {
   finally { financeInitPromise = null }
 }
 onMounted(() => { if (props.active) void initializeFinance() })
+watch(() => props.ledgerRevision, () => {
+  ledgerDirty = true
+  // Avoid fetching during a restore or duplicate check; the next visit or
+  // explicit refresh will reconcile the current D1 ledger safely.
+  if (props.active && !busy.value) void loadAll()
+})
 watch(() => props.active, active => {
   if (!active) return
-  // A new visit should see newly added or edited transactions before exporting.
-  if (financeInitialized && loaded.value) void loadAll()
-  else void initializeFinance()
+  if (!financeInitialized || !loaded.value) return void initializeFinance()
+  if (ledgerDirty || !lastLoadedAt.value ||
+      Date.now() - lastLoadedAt.value.getTime() >= MANAGEMENT_LEDGER_TTL_MS) {
+    void loadFinanceSettings().catch(e => { loadError.value='設定を更新できませんでした：'+e.message })
+    void loadAll()
+  }
+  // Otherwise reuse the already loaded ledger: no D1 fetch on every tap.
 })
 async function removePlan(id) {
   if (!settingsReady.value || recurringBusy.value) return

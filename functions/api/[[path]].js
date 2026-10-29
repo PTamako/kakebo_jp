@@ -784,8 +784,10 @@ export async function onRequest({ request, env, params }) {
       }
       if (m === 'POST' && b === 'restore-empty') {
         const body = await request.json()
-        if (body?.platform !== 'sbi' || !Number.isSafeInteger(body.currentValue) || body.currentValue < 0 ||
-            !Number.isSafeInteger(body.pnl)) return json({error:'バックアップの資産データを確認してください'},400)
+        if (body?.platform !== 'sbi' ||
+            (body.currentValue !== null && (!Number.isSafeInteger(body.currentValue) || body.currentValue < 0)) ||
+            (body.pnl !== null && !Number.isSafeInteger(body.pnl)) ||
+            (body.currentValue === null && body.pnl === null)) return json({error:'バックアップの資産データを確認してください'},400)
         // Fill an entirely blank snapshot only; never modify a manually entered SBI valuation.
         const result = await db.prepare("UPDATE investment_snapshots SET current_value=?1, pnl=?2, updated_at=?3 WHERE platform='sbi' AND current_value IS NULL AND pnl IS NULL")
           .bind(body.currentValue,body.pnl,new Date().toISOString()).run()
@@ -806,7 +808,7 @@ export async function onRequest({ request, env, params }) {
     }
 
     if (a === 'stats' && m === 'GET') {
-      const year = (url.searchParams.get('year') || '').slice(0, 4)
+      const year = url.searchParams.get('year') || ''
       if (year) {
         if (!/^\d{4}$/.test(year)) return json({ error: '年份格式不正确' }, 400)
         const like = year + '%'

@@ -173,6 +173,8 @@ const restoreRows = ref([])
 const restoreConflicts = ref([])
 const restoreIncludeConflicts = ref(false)
 const backupPreview = ref(null)
+const backupLedgerFingerprint = ref('')
+const ledgerFingerprint = items => items.map(x=>[x.id,transactionKey(x),x.raw||'',x.transfer_applied||0].join('|')).sort().join('\n')
 const backupBusy = ref(false)
 const plans = ref([])
 const bills = ref([])
@@ -209,15 +211,21 @@ async function loadAll() {
     for(const item of years){
       const year=String(item.year), expected=Number(item.count)
       if(!/^\d{4}$/.test(year) || !Number.isSafeInteger(expected) || expected<0) throw Error('記録年の一覧が不正です')
-      let fetched=0
-      for(let offset=0;;offset+=500){
-        const page=await props.api('entries?year='+year+'&offset='+offset)
+      let fetched=0,cursor=0
+      for(;;){
+        const page=await props.api('entries?year='+year+'&cursor='+cursor)
         if(!Array.isArray(page))throw Error('読み込み形式が不正です')
+        for(const row of page){
+          if(!Number.isSafeInteger(Number(row.id)) || Number(row.id)<=cursor)throw Error('明細ページの順序が変わりました')
+          cursor=Number(row.id)
+        }
         all.push(...page);fetched+=page.length
         if(page.length<500)break
       }
       if(fetched!==expected) throw Error('読み込み中に明細件数が変わりました。もう一度更新してください')
     }
+    const latestYears=await props.api('entry-years')
+    if(JSON.stringify(years)!==JSON.stringify(latestYears))throw Error('明細の件数が読み込み中に変わりました。再度実行してください')
     rows.value=all;loaded.value=true;lastLoadedAt.value=new Date();message.value=all.length+'件の明細を読み込みました'
     return true
   }catch(e){
@@ -236,21 +244,21 @@ async function downloadBackup(){
     // Refresh ledger and D1 metadata immediately before export. A partial fetch
     // must not be mistaken for a complete, safe recovery archive.
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
-    const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons] = await Promise.all([
+    const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers] = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons')
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders')
     ])
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
       entries:rows.value,plans:nextPlans,bills:nextBills,investments,
-      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons
+      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers
     })
     const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
     const a=document.createElement('a')
     a.href=url;a.download='kakeibo-complete-'+new Date().toISOString().slice(0,10)+'.json';a.click()
     setTimeout(()=>URL.revokeObjectURL(url),30000)
-    message.value='バックアップを作成しました。明細・SBI評価額・登録設定を含みます'
+    message.value='帳簿・設定JSONを保存しました（端末内レシート画像を除く）'
   } catch(e) { message.value='バックアップを作成できませんでした：'+e.message }
   finally { backupBusy.value=false }
 }
@@ -263,6 +271,7 @@ async function preview(event){
     if(file.size>25*1024*1024)throw Error('ファイルが大きすぎます')
     const backup=validateBackup(JSON.parse(await file.text()))
     const result=prepareRestoreRows(rows.value,backup.entries)
+    backupLedgerFingerprint.value=ledgerFingerprint(rows.value)
     restoreRows.value=result.newRows
     restoreConflicts.value=result.conflicts
     backupPreview.value=backup
@@ -278,6 +287,13 @@ async function restore(){
   if(!confirm(descriptions+' 続けますか？'))return
   if(restoreIncludeConflicts.value && restoreConflicts.value.length &&
       !confirm('同一内容の取引 '+restoreConflicts.value.length+'件を別の取引として追加します。本当に登録しますか？')) return
+  // Re-fetch before writing: preview must still refer to the same server ledger.
+  if(!(await loadAll())) {message.value='最新の明細を再取得できません。復元を中止しました';return}
+  if(backupLedgerFingerprint.value!==ledgerFingerprint(rows.value)){
+    backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
+    message.value='確認後に明細が更新されました。安全のため復元を中止しました。バックアップを選び直してください'
+    return
+  }
   busy.value=true
   let count=0,settingsCount=0,skipped=0
   try{
@@ -332,6 +348,7 @@ async function restore(){
       const saved=await props.api('investments/restore-empty',{method:'POST',body:JSON.stringify({platform:'sbi',currentValue:sbi.current_value,pnl:sbi.pnl})})
       if(saved.restored)settingsCount++;else skipped++
     }
+    const restoredIds = new Map()
     for (const e of selectedRows){
       // Stable across retry; source backup identity disambiguates identical purchases.
       const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
@@ -340,8 +357,13 @@ async function restore(){
       const {backupIndex,...entry}=e
       const result=await props.api('entries',{method:'POST',body:JSON.stringify({...entry,clientRequestId:key,transferTarget:e.transfer_target||'',transferDate:e.transfer_date||e.date,paymentSource:e.payment_source||''})})
       if(result.duplicate)skipped++;else count++
+      if(e.id && result?.id)restoredIds.set(Number(e.id),Number(result.id))
       restoreRows.value=restoreRows.value.filter(row=>row.backupIndex!==e.backupIndex)
       restoreConflicts.value=restoreConflicts.value.filter(row=>row.backupIndex!==e.backupIndex)
+    }
+    for(const oldId of backup.dismissedTransfers || []) {
+      const newId=restoredIds.get(Number(oldId))
+      if(newId){await props.api('dismissed-transfer-reminders',{method:'POST',body:JSON.stringify({entryId:newId})});settingsCount++}
     }
     // Restore recurring plans last: ledger rows must exist before a future app
     // launch can generate scheduled records from the restored plans.
@@ -590,8 +612,8 @@ async function removeCardBill(record) {
   </article>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
     <summary>バックアップ・復元<span>必要なときに開く</span></summary>
-    <p>全明細・SBI証券の評価額と損益・固定支出・カード請求・カード設定・店舗ルールを保存します。レシート写真は端末内にあるため含まれません。</p>
-    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '完全JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
+    <p>全明細・SBI評価額と損益・固定支出・カード設定・通知状態をJSONで保存します。端末内レシート写真は含まれません。復元が途中で停止した場合は、表示された登録件数を確認してから再試行してください。</p>
+    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div v-if="backupPreview" class="restore-preview">
       <p>新しい明細 {{restoreRows.length}}件・重複の可能性 {{restoreConflicts.length}}件。既存の取引や資産評価額は上書きしません。</p>
       <details v-if="restoreConflicts.length"><summary>重複候補を確認（{{restoreConflicts.length}}件）</summary><p v-for="e in restoreConflicts.slice(0,30)" :key="e.backupIndex">{{e.date}} · {{e.merchant || e.category}} · {{yen(e.amount)}} · {{e.payment_source || '未設定'}}</p><p v-if="restoreConflicts.length>30">最初の30件のみ表示しています。</p></details>

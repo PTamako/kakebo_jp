@@ -23,16 +23,12 @@ const { month, input, yen, pendingTransfers, transferLoading, transferDue, loadT
       <SbiPortfolio :api="api" />
       <details class="legacy-investment-details"><summary>旧評価額（過去の手入力データ）</summary>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
-        <div class="investment-card-heading"><div><h2>{{ item.label }}</h2><p>{{ item.detail }}</p></div><span class="investment-unit">{{ item.unit }}</span></div>
-        <div class="investment-principal"><small>積立累計</small><strong>{{ yen(investments[item.id].investedTotal) }}</strong></div>
-        <label class="form-field"><span>現在の評価額（{{ item.unit }}）</span><input v-model.number="investments[item.id].currentValue" type="number" min="0" step="1" inputmode="numeric" placeholder="現在の評価額" /></label>
-        <label class="form-field"><span>評価損益（{{ item.unit }}）</span><input v-model.number="investments[item.id].pnl" type="number" step="1" inputmode="numeric" placeholder="例：-1339" /></label>
+        <div class="investment-card-heading"><div><h2>{{item.label}}</h2><p>移行前の手入力履歴（参照のみ）</p></div><span class="investment-unit">{{item.unit}}</span></div>
         <div class="investment-summary">
-          <div><small>評価損益</small><strong :class="Number(investments[item.id].pnl) > 0 ? 'investment-positive' : Number(investments[item.id].pnl) < 0 ? 'investment-negative' : ''">{{ investments[item.id].pnl === null || investments[item.id].pnl === '' ? '—' : (Number(investments[item.id].pnl) > 0 ? '+' : '') + Number(investments[item.id].pnl).toLocaleString('ja-JP') + ' ' + item.unit }}</strong></div>
-          <div><small>損益率</small><strong :class="investmentReturn(item) > 0 ? 'investment-positive' : investmentReturn(item) < 0 ? 'investment-negative' : ''">{{ investmentReturn(item) === null ? '—' : (investmentReturn(item) > 0 ? '+' : '') + investmentReturn(item).toFixed(2) + '%' }}</strong></div>
+          <div><small>旧評価額</small><strong>{{investments[item.id].currentValue===null?'—':yen(investments[item.id].currentValue)}}</strong></div>
+          <div><small>旧評価損益</small><strong>{{investments[item.id].pnl===null?'—':yen(investments[item.id].pnl)}}</strong></div>
         </div>
-        <p class="investment-updated">最終更新：{{ investments[item.id].updatedAt ? new Date(investments[item.id].updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '未更新' }}</p>
-        <button class="button-primary investment-save" :disabled="investmentBusy" @click="saveInvestment(item)">最新データを保存</button>
+        <p class="investment-updated">最終更新：{{investments[item.id].updatedAt?new Date(investments[item.id].updatedAt).toLocaleDateString('ja-JP'):'未更新'}}</p>
       </article>
       </details>
     </section>

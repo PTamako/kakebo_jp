@@ -374,11 +374,11 @@ function setAiOcrEnabled(checked) {
 const draftRecoveryInfo = ref('')
 const DRAFT_KEY = 'kakeibo-unsaved-draft-v1'
 function clearLocalDraft() {
-  if(!confirm('未保存の入力と貼り付けた文字を、この端末から破棄しますか？保存済み明細とレシート画像は変更されません。'))return
+  if(!confirm('未保存の下書きを削除しますか？保存済み明細やレシート画像は残ります。'))return
   clearTimeout(draftSaveTimer)
   forms.value=[];input.value='';draftRecoveryInfo.value=''
   try{localStorage.removeItem(DRAFT_KEY)}catch{}
-  flash('端末内の未保存入力だけを削除しました')
+  flash('下書きを削除しました')
 }
 try {
   const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
@@ -387,7 +387,7 @@ try {
     if (typeof saved.input === 'string') input.value = saved.input.slice(0,100000)
     if (forms.value.length || input.value.trim()) {
       entryInputMode.value = saved.mode === 'scan' ? 'scan' : 'manual'
-      draftRecoveryInfo.value = '前回保存していない入力をこの端末から復元しました。レシート画像は再選択してください。'
+      draftRecoveryInfo.value = '前回の下書きを復元しました（画像は再選択）'
     }
   }
 } catch { /* Invalid old draft is ignored, not sent to the API. */ }
@@ -1212,8 +1212,13 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <p v-if="ocrWarning" class="microcopy" role="alert">{{ ocrWarning }}</p>
       </div>
 
-      <p v-if="draftRecoveryInfo && (forms.length || input.trim())" class="microcopy" role="status">{{draftRecoveryInfo}}</p>
-      <button v-if="forms.length || input.trim()" type="button" class="draft-clear" :disabled="!!busy" @click="clearLocalDraft">未保存の入力をこの端末から破棄</button>
+      <div v-if="forms.length || input.trim()" class="draft-utility-row">
+        <span v-if="draftRecoveryInfo" class="draft-recovery-hint" role="status">{{draftRecoveryInfo}}</span>
+        <button type="button" class="draft-discard-inline" :disabled="!!busy" @click="clearLocalDraft" aria-label="未保存の下書きを削除" title="未保存の下書きを削除">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 4h4M6.5 7l1 13h9l1-13M10 11v5M14 11v5"/></svg>
+          下書きを削除
+        </button>
+      </div>
       <div v-if="forms.length" class="draft-heading">
         <div><h2>{{ entryInputMode === 'scan' ? '読み取り結果の確認' : '入力内容の確認' }}</h2><p>保存前に金額・日付を確認</p></div>
         <span class="count-pill">{{ forms.length }}件</span>
@@ -1820,4 +1825,12 @@ main.theme-green .brand-mark{
   border-radius:0;
   padding:0;
 }
+
+/* Low-emphasis draft action, with a full-size 44px touch target. */
+.draft-utility-row{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0;margin:4px 1px 0}
+.draft-recovery-hint{flex:1;min-width:0;font-size:11px;line-height:1.4;color:var(--muted)}
+.draft-discard-inline{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;border:0;background:transparent;box-shadow:none;color:var(--muted);padding:7px 8px;border-radius:9px;font-size:12px;font-weight:500;cursor:pointer}
+.draft-discard-inline svg{width:15px;height:15px;flex:none}
+.draft-discard-inline:disabled{opacity:.45;cursor:not-allowed}
+.draft-discard-inline:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 </style>

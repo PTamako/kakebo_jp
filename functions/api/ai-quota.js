@@ -2,7 +2,7 @@
 export const tokyoAiDay = (now = Date.now()) => new Date(now + 9 * 3600000).toISOString().slice(0,10)
 export const aiDailyLimit = env => {
   const value = Number(env.AI_OCR_DAILY_LIMIT)
-  return env.AI_OCR_DAILY_LIMIT != null && Number.isSafeInteger(value) && value >= 0 ? Math.min(30,value) : 3
+  return env.AI_OCR_DAILY_LIMIT != null && Number.isSafeInteger(value) && value >= 0 ? Math.min(20,value) : 20
 }
 export async function aiQuotaState(db,env) {
   const day=tokyoAiDay(),limit=aiDailyLimit(env)

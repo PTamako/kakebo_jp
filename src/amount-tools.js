@@ -17,7 +17,7 @@ export function normalizeYenInput(value) {
 
 export function calculateYenExpression(expression) {
   const source = String(expression ?? '').replace(/[０-９]/g, ch => String(ch.charCodeAt(0) - 0xff10))
-    .replace(/[×＊]/g, '*').replace(/[÷／]/g, '/').replace(/[−－]/g, '-').replace(/\s/g, '')
+    .replace(/[×＊]/g, '*').replace(/[÷／]/g, '/').replace(/[−－]/g, '-').replace(/\s/g, '').replace(/(\d),(?=\d{3}(?:\D|$))/g, '$1')
   if (!source || source.length > 80 || !/^[\d.()+*/-]+$/.test(source)) return null
   const tokens = source.match(/(?:\d+(?:\.\d*)?|\.\d+)|[()+*/-]/g)
   if (!tokens || tokens.join('') !== source) return null

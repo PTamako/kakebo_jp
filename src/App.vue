@@ -339,8 +339,14 @@ watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') load
 const recognitionMode = ref('statement')
 const entryInputMode = ref('manual')
 const aiOcrEnabled = ref(localStorage.getItem('kakeibo-ai-ocr-enabled') === '1')
+const aiQuota = ref(null)
+async function refreshAiQuota() {
+  try { aiQuota.value=await api('ai-ocr/quota') }
+  catch { aiQuota.value=null }
+}
 function setAiOcrEnabled(checked) {
   aiOcrEnabled.value = checked
+  if (checked) void refreshAiQuota()
   try { localStorage.setItem('kakeibo-ai-ocr-enabled', checked ? '1' : '0') }
   catch { flash('AI OCRの設定を保存できませんでした') }
 }
@@ -348,6 +354,13 @@ function setAiOcrEnabled(checked) {
 // are intentionally excluded from localStorage; the original photo stays on device.
 const draftRecoveryInfo = ref('')
 const DRAFT_KEY = 'kakeibo-unsaved-draft-v1'
+function clearLocalDraft() {
+  if(!confirm('未保存の入力と貼り付けた文字を、この端末から破棄しますか？保存済み明細とレシート画像は変更されません。'))return
+  clearTimeout(draftSaveTimer)
+  forms.value=[];input.value='';draftRecoveryInfo.value=''
+  try{localStorage.removeItem(DRAFT_KEY)}catch{}
+  flash('端末内の未保存入力だけを削除しました')
+}
 try {
   const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
   if (saved && Date.now() - Number(saved.updatedAt) < 7 * 86400000 && Array.isArray(saved.forms)) {
@@ -404,6 +417,8 @@ async function onImage(e, mode = 'statement') {
     } else {
       try {
         busy.value = 'AIで画像を読み取り中'
+        await refreshAiQuota()
+        if(aiQuota.value && aiQuota.value.remaining<=0)throw Error('本日のAI上限に達しました')
         const data = new FormData()
         const image = await compressReceiptImage(f)
         data.append('image', image, image.type === 'image/jpeg' ? 'receipt.jpg' : 'receipt.webp')
@@ -411,6 +426,7 @@ async function onImage(e, mode = 'statement') {
         const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': token.value }, body: data })
         if (!response.ok) { const errorBody = await response.json().catch(() => ({})); throw new Error(errorBody.error || `AI画像認識に失敗しました（HTTP ${response.status}）`) }
         const result = await response.json()
+        await refreshAiQuota()
         if (!result.text?.trim()) throw new Error('認識結果がありません')
         if (result.engine !== 'gemma4') throw new Error('AIの応答を確認できませんでした')
         input.value = result.text
@@ -1165,7 +1181,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             </button>
           </div>
         </div>
-        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">画像をCloudflare AIへ送信します。利用枠を消費します。</p>
+        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">Cloudflare AIへ送信します。1日あたりの使用回数に上限があります。<span v-if="aiQuota">本日の残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
@@ -1177,6 +1193,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
 
       <p v-if="draftRecoveryInfo && (forms.length || input.trim())" class="microcopy" role="status">{{draftRecoveryInfo}}</p>
+      <button v-if="forms.length || input.trim()" type="button" class="draft-clear" :disabled="!!busy" @click="clearLocalDraft">未保存の入力をこの端末から破棄</button>
       <div v-if="forms.length" class="draft-heading">
         <div><h2>{{ entryInputMode === 'scan' ? '読み取り結果の確認' : '入力内容の確認' }}</h2><p>金額・日付・店舗名を確認して保存してください</p></div>
         <span class="count-pill">{{ forms.length }}件</span>

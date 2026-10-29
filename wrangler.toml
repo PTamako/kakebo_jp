@@ -10,8 +10,11 @@ database_id = "4d790915-fc06-4073-b660-bbb51dc74463"   # ← 换成你的 D1 ID
 [ai]
 binding = "AI"
 
-# Fail closed by default: a preview must NOT touch the live D1 ledger.
-# Set PREVIEW_D1_ISOLATED=true only after a distinct preview DB is VERIFIED
-# in Cloudflare Pages Settings > Bindings. Preview financial writes stay blocked.
-[env.preview.vars]
-APP_ENV = "preview"
+# Pages Preview deployments use their own dashboard environment settings.
+# Do not add [env.preview] with only vars here: Wrangler does not inherit
+# d1_databases or ai into an environment, resulting in missing bindings.
+# For custom Preview domains set APP_ENV=preview in the *Preview* settings.
+# For all Preview domains, keep PREVIEW_D1_ISOLATED unset until the D1
+# binding has been verified as DIFFERENT from the production ledger.
+# Unverified Preview API requests fail closed (503); financial writes always
+# remain blocked (403) even after explicitly enabling safe preview reads.

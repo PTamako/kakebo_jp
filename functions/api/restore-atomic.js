@@ -51,10 +51,14 @@ export async function restoreAtomic(db, archive) {
     const type=e.type, transfer=type==='transfer'
     const target=transfer && e.transfer_target==='sbi'?'sbi':null
     const transferDate=transfer?(e.transfer_date||e.date):null
+    // Applied status is a derived fact, NEVER trust a backup's flag for
+    // future-dated SBI transfers. Preserve the manual valuation separately.
+    const tokyoToday=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10)
+    const transferApplied=target && transferDate<=tokyoToday ? 1 : 0
     if(transfer && transferDate!==null && !/^\d{4}-\d{2}-\d{2}$/.test(transferDate))throw Error('atomic_restore_invalid_transfer_date')
     add('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING',
       e.date,e.time||'',Number(e.amount),transfer?'投資・資産移動':e.category||'其他',e.merchant||'',e.note||'',String(e.raw||'').slice(0,2000),
-      type,target,transfer?Number(e.transfer_applied||0):0,transferDate,e.clientRequestId,e.payment_source||e.paymentSource||'')
+      type,target,transferApplied,transferDate,e.clientRequestId,e.payment_source||e.paymentSource||'')
   }
   // Restore dismissal on transaction IDs actually imported (or idempotent retries).
   const byOldId=new Map(entries.filter(e=>e.type==='transfer'&&e.transfer_target==='sbi').map(e=>[Number(e.id),e]))

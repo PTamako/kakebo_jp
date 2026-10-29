@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { formatYenInput, normalizeYenInput, calculateYenExpression, convertToYen } from '../src/amount-tools.js'
+import { formatYenInput, normalizeYenInput, calculateYenExpression, convertToYen, calculateJapaneseConsumptionTax } from '../src/amount-tools.js'
 import { onRequestGet } from '../functions/api/exchange-rate.js'
 
 const source = p => readFileSync(new URL('../' + p, import.meta.url), 'utf8')
@@ -37,6 +37,26 @@ test('calculator uses an arithmetic parser, not eval, and only accepts positive,
   assert.equal(convertToYen('1e30', 150), null)
 })
 
+
+test('Japan consumption tax opt-in defaults off and supports 10%/8% with selectable rounding', () => {
+  assert.deepEqual(calculateJapaneseConsumptionTax(1580), {subtotal:1580,tax:0,total:1580})
+  assert.deepEqual(calculateJapaneseConsumptionTax(1580,10), {subtotal:1580,tax:158,total:1738})
+  assert.deepEqual(calculateJapaneseConsumptionTax(1580,8), {subtotal:1580,tax:126,total:1706})
+  assert.deepEqual(calculateJapaneseConsumptionTax(101,8,'floor'), {subtotal:101,tax:8,total:109})
+  assert.deepEqual(calculateJapaneseConsumptionTax(107,8,'round'), {subtotal:107,tax:9,total:116})
+  assert.deepEqual(calculateJapaneseConsumptionTax(101,8,'ceil'), {subtotal:101,tax:9,total:110})
+  assert.equal(calculateJapaneseConsumptionTax(0,10),null)
+  assert.equal(calculateJapaneseConsumptionTax(-1,8),null)
+  assert.equal(calculateJapaneseConsumptionTax(Number.MAX_SAFE_INTEGER,10),null)
+  assert.equal(calculateJapaneseConsumptionTax(1000,7),null)
+  assert.equal(calculateJapaneseConsumptionTax(1000,10,'bankers'),null)
+  const field=source('src/AmountInput.vue')
+  assert.match(field, /const taxRate = ref\(0\)/, 'no tax is the default')
+  assert.match(field, /const taxRounding = ref\('floor'\)/)
+  assert.match(field, /activeTab\.value === 'calc' \? taxSummary\.value\?\.total/, 'copy and apply use final tax-inclusive result')
+  assert.match(field, /watch\(\[chosenResult, activeTab\]/, 'stale copy confirmation resets when result or tab changes')
+})
+
 test('all transaction forms including edit mode use the shared currency field', () => {
   const transaction = source('src/TransactionForm.vue')
   const app = source('src/App.vue')
@@ -49,7 +69,20 @@ test('all transaction forms including edit mode use the shared currency field', 
   assert.match(field, /aria-label="計算・為替換算を開く"/)
   assert.match(field, /role="dialog" aria-modal="true"/)
   assert.match(field, /金額に反映/)
-  assert.doesNotMatch(field, /結果をコピー|計算式をコピー|GenUI.copy/)
+  assert.match(field, /結果をコピー/)
+  assert.doesNotMatch(field, /計算式をコピー|GenUI.copy/)
+  assert.match(field, /navigator\.clipboard\.writeText\(digits\)/)
+  assert.match(field, /const digits = String\(chosenResult\.value\)/)
+  assert.match(field, /copyFeedback==='copied'/)
+  assert.match(field, /:disabled="chosenResult == null" @click="copyResult"/)
+  assert.match(field, /grid-template-columns:minmax\(0,2fr\) minmax\(0,3fr\)/)
+  assert.match(field, /消費税を加算/)
+  assert.match(field, /taxRate===option\.value/)
+  assert.match(field, /taxSummary\.value\?\.total/)
+  assert.match(field, /税込合計/)
+  assert.match(field, /切り捨て/)
+  assert.match(field, /四捨五入/)
+  assert.match(field, /切り上げ/)
   assert.match(field, /type="button" class="money-apply" :disabled="chosenResult == null"/)
   assert.match(field, /@click.self="closeTools"/)
   assert.match(field, /inputmode="numeric"/)

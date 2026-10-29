@@ -366,14 +366,16 @@ main .finance-tools .card-billing-fields input.card-closing-month {
   font-size: 16px !important;
   padding-inline: 8px !important;
 }
-/* While typing, release the screen edge for the on-screen keyboard. */
+/* Hide bottom chrome only when a text keyboard is needed. Native select,
+   date and time pickers (including iOS select sheets) must keep the tab bar visible
+   even when the picker retains focus after the user makes a choice. */
 @media (max-width: 560px) {
-  main:has(input:focus, textarea:focus, select:focus) .bottom-nav {
+  main:has(input:is(:not([type]), [type="text"], [type="search"], [type="number"], [type="email"], [type="tel"], [type="url"], [type="password"]):focus, textarea:focus) .bottom-nav {
     opacity: 0;
     pointer-events: none;
     transform: translate(-50%, calc(100% + 24px));
   }
-  main:has(input:focus, textarea:focus, select:focus) .batch-actions:not(.batch-actions-empty) {
+  main:has(input:is(:not([type]), [type="text"], [type="search"], [type="number"], [type="email"], [type="tel"], [type="url"], [type="password"]):focus, textarea:focus) .batch-actions:not(.batch-actions-empty) {
     position: static;
   }
 }

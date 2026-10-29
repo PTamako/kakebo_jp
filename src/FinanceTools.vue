@@ -126,22 +126,33 @@ async function removeMerchantRule(keyword) {
     emit('settings-changed')
   } catch (e) { cardMessage.value = 'ルールを解除できませんでした：' + e.message }
 }
-function addPaymentSource() {
+async function addPaymentSource() {
   const name = newPaymentSource.value.trim()
   if (!name || name.length > 80) { cardMessage.value = '名称は1～80文字で入力してください'; return }
   if (props.paymentSources.includes(name)) { cardMessage.value = '同じ名前が登録されています'; return }
-  emit('update-payment-sources', [...props.paymentSources, name])
-  newPaymentSource.value = ''
-  cardMode.value = ''
-  cardMessage.value = name + 'を追加しました'
+  if (busy.value) return
+  busy.value = true
+  try {
+    await props.api('payment-sources',{method:'POST',body:JSON.stringify({name})})
+    emit('payment-settings-refresh')
+    newPaymentSource.value = ''
+    cardMode.value = ''
+    cardMessage.value = name + 'を追加しました'
+  } catch(e) { cardMessage.value = 'カードを追加できませんでした：' + e.message }
+  finally { busy.value = false }
 }
 async function removePaymentSource(name) {
-  if (name === '現金') return
-  if (!confirm(name + 'を選択肢から削除しますか？過去の明細や固定支出、請求データは削除されません。')) return
-  emit('update-payment-sources', props.paymentSources.filter(x => x !== name))
-  selectedCard.value = ''
-  cardMode.value = ''
-  cardMessage.value = name + 'を選択肢から削除しました。過去の記録は保持されます'
+  if (name === '現金' || busy.value) return
+  if (!confirm(name + 'を選択肢から削除しますか？過去の明細や請求データは削除されません。')) return
+  busy.value = true
+  try {
+    await props.api('payment-sources/remove',{method:'POST',body:JSON.stringify({name})})
+    emit('payment-settings-refresh')
+    selectedCard.value = ''
+    cardMode.value = ''
+    cardMessage.value = name + 'を選択肢から削除しました。過去の記録は保持されます'
+  } catch(e) { cardMessage.value = 'カードを削除できませんでした：' + e.message }
+  finally { busy.value = false }
 }
 
 const rows = ref([])

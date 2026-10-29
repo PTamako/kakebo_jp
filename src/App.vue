@@ -193,7 +193,7 @@ const availableIcons = computed(() => {
   const existingLabels = new Set(categories.value.map(name => categoryDisplayNames.value[name] || name))
   return ICON_LIBRARY.filter(icon => icon.id === 'other' || (!used.has(icon.id) && !existingLabels.has(icon.label)))
 })
-const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || ICON_LIBRARY.at(-1).path
+const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || ICON_LIBRARY.find(icon => icon.id === 'other').path
 const categoryLabel = name => categoryDisplayNames.value[name] || name
 async function loadCategoryMetadata() {
   const rows = await api('category-source')

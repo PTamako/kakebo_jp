@@ -134,7 +134,13 @@ export async function onRequest({ request, env, params }) {
       const ipHash = await sessionHash(ip)
       try {
         await db.prepare('CREATE TABLE IF NOT EXISTS login_attempts (ip_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at INTEGER NOT NULL)').run()
+        await db.prepare('CREATE TABLE IF NOT EXISTS device_sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)').run()
         const now = Date.now()
+        // Reclaim expired authentication rows without touching sessions still in use.
+        await db.batch([
+          db.prepare('DELETE FROM login_attempts WHERE reset_at <= ?1').bind(now),
+          db.prepare('DELETE FROM device_sessions WHERE expires_at <= ?1').bind(now)
+        ]).catch(() => {})
         const attempt = await db.prepare('SELECT attempts, reset_at FROM login_attempts WHERE ip_hash = ?1').bind(ipHash).first()
         if (attempt && attempt.reset_at > now && attempt.attempts >= 5) return json({ error: 'しばらくしてから再度お試しください' }, 429)
         if (typeof body?.code !== 'string' || body.code !== env.AUTH_TOKEN) {
@@ -469,8 +475,14 @@ export async function onRequest({ request, env, params }) {
       const body = await request.json()
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
       if (!name || name === '現金') return json({ error: 'カード名を確認してください' }, 400)
-      await db.prepare('DELETE FROM merchant_payment_rules WHERE payment_source=?1').bind(name).run()
-      await db.prepare('DELETE FROM payment_sources WHERE name=?1').bind(name).run()
+      // Do not remove a card that is still used by an enabled automatic charge.
+      await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
+      const activePlan = await db.prepare('SELECT id FROM recurring_plans WHERE payment_source=?1 AND enabled=1 LIMIT 1').bind(name).first()
+      if (activePlan) return json({error:'このカードを利用する固定支出が残っています。先に固定支出の設定を整理してください'},409)
+      await db.batch([
+        db.prepare('DELETE FROM merchant_payment_rules WHERE payment_source=?1').bind(name),
+        db.prepare('DELETE FROM payment_sources WHERE name=?1').bind(name)
+      ])
       return json({ ok: true })
     }
     if (a === 'merchant-payment-rules' && m === 'GET') {
@@ -516,6 +528,38 @@ export async function onRequest({ request, env, params }) {
         db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName)
       ])
       return json({ ok: true, changes: result[2]?.meta?.changes ?? 0 })
+    }
+    if (a === 'recurring-post' && m === 'POST') {
+      // Atomic, non-destructive fixed-expense insertion; conflicting manual records win.
+      await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
+      const body = await request.json()
+      const planId = typeof body?.planId === 'string' ? body.planId : ''
+      const scheduledMonth = typeof body?.month === 'string' ? body.month : ''
+      if (!/^[a-zA-Z0-9-]{8,80}$/.test(planId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(scheduledMonth))
+        return json({error:'固定支出の対象を確認してください'},400)
+      const plan = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=?1').bind(planId).first()
+      if (!plan || !plan.enabled || !Number.isSafeInteger(Number(plan.amount)) || Number(plan.amount)<=0)
+        return json({error:'有効な固定支出が見つかりません'},404)
+      if (scheduledMonth < plan.start_month) return json({error:'開始月より前の支出は登録できません'},400)
+      const [year,monthNumber] = scheduledMonth.split('-').map(Number)
+      const day = Math.min(Number(plan.day),new Date(Date.UTC(year,monthNumber,0)).getUTCDate())
+      const date = scheduledMonth+'-'+String(day).padStart(2,'0')
+      if (date > tokyoToday()) return json({error:'予定日前の固定支出は登録できません'},409)
+      const clientRequestId = 'recurring_'+plan.id.replace(/-/g,'')+'_'+scheduledMonth.replace('-','')
+      if (await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())
+        return json({ok:true,created:false,duplicate:true,conflict:false})
+      const result = await db.prepare(`INSERT INTO entries
+        (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
+        SELECT ?1,'',?2,?3,?4,'毎月の固定支出（自動記録）','','expense',NULL,0,NULL,?5,?6
+        WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND type='expense' AND merchant=?4 AND amount=?2 AND COALESCE(payment_source,'')=?6 AND (client_request_id IS NULL OR client_request_id NOT LIKE 'recurring_%'))
+        ON CONFLICT(client_request_id) DO NOTHING`)
+        .bind(date,plan.amount,plan.category,plan.name,clientRequestId,plan.payment_source || '').run()
+      return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
+    }
+    if (a === 'entry-years' && m === 'GET') {
+      // Query actual ledger years instead of silently omitting records before 2018 or in future years.
+      const { results } = await db.prepare("SELECT substr(date,1,4) AS year, COUNT(*) AS count FROM entries GROUP BY substr(date,1,4) ORDER BY year").all()
+      return json((results || []).filter(row => /^\d{4}$/.test(String(row.year))).map(row => ({year:String(row.year),count:Number(row.count)})))
     }
     if (a === 'entries') {
       if (m === 'GET') {
@@ -664,7 +708,6 @@ export async function onRequest({ request, env, params }) {
         // shipped value; leave any user-edited category and custom_rules intact.
         const v10Marker = '__kakeibo_d1_category_rules_v10__'
         if (!(await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(v10Marker).first())) {
-          const legacyDefaults = new Map(LEGACY_DEFAULT_RULE_ROWS)
           // A few multi-row SQL statements rather than hundreds of D1 queries.
           // All values remain parameter-bound; INSERT OR IGNORE never overwrites data.
           const allDefaults = DEFAULT_RULE_ROWS
@@ -674,13 +717,8 @@ export async function onRequest({ request, env, params }) {
             await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES ' + placeholders)
               .bind(...chunk.flat()).run()
           }
-          const corrections = DEFAULT_RULE_ROWS.flatMap(([keyword, category]) => {
-            const oldCategory = legacyDefaults.get(keyword)
-            return oldCategory && oldCategory !== category
-              ? [db.prepare('UPDATE rules SET category = ?1 WHERE keyword = ?2 AND category = ?3').bind(category, keyword, oldCategory)]
-              : []
-          })
-          for (let i = 0; i < corrections.length; i += 40) await db.batch(corrections.slice(i, i + 40))
+          // Never overwrite an existing category mapping. A row equal to a shipped
+          // legacy default can also be a user's deliberate choice.
           // Mark completion last so a partial migration can be retried safely.
           await db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind(v10Marker, '其他').run()
         }
@@ -744,6 +782,17 @@ export async function onRequest({ request, env, params }) {
         const { results } = await db.prepare("SELECT platform, current_value, pnl, updated_at, (SELECT COALESCE(SUM(amount),0) FROM entries WHERE type = 'transfer' AND transfer_target = investment_snapshots.platform AND transfer_applied = 1) AS invested_total FROM investment_snapshots ORDER BY CASE platform WHEN 'sbi' THEN 1 ELSE 2 END").all()
         return json(results)
       }
+      if (m === 'POST' && b === 'restore-empty') {
+        const body = await request.json()
+        if (body?.platform !== 'sbi' ||
+            (body.currentValue !== null && (!Number.isSafeInteger(body.currentValue) || body.currentValue < 0)) ||
+            (body.pnl !== null && !Number.isSafeInteger(body.pnl)) ||
+            (body.currentValue === null && body.pnl === null)) return json({error:'バックアップの資産データを確認してください'},400)
+        // Fill an entirely blank snapshot only; never modify a manually entered SBI valuation.
+        const result = await db.prepare("UPDATE investment_snapshots SET current_value=?1, pnl=?2, updated_at=?3 WHERE platform='sbi' AND current_value IS NULL AND pnl IS NULL")
+          .bind(body.currentValue,body.pnl,new Date().toISOString()).run()
+        return json({ok:true,restored:!!result.meta?.changes})
+      }
       if (m === 'PUT') {
         const body = await request.json()
         const platform = String(body.platform || '')
@@ -759,7 +808,7 @@ export async function onRequest({ request, env, params }) {
     }
 
     if (a === 'stats' && m === 'GET') {
-      const year = (url.searchParams.get('year') || '').slice(0, 4)
+      const year = url.searchParams.get('year') || ''
       if (year) {
         if (!/^\d{4}$/.test(year)) return json({ error: '年份格式不正确' }, 400)
         const like = year + '%'
@@ -772,6 +821,7 @@ export async function onRequest({ request, env, params }) {
         const paymentRows = await db.prepare("SELECT CASE WHEN TRIM(COALESCE(payment_source,'')) = '' OR payment_source = '現金' THEN '現金' ELSE 'カード・電子決済' END method, COUNT(*) count, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY method ORDER BY amount DESC").bind(like).all()
         return json({ paymentMethods: paymentRows.results, year: Number(year), total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, byCategory: cat.results, byMonth: monthRows.results, incomeByMonth: incomeMonthRows.results, incomeByCategory: incomeCategoryRows.results, incomeByMonthCategory: incomeMonthCategoryRows.results })
       }
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({error:'集計月を確認してください'},400)
       const like = month + '%'
       const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income, COALESCE(SUM(CASE WHEN type = 'transfer' THEN amount ELSE 0 END),0) transferTotal, SUM(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END) transferCount FROM entries WHERE date LIKE ?1").bind(like).first()
       const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()

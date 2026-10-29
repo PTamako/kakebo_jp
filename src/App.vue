@@ -10,6 +10,7 @@ import FinanceTools from './FinanceTools.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
 import { checkRecurringEntries } from './recurring-check.js'
+import { CATEGORY_ICON_PATHS, ICON_LIBRARY, CATEGORY_LABELS } from './category-ui.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
@@ -175,82 +176,6 @@ async function removeReceiptImage() {
 }
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
-const CATEGORY_ICON_PATHS = {
- '餐饮':'M4 14h16M5 14a7 7 0 0 0 14 0M8 19h8M8 5v5M12 5v5M16 5v5',
- '饮食料品':'M3 6h2l2 11h12l2-8H6M9 21h.01M18 21h.01',
- '日用品':'M7 4h10l2 16H5L7 4ZM9 8h6',
- '交通':'M5 16V7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v9H5ZM5 11h14M8 20v-4M16 20v-4',
- '购物':'M5 8h14l1 12H4L5 8ZM9 9V6a3 3 0 0 1 6 0v3',
- '居住':'M3 11l9-8 9 8M6 9v11h12V9M10 20v-7h4v7',
- '医疗':'M9 4h6v5h5v6h-5v5H9v-5H4V9h5V4Z',
- '娱乐':'M7 7h10l4 8-3 4-4-4h-4l-4 4-3-4 4-8ZM8 11v4M6 13h4M16 11h.01M18 13h.01',
- '宠物':'M7 9h.01M17 9h.01M5 6h.01M19 6h.01M12 11c-3 0-7 4-7 7 0 2 2 3 4 2l3-1 3 1c2 1 4 0 4-2 0-3-4-7-7-7Z',
- '工资':'M4 8h16v12H4V8ZM7 8V5h10v3M8 14h8',
- '奖金':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13M8 7c-3-4 3-6 4 0 1-6 7-4 4 0',
- '副业':'M3 7h18v13H3V7ZM8 7V4h8v3M3 12h18',
- '老公生活费':'M3 11l9-8 9 8M6 9v11h12V9M10 20v-7h4v7',
- '父母赠与':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13',
- '亲友赠与':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13',
- '退款':'M8 6 3 11l5 5M3 11h11a6 6 0 0 1 0 12',
- '投資・資産移動':'M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4'
-}
-const ICON_LIBRARY = [
-  { id:'food', label:'飲食料品', path:CATEGORY_ICON_PATHS['饮食料品'] },
-  { id:'dining', label:'外食', path:CATEGORY_ICON_PATHS['餐饮'] },
-  { id:'daily', label:'日用品', path:CATEGORY_ICON_PATHS['日用品'] },
-  { id:'transport', label:'交通', path:CATEGORY_ICON_PATHS['交通'] },
-  { id:'shopping', label:'買い物', path:CATEGORY_ICON_PATHS['购物'] },
-  { id:'home', label:'住居費', path:CATEGORY_ICON_PATHS['居住'] },
-  { id:'medical', label:'医療費', path:CATEGORY_ICON_PATHS['医疗'] },
-  { id:'pet', label:'ペット', path:CATEGORY_ICON_PATHS['宠物'] },
-  { id:'beauty', label:'美容', path:'M9 3h6v5H9zM8 8h8v12H8zM10 12h4M18 3v4M16 5h4' },
-  { id:'education', label:'教育', path:'M2 9l10-5 10 5-10 5-10-5ZM6 11v5c3 3 9 3 12 0v-5M21 10v6' },
-  { id:'insurance', label:'保険', path:'M12 3l8 3v5c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3ZM9 12l2 2 4-4' },
-  { id:'utilities', label:'光熱費', path:'M13 2 5 13h6l-1 9 9-12h-6V2Z' },
-  { id:'phone', label:'通信', path:'M7 2h10v20H7zM10 5h4M11 19h2' },
-  { id:'tax', label:'税金', path:'M4 21h16M5 19V9h14v10M3 9l9-6 9 6M8 12v4M12 12v4M16 12v4' },
-  { id:'travel', label:'旅行', path:'M3 15l7 1 8 5 2-1-5-6 5-5c2-2 0-4-2-2l-5 5-6-5-1 2 5 8-8-2Z' },
-  { id:'subscriptions', label:'サブスク', path:'M4 5h16v14H4zM10 9l5 3-5 3V9Z' },
-  { id:'gift', label:'贈り物', path:CATEGORY_ICON_PATHS['奖金'] },
-  { id:'electricity', label:'電気', path:'M13 2 5 13h6l-1 9 9-12h-6z' },
-  { id:'water', label:'水道', path:'M12 3C9 7 6 11 6 15a6 6 0 0 0 12 0c0-4-3-8-6-12Z' },
-  { id:'gas', label:'ガス', path:'M12 3c1 5-4 5-4 10-2-1-2-3-2-3-3 7 1 11 6 11s8-4 6-9c-1 2-2 2-3 2 1-5-2-8-3-11Z' },
-  { id:'rent', label:'家賃', path:'M3 11l9-8 9 8M6 10v10h12V10M10 20v-6h4v6' },
-  { id:'internet', label:'インターネット', path:'M3 9a14 14 0 0 1 18 0M6 12a9 9 0 0 1 12 0M9 15a5 5 0 0 1 6 0M12 19h.01' },
-  { id:'hair', label:'美容院', path:'M4 5l16 14M20 5 4 19M5 5h.01M5 19h.01' },
-  { id:'cosmetics', label:'化粧品', path:'M9 3h6v5H9zM8 8h8v12H8zM10 13h4' },
-  { id:'clothes', label:'衣服', path:'M8 4 4 6 2 10l4 2v8h12v-8l4-2-2-4-4-2c-1 3-7 3-8 0Z' },
-  { id:'shoes', label:'靴', path:'M4 5h5l3 8 6 2c2 1 3 2 3 4H3v-3z' },
-  { id:'books', label:'書籍', path:'M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4zM20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z' },
-  { id:'lessons', label:'習い事', path:'M4 20h16M6 17 16 4l3 3-10 13H6z' },
-  { id:'childcare', label:'子育て', path:'M8 10a4 4 0 1 0 8 0 4 4 0 0 0-8 0ZM5 21c0-4 3-6 7-6s7 2 7 6' },
-  { id:'family', label:'家族', path:'M8 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6M16 14c3 0 5 2 5 5v1' },
-  { id:'car', label:'車', path:'M4 16l1-6 2-4h10l2 4 1 6v3h-2v-2H6v2H4zM5 12h14M7 15h.01M17 15h.01' },
-  { id:'bicycle', label:'自転車', path:'M5 19a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19 19a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM5 16l5-7 3 7H5l7-5h4M10 9H8' },
-  { id:'fuel', label:'ガソリン', path:'M5 20V4h10v16M3 20h14M7 6h6v5H7zM15 9h2l2 2v6a2 2 0 0 0 2 0v-5' },
-  { id:'parking', label:'駐車場', path:'M4 3h16v18H4zM9 18V6h4a3 3 0 0 1 0 6H9' },
-  { id:'fitness', label:'運動', path:'M4 8v8M2 10v4M7 6v12M7 12h10M17 6v12M20 8v8M22 10v4' },
-  { id:'health', label:'健康', path:'M12 21S3 16 3 10a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 11-9 11Z' },
-  { id:'medicine', label:'薬', path:'M5 12 12 5a5 5 0 0 1 7 7l-7 7a5 5 0 0 1-7-7ZM8 9l7 7' },
-  { id:'dental', label:'歯科', path:'M7 4c-3 0-4 3-3 7l2 7c1 4 3 3 4-1l2-4 2 4c1 4 3 5 4 1l2-7c1-4 0-7-3-7-2 0-3 1-5 1S9 4 7 4Z' },
-  { id:'cafe', label:'カフェ', path:'M4 7h13v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM17 9h2a2 2 0 0 1 0 4h-2M3 21h16' },
-  { id:'hobby', label:'趣味', path:'M5 5h14v14H5zM8 9h8M8 13h5' },
-  { id:'music', label:'音楽', path:'M9 18V5l10-2v13M9 8l10-2M9 18c0 2-4 3-5 1s3-4 5-3M19 16c0 2-4 3-5 1s3-4 5-3' },
-  { id:'movie', label:'映画', path:'M3 6h18v13H3zM3 10h18M7 6l3 4M14 6l3 4' },
-  { id:'electronics', label:'家電', path:'M4 5h16v12H4zM9 21h6M12 17v4' },
-  { id:'furniture', label:'家具', path:'M4 10v8M20 10v8M4 14h16M6 14V8h12v6M6 18v2M18 18v2' },
-  { id:'repair', label:'修理', path:'M14 5a5 5 0 0 0-6 6L3 16l5 5 5-5a5 5 0 0 0 6-6l-3 3-3-3z' },
-  { id:'charity', label:'寄付', path:'M12 20S4 15 4 10a4 4 0 0 1 8-2 4 4 0 0 1 8 2c0 5-8 10-8 10Z' },
-  { id:'bank', label:'銀行', path:'M3 9l9-6 9 6H3ZM5 10v8M9 10v8M15 10v8M19 10v8M3 20h18' },
-  { id:'savings', label:'貯金', path:'M4 9h16v10H4zM8 9V6h8v3M15 14h2' },
-  { id:'fees', label:'手数料', path:'M5 5h14v14H5zM8 9h8M8 13h8M8 17h4' },
-  { id:'delivery', label:'配送料', path:'M3 6h11v10H3zM14 10h4l3 3v3h-7zM7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM18 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4' },
-  { id:'cleaning', label:'清掃', path:'M8 3h8v5H8zM7 8h10l2 12H5zM9 12h6' },
-  { id:'events', label:'イベント', path:'M4 6h16v14H4zM8 3v6M16 3v6M4 11h16' },
-  { id:'work', label:'仕事', path:'M3 7h18v13H3zM8 7V4h8v3M3 12h18' },
-  { id:'phone-device', label:'スマホ本体', path:'M7 2h10v20H7zM10 5h4M11 19h2' },
-  { id:'other', label:'その他', path:'M5 3h14v18H5V3ZM8 8h8M8 12h8M8 16h5' }
-]
 const categoryIcons = ref({})
 const availableIcons = computed(() => {
   const used = new Set(Object.values(categoryIcons.value))
@@ -259,7 +184,6 @@ const availableIcons = computed(() => {
   return ICON_LIBRARY.filter(icon => icon.id === 'other' || (!used.has(icon.id) && !existingPaths.has(icon.path) && !existingLabels.has(icon.label)))
 })
 const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || CATEGORY_ICON_PATHS[name] || ICON_LIBRARY.at(-1).path
-const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'飲食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
 const categoryLabel = name => CATEGORY_LABELS[name] || name
 
 // Store only a revocable, 30-day device session; never persist the access code.
@@ -275,11 +199,11 @@ async function signIn(code) {
   localStorage.removeItem('kakeibo-logged-out')
   sessionStorage.removeItem('kakeibo-token')
   locked.value = false
-  checkRecurringEntries(api).then(() => { load(); loadYear() }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message))
+  checkRecurringEntries(api, count => flash('手入力と重複する固定支出 '+count+'件は自動登録しませんでした。管理で確認してください')).then(() => { load(); loadYear() }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message))
 }
 async function logout() {
   if (busy.value || editSaving.value || investmentBusy.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
-  if (!confirm('ログアウトしますか？未保存の入力は失われます。')) return
+  if (!confirm('ログアウトしますか？未保存の入力はこの端末の草稿として保存されます。')) return
   const oldSession = token.value
   token.value = ''
   localStorage.removeItem('kakeibo-device-session')
@@ -333,32 +257,68 @@ const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 let flashTimer
 const flash = t => { clearTimeout(flashTimer); msg.value = t; flashTimer = setTimeout(() => (msg.value = ''), 3000) }
 
+const pageLoadError = ref('')
+const annualLoadError = ref('')
+let loadedMonth = ''
+let loadedYear = null
+async function fetchMonthEntries(targetMonth) {
+  const all = []
+  for (let offset = 0; ; offset += 500) {
+    const page = await api('entries?month=' + targetMonth + '&offset=' + offset)
+    if (!Array.isArray(page)) throw Error('月別明細の形式が正しくありません')
+    all.push(...page)
+    if (page.length < 500) return all
+  }
+}
 let loadRequestId = 0
 async function load() {
   const requestId = ++loadRequestId
   const requestedMonth = month.value
+  if (loadedMonth !== requestedMonth) { entries.value = []; stats.value = null }
+  pageLoadError.value = ''
   try {
     if (!rules.value.length) rules.value = await api('rules')
     if (!paymentSettingsLoaded) await loadPaymentSettings()
-    const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), api('entries?month=' + requestedMonth), api('stats?month=' + requestedMonth)])
+    const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), fetchMonthEntries(requestedMonth), api('stats?month=' + requestedMonth)])
     if (requestId !== loadRequestId || requestedMonth !== month.value) return
     categories.value = nextCategories
     try { categoryIcons.value = await api('category-icons') } catch { /* Existing categories keep their default icons. */ }
     entries.value = nextEntries
     refreshReceiptImageIds().catch(() => {})
     stats.value = nextStats
-  } catch (e) { flash(e.message) }
+    loadedMonth = requestedMonth
+  } catch (e) {
+    if (requestId === loadRequestId && requestedMonth === month.value) {
+      loadedMonth = ''
+      entries.value = []
+      stats.value = null
+      pageLoadError.value = '月別データを読み込めませんでした：' + e.message
+      flash(pageLoadError.value)
+    }
+  }
 }
 let yearRequestId = 0
 async function loadYear() {
   const requestId = ++yearRequestId
   const year = selectedYear.value
+  if (loadedYear !== year) annualStats.value = null
+  annualLoadError.value = ''
   try {
     const nextStats = await api('stats?year=' + year)
-    if (requestId === yearRequestId && year === selectedYear.value) annualStats.value = nextStats
-  } catch (e) { if (requestId === yearRequestId) flash('年間集計の読み込みに失敗しました：' + e.message) }
+    if (requestId === yearRequestId && year === selectedYear.value) {
+      annualStats.value = nextStats
+      loadedYear = year
+    }
+  } catch (e) {
+    if (requestId === yearRequestId && year === selectedYear.value) {
+      annualStats.value = null
+      loadedYear = null
+      annualLoadError.value = '年間集計の読み込みに失敗しました：' + e.message
+      flash(annualLoadError.value)
+    }
+  }
 }
-onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers(); checkRecurringEntries(api).then(count => { if (count) { load(); loadYear() } }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message)) } })
+onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers(); checkRecurringEntries(api, count => flash('手入力と重複する固定支出 '+count+'件は自動登録しませんでした。管理で確認してください')).then(count => { if (count) { load(); loadYear() } }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message)) } })
 
 watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; swipedReceiptId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
@@ -372,6 +332,41 @@ watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') load
 
 const recognitionMode = ref('statement')
 const entryInputMode = ref('manual')
+const aiOcrEnabled = ref(localStorage.getItem('kakeibo-ai-ocr-enabled') === '1')
+function setAiOcrEnabled(checked) {
+  aiOcrEnabled.value = checked
+  try { localStorage.setItem('kakeibo-ai-ocr-enabled', checked ? '1' : '0') }
+  catch { flash('AI OCRの設定を保存できませんでした') }
+}
+// Device-only recovery: never send unfinished drafts to D1. Receipt image blobs
+// are intentionally excluded from localStorage; the original photo stays on device.
+const draftRecoveryInfo = ref('')
+const DRAFT_KEY = 'kakeibo-unsaved-draft-v1'
+try {
+  const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
+  if (saved && Date.now() - Number(saved.updatedAt) < 7 * 86400000 && Array.isArray(saved.forms)) {
+    forms.value = saved.forms.filter(f => f && typeof f === 'object' && !Array.isArray(f)).slice(0,150).map(f => ({...f,receiptImage:null,receiptFileName:''}))
+    if (typeof saved.input === 'string') input.value = saved.input.slice(0,100000)
+    if (forms.value.length || input.value.trim()) {
+      entryInputMode.value = saved.mode === 'scan' ? 'scan' : 'manual'
+      draftRecoveryInfo.value = '前回保存していない入力をこの端末から復元しました。レシート画像は再選択してください。'
+    }
+  }
+} catch { /* Invalid old draft is ignored, not sent to the API. */ }
+let draftSaveTimer = null
+watch([forms,input,entryInputMode], () => {
+  clearTimeout(draftSaveTimer)
+  draftSaveTimer = setTimeout(() => {
+    try {
+      if (!forms.value.length && !input.value.trim()) return localStorage.removeItem(DRAFT_KEY)
+      const safeForms = forms.value.slice(0,150).map(f => ({...f,receiptImage:null,receiptFileName:''}))
+      localStorage.setItem(DRAFT_KEY,JSON.stringify({
+        updatedAt:Date.now(),mode:entryInputMode.value,input:input.value.slice(0,100000),forms:safeForms
+      }))
+    } catch { /* Private browsing can disable storage; keep live draft intact. */ }
+  }, 400)
+}, {deep:true})
+onUnmounted(() => { clearTimeout(draftSaveTimer) })
 function recognize(mode = recognitionMode.value, append = false) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
@@ -395,28 +390,34 @@ async function onImage(e, mode = 'statement') {
   ocrEngine.value = ''
   ocrWarning.value = ''
   try {
-    // Prefer Gemma 4; keep the existing on-device OCR as an offline/free fallback.
-    try {
-      busy.value = 'AIで画像を読み取り中'
-      const data = new FormData()
-      const image = await compressReceiptImage(f)
-      data.append('image', image, image.type === 'image/jpeg' ? 'receipt.jpg' : 'receipt.webp')
-      data.append('mode', mode)
-      const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': token.value }, body: data })
-      if (!response.ok) { const errorBody = await response.json().catch(() => ({})); throw new Error(errorBody.error || `AI画像認識に失敗しました（HTTP ${response.status}）`) }
-      const result = await response.json()
-      if (!result.text?.trim()) throw new Error('認識結果がありません')
-      if (result.engine !== 'gemma4') throw new Error('AIの応答を確認できませんでした')
-      input.value = result.text
-      ocrEngine.value = 'Gemma 4'
-    } catch (aiError) {
-      busy.value = '通常のOCRで読み取り中'
+    // On-device OCR is the free, privacy-preserving default.
+    if (!aiOcrEnabled.value) {
+      busy.value = '端末内OCRで読み取り中'
+      input.value = await ocrImage(f, progress => (busy.value = '読み取り中 ' + progress + '%'))
+      ocrEngine.value = '端末内OCR'
+    } else {
       try {
-        input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
-        ocrEngine.value = '端末内OCR'
-        ocrWarning.value = `AI画像認識を利用できなかったため、端末内OCRで読み取りました。理由：${aiError.message}`
-      } catch (localError) {
-        throw new Error(`${aiError.message}。端末内OCRも利用できませんでした。ページを再読み込みして再試行してください。`)
+        busy.value = 'AIで画像を読み取り中'
+        const data = new FormData()
+        const image = await compressReceiptImage(f)
+        data.append('image', image, image.type === 'image/jpeg' ? 'receipt.jpg' : 'receipt.webp')
+        data.append('mode', mode)
+        const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': token.value }, body: data })
+        if (!response.ok) { const errorBody = await response.json().catch(() => ({})); throw new Error(errorBody.error || `AI画像認識に失敗しました（HTTP ${response.status}）`) }
+        const result = await response.json()
+        if (!result.text?.trim()) throw new Error('認識結果がありません')
+        if (result.engine !== 'gemma4') throw new Error('AIの応答を確認できませんでした')
+        input.value = result.text
+        ocrEngine.value = 'Gemma 4'
+      } catch (aiError) {
+        busy.value = '通常のOCRで読み取り中'
+        try {
+          input.value = await ocrImage(f, progress => (busy.value = '読み取り中 ' + progress + '%'))
+          ocrEngine.value = '端末内OCR'
+          ocrWarning.value = 'AIが使用できないため、端末内OCRに切り替えました：' + aiError.message
+        } catch {
+          throw new Error('AIと端末内OCRの両方で読み取れませんでした。再試行してください')
+        }
       }
     }
     recognitionMode.value = mode
@@ -442,6 +443,20 @@ function addBlank(type = 'expense') {
   forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
+  if (form.type !== type) {
+    if (type !== 'expense') {
+      form.merchant = ''
+      form.paymentSource = ''
+      form.paymentManuallySelected = false
+      form.bindRule = false
+      form.bindPaymentRule = false
+      form.receiptImage = null
+      form.receiptFileName = ''
+      form.time = ''
+    }
+    if (type !== 'transfer') form.transferTarget = ''
+    if (type === 'transfer') form.transferDate = form.transferDate || form.date
+  }
   form.type = type
   if (type === 'income') form.category = INCOME_CATEGORIES.includes(form.category) ? form.category : '工资'
   else if (type === 'transfer') form.category = '投資・資産移動'
@@ -826,7 +841,7 @@ watch(visibleEntryCount, () => {
   if (days.length && !days.some(day => expandedEntryDays.value.has(day))) expandedEntryDays.value = new Set([days[0]])
 })
 async function fetchPeriodDetailRows(period, requestId = null) {
-  if (period !== 'year') return api('entries?month=' + month.value)
+  if (period !== 'year') return fetchMonthEntries(month.value)
   const year = selectedYear.value
   const rows = []
   for (let offset = 0; ; offset += 500) {
@@ -877,6 +892,7 @@ let suppressRowClick = false
 const calendarEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : entries.value
   return source.filter(entryMatchesType).filter(entry => !detailFilter.value || (
+    detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) :
     detailFilter.value.type === 'transfer' ? entry.type === 'transfer' :
     entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer')
   )).filter(entry => String(entry.date || '').startsWith(month.value))
@@ -1017,7 +1033,18 @@ const ratioTrendPoints = computed(() => yearMonthRows.value.map((item, i) => {
   const ratio = item.income > 0 ? item.amount / item.income : null
   return { ...item, ratio, x: 16 + i * 26.18, y: ratio === null ? null : 108 - Math.min(1.5, ratio) / 1.5 * 82 }
 }))
-const ratioTrendLine = computed(() => ratioTrendPoints.value.filter(point => point.ratio !== null).map(point => `${point.x},${point.y}`).join(' '))
+const ratioTrendSegments = computed(() => {
+  const segments = []
+  let segment = []
+  for (const point of ratioTrendPoints.value) {
+    if (point.ratio === null) {
+      if (segment.length > 1) segments.push(segment.map(p => p.x + ',' + p.y).join(' '))
+      segment = []
+    } else segment.push(point)
+  }
+  if (segment.length > 1) segments.push(segment.map(p => p.x + ',' + p.y).join(' '))
+  return segments
+})
 const incomeTrendMax = computed(() => Math.max(0, ...yearMonthRows.value.map(item => item.income)))
 const ratioTrendMax = computed(() => Math.max(0, ...ratioTrendPoints.value.filter(point => point.ratio !== null).map(point => point.ratio)))
 const maxYearMonth = computed(() => Math.max(1, ...yearMonthRows.value.map(item => item.amount)))
@@ -1086,6 +1113,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </header>
 
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
+    <div v-if="(tab === 'list' || (tab === 'stat' && statsPeriod === 'month')) && pageLoadError" class="panel" role="alert"><span>{{pageLoadError}}</span> <button type="button" class="button-secondary" @click="load">再読み込み</button></div>
+    <div v-if="tab === 'stat' && statsPeriod === 'year' && annualLoadError" class="panel" role="alert"><span>{{annualLoadError}}</span> <button type="button" class="button-secondary" @click="loadYear">再読み込み</button></div>
 
     <section v-if="tab === 'add'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
@@ -1114,6 +1143,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </details>
       </div>
       <div v-if="entryInputMode === 'scan'" class="panel capture-panel">
+        <label class="ai-ocr-mode"><input type="checkbox" :checked="aiOcrEnabled" @change="setAiOcrEnabled($event.target.checked)" /> AI画像認識を利用する（Cloudflare AI・利用枠に影響。未選択なら端末内OCR）</label>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
@@ -1124,6 +1154,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <p v-if="ocrWarning" class="microcopy" role="alert">{{ ocrWarning }}</p>
       </div>
 
+      <p v-if="draftRecoveryInfo && (forms.length || input.trim())" class="microcopy" role="status">{{draftRecoveryInfo}}</p>
       <div v-if="forms.length" class="draft-heading">
         <div><h2>{{ entryInputMode === 'scan' ? '読み取り結果の確認' : '入力内容の確認' }}</h2><p>金額・日付・店舗名を確認して保存してください</p></div>
         <span class="count-pill">{{ forms.length }}件</span>
@@ -1320,11 +1351,12 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入。破線は80%と100%の目安</p></div></div>
           <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>月間最高の支出割合</span></div>
+          <p v-if="ratioTrendMax > 1.5" class="trend-note">150%を超える月はグラフ上端に表示します。正確な割合は月を選択して確認してください。</p>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出割合の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <line x1="16" y1="64.27" x2="304" y2="64.27" class="chart-reference-line" />
             <line x1="16" y1="53.33" x2="304" y2="53.33" class="chart-reference-line chart-reference-danger" />
-            <polyline v-if="ratioTrendLine" :points="ratioTrendLine" class="chart-line ratio-chart-line" />
+            <polyline v-for="(segment,i) in ratioTrendSegments" :key="i" :points="segment" class="chart-line ratio-chart-line" />
             <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point ratio-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" aria-hidden="true" pointer-events="none" />
             <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="14" class="chart-point-hit" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '支出割合 ' + Math.round(point.ratio * 100) + '%。タップして当月の収支を確認'" @click="selectRatioMonth(point)" @keydown.enter.prevent="selectRatioMonth(point)" @keydown.space.prevent="selectRatioMonth(point)" />
           </svg>

@@ -22,7 +22,7 @@ export async function restoreAtomic(db, archive) {
   const statements=[]
   const add = (sql,...args) => statements.push(db.prepare(sql).bind(...args))
   for (const s of archive.paymentSources||[]) {
-    add('INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day) VALUES(?1,(SELECT COALESCE(MAX(sort_order),0)+1 FROM payment_sources),?2)',s.name,s.closing_day??null)
+    add("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END,?2)",s.name,s.closing_day??null)
   }
   const preferred=(archive.paymentSources||[]).find(s=>s.is_default)
   if(preferred)add('UPDATE payment_sources SET is_default=1 WHERE name=?1 AND NOT EXISTS(SELECT 1 FROM payment_sources WHERE is_default=1)',preferred.name)

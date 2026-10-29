@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="家計簿のノートとコイン">
+  <title>家計簿</title>
+  <path d="M12 8.5c0-2.5 2-4.5 4.5-4.5h26C45 4 47 6 47 8.5V54c0 3.3-2.7 6-6 6H17.5A5.5 5.5 0 0 1 12 54.5v-46Z" fill="#FDFEFF" stroke="#4E788C" stroke-width="2.6"/>
+  <path d="M12 9c0-2.8 2.3-5 5-5h4v56h-4c-2.8 0-5-2.2-5-5V9Z" fill="#C3E5DF" stroke="#4E788C" stroke-width="2.6"/>
+  <path d="M26.5 16h14M26.5 22h9" stroke="#4E788C" stroke-width="2.9" stroke-linecap="round"/>
+  <rect x="26" y="31" width="6" height="6" rx="1.5" fill="#F7D9E1" stroke="#D28FA4" stroke-width="1.5"/>
+  <path d="M36.5 34h5M26.5 44h5.5" stroke="#7C9BAC" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M10.4 17h5.2M10.4 28h5.2M10.4 39h5.2M10.4 50h5.2" stroke="#4E788C" stroke-width="2.8" stroke-linecap="round"/>
+  <circle cx="43.5" cy="46.5" r="13.5" fill="#FFDA8B" stroke="#B87A33" stroke-width="2.4"/>
+  <circle cx="43.5" cy="46.5" r="10.1" stroke="#F5BD60" stroke-width="1"/>
+  <path d="m38.5 40.5 5 6.2 5-6.2m-5 6.2v7M38 47.4h11M38 50.8h11" stroke="#916322" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -25,6 +25,8 @@ class SqliteD1 {
     stmt.first = async () => db.prepare(sql).get(...stmt.args) || null
     stmt.all = async () => ({results:db.prepare(sql).all(...stmt.args)})
     stmt.run = async () => {
+      // D1 batch() returns result rows for SELECT statements too.
+      if(/^\s*SELECT\b/i.test(sql))return {results:db.prepare(sql).all(...stmt.args),success:true}
       const result = db.prepare(sql).run(...stmt.args)
       return {meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}}
     }
@@ -324,5 +326,37 @@ test('D1 restore of a missing category icon does not overwrite a user icon',asyn
     assert.equal((await call(path,'POST',{category:'居住',icon:'home'})).body.created,true)
     assert.equal((await call(path,'POST',{category:'居住',icon:'water'})).body.created,false)
     assert.equal((await call('category-icons')).body['居住'],'home')
+  }finally{db.close()}
+})
+
+test('actual SQLite: card bill totals use latest D1 ledger even after another device writes',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const source='検証カード'
+    assert.equal((await call('entries','POST',{date:'2026-10-01',amount:1000,type:'expense',merchant:'店A',paymentSource:source})).status,200)
+    assert.equal((await call('entries','POST',{date:'2026-10-02',amount:500,type:'expense',merchant:'店B',paymentSource:source})).status,200)
+    assert.equal((await call('entries','POST',{date:'2026-10-02',amount:900,type:'income',category:'工资'})).status,200)
+    const bill=await call('card-bills/recalculate','POST',{name:source,month:'2026-10',start:'2026-10-01',end:'2026-10-31',total:1})
+    assert.equal(bill.status,200)
+    assert.equal(bill.body.total,1500)
+    assert.equal(bill.body.count,2)
+    assert.equal((await call('card-bills')).body.find(x=>x.name===source).total,1500)
+  }finally{db.close()}
+})
+
+test('actual SQLite: backup snapshot reads the same consistent entries and settings',async()=>{
+  const {db,call}=await createClient()
+  try{
+    assert.equal((await call('entries','POST',{date:'2026-10-03',amount:321,type:'expense',merchant:'検証店舗'})).status,200)
+    await call('investments') // establish the SBI snapshot
+    const result=await call('backup-snapshot')
+    assert.equal(result.status,200)
+    assert.equal(result.body.format,'kakeibo-ledger-backup')
+    assert.equal(result.body.version,3)
+    assert.equal(result.body.entries.length,1)
+    assert.equal(result.body.entries[0].amount,321)
+    assert.ok(Array.isArray(result.body.paymentSources))
+    assert.ok(Array.isArray(result.body.plans))
+    assert.ok(Array.isArray(result.body.investments))
   }finally{db.close()}
 })

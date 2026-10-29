@@ -4,6 +4,7 @@ import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
 import { ensureUnifiedMerchantRules } from './merchant-rules-store.js'
+import { ensureCategorySource } from './category-source-store.js'
 // Cloudflare Pages Functions：/api/*
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
@@ -343,6 +344,8 @@ export async function onRequest({ request, env, params }) {
     // Old tables remain untouched for rollback; the unified table is authoritative.
     if (['rules','custom-rules','merchant-payment-rules','payment-sources','backup-snapshot','restore-atomic'].includes(a))
       await ensureUnifiedMerchantRules(db)
+    if (['categories','category-icons','backup-snapshot','restore-atomic'].includes(a))
+      await ensureCategorySource(db)
     // Settings are independent of historical ledger rows and safe to create on existing D1.
     // Personal finance configuration is kept on D1, not in browser storage.
     if (a === 'recurring-plans' || a === 'card-bills') {
@@ -478,7 +481,7 @@ export async function onRequest({ request, env, params }) {
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
         "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
-        'SELECT category,icon FROM category_icons ORDER BY category',
+        'SELECT category,icon FROM category_source WHERE icon IS NOT NULL ORDER BY category',
         'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id'
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
@@ -834,9 +837,8 @@ export async function onRequest({ request, env, params }) {
       }
     }
     if (a === 'category-icons') {
-      await db.prepare('CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL)').run()
       if (m === 'GET') {
-        const { results } = await db.prepare('SELECT category, icon FROM category_icons').all()
+        const { results } = await db.prepare('SELECT category, icon FROM category_source WHERE icon IS NOT NULL').all()
         return json(Object.fromEntries(results.map(r => [r.category, r.icon])))
       }
       if (m === 'POST' && b === 'restore-missing') {
@@ -845,24 +847,23 @@ export async function onRequest({ request, env, params }) {
         const icon = typeof data?.icon === 'string' ? data.icon.trim() : ''
         if (!category || category.length > 20 || !/^[a-z][a-z-]{1,40}$/.test(icon))
           return json({error:'復元するカテゴリーアイコンを確認してください'},400)
-        const result = await db.prepare('INSERT OR IGNORE INTO category_icons(category,icon) VALUES(?1,?2)').bind(category,icon).run()
+        const result = await db.prepare(`INSERT INTO category_source(category,icon) VALUES(?1,?2)
+          ON CONFLICT(category) DO UPDATE SET icon=excluded.icon WHERE category_source.icon IS NULL`).bind(category,icon).run()
         return json({ok:true,created:!!result.meta?.changes})
       }
     }
     if (a === 'categories') {
-      // Additive metadata only: never rebuild the categories or the rules table.
-      await db.prepare("CREATE TABLE IF NOT EXISTS category_sort_order (category TEXT PRIMARY KEY, sort_order INTEGER NOT NULL)").run()
-      await db.prepare("INSERT OR IGNORE INTO category_sort_order(category,sort_order) VALUES ('餐饮',0),('饮食料品',1),('日用品',2),('交通',3),('购物',4),('居住',5),('医疗',6),('娱乐',7),('宠物',8)").run()
-      await db.prepare("INSERT INTO category_sort_order(category,sort_order) VALUES('其他',99999),('其他收入',99999) ON CONFLICT(category) DO UPDATE SET sort_order=99999").run()
+      // All category sorting and icons now live in category_source.
+      await db.prepare("INSERT INTO category_source(category,sort_order) VALUES('其他',99999),('其他收入',99999) ON CONFLICT(category) DO UPDATE SET sort_order=99999").run()
       if (m === 'GET') {
         const base = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
         const { results } = await db.prepare("SELECT DISTINCT category FROM rules WHERE substr(keyword, 1, 13) = '__category__:' ORDER BY category").all()
         // Old custom categories gain stable stored ranks without losing icons or rules.
         for (const category of results.map(r => r.category)) {
           if (category === '其他' || category === '其他收入') continue
-          await db.prepare("INSERT OR IGNORE INTO category_sort_order(category,sort_order) VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_sort_order WHERE sort_order<99999))").bind(category).run()
+          await db.prepare("INSERT INTO category_source(category,sort_order) VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999)) ON CONFLICT(category) DO UPDATE SET sort_order=COALESCE(category_source.sort_order,excluded.sort_order)").bind(category).run()
         }
-        const ranks = await db.prepare('SELECT category,sort_order FROM category_sort_order').all()
+        const ranks = await db.prepare('SELECT category,sort_order FROM category_source').all()
         const rankMap = new Map((ranks.results || []).map(row=>[row.category,row.sort_order]))
         return json([...new Set([...base, ...results.map(r => r.category)])].sort((a,b)=>
           (a === '其他' ? 99999 : (rankMap.get(a) ?? (base.includes(a) ? base.indexOf(a) : 10000))) -
@@ -881,12 +882,14 @@ export async function onRequest({ request, env, params }) {
         if (reserved.includes(name)) return json({ error: '同じカテゴリが既にあります' }, 409)
         const existing = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind('__category__:' + name).first()
         if (existing) return json({ error: '同じカテゴリが既にあります' }, 409)
-        await db.prepare('CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL)').run()
-        // Keep the category and its icon together if a database write fails.
+        // A single transaction registers the category and both metadata fields.
         await db.batch([
           db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name),
-          db.prepare('INSERT OR IGNORE INTO category_icons (category, icon) VALUES (?1, ?2)').bind(name, icon),
-          db.prepare("INSERT OR IGNORE INTO category_sort_order(category,sort_order) VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_sort_order WHERE sort_order<99999))").bind(name)
+          db.prepare(`INSERT INTO category_source(category,sort_order,icon)
+            VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999),?2)
+            ON CONFLICT(category) DO UPDATE SET
+              sort_order=COALESCE(category_source.sort_order,excluded.sort_order),
+              icon=COALESCE(category_source.icon,excluded.icon)`).bind(name, icon)
         ])
         return json({ ok: true, category: name })
       }

@@ -63,3 +63,14 @@ Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=
 - 小票图片：设备 IndexedDB（现有 30 天 TTL，不随 JSON 账本备份）。
 - 登录会话：localStorage/sessionStorage；未保存草稿：localStorage（最长约 7 天）；主题/AI OCR 开关/上次外币：localStorage；PWA 静态页面资源：Service Worker 缓存。
 - 本次不擅自清除浏览器草稿、登录状态或收据，也不将个人设备会话口令与图片上传到 D1。
+
+## 2026-10-29: category_source へ統合・旧4表の廃止
+
+- 現行の読み書きは **`category_source(category PRIMARY KEY, sort_order, icon)`** と `merchant_rules(keyword PRIMARY KEY, category, payment_source)` の2表だけを使用する。
+- `ensureCategorySource(db)` は初めて該当APIを利用したとき、`category_sort_order` と `category_icons` が存在すれば **両列を1つの `db.batch()` トランザクションでコピー**する。既に入力済みの値を上書きせず、`其他` / `其他收入` の並び順は99999に補正する。移行済みマーカーは `schema_migrations.category-source-v1`。
+- `category-icons` API のURLとJSON応答形は旧バージョンとの互換のため残るが、**旧 `category_icons` テーブルへアクセスすることを意味しない**。バックアップ/復元も `category_source` を参照する。
+- `custom_rules` / `merchant_payment_rules` は前段の `unified-merchant-rules-v1` で `merchant_rules` に統合済み。現行APIは旧2表を日常使用しない。旧表へのコピーは履歴からの初回移行に限定する。
+- **旧4表は自動削除しない**。本番でマーカー、データ件数、既存ルール、カテゴリーの順番/アイコン、entries、SBI評価額を読み取り専用で照合し、完全なバックアップを安全な場所へ保存してから、`migrations/0005_cleanup_legacy_rule_and_category_tables.sql` を**人の承認を得て手動実行**する。安全チェックに失敗したら削除せず理由を解消する。
+- 完全削除後に以前のアプリへロールバックすると旧表へのアクセスが失敗する。必要なら `merchant_rules` / `category_source` から復旧用の旧表を再構築できるよう、削除前のバックアップを確保する。
+- `migrations/0004_other_last_sort_order.sql` は旧スキーマ用の履歴資料で、現行運用では**再実行しない**。新規 `schema.sql` も旧4表を新設しない。
+- テストは独立したインメモリSQLiteで旧表を作成して移行・削除後の動作を検証する。本番 D1 で実行した実績を示すものではない。

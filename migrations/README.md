@@ -11,7 +11,7 @@
 この PR では既存 D1 に SQL を実行していない。ファイルは段階的な移行の準備であり、本番移行完了の証明ではない。
 
 ## 新规则切换（2026-10-29）
-- 旧内置 rules 行暂时保留在 D1 作为历史迁移资料，但 **不再参与自动分类**。API 返回由当前 `DEFAULT_RULE_ROWS` 和 `custom_rules` 合成，后者优先。
+- 旧内置 `rules` 行暂时保留在 D1 作为历史迁移资料，但 **不再参与自动分类**。API 返回由当前 `DEFAULT_RULE_ROWS` 和统一表 `merchant_rules` 中的非空 `category` 合成，用户分类优先。
 - 不自动批量删除 `rules`，因为它还存储自定义类别 `__category__:` 和升级前无法完全区分的手动规则。所有历史 `entries.category` 保持原样。
 - `migrations/0002_versioned_migration_tracking.sql` 只能在隔离 D1 副本演练后执行。正式迁移仍需检查数据库结构、SBI 快照和用户自定义规则。
 - 大于 500 笔明细或 500 项设置的备份仍采用可恢复逐笔模式；小型备份使用 D1 单次 `batch()` 事务。不可宣称任意大小恢复均原子化。
@@ -46,3 +46,20 @@ Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=
 - `migrations/0004_other_last_sort_order.sql` は新しいデータベース複製で事前検証してから適用する再実行可能な SQL。Cloudflare Pages のビルドは本番 D1 にこの SQL を自動実行した証明ではない。
 - Webアプリが `payment-sources` / `categories` を取得すると、サーバーは既存 D1 の不足するソートメタデータを補完する。その後 `99999` の実値を D1 で確認できる。実環境の確認なしに物理適用済みとは宣言しない。
 - カテゴリー・カード・入金・固定支出などの選択肢はクライアントでも「その他」を末尾に固定し、データ変更ではなく表示順のみに作用する。
+
+## 2026-10-29: 商家規則の統合（PR #110）
+
+- **現行の唯一の書き込み先**：`merchant_rules(keyword PRIMARY KEY, category NULL, payment_source NULL)`。1つのキーワードに分類と支払方法の両方を登録でき、片方の変更/削除はもう一方を保持する。
+- 旧 `custom_rules` / `merchant_payment_rules` は本番で存在する場合、`ensureUnifiedMerchantRules` が両者を1つの D1 `batch()` トランザクションでコピーする。両方の値を同一キーワードに合わせ、`schema_migrations.unified-merchant-rules-v1` を最後に記録。コピーが失敗すると標記も書かれず、再試行可能。
+- **旧表はDROPもDELETEもしない**。既存 DB に限り、切り戻し/照合のため読み取り専用の履歴表として残す。新規 `schema.sql` からは旧2表を新設しない。すでに使われている表を直接削除しないこと。
+- 既存の `/api/rules` / `/api/custom-rules` / `/api/merchant-payment-rules` の応答形、v1/v2/v3 JSON バックアップの2配列フィールドは維持。バックアップは統合表の2列から作成し、復元も統合表へ追加する。
+- **旧バージョンへ切り戻す前**は統合表の追加/変更内容をJSONでエクスポートし、旧バージョン側の旧2表へ安全に反映する計画が必要。旧2表は移行時点のスナップショットであり、その後の最新状態を自動的に同期しない。
+- 本番 D1 での移行完了を確かめるには読み取り専用で、`schema_migrations` の標記、統合表の重複しない keyword 数、`category IS NOT NULL` 件数と `payment_source IS NOT NULL` 件数を元の旧表と比較する。SBI の評価額・損益、entries 件数と合計も変更前後で照合する。
+- Preview の専用 D1 バインディングが未検証なら API は安全のため停止したままにする。バックアップの実際の復元テストは本番ではなく独立 D1 で行う。
+
+## 浏览器端保存范围
+
+- 已保存的账目、分类、商家规则、支付方式、固定支出、账单、SBI 估值等均以 D1 为准；**并非所有数据都只存在 D1**。
+- 小票图片：设备 IndexedDB（现有 30 天 TTL，不随 JSON 账本备份）。
+- 登录会话：localStorage/sessionStorage；未保存草稿：localStorage（最长约 7 天）；主题/AI OCR 开关/上次外币：localStorage；PWA 静态页面资源：Service Worker 缓存。
+- 本次不擅自清除浏览器草稿、登录状态或收据，也不将个人设备会话口令与图片上传到 D1。

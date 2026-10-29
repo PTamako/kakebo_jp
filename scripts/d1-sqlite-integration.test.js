@@ -221,3 +221,47 @@ test('verified isolated Pages preview still rejects financial mutation',async()=
   assert.equal(response.status,403)
   assert.equal((await response.json()).code,'preview_read_only')
 })
+
+test('actual SQLite: restore insert-only cannot overwrite newer card bills and category rules',async()=>{
+  const {db,call}=await createClient()
+  try {
+    assert.equal((await call('payment-sources','POST',{name:'カードA'})).status,200)
+    // A blank test D1 has no "現金" row unless the fixture registers it.
+    // The initial POST below must succeed for PUT insert-only semantics to be tested.
+    assert.equal((await call('payment-sources','POST',{name:'現金'})).status,200)
+    assert.equal((await call('payment-sources/restore-missing','POST',{name:'カードB',closingDay:10})).body.created,true)
+    assert.equal((await call('payment-sources/restore-missing','POST',{name:'カードB',closingDay:27})).body.created,false)
+    assert.equal((await call('payment-sources')).body.find(x=>x.name==='カードB').closing_day,10)
+    assert.equal((await call('payment-sources/default','POST',{name:'カードA'})).status,200)
+    assert.equal((await call('payment-sources/restore-default','POST',{name:'カードB'})).body.restored,false)
+    assert.equal((await call('payment-sources')).body.find(x=>x.name==='カードA').is_default,1)
+    await call('rules','POST',{keyword:'テストスーパー',category:'饮食料品'})
+    const category=await call('custom-rules','POST',{keyword:'テストスーパー',category:'购物'})
+    assert.equal(category.status,200)
+    const stored=(await call('custom-rules')).body.find(row=>row.keyword==='テストスーパー')
+    assert.equal(stored.category,'饮食料品')
+
+    assert.equal((await call('merchant-payment-rules','POST',{keyword:'テスト店',paymentSource:'現金'})).status,200)
+    assert.equal((await call('merchant-payment-rules')).body.find(row=>row.keyword==='テスト店').payment_source,'現金')
+    const payment=await call('merchant-payment-rules','PUT',{keyword:'テスト店',paymentSource:'カードA'})
+    assert.equal(payment.status,200)
+    assert.equal((await call('merchant-payment-rules')).body.find(row=>row.keyword==='テスト店').payment_source,'現金')
+
+    const bill={name:'カードA',month:'2026-10',start:'2026-09-01',end:'2026-09-30',total:9000,count:3}
+    assert.equal((await call('card-bills','PUT',bill)).status,200)
+    assert.equal((await call('card-bills','POST',{...bill,total:99999})).status,200)
+    assert.equal((await call('card-bills')).body.find(row=>row.name==='カードA').total,9000)
+    assert.equal((await call('card-bills','PUT',{...bill,total:12345})).status,200)
+    assert.equal((await call('card-bills')).body.find(row=>row.name==='カードA').total,12345)
+  }finally{db.close()}
+})
+
+test('actual request gate: custom-domain preview cannot read/write production D1 even with missing DB binding',async()=>{
+  const response=await onRequest({
+    request:new Request('https://staging.example.net/api/entries?month=2026-10'),
+    env:{AUTH_TOKEN:'test-token',DB:null,APP_ENV:'preview'},
+    params:{path:['entries']}
+  })
+  assert.equal(response.status,503)
+  assert.equal((await response.json()).code,'preview_db_not_verified')
+})

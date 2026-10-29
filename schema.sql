@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS entries (
   transfer_applied INTEGER NOT NULL DEFAULT 0,
   transfer_date TEXT,
   client_request_id TEXT,
+  payment_source TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
@@ -24,11 +25,11 @@ CREATE TABLE IF NOT EXISTS rules (
 );
 
 INSERT OR IGNORE INTO rules (keyword, category) VALUES
-('ローソン','餐饮'),('セブン','餐饮'),('ファミリーマート','餐饮'),('ファミマ','餐饮'),
+('ローソン','饮食料品'),('セブン','饮食料品'),('ファミリーマート','饮食料品'),('ファミマ','饮食料品'),
 ('マクドナルド','餐饮'),('スターバックス','餐饮'),('すき家','餐饮'),('吉野家','餐饮'),
 ('午饭','餐饮'),('晚饭','餐饮'),('早饭','餐饮'),('咖啡','餐饮'),('ランチ','餐饮'),
 ('JR','交通'),('Suica','交通'),('PASMO','交通'),('メトロ','交通'),('バス','交通'),('タクシー','交通'),('打车','交通'),('地铁','交通'),
-('ドラッグ','日用品'),('マツモトキヨシ','日用品'),('ダイソー','日用品'),('ニトリ','日用品'),('スーパー','日用品'),('イオン','日用品'),
+('ドラッグ','日用品'),('マツモトキヨシ','日用品'),('ダイソー','日用品'),('ニトリ','日用品'),('スーパー','饮食料品'),('イオン','饮食料品'),
 ('Amazon','购物'),('アマゾン','购物'),('ユニクロ','购物'),('楽天','购物'),
 ('家賃','居住'),('房租','居住'),('電気','居住'),('ガス','居住'),('水道','居住'),('水电','居住'),
 ('病院','医疗'),('薬局','医疗'),('クリニック','医疗'),
@@ -84,3 +85,12 @@ CREATE TABLE IF NOT EXISTS finance_settings (
   name TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- New installations can bootstrap these tables immediately; old installations
+-- retain their existing tables and are upgraded additively.
+CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS device_sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS login_attempts (ip_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at INTEGER NOT NULL);

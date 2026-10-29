@@ -84,9 +84,9 @@ export function parseEntry(raw, rules) {
   const firstLine = text.split('\n').map(s => s.trim()).find(s => s.length >= 2 && !/^[\d¥\s:\/.\-]+$/.test(s)) || ''
   // AI card statements often use CSV-like rows: date, merchant, amount, payment plan.
   // The card title must contain only the merchant, never the whole transaction.
-  const csvParts = firstLine.split(/[,，]\\s*/).map(part => part.trim())
-  const csvDate = /^(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}$/
-  const csvAmount = /^(?:[¥￥]\\s*)?\\d[\\d,，]*(?:\\s*円)?$/
+  const csvParts = firstLine.split(/[,，]\s*/).map(part => part.trim())
+  const csvDate = /^(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}$/
+  const csvAmount = /^(?:[¥￥]\s*)?\d[\d,，]*(?:\s*円)?$/
   const structuredMerchant = csvParts.length >= 3 && csvDate.test(csvParts[0])
     && csvParts.slice(2).some(part => csvAmount.test(part))
     ? csvParts[1] : ''
@@ -250,10 +250,10 @@ export function parseEntries(raw, rules) {
   if (csvRows.length && csvRows.every(Boolean)) return csvRows
   // Space-delimited AI card rows: date, merchant, yen amount, installment count.
   const spacedRows = csvLines.map(line => {
-    const match = line.match(/^((?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2})\\s+(.+?)\\s+([¥￥]?\\d{1,3}(?:[,，]\\d{3})*|[¥￥]?\\d+)\\s*円\\s+(?:\\d+回払い|一回払い|分割払い|リボ払い)\\s*$/)
+    const match = line.match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2})\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)\s*$/)
     if (!match) return null
     const merchant = match[2].trim()
-    const amount = Number(match[3].replace(/[^\\d]/g, ''))
+    const amount = Number(match[3].replace(/[^\d]/g, ''))
     if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
     const { category, keyword } = classify(merchant, rules)
     return { date: findDate(match[1]), time: '', amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }

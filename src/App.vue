@@ -535,10 +535,32 @@ async function saveAll() {
   if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
   const uncertain = forms.value.filter(f => /要確認|不明瞭|読み取れません|確認してください/.test(f.note || ''))
   if (uncertain.length) return flash('金額・内容を確認し、要確認の表示を修正してください')
-  const key = f => [f.date, f.time || '', Number(f.amount), f.merchant?.trim() || ''].join('|')
-  const seen = new Set()
-  const possibleDuplicates = forms.value.filter(f => { const k = key(f); const duplicate = seen.has(k) || entries.value.some(e => key(e) === k); seen.add(k); return duplicate })
-  if (possibleDuplicates.length && !confirm(`同じ日付・金額・店名の記録が${possibleDuplicates.length}件あります。実際に別の取引なら保存できます。続行しますか？`)) return
+  // Check every month represented by the drafts, not just the currently displayed month.
+  // This is an advisory check: two purchases with the same details can both be legitimate.
+  busy.value = '重複を確認中'
+  try {
+    const months = [...new Set(forms.value.map(f => String(f.date || '').slice(0, 7)))]
+    if (months.some(m => !/^\d{4}-(0[1-9]|1[0-2])$/.test(m))) throw Error('日付を確認してください')
+    const historical = (await Promise.all(months.map(fetchMonthEntries))).flat()
+    const key = f => [f.date, f.time || '', Number(f.amount), String(f.merchant || '').trim(),
+      f.payment_source ?? f.paymentSource ?? '', f.type || 'expense'].join('|')
+    const seen = new Set()
+    const known = new Set(historical.map(key))
+    const possibleDuplicates = forms.value.filter(f => {
+      const k = key(f)
+      const ownRetry = f.clientRequestId && historical.some(e => e.client_request_id === f.clientRequestId)
+      const duplicate = !ownRetry && (seen.has(k) || known.has(k))
+      seen.add(k)
+      return duplicate
+    })
+    if (possibleDuplicates.length && !confirm(`対象月の既存明細と同じ日付・金額・店名・支払方法の候補が${possibleDuplicates.length}件あります。別の取引なら保存できます。続行しますか？`)) {
+      busy.value = ''
+      return
+    }
+  } catch (e) {
+    busy.value = ''
+    return flash('重複確認ができないため、保存を中止しました：' + e.message)
+  }
   busy.value = 'saving'
   let saved = 0
   let ruleFailures = 0

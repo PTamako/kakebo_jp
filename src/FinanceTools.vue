@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion } from './finance-tools.js'
+import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
 const props = defineProps({ active: { type: Boolean, default: false }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
@@ -342,12 +343,24 @@ async function downloadBackup(){
     // Reject mixed-time exports when another device edited the ledger during metadata reads.
     if (!(await loadAll()) || ledgerFingerprint(rows.value)!==before)
       throw Error('明細がバックアップ作成中に変更されました。もう一度実行してください')
+    // Settings have their own write APIs. Read a second time to avoid exporting
+    // a mixed ledger/setting revision; a true cross-table snapshot still needs D1.
+    const currentSettings = await Promise.all([
+      props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
+      props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders')
+    ])
+    if (JSON.stringify(currentSettings) !== JSON.stringify([
+      nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,
+      customRules,categories,categoryIcons,dismissedTransfers
+    ])) throw Error('設定がバックアップ中に変更されました。もう一度実行してください')
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
       entries:snapshot,plans:nextPlans,bills:nextBills,investments,
       paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers
     })
-    const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
+    const sealed = await sealBackup(data)
+    const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
     const a=document.createElement('a')
     a.href=url;a.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+'.json';a.click()
     setTimeout(()=>URL.revokeObjectURL(url),30000)
@@ -364,6 +377,7 @@ async function preview(event){
     if(!loaded.value)throw Error('先に全明細を読み込んでください')
     if(file.size>25*1024*1024)throw Error('ファイルが大きすぎます')
     const backup=validateBackup(JSON.parse(await file.text()))
+    await verifyBackupIntegrity(backup)
     const result=prepareRestoreRows(rows.value,backup.entries)
     backupLedgerFingerprint.value=ledgerFingerprint(rows.value)
     restoreRows.value=result.newRows
@@ -397,18 +411,17 @@ async function restore(){
     const sources=restoreMissingByKey(existingSources,backup.paymentSources||[],x=>x.name)
     for (const source of sources) {
       if(!source || typeof source.name!=='string' || !source.name.trim() || source.name.length>80) continue
-      await props.api('payment-sources',{method:'POST',body:JSON.stringify({name:source.name})})
-      if(Number.isInteger(source.closing_day) && source.closing_day>=0 && source.closing_day<=31) {
-        await props.api('payment-sources/closing-day',{method:'POST',body:JSON.stringify({name:source.name,closingDay:source.closing_day})})
-      }
-      settingsCount++
+      const saved = await props.api('payment-sources/restore-missing',{method:'POST',body:JSON.stringify({
+        name:source.name,closingDay:source.closing_day ?? null
+      })})
+      if(saved.created)settingsCount++
     }
     // Only recover a default card if the current database has no default.
     if(!existingSources.some(source=>source.is_default)){
       const source=(backup.paymentSources||[]).find(source=>source?.is_default)
       if(source?.name && (await props.api('payment-sources')).some(current=>current.name===source.name)){
-        await props.api('payment-sources/default',{method:'POST',body:JSON.stringify({name:source.name})})
-        settingsCount++
+        const saved = await props.api('payment-sources/restore-default',{method:'POST',body:JSON.stringify({name:source.name})})
+        if(saved.restored)settingsCount++
       }
     }
     const existingCategories=await props.api('categories')
@@ -420,19 +433,19 @@ async function restore(){
     const existingCategoryRules=await props.api('custom-rules')
     for(const rule of restoreMissingByKey(existingCategoryRules,backup.customRules||[],x=>x.keyword)){
       if(!rule?.keyword || !rule?.category)continue
-      await props.api('rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,category:rule.category})})
+      await props.api('custom-rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,category:rule.category})})
       settingsCount++
     }
     const existingPaymentRules=await props.api('merchant-payment-rules')
     for(const rule of restoreMissingByKey(existingPaymentRules,backup.merchantPaymentRules||[],x=>x.keyword)){
       if(!rule?.keyword || !rule?.payment_source)continue
-      await props.api('merchant-payment-rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,paymentSource:rule.payment_source})})
+      await props.api('merchant-payment-rules',{method:'PUT',body:JSON.stringify({keyword:rule.keyword,paymentSource:rule.payment_source})})
       settingsCount++
     }
     const existingBills=await props.api('card-bills')
     for(const bill of restoreMissingByKey(existingBills,backup.bills||[],x=>x.name+'|'+x.month)){
       if(!bill?.name || !bill?.month)continue
-      await props.api('card-bills',{method:'PUT',body:JSON.stringify(bill)})
+      await props.api('card-bills',{method:'POST',body:JSON.stringify(bill)})
       settingsCount++
     }
     const sbi=(backup.investments||[]).find(x=>x.platform==='sbi')

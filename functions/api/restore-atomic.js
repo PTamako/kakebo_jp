@@ -6,7 +6,7 @@ import { validateBackup } from '../../src/finance-tools.js'
 export async function restoreAtomic(db, archive) {
   validateBackup(archive)
   const entries = archive.entries
-  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata']
+  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
   // A bounded single transaction is preferable to pretending a many-request
   // restore is atomic. The older resumable path remains for large archives.
@@ -55,6 +55,20 @@ export async function restoreAtomic(db, archive) {
     add("UPDATE investment_snapshots SET current_value=?1,pnl=?2,updated_at=?3 WHERE platform='sbi' AND current_value IS NULL AND pnl IS NULL",
       sbi.current_value,sbi.pnl,new Date().toISOString())
   }
+  // Optional v4 portfolio data. Restore is insert-only and never replaces
+  // the newer local holdings, allocations, prices or legacy SBI snapshots.
+  for(const p of archive.investmentPlans||[])
+    add('INSERT OR IGNORE INTO investment_plans(fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7)',
+      p.fund_code,p.account_type,p.fund_name,p.monthly_amount,p.order_day,p.enabled,p.updated_at||new Date().toISOString())
+  for(const p of archive.investmentPlanHistory||[])
+    add('INSERT OR IGNORE INTO investment_plan_history(fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
+      p.fund_code,p.account_type,p.effective_month,p.fund_name,p.monthly_amount,p.order_day,p.enabled,p.updated_at||new Date().toISOString())
+  for(const h of archive.investmentHoldings||[])
+    add('INSERT OR IGNORE INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost,updated_at) VALUES(?1,?2,?3,?4,?5,?6)',
+      h.fund_code,h.account_type,h.fund_name,h.units,h.acquisition_cost,h.updated_at||new Date().toISOString())
+  for(const p of archive.fundPrices||[])
+    add('INSERT OR IGNORE INTO fund_prices(fund_code,nav_per_10000,price_date,source,updated_at) VALUES(?1,?2,?3,?4,?5)',
+      p.fund_code,p.nav_per_10000,p.price_date,p.source,p.updated_at||new Date().toISOString())
   const insertStart=statements.length
   for(const e of entries) {
     const type=e.type, transfer=type==='transfer'
@@ -74,6 +88,14 @@ export async function restoreAtomic(db, archive) {
   for(const oldId of archive.dismissedTransfers||[]){
     const e=byOldId.get(Number(oldId))
     if(e)add('INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) SELECT id FROM entries WHERE client_request_id=?1',e.clientRequestId)
+  }
+  // Transfer IDs change on restore. Map to a stable restore client request
+  // ID and never guess a match from amount/date alone.
+  const oldTransfers=new Map(entries.filter(e=>e.type==='transfer'&&e.transfer_target==='sbi'&&Number.isSafeInteger(Number(e.id))).map(e=>[Number(e.id),e]))
+  for(const link of archive.transferLinks||[]){
+    const e=oldTransfers.get(Number(link.entry_id))
+    if(e)add("INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) SELECT id,?1 FROM entries WHERE client_request_id=?2 AND type='transfer' AND transfer_target='sbi'",
+      link.purchase_month,e.clientRequestId)
   }
   for(const plan of archive.plans||[])add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
     plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0)

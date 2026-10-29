@@ -63,3 +63,17 @@ test('finance_settings is retired, while login attempt throttling remains active
   assert.match(api,/INSERT INTO login_attempts/)
   assert.match(api,/attempt\.attempts >= 5/)
 })
+
+test('calendar legend and accessible peak labels use natural Japanese, not Chinese abbreviations',()=>{
+  const legend=ledger.match(/<div class="calendar-legend"[\s\S]*?<\/div>/)?.[0]
+  assert.ok(legend)
+  assert.match(legend, /<i class="legend-today"><\/i>今日/)
+  assert.match(legend, /支出額が最も多い日/)
+  assert.match(legend, /収入額が最も多い日/)
+  for(const label of ['支出額が最も多い日','収入額が最も多い日']){
+    assert.equal(ledger.split(label).length-1,3, label+' must be used in legend, screen-reader label and badge title')
+  }
+  assert.doesNotMatch(ledger, /支出最多|収入最多/)
+  assert.match(ledger, /title="支出額が最も多い日"/)
+  assert.match(ledger, /title="収入額が最も多い日"/)
+})

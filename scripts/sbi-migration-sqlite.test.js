@@ -66,3 +66,18 @@ test('full fresh schema is compatible with the explicit one-time SBI migration',
     assert.equal(db.prepare("SELECT current_value FROM investment_snapshots WHERE platform='sbi'").get().current_value,null)
   }finally{db.close()}
 })
+
+test('existing per-account holding prevents adding an overlapping combined screenshot row',()=>{
+  const db=oldDatabase()
+  try{
+    // Simulate a partial migration where a user already entered a real
+    // account-level position. New initialization must never double-count it.
+    db.exec(schema.slice(schema.indexOf('CREATE TABLE IF NOT EXISTS investment_plans (')))
+    db.prepare(`INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost)
+      VALUES('03311187','growth','米国株式（既存）',9999,44000)`).run()
+    db.exec(migration)
+    const positions=db.prepare("SELECT account_type,units,acquisition_cost FROM investment_holdings WHERE fund_code='03311187'").all()
+    assert.equal(positions.length,1)
+    assert.deepEqual({...positions[0]},{account_type:'growth',units:9999,acquisition_cost:44000})
+  }finally{db.close()}
+})

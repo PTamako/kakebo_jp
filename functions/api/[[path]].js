@@ -173,6 +173,14 @@ export async function onRequest({ request, env, params }) {
   try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
   catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
   if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
+  if (a === 'ai-ocr' && b === 'quota' && m === 'GET') {
+    const day = new Date(Date.now() + 9 * 3600000).toISOString().slice(0,10)
+    const limit = Number.isSafeInteger(Number(env.AI_OCR_DAILY_LIMIT)) && Number(env.AI_OCR_DAILY_LIMIT) >= 0
+      ? Math.min(30,Number(env.AI_OCR_DAILY_LIMIT)) : 3
+    await db.prepare('CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0)').run()
+    const row = await db.prepare('SELECT attempts FROM ai_ocr_daily_usage WHERE day=?1').bind(day).first()
+    return json({day,limit,remaining:Math.max(0,limit-Number(row?.attempts || 0))})
+  }
   if (a === 'ai-ocr' && m === 'POST') {
     if (!env.AI) return json({ error: 'AI接続が未設定です。Cloudflare PagesのAIバインディングを確認してください' }, 503)
     const size = Number(request.headers.get('content-length') || 0)
@@ -183,6 +191,20 @@ export async function onRequest({ request, env, params }) {
     const mode = body.get('mode') === 'receipt' ? 'receipt' : 'statement'
     if (!file || typeof file.arrayBuffer !== 'function' || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024)
       return json({ error: 'JPEG・PNG・WebP画像（4MB以下）を選択してください' }, 400)
+    // One private household account, one app-wide daily cap regardless of new sessions.
+    // Count attempts even if the external model fails: protect the free usage budget.
+    const day = new Date(Date.now() + 9 * 3600000).toISOString().slice(0,10)
+    const limit = Number.isSafeInteger(Number(env.AI_OCR_DAILY_LIMIT)) && Number(env.AI_OCR_DAILY_LIMIT) >= 0
+      ? Math.min(30,Number(env.AI_OCR_DAILY_LIMIT)) : 3
+    if(limit === 0)return json({error:'AI画像認識は管理設定で無効です',code:'daily_limit'},429)
+    try {
+      await db.prepare('CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0)').run()
+      const count=await db.batch([
+        db.prepare('INSERT OR IGNORE INTO ai_ocr_daily_usage(day,attempts) VALUES(?1,0)').bind(day),
+        db.prepare('UPDATE ai_ocr_daily_usage SET attempts=attempts+1 WHERE day=?1 AND attempts < ?2').bind(day,limit)
+      ])
+      if(!count[1]?.meta?.changes)return json({error:'本日のAI画像認識の無料枠を使い切りました。端末内OCRをご利用ください',code:'daily_limit'},429)
+    }catch { return json({error:'AI使用枠を確認できないため、端末内OCRをご利用ください',code:'quota_unavailable'},503) }
     try {
       const text = await recognizeWithGemma(env.AI, await file.arrayBuffer(), file.type, mode)
       return json({ text, engine: 'gemma4' })
@@ -582,6 +604,14 @@ export async function onRequest({ request, env, params }) {
             (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) ||
             (!entriesYear && !month)) return json({ error: '対象期間が正しくありません' }, 400)
         const datePrefix = entriesYear || month
+        // Stable ID-cursor pagination for full exports. Keep OFFSET for older clients.
+        const cursorRaw = url.searchParams.get('cursor')
+        if (cursorRaw !== null) {
+          const cursor = Number(cursorRaw)
+          if (!Number.isSafeInteger(cursor) || cursor < 0) return json({error:'読み込み位置が正しくありません'},400)
+          const {results} = await db.prepare('SELECT * FROM entries WHERE date LIKE ?1 AND id > ?2 ORDER BY id ASC LIMIT 500').bind(datePrefix+'%',cursor).all()
+          return json(results)
+        }
         const offsetRaw = url.searchParams.get('offset')
         const offset = offsetRaw === null ? 0 : Number(offsetRaw)
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) return json({ error: '読み込み位置が正しくありません' }, 400)
@@ -757,6 +787,22 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    if (a === 'dismissed-transfer-reminders') {
+      await db.prepare('CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run()
+      if(m==='GET') {
+        const {results}=await db.prepare('SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id').all()
+        return json(results.map(x=>x.entry_id))
+      }
+      if(m==='POST') {
+        const body=await request.json()
+        const id=Number(body?.entryId)
+        if(!Number.isSafeInteger(id)||id<=0)return json({error:'振替記録を確認してください'},400)
+        const entry=await db.prepare("SELECT id FROM entries WHERE id=?1 AND type='transfer' AND transfer_target='sbi'").bind(id).first()
+        if(!entry)return json({error:'振替の記録が見つかりません'},404)
+        await db.prepare('INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) VALUES(?1)').bind(id).run()
+        return json({ok:true})
+      }
+    }
     if (a === 'transfers' && b && params.path?.[2] === 'dismiss' && m === 'POST') {
       const id = Number(b)
       if (!Number.isSafeInteger(id) || id <= 0) return json({ error: '明細IDが正しくありません' }, 400)

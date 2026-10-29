@@ -95,6 +95,23 @@ test('all transaction forms including edit mode use the shared currency field', 
   assert.match(field, /localStorage\.setItem\('kakeibo-fx-currency'/)
 })
 
+test('compact iPhone bottom sheet keeps all controls accessible and touch friendly', () => {
+  const field = source('src/AmountInput.vue')
+  assert.match(field, /class="money-sheet-top"/, 'tabs and close action share one row')
+  assert.match(field, /class="money-sr-only">金額ツール<\/h2>/, 'dialog retains accessible title')
+  assert.doesNotMatch(field, /class="money-sheet-header"/, 'remove separate space-consuming heading row')
+  assert.match(field, /\.money-tax-controls\{display:grid;grid-template-columns:auto minmax\(0,1fr\)/, 'tax label and options share one row')
+  assert.match(field, /\.money-rounding-row\{grid-column:1\/-1/, 'rounding only takes an extra row when tax selected')
+  assert.match(field, /\.money-keypad button\{min-width:0;min-height:46px/, 'keypad touch targets remain at least 44px')
+  assert.match(field, /\.money-tax-options button\{min-height:44px/, 'tax buttons remain accessible')
+  assert.match(field, /\.money-sheet-tabs button\{border:0;min-height:44px/, 'both tabs remain accessible')
+  assert.match(field, /\.money-copy\{width:100%;min-height:48px/, 'copy action remains finger-friendly')
+  assert.match(field, /\.money-apply\{display:block;width:100%;min-height:48px/, 'apply action remains finger-friendly')
+  assert.match(field, /env\(safe-area-inset-bottom/, 'footer respects the iPhone home indicator')
+  assert.match(field, /\.money-sheet-scroll\{overflow-y:auto/, 'short screens retain scrolling')
+  assert.match(field, /\[chosenResult, activeTab\]/, 'both tools still use the same result actions')
+})
+
 test('FX proxy validates allowed currencies, returns a sourced reference rate and does not touch D1', async () => {
   const invalid = await onRequestGet({request:new Request('https://example.com/api/exchange-rate?from=XSS')})
   assert.equal(invalid.status, 400)

@@ -28,20 +28,19 @@ export function previewRecurringEntries(plans, entries, {today = new Date(), his
       if (idempotency.has(requestId)) continue
       const key = [date,plan.name,Number(plan.amount),plan.paymentSource || ''].join('|')
       candidates.push({planId:plan.id,month:m,date,name:plan.name,amount:Number(plan.amount),
-        paymentSource:plan.paymentSource,conflict:existing.has(key)})
+        paymentSource:plan.paymentSource,day:Number(plan.day),category:plan.category,startMonth:plan.startMonth,conflict:existing.has(key)})
     }
   }
   return candidates
 }
-export async function checkRecurringEntries(api) {
-  // Backwards-compatible startup hook: a read-only validation, NEVER POST here.
-  const plans = await api('recurring-plans')
-  return Array.isArray(plans) ? plans.length : 0
-}
 export async function postApprovedRecurringEntries(api, approved, onConflict = () => {}) {
   let created=0,conflicts=0
   for(const row of approved) {
-    const result=await api('recurring-post',{method:'POST',body:JSON.stringify({planId:row.planId,month:row.month})})
+    const result=await api('recurring-post',{method:'POST',body:JSON.stringify({
+      planId:row.planId,month:row.month,
+      expected:{name:row.name,amount:row.amount,day:row.day,category:row.category,
+        paymentSource:row.paymentSource || '',startMonth:row.startMonth,date:row.date}
+    })})
     if(result.created) created++
     if(result.conflict) conflicts++
   }

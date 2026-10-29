@@ -19,6 +19,14 @@ class LedgerDb {
         if (sql.startsWith('SELECT 1 AS found FROM card_bills')) return [...db.cardBills.values()].some(v=>v.name===this.args[0] && [...db.cardBills.values()].some(w=>w.name===this.args[1] && w.month===v.month)) ? {found:1} : null
         if (sql.startsWith('SELECT value FROM finance_settings WHERE name=')) return db.financeSettings.has(this.args[0]) ? { value: db.financeSettings.get(this.args[0]) } : null
         if (sql.startsWith('SELECT name FROM payment_sources WHERE name=')) return db.paymentSources.has(this.args[0]) ? { name: this.args[0] } : null
+        if (sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=')) {
+          const p=db.recurringPlans.get(this.args[0]);return p?{...p,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0}:null
+        }
+        if (sql.startsWith('SELECT id FROM entries WHERE client_request_id=')) return db.entries.find(e=>e.client_request_id===this.args[0])||null
+        if (sql.startsWith('SELECT id FROM recurring_plans WHERE payment_source=')) {
+          const p=[...db.recurringPlans.values()].find(p=>p.paymentSource===this.args[0]&&p.enabled)
+          return p?{id:p.id}:null
+        }
         if (sql.startsWith('SELECT token_hash FROM device_sessions')) return (db.sessions.get(this.args[0]) || 0) > this.args[1] ? { token_hash: this.args[0] } : null
         if (sql.startsWith('SELECT attempts, reset_at FROM login_attempts')) return db.attempts.get(this.args[0]) || null
         if (sql.startsWith('SELECT id, amount, transfer_target, transfer_applied, transfer_date, date FROM entries'))
@@ -34,6 +42,11 @@ class LedgerDb {
         return { exists: true }
       },
       async all() {
+        if (sql.startsWith('SELECT substr(date,1,4) AS year')) {
+          const counts=new Map()
+          for(const e of db.entries){const year=String(e.date||'').slice(0,4);counts.set(year,(counts.get(year)||0)+1)}
+          return {results:[...counts].map(([year,count])=>({year,count}))}
+        }
         if (sql.startsWith('PRAGMA table_info(payment_sources)')) return {results:[{name:'closing_day'}]}
         if (sql.startsWith('SELECT name, is_default, closing_day FROM payment_sources')) return {results:[...db.paymentSources].map(name=>({name,is_default:0,closing_day:db.paymentClosingDays.has(name)?db.paymentClosingDays.get(name):null}))}
         if (sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans')) return {results:[...db.recurringPlans.values()].map(p=>({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0}))}
@@ -99,6 +112,19 @@ class LedgerDb {
         if (sql.startsWith('INSERT INTO login_attempts')) {
           const prior = db.attempts.get(this.args[0])
           db.attempts.set(this.args[0], prior && prior.reset_at > this.args[2] ? { attempts: prior.attempts + 1, reset_at: prior.reset_at } : { attempts: 1, reset_at: this.args[1] })
+        }
+        if (sql.startsWith('INSERT INTO entries') && sql.includes('WHERE NOT EXISTS')) {
+          const [date,amount,category,merchant,requestId,paymentSource]=this.args
+          const existing=db.entries.some(e=>e.date===date && e.amount===amount && e.merchant===merchant &&
+            (e.payment_source||'')===paymentSource && e.type==='expense' && !String(e.client_request_id||'').startsWith('recurring_'))
+          if(existing||db.entries.some(e=>e.client_request_id===requestId))return {meta:{changes:0}}
+          db.entries.push({id:db.nextId++,date,amount,category,merchant,type:'expense',payment_source:paymentSource,client_request_id:requestId})
+          return {meta:{changes:1}}
+        }
+        if (sql.startsWith('UPDATE investment_snapshots SET current_value=')) {
+          if(db.snapshot!==null)return {meta:{changes:0}}
+          db.snapshot=this.args[0];db.snapshotPnl=this.args[1]
+          return {meta:{changes:1}}
         }
         if (sql.startsWith('INSERT INTO entries')) {
           const a = this.args
@@ -410,4 +436,46 @@ test('normalized D1 bills support update and delete without editing ledger', asy
   assert.deepEqual((await call(db,'card-bills')).body,[])
   assert.equal(db.entries[0].amount,3000)
   assert.equal(db.financeSettings.get('bills'),JSON.stringify([bill]))
+})
+
+test('all real years are discoverable for complete ledger export',async()=>{
+  const db=new LedgerDb()
+  db.entries.push({id:1,date:'2017-12-31',amount:1500,type:'expense'})
+  db.entries.push({id:2,date:'2027-01-02',amount:1200,type:'expense'})
+  const response=await call(db,'entry-years')
+  assert.equal(response.status,200)
+  assert.deepEqual(response.body,[{year:'2017',count:1},{year:'2027',count:1}])
+})
+
+test('server skips matching hand-entered recurring expense and retries are idempotent',async()=>{
+  const db=new LedgerDb()
+  const p={id:'plan-regular-001',name:'家賃',amount:102000,day:25,category:'居住',paymentSource:'現金',startMonth:'2026-10',enabled:true}
+  db.recurringPlans.set(p.id,p)
+  db.entries.push({id:1,date:'2026-10-25',amount:102000,type:'expense',merchant:'家賃',payment_source:'現金',client_request_id:null})
+  let response=await call(db,'recurring-post','POST',{planId:p.id,month:'2026-10'})
+  assert.equal(response.status,200)
+  assert.equal(response.body.conflict,true)
+  assert.equal(db.entries.length,1)
+  db.entries=[];db.nextId=1
+  response=await call(db,'recurring-post','POST',{planId:p.id,month:'2026-10'})
+  assert.equal(response.body.created,true)
+  assert.equal(db.entries.length,1)
+  response=await call(db,'recurring-post','POST',{planId:p.id,month:'2026-10'})
+  assert.equal(response.body.duplicate,true)
+  assert.equal(db.entries.length,1)
+})
+
+test('SBI backup restore never changes existing nonempty valuation',async()=>{
+  const db=new LedgerDb()
+  let answer=await call(db,'investments/restore-empty','POST',{platform:'sbi',currentValue:70000,pnl:2000})
+  assert.equal(answer.status,200)
+  assert.equal(answer.body.restored,false)
+  assert.equal(db.snapshot,120000)
+  db.snapshot=null
+  answer=await call(db,'investments/restore-empty','POST',{platform:'sbi',currentValue:70000,pnl:2000})
+  assert.equal(answer.body.restored,true)
+  assert.equal(db.snapshot,70000)
+  answer=await call(db,'investments/restore-empty','POST',{platform:'sbi',currentValue:90000,pnl:20000})
+  assert.equal(answer.body.restored,false)
+  assert.equal(db.snapshot,70000)
 })

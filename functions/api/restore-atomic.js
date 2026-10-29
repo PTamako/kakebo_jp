@@ -6,7 +6,7 @@ import { validateBackup } from '../../src/finance-tools.js'
 export async function restoreAtomic(db, archive) {
   validateBackup(archive)
   const entries = archive.entries
-  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers']
+  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
   // A bounded single transaction is preferable to pretending a many-request
   // restore is atomic. The older resumable path remains for large archives.
@@ -31,6 +31,14 @@ export async function restoreAtomic(db, archive) {
     // a user-added category in the category dropdown.
     add('INSERT OR IGNORE INTO rules(keyword,category) VALUES(?1,?2)','__category__:'+category,category)
     add("INSERT INTO category_source(category,sort_order) VALUES(?1,CASE WHEN ?1 IN ('其他','其他收入') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999) END) ON CONFLICT(category) DO UPDATE SET sort_order=COALESCE(category_source.sort_order,excluded.sort_order)",category)
+  }
+  for (const row of archive.categoryMetadata||[]) {
+    add(`INSERT INTO category_source(category,sort_order,icon,display_name) VALUES(?1,?2,?3,?4)
+      ON CONFLICT(category) DO UPDATE SET
+        sort_order=COALESCE(category_source.sort_order,excluded.sort_order),
+        icon=COALESCE(category_source.icon,excluded.icon),
+        display_name=COALESCE(category_source.display_name,excluded.display_name)`,
+      row.category,row.sort_order??null,row.icon??null,row.display_name??null)
   }
   for(const [category,icon] of Object.entries(archive.categoryIcons||{})) {
     if(!/^[a-z][a-z-]{1,40}$/.test(icon))throw Error('atomic_restore_invalid_icon')

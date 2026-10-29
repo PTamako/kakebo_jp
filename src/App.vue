@@ -174,6 +174,12 @@ async function removeReceiptImage() {
   closeReceipt()
   flash('レシート画像を削除しました。記録は残っています')
 }
+// Device-only bulk image removal from 管理 → その他. Ledger records remain unchanged.
+function onReceiptImagesCleared() {
+  closeReceipt()
+  receiptImageIds.value = new Set()
+}
+
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
 const categoryIcons = ref({})
@@ -1477,15 +1483,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </article>
     </section>
 
-    <FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
-    <details v-if="tab === 'finance'" class="panel device-security-settings">
-      <summary>端末のプライバシー設定</summary>
-      <label class="form-field"><span>ログイン状態</span><select :value="rememberDevice ? 'remember' : 'session'" @change="setRememberDevice($event.target.value === 'remember')">
-        <option value="remember">この端末にログイン状態を保存（最長30日）</option>
-        <option value="session">ブラウザのセッション内のみ保存（終了時の破棄は端末に依存）</option>
-      </select></label>
-      <p class="microcopy">ログイン情報は端末内に保存します。共有端末では「保存しない」を選択してください。未保存の入力は「入力」画面から個別に破棄できます。</p>
-    </details>
+    <FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button type="button" :class="{ active: tab === 'add' }" :aria-current="tab === 'add' ? 'page' : undefined" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button type="button" :class="{ active: tab === 'list' }" :aria-current="tab === 'list' ? 'page' : undefined" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

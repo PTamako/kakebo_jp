@@ -40,10 +40,11 @@ test('A17: next scheduled date honors a future start and the stopped state',()=>
   assert.equal(nextScheduledDate(25,new Date(2026,9,29),'2026-10',false),'停止中')
 })
 
-test('A04/A07/A08: backward-compatible backup v3, cursor pagination and pre-restore recheck',()=>{
+test('A04/A07/A08: v4 SBI archive still accepts v1-v3 backups and guards restore',()=>{
   const data={format:'kakeibo-ledger-backup',version:backupVersion,entries:[],dismissedTransfers:[1,4]}
-  assert.equal(backupVersion,3)
+  assert.equal(backupVersion,4)
   assert.equal(validateBackup(data),data)
+  assert.equal(validateBackup({...data,version:3}).version,3)
   assert.equal(validateBackup({...data,version:2}).version,2)
   assert.throws(()=>validateBackup({...data,dismissedTransfers:[-3]}))
   const ui=read('src/FinanceTools.vue')

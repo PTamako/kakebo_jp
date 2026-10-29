@@ -1,26 +1,50 @@
-// Run due recurring entries on app open. Existing records remain untouched.
-export async function checkRecurringEntries(api, onConflict = () => {}) {
-  // Normalized D1 plan records are the only source of recurring schedules.
-  const plans = await api('recurring-plans')
-  if (!Array.isArray(plans) || !plans.length) return 0
-  const now = new Date()
-  const today = [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-')
-  let created = 0
-  let conflicts = 0
-  for (const p of plans) {
-    if (!p || !p.enabled || !/^\d{4}-(0[1-9]|1[0-2])$/.test(p.startMonth || '') || !/^\d+$/.test(String(p.day)) || Number(p.day)<1 || Number(p.day)>31 || !p.id || !Number.isFinite(Number(p.amount)) || Number(p.amount)<=0) continue
-    let [year,month] = p.startMonth.split('-').map(Number)
-    for (let i=0;i<120 && (year<now.getFullYear() || (year===now.getFullYear() && month<=now.getMonth()+1));i++) {
-      const last = new Date(year,month,0).getDate()
-      const date = [year,String(month).padStart(2,'0'),String(Math.min(Number(p.day),last)).padStart(2,'0')].join('-')
-      if (date<=today) {
-        const result = await api('recurring-post',{method:'POST',body:JSON.stringify({planId:p.id,month:year+'-'+String(month).padStart(2,'0')})})
-        if (result.created) created++
-        if (result.conflict) conflicts++
-      }
-      month++;if(month===13){month=1;year++}
+// Read-only review of scheduled fixed expenses. Never register a debit on app startup.
+export function previewRecurringEntries(plans, entries, {today = new Date(), historicalMonths = 0} = {}) {
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const earliest = new Date(current.getFullYear(), current.getMonth() - Math.max(0, Math.min(119, historicalMonths)), 1)
+  const existing = new Map()
+  const idempotency = new Set()
+  for (const row of entries || []) {
+    if (row.type !== 'expense') continue
+    const key = [row.date,row.merchant,Number(row.amount),row.payment_source || ''].join('|')
+    existing.set(key, (existing.get(key) || 0) + 1)
+    if (row.client_request_id) idempotency.add(row.client_request_id)
+  }
+  const candidates = []
+  for (const plan of plans || []) {
+    if (!plan.enabled || !/^\d{4}-(0[1-9]|1[0-2])$/.test(plan.startMonth || '') ||
+      !Number.isInteger(Number(plan.day)) || Number(plan.day) < 1 || Number(plan.day) > 31) continue
+    const [sy,sm] = plan.startMonth.split('-').map(Number)
+    const start = new Date(Math.max(new Date(sy,sm-1,1).getTime(),earliest.getTime()))
+    for (let year = start.getFullYear(), month = start.getMonth() + 1, i=0;
+      i < 120 && (year < current.getFullYear() || (year===current.getFullYear() && month <= current.getMonth()+1));
+      i++,month++) {
+      if (month===13){month=1;year++}
+      const d = Math.min(Number(plan.day), new Date(year,month,0).getDate())
+      const date = [year,String(month).padStart(2,'0'),String(d).padStart(2,'0')].join('-')
+      const m = year+'-'+String(month).padStart(2,'0')
+      if(date > [current.getFullYear(),String(current.getMonth()+1).padStart(2,'0'),String(current.getDate()).padStart(2,'0')].join('-')) continue
+      const requestId = 'recurring_'+plan.id.replace(/-/g,'')+'_'+m.replace('-','')
+      if (idempotency.has(requestId)) continue
+      const key = [date,plan.name,Number(plan.amount),plan.paymentSource || ''].join('|')
+      candidates.push({planId:plan.id,month:m,date,name:plan.name,amount:Number(plan.amount),
+        paymentSource:plan.paymentSource,conflict:existing.has(key)})
     }
   }
-  if (conflicts) onConflict(conflicts)
-  return created
+  return candidates
+}
+export async function checkRecurringEntries(api) {
+  // Backwards-compatible startup hook: a read-only validation, NEVER POST here.
+  const plans = await api('recurring-plans')
+  return Array.isArray(plans) ? plans.length : 0
+}
+export async function postApprovedRecurringEntries(api, approved, onConflict = () => {}) {
+  let created=0,conflicts=0
+  for(const row of approved) {
+    const result=await api('recurring-post',{method:'POST',body:JSON.stringify({planId:row.planId,month:row.month})})
+    if(result.created) created++
+    if(result.conflict) conflicts++
+  }
+  if(conflicts) onConflict(conflicts)
+  return {created,conflicts}
 }

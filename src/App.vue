@@ -279,7 +279,7 @@ async function signIn(code) {
 }
 async function logout() {
   if (busy.value || editSaving.value || investmentBusy.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
-  if (!confirm('ログアウトしますか？未保存の入力は失われます。')) return
+  if (!confirm('ログアウトしますか？未保存の入力はこの端末の草稿として保存されます。')) return
   const oldSession = token.value
   token.value = ''
   localStorage.removeItem('kakeibo-device-session')
@@ -408,6 +408,41 @@ watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') load
 
 const recognitionMode = ref('statement')
 const entryInputMode = ref('manual')
+const aiOcrEnabled = ref(localStorage.getItem('kakeibo-ai-ocr-enabled') === '1')
+function setAiOcrEnabled(checked) {
+  aiOcrEnabled.value = checked
+  try { localStorage.setItem('kakeibo-ai-ocr-enabled', checked ? '1' : '0') }
+  catch { flash('AI OCRの設定を保存できませんでした') }
+}
+// Device-only recovery: never send unfinished drafts to D1. Receipt image blobs
+// are intentionally excluded from localStorage; the original photo stays on device.
+const draftRecoveryInfo = ref('')
+const DRAFT_KEY = 'kakeibo-unsaved-draft-v1'
+try {
+  const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
+  if (saved && Date.now() - Number(saved.updatedAt) < 7 * 86400000 && Array.isArray(saved.forms)) {
+    forms.value = saved.forms.filter(f => f && typeof f === 'object' && !Array.isArray(f)).slice(0,150).map(f => ({...f,receiptImage:null,receiptFileName:''}))
+    if (typeof saved.input === 'string') input.value = saved.input.slice(0,100000)
+    if (forms.value.length || input.value.trim()) {
+      entryInputMode.value = saved.mode === 'scan' ? 'scan' : 'manual'
+      draftRecoveryInfo.value = '前回保存していない入力をこの端末から復元しました。レシート画像は再選択してください。'
+    }
+  }
+} catch { /* Invalid old draft is ignored, not sent to the API. */ }
+let draftSaveTimer = null
+watch([forms,input,entryInputMode], () => {
+  clearTimeout(draftSaveTimer)
+  draftSaveTimer = setTimeout(() => {
+    try {
+      if (!forms.value.length && !input.value.trim()) return localStorage.removeItem(DRAFT_KEY)
+      const safeForms = forms.value.slice(0,150).map(f => ({...f,receiptImage:null,receiptFileName:''}))
+      localStorage.setItem(DRAFT_KEY,JSON.stringify({
+        updatedAt:Date.now(),mode:entryInputMode.value,input:input.value.slice(0,100000),forms:safeForms
+      }))
+    } catch { /* Private browsing can disable storage; keep live draft intact. */ }
+  }, 400)
+}, {deep:true})
+onUnmounted(() => { clearTimeout(draftSaveTimer) })
 function recognize(mode = recognitionMode.value, append = false) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
@@ -431,28 +466,34 @@ async function onImage(e, mode = 'statement') {
   ocrEngine.value = ''
   ocrWarning.value = ''
   try {
-    // Prefer Gemma 4; keep the existing on-device OCR as an offline/free fallback.
-    try {
-      busy.value = 'AIで画像を読み取り中'
-      const data = new FormData()
-      const image = await compressReceiptImage(f)
-      data.append('image', image, image.type === 'image/jpeg' ? 'receipt.jpg' : 'receipt.webp')
-      data.append('mode', mode)
-      const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': token.value }, body: data })
-      if (!response.ok) { const errorBody = await response.json().catch(() => ({})); throw new Error(errorBody.error || `AI画像認識に失敗しました（HTTP ${response.status}）`) }
-      const result = await response.json()
-      if (!result.text?.trim()) throw new Error('認識結果がありません')
-      if (result.engine !== 'gemma4') throw new Error('AIの応答を確認できませんでした')
-      input.value = result.text
-      ocrEngine.value = 'Gemma 4'
-    } catch (aiError) {
-      busy.value = '通常のOCRで読み取り中'
+    // On-device OCR is the free, privacy-preserving default.
+    if (!aiOcrEnabled.value) {
+      busy.value = '端末内OCRで読み取り中'
+      input.value = await ocrImage(f, progress => (busy.value = '読み取り中 ' + progress + '%'))
+      ocrEngine.value = '端末内OCR'
+    } else {
       try {
-        input.value = await ocrImage(f, p => (busy.value = `読み取り中 ${p}%`))
-        ocrEngine.value = '端末内OCR'
-        ocrWarning.value = `AI画像認識を利用できなかったため、端末内OCRで読み取りました。理由：${aiError.message}`
-      } catch (localError) {
-        throw new Error(`${aiError.message}。端末内OCRも利用できませんでした。ページを再読み込みして再試行してください。`)
+        busy.value = 'AIで画像を読み取り中'
+        const data = new FormData()
+        const image = await compressReceiptImage(f)
+        data.append('image', image, image.type === 'image/jpeg' ? 'receipt.jpg' : 'receipt.webp')
+        data.append('mode', mode)
+        const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': token.value }, body: data })
+        if (!response.ok) { const errorBody = await response.json().catch(() => ({})); throw new Error(errorBody.error || `AI画像認識に失敗しました（HTTP ${response.status}）`) }
+        const result = await response.json()
+        if (!result.text?.trim()) throw new Error('認識結果がありません')
+        if (result.engine !== 'gemma4') throw new Error('AIの応答を確認できませんでした')
+        input.value = result.text
+        ocrEngine.value = 'Gemma 4'
+      } catch (aiError) {
+        busy.value = '通常のOCRで読み取り中'
+        try {
+          input.value = await ocrImage(f, progress => (busy.value = '読み取り中 ' + progress + '%'))
+          ocrEngine.value = '端末内OCR'
+          ocrWarning.value = 'AIが使用できないため、端末内OCRに切り替えました：' + aiError.message
+        } catch {
+          throw new Error('AIと端末内OCRの両方で読み取れませんでした。再試行してください')
+        }
       }
     }
     recognitionMode.value = mode
@@ -1167,6 +1208,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         </details>
       </div>
       <div v-if="entryInputMode === 'scan'" class="panel capture-panel">
+        <label class="ai-ocr-mode"><input type="checkbox" :checked="aiOcrEnabled" @change="setAiOcrEnabled($event.target.checked)" /> AI画像認識を利用する（Cloudflare AI・利用枠に影響。未選択なら端末内OCR）</label>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
@@ -1177,6 +1219,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <p v-if="ocrWarning" class="microcopy" role="alert">{{ ocrWarning }}</p>
       </div>
 
+      <p v-if="draftRecoveryInfo && (forms.length || input.trim())" class="microcopy" role="status">{{draftRecoveryInfo}}</p>
       <div v-if="forms.length" class="draft-heading">
         <div><h2>{{ entryInputMode === 'scan' ? '読み取り結果の確認' : '入力内容の確認' }}</h2><p>金額・日付・店舗名を確認して保存してください</p></div>
         <span class="count-pill">{{ forms.length }}件</span>

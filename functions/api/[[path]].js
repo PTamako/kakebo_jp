@@ -529,6 +529,33 @@ export async function onRequest({ request, env, params }) {
       ])
       return json({ ok: true, changes: result[2]?.meta?.changes ?? 0 })
     }
+    if (a === 'recurring-post' && m === 'POST') {
+      // Atomic, non-destructive fixed-expense insertion; conflicting manual records win.
+      await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
+      const body = await request.json()
+      const planId = typeof body?.planId === 'string' ? body.planId : ''
+      const scheduledMonth = typeof body?.month === 'string' ? body.month : ''
+      if (!/^[a-zA-Z0-9-]{8,80}$/.test(planId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(scheduledMonth))
+        return json({error:'固定支出の対象を確認してください'},400)
+      const plan = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=?1').bind(planId).first()
+      if (!plan || !plan.enabled || !Number.isSafeInteger(Number(plan.amount)) || Number(plan.amount)<=0)
+        return json({error:'有効な固定支出が見つかりません'},404)
+      if (scheduledMonth < plan.start_month) return json({error:'開始月より前の支出は登録できません'},400)
+      const [year,monthNumber] = scheduledMonth.split('-').map(Number)
+      const day = Math.min(Number(plan.day),new Date(Date.UTC(year,monthNumber,0)).getUTCDate())
+      const date = scheduledMonth+'-'+String(day).padStart(2,'0')
+      if (date > tokyoToday()) return json({error:'予定日前の固定支出は登録できません'},409)
+      const clientRequestId = 'recurring_'+plan.id.replace(/-/g,'')+'_'+scheduledMonth.replace('-','')
+      if (await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())
+        return json({ok:true,created:false,duplicate:true,conflict:false})
+      const result = await db.prepare(`INSERT INTO entries
+        (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
+        SELECT ?1,'',?2,?3,?4,'毎月の固定支出（自動記録）','','expense',NULL,0,NULL,?5,?6
+        WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND type='expense' AND merchant=?4 AND amount=?2 AND COALESCE(payment_source,'')=?6)
+        ON CONFLICT(client_request_id) DO NOTHING`)
+        .bind(date,plan.amount,plan.category,plan.name,clientRequestId,plan.payment_source || '').run()
+      return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
+    }
     if (a === 'entry-years' && m === 'GET') {
       // Query actual ledger years instead of silently omitting records before 2018 or in future years.
       const { results } = await db.prepare("SELECT substr(date,1,4) AS year, COUNT(*) AS count FROM entries GROUP BY substr(date,1,4) ORDER BY year").all()

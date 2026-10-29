@@ -177,8 +177,12 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       if(!codeOk(x.fundCode)||!yenOk(x.navPer10000)||x.navPer10000<1||
         x.navPer10000>1000000000||!dayOk(x.priceDate))
         return respond({error:'基準価額と基準日を確認してください'},400);
-      const stored=await db.prepare('SELECT price_date FROM fund_prices WHERE fund_code=?1').bind(x.fundCode).first();
-      if(stored?.price_date && stored.price_date>x.priceDate)
+      const stored=await db.prepare('SELECT price_date,source FROM fund_prices WHERE fund_code=?1').bind(x.fundCode).first();
+      // Screenshot day is an observation timestamp, not the official NAV
+      // calculation date. Allow replacing that one-time placeholder with a
+      // validated earlier NAV day. All subsequently entered real prices are
+      // monotonic (never silently roll the portfolio back in time).
+      if(stored?.price_date && stored.source!=='sbi_screenshot' && stored.price_date>x.priceDate)
         return respond({error:'現在の基準日より古い価格は登録できません'},409);
       await db.prepare(`INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source,updated_at)
         VALUES(?1,?2,?3,'manual',?4)

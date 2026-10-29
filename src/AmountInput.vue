@@ -223,7 +223,7 @@ function apply() {
           <div v-if="activeTab==='calc'" class="money-calculator" role="tabpanel">
             <div class="money-tax-controls">
               <span class="money-caption">消費税</span>
-              <div class="money-tax-options" role="group" aria-label="消費税の追加">
+              <div class="money-tax-options" role="group" aria-label="消費税を加算">
                 <button v-for="option in [{ value:0, label:'なし' }, { value:10, label:'10%' }, { value:8, label:'8%' }]"
                   :key="option.value" type="button" :aria-pressed="taxRate===option.value"
                   :class="{selected:taxRate===option.value}" @click="taxRate=option.value">{{ option.label }}</button>

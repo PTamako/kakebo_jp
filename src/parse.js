@@ -69,7 +69,7 @@ export function classify(text, rules = []) {
 
 function parseAiCsvRow(raw, rules) {
   const line = normalize(raw).trim()
-  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日))\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*(?:円)?\s*(?:[,，]\s*(.*))?$/)
+  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日)(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*(?:円)?\s*(?:[,，]\s*(.*))?$/)
   if (!m) return null
   const merchant = m[2].replace(/^QP\s*[/／]\s*/i, '').trim()
   const amount = Number(m[3].replace(/[^\d]/g, ''))

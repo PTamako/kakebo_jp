@@ -94,3 +94,13 @@ CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMAR
 CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS device_sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS login_attempts (ip_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at INTEGER NOT NULL);
+
+-- Keep legacy その他 / 其他 last in every category selector.
+CREATE TABLE IF NOT EXISTS category_sort_order (
+  category TEXT PRIMARY KEY,
+  sort_order INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO category_sort_order(category,sort_order) VALUES
+('餐饮',0),('饮食料品',1),('日用品',2),('交通',3),('购物',4),
+('居住',5),('医疗',6),('娱乐',7),('宠物',8),
+('其他',99999),('其他收入',99999);

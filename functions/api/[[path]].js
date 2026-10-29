@@ -125,6 +125,12 @@ export async function onRequest({ request, env, params }) {
   const url = new URL(request.url)
   const m = request.method
   const [a, b] = params.path || []
+  // Cloudflare Pages preview deployments must never mutate the production ledger,
+  // even if a dashboard binding accidentally points to the production DB.
+  // Login/logout stay usable for read-only preview QA.
+  const isPagesPreview = /^[^.]+\\.kakeibo-f17\\.pages\\.dev$/.test(url.hostname)
+  if (isPagesPreview && m !== 'GET' && a !== 'auth')
+    return json({error:'プレビュー画面では明細・設定を更新できません。本番サイトをご利用ください',code:'preview_read_only'},403)
   if (a === 'auth') {
     if (b === 'login' && m === 'POST') {
       let body

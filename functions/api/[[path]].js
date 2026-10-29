@@ -392,6 +392,24 @@ export async function onRequest({ request, env, params }) {
           return json({ok:true})
         }
       } else {
+        if (m === 'POST' && b === 'recalculate') {
+          const item=await request.json()
+          if(typeof item?.name!=='string'||!item.name.trim()||item.name.length>80||
+             !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.month||'')||
+             !validDate(item.start)||!validDate(item.end)||item.start>item.end)
+            return json({error:'カードの対象期間を確認してください'},400)
+          // One SQL statement calculates and writes the bill from authoritative
+          // D1 entries. A stale browser cache can never overwrite this total.
+          await db.prepare(`INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count)
+            SELECT ?1,?2,?3,?4,COALESCE(SUM(amount),0),COUNT(*)
+            FROM entries WHERE date>=?3 AND date<=?4 AND type='expense' AND payment_source=?1
+            ON CONFLICT(payment_source,bill_month) DO UPDATE SET
+              period_start=excluded.period_start,period_end=excluded.period_end,
+              total_amount=excluded.total_amount,transaction_count=excluded.transaction_count`)
+            .bind(item.name,item.month,item.start,item.end).run()
+          const latest=await db.prepare('SELECT total_amount AS total,transaction_count AS count FROM card_bills WHERE payment_source=?1 AND bill_month=?2').bind(item.name,item.month).first()
+          return json({ok:true,total:latest.total,count:latest.count})
+        }
         if ((m === 'PUT' || m === 'POST') && !b) {
           const item = await request.json()
           if (typeof item?.name !== 'string' || !item.name || item.name.length > 80 ||

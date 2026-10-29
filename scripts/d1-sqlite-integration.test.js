@@ -327,6 +327,7 @@ test('legacy rule tables are never re-imported after migration is complete',asyn
     assert.equal((await call('rules')).status,200)
     assert.equal((await call('backup-snapshot')).status,200)
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM merchant_rules WHERE keyword='旧商家'").get().n,0)
+    assert.equal((await call('payment-sources','POST',{name:'現金'})).status,200)
     assert.equal((await call('rules','POST',{keyword:'現在商家',category:'购物'})).status,200)
     assert.equal((await call('merchant-payment-rules','POST',{keyword:'現在商家',paymentSource:'現金'})).status,200)
     db.db.exec('DROP TABLE custom_rules;DROP TABLE merchant_payment_rules;')
@@ -501,6 +502,10 @@ test('manual-only legacy cleanup succeeds after both migrations and leaves ledge
     db.db.exec("INSERT INTO custom_rules VALUES('移行済の店','宠物'); INSERT INTO merchant_payment_rules VALUES('移行済の店','現金');")
     db.db.exec("INSERT INTO category_sort_order VALUES('移行済カテゴリ',23); INSERT INTO category_icons VALUES('移行済カテゴリ','books');")
     db.db.exec("INSERT INTO rules(keyword,category) VALUES('__category__:移行済カテゴリ','移行済カテゴリ')")
+    db.db.exec("INSERT INTO merchant_rules(keyword,category,payment_source) VALUES('移行済の店','宠物','現金')")
+    db.db.exec("INSERT INTO category_source(category,sort_order,icon,display_name) VALUES('移行済カテゴリ',23,'books','移行済カテゴリ')")
+    db.db.exec("INSERT INTO schema_migrations(version,description) VALUES('unified-merchant-rules-v1','manual migration confirmed'),('category-source-v1','manual migration confirmed')")
+
     assert.equal((await call('entries','POST',{date:'2026-10-29',amount:1234,merchant:'テスト費用',type:'expense'})).status,200)
     assert.equal((await call('backup-snapshot')).status,200)
     const before=db.db.prepare("SELECT amount FROM entries WHERE merchant='テスト費用'").get().amount

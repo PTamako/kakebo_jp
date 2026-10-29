@@ -52,8 +52,8 @@ test('daily NAV cron updates three held MUFG funds but never touches holdings, p
   try{
     const {db,d1}=fixture
     for(const code of [...initialCodes,'04317188']){
-      db.prepare("INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost) VALUES(?1,'combined','test',4043,18000)").run(code)
-      db.prepare("INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES(?1,30000,'2026-10-30','sbi_screenshot')").run(code)
+      db.prepare("INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost) VALUES(?,'combined','test',4043,18000)").run(code)
+      db.prepare("INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES(?,30000,'2026-10-30','sbi_screenshot')").run(code)
     }
     db.prepare("INSERT INTO entries(date,type,amount,merchant) VALUES('2026-10-27','transfer',15000,'SBI')").run()
     const initialHoldings=db.prepare('SELECT * FROM investment_holdings ORDER BY fund_code').all()

@@ -179,7 +179,7 @@ test('SBI screenshot bootstrap stores exact reported values and preserves existi
   try{
     await call('investment-portfolio/initialize','POST')
     const first=await call('investment-portfolio?month='+currentMonth)
-    assert.equal(first.valuation?.value??first.body.valuation.value,71560)
+    assert.equal(first.body.valuation.value,71560)
     const h=first.body.holdings.find(x=>x.fund_code==='04317188')
     assert.equal(h.units,2651)
     assert.equal(h.acquisition_cost,14880)
@@ -187,6 +187,17 @@ test('SBI screenshot bootstrap stores exact reported values and preserves existi
     assert.equal(h.account_type,'combined')
     assert.equal(h.nav_per_10000,56153)
     assert.equal(h.valuation_source,'sbi_screenshot')
+    const firstOfficial=await call('investment-portfolio/price','PUT',{
+      fundCode:'04317188',navPer10000:56153,priceDate:'2026-10-29'
+    })
+    assert.equal(firstOfficial.status,200,'screenshot observation day does not block an earlier official NAV date')
+    const nav=(await call('investment-portfolio?month='+currentMonth)).body.holdings.find(x=>x.fund_code==='04317188')
+    assert.equal(nav.source,'manual')
+    assert.equal(nav.price_date,'2026-10-29')
+    const rollback=await call('investment-portfolio/price','PUT',{
+      fundCode:'04317188',navPer10000:40000,priceDate:'2026-10-28'
+    })
+    assert.equal(rollback.status,409,'real NAV must not roll back to an older day')
     const modified=await call('investment-portfolio/holding','PUT',{
       fundCode:'04317188',accountType:'combined',fundName:h.fund_name,units:2800,acquisitionCost:15600
     })

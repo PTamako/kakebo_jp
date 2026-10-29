@@ -273,19 +273,24 @@ async function downloadBackup(){
     // Refresh ledger and D1 metadata immediately before export. A partial fetch
     // must not be mistaken for a complete, safe recovery archive.
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
+    const snapshot = rows.value.map(row=>({...row}))
+    const before = ledgerFingerprint(snapshot)
     const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers] = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
       props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders')
     ])
+    // Reject mixed-time exports when another device edited the ledger during metadata reads.
+    if (!(await loadAll()) || ledgerFingerprint(rows.value)!==before)
+      throw Error('明細がバックアップ作成中に変更されました。もう一度実行してください')
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
-      entries:rows.value,plans:nextPlans,bills:nextBills,investments,
+      entries:snapshot,plans:nextPlans,bills:nextBills,investments,
       paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers
     })
     const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
     const a=document.createElement('a')
-    a.href=url;a.download='kakeibo-complete-'+new Date().toISOString().slice(0,10)+'.json';a.click()
+    a.href=url;a.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+'.json';a.click()
     setTimeout(()=>URL.revokeObjectURL(url),30000)
     message.value='帳簿・設定JSONを保存しました（端末内レシート画像を除く）'
   } catch(e) { message.value='バックアップを作成できませんでした：'+e.message }

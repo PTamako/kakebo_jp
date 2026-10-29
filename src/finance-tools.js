@@ -77,11 +77,14 @@ export function reconcileStatement(rows, total) {
   return { sum, difference: Number(total) - sum }
 }
 
-export function nextScheduledDate(day, now = new Date()) {
+export function nextScheduledDate(day, now = new Date(), startMonth = '', enabled = true) {
+  if (!enabled) return '停止中'
   const d = Math.max(1,Math.min(31,Number(day) || 1))
-  const y=now.getFullYear(),m=now.getMonth()
-  const candidate = (year, month) => new Date(year,month,Math.min(d,new Date(year,month+1,0).getDate()))
-  const first=candidate(y,m)
-  const next=first >= new Date(y,m,now.getDate()) ? first : candidate(y,m+1)
-  return [next.getFullYear(),String(next.getMonth()+1).padStart(2,'0'),String(next.getDate()).padStart(2,'0')].join('-')
+  const current = new Date(now.getFullYear(),now.getMonth(),now.getDate())
+  const start = /^\d{4}-(0[1-9]|1[0-2])$/.test(startMonth) ? new Date(Number(startMonth.slice(0,4)),Number(startMonth.slice(5,7))-1,1) : current
+  const baseline = start>current ? start : current
+  const candidate = (y,m) => new Date(y,m,Math.min(d,new Date(y,m+1,0).getDate()))
+  const y = baseline.getFullYear(),m=baseline.getMonth()
+  const date = candidate(y,m)>=current ? candidate(y,m) : candidate(y,m+1)
+  return [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-')
 }

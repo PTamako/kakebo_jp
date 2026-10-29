@@ -373,8 +373,18 @@ async function restore(){
       restoreRows.value=restoreRows.value.filter(row=>row.backupIndex!==e.backupIndex)
       restoreConflicts.value=restoreConflicts.value.filter(row=>row.backupIndex!==e.backupIndex)
     }
+    // An already existing transfer may not be part of the newly inserted rows.
+    // Restore its dismissal only when one unique matching transaction is found.
+    const originalEntries=new Map(backup.entries.filter(e=>Number.isSafeInteger(Number(e.id))).map(e=>[Number(e.id),e]))
     for(const oldId of backup.dismissedTransfers || []) {
-      const newId=restoredIds.get(Number(oldId))
+      let newId=restoredIds.get(Number(oldId))
+      if(!newId) {
+        const original=originalEntries.get(Number(oldId))
+        if(original?.type==='transfer' && original.transfer_target==='sbi'){
+          const matches=rows.value.filter(row=>row.type==='transfer'&&row.transfer_target==='sbi'&&transactionKey(row)===transactionKey(original))
+          if(matches.length===1)newId=Number(matches[0].id)
+        }
+      }
       if(newId){await props.api('dismissed-transfer-reminders',{method:'POST',body:JSON.stringify({entryId:newId})});settingsCount++}
     }
     // Restore recurring plans last: ledger rows must exist before a future app

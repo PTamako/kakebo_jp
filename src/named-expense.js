@@ -35,11 +35,28 @@ function amountFromLine(text) {
   return Number.isSafeInteger(amount)&&amount>0&&amount<=99999999 ? amount : null
 }
 
+// Single-line variation, such as 勉強会10月毎週の金曜日 100円.
+// Reuse the three-line validation instead of guessing OCR statement fields.
+function splitInlineNamedExpense(line) {
+  const month = String.raw`(?:(?:20\d{2})\s*年\s*)?${monthToken}\s*月`
+  const weekday = String.raw`(?:毎週|每周|每週)\s*(?:の)?\s*(?:星期|礼拜|週)?\s*[月火水木金土日一二三四五六天]\s*(?:曜日)?`
+  const when = String.raw`(?:${month}\s*(?:の\s*)?${weekday}|${month}\s*\d{1,2}\s*日?|20\d{2}[-/.]\d{1,2}[-/.]\d{1,2})`
+  const match = line.match(new RegExp(String.raw`^(.{1,60}?)\s*(${when})\s+(\S{1,25})$`))
+  if (!match) return null
+  const name = match[1].trim()
+  // A bare month must not be split into a numeric "name" and date.
+  if (!name || !/[^\d\s¥￥,./-]/.test(name)) return null
+  if (!/[¥￥円]/.test(match[3])) return null
+  return [name, match[2].trim(), match[3].trim()]
+}
 // null = unrelated text; {rows} = recognized; {error} = structured input invalid.
 // A malformed 3-line block must never fall through to generic OCR heuristics.
 export function parseNamedExpenseBlocks(raw, now = new Date()) {
   if(typeof raw!=='string' || raw.length>100000)return null
-  const lines=raw.normalize('NFKC').split(/\r?\n/).map(s=>s.trim()).filter(Boolean)
+  let lines=raw.normalize('NFKC').split(/\r?\n/).map(s=>s.trim()).filter(Boolean)
+  // Both one-line and three-line entries share the same input validation.
+  const inline=lines.map(splitInlineNamedExpense)
+  if(inline.length && inline.every(Boolean))lines=inline.flat()
   if(lines.length<2)return null
   const dateHint=/毎週|每周|每週|月|^\d{1,4}[\/.-]|^(今日|昨日|一昨日)$/
   if(!dateHint.test(lines[1]))return null

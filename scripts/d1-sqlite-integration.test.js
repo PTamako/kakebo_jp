@@ -226,6 +226,12 @@ test('actual SQLite: restore insert-only cannot overwrite newer card bills and c
   const {db,call}=await createClient()
   try {
     await call('payment-sources','POST',{name:'カードA'})
+    assert.equal((await call('payment-sources/restore-missing','POST',{name:'カードB',closingDay:10})).body.created,true)
+    assert.equal((await call('payment-sources/restore-missing','POST',{name:'カードB',closingDay:27})).body.created,false)
+    assert.equal((await call('payment-sources')).body.find(x=>x.name==='カードB').closing_day,10)
+    assert.equal((await call('payment-sources/default','POST',{name:'カードA'})).status,200)
+    assert.equal((await call('payment-sources/restore-default','POST',{name:'カードB'})).body.restored,false)
+    assert.equal((await call('payment-sources')).body.find(x=>x.name==='カードA').is_default,1)
     await call('rules','POST',{keyword:'テストスーパー',category:'饮食料品'})
     const category=await call('custom-rules','POST',{keyword:'テストスーパー',category:'购物'})
     assert.equal(category.status,200)

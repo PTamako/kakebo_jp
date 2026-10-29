@@ -17,6 +17,7 @@ import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
+import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
@@ -992,7 +993,7 @@ const calendarEntries = computed(() => {
 const calendarDays = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
   const daysInMonth = new Date(year, monthNumber, 0).getDate()
-  const firstDayOffset = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7
+  const firstDayOffset = sundayFirstOffset(year, monthNumber - 1)
   const amounts = new Map(), expenses = new Map(), incomes = new Map()
   // Peak badges follow the same transaction and category filters as the calendar.
   for (const entry of calendarEntries.value) {
@@ -1066,7 +1067,7 @@ function handleEntryClick(entry) {
   swipedEntryId.value = null; swipedReceiptId.value = null
   startEdit(entry)
 }
-// Monthly statistics are grouped into Monday–Sunday weeks, clipped to the selected month.
+// Monthly statistics use the same Sunday–Saturday weeks as the Japanese calendar.
 const weekRows = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
   const monthStart = new Date(year, monthNumber - 1, 1)
@@ -1074,24 +1075,22 @@ const weekRows = computed(() => {
   const groups = new Map()
   for (const day of dayRows.value) {
     const date = new Date(day.date + 'T12:00:00')
-    const monday = new Date(date)
-    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
-    const key = monday.toLocaleDateString('sv-SE')
+    const sunday = startOfSundayWeek(date)
+    const key = sunday.toLocaleDateString('sv-SE')
     const current = groups.get(key) || { start: key, end: '', amount: 0, days: 0 }
     current.amount += Number(day.amount || 0)
     current.days += 1
     groups.set(key, current)
   }
   const weeks = []
-  const cursor = new Date(monthStart)
-  cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7))
+  const cursor = startOfSundayWeek(monthStart)
   while (cursor <= monthEnd) {
-    const monday = new Date(cursor)
     const sunday = new Date(cursor)
-    sunday.setDate(sunday.getDate() + 6)
-    const clippedStart = monday < monthStart ? monthStart : monday
-    const clippedEnd = sunday > monthEnd ? monthEnd : sunday
-    const key = monday.toLocaleDateString('sv-SE')
+    const saturday = new Date(cursor)
+    saturday.setDate(saturday.getDate() + 6)
+    const clippedStart = sunday < monthStart ? monthStart : sunday
+    const clippedEnd = saturday > monthEnd ? monthEnd : saturday
+    const key = sunday.toLocaleDateString('sv-SE')
     const group = groups.get(key)
     weeks.push({
       key,

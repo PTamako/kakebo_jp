@@ -421,7 +421,7 @@ function recognize(mode = recognitionMode.value, append = false) {
   const repeated = parseRepeatedExpense(input.value)
   const effectiveMode = repeated ? 'statement' : mode
   const parsed = repeated || (effectiveMode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value))
-  if (mode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
+  if (effectiveMode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
   const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))

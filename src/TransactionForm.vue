@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { sortOtherLast } from './category-ui.js'
+import { sortOtherLast } from './category-sort.js'
 import AmountInput from './AmountInput.vue'
 const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false } })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])

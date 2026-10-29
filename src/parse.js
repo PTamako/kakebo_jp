@@ -1,3 +1,4 @@
+import { findTransactionTime } from './entry-time.js'
 // テキスト・OCR解析：日付、時刻、金額、店舗、カテゴリー（ブラウザ内で処理）
 export const CATEGORIES = ['餐饮', '饮食料品', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
 
@@ -74,7 +75,7 @@ function parseAiCsvRow(raw, rules) {
   const amount = Number(m[3].replace(/[^\d]/g, ''))
   if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
   const { category, keyword } = classify(merchant, rules)
-  return { date: findDate(m[1]), time: '', amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
+  return { date: findDate(m[1]), time: findTransactionTime(m[1]), amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
 }
 export function parseEntry(raw, rules) {
   const ai = parseAiCsvRow(raw, rules)
@@ -209,7 +210,7 @@ export function parseReceipt(raw, rules = []) {
   }
   return {
     date: receiptDate,
-    time: dateLine ? findTime(dateLine) : '',
+    time: findTransactionTime(text, dateLine),
     amount,
     category,
     merchant: merchant.slice(0, 60),
@@ -219,7 +220,7 @@ export function parseReceipt(raw, rules = []) {
 }
 
 // 貼り付けテキストまたはOCR画像から複数の明細を抽出する。
-export function parseEntries(raw, rules) {
+function parseEntriesInternal(raw, rules) {
   const marker = '\n__QP_AMOUNT_COLUMN__\n'
   let qpColumnAmounts = []
   if (typeof raw === 'string' && raw.includes(marker)) {
@@ -610,6 +611,18 @@ export function parseEntries(raw, rules) {
   if (hasCardPaymentMetadata && dateLines.length && !hasExplicitAmount) return [{ ...entry, amount: 0 }]
   return [entry]
 }
+// Parsed statement rows must carry the printed transaction time when present.
+// Never assign the current time to imported OCR/credit-card records.
+export function parseEntries(raw, rules) {
+  const rows = parseEntriesInternal(raw, rules)
+  return rows.map(row => {
+    if (row.time) return row
+    const time = findTransactionTime(row.raw || '') ||
+      (rows.length === 1 ? findTransactionTime(raw) : '')
+    return time ? { ...row, time } : row
+  })
+}
+
 // 画像から文字を抽出：Tesseract.jsを端末のブラウザ内で実行し、画像はアップロードしない
 export async function ocrImage(file, onProgress) {
   const { createWorker } = await import('tesseract.js')

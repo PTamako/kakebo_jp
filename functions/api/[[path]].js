@@ -248,6 +248,14 @@ export async function onRequest({ request, env, params }) {
   const entriesYear = url.searchParams.get('year') || ''
 
   try {
+    // Versioned, fail-safe compatibility migration: one cheap read after
+    // completion, rather than six column probes and a DDL index per request.
+    let compatibilityReady=false
+    try {
+      const recorded=await db.prepare("SELECT version FROM schema_migrations WHERE version='api-compat-v1'").first()
+      compatibilityReady=!!recorded
+    }catch { /* Very old DB has no migration ledger yet. */ }
+    if(!compatibilityReady){
     // Automatic one-time migration: existing rows default to expenses.
     try { await db.prepare('SELECT type FROM entries LIMIT 1').first() }
     catch (columnCheckError) {
@@ -321,6 +329,9 @@ export async function onRequest({ request, env, params }) {
       }
     }
     await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_client_request_id ON entries(client_request_id)').run()
+    await db.prepare('CREATE TABLE IF NOT EXISTS schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, description TEXT NOT NULL)').run()
+    await db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES('api-compat-v1','Safe additive ledger columns and request-id index')").run()
+    }
 
     // Never rewrite or delete existing ledger rows during migration.
     // SBI valuation entries remain untouched unless the user explicitly edits them.

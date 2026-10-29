@@ -1,10 +1,10 @@
 name: Validate
 # Validate category-to-details navigation and shared-list pagination as part of the production build
+# Actions quota is exhausted. Cloudflare Pages runs npm run build, which
+# executes npm run test:parse before Vite. Keep this workflow for manual use
+# after Actions minutes become available, without automatic quota-consuming runs.
 on:
-  pull_request:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 jobs:
   validate:
     runs-on: ubuntu-latest

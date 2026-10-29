@@ -60,7 +60,7 @@ test('preview remains closed until verified and release audit fails on productio
   assert.match(api,/PREVIEW_D1_ISOLATED !== 'true'/)
   assert.match(api,/preview_read_only/)
   const wrangler=source('wrangler.toml')
-  assert.doesNotMatch(wrangler,/^\\s*\\[env\\.preview(?:\\.|\\])?/m,
+  assert.doesNotMatch(wrangler,/^\s*\[env\.preview(?:\.[^\]]*)?\]/m,
     'Partial preview env config must not drop non-inherited D1/AI bindings')
   const pkg=JSON.parse(source('package.json'))
   assert.equal(pkg.scripts['verify:release'],'npm run build && npm run security:audit:prod')

@@ -79,3 +79,20 @@ test('OCR engine uses a compact, accessible two-option selector without changing
   assert.match(mobile, /main \.capture-panel \.ocr-engine-options button \{/)
   assert.match(mobile, /min-height: 44px/)
 })
+
+test('changing cards while editing refreshes the name and cannot rename the previous card', () => {
+  // Watching the card selection is essential: selectCardForEdit() only runs
+  // when the pencil icon is pressed, not when a different card is selected.
+  const sync = finance.match(/watch\(selectedCard,\s*\(name\)\s*=>\s*\{([\s\S]*?)\n\}\)/)?.[1]
+  assert.ok(sync, 'card selection has its own editor synchronization watcher')
+  assert.match(sync, /editedCardName\.value\s*=\s*name\s*\|\|\s*''/)
+  const picker = finance.match(/<select v-model="selectedCard"[^>]*>/)?.[0]
+  assert.ok(picker)
+  assert.match(picker, /:disabled="busy"/)
+  const editor = finance.match(/<div v-if="cardMode === 'edit' && selectedCard"[\s\S]*?<\/div>/)?.[0]
+  assert.ok(editor)
+  assert.match(editor, /<input :key="selectedCard" v-model="editedCardName"/)
+  assert.match(editor, /:disabled="busy \|\| selectedCard === '現金'"/)
+  assert.match(editor, /<button type="button" :disabled="busy" @click="renameCard">保存<\/button>/)
+  assert.match(finance, /async function renameCard\(\) \{\s*if \(busy\.value\) return/)
+})

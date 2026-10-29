@@ -24,7 +24,7 @@
 
 ## 重要：既存データと検証
 - 既存の本番 D1 で `schema.sql` を再実行して初期化しないでください。移行準備と安全な確認手順は [migrations/README.md](migrations/README.md) を参照してください。
-- 本番/Preview は異なる D1 が必要です。検証していない Preview API は 503 で停止し、検証済みでも財務変更は 403 で禁止します。Cloudflare ダッシュボードで Preview バインディングを確認してください。
+- 本番/Preview は異なる D1 が必要です。検証していない Preview API は 503 で停止し、検証済みでも財務変更は 403 で禁止します。Cloudflare ダッシュボードで Preview バインディングを確認してください。 カスタム Preview ドメインを使う場合は、Cloudflare Pages の Preview 環境変数に `APP_ENV=preview` を設定してください。`wrangler.toml` の `[env.preview]` へ安易に設定を移すと D1/AI バインディングが継承されず動作しません。
 - バックアップ JSON v3 は新規エクスポートに SHA-256 検証情報が含まれます。古い v1/v2/v3 は引き続き読み込めます。画像は含まれず、復元処理はまだ全表を一括ロールバックするトランザクションではありません。
 - 本番リリース前の手動確認：`npm ci && npm run verify:release`（全テスト＋ビルド＋本番依存の High 以上の監査）。GitHub Actions の自動起動は予算制限のため無効、必要に応じて手動実行してください。
 - 既存の取引・カスタム分類・SBI 評価額は初期化/自動再計算しません。実機 Safari、独立 D1 による復元、Cloudflare デプロイ結果は個別に確認してください。

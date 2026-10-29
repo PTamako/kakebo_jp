@@ -340,6 +340,21 @@ export async function onRequest({ request, env, params }) {
           const result = await db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(item.id,item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled ? 1 : 0).run()
           return json({ok:true,created:!!result.meta?.changes})
         }
+        if (m === 'PUT' && b && /^[a-zA-Z0-9-]{8,80}$/.test(b)) {
+          const item = await request.json()
+          if (typeof item?.name !== 'string' || !item.name.trim() || item.name.length > 120 ||
+              !Number.isSafeInteger(item.amount) || item.amount <= 0 ||
+              !Number.isInteger(item.day) || item.day < 1 || item.day > 31 ||
+              typeof item.category !== 'string' || !item.category.trim() ||
+              typeof item.paymentSource !== 'string' ||
+              !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
+              typeof item.enabled !== 'boolean') return json({error:'固定支出の入力を確認してください'},400)
+          const updated = await db.prepare('UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7 WHERE id=?8')
+            .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,b).run()
+          if(!updated.meta?.changes)return json({error:'固定支出が見つかりません'},404)
+          // Stable plan IDs preserve the monthly idempotency key. Existing ledger entries are untouched.
+          return json({ok:true})
+        }
         if (m === 'DELETE' && b && /^[a-zA-Z0-9-]{8,80}$/.test(b)) {
           await db.prepare('DELETE FROM recurring_plans WHERE id=?1').bind(b).run()
           return json({ok:true})
@@ -551,7 +566,7 @@ export async function onRequest({ request, env, params }) {
       const result = await db.prepare(`INSERT INTO entries
         (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
         SELECT ?1,'',?2,?3,?4,'毎月の固定支出（自動記録）','','expense',NULL,0,NULL,?5,?6
-        WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND type='expense' AND merchant=?4 AND amount=?2 AND COALESCE(payment_source,'')=?6 AND (client_request_id IS NULL OR client_request_id NOT LIKE 'recurring_%'))
+        WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND type='expense' AND merchant=?4 AND amount=?2 AND COALESCE(payment_source,'')=?6  )
         ON CONFLICT(client_request_id) DO NOTHING`)
         .bind(date,plan.amount,plan.category,plan.name,clientRequestId,plan.payment_source || '').run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})

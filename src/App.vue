@@ -1480,8 +1480,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <details v-if="tab === 'finance'" class="panel device-security-settings">
       <summary>端末のプライバシー設定</summary>
       <label class="form-field"><span>ログイン状態</span><select :value="rememberDevice ? 'remember' : 'session'" @change="setRememberDevice($event.target.value === 'remember')">
-        <option value="remember">この端末にログインを保存（30日間）</option>
-        <option value="session">アプリを終了したら保存しない</option>
+        <option value="remember">この端末にログイン状態を保存（最長30日）</option>
+        <option value="session">ブラウザのセッション内のみ保存（終了時の破棄は端末に依存）</option>
       </select></label>
       <p class="microcopy">ログイン情報は端末内に保存します。共有端末では「保存しない」を選択してください。未保存の入力は「入力」画面から個別に破棄できます。</p>
     </details>
@@ -1809,4 +1809,16 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 .batch-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;min-width:0;width:100%}
 .batch-actions>*{min-width:0;max-width:100%;width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;overflow-wrap:anywhere;min-height:44px}
 .batch-actions .upload-disabled{opacity:.55;pointer-events:none;cursor:not-allowed}
+/* Remove the logo's outer frame across all cream themes. */
+main .brand-mark,
+main.theme-pink .brand-mark,
+main.theme-blue .brand-mark,
+main.theme-yellow .brand-mark,
+main.theme-green .brand-mark{
+  background:transparent;
+  box-shadow:none;
+  border:none;
+  border-radius:0;
+  padding:0;
+}
 </style>

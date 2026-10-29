@@ -76,3 +76,10 @@ export const ICON_LIBRARY = [
   { id:'other', label:'その他', path:'M5 3h14v18H5V3ZM8 8h8M8 12h8M8 16h5' }
 ]
 export const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'飲食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
+
+export const OTHER_SORT_ORDER = 99999
+export const isOtherOption = name => ['其他','その他','其他收入','その他の収入'].includes(String(name || '').trim())
+// Stable sort: preserve custom user order; only move "other" to the final position.
+export const sortOtherLast = values => [...values].sort((a,b) =>
+  (isOtherOption(a) ? OTHER_SORT_ORDER : 0) - (isOtherOption(b) ? OTHER_SORT_ORDER : 0)
+)

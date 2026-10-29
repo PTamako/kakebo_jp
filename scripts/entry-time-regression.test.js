@@ -13,7 +13,7 @@ test('new manual expense gets local HH:mm once when the draft is created', () =>
   const add = app.match(/function addBlank\(type = 'expense'\) \{([\s\S]*?)\n\}/)?.[1]
   assert.ok(add, 'manual add handler exists')
   assert.match(add, /const now = new Date\(\)/)
-  assert.match(add, /time: type === 'expense' \? localHHMM\(now\) : ''/)
+  assert.match(add, /time: localHHMM\(now\)/, 'all manual entries default to the current time')
   assert.match(add, /date: today, transferDate: today/)
   assert.match(app, /function startEdit\(entry\)[\s\S]*?time: entry\.time \|\| ''/, 'existing entry time is preserved')
   assert.doesNotMatch(app, /function startEdit\(entry\)[\s\S]{0,180}localHHMM/, 'do not overwrite edit time')
@@ -65,4 +65,5 @@ test('OCR readout and create/edit share the existing time field without a data m
   assert.match(app, /\.\.\.f, amount: Number\(f\.amount\)/, 'save keeps the original time field')
   assert.match(form, /v-model="record\.time" type="time"/)
   assert.match(form, /class="transaction-time-summary">時刻 \{\{record\.time\}\}/, 'the automatically filled time can be seen in compact details')
+  assert.doesNotMatch(form, /v-if="record.type==='expense'" class="form-field"><span>時刻/, 'income and transfer time remains editable')
 })

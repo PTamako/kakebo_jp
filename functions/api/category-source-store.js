@@ -11,11 +11,15 @@ export async function ensureCategorySource(db) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS category_source (
     category TEXT PRIMARY KEY,
     sort_order INTEGER,
-    icon TEXT
+    icon TEXT,
+    display_name TEXT
   )`).run()
   await db.prepare("CREATE TABLE IF NOT EXISTS schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, description TEXT NOT NULL)").run()
   const version='category-source-v1'
-  if (await db.prepare('SELECT version FROM schema_migrations WHERE version=?1').bind(version).first()) return
+  if (await db.prepare('SELECT version FROM schema_migrations WHERE version=?1').bind(version).first()) {
+    await ensureCategoryPresentation(db)
+    return
+  }
   const {results}=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('category_sort_order','category_icons')").all()
   const legacy=new Set((results||[]).map(row=>row.name))
   const pending=[]
@@ -39,4 +43,5 @@ export async function ensureCategorySource(db) {
   pending.push(db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?1,?2)")
     .bind(version,'Merge category_sort_order and category_icons without deleting historical tables'))
   await db.batch(pending)
+  await ensureCategoryPresentation(db)
 }

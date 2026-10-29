@@ -1,25 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b8ddff"/><stop offset="1" stop-color="#6fa7ed"/></linearGradient>
-    <linearGradient id="coin" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffe9a1"/><stop offset="1" stop-color="#ffbd54"/></linearGradient>
-    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="9" stdDeviation="9" flood-color="#3e649b" flood-opacity=".2"/></filter>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <g transform="rotate(-8 236 252)" filter="url(#shadow)">
-    <rect x="105" y="94" width="270" height="322" rx="30" fill="#dce9fb" opacity=".65"/>
-    <rect x="94" y="82" width="270" height="322" rx="30" fill="#fffaf2"/>
-    <rect x="77" y="145" width="48" height="23" rx="11.5" fill="#6488bf"/>
-    <rect x="77" y="218" width="48" height="23" rx="11.5" fill="#6488bf"/>
-    <rect x="77" y="291" width="48" height="23" rx="11.5" fill="#6488bf"/>
-    <circle cx="157" cy="157" r="12" fill="#82cdb9"/>
-    <rect x="183" y="147" width="128" height="20" rx="10" fill="#dce2ed"/>
-    <circle cx="157" cy="230" r="12" fill="#ff999a"/>
-    <rect x="183" y="220" width="128" height="20" rx="10" fill="#dce2ed"/>
-    <rect x="140" y="282" width="171" height="20" rx="10" fill="#dce2ed"/>
-  </g>
-  <g filter="url(#shadow)">
-    <circle cx="333" cy="333" r="99" fill="#ffe8a0"/>
-    <circle cx="333" cy="333" r="82" fill="url(#coin)" stroke="#ffd071" stroke-width="3"/>
-    <path d="M293 291h18l22 34 22-34h18l-29 46h19a8 8 0 0 1 0 16h-22v11h22a8 8 0 0 1 0 16h-22v18h-16v-18h-22a8 8 0 0 1 0-16h22v-11h-22a8 8 0 0 1 0-16h19z" fill="#b9782e"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>家計簿</title>
+  <defs><linearGradient id="cream" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FAEDEB"/><stop offset="1" stop-color="#F4DCE6"/></linearGradient></defs>
+  <rect width="512" height="512" fill="url(#cream)"/>
+  <g transform="translate(80 80) scale(5.5)">
+  <rect x="11" y="5" width="42" height="54" rx="9" fill="#FFFCF9" stroke="#D9A4B5" stroke-width="2.2"/>
+  <path d="M21.8 6.5v51" stroke="#C5DED5" stroke-width="11"/>
+  <path d="M21.8 6.8v50.4" stroke="#98B8AD" stroke-width="1.2"/>
+  <path d="M30 19h13" stroke="#B89AA5" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="m30 30 4 4 8-9" fill="none" stroke="#7EA993" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="46" cy="48" r="14" fill="#F4D588" stroke="#FFF5D8" stroke-width="2.3"/>
+  <circle cx="46" cy="48" r="11.2" fill="none" stroke="#E9B862" stroke-width="0.8"/>
+  <path d="m41.5 42.5 4.5 5 4.5-5M46 47.5v7M41.5 49h9M41.5 52h9" fill="none" stroke="#91652D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

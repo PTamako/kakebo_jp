@@ -117,9 +117,6 @@ function addKey(key) {
   }
   if (expression.value.length < 80) expression.value += key
 }
-function setExpression(event) {
-  expression.value = event.target.value.slice(0, 80)
-}
 async function loadRate() {
   const selected = currency.value
   const sequence = ++requestSequence
@@ -224,9 +221,6 @@ function apply() {
         </div>
         <div class="money-sheet-scroll">
           <div v-if="activeTab==='calc'" class="money-calculator" role="tabpanel">
-            <label class="money-caption" for="money-expression">計算式</label>
-            <input id="money-expression" class="money-expression" :value="expression" inputmode="none" type="text" autocomplete="off"
-              aria-label="計算式" @input="setExpression" />
             <div class="money-tax-controls">
               <span class="money-caption">消費税を加算</span>
               <div class="money-tax-options" role="group" aria-label="消費税の追加">
@@ -243,7 +237,8 @@ function apply() {
                 </select>
               </div>
             </div>
-            <div class="money-result-box">
+            <div class="money-result-box" aria-live="polite">
+              <div class="money-expression-preview" aria-label="入力中の計算">{{ expression || '0' }}</div>
               <span>{{taxRate===0?'計算結果':'税込合計'}}</span>
               <strong>{{ taxSummary == null ? '—' : '¥' + taxSummary.total.toLocaleString('ja-JP') }}</strong>
               <div v-if="taxRate!==0 && taxSummary" class="money-tax-breakdown">
@@ -320,7 +315,8 @@ function apply() {
 .money-sheet-tabs button.selected{color:var(--blue-dark,var(--blue,#486ca9));background:var(--card,#fff);box-shadow:0 2px 8px #192d3c16}
 .money-sheet-scroll{overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:4px 17px 14px;flex:1}
 .money-caption{display:block;font-size:12px;font-weight:700;color:var(--muted,#6e7a90);margin:0 0 7px}
-.money-expression{width:100%;box-sizing:border-box;min-height:45px;font-size:20px!important;font-weight:750!important;text-align:right!important;border:1px solid var(--line,#dde3e9)!important;border-radius:12px!important;padding:8px 12px!important;background:var(--paper,#fafbff)!important;color:var(--ink,#283346)}
+.money-expression-preview{width:100%;max-width:100%;min-height:20px;overflow-x:auto;overflow-y:hidden;white-space:nowrap;text-align:right;direction:ltr;font-size:15px;line-height:1.3;font-weight:650;color:var(--muted,#6e7a90);font-variant-numeric:tabular-nums;scrollbar-width:none}
+.money-expression-preview::-webkit-scrollbar{display:none}
 .money-result-box{margin:10px 0 14px;display:flex;flex-direction:column;gap:3px;align-items:flex-end;justify-content:center;border-radius:14px;padding:12px 14px;background:var(--tint,#f3f6fc);min-height:70px}
 .money-result-box span{font-size:12px;color:var(--muted,#6e7a90)}
 .money-result-box strong{font-size:clamp(24px,7vw,32px);font-weight:850;line-height:1.25;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}

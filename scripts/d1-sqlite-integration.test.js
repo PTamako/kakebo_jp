@@ -160,3 +160,47 @@ test('Pages previews reject ledger mutations before touching the D1 binding',asy
   assert.equal(response.status,403)
   assert.equal((await response.json()).code,'preview_read_only')
 })
+
+test('manual priority: editing a ¥101,500 planned debit to ¥98,000 is never overwritten',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const plan={id:'99999999-2222-3333-4444-555555555555',name:'家賃',amount:101500,day:25,
+      category:'居住',paymentSource:'現金',startMonth:'2026-10',enabled:true}
+    assert.equal((await call('recurring-plans','POST',plan)).status,200)
+    const first=await call('recurring-post','POST',approvedPost(plan))
+    assert.equal(first.body.created,true)
+    const entry=(await call('entries?month=2026-10')).body[0]
+    assert.equal(entry.amount,101500)
+    const edited=await call('entries/'+entry.id,'PUT',{...entry,date:'2026-10-25',
+      amount:98000,type:'expense',category:'居住',merchant:'家賃',paymentSource:'現金'})
+    assert.equal(edited.status,200)
+    const again=await call('recurring-post','POST',approvedPost(plan))
+    assert.equal(again.body.duplicate,true)
+    let rows=(await call('entries?month=2026-10')).body
+    assert.equal(rows.length,1)
+    assert.equal(rows[0].amount,98000)
+    // A manually entered amount in a month without the original request ID takes priority too.
+    const alternate={...plan,id:'88888888-2222-3333-4444-555555555555'}
+    assert.equal((await call('recurring-plans','POST',alternate)).status,200)
+    const dup=await call('recurring-post','POST',approvedPost(alternate))
+    assert.equal(dup.body.conflict,true)
+    rows=(await call('entries?month=2026-10')).body
+    assert.equal(rows.length,1)
+    assert.equal(rows[0].amount,98000)
+  } finally{db.close()}
+})
+
+test('stale recurring confirmation is rejected instead of recording another device new amount',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const original={id:'77777777-2222-3333-4444-555555555555',name:'家賃',amount:101500,
+      day:25,category:'居住',paymentSource:'現金',startMonth:'2026-10',enabled:true}
+    assert.equal((await call('recurring-plans','POST',original)).status,200)
+    assert.equal((await call('recurring-plans/'+original.id,'PUT',{...original,amount:120000})).status,200)
+    const stale=await call('recurring-post','POST',approvedPost(original))
+    assert.equal(stale.status,409)
+    assert.equal(stale.body.code,'plan_changed')
+    assert.equal((await call('entries?month=2026-10')).body.length,0)
+    assert.equal((await call('recurring-post','POST',{planId:original.id,month:'2026-10'})).status,409)
+  }finally{db.close()}
+})

@@ -3,6 +3,7 @@ import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
+import { ensureUnifiedMerchantRules } from './merchant-rules-store.js'
 // Cloudflare Pages Functions：/api/*
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\\d|2[0-3]):[0-5]\\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
@@ -338,6 +339,10 @@ export async function onRequest({ request, env, params }) {
     // Never rewrite or delete existing ledger rows during migration.
     // SBI valuation entries remain untouched unless the user explicitly edits them.
 
+    // Only rule-dependent endpoints perform the additive one-time data migration.
+    // Old tables remain untouched for rollback; the unified table is authoritative.
+    if (['rules','custom-rules','merchant-payment-rules','payment-sources','backup-snapshot','restore-atomic'].includes(a))
+      await ensureUnifiedMerchantRules(db)
     // Settings are independent of historical ledger rows and safe to create on existing D1.
     // Personal finance configuration is kept on D1, not in browser storage.
     if (a === 'recurring-plans' || a === 'card-bills') {
@@ -470,8 +475,8 @@ export async function onRequest({ request, env, params }) {
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         'SELECT platform,current_value,pnl,updated_at FROM investment_snapshots ORDER BY platform',
         "SELECT name,closing_day,is_default,sort_order FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
-        'SELECT keyword,payment_source FROM merchant_payment_rules ORDER BY keyword',
-        'SELECT keyword,category FROM custom_rules ORDER BY keyword',
+        'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
+        'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
         "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
         'SELECT category,icon FROM category_icons ORDER BY category',
         'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id'
@@ -533,7 +538,7 @@ export async function onRequest({ request, env, params }) {
     }
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
       await db.prepare("CREATE TABLE IF NOT EXISTS payment_sources (name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)), closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31))").run()
-      await db.prepare("CREATE TABLE IF NOT EXISTS merchant_payment_rules (keyword TEXT PRIMARY KEY, payment_source TEXT NOT NULL)").run()
+      // Unified merchant_rules is created/migrated by ensureUnifiedMerchantRules.
     }
     if (a === 'payment-sources') {
       // Existing D1 installations lack closing_day. Leave all card records intact.
@@ -642,13 +647,14 @@ export async function onRequest({ request, env, params }) {
       const activePlan = await db.prepare('SELECT id FROM recurring_plans WHERE payment_source=?1 AND enabled=1 LIMIT 1').bind(name).first()
       if (activePlan) return json({error:'このカードを利用する固定支出が残っています。先に固定支出の設定を整理してください'},409)
       await db.batch([
-        db.prepare('DELETE FROM merchant_payment_rules WHERE payment_source=?1').bind(name),
+        db.prepare('DELETE FROM merchant_rules WHERE payment_source=?1 AND category IS NULL').bind(name),
+        db.prepare('UPDATE merchant_rules SET payment_source=NULL WHERE payment_source=?1').bind(name),
         db.prepare('DELETE FROM payment_sources WHERE name=?1').bind(name)
       ])
       return json({ ok: true })
     }
     if (a === 'merchant-payment-rules' && m === 'GET') {
-      const { results } = await db.prepare('SELECT keyword, payment_source FROM merchant_payment_rules ORDER BY LENGTH(keyword) DESC').all()
+      const { results } = await db.prepare('SELECT keyword, payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY LENGTH(keyword) DESC').all()
       return json(results)
     }
     if (a === 'merchant-payment-rules' && (m === 'POST' || m === 'PUT')) {
@@ -659,15 +665,18 @@ export async function onRequest({ request, env, params }) {
       if (!(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(name).first())) return json({ error: '登録済みの支払方法を選択してください' }, 400)
       // PUT is reserved for insert-if-missing during restore. Normal POST keeps edit behavior.
       const statement = m === 'PUT'
-        ? 'INSERT OR IGNORE INTO merchant_payment_rules(keyword,payment_source) VALUES(?1,?2)'
-        : 'INSERT INTO merchant_payment_rules(keyword,payment_source) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=excluded.payment_source'
+        ? 'INSERT OR IGNORE INTO merchant_rules(keyword,payment_source) VALUES(?1,?2)'
+        : 'INSERT INTO merchant_rules(keyword,payment_source) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=excluded.payment_source'
       await db.prepare(statement).bind(keyword,name).run()
       return json({ ok: true })
     }
     if (a === 'merchant-payment-rules' && m === 'DELETE') {
       const keyword = url.searchParams.get('keyword') || ''
       if (!keyword || keyword.length > 80) return json({ error: '店舗名を確認してください' }, 400)
-      await db.prepare('DELETE FROM merchant_payment_rules WHERE keyword=?1').bind(keyword).run()
+      await db.batch([
+        db.prepare('DELETE FROM merchant_rules WHERE keyword=?1 AND category IS NULL').bind(keyword),
+        db.prepare('UPDATE merchant_rules SET payment_source=NULL WHERE keyword=?1').bind(keyword)
+      ])
       return json({ ok: true })
     }
 
@@ -688,7 +697,7 @@ export async function onRequest({ request, env, params }) {
       if (collision) return json({error:'変更先に同月のカード請求が存在します'},409)
       const result = await db.batch([
         db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName),
-        db.prepare('UPDATE merchant_payment_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
+        db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
         db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
         db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
         db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName)
@@ -883,7 +892,7 @@ export async function onRequest({ request, env, params }) {
       }
     }
     if (a === 'custom-rules') {
-      await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
+      // Only the combined merchant_rules table is used for active preferences.
       if (m === 'POST') {
         const body = await request.json()
         const keyword = typeof body?.keyword === 'string' ? body.keyword.trim() : ''
@@ -891,24 +900,27 @@ export async function onRequest({ request, env, params }) {
         if (keyword.length < 2 || keyword.length > 120 || !category || category.length > 120)
           return json({error:'カテゴリー規則を確認してください'},400)
         // Only add missing keys when restoring. User-edited mappings are never overwritten.
-        await db.prepare('INSERT OR IGNORE INTO custom_rules(keyword,category) VALUES(?1,?2)').bind(keyword,category).run()
+        await db.prepare('INSERT OR IGNORE INTO merchant_rules(keyword,category) VALUES(?1,?2)').bind(keyword,category).run()
         return json({ok:true})
       }
       if (m === 'GET') {
-        const { results } = await db.prepare('SELECT keyword, category FROM custom_rules ORDER BY keyword').all()
+        const { results } = await db.prepare('SELECT keyword, category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword').all()
         return json(results)
       }
       if (m === 'DELETE') {
         const keyword = url.searchParams.get('keyword') || ''
         if (keyword.length < 2 || keyword.length > 80) return json({ error: '店舗名を確認してください' }, 400)
-        await db.prepare('DELETE FROM custom_rules WHERE keyword=?1').bind(keyword).run()
+        await db.batch([
+        db.prepare('DELETE FROM merchant_rules WHERE keyword=?1 AND payment_source IS NULL').bind(keyword),
+        db.prepare('UPDATE merchant_rules SET category=NULL WHERE keyword=?1').bind(keyword)
+      ])
         return json({ ok: true })
       }
     }
     if (a === 'rules') {
       if (m === 'GET') {
         // デフォルトルールとユーザー上書きルールを分離し、初期化や再デプロイで個人設定を消さない。
-        await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
+        // Custom categories and payment rules coexist in merchant_rules.
         const marker = '__kakeibo_japanese_rules_v9_initialized__'
         const seeded = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind(marker).first()
         if (!seeded) {
@@ -918,7 +930,7 @@ export async function onRequest({ request, env, params }) {
           for (const rule of (legacy.results || []).filter(rule =>
             !defaultCategories.has(rule.keyword) || defaultCategories.get(rule.keyword) !== rule.category
           )) {
-            await db.prepare('INSERT OR IGNORE INTO custom_rules (keyword, category) VALUES (?1, ?2)').bind(rule.keyword, rule.category).run()
+            await db.prepare('INSERT OR IGNORE INTO merchant_rules (keyword, category) VALUES (?1, ?2)').bind(rule.keyword, rule.category).run()
           }
           // Never delete or overwrite legacy rules during a software upgrade.
           // Add only missing defaults and a completion marker. Existing user data
@@ -952,7 +964,7 @@ export async function onRequest({ request, env, params }) {
         }
         // Ignore old persisted built-in rows. Historical categories and rule rows
         // remain untouched in D1, but only the current dictionary is effective.
-        const customResult = await db.prepare('SELECT keyword, category FROM custom_rules').all()
+        const customResult = await db.prepare('SELECT keyword, category FROM merchant_rules WHERE category IS NOT NULL').all()
         const merged = new Map(DEFAULT_RULE_ROWS.map(([keyword,category]) => [keyword, {keyword,category,is_custom:false}]))
         for (const rule of (customResult.results || [])) merged.set(rule.keyword, { ...rule, is_custom: true })
         return json([...merged.values()].map(rule => ({ ...rule, is_custom: rule.is_custom === true })))
@@ -963,8 +975,8 @@ export async function onRequest({ request, env, params }) {
         const category = String(r.category || '').trim()
         if (kw.length < 2) return json({ error: 'キーワードは2文字以上で入力してください' }, 400)
         if (!category) return json({ error: 'カテゴリーを指定してください' }, 400)
-        await db.prepare('CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL)').run()
-        await db.prepare('INSERT INTO custom_rules (keyword,category) VALUES (?1,?2) ON CONFLICT(keyword) DO UPDATE SET category = excluded.category').bind(kw, category).run()
+        // Keep the user's payment mapping when updating the custom category.
+        await db.prepare('INSERT INTO merchant_rules (keyword,category) VALUES (?1,?2) ON CONFLICT(keyword) DO UPDATE SET category = excluded.category').bind(kw, category).run()
         return json({ ok: true, keyword: kw, category })
       }
     }

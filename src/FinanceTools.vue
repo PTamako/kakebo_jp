@@ -301,7 +301,9 @@ async function restore(){
       settingsCount++
     }
     const sbi=(backup.investments||[]).find(x=>x.platform==='sbi')
-    if(sbi && Number.isSafeInteger(sbi.current_value) && Number.isSafeInteger(sbi.pnl)){
+    if(sbi && (sbi.current_value === null || Number.isSafeInteger(sbi.current_value)) &&
+       (sbi.pnl === null || Number.isSafeInteger(sbi.pnl)) &&
+       (sbi.current_value !== null || sbi.pnl !== null)){
       const saved=await props.api('investments/restore-empty',{method:'POST',body:JSON.stringify({platform:'sbi',currentValue:sbi.current_value,pnl:sbi.pnl})})
       if(saved.restored)settingsCount++;else skipped++
     }

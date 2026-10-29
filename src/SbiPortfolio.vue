@@ -155,7 +155,6 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
     <div class="sbi-toolbar">
       <div class="sbi-provider"><span class="sbi-provider-dot" aria-hidden="true"></span><span>SBI証券</span></div>
       <div class="sbi-toolbar-actions">
-        <label class="sbi-month-label"><span class="sr-only">対象月</span><input v-model="month" type="month" aria-label="対象月" @change="load" /></label>
         <button type="button" class="sbi-icon-button" @click="load" :disabled="loading" aria-label="資産情報を更新" title="更新">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14 5l2-2"/><path d="M20 20v-4h-4"/></svg>
         </button>
@@ -212,6 +211,10 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
         <p class="sbi-card-note">基準価額は三菱UFJ運用の3銘柄を自動更新します。NASDAQ100は手入力です。</p>
       </section>
 
+      <div class="sbi-period-filter">
+        <span>積立・振替の対象月</span>
+        <label class="sbi-month-label"><span class="sr-only">積立・振替の対象月</span><input v-model="month" type="month" aria-label="積立・振替の対象月" @change="load" /></label>
+      </div>
       <section class="panel sbi-card" aria-labelledby="sbi-plans-title">
         <div class="sbi-line-heading"><h3 id="sbi-plans-title">毎月の積立</h3><button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button></div>
         <div class="sbi-plan-total"><div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}} <small>/ 月</small></strong></div><div class="sbi-plan-day">注文予定は銘柄別</div></div>
@@ -291,6 +294,8 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
 .sbi-provider{justify-content:flex-start;font-size:12px;font-weight:800;color:var(--muted)}
 .sbi-provider-dot,.sbi-fund-dot{width:9px;height:9px;border-radius:50%;background:var(--blue);flex:none}
 .sbi-toolbar-actions{gap:7px}
+.sbi-period-filter{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 2px 0}
+.sbi-period-filter>span{font-size:11px;color:var(--muted);font-weight:750}
 .sbi-month-label input{max-width:146px;min-height:42px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font-size:13px;font-weight:750}
 .sbi-icon-button{display:grid;place-items:center;width:44px;height:44px;padding:0;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--blue-dark)}
 .sbi-icon-button svg{width:19px;height:19px}.sbi-icon-button:disabled{opacity:.45}

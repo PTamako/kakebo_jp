@@ -58,12 +58,27 @@ test('mobile navigation, keyboard and charts retain touch-safe affordances', () 
   assert.ok(nav)
   assert.equal((nav.match(/:aria-current=/g) || []).length, 5)
   assert.match(mobile, /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/)
-  assert.match(mobile, /main:has\(input:focus, textarea:focus, select:focus\) \.bottom-nav/)
-  assert.match(mobile, /main:has\(input:focus, textarea:focus, select:focus\) \.batch-actions/)
+  assert.match(mobile, /main:has\(input:is\([^\n]+\):focus, textarea:focus\) \.bottom-nav/)
+  assert.match(mobile, /main:has\(input:is\([^\n]+\):focus, textarea:focus\) \.batch-actions/)
   assert.match(mobile, /main \.trend-month-labels button \{ min-height: 44px; \}/)
   assert.equal((app.match(/r="14" class="chart-point-hit"/g) || []).length, 3)
   assert.match(html, /width=device-width, initial-scale=1, viewport-fit=cover/)
   assert.doesNotMatch(html, /user-scalable=no|maximum-scale=1/)
+})
+
+test('native select, calendar and time pickers never hide the bottom tab bar on focus', () => {
+  const focusRules = mobile.split('\n').filter(line =>
+    line.includes('main:has(') &&
+    (line.includes('.bottom-nav') || line.includes('.batch-actions'))
+  )
+  assert.equal(focusRules.length, 2)
+  for (const rule of focusRules) {
+    assert.doesNotMatch(rule, /select:focus|input:focus/)
+    assert.doesNotMatch(rule, /\[type="(?:date|month|time|datetime-local|file|checkbox|radio)"\]/)
+    assert.match(rule, /\[type="text"\]/)
+    assert.match(rule, /\[type="number"\]/)
+    assert.match(rule, /textarea:focus/)
+  }
 })
 
 test('Pages production build runs API and OCR regression suite before Vite', () => {

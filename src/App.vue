@@ -333,30 +333,66 @@ const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 let flashTimer
 const flash = t => { clearTimeout(flashTimer); msg.value = t; flashTimer = setTimeout(() => (msg.value = ''), 3000) }
 
+const pageLoadError = ref('')
+const annualLoadError = ref('')
+let loadedMonth = ''
+let loadedYear = null
+async function fetchMonthEntries(targetMonth) {
+  const all = []
+  for (let offset = 0; ; offset += 500) {
+    const page = await api('entries?month=' + targetMonth + '&offset=' + offset)
+    if (!Array.isArray(page)) throw Error('月別明細の形式が正しくありません')
+    all.push(...page)
+    if (page.length < 500) return all
+  }
+}
 let loadRequestId = 0
 async function load() {
   const requestId = ++loadRequestId
   const requestedMonth = month.value
+  if (loadedMonth !== requestedMonth) { entries.value = []; stats.value = null }
+  pageLoadError.value = ''
   try {
     if (!rules.value.length) rules.value = await api('rules')
     if (!paymentSettingsLoaded) await loadPaymentSettings()
-    const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), api('entries?month=' + requestedMonth), api('stats?month=' + requestedMonth)])
+    const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), fetchMonthEntries(requestedMonth), api('stats?month=' + requestedMonth)])
     if (requestId !== loadRequestId || requestedMonth !== month.value) return
     categories.value = nextCategories
     try { categoryIcons.value = await api('category-icons') } catch { /* Existing categories keep their default icons. */ }
     entries.value = nextEntries
     refreshReceiptImageIds().catch(() => {})
     stats.value = nextStats
-  } catch (e) { flash(e.message) }
+    loadedMonth = requestedMonth
+  } catch (e) {
+    if (requestId === loadRequestId && requestedMonth === month.value) {
+      loadedMonth = ''
+      entries.value = []
+      stats.value = null
+      pageLoadError.value = '月別データを読み込めませんでした：' + e.message
+      flash(pageLoadError.value)
+    }
+  }
 }
 let yearRequestId = 0
 async function loadYear() {
   const requestId = ++yearRequestId
   const year = selectedYear.value
+  if (loadedYear !== year) annualStats.value = null
+  annualLoadError.value = ''
   try {
     const nextStats = await api('stats?year=' + year)
-    if (requestId === yearRequestId && year === selectedYear.value) annualStats.value = nextStats
-  } catch (e) { if (requestId === yearRequestId) flash('年間集計の読み込みに失敗しました：' + e.message) }
+    if (requestId === yearRequestId && year === selectedYear.value) {
+      annualStats.value = nextStats
+      loadedYear = year
+    }
+  } catch (e) {
+    if (requestId === yearRequestId && year === selectedYear.value) {
+      annualStats.value = null
+      loadedYear = null
+      annualLoadError.value = '年間集計の読み込みに失敗しました：' + e.message
+      flash(annualLoadError.value)
+    }
+  }
 }
 onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers(); checkRecurringEntries(api).then(count => { if (count) { load(); loadYear() } }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message)) } })
 
@@ -442,6 +478,20 @@ function addBlank(type = 'expense') {
   forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
+  if (form.type !== type) {
+    if (type !== 'expense') {
+      form.merchant = ''
+      form.paymentSource = ''
+      form.paymentManuallySelected = false
+      form.bindRule = false
+      form.bindPaymentRule = false
+      form.receiptImage = null
+      form.receiptFileName = ''
+      form.time = ''
+    }
+    if (type !== 'transfer') form.transferTarget = ''
+    if (type === 'transfer') form.transferDate = form.transferDate || form.date
+  }
   form.type = type
   if (type === 'income') form.category = INCOME_CATEGORIES.includes(form.category) ? form.category : '工资'
   else if (type === 'transfer') form.category = '投資・資産移動'
@@ -826,7 +876,7 @@ watch(visibleEntryCount, () => {
   if (days.length && !days.some(day => expandedEntryDays.value.has(day))) expandedEntryDays.value = new Set([days[0]])
 })
 async function fetchPeriodDetailRows(period, requestId = null) {
-  if (period !== 'year') return api('entries?month=' + month.value)
+  if (period !== 'year') return fetchMonthEntries(month.value)
   const year = selectedYear.value
   const rows = []
   for (let offset = 0; ; offset += 500) {
@@ -877,6 +927,7 @@ let suppressRowClick = false
 const calendarEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : entries.value
   return source.filter(entryMatchesType).filter(entry => !detailFilter.value || (
+    detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) :
     detailFilter.value.type === 'transfer' ? entry.type === 'transfer' :
     entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer')
   )).filter(entry => String(entry.date || '').startsWith(month.value))
@@ -1086,6 +1137,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </header>
 
     <p v-if="msg" class="toast" role="status">{{ msg }}</p>
+    <div v-if="(tab === 'list' || (tab === 'stat' && statsPeriod === 'month')) && pageLoadError" class="panel" role="alert"><span>{{pageLoadError}}</span> <button type="button" class="button-secondary" @click="load">再読み込み</button></div>
+    <div v-if="tab === 'stat' && statsPeriod === 'year' && annualLoadError" class="panel" role="alert"><span>{{annualLoadError}}</span> <button type="button" class="button-secondary" @click="loadYear">再読み込み</button></div>
 
     <section v-if="tab === 'add'" class="page-section">
       <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>

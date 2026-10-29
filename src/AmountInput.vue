@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
-import { formatYenInput, normalizeYenInput, calculateYenExpression, convertToYen } from './amount-tools.js'
+import { formatYenInput, normalizeYenInput, calculateYenExpression, convertToYen, calculateJapaneseConsumptionTax } from './amount-tools.js'
 
 const props = defineProps({ modelValue: { type: [Number, String], default: 0 }, inputLabel: { type: String, default: '金額（円）' } })
 const emit = defineEmits(['update:modelValue'])
@@ -43,6 +43,12 @@ const opened = ref(false)
 const activeTab = ref('calc')
 const expression = ref('')
 const calculatorResult = computed(() => calculateYenExpression(expression.value))
+const taxRate = ref(0)
+const taxRounding = ref('floor')
+const taxSummary = computed(() => calculateJapaneseConsumptionTax(calculatorResult.value, taxRate.value, taxRounding.value))
+const copyFeedback = ref('')
+let copyTimer = null
+watch([expression, taxRate, taxRounding], () => { copyFeedback.value = '' })
 const currencies = ['CNY', 'USD', 'EUR', 'KRW', 'JPY']
 function storedCurrency() {
   try {
@@ -98,6 +104,7 @@ function closeTools() {
   nextTick(() => launchButton.value?.focus({ preventScroll: true }))
 }
 onBeforeUnmount(() => {
+  if (copyTimer) clearTimeout(copyTimer)
   requestSequence++
   if (opened.value) unlockScroll()
 })
@@ -153,7 +160,32 @@ function switchManualRate() {
 }
 const appliedRate = computed(() => manualRate.value ? Number(manualRateText.value) : info.value?.rate)
 const fxResult = computed(() => convertToYen(foreignAmount.value, appliedRate.value))
-const chosenResult = computed(() => activeTab.value === 'calc' ? calculatorResult.value : fxResult.value)
+const chosenResult = computed(() => activeTab.value === 'calc' ? taxSummary.value?.total ?? null : fxResult.value)
+watch([chosenResult, activeTab], () => { copyFeedback.value = '' })
+async function copyResult() {
+  if (chosenResult.value == null) return
+  const digits = String(chosenResult.value)
+  let copied = false
+  try {
+    if (!navigator.clipboard?.writeText) throw Error('clipboard_unavailable')
+    await navigator.clipboard.writeText(digits)
+    copied = true
+  } catch {
+    // Fallback for older iOS webviews: copy the current numeric result only.
+    const temporary = document.createElement('textarea')
+    temporary.value = digits
+    temporary.readOnly = true
+    temporary.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'
+    document.body.appendChild(temporary)
+    temporary.focus()
+    temporary.select()
+    try { copied = document.execCommand('copy') } catch { /* unsupported */ }
+    temporary.remove()
+  }
+  copyFeedback.value = copied ? 'copied' : 'failed'
+  if (copyTimer) clearTimeout(copyTimer)
+  copyTimer = setTimeout(() => { copyFeedback.value = '' }, 2000)
+}
 function apply() {
   if (chosenResult.value == null) return
   const amount = chosenResult.value
@@ -195,9 +227,29 @@ function apply() {
             <label class="money-caption" for="money-expression">計算式</label>
             <input id="money-expression" class="money-expression" :value="expression" inputmode="none" type="text" autocomplete="off"
               aria-label="計算式" @input="setExpression" />
+            <div class="money-tax-controls">
+              <span class="money-caption">消費税を加算</span>
+              <div class="money-tax-options" role="group" aria-label="消費税の追加">
+                <button v-for="option in [{ value:0, label:'なし' }, { value:10, label:'10%' }, { value:8, label:'8%' }]"
+                  :key="option.value" type="button" :aria-pressed="taxRate===option.value"
+                  :class="{selected:taxRate===option.value}" @click="taxRate=option.value">{{ option.label }}</button>
+              </div>
+              <div v-if="taxRate!==0" class="money-rounding-row">
+                <span>端数処理</span>
+                <select v-model="taxRounding" aria-label="消費税の端数処理">
+                  <option value="floor">切り捨て</option>
+                  <option value="round">四捨五入</option>
+                  <option value="ceil">切り上げ</option>
+                </select>
+              </div>
+            </div>
             <div class="money-result-box">
-              <span>計算結果</span>
-              <strong>{{ calculatorResult == null ? '—' : '¥' + calculatorResult.toLocaleString('ja-JP') }}</strong>
+              <span>{{taxRate===0?'計算結果':'税込合計'}}</span>
+              <strong>{{ taxSummary == null ? '—' : '¥' + taxSummary.total.toLocaleString('ja-JP') }}</strong>
+              <div v-if="taxRate!==0 && taxSummary" class="money-tax-breakdown">
+                <span>税抜 ¥{{taxSummary.subtotal.toLocaleString('ja-JP')}}</span>
+                <span>消費税（{{taxRate}}%） ¥{{taxSummary.tax.toLocaleString('ja-JP')}}</span>
+              </div>
             </div>
             <div class="money-keypad">
               <button v-for="key in ['C','⌫','(',')','7','8','9','÷','4','5','6','×','1','2','3','−','0','.','=','+']"
@@ -237,7 +289,10 @@ function apply() {
           </div>
         </div>
         <div class="money-sheet-footer">
-          <button type="button" class="money-apply" :disabled="chosenResult == null" @click="apply">金額に反映</button>
+          <div class="money-footer-actions">
+            <button type="button" class="money-copy" :disabled="chosenResult == null" @click="copyResult">{{copyFeedback==='copied'?'コピーしました':copyFeedback==='failed'?'コピー失敗':'結果をコピー'}}</button>
+            <button type="button" class="money-apply" :disabled="chosenResult == null" @click="apply">金額に反映</button>
+          </div>
         </div>
       </section>
     </div>
@@ -281,6 +336,16 @@ function apply() {
 .money-rate-info{min-height:38px;padding:2px 0;font-size:12px;line-height:1.5;color:var(--muted,#6e7a90)}
 .money-rate-change{min-height:44px;border:0;background:transparent;color:var(--blue-dark,var(--blue,#486ca9));font-size:13px;font-weight:750;padding:5px 0}
 .money-manual-rate{display:grid;gap:6px;font-size:12px;color:var(--muted,#6e7a90);padding:4px 0 8px}
+.money-tax-controls{display:grid;gap:5px;margin:6px 0 10px}
+.money-tax-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;border-radius:12px;padding:4px;background:var(--paper,#f7f8fb)}
+.money-tax-options button{min-height:42px;border:0;border-radius:9px;background:transparent;color:var(--muted,#6e7a90);font-size:14px;font-weight:750;touch-action:manipulation}
+.money-tax-options button.selected{background:var(--card,#fff);color:var(--blue-dark,var(--blue,#486ca9));box-shadow:0 2px 8px #192d3c14}
+.money-rounding-row{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted,#6e7a90);font-size:12px;padding:1px 2px}
+.money-rounding-row select{width:auto;min-width:130px;min-height:40px;font-size:13px!important;border:1px solid var(--line,#e5e8ee)!important;border-radius:10px;padding:7px 10px!important;background:var(--card,#fff)!important;color:var(--ink,#283346)}
+.money-tax-breakdown{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;column-gap:12px;row-gap:3px;width:100%;font-size:11px;color:var(--muted,#6e7a90)}
+.money-tax-breakdown span{font-size:11px}
+.money-footer-actions{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:9px}
+.money-copy{width:100%;min-height:52px;border:1px solid var(--line,#dfe3eb);border-radius:14px;background:var(--paper,#f6f7fa);color:var(--blue-dark,var(--blue,#486ca9));font-size:14px;font-weight:750;touch-action:manipulation;white-space:nowrap}
 .money-sheet-footer{flex:none;background:var(--card,#fff);border-top:1px solid var(--line,#e5e8ee);padding:12px 17px calc(12px + env(safe-area-inset-bottom,0px))}
 .money-apply{display:block;width:100%;min-height:52px;border:0;border-radius:14px;background:var(--blue,#668bdd);color:white;font-size:16px;font-weight:800;touch-action:manipulation}
 .money-apply:disabled{opacity:.4;cursor:not-allowed}

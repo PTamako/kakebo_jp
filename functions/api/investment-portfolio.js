@@ -1,3 +1,4 @@
+import { sbiInitialHoldings, SBI_SNAPSHOT_DAY, SBI_SNAPSHOT_OBSERVED_AT } from './sbi-initial-holdings.js'
 // SBI bookkeeping only; NEVER sends bank transfers or securities orders.
 // D1 stores explicit holdings and a monthly funding-to-plan reconciliation.
 const respond=(value,status=200)=>new Response(JSON.stringify(value),{
@@ -7,6 +8,7 @@ const codeOk=value=>typeof value==='string' && /^[A-Z0-9]{8}$/.test(value);
 const monthOk=value=>typeof value==='string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 const dayOk=value=>typeof value==='string' && /^\d{4}-(0[1-9]|[12]\d|3[01])$/.test(value) && !Number.isNaN(Date.parse(value+'T00:00:00Z')) && new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
 const accountOk=value=>value==='growth'||value==='tsumitate';
+const holdingAccountOk=value=>accountOk(value)||value==='combined';
 const yenOk=value=>Number.isSafeInteger(value) && value>=0;
 const nextMonth=month=>{
   const [y,m]=month.split('-').map(Number);
@@ -40,7 +42,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const rows=await db.batch([
         db.prepare('SELECT fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plans'),
         db.prepare('SELECT fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plan_history'),
-        db.prepare('SELECT fund_code,account_type,fund_name,units,acquisition_cost,updated_at FROM investment_holdings'),
+        db.prepare('SELECT fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at FROM investment_holdings'),
         db.prepare('SELECT fund_code,nav_per_10000,price_date,source,updated_at FROM fund_prices'),
         db.prepare('SELECT entry_id,purchase_month FROM sbi_transfer_links')
       ]);
@@ -56,7 +58,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
         AND p.effective_month=(SELECT MAX(h.effective_month) FROM investment_plan_history h
           WHERE h.fund_code=p.fund_code AND h.account_type=p.account_type AND h.effective_month<=?1)
         ORDER BY p.monthly_amount DESC,p.fund_code,p.account_type`).bind(month).all(),
-        db.prepare('SELECT h.fund_code,h.account_type,h.fund_name,h.units,h.acquisition_cost,h.updated_at,p.nav_per_10000,p.price_date,p.source FROM investment_holdings h LEFT JOIN fund_prices p ON p.fund_code=h.fund_code ORDER BY h.fund_code,h.account_type').all(),
+        db.prepare('SELECT h.fund_code,h.account_type,h.fund_name,h.units,h.acquisition_cost,h.reported_value,h.reported_at,h.updated_at,p.nav_per_10000,p.price_date,p.source FROM investment_holdings h LEFT JOIN fund_prices p ON p.fund_code=h.fund_code ORDER BY h.fund_code,h.account_type').all(),
         db.prepare("SELECT e.id,e.date,e.transfer_date,e.amount,e.transfer_applied,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.type='transfer' AND e.transfer_target='sbi' ORDER BY e.id DESC LIMIT 1000").all()
       ]);
       const active=plans.filter(p=>p.enabled===1);
@@ -72,8 +74,15 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const positions=holdings.map(h=>{
         const nav=h.nav_per_10000==null?null:Number(h.nav_per_10000);
         const calculated=nav==null?null:(BigInt(h.units)*BigInt(nav)+5000n)/10000n;
-        const marketValue=calculated==null||calculated>BigInt(Number.MAX_SAFE_INTEGER)?null:Number(calculated);
-        return {...h,market_value:marketValue,pnl:marketValue==null?null:marketValue-Number(h.acquisition_cost)};
+        const computedMarket=calculated==null||calculated>BigInt(Number.MAX_SAFE_INTEGER)?null:Number(calculated);
+        // First setup retains SBI's exact displayed valuations. Reported whole
+        // units and rounded screen NAV can differ by ¥1 from SBI's own valuation.
+        // As soon as the position or NAV is edited, computed values take over.
+        const useScreenshot=h.reported_value!=null && (h.source==='sbi_screenshot' || nav===null);
+        const marketValue=useScreenshot ? Number(h.reported_value) : computedMarket;
+        return {...h,market_value:marketValue,
+          valuation_source:useScreenshot?'sbi_screenshot':(marketValue==null?'unavailable':'calculated'),
+          pnl:marketValue==null?null:marketValue-Number(h.acquisition_cost)};
       });
       const valued=positions.filter(p=>p.market_value!=null);
       return respond({
@@ -87,17 +96,31 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       });
     }
     if(sub==='initialize'&&method==='POST'){
+      // Explicit user-selected one-time bootstrap. Never modify existing
+      // holdings or reinitialize investment history after user edits.
       const existing=await db.prepare('SELECT COUNT(*) AS n FROM investment_plan_history').first();
-      if(existing?.n)return respond({ok:true,created:false});
       const now=new Date().toISOString();
       const month=new Date(Date.now()+9*3600000).toISOString().slice(0,7);
-      await db.batch(initialPlans.flatMap(([code,account,name,amount,day])=>[
-        db.prepare('INSERT OR IGNORE INTO investment_plans(fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,1,?6)')
-          .bind(code,account,name,amount,day,now),
-        db.prepare('INSERT OR IGNORE INTO investment_plan_history(fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,?6,1,?7)')
-          .bind(code,account,month,name,amount,day,now)
-      ]));
-      return respond({ok:true,created:true});
+      const stmts=[];
+      if(!Number(existing?.n)){
+        for(const [code,account,name,amount,day] of initialPlans){
+          stmts.push(db.prepare('INSERT OR IGNORE INTO investment_plans(fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,1,?6)').bind(code,account,name,amount,day,now));
+          stmts.push(db.prepare('INSERT OR IGNORE INTO investment_plan_history(fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,?6,1,?7)').bind(code,account,month,name,amount,day,now));
+        }
+      }
+      for(const h of sbiInitialHoldings){
+        stmts.push(db.prepare(`INSERT INTO investment_holdings
+          (fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at)
+          SELECT ?1,?2,?3,?4,?5,?6,?7,?8 WHERE NOT EXISTS
+            (SELECT 1 FROM investment_holdings WHERE fund_code=?1)`)
+          .bind(h.fundCode,h.accountType,h.fundName,h.units,h.acquisitionCost,h.reportedValue,SBI_SNAPSHOT_OBSERVED_AT,now));
+        stmts.push(db.prepare(`INSERT OR IGNORE INTO fund_prices
+          (fund_code,nav_per_10000,price_date,source,updated_at)
+          VALUES(?1,?2,?3,'sbi_screenshot',?4)`)
+          .bind(h.fundCode,h.screenshotNav,SBI_SNAPSHOT_DAY,now));
+      }
+      const results=await db.batch(stmts);
+      return respond({ok:true,created:results.some(row=>Number(row.meta?.changes||0)>0)});
     }
     if(sub==='plan'&&method==='PUT'){
       const x=await request.json();
@@ -124,16 +147,24 @@ export async function handlePortfolio({db,request,method,sub,url}) {
     }
     if(sub==='holding'&&method==='PUT'){
       const x=await request.json();
-      if(!codeOk(x.fundCode)||!accountOk(x.accountType)||typeof x.fundName!=='string'||
+      if(!codeOk(x.fundCode)||!holdingAccountOk(x.accountType)||typeof x.fundName!=='string'||
         !x.fundName.trim()||x.fundName.length>120||!yenOk(x.units)||!yenOk(x.acquisitionCost)||
         x.units>1000000000000||x.acquisitionCost>1000000000000)
         return respond({error:'保有口数と取得金額を確認してください'},400);
+      // Do not double count an SBI aggregate together with separate account
+      // positions for the same fund. Explicit split is possible later, but
+      // requires verified per-account quantities before replacing the aggregate.
+      const {results:existing} = await db.prepare('SELECT account_type FROM investment_holdings WHERE fund_code=?1').bind(x.fundCode).all();
+      if(existing.some(h=>h.account_type!==x.accountType &&
+          (h.account_type==='combined'||x.accountType==='combined')))
+        return respond({error:'合算保有と口座別保有を重複登録できません。先にSBIの内訳を確認してください'},409);
       await db.prepare(`INSERT INTO investment_holdings
-        (fund_code,account_type,fund_name,units,acquisition_cost,updated_at)
-        VALUES(?1,?2,?3,?4,?5,?6)
+        (fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at)
+        VALUES(?1,?2,?3,?4,?5,NULL,NULL,?6)
         ON CONFLICT(fund_code,account_type) DO UPDATE SET
           fund_name=excluded.fund_name,units=excluded.units,
-          acquisition_cost=excluded.acquisition_cost,updated_at=excluded.updated_at`)
+          acquisition_cost=excluded.acquisition_cost,reported_value=NULL,
+          reported_at=NULL,updated_at=excluded.updated_at`)
         .bind(x.fundCode,x.accountType,x.fundName.trim(),x.units,x.acquisitionCost,new Date().toISOString()).run();
       return respond({ok:true});
     }

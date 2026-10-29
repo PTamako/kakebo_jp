@@ -1126,7 +1126,7 @@ const pigState = ratio => ratio === null ? 'empty' : ratio >= 1 ? 'broken' : rat
 // Statistical illustrations are bundled local assets; do not rely on image CDNs.
 const puppyExpression = ratio => ratio >= 1 ? puppyCrying : puppyWorried
 function puppyFallback(event) { event.target.onerror = null; event.target.src = puppyWorried }
-const pigLabel = ratio => ratio === null ? '収入の記録がありません' : ratio >= 1 ? '支出が収入以上です' : ratio >= .8 ? '支出割合が高めです' : '良好な収支バランス'
+const pigLabel = ratio => ratio === null ? 'お財布、収入の登場を待機中…🪙' : ratio >= 1 ? 'お財布が大泣き！収入より使ってるよ💸' : ratio >= .8 ? 'ちょっと使いすぎ？お財布に汗が…💦' : 'お財布、ごきげん♪ この調子！'
 const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.round(ratio * 100) + '%'
 </script>
 
@@ -1331,7 +1331,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="hero-footer"><span class="hero-dot"></span>{{ stats?.count || 0 }}件の支出記録</div>
       </div>
       <div class="piggy-card" :class="'piggy-' + pigState(monthlyRatio)">
-        <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="収支バランスの表情"><img v-if="monthlyRatio !== null && monthlyRatio >= .8" :key="pigState(monthlyRatio)" class="puppy-expression" :src="puppyExpression(monthlyRatio)" :alt="monthlyRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-white" :src="puppyWorried" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" :src="puppyCrying" alt="ちび毛としろちゃんのスタンプ" loading="lazy" /></template></div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="収支バランスの表情"><img v-if="monthlyRatio !== null && monthlyRatio >= .8" :key="pigState(monthlyRatio)" class="puppy-expression" :src="puppyExpression(monthlyRatio)" :alt="monthlyRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-default-gif" src="/IMG_0986.gif" alt="収支バランスのアニメーション" loading="lazy" /></template></div>
         <div class="piggy-content"><div class="piggy-title">今月の収支バランス</div><div class="piggy-status">{{ pigLabel(monthlyRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (monthlyRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(monthlyRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip"><div><small>今月の収入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>今月の支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>差引残高</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
@@ -1377,7 +1377,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件の支出記録</div>
       </div>
       <div class="piggy-card" :class="'piggy-' + pigState(annualRatio)">
-        <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="収支バランスの表情"><img v-if="annualRatio !== null && annualRatio >= .8" :key="pigState(annualRatio)" class="puppy-expression" :src="puppyExpression(annualRatio)" :alt="annualRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-white" :src="puppyWorried" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" :src="puppyCrying" alt="ちび毛としろちゃんのスタンプ" loading="lazy" /></template></div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="収支バランスの表情"><img v-if="annualRatio !== null && annualRatio >= .8" :key="pigState(annualRatio)" class="puppy-expression" :src="puppyExpression(annualRatio)" :alt="annualRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-default-gif" src="/IMG_0986.gif" alt="収支バランスのアニメーション" loading="lazy" /></template></div>
         <div class="piggy-content"><div class="piggy-title">年間の収支バランス</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip annual-income-strip"><div><small>年間収入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>年間支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>年間収支</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
@@ -1833,4 +1833,10 @@ main.theme-green .brand-mark{
 .draft-discard-inline svg{width:15px;height:15px;flex:none}
 .draft-discard-inline:disabled{opacity:.45;cursor:not-allowed}
 .draft-discard-inline:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+/* Default balance illustration: local GIF, only for the under-80% / unrecorded state.
+   The existing 80% and 100% character images remain unchanged. */
+main .puppy-pair.puppy-happy,
+main .puppy-pair.puppy-empty{padding:0;background:transparent}
+main .puppy-pair img.puppy-default-gif{display:block;width:100%;height:100%;object-fit:contain;flex:none;border:0;border-radius:0;filter:none}
 </style>

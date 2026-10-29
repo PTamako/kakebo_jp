@@ -1002,7 +1002,7 @@ const calendarDays = computed(() => {
     amounts.set(key, (amounts.get(key) || 0) + Number(entry.amount || 0))
   }
   const maxExpense=Math.max(0,...expenses.values()),maxIncome=Math.max(0,...incomes.values())
-  const today=new Date().toLocaleDateString('sv-SE')
+  const today=liveNow.value.toLocaleDateString('sv-SE')
   const days = Array.from({ length: firstDayOffset }, (_, i) => ({ key: `blank-${i}`, blank: true }))
   for (let day = 1; day <= daysInMonth; day++) {
     const date = `${year}-${String(monthNumber).padStart(2, '0')}-${String(day).padStart(2, '0')}`
@@ -1015,7 +1015,7 @@ const calendarDays = computed(() => {
 })
 const visibleCalendarDays = computed(() => {
   if (calendarExpanded.value) return calendarDays.value
-  const today = new Date().toLocaleDateString('sv-SE')
+  const today = liveNow.value.toLocaleDateString('sv-SE')
   const target = today.startsWith(month.value) ? today : (selectedDay.value.startsWith(month.value) ? selectedDay.value : calendarDays.value.find(day => !day.blank)?.date)
   const index = calendarDays.value.findIndex(day => day.date === target)
   const start = Math.max(0, Math.floor(Math.max(0, index) / 7) * 7)

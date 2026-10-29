@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
+const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/pages/StatisticsPage.vue',import.meta.url),'utf8')
 const image=readFileSync(new URL('../public/IMG_0986.gif',import.meta.url))
 
 test('the default balance image is the user-provided bundled GIF, not an external URL',()=>{

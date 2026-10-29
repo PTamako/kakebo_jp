@@ -665,7 +665,7 @@ export async function onRequest({ request, env, params }) {
       if (!(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(name).first())) return json({ error: '登録済みの支払方法を選択してください' }, 400)
       // PUT is reserved for insert-if-missing during restore. Normal POST keeps edit behavior.
       const statement = m === 'PUT'
-        ? 'INSERT OR IGNORE INTO merchant_rules(keyword,payment_source) VALUES(?1,?2)'
+        ? 'INSERT INTO merchant_rules(keyword,payment_source) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=COALESCE(merchant_rules.payment_source,excluded.payment_source)'
         : 'INSERT INTO merchant_rules(keyword,payment_source) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=excluded.payment_source'
       await db.prepare(statement).bind(keyword,name).run()
       return json({ ok: true })
@@ -900,7 +900,7 @@ export async function onRequest({ request, env, params }) {
         if (keyword.length < 2 || keyword.length > 120 || !category || category.length > 120)
           return json({error:'カテゴリー規則を確認してください'},400)
         // Only add missing keys when restoring. User-edited mappings are never overwritten.
-        await db.prepare('INSERT OR IGNORE INTO merchant_rules(keyword,category) VALUES(?1,?2)').bind(keyword,category).run()
+        await db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)').bind(keyword,category).run()
         return json({ok:true})
       }
       if (m === 'GET') {
@@ -930,7 +930,7 @@ export async function onRequest({ request, env, params }) {
           for (const rule of (legacy.results || []).filter(rule =>
             !defaultCategories.has(rule.keyword) || defaultCategories.get(rule.keyword) !== rule.category
           )) {
-            await db.prepare('INSERT OR IGNORE INTO merchant_rules (keyword, category) VALUES (?1, ?2)').bind(rule.keyword, rule.category).run()
+            await db.prepare('INSERT INTO merchant_rules (keyword, category) VALUES (?1, ?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)').bind(rule.keyword, rule.category).run()
           }
           // Never delete or overwrite legacy rules during a software upgrade.
           // Add only missing defaults and a completion marker. Existing user data

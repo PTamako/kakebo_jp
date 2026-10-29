@@ -116,7 +116,7 @@ class LedgerDb {
         if (sql.startsWith('INSERT INTO entries') && sql.includes('WHERE NOT EXISTS')) {
           const [date,amount,category,merchant,requestId,paymentSource]=this.args
           const existing=db.entries.some(e=>e.date===date && e.amount===amount && e.merchant===merchant &&
-            (e.payment_source||'')===paymentSource && e.type==='expense' && !String(e.client_request_id||'').startsWith('recurring_'))
+            (e.payment_source||'')===paymentSource && e.type==='expense')
           if(existing||db.entries.some(e=>e.client_request_id===requestId))return {meta:{changes:0}}
           db.entries.push({id:db.nextId++,date,amount,category,merchant,type:'expense',payment_source:paymentSource,client_request_id:requestId})
           return {meta:{changes:1}}

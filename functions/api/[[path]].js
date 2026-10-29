@@ -2,6 +2,7 @@ import { isAppliedSbiTransfer } from './investment-transfer.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
+import { restoreAtomic } from './restore-atomic.js'
 // Cloudflare Pages Functions：/api/*
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 const json = (d, s = 200) =>
@@ -407,6 +408,19 @@ export async function onRequest({ request, env, params }) {
         }
       }
       return json({error:'未対応の操作です'},405)
+    }
+    if (a === 'restore-atomic' && m === 'POST') {
+      const size=Number(request.headers.get('content-length')||0)
+      if(size>2*1024*1024)return json({error:'一括復元のサイズ上限を超えました'},413)
+      const payload=await request.json()
+      try {
+        const result=await restoreAtomic(db,payload)
+        return json(result)
+      }catch(e){
+        if(/atomic_restore_too_large/.test(String(e)))return json({error:'一括復元の安全上限を超えました。小分け復元を使用してください'},413)
+        if(/atomic_restore_invalid|バックアップ|不正|形式|取引/.test(String(e)))return json({error:'復元データを確認してください'},400)
+        throw e
+      }
     }
     if (a === 'finance-settings') {
       await db.prepare('CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)').run()

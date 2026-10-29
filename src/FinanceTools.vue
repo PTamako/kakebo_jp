@@ -430,6 +430,15 @@ async function restore(){
       await props.api('categories',{method:'POST',body:JSON.stringify({name,icon:backup.categoryIcons?.[name]||'other'})})
       settingsCount++
     }
+    // A category may already exist while its restored icon is still missing.
+    // Restore missing icons independently; never overwrite the current choice.
+    const existingIcons=await props.api('category-icons')
+    const knownCategories=await props.api('categories')
+    for(const [category,icon] of Object.entries(backup.categoryIcons||{})){
+      if(!knownCategories.includes(category) || existingIcons[category])continue
+      const result=await props.api('category-icons/restore-missing',{method:'POST',body:JSON.stringify({category,icon})})
+      if(result.created)settingsCount++
+    }
     const existingCategoryRules=await props.api('custom-rules')
     for(const rule of restoreMissingByKey(existingCategoryRules,backup.customRules||[],x=>x.keyword)){
       if(!rule?.keyword || !rule?.category)continue

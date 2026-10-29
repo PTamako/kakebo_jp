@@ -346,44 +346,11 @@ export async function onRequest({ request, env, params }) {
       await ensureUnifiedMerchantRules(db)
     if (['categories','category-icons','category-source','backup-snapshot','restore-atomic'].includes(a))
       await ensureCategorySource(db)
-    // Settings are independent of historical ledger rows and safe to create on existing D1.
-    // Personal finance configuration is kept on D1, not in browser storage.
+    // Normalized recurring plans and bills are the sole persistent stores.
+    // Obsolete finance_settings is intentionally neither created nor queried.
     if (a === 'recurring-plans' || a === 'card-bills') {
-      await db.prepare('CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)').run()
       await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
       await db.prepare('CREATE TABLE IF NOT EXISTS card_bills (payment_source TEXT NOT NULL, bill_month TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL, total_amount INTEGER NOT NULL CHECK(total_amount >= 0), transaction_count INTEGER NOT NULL CHECK(transaction_count >= 0), PRIMARY KEY(payment_source,bill_month))').run()
-      const marker = 'normalized-' + (a === 'recurring-plans' ? 'plans' : 'bills') + '-v1'
-      const saved = await db.prepare('SELECT value FROM finance_settings WHERE name=?1').bind(marker).first()
-      if (!saved) {
-        const legacyName = a === 'recurring-plans' ? 'plans' : 'bills'
-        const legacy = await db.prepare('SELECT value FROM finance_settings WHERE name=?1').bind(legacyName).first()
-        let items = []
-        if (legacy) {
-          try { items = JSON.parse(legacy.value) } catch { return json({error:'旧設定の読み込みに失敗しました'},500) }
-          if (!Array.isArray(items)) return json({error:'旧設定の形式が不正です'},500)
-        }
-        const statements = []
-        for (const item of items) {
-          if (a === 'recurring-plans') {
-            if (typeof item?.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name ||
-                !Number.isSafeInteger(Number(item.amount)) || Number(item.amount) <= 0 ||
-                !Number.isInteger(Number(item.day)) || Number(item.day) < 1 || Number(item.day) > 31 ||
-                !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || ''))
-              return json({error:'旧固定支出データを確認してください'},500)
-            statements.push(db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(item.id,item.name,Number(item.amount),Number(item.day),item.category || 'その他',item.paymentSource || '',item.startMonth,item.enabled ? 1 : 0))
-          } else {
-            if (typeof item?.name !== 'string' || !item.name || !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month || '') ||
-                !validDate(item.start) || !validDate(item.end) || item.start > item.end ||
-                !Number.isSafeInteger(Number(item.total)) || Number(item.total) < 0 ||
-                !Number.isSafeInteger(Number(item.count)) || Number(item.count) < 0)
-              return json({error:'旧カード請求データを確認してください'},500)
-            statements.push(db.prepare('INSERT OR IGNORE INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6)').bind(item.name,item.month,item.start,item.end,Number(item.total),Number(item.count)))
-          }
-        }
-        // Batch the imports and the marker atomically so a partial import is never marked complete.
-        statements.push(db.prepare('INSERT OR IGNORE INTO finance_settings(name,value) VALUES(?1,?2)').bind(marker,'true'))
-        await db.batch(statements)
-      }
       if (m === 'GET' && !b) {
         if (a === 'recurring-plans') {
           const {results} = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY name,id').all()
@@ -511,34 +478,8 @@ export async function onRequest({ request, env, params }) {
         throw e
       }
     }
-    if (a === 'finance-settings') {
-      await db.prepare('CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)').run()
-      const allowed = new Set(['plans', 'bills', 'closing-days', 'theme'])
-      if (!allowed.has(b)) return json({ error: '設定名が不正です' }, 400)
-      if (m === 'GET') {
-        const row = await db.prepare('SELECT value FROM finance_settings WHERE name=?1').bind(b).first()
-        return json({ exists: !!row, value: row ? JSON.parse(row.value) : (b === 'closing-days' ? {} : b === 'theme' ? 'pink' : []) })
-      }
-      if (m === 'POST' || m === 'PUT') {
-        const body = await request.json()
-        const value = body?.value
-        const valid = b === 'theme'
-          ? ['pink','blue','yellow','green'].includes(value)
-          : b === 'closing-days'
-          ? value && typeof value === 'object' && !Array.isArray(value) &&
-            Object.entries(value).every(([name,day]) => name.length <= 80 && (day === '' || day === '末日' || (Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31)))
-          : Array.isArray(value) && value.length <= 500 && value.every(item => item && typeof item === 'object' && !Array.isArray(item))
-        if (!valid || JSON.stringify(value).length > 150000) return json({ error: '設定データが不正です' }, 400)
-        const encoded = JSON.stringify(value)
-        if (m === 'POST') {
-          // Import legacy browser data only once, never overwrite D1 records.
-          await db.prepare('INSERT OR IGNORE INTO finance_settings(name,value) VALUES(?1,?2)').bind(b,encoded).run()
-        } else {
-          await db.prepare('INSERT INTO finance_settings(name,value) VALUES(?1,?2) ON CONFLICT(name) DO UPDATE SET value=excluded.value').bind(b,encoded).run()
-        }
-        return json({ ok: true })
-      }
-    }
+    if (a === 'finance-settings')
+      return json({error:'この旧設定APIは廃止されました。現在の管理画面をご利用ください',code:'deprecated_finance_settings'},410)
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
       await db.prepare("CREATE TABLE IF NOT EXISTS payment_sources (name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)), closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31))").run()
       // Unified merchant_rules is created/migrated by ensureUnifiedMerchantRules.
@@ -556,29 +497,8 @@ export async function onRequest({ request, env, params }) {
       }
     }
     if (a === 'payment-sources' && !b && m === 'GET') {
-      // One-time additive migration from finance_settings. Old JSON remains as backup.
-      await db.prepare("CREATE TABLE IF NOT EXISTS finance_settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)").run()
-      const marker = await db.prepare("SELECT value FROM finance_settings WHERE name='closing-days-migrated-v1'").first()
-      if (!marker) {
-        const legacy = await db.prepare("SELECT value FROM finance_settings WHERE name='closing-days'").first()
-        if (legacy) {
-          let closingDays
-          try { closingDays = JSON.parse(legacy.value) } catch { return json({error:'締め日設定の移行元が不正です'},500) }
-          if (!closingDays || typeof closingDays !== 'object' || Array.isArray(closingDays)) return json({error:'締め日設定の形式が不正です'},500)
-          const updates = []
-          for (const [name, value] of Object.entries(closingDays)) {
-            const day = value === '末日' ? 0 : Number(value)
-            if (!name || !Number.isInteger(day) || day < 0 || day > 31 || (value !== '末日' && String(value) !== String(day)))
-              return json({error:'締め日設定を確認してください'},500)
-            updates.push(db.prepare('UPDATE payment_sources SET closing_day=?1 WHERE name=?2 AND closing_day IS NULL').bind(day,name))
-          }
-          if (updates.length) await db.batch(updates)
-        }
-        // A brand-new database may not have cards yet; retry after card initialization.
-        const cardCount = await db.prepare('SELECT COUNT(*) AS n FROM payment_sources').first()
-        if (cardCount?.n > 0)
-          await db.prepare("INSERT OR IGNORE INTO finance_settings(name,value) VALUES('closing-days-migrated-v1','true')").run()
-      }
+      // Closing days are authoritative on payment_sources.closing_day.
+      // Never recreate the deprecated finance_settings table.
       // Enforce the persisted sentinel on existing databases, without touching
       // transaction/payment references or any user-created payment method.
       await db.prepare("UPDATE payment_sources SET sort_order=99999 WHERE name IN ('その他','其他') AND sort_order<>99999").run()

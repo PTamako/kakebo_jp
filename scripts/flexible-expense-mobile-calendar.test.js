@@ -81,7 +81,7 @@ test('image upload recognizes in append mode then stays in 画像から読み取
 
 test('calendar is compact but retains today, selected, income and expense badges',()=>{
   const css=src('src/mobile-ui.css')
-  const app=src('src/App.vue')
+  const app=src('src/App.vue')+'\n'+src('src/pages/LedgerPage.vue')
   assert.match(css,/main \.month-calendar \.calendar-day\{\s*height:46px;min-height:46px/)
   assert.match(css,/main \.month-calendar \.calendar-legend\{margin:-2px 2px 5px/)
   assert.match(css,/main \.month-calendar \.calendar-day-badges\{min-height:10px/)

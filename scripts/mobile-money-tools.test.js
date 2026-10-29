@@ -59,7 +59,7 @@ test('Japan consumption tax opt-in defaults off and supports 10%/8% with selecta
 
 test('all transaction forms including edit mode use the shared currency field', () => {
   const transaction = source('src/TransactionForm.vue')
-  const app = source('src/App.vue')
+  const app = source('src/App.vue')+'\n'+source('src/pages/LedgerPage.vue')
   const finance = source('src/FinanceTools.vue')
   const field = source('src/AmountInput.vue')
   assert.match(transaction, /<AmountInput v-model="record.amount"/)

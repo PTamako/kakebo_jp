@@ -25,7 +25,7 @@ test('new merchant defaults include major shopping brands without legacy rules',
 })
 
 test('today and highest expense/income marks survive month and week calendar views',()=>{
-  const app=source('src/App.vue')
+  const app=source('src/App.vue')+'\n'+source('src/pages/LedgerPage.vue')
   assert.match(app,/calendar-today/)
   assert.match(app,/calendar-top-expense/)
   assert.match(app,/calendar-top-income/)

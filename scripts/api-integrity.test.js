@@ -349,76 +349,38 @@ test('renaming a card rebinds historical payments without altering amounts or in
   assert.equal(db.snapshot,120000)
 })
 
-test('D1 finance settings migrate once and protect pre-existing plans', async () => {
-  const db = new LedgerDb()
-  const plan = { id:'fixed-rent',name:'家賃',amount:102000,day:25,category:'居住',paymentSource:'口座振替',startMonth:'2026-06',enabled:true }
-  let x = await call(db,'finance-settings/plans')
-  assert.equal(x.status,200)
-  assert.equal(x.body.exists,false)
-  assert.equal((await call(db,'finance-settings/plans','POST',{value:[plan]})).status,200)
-  assert.equal((await call(db,'finance-settings/plans','POST',{value:[]})).status,200)
-  x = await call(db,'finance-settings/plans')
-  assert.equal(x.body.exists,true)
-  assert.deepEqual(x.body.value,[plan])
-  assert.equal(db.entries.length,0)
+test('retired finance-settings APIs never recreate deprecated D1 tables',async()=>{
+  const db=new LedgerDb()
+  for(const key of ['plans','bills','closing-days','theme']) {
+    const response=await call(db,'finance-settings/'+key)
+    assert.equal(response.status,410)
+    assert.equal(response.body.code,'deprecated_finance_settings')
+  }
+  assert.equal((await call(db,'finance-settings/theme','PUT',{value:'green'})).status,410)
+  assert.equal(db.sql.some(sql=>/CREATE TABLE IF NOT EXISTS finance_settings|INSERT INTO finance_settings|SELECT value FROM finance_settings/.test(sql)),false)
 })
 
-test('D1 closing days and card bills survive retrieval and reject wrong data', async () => {
-  const db = new LedgerDb()
-  const closing = {'セゾンカード':'10','セブンカード・プラス':'15'}
-  assert.equal((await call(db,'finance-settings/closing-days','PUT',{value:closing})).status,200)
-  assert.deepEqual((await call(db,'finance-settings/closing-days')).body.value,closing)
-  const bills = [{ name:'セゾンカード',month:'2026-10',total:31000,start:'2026-09-11',end:'2026-10-10',count:12 }]
-  assert.equal((await call(db,'finance-settings/bills','PUT',{value:bills})).status,200)
-  assert.deepEqual((await call(db,'finance-settings/bills')).body.value,bills)
-  assert.equal((await call(db,'finance-settings/closing-days','PUT',{value:{card:500}})).status,400)
-  assert.deepEqual((await call(db,'finance-settings/closing-days')).body.value,closing)
-  assert.equal((await call(db,'finance-settings/unknown','GET')).status,400)
-  assert.equal(db.entries.length,0)
-})
-
-test('PWA theme persists in D1 while rejecting unknown theme values', async () => {
-  const db = new LedgerDb()
-  assert.equal((await call(db,'finance-settings/theme')).body.exists,false)
-  assert.equal((await call(db,'finance-settings/theme','PUT',{value:'green'})).status,200)
-  assert.deepEqual((await call(db,'finance-settings/theme')).body,{exists:true,value:'green'})
-  assert.equal((await call(db,'finance-settings/theme','PUT',{value:'unknown'})).status,400)
-  assert.equal((await call(db,'finance-settings/theme')).body.value,'green')
-})
-
-test('legacy closing dates migrate to payment_sources and preserve independent settings', async () => {
-  const db = new LedgerDb()
-  for (const name of ['PayPay','楽天カード','三井住友カード','セブンカード・プラス','セゾンカード']) db.paymentSources.add(name)
-  const old={'PayPay':'末日','楽天カード':'末日','三井住友カード':'末日','セブンカード・プラス':'15','セゾンカード':'10'}
-  db.financeSettings.set('closing-days',JSON.stringify(old))
-  db.financeSettings.set('theme',JSON.stringify('green'))
-  db.financeSettings.set('plans',JSON.stringify([{name:'家賃',amount:101500}]))
-  const response = await call(db,'payment-sources')
+test('card closing days are persisted directly in payment_sources only',async()=>{
+  const db=new LedgerDb()
+  for(const name of ['PayPay','楽天カード','三井住友カード','セブンカード・プラス','セゾンカード'])
+    db.paymentSources.add(name)
+  for(const name of ['PayPay','楽天カード','三井住友カード']) db.paymentClosingDays.set(name,0)
+  db.paymentClosingDays.set('セブンカード・プラス',15)
+  db.paymentClosingDays.set('セゾンカード',10)
+  const response=await call(db,'payment-sources')
   assert.equal(response.status,200)
   assert.deepEqual(Object.fromEntries(response.body.map(x=>[x.name,x.closing_day])),{'PayPay':0,'楽天カード':0,'三井住友カード':0,'セブンカード・プラス':15,'セゾンカード':10})
-  assert.equal(db.financeSettings.get('closing-days'),JSON.stringify(old))
-  assert.equal(db.financeSettings.get('theme'),JSON.stringify('green'))
-  assert.deepEqual(JSON.parse(db.financeSettings.get('plans')),[{name:'家賃',amount:101500}])
   assert.equal((await call(db,'payment-sources/closing-day','POST',{name:'楽天カード',closingDay:25})).status,200)
   assert.equal((await call(db,'payment-sources')).body.find(x=>x.name==='楽天カード').closing_day,25)
   assert.equal((await call(db,'payment-sources/closing-day','POST',{name:'楽天カード',closingDay:40})).status,400)
   assert.equal((await call(db,'payment-sources/closing-day','POST',{name:'存在しないカード',closingDay:10})).status,404)
-})
-
-test('closing day migration is deferred when there are no card records', async () => {
-  const db = new LedgerDb()
-  db.financeSettings.set('closing-days',JSON.stringify({'セゾンカード':'10'}))
-  assert.equal((await call(db,'payment-sources')).status,200)
-  assert.equal(db.financeSettings.has('closing-days-migrated-v1'),false)
-  db.paymentSources.add('セゾンカード')
-  const response=await call(db,'payment-sources')
-  assert.equal(response.body[0].closing_day,10)
+  assert.equal(db.sql.some(sql=>sql.includes('finance_settings')),false)
 })
 
 test('normalized D1 plans preserve IDs and allow deleting only a schedule', async () => {
   const db=new LedgerDb()
   const p={name:'家賃',amount:101500,day:27,category:'居住',paymentSource:'現金',id:'2a23e8e5-d621-4e2b-b858-460b52407ca2',startMonth:'2026-10',enabled:true}
-  db.financeSettings.set('plans',JSON.stringify([p]))
+  db.recurringPlans.set(p.id,p)
   db.entries.push({id:1,amount:101500,client_request_id:'recurring_2a23e8e5d6214e2bb858460b52407ca2_202610'})
   const first=await call(db,'recurring-plans')
   assert.equal(first.status,200)
@@ -428,13 +390,13 @@ test('normalized D1 plans preserve IDs and allow deleting only a schedule', asyn
   assert.equal((await call(db,'recurring-plans/'+p.id,'DELETE')).status,200)
   assert.deepEqual((await call(db,'recurring-plans')).body,[])
   assert.equal(db.entries.length,1)
-  assert.equal(db.financeSettings.get('plans'),JSON.stringify([p]))
+  assert.equal(db.sql.some(sql=>sql.includes('finance_settings')),false)
 })
 
 test('normalized D1 bills support update and delete without editing ledger', async () => {
   const db=new LedgerDb()
   const bill={name:'セゾンカード',month:'2026-10',start:'2026-09-11',end:'2026-10-10',total:45000,count:18}
-  db.financeSettings.set('bills',JSON.stringify([bill]))
+  db.cardBills.set(bill.name+'|'+bill.month,bill)
   db.entries.push({id:1,amount:3000,payment_source:'セゾンカード'})
   assert.deepEqual((await call(db,'card-bills')).body,[bill])
   assert.equal((await call(db,'card-bills','PUT',{...bill,total:46000})).status,200)
@@ -442,7 +404,7 @@ test('normalized D1 bills support update and delete without editing ledger', asy
   assert.equal((await call(db,'card-bills?name=%E3%82%BB%E3%82%BE%E3%83%B3%E3%82%AB%E3%83%BC%E3%83%89&month=2026-10','DELETE')).status,200)
   assert.deepEqual((await call(db,'card-bills')).body,[])
   assert.equal(db.entries[0].amount,3000)
-  assert.equal(db.financeSettings.get('bills'),JSON.stringify([bill]))
+  assert.equal(db.sql.some(sql=>sql.includes('finance_settings')),false)
 })
 
 test('all real years are discoverable for complete ledger export',async()=>{

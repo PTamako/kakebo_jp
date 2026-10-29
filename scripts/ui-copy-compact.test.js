@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
-const app = source('src/App.vue')
+const app = source('src/App.vue')+'\n'+source('src/pages/LedgerPage.vue')+'\n'+source('src/pages/StatisticsPage.vue')+'\n'+source('src/pages/AssetsPage.vue')
 const finance = source('src/FinanceTools.vue')
 const form = source('src/TransactionForm.vue')
 

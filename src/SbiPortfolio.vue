@@ -76,6 +76,8 @@ async function load() {
   const targetMonth = month.value
   loading.value = true
   error.value = ''
+  // A different month must never briefly show a previous month's reconciliation.
+  if (data.value?.month !== targetMonth) data.value = null
   try {
     const response = await props.api('investment-portfolio?month=' + targetMonth)
     if (sequence !== loadSequence || targetMonth !== month.value) return
@@ -83,7 +85,8 @@ async function load() {
   } catch(e) {
     if (sequence !== loadSequence || targetMonth !== month.value) return
     error.value = e.message
-    data.value = null
+    // Keep the current month's successfully loaded values visible if a refresh fails.
+    if (data.value?.month !== targetMonth) data.value = null
   } finally {
     if (sequence === loadSequence) loading.value = false
   }

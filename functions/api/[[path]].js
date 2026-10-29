@@ -108,7 +108,8 @@ const PARSER_DEFAULT_RULE_ROWS = [["マクドナルド","餐饮"],["マック","
 // New defaults are authoritative. Legacy rules are migration reference only and
 // NEVER participate in classification; custom_rules remains user-owned.
 export const DEFAULT_RULE_ROWS = [...new Map([...PARSER_DEFAULT_RULE_ROWS,
-  ['セブン','饮食料品'], ['スーパー','饮食料品'], ['コジマ','购物']]
+  ['セブン','饮食料品'], ['スーパー','饮食料品'], ['コジマ','购物'],
+  ['Amazon','购物'],['AMAZON','购物'],['アマゾン','购物'],['楽天','购物'],['ユニクロ','购物'],['UNIQLO','购物']]
   .map(([keyword, category]) => [keyword, [keyword, category]])).values()]
 
 

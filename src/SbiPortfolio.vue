@@ -135,7 +135,7 @@ onMounted(load)
         <p v-if="data.reconciliation.difference!==0" class="sbi-hint">
           {{data.reconciliation.difference>0?'振替超過':'振替不足'}}：{{yen(Math.abs(data.reconciliation.difference))}}
         </p>
-        <p class="sbi-hint">到期反映は家計簿上の処理です。証券口座への着金・買付成立を意味しません。</p>
+        <p class="sbi-hint">期日反映は家計簿上の処理です。証券口座への着金・買付成立を意味しません。</p>
       </article>
 
       <article class="panel sbi-card">

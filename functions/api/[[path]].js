@@ -1,5 +1,6 @@
 import { isAppliedSbiTransfer } from './investment-transfer.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
+import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 // Cloudflare Pages Functions：/api/*
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 const json = (d, s = 200) =>
@@ -125,6 +126,12 @@ export async function onRequest({ request, env, params }) {
   const url = new URL(request.url)
   const m = request.method
   const [a, b] = params.path || []
+  // Cloudflare Pages preview deployments must never mutate the production ledger,
+  // even if a dashboard binding accidentally points to the production DB.
+  // Login/logout stay usable for read-only preview QA.
+  const isPagesPreview = /^[^.]+\.kakeibo-f17\.pages\.dev$/.test(url.hostname)
+  if (isPagesPreview && m !== 'GET' && a !== 'auth')
+    return json({error:'プレビュー画面では明細・設定を更新できません。本番サイトをご利用ください',code:'preview_read_only'},403)
   if (a === 'auth') {
     if (b === 'login' && m === 'POST') {
       let body
@@ -173,6 +180,10 @@ export async function onRequest({ request, env, params }) {
   try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
   catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
   if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
+  if (a === 'ai-ocr' && b === 'quota' && m === 'GET') {
+    try { return json(await aiQuotaState(db,env)) }
+    catch { return json({error:'AI利用枠を確認できません'},503) }
+  }
   if (a === 'ai-ocr' && m === 'POST') {
     if (!env.AI) return json({ error: 'AI接続が未設定です。Cloudflare PagesのAIバインディングを確認してください' }, 503)
     const size = Number(request.headers.get('content-length') || 0)
@@ -183,6 +194,11 @@ export async function onRequest({ request, env, params }) {
     const mode = body.get('mode') === 'receipt' ? 'receipt' : 'statement'
     if (!file || typeof file.arrayBuffer !== 'function' || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024)
       return json({ error: 'JPEG・PNG・WebP画像（4MB以下）を選択してください' }, 400)
+    // Reserve a daily attempt before invoking Cloudflare AI; if quota D1 fails, use local OCR.
+    try {
+      const quota=await reserveAiAttempt(db,env)
+      if(!quota.allowed)return json({error:'本日のAI画像認識の上限に達しました。端末内OCRをご利用ください',code:'daily_limit'},429)
+    }catch {return json({error:'AI使用枠を確認できないため、端末内OCRをご利用ください',code:'quota_unavailable'},503)}
     try {
       const text = await recognizeWithGemma(env.AI, await file.arrayBuffer(), file.type, mode)
       return json({ text, engine: 'gemma4' })
@@ -265,7 +281,7 @@ export async function onRequest({ request, env, params }) {
       await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
         .bind(tokyoToday()).run()
     }
-    await applyDueTransfers()
+    // Transfer state is applied only by the explicit POST transfers/process-due endpoint.
 
     // D1 unique index makes OCR retries idempotent even when a response is lost.
     try { await db.prepare('SELECT client_request_id FROM entries LIMIT 1').first() }
@@ -339,6 +355,21 @@ export async function onRequest({ request, env, params }) {
             return json({error:'固定支出の入力を確認してください'},400)
           const result = await db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(item.id,item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled ? 1 : 0).run()
           return json({ok:true,created:!!result.meta?.changes})
+        }
+        if (m === 'PUT' && b && /^[a-zA-Z0-9-]{8,80}$/.test(b)) {
+          const item = await request.json()
+          if (typeof item?.name !== 'string' || !item.name.trim() || item.name.length > 120 ||
+              !Number.isSafeInteger(item.amount) || item.amount <= 0 ||
+              !Number.isInteger(item.day) || item.day < 1 || item.day > 31 ||
+              typeof item.category !== 'string' || !item.category.trim() ||
+              typeof item.paymentSource !== 'string' ||
+              !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
+              typeof item.enabled !== 'boolean') return json({error:'固定支出の入力を確認してください'},400)
+          const updated = await db.prepare('UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7 WHERE id=?8')
+            .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,b).run()
+          if(!updated.meta?.changes)return json({error:'固定支出が見つかりません'},404)
+          // Stable plan IDs preserve the monthly idempotency key. Existing ledger entries are untouched.
+          return json({ok:true})
         }
         if (m === 'DELETE' && b && /^[a-zA-Z0-9-]{8,80}$/.test(b)) {
           await db.prepare('DELETE FROM recurring_plans WHERE id=?1').bind(b).run()
@@ -551,7 +582,7 @@ export async function onRequest({ request, env, params }) {
       const result = await db.prepare(`INSERT INTO entries
         (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
         SELECT ?1,'',?2,?3,?4,'毎月の固定支出（自動記録）','','expense',NULL,0,NULL,?5,?6
-        WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND type='expense' AND merchant=?4 AND amount=?2 AND COALESCE(payment_source,'')=?6 AND (client_request_id IS NULL OR client_request_id NOT LIKE 'recurring_%'))
+        WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND type='expense' AND merchant=?4 AND amount=?2 AND COALESCE(payment_source,'')=?6  )
         ON CONFLICT(client_request_id) DO NOTHING`)
         .bind(date,plan.amount,plan.category,plan.name,clientRequestId,plan.payment_source || '').run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
@@ -567,6 +598,14 @@ export async function onRequest({ request, env, params }) {
             (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) ||
             (!entriesYear && !month)) return json({ error: '対象期間が正しくありません' }, 400)
         const datePrefix = entriesYear || month
+        // Stable ID-cursor pagination for full exports. Keep OFFSET for older clients.
+        const cursorRaw = url.searchParams.get('cursor')
+        if (cursorRaw !== null) {
+          const cursor = Number(cursorRaw)
+          if (!Number.isSafeInteger(cursor) || cursor < 0) return json({error:'読み込み位置が正しくありません'},400)
+          const {results} = await db.prepare('SELECT * FROM entries WHERE date LIKE ?1 AND id > ?2 ORDER BY id ASC LIMIT 500').bind(datePrefix+'%',cursor).all()
+          return json(results)
+        }
         const offsetRaw = url.searchParams.get('offset')
         const offset = offsetRaw === null ? 0 : Number(offsetRaw)
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) return json({ error: '読み込み位置が正しくありません' }, 400)
@@ -742,6 +781,27 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
+    if (a === 'dismissed-transfer-reminders') {
+      await db.prepare('CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run()
+      if(m==='GET') {
+        const {results}=await db.prepare('SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id').all()
+        return json(results.map(x=>x.entry_id))
+      }
+      if(m==='POST') {
+        const body=await request.json()
+        const id=Number(body?.entryId)
+        if(!Number.isSafeInteger(id)||id<=0)return json({error:'振替記録を確認してください'},400)
+        const entry=await db.prepare("SELECT id FROM entries WHERE id=?1 AND type='transfer' AND transfer_target='sbi'").bind(id).first()
+        if(!entry)return json({error:'振替の記録が見つかりません'},404)
+        await db.prepare('INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) VALUES(?1)').bind(id).run()
+        return json({ok:true})
+      }
+    }
+    if (a === 'transfers' && b === 'process-due' && m === 'POST') {
+      // Explicit mutation: ordinary GET requests no longer silently modify entries.
+      await applyDueTransfers()
+      return json({ok:true})
+    }
     if (a === 'transfers' && b && params.path?.[2] === 'dismiss' && m === 'POST') {
       const id = Number(b)
       if (!Number.isSafeInteger(id) || id <= 0) return json({ error: '明細IDが正しくありません' }, 400)

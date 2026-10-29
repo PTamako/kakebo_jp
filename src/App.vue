@@ -9,7 +9,6 @@ import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
-import { checkRecurringEntries } from './recurring-check.js'
 import { CATEGORY_ICON_PATHS, ICON_LIBRARY, CATEGORY_LABELS } from './category-ui.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
@@ -189,18 +188,28 @@ const categoryLabel = name => CATEGORY_LABELS[name] || name
 
 // Store only a revocable, 30-day device session; never persist the access code.
 localStorage.removeItem('token')
-const token = ref(localStorage.getItem('kakeibo-device-session') || '')
+const rememberDevice = ref(localStorage.getItem('kakeibo-remember-device') !== '0')
+const token = ref(sessionStorage.getItem('kakeibo-device-session') || (rememberDevice.value ? localStorage.getItem('kakeibo-device-session') : '') || '')
+function setRememberDevice(remember) {
+  rememberDevice.value=remember
+  try {
+    localStorage.setItem('kakeibo-remember-device',remember ? '1':'0')
+    if(remember && token.value) localStorage.setItem('kakeibo-device-session',token.value)
+    else localStorage.removeItem('kakeibo-device-session')
+    if(!remember && token.value)sessionStorage.setItem('kakeibo-device-session',token.value)
+  } catch { flash('ログイン保存設定を変更できませんでした') }
+}
 const locked = ref(!token.value && localStorage.getItem('kakeibo-logged-out') === '1')
 async function signIn(code) {
   const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) })
   const result = await response.json()
   if (!response.ok) throw new Error(result.error || 'アクセスコードを確認してください')
   token.value = result.session
-  localStorage.setItem('kakeibo-device-session', result.session)
+  sessionStorage.setItem('kakeibo-device-session', result.session)
+  if(rememberDevice.value)localStorage.setItem('kakeibo-device-session', result.session)
   localStorage.removeItem('kakeibo-logged-out')
   sessionStorage.removeItem('kakeibo-token')
   locked.value = false
-  checkRecurringEntries(api, count => flash('手入力と重複する固定支出 '+count+'件は自動登録しませんでした。管理で確認してください')).then(() => { load(); loadYear() }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message))
 }
 async function logout() {
   if (busy.value || editSaving.value || investmentBusy.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
@@ -208,6 +217,7 @@ async function logout() {
   const oldSession = token.value
   token.value = ''
   localStorage.removeItem('kakeibo-device-session')
+  sessionStorage.removeItem('kakeibo-device-session')
   sessionStorage.removeItem('kakeibo-token')
   localStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
@@ -245,6 +255,7 @@ async function api(path, opt = {}) {
       rejectedSession = requestToken
       token.value = ''
       localStorage.removeItem('kakeibo-device-session')
+      sessionStorage.removeItem('kakeibo-device-session')
     }
     await ensureLogin()
     return api(path, opt)
@@ -319,10 +330,17 @@ async function loadYear() {
     }
   }
 }
-onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers(); checkRecurringEntries(api, count => flash('手入力と重複する固定支出 '+count+'件は自動登録しませんでした。管理で確認してください')).then(count => { if (count) { load(); loadYear() } }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message)) } })
+onMounted(async () => {
+  cleanupReceiptImages().catch(() => {}) // Keep the existing A01 thirty-day receipt behavior unchanged.
+  if (!locked.value) {
+    // Never auto-post fixed expenses on app open. User reviews the schedule in management.
+    await load()
+    await Promise.allSettled([loadYear(), loadInvestments(), loadTransfers()])
+  }
+})
 
-watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; swipedReceiptId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
-watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
+watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; swipedReceiptId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month', detailFilter.value.paymentMethod || '') })
+watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year', detailFilter.value.paymentMethod || '') })
 watch(tab, value => {
   if (value === 'stat' && statsPeriod.value === 'year') loadYear()
   if (value === 'list') visibleEntryCount.value = 20
@@ -334,8 +352,14 @@ watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') load
 const recognitionMode = ref('statement')
 const entryInputMode = ref('manual')
 const aiOcrEnabled = ref(localStorage.getItem('kakeibo-ai-ocr-enabled') === '1')
+const aiQuota = ref(null)
+async function refreshAiQuota() {
+  try { aiQuota.value=await api('ai-ocr/quota') }
+  catch { aiQuota.value=null }
+}
 function setAiOcrEnabled(checked) {
   aiOcrEnabled.value = checked
+  if (checked) void refreshAiQuota()
   try { localStorage.setItem('kakeibo-ai-ocr-enabled', checked ? '1' : '0') }
   catch { flash('AI OCRの設定を保存できませんでした') }
 }
@@ -343,6 +367,13 @@ function setAiOcrEnabled(checked) {
 // are intentionally excluded from localStorage; the original photo stays on device.
 const draftRecoveryInfo = ref('')
 const DRAFT_KEY = 'kakeibo-unsaved-draft-v1'
+function clearLocalDraft() {
+  if(!confirm('未保存の入力と貼り付けた文字を、この端末から破棄しますか？保存済み明細とレシート画像は変更されません。'))return
+  clearTimeout(draftSaveTimer)
+  forms.value=[];input.value='';draftRecoveryInfo.value=''
+  try{localStorage.removeItem(DRAFT_KEY)}catch{}
+  flash('端末内の未保存入力だけを削除しました')
+}
 try {
   const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
   if (saved && Date.now() - Number(saved.updatedAt) < 7 * 86400000 && Array.isArray(saved.forms)) {
@@ -399,6 +430,8 @@ async function onImage(e, mode = 'statement') {
     } else {
       try {
         busy.value = 'AIで画像を読み取り中'
+        await refreshAiQuota()
+        if(aiQuota.value && aiQuota.value.remaining<=0)throw Error('本日のAI上限に達しました')
         const data = new FormData()
         const image = await compressReceiptImage(f)
         data.append('image', image, image.type === 'image/jpeg' ? 'receipt.jpg' : 'receipt.webp')
@@ -406,6 +439,7 @@ async function onImage(e, mode = 'statement') {
         const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': token.value }, body: data })
         if (!response.ok) { const errorBody = await response.json().catch(() => ({})); throw new Error(errorBody.error || `AI画像認識に失敗しました（HTTP ${response.status}）`) }
         const result = await response.json()
+        await refreshAiQuota()
         if (!result.text?.trim()) throw new Error('認識結果がありません')
         if (result.engine !== 'gemma4') throw new Error('AIの応答を確認できませんでした')
         input.value = result.text
@@ -622,6 +656,9 @@ const transferDue = item => String(item.transfer_date || item.date) <= new Date(
 async function loadTransfers() {
   transferLoading.value = true
   try {
+    // Explicitly apply due transfers; this must not happen on unrelated GET requests.
+    if (!/^[^.]+\.kakeibo-f17\.pages\.dev$/.test(window.location.hostname))
+      await api('transfers/process-due',{method:'POST'})
     let rows = await api('transfers')
     // The backend marks due transfers once; no extra per-row writes needed here.
     pendingTransfers.value = rows
@@ -768,8 +805,7 @@ const filteredEntries = computed(() => entries.value.filter(e => String(e.date |
 const detailFilter = ref(null)
 const paymentMethodMatches = (entry, method) => method === '現金' ? !String(entry.payment_source || '').trim() || entry.payment_source === '現金' : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
 async function openPaymentMethodDetails(method, period) {
-  await openCategoryDetails('', 'expense', period)
-  if (detailFilter.value) detailFilter.value = {...detailFilter.value, paymentMethod:method}
+  await openCategoryDetails('', 'expense', period, method)
 }
 const detailSourceEntries = ref([])
 const detailLoading = ref(false)
@@ -854,8 +890,8 @@ async function fetchPeriodDetailRows(period, requestId = null) {
   }
   return rows
 }
-async function openCategoryDetails(category, type, period) {
-  detailFilter.value = { category, type, period }
+async function openCategoryDetails(category, type, period, paymentMethod = '') {
+  detailFilter.value = { category, type, period, paymentMethod }
   entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
   selectedDay.value = ''
   detailSourceEntries.value = []
@@ -1081,9 +1117,9 @@ const selectedRatio = computed(() => selectedRatioMonthRow.value && selectedRati
 const monthlyRatio = computed(() => Number(stats.value?.income || 0) > 0 ? Number(stats.value?.total || 0) / Number(stats.value.income) : null)
 const annualRatio = computed(() => Number(annualStats.value?.income || 0) > 0 ? Number(annualStats.value?.total || 0) / Number(annualStats.value.income) : null)
 const pigState = ratio => ratio === null ? 'empty' : ratio >= 1 ? 'broken' : ratio >= .8 ? 'sweating' : 'happy'
-// Sticker sources: https://www.duitang.com/blog/?id=1514035767 and https://www.duitang.com/blog/?id=1536248097
+// Statistical illustrations are bundled local assets; do not rely on image CDNs.
 const puppyExpression = ratio => ratio >= 1 ? puppyCrying : puppyWorried
-function puppyFallback(event) { event.target.onerror = null; event.target.src = 'https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png' }
+function puppyFallback(event) { event.target.onerror = null; event.target.src = puppyWorried }
 const pigLabel = ratio => ratio === null ? 'まず収入を記録して、収支バランスを確認しましょう' : ratio >= 1 ? '大変！支出が収入以上になっています！' : ratio >= .8 ? '予算オーバーに注意しましょう！' : 'いい感じです。この調子でいきましょう'
 const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.round(ratio * 100) + '%'
 </script>
@@ -1159,7 +1195,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             </button>
           </div>
         </div>
-        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">画像をCloudflare AIへ送信します。利用枠を消費します。</p>
+        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">Cloudflare AIへ送信します。1日あたりの使用回数に上限があります。<span v-if="aiQuota">本日の残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
@@ -1171,6 +1207,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </div>
 
       <p v-if="draftRecoveryInfo && (forms.length || input.trim())" class="microcopy" role="status">{{draftRecoveryInfo}}</p>
+      <button v-if="forms.length || input.trim()" type="button" class="draft-clear" :disabled="!!busy" @click="clearLocalDraft">未保存の入力をこの端末から破棄</button>
       <div v-if="forms.length" class="draft-heading">
         <div><h2>{{ entryInputMode === 'scan' ? '読み取り結果の確認' : '入力内容の確認' }}</h2><p>金額・日付・店舗名を確認して保存してください</p></div>
         <span class="count-pill">{{ forms.length }}件</span>
@@ -1283,7 +1320,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="hero-footer"><span class="hero-dot"></span>{{ stats?.count || 0 }}件の支出記録</div>
       </div>
       <div class="piggy-card" :class="'piggy-' + pigState(monthlyRatio)">
-        <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="収支バランスの表情"><img v-if="monthlyRatio !== null && monthlyRatio >= .8" :key="pigState(monthlyRatio)" class="puppy-expression" :src="puppyExpression(monthlyRatio)" :alt="monthlyRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-white" src="https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" src="https://cdn2.cdnstep.com/8A5BxvcpUvyc8nO7YV3A/1-1.thumb128.png" alt="ちび毛としろちゃんのスタンプ" loading="lazy" /></template></div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="収支バランスの表情"><img v-if="monthlyRatio !== null && monthlyRatio >= .8" :key="pigState(monthlyRatio)" class="puppy-expression" :src="puppyExpression(monthlyRatio)" :alt="monthlyRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-white" :src="puppyWorried" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" :src="puppyCrying" alt="ちび毛としろちゃんのスタンプ" loading="lazy" /></template></div>
         <div class="piggy-content"><div class="piggy-title">今月の収支バランス</div><div class="piggy-status">{{ pigLabel(monthlyRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (monthlyRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(monthlyRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip"><div><small>今月の収入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>今月の支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>差引残高</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
@@ -1329,7 +1366,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件の支出記録</div>
       </div>
       <div class="piggy-card" :class="'piggy-' + pigState(annualRatio)">
-        <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="収支バランスの表情"><img v-if="annualRatio !== null && annualRatio >= .8" :key="pigState(annualRatio)" class="puppy-expression" :src="puppyExpression(annualRatio)" :alt="annualRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-white" src="https://cdn2.cdnstep.com/ZW1T6zYOaVZmvnKF1aHl/0-2.thumb128.png" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" src="https://cdn2.cdnstep.com/8A5BxvcpUvyc8nO7YV3A/1-1.thumb128.png" alt="ちび毛としろちゃんのスタンプ" loading="lazy" /></template></div>
+        <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="収支バランスの表情"><img v-if="annualRatio !== null && annualRatio >= .8" :key="pigState(annualRatio)" class="puppy-expression" :src="puppyExpression(annualRatio)" :alt="annualRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-white" :src="puppyWorried" alt="しろちゃんのスタンプ" loading="lazy" /><img class="puppy-jimao" :src="puppyCrying" alt="ちび毛としろちゃんのスタンプ" loading="lazy" /></template></div>
         <div class="piggy-content"><div class="piggy-title">年間の収支バランス</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip annual-income-strip"><div><small>年間収入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>年間支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>年間収支</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
@@ -1440,6 +1477,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </section>
 
     <FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
+    <details v-if="tab === 'finance'" class="panel device-security-settings">
+      <summary>端末のプライバシー設定</summary>
+      <label class="form-field"><span>ログイン状態</span><select :value="rememberDevice ? 'remember' : 'session'" @change="setRememberDevice($event.target.value === 'remember')">
+        <option value="remember">この端末にログインを保存（30日間）</option>
+        <option value="session">アプリを終了したら保存しない</option>
+      </select></label>
+      <p class="microcopy">ログイン情報は端末内に保存します。共有端末では「保存しない」を選択してください。未保存の入力は「入力」画面から個別に破棄できます。</p>
+    </details>
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button type="button" :class="{ active: tab === 'add' }" :aria-current="tab === 'add' ? 'page' : undefined" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button type="button" :class="{ active: tab === 'list' }" :aria-current="tab === 'list' ? 'page' : undefined" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

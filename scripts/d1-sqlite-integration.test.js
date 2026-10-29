@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
+import { aiQuotaState, reserveAiAttempt } from '../functions/api/ai-quota.js'
 
 class SqliteD1 {
   constructor() {
@@ -69,7 +70,7 @@ test('actual SQLite: ledger years include dates outside hard-coded range',async(
   }finally{db.close()}
 })
 
-test('actual SQLite: manual recurring conflict, idempotency and two distinct plans',async()=>{
+test('actual SQLite: manual and old automated recurring conflicts, idempotency and plan ID updates',async()=>{
   const {db,call}=await createClient()
   try {
     const makePlan=(id)=>({id,name:'家賃',amount:102000,day:25,category:'居住',paymentSource:'現金',startMonth:'2026-10',enabled:true})
@@ -90,8 +91,14 @@ test('actual SQLite: manual recurring conflict, idempotency and two distinct pla
     const repeated=await call('recurring-post','POST',{planId:first.id,month:'2026-10'})
     assert.equal(repeated.body.duplicate,true)
     const independent=await call('recurring-post','POST',{planId:second.id,month:'2026-10'})
-    assert.equal(independent.body.created,true)
-    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,2)
+    assert.equal(independent.body.conflict,true, 'an identical plan with a new ID cannot create a duplicate expense')
+    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,1)
+    const edited=await call('recurring-plans/'+first.id,'PUT',{...first,amount:103000,enabled:false})
+    assert.equal(edited.status,200)
+    const savedPlans=(await call('recurring-plans')).body
+    assert.equal(savedPlans.find(p=>p.id===first.id).amount,103000)
+    assert.equal(savedPlans.find(p=>p.id===first.id).enabled,false)
+    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,1)
   }finally{db.close()}
 })
 
@@ -119,4 +126,30 @@ test('actual SQLite: a card referenced by active recurring plan cannot be remove
     assert.equal(removal.status,409)
     assert.ok((await call('payment-sources')).body.some(x=>x.name==='楽天カード'))
   }finally{db.close()}
+})
+
+test('actual SQLite: AI daily quota is atomic and fail-closed without any billing logic',async()=>{
+  const db=new SqliteD1()
+  try {
+    const env={AI_OCR_DAILY_LIMIT:'2'}
+    let quota=await aiQuotaState(db,env)
+    assert.equal(quota.remaining,2)
+    assert.equal((await reserveAiAttempt(db,env)).allowed,true)
+    assert.equal((await reserveAiAttempt(db,env)).allowed,true)
+    assert.equal((await reserveAiAttempt(db,env)).allowed,false)
+    quota=await aiQuotaState(db,env)
+    assert.equal(quota.remaining,0)
+    assert.equal((await reserveAiAttempt(db,{AI_OCR_DAILY_LIMIT:'0'})).allowed,false)
+  }finally{db.close()}
+})
+
+test('Pages previews reject ledger mutations before touching the D1 binding',async()=>{
+  const response=await onRequest({
+    request:new Request('https://mybranch.kakeibo-f17.pages.dev/api/entries',{
+      method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({date:'2026-10-29',amount:100,type:'expense'})}),
+    env:{AUTH_TOKEN:'readonly-test-only',DB:null},params:{path:['entries']}
+  })
+  assert.equal(response.status,403)
+  assert.equal((await response.json()).code,'preview_read_only')
 })

@@ -61,7 +61,7 @@ test('mobile navigation, keyboard and charts retain touch-safe affordances', () 
 })
 
 test('Pages production build runs API and OCR regression suite before Vite', () => {
-  assert.equal(pkg.scripts.build, 'npm run test:parse && vite build')
+  assert.equal(pkg.scripts.build, 'npm run test:parse && npm run security:audit:prod && vite build')
   assert.equal(pkg.scripts['test:parse'], 'node --test scripts/*.test.js')
 })
 

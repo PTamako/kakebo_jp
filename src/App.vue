@@ -281,10 +281,15 @@ let loadedMonth = ''
 let loadedYear = null
 async function fetchMonthEntries(targetMonth) {
   const all = []
-  for (let offset = 0; ; offset += 500) {
-    const page = await api('entries?month=' + targetMonth + '&offset=' + offset)
+  let cursor = 0
+  for (;;) {
+    const page = await api('entries?month=' + targetMonth + '&cursor=' + cursor)
     if (!Array.isArray(page)) throw Error('月別明細の形式が正しくありません')
-    all.push(...page)
+    for (const row of page) {
+      if (!Number.isSafeInteger(Number(row.id)) || Number(row.id) <= cursor) throw Error('読み込み順序が変更されました')
+      cursor = Number(row.id)
+      all.push(row)
+    }
     if (page.length < 500) return all
   }
 }
@@ -909,11 +914,16 @@ async function fetchPeriodDetailRows(period, requestId = null) {
   if (period !== 'year') return fetchMonthEntries(month.value)
   const year = selectedYear.value
   const rows = []
-  for (let offset = 0; ; offset += 500) {
+  let cursor = 0
+  for (;;) {
     if (requestId !== null && requestId !== detailRequestId) return []
-    const page = await api('entries?year=' + year + '&offset=' + offset)
+    const page = await api('entries?year=' + year + '&cursor=' + cursor)
     if (!Array.isArray(page)) throw new Error('年間明細の形式が正しくありません')
-    rows.push(...page)
+    for (const entry of page) {
+      if (!Number.isSafeInteger(Number(entry.id)) || Number(entry.id) <= cursor) throw Error('明細の順序が変更されました')
+      cursor = Number(entry.id)
+      rows.push(entry)
+    }
     if (page.length < 500) break
   }
   return rows

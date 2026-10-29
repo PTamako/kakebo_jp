@@ -143,7 +143,14 @@ export async function onRequest({ request, env, params }) {
     (typeof env.CF_PAGES_BRANCH === 'string' && !!env.CF_PAGES_BRANCH && env.CF_PAGES_BRANCH !== 'main')
   // Preview bindings cannot be inspected from this repo. Fail closed on ALL preview
   // API access until a dedicated Preview D1 binding is explicitly verified.
-  if (isPagesPreview && env.PREVIEW_D1_ISOLATED !== 'true')
+  // A single opt-in flag is not evidence that the DB bindings are separate.
+  // Both IDs must be recorded in the Preview environment, verified in the
+  // dashboard, and different. This still cannot inspect the binding itself.
+  const previewDbVerified = env.PREVIEW_D1_ISOLATED === 'true' &&
+    typeof env.PREVIEW_D1_ID === 'string' && /^[a-f0-9-]{36}$/i.test(env.PREVIEW_D1_ID) &&
+    typeof env.PRODUCTION_D1_ID === 'string' && /^[a-f0-9-]{36}$/i.test(env.PRODUCTION_D1_ID) &&
+    env.PREVIEW_D1_ID.toLowerCase() !== env.PRODUCTION_D1_ID.toLowerCase()
+  if (isPagesPreview && !previewDbVerified)
     return json({error:'プレビュー環境のテスト専用DBが未確認です。本番のデータを保護するためAPIを停止しています',code:'preview_db_not_verified'},503)
   if (isPagesPreview && m !== 'GET' && a !== 'auth')
     return json({error:'プレビュー画面では明細・設定を更新できません。本番サイトをご利用ください',code:'preview_read_only'},403)

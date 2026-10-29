@@ -542,6 +542,7 @@ async function saveAll() {
   if (uncertain.length) return flash('金額・内容を確認し、要確認の表示を修正してください')
   // Check every month represented by the drafts, not just the currently displayed month.
   // This is an advisory check: two purchases with the same details can both be legitimate.
+  let duplicateConfirmed = false
   busy.value = '重複を確認中'
   try {
     const months = [...new Set(forms.value.map(f => String(f.date || '').slice(0, 7)))]
@@ -558,9 +559,12 @@ async function saveAll() {
       seen.add(k)
       return duplicate
     })
-    if (possibleDuplicates.length && !confirm(`対象月の既存明細と同じ日付・金額・店名・支払方法の候補が${possibleDuplicates.length}件あります。別の取引なら保存できます。続行しますか？`)) {
-      busy.value = ''
-      return
+    if (possibleDuplicates.length) {
+      if (!confirm(`対象月の既存明細と同じ日付・金額・店名・支払方法の候補が${possibleDuplicates.length}件あります。別の取引なら保存できます。続行しますか？`)) {
+        busy.value = ''
+        return
+      }
+      duplicateConfirmed = true
     }
   } catch (e) {
     busy.value = ''
@@ -577,7 +581,9 @@ async function saveAll() {
       const f = forms.value[0]
       // Retain one stable ID across retries (including "saved on server, reply lost").
       if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
-      const result = await api('entries', { method: 'POST', body: JSON.stringify({ ...f, amount: Number(f.amount) }) })
+      const result = await api('entries', { method: 'POST', body: JSON.stringify({
+        ...f, amount: Number(f.amount), duplicatePolicy:'check', allowDuplicate:duplicateConfirmed
+      }) })
       const receiptBlob = f.type === 'expense' ? f.receiptImage : null
       if (receiptBlob) {
         try { await persistReceipt(result?.id, receiptBlob) }

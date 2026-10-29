@@ -23,7 +23,17 @@ import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptIm
 const tab = ref('add')
 // Show a bundled vector dog if the LINE sticker CDN is offline or blocked.
 const statsPeriod = ref('month')
-const themes = [{ id: 'pink', label: 'ピンク', color: '#d96f91' }, { id: 'blue', label: 'ブルー', color: '#78a9d6' }, { id: 'yellow', label: 'イエロー', color: '#d9b957' }, { id: 'green', label: 'グリーン', color: '#78ad91' }]
+// The four original IDs are permanent: saved device preferences must still work.
+const themes = [
+  { id: 'pink', label: 'ピンク', color: '#d96f91' },
+  { id: 'blue', label: 'ブルー', color: '#78a9d6' },
+  { id: 'yellow', label: 'イエロー', color: '#d9b957' },
+  { id: 'green', label: 'グリーン', color: '#78ad91' },
+  { id: 'lavender', label: 'ラベンダー', color: '#b697d1' },
+  { id: 'peach', label: 'ピーチ', color: '#df9c7e' },
+  { id: 'latte', label: 'ミルクティー', color: '#b59a81' },
+  { id: 'slate', label: 'スモーキーブルー', color: '#86a8bd' },
+]
 const storedTheme = localStorage.getItem('kakeibo-theme')
 const theme = ref(themes.some(item => item.id === storedTheme) ? storedTheme : 'pink')
 function setTheme(value) {
@@ -1221,9 +1231,16 @@ provide('kakeibo-page-context', { tab, statsPeriod, themes, storedTheme, theme, 
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H13a1.5 1.5 0 0 1 0-3h3.5A4.5 4.5 0 0 0 21 9.5 9 9 0 0 0 12 3Z"/><circle cx="7.5" cy="10" r="1"/><circle cx="11" cy="6.5" r="1"/><circle cx="16" cy="8.5" r="1"/></svg>
             <span class="theme-indicator" :style="{ background: themes.find(item => item.id === theme)?.color }"></span>
           </summary>
-          <div class="theme-switcher" role="group" aria-label="配色">
-            <strong>テーマカラー</strong>
-            <button v-for="item in themes" :key="item.id" type="button" :class="{ selected: theme === item.id }" :aria-pressed="theme === item.id" @click="setTheme(item.id); $event.currentTarget.closest('details').open = false"><i :style="{ background: item.color }"></i>{{ item.label }}</button>
+          <div class="theme-switcher" role="group" aria-label="テーマカラー">
+            <button v-for="item in themes" :key="item.id" type="button" class="theme-swatch"
+              :class="{ selected: theme === item.id }" :aria-label="item.label + 'テーマ'"
+              :aria-pressed="theme === item.id"
+              @click="setTheme(item.id); $event.currentTarget.closest('details').open = false">
+              <span class="theme-dot" :style="{ backgroundColor: item.color }" aria-hidden="true"></span>
+              <svg v-if="theme === item.id" class="theme-check" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m5 12 5 5 9-10" />
+              </svg>
+            </button>
           </div>
         </details>
         <button type="button" class="header-logout" @click="logout" aria-label="ログアウト"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6"/></svg><span>ログアウト</span></button>
@@ -1545,7 +1562,7 @@ main .annual-month-list .entry-day-group{border-radius:var(--radius-md);overflow
 
 main .heading-icon svg{width:21px;height:21px;display:block}
 .ui-line-icon{display:block;width:19px;height:19px;flex:none}.type-action-icon{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;margin-right:5px}.metric-icon .ui-line-icon{width:18px;height:18px}.type-switch button{display:inline-flex;align-items:center;justify-content:center;gap:3px}.category-line-icon{width:17px;height:17px;margin:auto}.category-dot,.category-emoji{display:inline-grid;place-items:center}
-/* Mobile-first PWA shell, usable with four cream themes. */
+/* Mobile-first PWA shell, usable with all cream themes. */
 main{--touch-height:44px;--card-padding:16px;--section-gap:14px;--radius-sm:10px;--radius-md:14px;--radius-lg:18px;
 width:100%;max-width:560px;padding:calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 100px);
 overscroll-behavior-y:contain}

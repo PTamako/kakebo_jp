@@ -10,6 +10,7 @@ const saving = ref(false)
 const error = ref('')
 const notice = ref('')
 const editing = ref('')
+const existingIdentity = ref(false)
 const knownFunds = [
   { code:'0331418A', name:'eMAXIS Slim 全世界株式（オール・カントリー）', account:'tsumitate' },
   { code:'03311187', name:'eMAXIS Slim 米国株式（S&P500）', account:'tsumitate' },
@@ -46,6 +47,7 @@ async function load() {
   finally { loading.value = false }
 }
 function editPlan(p) {
+  existingIdentity.value = !!p
   editing.value = 'plan'
   plan.value = p ? {
     fundCode:p.fund_code,fundName:p.fund_name,accountType:p.account_type,
@@ -54,6 +56,7 @@ function editPlan(p) {
   } : emptyPlan()
 }
 function editHolding(h) {
+  existingIdentity.value = !!h
   editing.value = 'holding'
   holding.value = h ? {
     fundCode:h.fund_code,fundName:h.fund_name,accountType:h.account_type,
@@ -118,6 +121,7 @@ onMounted(load)
           <span :style="{width:Math.min(100,100*data.reconciliation.funded/Math.max(1,data.reconciliation.monthly_amount))+'%'}"></span>
         </div>
         <p v-if="data.reconciliation.pending">反映待ち：{{yen(data.reconciliation.pending)}}</p>
+        <p v-if="data.reconciliation.funded && data.reconciliation.difference===0" class="sbi-success">予定額と振替実績が一致しています</p>
         <p v-if="data.reconciliation.difference!==0" class="sbi-hint">
           {{data.reconciliation.difference>0?'振替超過':'振替不足'}}：{{yen(Math.abs(data.reconciliation.difference))}}
         </p>
@@ -175,12 +179,12 @@ onMounted(load)
       </article>
     </template>
 
-    <div v-if="editing || editingTransfer!==null" class="sbi-overlay" @click.self="!saving&&(editing='')">
+    <div v-if="editing || editingTransfer!==null" class="sbi-overlay" @click.self="!saving&&(editing='',editingTransfer=null)">
       <form v-if="editing==='plan'" class="sbi-dialog" @submit.prevent="submit('plan',{...plan,monthlyAmount:Number(plan.monthlyAmount),orderDay:Number(plan.orderDay)},'積立設定を保存しました')">
         <div class="sbi-line-heading"><h3>積立設定</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
-        <label>銘柄コード<input v-model.trim="plan.fundCode" maxlength="8" required placeholder="03311187" @input="plan.fundCode=plan.fundCode.toUpperCase();fillFund(plan)"/></label>
+        <label>銘柄コード<input v-model.trim="plan.fundCode" maxlength="8" required :disabled="existingIdentity" placeholder="03311187" @input="plan.fundCode=plan.fundCode.toUpperCase();fillFund(plan)"/></label>
         <label>銘柄名<input v-model.trim="plan.fundName" maxlength="120" required /></label>
-        <label>口座区分<select v-model="plan.accountType"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option></select></label>
+        <label>口座区分<select v-model="plan.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option></select></label>
         <label>毎月の積立額（円）<input v-model.number="plan.monthlyAmount" type="number" min="0" step="1" required /></label>
         <label>注文希望日<input v-model.number="plan.orderDay" type="number" min="1" max="28" required /></label>
         <label>適用開始月<input v-model="plan.effectiveMonth" type="month" required /></label>
@@ -189,9 +193,9 @@ onMounted(load)
       </form>
       <form v-else-if="editing==='holding'" class="sbi-dialog" @submit.prevent="submit('holding',{...holding,units:Number(holding.units),acquisitionCost:Number(holding.acquisitionCost)},'保有情報を更新しました')">
         <div class="sbi-line-heading"><h3>保有口数・取得金額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
-        <label>銘柄コード<input v-model.trim="holding.fundCode" maxlength="8" required @input="holding.fundCode=holding.fundCode.toUpperCase();fillFund(holding)" /></label>
+        <label>銘柄コード<input v-model.trim="holding.fundCode" maxlength="8" required :disabled="existingIdentity" @input="holding.fundCode=holding.fundCode.toUpperCase();fillFund(holding)" /></label>
         <label>銘柄名<input v-model.trim="holding.fundName" maxlength="120" required /></label>
-        <label>口座区分<select v-model="holding.accountType"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option></select></label>
+        <label>口座区分<select v-model="holding.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option></select></label>
         <label>保有口数<input v-model.number="holding.units" type="number" min="0" step="1" required /></label>
         <label>取得金額（円）<input v-model.number="holding.acquisitionCost" type="number" min="0" step="1" required /></label>
         <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>

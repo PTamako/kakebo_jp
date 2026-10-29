@@ -64,8 +64,8 @@ export async function restoreAtomic(db, archive) {
     add('INSERT OR IGNORE INTO investment_plan_history(fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
       p.fund_code,p.account_type,p.effective_month,p.fund_name,p.monthly_amount,p.order_day,p.enabled,p.updated_at||new Date().toISOString())
   for(const h of archive.investmentHoldings||[])
-    add('INSERT OR IGNORE INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost,updated_at) VALUES(?1,?2,?3,?4,?5,?6)',
-      h.fund_code,h.account_type,h.fund_name,h.units,h.acquisition_cost,h.updated_at||new Date().toISOString())
+    add('INSERT OR IGNORE INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
+      h.fund_code,h.account_type,h.fund_name,h.units,h.acquisition_cost,h.reported_value??null,h.reported_at??null,h.updated_at||new Date().toISOString())
   for(const p of archive.fundPrices||[])
     add('INSERT OR IGNORE INTO fund_prices(fund_code,nav_per_10000,price_date,source,updated_at) VALUES(?1,?2,?3,?4,?5)',
       p.fund_code,p.nav_per_10000,p.price_date,p.source,p.updated_at||new Date().toISOString())

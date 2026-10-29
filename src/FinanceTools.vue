@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { sortOtherLast } from './category-sort.js'
+import { findLedgerDuplicateGroups } from './duplicate-review.js'
 import AmountInput from './AmountInput.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion } from './finance-tools.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
@@ -589,11 +590,11 @@ async function restore(){
   }catch(e){message.value='一部復元済み：明細 '+count+'件・設定 '+settingsCount+'件。再試行：'+e.message}
   finally{busy.value=false}
 }
-const duplicates=computed(()=>{
-  const groups=new Map()
-  for(const e of rows.value){const key=transactionKey(e);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e)}
-  return [...groups.values()].filter(g=>g.length>1)
-})
+// Use a read-only, tolerant comparison for review; backup keys stay strict.
+const duplicates=computed(() => findLedgerDuplicateGroups(rows.value))
+function refreshDuplicateReview(event) {
+  if (event.currentTarget?.open && props.active && managementTab.value === 'tools' && !busy.value) void loadAll()
+}
 async function addPlan(){
   if(!plan.value.name.trim() || !Number.isSafeInteger(Number(plan.value.amount)) || Number(plan.value.amount)<=0 ||
     !Number.isInteger(Number(plan.value.day)) || Number(plan.value.day)<1 || Number(plan.value.day)>31 ||
@@ -911,9 +912,10 @@ async function removeCardBill(record) {
     </div>
     <p v-if="message" role="status">{{message}}</p>
   </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
+  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="refreshDuplicateReview">
     <summary>重複の可能性</summary>
-    <p v-if="!loaded">全明細を更新してください。</p>
+    <p v-if="busy">重複候補を確認中…</p>
+    <p v-else-if="!loaded">{{ loadError || '全明細を更新してください。' }}</p>
     <p v-else-if="!duplicates.length">重複候補はありません。</p>
     <button v-for="(group,i) in duplicates.slice(0,30)" :key="i" type="button" class="finance-row duplicate-link" @click="emit('open-duplicate', group[0].date)">{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件 <span>明細を見る ›</span></button>
   </details>

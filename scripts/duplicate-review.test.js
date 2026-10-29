@@ -61,7 +61,7 @@ test('review helper does not mutate D1 rows or use strict backup transactionKey'
   assert.match(component,/computed\(\(\) => findLedgerDuplicateGroups\(rows\.value\)\)/)
   assert.match(component,/@toggle="refreshDuplicateReview"/)
   assert.match(component,/function refreshDuplicateReview\(event\)/)
-  assert.match(component,/if \(busy\)/)
+  assert.match(component,/v-if="busy"/)
   assert.match(component,/重複候補を確認中/)
   assert.doesNotMatch(helper,/DELETE FROM|UPDATE entries|props\.api|fetch\(/)
   assert.match(component,/prepareRestoreRows\(rows\.value,backup\.entries\)/)

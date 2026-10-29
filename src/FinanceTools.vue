@@ -22,13 +22,19 @@ async function refreshLocalReceiptCount() {
   } finally { receiptImagesBusy.value = false }
 }
 async function clearLocalReceiptImages() {
-  if (receiptImagesBusy.value) return
-  const count = localReceiptCount.value
-  if (!Number.isSafeInteger(count) || count < 1) return
-  if (!confirm('この端末に保存されたレシート画像 ' + count +
-    '件をすべて削除します。削除した画像は復元できません。記録・支出額・SBI評価額は変更されません。よろしいですか？')) return
+  if (receiptImagesBusy.value || !localReceiptCount.value) return
   receiptImagesBusy.value = true
   try {
+    // Recount immediately before a destructive operation to avoid a stale confirmation.
+    const latest = await countReceiptImages()
+    if (latest !== localReceiptCount.value) {
+      localReceiptCount.value = latest
+      receiptImagePrivacyMessage.value = '画像の件数が変わりました。内容を確認してもう一度操作してください。'
+      return
+    }
+    if (!latest) return
+    if (!confirm('この端末に保存されたレシート画像 ' + latest +
+      '件をすべて削除します。削除した画像は復元できません。記録・支出額・SBI評価額は変更されません。よろしいですか？')) return
     // This only clears the local IndexedDB receipt-image store. Never call D1 APIs.
     await clearAllReceiptImages()
     localReceiptCount.value = 0

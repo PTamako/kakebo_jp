@@ -607,12 +607,14 @@ async function saveAll() {
   } catch (e) {
     flash(`${saved}件を保存しました。未保存の${forms.value.length}件は入力欄に残っています：${e.message}`)
   } finally {
+    if (saved > 0) ledgerRevision.value++ // Also invalidate partial-success imports.
     try { rules.value = await api('rules') } catch { /* Keep existing rules when temporarily offline. */ }
     try { await loadPaymentSettings() } catch {}
     await Promise.allSettled([load(), loadYear(), loadInvestments(), loadTransfers()])
     busy.value = ''
   }
 }
+const ledgerRevision = ref(0)
 const pendingEntryIds = ref(new Set())
 const editSaving = ref(false)
 async function remove(id) {
@@ -622,6 +624,7 @@ async function remove(id) {
   pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
   try {
     await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
+    ledgerRevision.value++
     // Only remove the local receipt after the server confirms deletion.
     let receiptDeleteWarning = ''
     try {
@@ -664,6 +667,7 @@ async function saveEdit() {
       method: 'PUT',
       body: JSON.stringify({ ...e, amount: Number(e.amount) })
     })
+    ledgerRevision.value++
     if (editReceiptImage.value) {
       try { await persistReceipt(e.id, editReceiptImage.value); editReceiptImage.value = null }
       catch { receiptSaveError.value = '記録は更新されましたが、レシート画像を保存できませんでした。元の写真を保管してください。' }
@@ -1526,7 +1530,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       </article>
     </section>
 
-    <FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
+    <FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'" :ledger-revision="ledgerRevision" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="ledgerRevision++; load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button type="button" :class="{ active: tab === 'add' }" :aria-current="tab === 'add' ? 'page' : undefined" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button type="button" :class="{ active: tab === 'list' }" :aria-current="tab === 'list' ? 'page' : undefined" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

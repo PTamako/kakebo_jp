@@ -27,7 +27,7 @@ test('remove redundant visual helper paragraphs without changing chart labels or
   assert.match(app, /支出 ÷ 収入 · 破線：80% \/ 100%/)
   assert.match(app, /150%超は上端に表示/)
   assert.match(app, /期日で家計簿に反映。SBIへの着金確認・買付は別です/)
-  assert.match(app, /現在、基準価額は手動登録です。/)
+  assert.match(app, /基準価額は三菱UFJ運用の3銘柄を自動更新します。/)
 })
 test('input and OCR keep short actionable explanations and AI image disclosure', () => {
   assert.match(app, /Cloudflare AIに画像を送信/)

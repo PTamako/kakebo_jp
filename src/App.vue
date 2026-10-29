@@ -1,11 +1,12 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { parseRepeatedExpense } from './natural-repeat.js'
+import { parseNamedExpenseBlocks } from './named-expense.js'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
-import { parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
+import { classify, parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
 import TransactionForm from './TransactionForm.vue'
@@ -418,9 +419,14 @@ function recognize(mode = recognitionMode.value, append = false) {
   // and ordinary duplicate protections remain mandatory.
   // Natural-language expense drafts must work in 手入力 even after the user
   // previously selected レシート in the separate image-recognition tab.
+  const structured = !append && entryInputMode.value === 'manual' ? parseNamedExpenseBlocks(input.value) : null
+  if (structured?.error) return flash(structured.error)
   const repeated = parseRepeatedExpense(input.value)
-  const effectiveMode = repeated ? 'statement' : mode
-  const parsed = repeated || (effectiveMode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value))
+  const effectiveMode = structured || repeated ? 'statement' : mode
+  const parsed = structured ? structured.rows.map(row => {
+    const match = classify(row.merchant, rules.value)
+    return { ...row, category:match.category, suggested:match.category, keyword:match.keyword }
+  }) : repeated || (effectiveMode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value))
   if (effectiveMode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
   const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
@@ -432,7 +438,7 @@ function recognize(mode = recognitionMode.value, append = false) {
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   // Preserve the current input tab: pasted text stays in 手入力. Only the
   // image-upload handler may switch to 画像から読み取る.
-  flash(repeated ? `毎週の支出を${repeated.length}件に展開しました。日付・内容・金額を確認してから保存してください` : forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
+  flash(structured ? `${parsed.length}件の明細を作成しました。確認してから保存してください` : repeated ? `毎週の支出を${repeated.length}件に展開しました。日付・内容・金額を確認してから保存してください` : forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
 async function onImage(e, mode = 'statement') {
   const f = e.target.files[0]; e.target.value = ''
@@ -1252,7 +1258,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <summary>テキストを貼り付けて読み取る</summary>
           <label class="field-label" for="entry-text">テキスト入力</label>
           <label class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
-          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? '例：10月の毎週金曜日に100円使った（内容を確認して保存）' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
+          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? '勉強会\n10月毎週の金曜日\n100円' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
           <div class="action-row">
             <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
           </div>

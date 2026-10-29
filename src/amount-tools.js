@@ -63,3 +63,21 @@ export function convertToYen(rawAmount, rawRate) {
   const result = Math.round(amount * rate)
   return Number.isSafeInteger(result) && result > 0 ? result : null
 }
+
+/**
+ * Quick price estimation for a single Japanese consumption-tax rate.
+ * Prices for multiple rates, exempt items, and individual store rounding
+ * must be checked against the receipt rather than guessed here.
+ */
+export function calculateJapaneseConsumptionTax(subtotal, rate = 0, rounding = 'floor') {
+  const value = Number(subtotal)
+  if (!Number.isSafeInteger(value) || value <= 0 || ![0, 8, 10].includes(rate)) return null
+  if (!['floor', 'round', 'ceil'].includes(rounding)) return null
+  if (rate === 0) return { subtotal: value, tax: 0, total: value }
+  const rawTax = value * rate / 100
+  if (!Number.isFinite(rawTax)) return null
+  const tax = Math[rounding](rawTax)
+  const total = value + tax
+  if (!Number.isSafeInteger(tax) || !Number.isSafeInteger(total)) return null
+  return { subtotal: value, tax, total }
+}

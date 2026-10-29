@@ -76,7 +76,7 @@ export async function syncFundNav(db,{fetcher=fetch,now=new Date(),logger=consol
           price_date=excluded.price_date,
           source=excluded.source,
           updated_at=excluded.updated_at
-        WHERE fund_prices.source='sbi_screenshot' OR fund_prices.price_date<excluded.price_date)`)
+        WHERE fund_prices.source='sbi_screenshot' OR fund_prices.price_date<excluded.price_date`)
         .bind(quote.fundCode,quote.navPer10000,quote.priceDate,quote.source,now.toISOString()).run()
       ;(Number(result.meta?.changes||0)>0?summary.updated:summary.unchanged).push(code)
     }catch(error){

@@ -10,18 +10,18 @@
 - `04317188` iFreeNEXT NASDAQ100は大和アセットマネジメント商品。自動取得可能な正式JSON APIを確認できていないため**まだ自動更新しません**。既存の手入力と保有額は維持します。サイトHTMLやYahoo/SBI画面の非公認スクレイピングは禁止。
 - 実APIの出力構造と利用条件は運用環境でも確認し、失敗時は前回基準価額を残す。
 
-## 初回デプロイ（1回のみ）
+## 初回デプロイと時刻変更
 
-Cloudflare Pagesとは別の**専用Worker**を一度だけデプロイしてください。新DB作成、毎回コマンド実行は不要です。
+Cloudflare Pagesとは別の**専用Worker**を初回デプロイ、またはCron時刻の変更時に再デプロイしてください。既存Workerを上書きし、D1新表や移行は不要です。
 
 ```bash
 npm ci
 npm run deploy:nav
 ```
 
-`wrangler.nav.toml` を使い、既存D1 `kakeibo` を結びます。毎日 **日本時間06:30（UTC21:30）** のCron Triggerを作成します。Cloudflare Dashboardの「Workers & Pages」→「kakeibo-nav-sync」→「Triggers」で設定を確認してください。
+`wrangler.nav.toml` を使い、既存D1 `kakeibo` を結びます。毎日 **日本時間20:30（UTC11:30）** のCron Triggerを作成します。Cloudflare Dashboardの「Workers & Pages」→「kakeibo-nav-sync」→「Triggers」で設定を確認してください。
 
-**注意**：Pages の Git 連携がデプロイするのは PWA であり、別Workerは自動デプロイされません。GitHubへのPRマージだけではCron Triggerを作成しません。Workerの初回公開が必要です。
+**注意**：Pages の Git 連携がデプロイするのは PWA であり、別Workerは自動デプロイされません。GitHubへのPRマージだけではCronの設定時刻も変わりません。上記コマンドで既存Workerを再デプロイすると新時刻に変更されます。基準価額が当日20:30時点で未公開の場合は、古い基準日を新しい価格と誤認せず、次回の実行で取得します。
 
 ## 正常時の挙動と安全性
 

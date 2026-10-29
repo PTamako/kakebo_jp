@@ -10,6 +10,20 @@ CREATE TABLE IF NOT EXISTS investment_plans (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY(fund_code, account_type)
 );
+-- Versioned allocations prevent future edits from rewriting historical months.
+CREATE TABLE IF NOT EXISTS investment_plan_history (
+  fund_code TEXT NOT NULL,
+  account_type TEXT NOT NULL CHECK(account_type IN ('growth','tsumitate')),
+  effective_month TEXT NOT NULL CHECK(length(effective_month) = 7),
+  fund_name TEXT NOT NULL,
+  monthly_amount INTEGER NOT NULL CHECK(monthly_amount >= 0),
+  order_day INTEGER NOT NULL CHECK(order_day BETWEEN 1 AND 28),
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(fund_code, account_type, effective_month)
+);
+CREATE INDEX IF NOT EXISTS idx_plan_history_month ON investment_plan_history(effective_month);
+
 CREATE TABLE IF NOT EXISTS investment_holdings (
   fund_code TEXT NOT NULL,
   account_type TEXT NOT NULL CHECK(account_type IN ('growth','tsumitate')),

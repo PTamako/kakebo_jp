@@ -1,32 +1,14 @@
-// Shared icon metadata and Japanese-facing category labels.
-export const CATEGORY_ICON_PATHS = {
- '餐饮':'M4 14h16M5 14a7 7 0 0 0 14 0M8 19h8M8 5v5M12 5v5M16 5v5',
- '饮食料品':'M3 6h2l2 11h12l2-8H6M9 21h.01M18 21h.01',
- '日用品':'M7 4h10l2 16H5L7 4ZM9 8h6',
- '交通':'M5 16V7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v9H5ZM5 11h14M8 20v-4M16 20v-4',
- '购物':'M5 8h14l1 12H4L5 8ZM9 9V6a3 3 0 0 1 6 0v3',
- '居住':'M3 11l9-8 9 8M6 9v11h12V9M10 20v-7h4v7',
- '医疗':'M9 4h6v5h5v6h-5v5H9v-5H4V9h5V4Z',
- '娱乐':'M7 7h10l4 8-3 4-4-4h-4l-4 4-3-4 4-8ZM8 11v4M6 13h4M16 11h.01M18 13h.01',
- '宠物':'M7 9h.01M17 9h.01M5 6h.01M19 6h.01M12 11c-3 0-7 4-7 7 0 2 2 3 4 2l3-1 3 1c2 1 4 0 4-2 0-3-4-7-7-7Z',
- '工资':'M4 8h16v12H4V8ZM7 8V5h10v3M8 14h8',
- '奖金':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13M8 7c-3-4 3-6 4 0 1-6 7-4 4 0',
- '副业':'M3 7h18v13H3V7ZM8 7V4h8v3M3 12h18',
- '老公生活费':'M3 11l9-8 9 8M6 9v11h12V9M10 20v-7h4v7',
- '父母赠与':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13',
- '亲友赠与':'M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13',
- '退款':'M8 6 3 11l5 5M3 11h11a6 6 0 0 1 0 12',
- '投資・資産移動':'M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4'
-}
+// Static SVG drawing catalogue. Chosen icon ID and Japanese category names are stored on D1 category_source.
+// No user category mappings or category ordering are embedded in this file.
 export const ICON_LIBRARY = [
-  { id:'food', label:'飲食料品', path:CATEGORY_ICON_PATHS['饮食料品'] },
-  { id:'dining', label:'外食', path:CATEGORY_ICON_PATHS['餐饮'] },
-  { id:'daily', label:'日用品', path:CATEGORY_ICON_PATHS['日用品'] },
-  { id:'transport', label:'交通', path:CATEGORY_ICON_PATHS['交通'] },
-  { id:'shopping', label:'買い物', path:CATEGORY_ICON_PATHS['购物'] },
-  { id:'home', label:'住居費', path:CATEGORY_ICON_PATHS['居住'] },
-  { id:'medical', label:'医療費', path:CATEGORY_ICON_PATHS['医疗'] },
-  { id:'pet', label:'ペット', path:CATEGORY_ICON_PATHS['宠物'] },
+  { id:'food', label:'飲食料品', path:"M3 6h2l2 11h12l2-8H6M9 21h.01M18 21h.01" },
+  { id:'dining', label:'外食', path:"M4 14h16M5 14a7 7 0 0 0 14 0M8 19h8M8 5v5M12 5v5M16 5v5" },
+  { id:'daily', label:'日用品', path:"M7 4h10l2 16H5L7 4ZM9 8h6" },
+  { id:'transport', label:'交通', path:"M5 16V7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v9H5ZM5 11h14M8 20v-4M16 20v-4" },
+  { id:'shopping', label:'買い物', path:"M5 8h14l1 12H4L5 8ZM9 9V6a3 3 0 0 1 6 0v3" },
+  { id:'home', label:'住居費', path:"M3 11l9-8 9 8M6 9v11h12V9M10 20v-7h4v7" },
+  { id:'medical', label:'医療費', path:"M9 4h6v5h5v6h-5v5H9v-5H4V9h5V4Z" },
+  { id:'pet', label:'ペット', path:"M7 9h.01M17 9h.01M5 6h.01M19 6h.01M12 11c-3 0-7 4-7 7 0 2 2 3 4 2l3-1 3 1c2 1 4 0 4-2 0-3-4-7-7-7Z" },
   { id:'beauty', label:'美容', path:'M9 3h6v5H9zM8 8h8v12H8zM10 12h4M18 3v4M16 5h4' },
   { id:'education', label:'教育', path:'M2 9l10-5 10 5-10 5-10-5ZM6 11v5c3 3 9 3 12 0v-5M21 10v6' },
   { id:'insurance', label:'保険', path:'M12 3l8 3v5c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3ZM9 12l2 2 4-4' },
@@ -35,7 +17,7 @@ export const ICON_LIBRARY = [
   { id:'tax', label:'税金', path:'M4 21h16M5 19V9h14v10M3 9l9-6 9 6M8 12v4M12 12v4M16 12v4' },
   { id:'travel', label:'旅行', path:'M3 15l7 1 8 5 2-1-5-6 5-5c2-2 0-4-2-2l-5 5-6-5-1 2 5 8-8-2Z' },
   { id:'subscriptions', label:'サブスク', path:'M4 5h16v14H4zM10 9l5 3-5 3V9Z' },
-  { id:'gift', label:'贈り物', path:CATEGORY_ICON_PATHS['奖金'] },
+  { id:'gift', label:'贈り物', path:"M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13M8 7c-3-4 3-6 4 0 1-6 7-4 4 0" },
   { id:'electricity', label:'電気', path:'M13 2 5 13h6l-1 9 9-12h-6z' },
   { id:'water', label:'水道', path:'M12 3C9 7 6 11 6 15a6 6 0 0 0 12 0c0-4-3-8-6-12Z' },
   { id:'gas', label:'ガス', path:'M12 3c1 5-4 5-4 10-2-1-2-3-2-3-3 7 1 11 6 11s8-4 6-9c-1 2-2 2-3 2 1-5-2-8-3-11Z' },
@@ -73,13 +55,12 @@ export const ICON_LIBRARY = [
   { id:'events', label:'イベント', path:'M4 6h16v14H4zM8 3v6M16 3v6M4 11h16' },
   { id:'work', label:'仕事', path:'M3 7h18v13H3zM8 7V4h8v3M3 12h18' },
   { id:'phone-device', label:'スマホ本体', path:'M7 2h10v20H7zM10 5h4M11 19h2' },
-  { id:'other', label:'その他', path:'M5 3h14v18H5V3ZM8 8h8M8 12h8M8 16h5' }
+  { id:'other', label:'その他', path:'M5 3h14v18H5V3ZM8 8h8M8 12h8M8 16h5' },
+  { id:"entertainment", label:"娯楽", path:"M7 7h10l4 8-3 4-4-4h-4l-4 4-3-4 4-8ZM8 11v4M6 13h4M16 11h.01M18 13h.01" },
+  { id:"salary", label:"給与", path:"M4 8h16v12H4V8ZM7 8V5h10v3M8 14h8" },
+  { id:"bonus", label:"賞与", path:"M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13M8 7c-3-4 3-6 4 0 1-6 7-4 4 0" },
+  { id:"sidejob", label:"副業", path:"M3 7h18v13H3V7ZM8 7V4h8v3M3 12h18" },
+  { id:"family-gift", label:"家族からの贈与", path:"M4 10h16v10H4V10ZM3 7h18v3H3V7ZM12 7v13" },
+  { id:"refund", label:"返金", path:"M8 6 3 11l5 5M3 11h11a6 6 0 0 1 0 12" },
+  { id:"transfer", label:"資産移動", path:"M4 7h16l-4-4m4 4-4 4M20 17H4l4-4m-4 4 4 4" }
 ]
-export const CATEGORY_LABELS = { '投資・資産移動':'資産移動', '餐饮':'外食', '饮食料品':'飲食料品', '日用品':'日用品', '交通':'交通費', '购物':'買い物', '居住':'住居費', '医疗':'医療費', '娱乐':'娯楽', '宠物':'ペット', '其他':'その他', '工资':'給与', '奖金':'賞与', '副业':'副業', '老公生活费':'配偶者からの生活費', '父母赠与':'親からの贈与', '亲友赠与':'親族・友人からの贈与', '退款':'返金', '其他收入':'その他の収入' }
-
-export const OTHER_SORT_ORDER = 99999
-export const isOtherOption = name => ['其他','その他','其他收入','その他の収入'].includes(String(name || '').trim())
-// Stable sort: preserve custom user order; only move "other" to the final position.
-export const sortOtherLast = values => [...values].sort((a,b) =>
-  (isOtherOption(a) ? OTHER_SORT_ORDER : 0) - (isOtherOption(b) ? OTHER_SORT_ORDER : 0)
-)

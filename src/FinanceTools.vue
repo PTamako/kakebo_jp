@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { sortOtherLast } from './category-ui.js'
+import { sortOtherLast } from './category-sort.js'
 import AmountInput from './AmountInput.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion } from './finance-tools.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'

@@ -380,9 +380,13 @@ test('D1 restore of a missing category icon does not overwrite a user icon',asyn
   const {db,call}=await createClient()
   try{
     const path='category-icons/restore-missing'
-    assert.equal((await call(path,'POST',{category:'居住',icon:'home'})).body.created,true)
-    assert.equal((await call(path,'POST',{category:'居住',icon:'water'})).body.created,false)
-    assert.equal((await call('category-icons')).body['居住'],'home')
+    // Built-in icon IDs are now preseeded from D1 metadata; testing an
+    // unknown category proves restore-missing remains insert-only.
+    assert.equal((await call(path,'POST',{category:'テスト分類',icon:'home'})).body.created,true)
+    assert.equal((await call(path,'POST',{category:'テスト分類',icon:'water'})).body.created,false)
+    const icons=(await call('category-icons')).body
+    assert.equal(icons['テスト分類'],'home')
+    assert.equal(icons['居住'],'home')
   }finally{db.close()}
 })
 
@@ -545,4 +549,41 @@ test('manual-only cleanup refuses to delete an unmigrated historical category ic
     assert.equal(db.db.prepare("SELECT name FROM sqlite_master WHERE name='category_icons'").get().name,'category_icons')
     assert.equal(db.db.prepare("SELECT name FROM sqlite_master WHERE name='custom_rules'").get().name,'custom_rules')
   }finally{db.close()}
+})
+
+test('category_source serves Japanese labels and standard icon IDs without frontend mapping',async()=>{
+  const {db,call}=await createClient()
+  try {
+    const response=await call('category-source')
+    assert.equal(response.status,200)
+    const rows=new Map(response.body.map(row=>[row.category,row]))
+    assert.deepEqual({label:rows.get('餐饮')?.display_name,icon:rows.get('餐饮')?.icon},{label:'外食',icon:'dining'})
+    assert.deepEqual({label:rows.get('工资')?.display_name,icon:rows.get('工资')?.icon},{label:'給与',icon:'salary'})
+    assert.deepEqual({label:rows.get('其他')?.display_name,rank:rows.get('其他')?.sort_order},{label:'その他',rank:99999})
+    assert.equal((await call('categories','POST',{name:'試験用分類',icon:'books'})).status,200)
+    const added=(await call('category-source')).body.find(row=>row.category==='試験用分類')
+    assert.equal(added.display_name,'試験用分類')
+    assert.equal(added.icon,'books')
+    assert.ok(added.sort_order<99999)
+    assert.ok(db.db.prepare("SELECT version FROM schema_migrations WHERE version='category-presentation-v1'").get())
+  } finally {db.close()}
+})
+
+test('existing D1 upgrade adds the display_name column and never overwrites chosen icons',async()=>{
+  const {db,call}=await createClient()
+  try {
+    await call('categories')
+    db.db.prepare("UPDATE category_source SET icon='books' WHERE category='购物'").run()
+    // Model an older production D1 where category_source was created without
+    // the new display column and category-source-v1 is already marked complete.
+    db.db.prepare("DELETE FROM schema_migrations WHERE version='category-presentation-v1'").run()
+    db.db.exec("ALTER TABLE category_source DROP COLUMN display_name")
+    const response=await call('category-source')
+    assert.equal(response.status,200)
+    const chosen=response.body.find(row=>row.category==='购物')
+    assert.equal(chosen.display_name,'買い物')
+    assert.equal(chosen.icon,'books')
+    assert.equal((await call('category-source')).body.find(row=>row.category==='购物').icon,'books')
+    assert.ok(db.db.prepare("SELECT version FROM schema_migrations WHERE version='category-presentation-v1'").get())
+  } finally {db.close()}
 })

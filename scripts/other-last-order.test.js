@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
-import {sortOtherLast, isOtherOption, OTHER_SORT_ORDER} from '../src/category-ui.js'
+import {sortOtherLast, isOtherOption, OTHER_SORT_ORDER} from '../src/category-sort.js'
 
 const sourceFile=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 

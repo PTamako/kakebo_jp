@@ -657,7 +657,8 @@ async function loadTransfers() {
   transferLoading.value = true
   try {
     // Explicitly apply due transfers; this must not happen on unrelated GET requests.
-    await api('transfers/process-due',{method:'POST'})
+    if (!/^[^.]+\.kakeibo-f17\.pages\.dev$/.test(window.location.hostname))
+      await api('transfers/process-due',{method:'POST'})
     let rows = await api('transfers')
     // The backend marks due transfers once; no extra per-row writes needed here.
     pendingTransfers.value = rows

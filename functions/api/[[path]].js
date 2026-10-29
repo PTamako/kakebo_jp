@@ -669,9 +669,26 @@ export async function onRequest({ request, env, params }) {
         const clientRequestId = e.clientRequestId == null ? null : String(e.clientRequestId).trim()
         if (clientRequestId && !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
           return json({ error: '記録IDの形式が正しくありません' }, 400)
-        const inserted = await db.prepare(
-          'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied, transferDate, clientRequestId, paymentSource).run()
+        // Advisory prechecks in the browser can race with another device. Make
+        // the final duplicate decision in ONE SQL insert on D1. Explicitly
+        // confirmed legitimate repeats remain possible.
+        const type = transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense')
+        const checkDuplicate = e.duplicatePolicy === 'check' && e.allowDuplicate !== true
+        const insertSql = checkDuplicate
+          ? `INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
+            SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13
+            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND COALESCE(time,'')=?2 AND amount=?3
+              AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13)
+            ON CONFLICT(client_request_id) DO NOTHING`
+          : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
+        const inserted = await db.prepare(insertSql).bind(e.date, e.time || '', amount,
+          transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')),
+          e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000),
+          type, target, applied, transferDate, clientRequestId, paymentSource).run()
+        if (checkDuplicate && inserted.meta?.changes === 0) {
+          const ownRetry = clientRequestId && await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first()
+          if (!ownRetry) return json({error:'同じ日付・金額・店舗・支払方法の記録が追加されました。内容を再確認してください',code:'duplicate_candidate'},409)
+        }
         const savedEntry = clientRequestId
           ? await db.prepare('SELECT id FROM entries WHERE client_request_id = ?1').bind(clientRequestId).first()
           : await db.prepare('SELECT id FROM entries WHERE id = ?1').bind(inserted.meta.last_row_id).first()
@@ -709,10 +726,21 @@ export async function onRequest({ request, env, params }) {
         return json({ ok: true, changes: result.meta?.changes ?? 0 })
       }
     }
-    if (a === 'category-icons' && m === 'GET') {
+    if (a === 'category-icons') {
       await db.prepare('CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL)').run()
-      const { results } = await db.prepare('SELECT category, icon FROM category_icons').all()
-      return json(Object.fromEntries(results.map(r => [r.category, r.icon])))
+      if (m === 'GET') {
+        const { results } = await db.prepare('SELECT category, icon FROM category_icons').all()
+        return json(Object.fromEntries(results.map(r => [r.category, r.icon])))
+      }
+      if (m === 'POST' && b === 'restore-missing') {
+        const data = await request.json()
+        const category = typeof data?.category === 'string' ? data.category.trim() : ''
+        const icon = typeof data?.icon === 'string' ? data.icon.trim() : ''
+        if (!category || category.length > 20 || !/^[a-z][a-z-]{1,40}$/.test(icon))
+          return json({error:'復元するカテゴリーアイコンを確認してください'},400)
+        const result = await db.prepare('INSERT OR IGNORE INTO category_icons(category,icon) VALUES(?1,?2)').bind(category,icon).run()
+        return json({ok:true,created:!!result.meta?.changes})
+      }
     }
     if (a === 'categories') {
       if (m === 'GET') {

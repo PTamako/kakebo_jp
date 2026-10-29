@@ -358,7 +358,7 @@ export async function onRequest({ request, env, params }) {
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
         "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
-        'SELECT category,icon FROM category_source WHERE icon IS NOT NULL ORDER BY category',
+        'SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category',
         'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id'
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
@@ -371,7 +371,8 @@ export async function onRequest({ request, env, params }) {
         investments:rows(3),paymentSources:rows(4),merchantPaymentRules:rows(5),
         customRules:rows(6),
         categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(7).map(x=>x.category)])],
-        categoryIcons:Object.fromEntries(rows(8).map(x=>[x.category,x.icon])),
+        categoryIcons:Object.fromEntries(rows(8).filter(x=>x.icon).map(x=>[x.category,x.icon])),
+        categoryMetadata:rows(8),
         dismissedTransfers:rows(9).map(x=>x.entry_id)
       })
     }
@@ -605,7 +606,7 @@ export async function onRequest({ request, env, params }) {
         const insertSql = checkDuplicate
           ? `INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
             SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13
-            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND amount=?3
+            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND COALESCE(time,'')=COALESCE(?2,'') AND amount=?3
               AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13)
             ON CONFLICT(client_request_id) DO NOTHING`
           : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
@@ -681,6 +682,7 @@ export async function onRequest({ request, env, params }) {
         const { results } = await db.prepare(`SELECT category,sort_order FROM category_source
           WHERE category IN ('餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他')
              OR EXISTS(SELECT 1 FROM rules WHERE keyword='__category__:'||category_source.category)
+             OR display_name IS NOT NULL
           ORDER BY CASE WHEN category='其他' THEN 99999 ELSE COALESCE(sort_order,10000) END,category`).all()
         const ranks = new Map((results || []).map(row=>[row.category,row.sort_order]))
         return json([...new Set([...base,...ranks.keys()])].sort((a,b)=>

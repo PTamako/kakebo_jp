@@ -235,7 +235,7 @@ function parseEntriesInternal(raw, rules) {
   // Preserve original word boundaries for space-delimited AI statements.
   const originalLines = String(raw).split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   const originalSpacedRows = originalLines.map(line => {
-    const m = line.normalize('NFKC').match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2})\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)$/)
+    const m = line.normalize('NFKC').match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)$/)
     if (!m) return null
     const merchant = m[2].trim()
     const amount = Number(m[3].replace(/[^\d]/g, ''))
@@ -251,7 +251,7 @@ function parseEntriesInternal(raw, rules) {
   if (csvRows.length && csvRows.every(Boolean)) return csvRows
   // Space-delimited AI card rows: date, merchant, yen amount, installment count.
   const spacedRows = csvLines.map(line => {
-    const match = line.match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2})\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)\s*$/)
+    const match = line.match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)\s*$/)
     if (!match) return null
     const merchant = match[2].trim()
     const amount = Number(match[3].replace(/[^\d]/g, ''))

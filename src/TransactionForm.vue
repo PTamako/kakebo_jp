@@ -1,9 +1,13 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { sortOtherLast } from './category-ui.js'
 const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false } })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
+const orderedCategories = computed(() => sortOtherLast(props.categories))
+const orderedIncomeCategories = computed(() => sortOtherLast(props.incomeCategories))
+const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
 const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receiptName || props.existingReceipt)
 </script>
 <template>
@@ -15,9 +19,9 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
   <div v-if="!(Number(record.amount)>0)" class="amount-warning" role="alert">金額を確認してください。</div>
   <div class="field-grid">
     <label class="form-field"><span>日付</span><input v-model="record.date" type="date" required /></label>
-    <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><select v-model="record.category"><option v-for="c in (record.type==='income'?incomeCategories:record.type==='transfer'?['投資・資産移動']:categories)" :key="c" :value="c">{{categoryLabel(c)}}</option></select></label>
+    <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><select v-model="record.category"><option v-for="c in (record.type==='income'?orderedIncomeCategories:record.type==='transfer'?['投資・資産移動']:orderedCategories)" :key="c" :value="c">{{categoryLabel(c)}}</option></select></label>
     <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
-    <label v-if="record.type==='expense'" class="form-field"><span>支払方法・カード</span><select :value="record.paymentSource" @change="emit('payment-change', $event.target.value)"><option value="">未設定</option><option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option><option v-if="record.paymentSource && !paymentSources.includes(record.paymentSource)" :value="record.paymentSource">{{record.paymentSource}}（既存の設定）</option></select></label>
+    <label v-if="record.type==='expense'" class="form-field"><span>支払方法・カード</span><select :value="record.paymentSource" @change="emit('payment-change', $event.target.value)"><option value="">未設定</option><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="record.paymentSource && !paymentSources.includes(record.paymentSource)" :value="record.paymentSource">{{record.paymentSource}}（既存の設定）</option></select></label>
   </div>
   <div v-if="record.type==='transfer'" class="field-grid transfer-schedule-fields"><label class="form-field"><span>振替先</span><select v-model="record.transferTarget"><option value="">選択してください</option><option value="sbi">SBI証券（投資信託）</option></select></label><label class="form-field"><span>反映日</span><input v-model="record.transferDate" type="date" required /></label></div>
   <div v-if="record.type==='expense' && receiptEnabled" class="receipt-attachment-field" role="group" aria-label="レシート画像の添付"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{hasReceipt?'画像を変更する':'画像を追加'}}<input type="file" accept="image/*" @change="emit('select-receipt',$event)" hidden /></label><span class="receipt-attachment-status">{{record.receiptImage?'選択済み'+(record.receiptFileName?'：'+record.receiptFileName:''):receiptName?'選択済み：'+receiptName:existingReceipt?'保存済み':'未選択'}}</span><button v-if="record.receiptImage || receiptName" type="button" class="receipt-attachment-clear" @click="emit('clear-receipt')">選択を解除</button></div>

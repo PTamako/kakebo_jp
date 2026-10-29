@@ -468,7 +468,7 @@ export async function onRequest({ request, env, params }) {
         'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         'SELECT platform,current_value,pnl,updated_at FROM investment_snapshots ORDER BY platform',
-        'SELECT name,closing_day,is_default,sort_order FROM payment_sources ORDER BY sort_order,name',
+        "SELECT name,closing_day,is_default,sort_order FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
         'SELECT keyword,payment_source FROM merchant_payment_rules ORDER BY keyword',
         'SELECT keyword,category FROM custom_rules ORDER BY keyword',
         "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
@@ -570,7 +570,10 @@ export async function onRequest({ request, env, params }) {
         if (cardCount?.n > 0)
           await db.prepare("INSERT OR IGNORE INTO finance_settings(name,value) VALUES('closing-days-migrated-v1','true')").run()
       }
-      const { results } = await db.prepare('SELECT name, is_default, closing_day FROM payment_sources ORDER BY sort_order, name').all()
+      // Enforce the persisted sentinel on existing databases, without touching
+      // transaction/payment references or any user-created payment method.
+      await db.prepare("UPDATE payment_sources SET sort_order=99999 WHERE name IN ('その他','其他') AND sort_order<>99999").run()
+      const { results } = await db.prepare("SELECT name, is_default, closing_day FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
       return json(results)
     }
     if (a === 'payment-sources' && b === 'restore-missing' && m === 'POST') {
@@ -582,7 +585,7 @@ export async function onRequest({ request, env, params }) {
         return json({error:'復元するカード設定を確認してください'},400)
       // Insert name and closing day atomically; no later update may replace a
       // different device's card settings created in the meantime.
-      const result = await db.prepare('INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day) VALUES(?1,(SELECT COALESCE(MAX(sort_order),0)+1 FROM payment_sources),?2)')
+      const result = await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END,?2)")
         .bind(name,closingDay).run()
       return json({ok:true,created:!!result.meta?.changes})
     }
@@ -610,7 +613,7 @@ export async function onRequest({ request, env, params }) {
       const existing = await db.prepare('SELECT COUNT(*) AS n FROM payment_sources').first()
       if (!existing?.n) {
         const items = ['現金', ...names.filter(x => x !== '現金')]
-        for (let i = 0; i < items.length; i++) await db.prepare('INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,?2)').bind(items[i],i).run()
+        for (let i = 0; i < items.length; i++) await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE ?2 END)").bind(items[i],i).run()
       }
       return json({ ok: true })
     }
@@ -618,7 +621,7 @@ export async function onRequest({ request, env, params }) {
       const body = await request.json()
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
       if (!name || name.length > 80) return json({ error: 'カード名を確認してください' }, 400)
-      await db.prepare('INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,(SELECT COALESCE(MAX(sort_order),0)+1 FROM payment_sources))').bind(name).run()
+      await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END)").bind(name).run()
       return json({ ok: true })
     }
     if (a === 'payment-sources' && b === 'default' && m === 'POST') {
@@ -683,7 +686,7 @@ export async function onRequest({ request, env, params }) {
       const collision = await db.prepare('SELECT 1 AS found FROM card_bills WHERE payment_source=?1 AND bill_month IN (SELECT bill_month FROM card_bills WHERE payment_source=?2) LIMIT 1').bind(newName,oldName).first()
       if (collision) return json({error:'変更先に同月のカード請求が存在します'},409)
       const result = await db.batch([
-        db.prepare('UPDATE payment_sources SET name=?1 WHERE name=?2').bind(newName,oldName),
+        db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName),
         db.prepare('UPDATE merchant_payment_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
         db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
         db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
@@ -837,16 +840,31 @@ export async function onRequest({ request, env, params }) {
       }
     }
     if (a === 'categories') {
+      // Additive metadata only: never rebuild the categories or the rules table.
+      await db.prepare("CREATE TABLE IF NOT EXISTS category_sort_order (category TEXT PRIMARY KEY, sort_order INTEGER NOT NULL)").run()
+      await db.prepare("INSERT OR IGNORE INTO category_sort_order(category,sort_order) VALUES ('餐饮',0),('饮食料品',1),('日用品',2),('交通',3),('购物',4),('居住',5),('医疗',6),('娱乐',7),('宠物',8)").run()
+      await db.prepare("INSERT INTO category_sort_order(category,sort_order) VALUES('其他',99999),('其他收入',99999) ON CONFLICT(category) DO UPDATE SET sort_order=99999").run()
       if (m === 'GET') {
         const base = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
         const { results } = await db.prepare("SELECT DISTINCT category FROM rules WHERE substr(keyword, 1, 13) = '__category__:' ORDER BY category").all()
-        return json([...new Set([...base, ...results.map(r => r.category)])])
+        // Old custom categories gain stable stored ranks without losing icons or rules.
+        for (const category of results.map(r => r.category)) {
+          if (category === '其他' || category === '其他收入') continue
+          await db.prepare("INSERT OR IGNORE INTO category_sort_order(category,sort_order) VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_sort_order WHERE sort_order<99999))").bind(category).run()
+        }
+        const ranks = await db.prepare('SELECT category,sort_order FROM category_sort_order').all()
+        const rankMap = new Map((ranks.results || []).map(row=>[row.category,row.sort_order]))
+        return json([...new Set([...base, ...results.map(r => r.category)])].sort((a,b)=>
+          (a === '其他' ? 99999 : (rankMap.get(a) ?? (base.includes(a) ? base.indexOf(a) : 10000))) -
+          (b === '其他' ? 99999 : (rankMap.get(b) ?? (base.includes(b) ? base.indexOf(b) : 10000))) ||
+          a.localeCompare(b,'ja')
+        ))
       }
       if (m === 'POST') {
         const body = await request.json()
         const name = String(body.name || '').trim().slice(0, 20)
         if (name.length < 1) return json({ error: 'カテゴリー名を入力してください' }, 400)
-        const reserved = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
+        const reserved = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他','その他','其他收入','その他の収入']
         const icon = String(body.icon || 'other')
         const validIcons = ['food','dining','daily','transport','shopping','home','medical','pet','beauty','education','insurance','utilities','phone','tax','travel','subscriptions','gift','electricity','water','gas','rent','internet','hair','cosmetics','clothes','shoes','books','lessons','childcare','family','car','bicycle','fuel','parking','fitness','health','medicine','dental','cafe','hobby','music','movie','electronics','furniture','repair','charity','bank','savings','fees','delivery','cleaning','events','work','phone-device','other']
         if (!validIcons.includes(icon)) return json({ error: 'アイコンを確認してください' }, 400)
@@ -857,7 +875,8 @@ export async function onRequest({ request, env, params }) {
         // Keep the category and its icon together if a database write fails.
         await db.batch([
           db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name),
-          db.prepare('INSERT OR IGNORE INTO category_icons (category, icon) VALUES (?1, ?2)').bind(name, icon)
+          db.prepare('INSERT OR IGNORE INTO category_icons (category, icon) VALUES (?1, ?2)').bind(name, icon),
+          db.prepare("INSERT OR IGNORE INTO category_sort_order(category,sort_order) VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_sort_order WHERE sort_order<99999))").bind(name)
         ])
         return json({ ok: true, category: name })
       }

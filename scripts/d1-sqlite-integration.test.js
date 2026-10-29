@@ -360,3 +360,69 @@ test('actual SQLite: backup snapshot reads the same consistent entries and setti
     assert.ok(Array.isArray(result.body.investments))
   }finally{db.close()}
 })
+
+
+test('actual SQLite: Other payment source persists at 99999 and new cards sort above it',async()=>{
+  const {db,call}=await createClient()
+  try {
+    // Simulate an old installation where その他 was inserted between real cards.
+    db.db.prepare("INSERT INTO payment_sources(name,sort_order) VALUES('既存カード',0),('その他',1)").run()
+    const before= db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='その他'").get()
+    assert.equal(before.sort_order,1)
+    let sources=await call('payment-sources')
+    assert.equal(sources.status,200)
+    assert.equal(sources.body.at(-1).name,'その他')
+    assert.equal(db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='その他'").get().sort_order,99999)
+    for(const name of ['新規カードA','新規カードB']){
+      assert.equal((await call('payment-sources','POST',{name})).status,200)
+      assert.ok(db.db.prepare('SELECT sort_order FROM payment_sources WHERE name=?').get(name).sort_order<99999)
+    }
+    assert.equal((await call('payment-sources/restore-missing','POST',{name:'復元カード',closingDay:26})).body.created,true)
+    assert.ok(db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='復元カード'").get().sort_order<99999)
+    sources=await call('payment-sources')
+    assert.deepEqual(sources.body.map(x=>x.name),['既存カード','新規カードA','新規カードB','復元カード','その他'])
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries").get().n,0)
+    const backup=(await call('backup-snapshot')).body
+    assert.equal(backup.paymentSources.at(-1).name,'その他')
+    assert.equal(backup.paymentSources.at(-1).sort_order,99999)
+  }finally{db.close()}
+})
+
+test('actual SQLite: custom categories rank ahead of persisted 99999 Other even on old data',async()=>{
+  const {db,call}=await createClient()
+  try {
+    db.db.prepare("INSERT OR IGNORE INTO rules(keyword,category) VALUES('__category__:旧分類','旧分類')").run()
+    let res=await call('categories')
+    assert.equal(res.status,200)
+    assert.equal(res.body.at(-1),'其他')
+    assert.ok(res.body.indexOf('旧分類')<res.body.indexOf('其他'))
+    assert.equal(db.db.prepare("SELECT sort_order FROM category_sort_order WHERE category='其他'").get().sort_order,99999)
+    assert.equal(db.db.prepare("SELECT sort_order FROM category_sort_order WHERE category='其他收入'").get().sort_order,99999)
+    assert.equal((await call('categories','POST',{name:'新分類',icon:'books'})).status,200)
+    res=await call('categories')
+    assert.equal(res.body.at(-1),'其他')
+    assert.ok(res.body.indexOf('旧分類')<res.body.indexOf('新分類'))
+    for(const name of ['旧分類','新分類']){
+      assert.ok(db.db.prepare('SELECT sort_order FROM category_sort_order WHERE category=?').get(name).sort_order<99999)
+    }
+    const icon=(await call('category-icons')).body
+    assert.equal(icon['新分類'],'books')
+    assert.equal((await call('categories','POST',{name:'その他',icon:'other'})).status,409)
+  }finally{db.close()}
+})
+
+test('actual SQLite migration: 0004 is idempotent and leaves financial records intact',async()=>{
+  const {db,call}=await createClient()
+  try{
+    await call('entries','POST',{date:'2026-10-29',amount:888,type:'expense',category:'其他',merchant:'既存明細'})
+    db.db.prepare("INSERT INTO payment_sources(name,sort_order) VALUES('その他',3),('追加カード',4)").run()
+    db.db.prepare("UPDATE category_sort_order SET sort_order=10 WHERE category='其他'").run()
+    const migration=readFileSync(new URL('../migrations/0004_other_last_sort_order.sql',import.meta.url),'utf8')
+    db.db.exec(migration)
+    db.db.exec(migration)
+    assert.equal(db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='その他'").get().sort_order,99999)
+    assert.equal(db.db.prepare("SELECT sort_order FROM category_sort_order WHERE category='其他'").get().sort_order,99999)
+    assert.equal(db.db.prepare("SELECT amount FROM entries WHERE merchant='既存明細'").get().amount,888)
+    assert.equal(db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='追加カード'").get().sort_order,4)
+  }finally{db.close()}
+})

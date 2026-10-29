@@ -11,7 +11,7 @@ import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
-import { CATEGORY_ICON_PATHS, ICON_LIBRARY, CATEGORY_LABELS } from './category-ui.js'
+import { CATEGORY_ICON_PATHS, ICON_LIBRARY, CATEGORY_LABELS, sortOtherLast } from './category-ui.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
@@ -92,7 +92,7 @@ async function loadPaymentSettings() {
       await api('payment-sources/initialize', { method: 'POST', body: JSON.stringify({ names: readLegacyPaymentSources() }) })
       cards = await api('payment-sources')
     }
-    paymentSources.value = cards.map(x => x.name)
+    paymentSources.value = sortOtherLast(cards.map(x => x.name))
     paymentClosingDays.value = Object.fromEntries(cards.filter(x => x.closing_day !== null && x.closing_day !== undefined).map(x => [x.name, x.closing_day]))
     defaultPaymentSource.value = cards.find(x => x.is_default)?.name || ''
     merchantPaymentRules.value = await api('merchant-payment-rules')
@@ -183,7 +183,7 @@ function onReceiptImagesCleared() {
 }
 
 const editingEntry = ref(null)
-const INCOME_CATEGORIES = ['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入']
+const INCOME_CATEGORIES = sortOtherLast(['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入'])
 const categoryIcons = ref({})
 const availableIcons = computed(() => {
   const used = new Set(Object.values(categoryIcons.value))
@@ -306,7 +306,7 @@ async function load() {
     if (!paymentSettingsLoaded) await loadPaymentSettings()
     const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), fetchMonthEntries(requestedMonth), api('stats?month=' + requestedMonth)])
     if (requestId !== loadRequestId || requestedMonth !== month.value) return
-    categories.value = nextCategories
+    categories.value = sortOtherLast(nextCategories)
     try { categoryIcons.value = await api('category-icons') } catch { /* Existing categories keep their default icons. */ }
     entries.value = nextEntries
     refreshReceiptImageIds().catch(() => {})
@@ -536,7 +536,7 @@ async function saveCategory() {
   categorySaving.value = true
   try {
     await api('categories', { method: 'POST', body: JSON.stringify({ name, icon: categoryIcon.value }) })
-    categories.value = await api('categories')
+    categories.value = sortOtherLast(await api('categories'))
     categoryIcons.value = await api('category-icons')
     categoryDialog.value = false
     flash('カテゴリを追加しました')

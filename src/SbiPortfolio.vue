@@ -1,7 +1,10 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
-const props = defineProps({ api: { type: Function, required: true } })
+const props = defineProps({
+  api: { type: Function, required: true },
+  transferLoading: { type: Boolean, default: false }
+})
 const today = () => new Date().toLocaleDateString('sv-SE')
 const month = ref(today().slice(0, 7))
 const data = ref(null)
@@ -99,6 +102,9 @@ async function initialize() {
 async function submitTransfer() {
   await submit('transfer-month',{entryId:Number(editingTransfer.value),purchaseMonth:newPurchaseMonth.value},'買付月を更新しました')
 }
+// Refresh after existing due-transfer processing completes, so the asset
+// reconciliation cannot be stale if it raced the automatic due-date update.
+watch(() => props.transferLoading, (busy, previous) => { if (previous && !busy) void load() })
 onMounted(load)
 </script>
 

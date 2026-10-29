@@ -22,7 +22,7 @@ test('App only coordinates tabs; all four pages own their templates',()=>{
   assert.match(ledger,/class="month-calendar"/)
   assert.match(ledger,/class="edit-dialog"/)
   assert.match(stats,/statsPeriod === 'month'/)
-  assert.match(stats,/class="annual-page"/)
+  assert.match(stats,/class="page-section stats-page annual-page"/)
   assert.match(assets,/class="investment-card"/)
   assert.match(management,/<FinanceTools v-bind="\$attrs"\s*\/>/)
   assert.match(app,/<ManagementPage v-show="tab === 'finance'"/)

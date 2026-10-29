@@ -115,7 +115,7 @@ test('手入力 text reading keeps the manual tab and review/save controls; only
   assert.match(app,/entryInputMode === 'scan' \? '読み取り結果の確認' : '入力内容の確認'/)
   assert.match(app,/@click="saveAll"/)
   assert.match(manual,/const repeated = parseRepeatedExpense\(input\.value\)/)
-  assert.match(manual,/const effectiveMode = repeated \? 'statement' : mode/)
+  assert.match(manual,/const effectiveMode = structured \|\| repeated \? 'statement' : mode/)
   assert.match(manual,/forms\.value = append \? \[\.\.\.forms\.value, \.\.\.parsedForms\] : parsedForms/)
   assert.doesNotMatch(manual,/entryInputMode\.value\s*=\s*'scan'/)
   assert.doesNotMatch(manual,/api\('entries'/)

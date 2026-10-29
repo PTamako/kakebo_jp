@@ -483,3 +483,28 @@ main .calendar-day.calendar-selected.calendar-today{outline-color:#fff}
 main .calendar-day.calendar-selected .calendar-day-badges i{box-shadow:0 0 0 1px #fff}
 main .calendar-day small{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:360px){main .calendar-legend{font-size:9px;gap:4px 7px}main .calendar-day{padding-inline:0}main .entry-live-clock{letter-spacing:0}}
+
+/* Compact detail calendar: keep each date touchable (>=44px) and retain
+   separate today / highest-spend / highest-income visual indicators. */
+main .month-calendar{padding:10px 9px 9px;margin-bottom:10px}
+main .month-calendar .calendar-heading{margin-bottom:6px}
+main .month-calendar .calendar-legend{margin:-2px 2px 5px;gap:4px 9px}
+main .month-calendar .calendar-weekdays{margin-bottom:3px}
+main .month-calendar .calendar-weekdays,
+main .month-calendar .calendar-grid{gap:3px}
+main .month-calendar .calendar-day{
+  height:46px;min-height:46px;box-sizing:border-box;
+  padding:3px 1px 2px;gap:2px;border-radius:9px;
+  justify-content:center
+}
+main .month-calendar .calendar-day-number{font-size:12px;line-height:12px}
+main .month-calendar .calendar-day-badges{min-height:10px;height:10px}
+main .month-calendar .calendar-peak-expense,
+main .month-calendar .calendar-peak-income{
+  height:10px;min-width:11px;line-height:10px;font-size:8px
+}
+main .month-calendar .calendar-day small{font-size:8px;line-height:10px}
+@media(max-width:355px){
+  main .month-calendar .calendar-weekdays,
+  main .month-calendar .calendar-grid{gap:2px}
+}

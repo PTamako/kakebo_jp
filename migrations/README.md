@@ -74,3 +74,12 @@ Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=
 - 完全削除後に以前のアプリへロールバックすると旧表へのアクセスが失敗する。必要なら `merchant_rules` / `category_source` から復旧用の旧表を再構築できるよう、削除前のバックアップを確保する。
 - `migrations/0004_other_last_sort_order.sql` は旧スキーマ用の履歴資料で、現行運用では**再実行しない**。新規 `schema.sql` も旧4表を新設しない。
 - テストは独立したインメモリSQLiteで旧表を作成して移行・削除後の動作を検証する。本番 D1 で実行した実績を示すものではない。
+
+## 2026-10-29: D1 を分類表示の唯一の設定元にする
+
+- `category_source` に `display_name` (日本語画面表示名) を追加。既存データベースでは `PRAGMA table_info` により列を確認し、欠落時のみ `ALTER TABLE ... ADD COLUMN`。既存の `icon` 値・`sort_order`・明細の `category` は変更しない。
+- 既定カテゴリの日本語名と選択済みアイコンIDは `category-presentation-v1` の一度だけのD1トランザクションで補充する。既存の名称とアイコンは `COALESCE` で保護する。
+- `GET /api/category-source` が `category,sort_order,icon,display_name` を返す。Webアプリはこれを読み、日本語表示名とカテゴリ用SVGを決定する。`category-ui.js` に埋め込まれていたカテゴリ別の表示名/デフォルトアイコン対応表は削除。
+- `src/icon-library.js` は SVG path を描く静的なアイコン**部品集**。`src/category-sort.js` は支払方法を含む「その他を最後」にするUI用の純粋関数。両者はカテゴリデータの保存先ではないためD1とは役割が異なる。
+- 古いv3 JSONバックアップは引き続き `categories` と `categoryIcons` を含み、旧版に存在しない `display_name` は新規DBの標準値で復元される。カスタム分類はユーザーが登録した名称をそのまま表示する。
+- 本番 D1 での結果はAPI初回呼出後に `schema_migrations.category-presentation-v1` を読み取り専用で確認し、各 `category_source` レコードの `display_name` と `icon` を確認する。Cloudflare Pages のビルド成功だけでは本番物理更新が完了した証拠にならない。

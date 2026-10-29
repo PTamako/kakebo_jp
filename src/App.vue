@@ -326,8 +326,8 @@ onMounted(async () => {
   }
 })
 
-watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; swipedReceiptId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
-watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })
+watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; swipedReceiptId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month', detailFilter.value.paymentMethod || '') })
+watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year', detailFilter.value.paymentMethod || '') })
 watch(tab, value => {
   if (value === 'stat' && statsPeriod.value === 'year') loadYear()
   if (value === 'list') visibleEntryCount.value = 20
@@ -773,8 +773,7 @@ const filteredEntries = computed(() => entries.value.filter(e => String(e.date |
 const detailFilter = ref(null)
 const paymentMethodMatches = (entry, method) => method === '現金' ? !String(entry.payment_source || '').trim() || entry.payment_source === '現金' : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
 async function openPaymentMethodDetails(method, period) {
-  await openCategoryDetails('', 'expense', period)
-  if (detailFilter.value) detailFilter.value = {...detailFilter.value, paymentMethod:method}
+  await openCategoryDetails('', 'expense', period, method)
 }
 const detailSourceEntries = ref([])
 const detailLoading = ref(false)
@@ -859,8 +858,8 @@ async function fetchPeriodDetailRows(period, requestId = null) {
   }
   return rows
 }
-async function openCategoryDetails(category, type, period) {
-  detailFilter.value = { category, type, period }
+async function openCategoryDetails(category, type, period, paymentMethod = '') {
+  detailFilter.value = { category, type, period, paymentMethod }
   entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
   selectedDay.value = ''
   detailSourceEntries.value = []

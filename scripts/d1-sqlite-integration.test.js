@@ -69,7 +69,7 @@ test('actual SQLite: ledger years include dates outside hard-coded range',async(
   }finally{db.close()}
 })
 
-test('actual SQLite: manual recurring conflict, idempotency and two distinct plans',async()=>{
+test('actual SQLite: manual and old automated recurring conflicts, idempotency and plan ID updates',async()=>{
   const {db,call}=await createClient()
   try {
     const makePlan=(id)=>({id,name:'家賃',amount:102000,day:25,category:'居住',paymentSource:'現金',startMonth:'2026-10',enabled:true})
@@ -90,8 +90,14 @@ test('actual SQLite: manual recurring conflict, idempotency and two distinct pla
     const repeated=await call('recurring-post','POST',{planId:first.id,month:'2026-10'})
     assert.equal(repeated.body.duplicate,true)
     const independent=await call('recurring-post','POST',{planId:second.id,month:'2026-10'})
-    assert.equal(independent.body.created,true)
-    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,2)
+    assert.equal(independent.body.conflict,true, 'an identical plan with a new ID cannot create a duplicate expense')
+    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,1)
+    const edited=await call('recurring-plans/'+first.id,'PUT',{...first,amount:103000,enabled:false})
+    assert.equal(edited.status,200)
+    const savedPlans=(await call('recurring-plans')).body
+    assert.equal(savedPlans.find(p=>p.id===first.id).amount,103000)
+    assert.equal(savedPlans.find(p=>p.id===first.id).enabled,false)
+    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,1)
   }finally{db.close()}
 })
 

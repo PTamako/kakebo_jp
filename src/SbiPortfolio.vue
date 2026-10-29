@@ -17,6 +17,10 @@ const knownFunds = [
   { code:'0331A172', name:'eMAXIS Slim 先進国債券インデックス（除く日本）', account:'growth' },
   { code:'04317188', name:'iFreeNEXT NASDAQ100インデックス', account:'tsumitate' }
 ]
+const nextMonth = value => {
+  const [year,month] = value.split('-').map(Number)
+  return new Date(Date.UTC(year,month,1)).toISOString().slice(0,7)
+}
 const emptyPlan = () => ({fundCode:'',fundName:'',accountType:'tsumitate',monthlyAmount:0,orderDay:9,enabled:true,effectiveMonth:month.value})
 const emptyHolding = () => ({fundCode:'',fundName:'',accountType:'tsumitate',units:0,acquisitionCost:0})
 const emptyPrice = () => ({fundCode:'',navPer10000:0,priceDate:today()})
@@ -52,7 +56,7 @@ function editPlan(p) {
   plan.value = p ? {
     fundCode:p.fund_code,fundName:p.fund_name,accountType:p.account_type,
     monthlyAmount:Number(p.monthly_amount),orderDay:Number(p.order_day),
-    enabled:!!p.enabled,effectiveMonth:month.value
+    enabled:!!p.enabled,effectiveMonth:nextMonth(month.value)
   } : emptyPlan()
 }
 function editHolding(h) {
@@ -115,7 +119,7 @@ onMounted(load)
         <span class="sbi-overline">積立予定 / 資産移動</span>
         <div class="sbi-money">
           <strong>{{yen(data.reconciliation.monthly_amount)}}</strong>
-          <span>記帳上の振替済 {{yen(data.reconciliation.funded)}}</span>
+          <span>明細から自動集計：振替済 {{yen(data.reconciliation.funded)}}</span>
         </div>
         <div class="sbi-progress" role="progressbar" :aria-valuemax="Math.max(1,data.reconciliation.monthly_amount)" :aria-valuenow="Math.min(data.reconciliation.monthly_amount,data.reconciliation.funded)">
           <span :style="{width:Math.min(100,100*data.reconciliation.funded/Math.max(1,data.reconciliation.monthly_amount))+'%'}"></span>
@@ -187,7 +191,7 @@ onMounted(load)
         <label>口座区分<select v-model="plan.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option></select></label>
         <label>毎月の積立額（円）<input v-model.number="plan.monthlyAmount" type="number" min="0" step="1" required /></label>
         <label>注文希望日<input v-model.number="plan.orderDay" type="number" min="1" max="28" required /></label>
-        <label>適用開始月<input v-model="plan.effectiveMonth" type="month" required /></label>
+        <label>適用開始月<input v-model="plan.effectiveMonth" type="month" required /></label><p class="sbi-hint">変更は指定した月以降に適用され、以前の月は変更されません。</p>
         <label class="sbi-checkbox"><input v-model="plan.enabled" type="checkbox"/>積立中</label>
         <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
       </form>

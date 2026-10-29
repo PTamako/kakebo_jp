@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { formatYenInput, normalizeYenInput, calculateYenExpression, convertToYen } from './amount-tools.js'
 
-const props = defineProps({ modelValue: { type: [Number, String], default: 0 } })
+const props = defineProps({ modelValue: { type: [Number, String], default: 0 }, inputLabel: { type: String, default: '金額（円）' } })
 const emit = defineEmits(['update:modelValue'])
 const moneyInput = ref(null)
 const launchButton = ref(null)
@@ -151,7 +151,7 @@ function apply() {
     <div class="money-entry-input">
       <span class="money-symbol" aria-hidden="true">¥</span>
       <input ref="moneyInput" :value="draft" type="text" inputmode="numeric" autocomplete="off"
-        aria-label="金額（円）" placeholder="0" required
+        :aria-label="inputLabel" placeholder="0" required
         @input="onAmountInput" @blur="onAmountBlur" />
     </div>
     <button ref="launchButton" class="money-tools-trigger" type="button" aria-label="計算・為替換算を開く" @click="openTools">

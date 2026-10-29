@@ -1162,7 +1162,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <div v-if="tab === 'stat' && statsPeriod === 'year' && annualLoadError" class="panel" role="alert"><span>{{annualLoadError}}</span> <button type="button" class="button-secondary" @click="loadYear">再読み込み</button></div>
 
     <section v-if="tab === 'add'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">記録を追加</p><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
+      <div class="page-heading"><div><h1>入力</h1></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
       <fieldset class="draft-controls" :disabled="busy === 'saving'" :aria-busy="busy === 'saving'">
       <div v-if="categoryDialog" class="edit-overlay" @click.self="!categorySaving && (categoryDialog = false)">
         <form class="edit-dialog category-dialog" @submit.prevent="saveCategory" aria-label="カテゴリを追加">
@@ -1232,7 +1232,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </section>
 
     <section v-else-if="tab === 'list'" class="page-section">
-      <div class="page-heading"><div><p class="eyebrow">収支記録</p><h1>収支明細</h1></div><div class="heading-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div></div>
+      <div class="page-heading"><div><h1>収支明細</h1></div><div class="heading-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div></div>
       <div class="entry-type-filter" role="group" aria-label="明細の種類"><button v-for="option in [{value: 'all', label: 'すべて'}, {value: 'income', label: '収入'}, {value: 'expense', label: '支出'}, {value: 'transfer', label: '資産移動'}]" :key="option.value" type="button" :class="{ selected: entryTypeFilter === option.value }" :aria-pressed="entryTypeFilter === option.value" @click="setEntryTypeFilter(option.value)">{{ option.label }}</button></div>
       <section v-if="!detailFilter" class="month-calendar" aria-label="月間明細カレンダー">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><div class="calendar-actions"><button type="button" class="calendar-reset" @click="calendarExpanded = !calendarExpanded">{{ calendarExpanded ? '週のみ表示' : '月全体を表示' }}</button><button v-if="selectedDay" type="button" class="calendar-reset" @click="selectedDay = ''">日付解除</button></div></div>
@@ -1385,7 +1385,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
       <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div v-if="annualStats?.count" class="stats-card">
-          <div class="section-title"><div><h2>支出の推移</h2><p>{{ selectedYear }}年1月〜12月</p></div></div>
+          <div class="section-title"><div><h2>支出の推移</h2></div></div>
           <div class="trend-summary"><strong>{{ yen(highestSpendMonth.amount) }}</strong><span>月間最高支出 · {{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</span></div>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
@@ -1425,7 +1425,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <div class="ratio-detail-amounts"><div><span>当月の収入</span><strong>{{ yen(selectedRatioMonthRow.income) }}</strong></div><div><span>当月の支出</span><strong>{{ yen(selectedRatioMonthRow.amount) }}</strong></div></div>
             <p v-if="selectedRatio === null" class="trend-note">収入なし・割合算出不可</p>
           </div>
-          <p class="trend-note"></p>
+          
         </div>
         <div class="stats-card">
           <div class="section-title"><div><h2>年度カテゴリ収入</h2></div></div>

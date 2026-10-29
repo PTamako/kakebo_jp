@@ -222,26 +222,22 @@ function apply() {
         <div class="money-sheet-scroll">
           <div v-if="activeTab==='calc'" class="money-calculator" role="tabpanel">
             <div class="money-tax-controls">
-              <label class="money-tax-rate">
-                <span>消費税</span>
-                <span class="money-compact-select">
-                  <select v-model.number="taxRate" aria-label="消費税を加算">
-                    <option :value="0">なし</option>
-                    <option :value="10">10%</option>
-                    <option :value="8">8%</option>
-                  </select>
-                </span>
-              </label>
-              <label v-if="taxRate!==0" class="money-rounding-row">
-                <span>端数</span>
-                <span class="money-compact-select">
-                  <select v-model="taxRounding" aria-label="消費税の端数処理">
-                    <option value="floor">切り捨て</option>
-                    <option value="round">四捨五入</option>
-                    <option value="ceil">切り上げ</option>
-                  </select>
-                </span>
-              </label>
+              <div class="money-tax-row">
+                <span class="money-tax-label">消費税</span>
+                <div class="money-tax-choices" role="group" aria-label="消費税を加算">
+                  <button v-for="option in [{ value:0, label:'なし' }, { value:10, label:'10%' }, { value:8, label:'8%' }]"
+                    :key="option.value" type="button" :aria-pressed="taxRate===option.value"
+                    :class="{selected:taxRate===option.value}" @click="taxRate=option.value">{{option.label}}</button>
+                </div>
+              </div>
+              <div v-if="taxRate!==0" class="money-tax-row money-rounding-row">
+                <span class="money-tax-label">端数</span>
+                <div class="money-tax-choices money-rounding-choices" role="group" aria-label="消費税の端数処理">
+                  <button v-for="option in [{ value:'floor',label:'切り捨て' },{ value:'round',label:'四捨五入' },{ value:'ceil',label:'切り上げ' }]"
+                    :key="option.value" type="button" :aria-pressed="taxRounding===option.value"
+                    :class="{selected:taxRounding===option.value}" @click="taxRounding=option.value">{{option.label}}</button>
+                </div>
+              </div>
             </div>
             <div class="money-result-box" aria-live="polite">
               <div class="money-expression-preview" aria-label="入力中の計算">{{ expression || '0' }}</div>
@@ -339,13 +335,14 @@ function apply() {
 .money-rate-info{min-height:28px;padding:2px 0;font-size:12px;line-height:1.45;color:var(--muted,#6e7a90)}
 .money-rate-change{min-height:44px;border:0;background:transparent;color:var(--blue-dark,var(--blue,#486ca9));font-size:13px;font-weight:750;padding:4px 0}
 .money-manual-rate{display:grid;gap:6px;font-size:12px;color:var(--muted,#6e7a90);padding:4px 0 8px}
-.money-tax-controls{display:flex;align-items:center;flex-wrap:wrap;gap:5px 11px;margin:1px 0 6px}
-.money-tax-rate,.money-rounding-row{display:inline-flex;align-items:center;gap:6px;min-height:44px;min-width:0;color:var(--muted,#6e7a90);font-size:12px;white-space:nowrap}
-.money-compact-select{position:relative;display:inline-flex;align-items:center;flex:none;min-width:0}
-.money-compact-select:after{content:'⌄';position:absolute;right:8px;top:50%;transform:translateY(-55%);font-size:15px;color:var(--blue-dark,var(--blue,#486ca9));pointer-events:none}
-.money-compact-select select{box-sizing:border-box;appearance:none;-webkit-appearance:none;min-height:44px;height:44px;width:82px;padding:5px 24px 5px 10px!important;border:1px solid var(--line,#e5e8ee)!important;border-radius:11px!important;background:var(--paper,#f7f8fb)!important;color:var(--ink,#283346);font-size:13px!important;font-weight:750;line-height:1.3;touch-action:manipulation}
-.money-rounding-row .money-compact-select select{width:110px}
-.money-compact-select select:focus-visible{outline:2px solid var(--blue,#668bdd);outline-offset:2px}
+.money-tax-controls{display:grid;gap:3px;margin:1px 0 6px}
+.money-tax-row{display:flex;align-items:center;gap:8px;min-width:0;min-height:44px}
+.money-tax-label{flex:0 0 42px;font-size:12px;font-weight:700;color:var(--muted,#6e7a90);white-space:nowrap}
+.money-tax-choices{display:inline-flex;flex:0 1 auto;align-items:center;gap:4px;min-width:0;padding:0;background:none}
+.money-tax-choices button{flex:0 0 auto;min-width:48px;min-height:44px;padding:0 10px;border:1px solid var(--line,#e5e8ee);border-radius:11px;background:var(--paper,#f7f8fb);color:var(--muted,#6e7a90);font-size:13px;font-weight:750;touch-action:manipulation;white-space:nowrap}
+.money-tax-choices button.selected{border-color:var(--blue,#668bdd);background:var(--tint,#f2f4fb);color:var(--blue-dark,var(--blue,#486ca9));box-shadow:inset 0 0 0 1px var(--blue,#668bdd)}
+.money-rounding-choices button{min-width:0;padding:0 8px;font-size:12px}
+@media(max-width:360px){.money-tax-row{gap:4px}.money-tax-label{flex-basis:34px;font-size:11px}.money-tax-choices{gap:3px}.money-rounding-choices button{padding-inline:6px;font-size:11px}}
 .money-tax-breakdown{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;column-gap:12px;row-gap:3px;width:100%;font-size:11px;color:var(--muted,#6e7a90)}
 .money-tax-breakdown span{font-size:11px}
 .money-footer-actions{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:9px}

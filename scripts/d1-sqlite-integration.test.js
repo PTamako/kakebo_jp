@@ -216,7 +216,9 @@ test('verified isolated Pages preview still rejects financial mutation',async()=
   const response=await onRequest({
     request:new Request('https://testbuild.kakeibo-f17.pages.dev/api/entries',{
       method:'POST',headers:{'content-type':'application/json'},body:'{}'}),
-    env:{AUTH_TOKEN:'test-only',DB:null,PREVIEW_D1_ISOLATED:'true',
+    env:{AUTH_TOKEN:'test-only',
+      DB:{prepare(){return{first:async()=>({value:'11111111-2222-3333-4444-555555555555'})}}},
+      PREVIEW_D1_ISOLATED:'true',
       PREVIEW_D1_ID:'11111111-2222-3333-4444-555555555555',
       PRODUCTION_D1_ID:'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'},params:{path:['entries']}
   })

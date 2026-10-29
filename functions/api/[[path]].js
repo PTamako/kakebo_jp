@@ -4,6 +4,7 @@ import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
 // Cloudflare Pages Functions：/api/*
+const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\\d|2[0-3]):[0-5]\\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 const json = (d, s = 200) =>
   new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
@@ -754,7 +755,7 @@ export async function onRequest({ request, env, params }) {
         const e = await request.json()
         const transfer = e.type === 'transfer' || (!['income', 'expense'].includes(e.type) && isInvestmentTransfer(e))
         const amount = Number(e.amount)
-        if (!validDate(e.date) || !Number.isSafeInteger(Number(e.amount)) || !Number.isSafeInteger(amount) || amount <= 0)
+        if (!validDate(e.date) || !validTime(e.time) || !Number.isSafeInteger(Number(e.amount)) || !Number.isSafeInteger(amount) || amount <= 0)
           return json({ error: '日付または金額が正しくありません' }, 400)
         const paymentSource = e.paymentSource == null ? '' : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
@@ -774,7 +775,7 @@ export async function onRequest({ request, env, params }) {
         const insertSql = checkDuplicate
           ? `INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
             SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13
-            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND COALESCE(time,'')=?2 AND amount=?3
+            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND amount=?3
               AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13)
             ON CONFLICT(client_request_id) DO NOTHING`
           : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
@@ -796,7 +797,7 @@ export async function onRequest({ request, env, params }) {
         const transfer = e.type === 'transfer' || (!['income', 'expense'].includes(e.type) && isInvestmentTransfer(e))
         const id = Number(b)
         const amount = Number(e.amount)
-        if (!Number.isSafeInteger(id) || id <= 0 || !validDate(e.date) || !Number.isSafeInteger(amount) || amount <= 0)
+        if (!Number.isSafeInteger(id) || id <= 0 || !validDate(e.date) || !validTime(e.time) || !Number.isSafeInteger(amount) || amount <= 0)
           return json({ error: '日付または金額が正しくありません' }, 400)
         const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date, payment_source FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)

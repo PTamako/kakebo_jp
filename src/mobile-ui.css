@@ -490,6 +490,9 @@ main .month-calendar{padding:10px 9px 9px;margin-bottom:10px}
 main .month-calendar .calendar-heading{margin-bottom:6px}
 main .month-calendar .calendar-legend{margin:-2px 2px 5px;gap:4px 9px}
 main .month-calendar .calendar-weekdays{margin-bottom:3px}
+/* Japanese calendar convention: Sundays are red, Saturdays are blue. */
+main .month-calendar .calendar-weekdays span:first-child{color:#bc4356}
+main .month-calendar .calendar-weekdays span:last-child{color:#3567ae}
 main .month-calendar .calendar-weekdays,
 main .month-calendar .calendar-grid{gap:3px}
 main .month-calendar .calendar-day{

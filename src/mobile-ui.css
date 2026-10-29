@@ -232,6 +232,9 @@ main .donut-vertical .pie-legend {
   scroll-snap-type: x proximity;
 }
 main .donut-vertical .pie-legend-row { scroll-snap-align: start; min-height: 44px; }
+main .trend-month-labels button { min-height: 44px; }
+main .trend-chart .chart-point-hit { fill: transparent; stroke: none; cursor: pointer; touch-action: manipulation; }
+main .trend-chart .chart-point-hit:focus-visible { stroke: var(--blue); stroke-width: 2; }
 main .payment-method-stats-grid button { min-height: 87px; }
 main .investment-card { min-width: 0; padding: 15px; }
 main .investment-card .form-field input { font-size: 16px; min-height: 48px; }
@@ -242,6 +245,7 @@ main .pending-delete { min-width: 44px; }
 
 /* Management favors daily-use controls; maintenance actions live in disclosures. */
 main .finance-tools { min-width: 0; gap: 12px; }
+main .finance-tools .finance-load-error { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--tint); color: var(--ink); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 main .finance-tools .finance-panel { padding: 14px; border-radius: 17px; }
 main .finance-tools .finance-panel h2 { font-size: 16px; }
 main .finance-tools .finance-global-load { min-height: 44px; }

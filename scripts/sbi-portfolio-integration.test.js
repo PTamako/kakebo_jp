@@ -59,6 +59,13 @@ test('SBI 15,000 yen transfer reconciles with four monthly allocations without d
     assert.equal((await call('investment-portfolio/initialize','POST')).status,200)
     const initial=await call('investment-portfolio?month='+currentMonth)
     assert.equal(initial.body.plans.length,4)
+    assert.equal(initial.body.holdings.length,4)
+    assert.equal(initial.body.valuation.value,71560)
+    assert.equal(initial.body.valuation.pnl,121)
+    assert.deepEqual(initial.body.holdings.map(h=>h.fund_code).sort(),
+      ['03311187','0331418A','0331A172','04317188'])
+    assert.equal(initial.body.holdings.filter(h=>h.account_type==='combined').length,3)
+    assert.equal((await call('investment-portfolio/initialize','POST')).body.created,false,'repeated initialisation must never overwrite holdings')
     assert.equal(initial.body.reconciliation.monthly_amount,15000)
     const transfer=await call('entries','POST',{
       date:currentMonth+'-01',type:'transfer',amount:15000,category:'投資・資産移動',
@@ -73,7 +80,7 @@ test('SBI 15,000 yen transfer reconciles with four monthly allocations without d
     assert.equal((await call('transfers/process-due','POST')).status,200)
     const second=await call('investment-portfolio?month='+currentMonth)
     assert.equal(second.body.reconciliation.funded,15000,'repeat processing never doubles capital')
-    assert.equal(second.body.valuation.value,null,'bank transfer does not create a fictitious fund purchase')
+    assert.equal(second.body.valuation.value,71560,'transfer leaves existing screenshot-confirmed holdings unchanged')
     const entry=(await call('entries?month='+currentMonth)).body.find(x=>x.type==='transfer')
     assert.ok(entry)
     const linked=await call('investment-portfolio/transfer-month','PUT',{
@@ -117,15 +124,15 @@ test('SBI fund holdings and saved NAV value accurately without mutating the lega
   const {db,call}=await client()
   try{
     assert.equal((await call('investment-portfolio/holding','PUT',{
-      fundCode:'03311187',accountType:'tsumitate',fundName:'eMAXIS Slim 米国株式',
+      fundCode:'03311187',accountType:'combined',fundName:'eMAXIS Slim 米国株式',
       units:20000,acquisitionCost:69000
     })).status,200)
     assert.equal((await call('investment-portfolio/price','PUT',{
       fundCode:'03311187',navPer10000:35000,priceDate:'2026-10-30'
     })).status,200)
     const status=await call('investment-portfolio?month='+currentMonth)
-    assert.equal(status.body.valuation.value,70000)
-    assert.equal(status.body.valuation.pnl,1000)
+    assert.equal(status.body.holdings.find(x=>x.fund_code==='03311187').market_value,70000)
+    assert.equal(status.body.holdings.find(x=>x.fund_code==='03311187').pnl,1000)
     const old=await call('investments')
     assert.equal(old.body.find(x=>x.platform==='sbi').current_value,null)
     assert.equal((await call('investment-portfolio/price','PUT',{
@@ -140,7 +147,7 @@ test('v4 export and restore preserve portfolio settings and mapped transfer link
   try{
     await source.call('investment-portfolio/initialize','POST')
     await source.call('investment-portfolio/holding','PUT',{
-      fundCode:'03311187',accountType:'tsumitate',fundName:'米国株式',
+      fundCode:'03311187',accountType:'combined',fundName:'米国株式',
       units:10000,acquisitionCost:30000
     })
     await source.call('investment-portfolio/price','PUT',{fundCode:'03311187',navPer10000:35000,priceDate:'2026-10-30'})
@@ -153,18 +160,43 @@ test('v4 export and restore preserve portfolio settings and mapped transfer link
     assert.equal(archive.version,4)
     assert.equal(archive.investmentPlans.length,4)
     assert.equal(archive.investmentPlanHistory.length,4)
-    assert.equal(archive.investmentHoldings.length,1)
-    assert.equal(archive.fundPrices.length,1)
+    assert.equal(archive.investmentHoldings.length,4)
+    assert.equal(archive.fundPrices.length,4)
     assert.equal(archive.transferLinks.length,1)
     archive.entries=archive.entries.map(e=>({...e,clientRequestId:'restore_'+String(e.id).padStart(32,'0')}))
     const imported=await target.call('restore-atomic','POST',archive)
     assert.equal(imported.status,200)
     const t=(await target.call('investment-portfolio?month='+nextMonth(currentMonth))).body
     assert.equal(t.reconciliation.funded,15000)
-    assert.equal(t.holdings[0].market_value,35000)
+    assert.equal(t.holdings.find(x=>x.fund_code==='03311187').market_value,35000)
     assert.equal((await target.call('restore-atomic','POST',archive)).status,200)
     assert.equal((await target.call('investment-portfolio/export')).body.transferLinks.length,1)
   }finally{source.db.close();target.db.close()}
+})
+
+test('SBI screenshot bootstrap stores exact reported values and preserves existing edits',async()=>{
+  const {db,call}=await client()
+  try{
+    await call('investment-portfolio/initialize','POST')
+    const first=await call('investment-portfolio?month='+currentMonth)
+    assert.equal(first.valuation?.value??first.body.valuation.value,71560)
+    const h=first.body.holdings.find(x=>x.fund_code==='04317188')
+    assert.equal(h.units,2651)
+    assert.equal(h.acquisition_cost,14880)
+    assert.equal(h.reported_value,14885)
+    assert.equal(h.account_type,'combined')
+    assert.equal(h.nav_per_10000,56153)
+    assert.equal(h.valuation_source,'sbi_screenshot')
+    const modified=await call('investment-portfolio/holding','PUT',{
+      fundCode:'04317188',accountType:'combined',fundName:h.fund_name,units:2800,acquisitionCost:15600
+    })
+    assert.equal(modified.status,200)
+    await call('investment-portfolio/initialize','POST')
+    const final=(await call('investment-portfolio?month='+currentMonth)).body.holdings.find(x=>x.fund_code==='04317188')
+    assert.equal(final.units,2800)
+    assert.equal(final.acquisition_cost,15600)
+    assert.equal(final.reported_value,null)
+  }finally{db.close()}
 })
 
 test('purchase month estimates are explicit, not an assertion that a buy was filled',()=>{

@@ -6,7 +6,7 @@ export function previewRecurringEntries(plans, entries, {today = new Date(), his
   const idempotency = new Set()
   for (const row of entries || []) {
     if (row.type !== 'expense') continue
-    const key = [row.date,row.merchant,Number(row.amount),row.payment_source || ''].join('|')
+    const key = [String(row.date).slice(0,7),row.merchant,row.payment_source || ''].join('|')
     existing.set(key, (existing.get(key) || 0) + 1)
     if (row.client_request_id) idempotency.add(row.client_request_id)
   }
@@ -26,7 +26,7 @@ export function previewRecurringEntries(plans, entries, {today = new Date(), his
       if(date > [current.getFullYear(),String(current.getMonth()+1).padStart(2,'0'),String(current.getDate()).padStart(2,'0')].join('-')) continue
       const requestId = 'recurring_'+plan.id.replace(/-/g,'')+'_'+m.replace('-','')
       if (idempotency.has(requestId)) continue
-      const key = [date,plan.name,Number(plan.amount),plan.paymentSource || ''].join('|')
+      const key = [m,plan.name,plan.paymentSource || ''].join('|')
       candidates.push({planId:plan.id,month:m,date,name:plan.name,amount:Number(plan.amount),
         paymentSource:plan.paymentSource,day:Number(plan.day),category:plan.category,startMonth:plan.startMonth,conflict:existing.has(key)})
     }

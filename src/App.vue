@@ -994,8 +994,8 @@ const calendarDays = computed(() => {
   const daysInMonth = new Date(year, monthNumber, 0).getDate()
   const firstDayOffset = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7
   const amounts = new Map(), expenses = new Map(), incomes = new Map()
-  // Dates and monthly peaks must reflect the saved ledger, not draft entries.
-  for (const entry of entries.value.filter(e=>String(e.date||'').startsWith(month.value))) {
+  // Peak badges follow the same transaction and category filters as the calendar.
+  for (const entry of calendarEntries.value) {
     const key=String(entry.date||'').slice(0,10),amount=Number(entry.amount||0)
     if(entry.type==='expense')expenses.set(key,(expenses.get(key)||0)+amount)
     if(entry.type==='income')incomes.set(key,(incomes.get(key)||0)+amount)

@@ -416,18 +416,22 @@ function recognize(mode = recognitionMode.value, append = false) {
   if (!input.value.trim()) return
   // Scheduled-looking text expands into *drafts* only. Explicit review/save
   // and ordinary duplicate protections remain mandatory.
-  const repeated = mode === 'statement' ? parseRepeatedExpense(input.value) : null
-  const parsed = repeated || (mode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value))
-  if (mode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
+  // Natural-language expense drafts must work in 手入力 even after the user
+  // previously selected レシート in the separate image-recognition tab.
+  const repeated = parseRepeatedExpense(input.value)
+  const effectiveMode = repeated ? 'statement' : mode
+  const parsed = repeated || (effectiveMode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value))
+  if (effectiveMode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
   const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    const type = transfer ? 'transfer' : mode === 'receipt' ? 'expense' : normalizedDraftType(f.type)
-    const imported = mode === 'statement' ? importPaymentSource.value : ''
-    return { ...f, type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: suggestedPayment(f.merchant, f.paymentSource, type, imported), recognizedPayment: f.paymentSource || '', importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: mode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: mode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: mode === 'receipt', bindRule: false }
+    const type = transfer ? 'transfer' : effectiveMode === 'receipt' ? 'expense' : normalizedDraftType(f.type)
+    const imported = effectiveMode === 'statement' ? importPaymentSource.value : ''
+    return { ...f, type, category: transfer ? '投資・資産移動' : f.category, transferTarget: f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: suggestedPayment(f.merchant, f.paymentSource, type, imported), recognizedPayment: f.paymentSource || '', importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
-  entryInputMode.value = 'scan'
+  // Preserve the current input tab: pasted text stays in 手入力. Only the
+  // image-upload handler may switch to 画像から読み取る.
   flash(repeated ? `毎週の支出を${repeated.length}件に展開しました。日付・内容・金額を確認してから保存してください` : forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
 async function onImage(e, mode = 'statement') {

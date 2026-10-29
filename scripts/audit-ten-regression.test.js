@@ -78,3 +78,46 @@ test('resumable D1 restoration is broken into bounded transactional batches',()=
   assert.match(ui,/for\(let offset=0;offset<sourceRows\.length;offset\+=BATCH_SIZE\)/)
   assert.match(ui,/restoreOwnKeys\.value=new Map/)
 })
+
+
+test('Japanese kanji October and numeric October Fridays expand to identical five drafts',()=>{
+  const phrases=[
+    '十月毎週の金曜日に　100円',
+    '十月の毎週金曜日に100円使った',
+    '10月毎週の金曜日に100円',
+    '2026年十月の毎週金曜日に100円使った',
+    '１０月毎週の金曜日に１００円'
+  ]
+  const expected=['2026-10-02','2026-10-09','2026-10-16','2026-10-23','2026-10-30']
+  for(const phrase of phrases){
+    const drafts=parseRepeatedExpense(phrase,new Date(2026,9,29))
+    assert.ok(drafts,phrase)
+    assert.deepEqual(drafts.map(item=>item.date),expected,phrase)
+    assert.ok(drafts.every(item=>item.amount===100&&item.type==='expense'&&item.note==='毎週金曜日の支出（内容を確認）'),phrase)
+    assert.ok(drafts.every(item=>!item.clientRequestId&&!item.paymentSource),phrase)
+  }
+  assert.deepEqual(
+    parseRepeatedExpense('2026年十二月の毎週土曜日に1,000円',new Date(2026,9,29)).map(item=>item.date),
+    ['2026-12-05','2026-12-12','2026-12-19','2026-12-26']
+  )
+  assert.equal(parseRepeatedExpense('十三月毎週金曜日に100円'),null)
+  assert.equal(parseRepeatedExpense('十月毎週金曜日に0円'),null)
+})
+
+test('手入力 text reading keeps the manual tab and review/save controls; only image reading opens image tab',()=>{
+  const app=source('src/App.vue')
+  const manual=app.match(/function recognize\([\s\S]*?\n\}(?=\nasync function onImage)/)?.[0]
+  const image=app.match(/async function onImage\([\s\S]*?\n\}(?=\nfunction addBlank)/)?.[0]
+  assert.ok(manual,'text recognizer is present')
+  assert.ok(image,'image upload handler is present')
+  assert.match(app,/@click="recognize\(recognitionMode\)"/)
+  assert.match(app,/v-if="entryInputMode === 'manual'"/)
+  assert.match(app,/entryInputMode === 'scan' \? '読み取り結果の確認' : '入力内容の確認'/)
+  assert.match(app,/@click="saveAll"/)
+  assert.match(manual,/const repeated = parseRepeatedExpense\(input\.value\)/)
+  assert.match(manual,/const effectiveMode = repeated \? 'statement' : mode/)
+  assert.match(manual,/forms\.value = append \? \[\.\.\.forms\.value, \.\.\.parsedForms\] : parsedForms/)
+  assert.doesNotMatch(manual,/entryInputMode\.value\s*=\s*'scan'/)
+  assert.doesNotMatch(manual,/api\('entries'/)
+  assert.match(image,/recognize\(mode, true\)[\s\S]*entryInputMode\.value = 'scan'/)
+})

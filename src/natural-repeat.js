@@ -1,10 +1,12 @@
 // Preview-only natural language expansion: never write to the ledger here.
 // Recognizes a whole-month weekday recurrence, not a standing billing plan.
 const weekdayNumber={月:1,火:2,水:3,木:4,金:5,土:6,日:0,一:1,二:2,三:3,四:4,五:5,六:6,天:0}
+// 10月 / 十月 / 十一月 / 十二月 (after NFKC normalization).
+const kanjiMonthNumbers={一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10,十一:11,十二:12}
 export function parseRepeatedExpense(text, now=new Date()) {
   if(typeof text!=='string'||text.length>1000)return null
   const input=text.normalize('NFKC').trim().replace(/[，,]/g,'')
-  const when=input.match(/(?:(20\d{2})[年/-])?\s*(1[0-2]|0?[1-9])\s*月/)
+  const when=input.match(/(?<![〇零一二三四五六七八九十\d])(?:(20\d{2})[年/-])?\s*(1[0-2]|0?[1-9]|十[一二]?|[一二三四五六七八九])\s*月/)
   if(!when)return null
   const repeated=input.match(/(?:毎週|每周|每週)\s*(?:の)?\s*(?:星期|礼拜|週)?\s*([月火水木金土日一二三四五六天])(?:曜日)?/)
   if(!repeated)return null
@@ -12,7 +14,7 @@ export function parseRepeatedExpense(text, now=new Date()) {
   if(!amountMatch)return null
   const amount=Number(amountMatch[1]||amountMatch[2])
   if(!Number.isSafeInteger(amount)||amount<1||amount>99999999)return null
-  const year=when[1]?Number(when[1]):now.getFullYear(),month=Number(when[2])
+  const year=when[1]?Number(when[1]):now.getFullYear(),month=kanjiMonthNumbers[when[2]] ?? Number(when[2])
   if(year<2000||year>2100)return null
   const weekday=weekdayNumber[repeated[1]]
   const japaneseWeekday=['日','月','火','水','木','金','土'][weekday]

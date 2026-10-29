@@ -43,7 +43,7 @@ export function validateBackup(value) {
       throw Error('取引データに不正な値があります')
     }
   }
-  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories']
+  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata']
   for (const name of arrayNames) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
@@ -76,6 +76,12 @@ export function validateBackup(value) {
     if (Array.isArray(value[name]) && value[name].some(x => !check(x)))
       throw Error('バックアップの' + name + 'に不正な設定があります')
   }
+  if (Array.isArray(value.categoryMetadata) && value.categoryMetadata.some(x =>
+      !x || !isText(x.category,20) ||
+      (x.display_name != null && (typeof x.display_name !== 'string' || x.display_name.length > 80)) ||
+      (x.icon != null && (typeof x.icon !== 'string' || !/^[a-z][a-z-]{1,40}$/.test(x.icon))) ||
+      (x.sort_order != null && (!Number.isSafeInteger(x.sort_order) || x.sort_order < 0 || x.sort_order > 99999))))
+    throw Error('カテゴリー表示設定が不正です')
   if (value.categoryIcons && Object.entries(value.categoryIcons).some(([k,v]) =>
       !isText(k,20) || !isText(v,80))) throw Error('カテゴリーアイコンが不正です')
   if (value.dismissedTransfers != null && (!Array.isArray(value.dismissedTransfers) ||

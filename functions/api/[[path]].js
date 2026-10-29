@@ -175,8 +175,6 @@ export async function onRequest({ request, env, params }) {
       const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
       const ipHash = await sessionHash(ip)
       try {
-        await db.prepare('CREATE TABLE IF NOT EXISTS login_attempts (ip_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at INTEGER NOT NULL)').run()
-        await db.prepare('CREATE TABLE IF NOT EXISTS device_sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)').run()
         const now = Date.now()
         // Reclaim expired authentication rows without touching sessions still in use.
         await db.batch([
@@ -195,7 +193,6 @@ export async function onRequest({ request, env, params }) {
       const hash = await sessionHash(session)
       const expires = Date.now() + 30 * 24 * 60 * 60 * 1000
       try {
-        await db.prepare('CREATE TABLE IF NOT EXISTS device_sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)').run()
         await db.prepare('INSERT INTO device_sessions (token_hash, expires_at) VALUES (?1, ?2)').bind(hash, expires).run()
       } catch { return json({ error: 'ログイン処理に失敗しました' }, 500) }
       return json({ session, expires_at: expires })
@@ -254,13 +251,11 @@ export async function onRequest({ request, env, params }) {
       await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
         .bind(tokyoToday()).run()
     }
-    // D1 migration has been completed. Do not import, seed, or alter legacy
-    // data when handling a request. User-initiated writes remain available.
+    // D1 migrations have been completed. Requests never create schema,
+    // import legacy records, or write default investment snapshots. User-initiated writes remain available.
     // Normalized recurring plans and bills are the sole persistent stores.
     // Obsolete finance_settings is intentionally neither created nor queried.
     if (a === 'recurring-plans' || a === 'card-bills') {
-      await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
-      await db.prepare('CREATE TABLE IF NOT EXISTS card_bills (payment_source TEXT NOT NULL, bill_month TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL, total_amount INTEGER NOT NULL CHECK(total_amount >= 0), transaction_count INTEGER NOT NULL CHECK(transaction_count >= 0), PRIMARY KEY(payment_source,bill_month))').run()
       if (m === 'GET' && !b) {
         if (a === 'recurring-plans') {
           const {results} = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY name,id').all()
@@ -358,7 +353,7 @@ export async function onRequest({ request, env, params }) {
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
         "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
-        'SELECT category,icon FROM category_source WHERE icon IS NOT NULL ORDER BY category',
+        'SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category',
         'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id'
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
@@ -371,7 +366,8 @@ export async function onRequest({ request, env, params }) {
         investments:rows(3),paymentSources:rows(4),merchantPaymentRules:rows(5),
         customRules:rows(6),
         categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(7).map(x=>x.category)])],
-        categoryIcons:Object.fromEntries(rows(8).map(x=>[x.category,x.icon])),
+        categoryIcons:Object.fromEntries(rows(8).filter(x=>x.icon).map(x=>[x.category,x.icon])),
+        categoryMetadata:rows(8),
         dismissedTransfers:rows(9).map(x=>x.entry_id)
       })
     }
@@ -391,7 +387,6 @@ export async function onRequest({ request, env, params }) {
     if (a === 'finance-settings')
       return json({error:'この旧設定APIは廃止されました。現在の管理画面をご利用ください',code:'deprecated_finance_settings'},410)
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
-      await db.prepare("CREATE TABLE IF NOT EXISTS payment_sources (name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)), closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31))").run()
       // Use the already migrated merchant_rules table; never re-import old mappings.
     }
     if (a === 'payment-sources' && !b && m === 'GET') {
@@ -464,7 +459,6 @@ export async function onRequest({ request, env, params }) {
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
       if (!name || name === '現金') return json({ error: 'カード名を確認してください' }, 400)
       // Do not remove a card that is still used by an enabled automatic charge.
-      await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
       const activePlan = await db.prepare('SELECT id FROM recurring_plans WHERE payment_source=?1 AND enabled=1 LIMIT 1').bind(name).first()
       if (activePlan) return json({error:'このカードを利用する固定支出が残っています。先に固定支出の設定を整理してください'},409)
       await db.batch([
@@ -509,9 +503,7 @@ export async function onRequest({ request, env, params }) {
         return json({ error: 'カード名を確認してください' }, 400)
       if (oldName === newName) return json({ ok: true, changes: 0 })
       if (await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(newName).first()) return json({ error: '同じカード名が登録されています' }, 409)
-      // Ensure normalized tables exist even if this is the first API call after deployment.
-      await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
-      await db.prepare('CREATE TABLE IF NOT EXISTS card_bills (payment_source TEXT NOT NULL, bill_month TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL, total_amount INTEGER NOT NULL CHECK(total_amount >= 0), transaction_count INTEGER NOT NULL CHECK(transaction_count >= 0), PRIMARY KEY(payment_source,bill_month))').run()
+      // Schema is provisioned by explicit migrations, never by business requests.
       // D1 batch keeps ledger, card and normalized finance references consistent.
       // A saved bill for the destination name/month must not be silently overwritten.
       const collision = await db.prepare('SELECT 1 AS found FROM card_bills WHERE payment_source=?1 AND bill_month IN (SELECT bill_month FROM card_bills WHERE payment_source=?2) LIMIT 1').bind(newName,oldName).first()
@@ -527,7 +519,6 @@ export async function onRequest({ request, env, params }) {
     }
     if (a === 'recurring-post' && m === 'POST') {
       // Atomic, non-destructive fixed-expense insertion; conflicting manual records win.
-      await db.prepare('CREATE TABLE IF NOT EXISTS recurring_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0), day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31), category TEXT NOT NULL, payment_source TEXT NOT NULL, start_month TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)))').run()
       const body = await request.json()
       const planId = typeof body?.planId === 'string' ? body.planId : ''
       const scheduledMonth = typeof body?.month === 'string' ? body.month : ''
@@ -605,7 +596,7 @@ export async function onRequest({ request, env, params }) {
         const insertSql = checkDuplicate
           ? `INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
             SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13
-            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND amount=?3
+            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND COALESCE(time,'')=COALESCE(?2,'') AND amount=?3
               AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13)
             ON CONFLICT(client_request_id) DO NOTHING`
           : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
@@ -760,7 +751,6 @@ export async function onRequest({ request, env, params }) {
     }
 
     if (a === 'dismissed-transfer-reminders') {
-      await db.prepare('CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run()
       if(m==='GET') {
         const {results}=await db.prepare('SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id').all()
         return json(results.map(x=>x.entry_id))
@@ -785,7 +775,6 @@ export async function onRequest({ request, env, params }) {
       if (!Number.isSafeInteger(id) || id <= 0) return json({ error: '明細IDが正しくありません' }, 400)
       const entry = await db.prepare("SELECT id FROM entries WHERE id = ?1 AND type = 'transfer' AND transfer_target = 'sbi'").bind(id).first()
       if (!entry) return json({ error: '対象の資産移動が見つかりません' }, 404)
-      await db.prepare('CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run()
       await db.prepare('INSERT OR IGNORE INTO dismissed_transfer_reminders (entry_id) VALUES (?1)').bind(id).run()
       return json({ ok: true })
     }
@@ -803,19 +792,11 @@ export async function onRequest({ request, env, params }) {
     }
 
     if (a === 'transfers' && m === 'GET') {
-      await db.prepare('CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run()
       const { results } = await db.prepare("SELECT id, date, amount, merchant, note, transfer_target, transfer_applied, transfer_date FROM entries WHERE type = 'transfer' AND transfer_target = 'sbi' AND NOT EXISTS (SELECT 1 FROM dismissed_transfer_reminders d WHERE d.entry_id = entries.id) AND (COALESCE(transfer_date, date) >= date('now', '-60 days') OR COALESCE(transfer_applied, 0) = 0) ORDER BY COALESCE(transfer_date, date) ASC, id DESC LIMIT 100").all()
       return json(results)
     }
 
     if (a === 'investments') {
-      await db.prepare(`CREATE TABLE IF NOT EXISTS investment_snapshots (
-        platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),
-        current_value INTEGER,
-        pnl INTEGER,
-        updated_at TEXT
-      )`).run()
-      await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL)").run()
       if (m === 'GET') {
         const { results } = await db.prepare("SELECT platform, current_value, pnl, updated_at, (SELECT COALESCE(SUM(amount),0) FROM entries WHERE type = 'transfer' AND transfer_target = investment_snapshots.platform AND transfer_applied = 1) AS invested_total FROM investment_snapshots ORDER BY CASE platform WHEN 'sbi' THEN 1 ELSE 2 END").all()
         return json(results)

@@ -17,6 +17,7 @@ import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
+import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
@@ -992,10 +993,10 @@ const calendarEntries = computed(() => {
 const calendarDays = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
   const daysInMonth = new Date(year, monthNumber, 0).getDate()
-  const firstDayOffset = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7
+  const firstDayOffset = sundayFirstOffset(year, monthNumber - 1)
   const amounts = new Map(), expenses = new Map(), incomes = new Map()
-  // Dates and monthly peaks must reflect the saved ledger, not draft entries.
-  for (const entry of entries.value.filter(e=>String(e.date||'').startsWith(month.value))) {
+  // Peak badges follow the same transaction and category filters as the calendar.
+  for (const entry of calendarEntries.value) {
     const key=String(entry.date||'').slice(0,10),amount=Number(entry.amount||0)
     if(entry.type==='expense')expenses.set(key,(expenses.get(key)||0)+amount)
     if(entry.type==='income')incomes.set(key,(incomes.get(key)||0)+amount)
@@ -1066,7 +1067,7 @@ function handleEntryClick(entry) {
   swipedEntryId.value = null; swipedReceiptId.value = null
   startEdit(entry)
 }
-// Monthly statistics are grouped into Monday–Sunday weeks, clipped to the selected month.
+// Monthly statistics use the same Sunday–Saturday weeks as the Japanese calendar.
 const weekRows = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
   const monthStart = new Date(year, monthNumber - 1, 1)
@@ -1074,24 +1075,22 @@ const weekRows = computed(() => {
   const groups = new Map()
   for (const day of dayRows.value) {
     const date = new Date(day.date + 'T12:00:00')
-    const monday = new Date(date)
-    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
-    const key = monday.toLocaleDateString('sv-SE')
+    const sunday = startOfSundayWeek(date)
+    const key = sunday.toLocaleDateString('sv-SE')
     const current = groups.get(key) || { start: key, end: '', amount: 0, days: 0 }
     current.amount += Number(day.amount || 0)
     current.days += 1
     groups.set(key, current)
   }
   const weeks = []
-  const cursor = new Date(monthStart)
-  cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7))
+  const cursor = startOfSundayWeek(monthStart)
   while (cursor <= monthEnd) {
-    const monday = new Date(cursor)
     const sunday = new Date(cursor)
-    sunday.setDate(sunday.getDate() + 6)
-    const clippedStart = monday < monthStart ? monthStart : monday
-    const clippedEnd = sunday > monthEnd ? monthEnd : sunday
-    const key = monday.toLocaleDateString('sv-SE')
+    const saturday = new Date(cursor)
+    saturday.setDate(saturday.getDate() + 6)
+    const clippedStart = sunday < monthStart ? monthStart : sunday
+    const clippedEnd = saturday > monthEnd ? monthEnd : saturday
+    const key = sunday.toLocaleDateString('sv-SE')
     const group = groups.get(key)
     weeks.push({
       key,
@@ -1315,9 +1314,9 @@ provide('kakeibo-page-context', { tab, statsPeriod, themes, storedTheme, theme, 
     <AssetsPage v-else-if="tab === 'investments'" />
     <ManagementPage v-show="tab === 'finance'" :active="tab === 'finance'" :ledger-revision="ledgerRevision" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="ledgerRevision++; load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
-      <button type="button" :class="{ active: tab === 'add' }" :aria-current="tab === 'add' ? 'page' : undefined" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button type="button" :class="{ active: tab === 'list' }" :aria-current="tab === 'list' ? 'page' : undefined" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>
       <button type="button" :class="{ active: tab === 'stat' }" :aria-current="tab === 'stat' ? 'page' : undefined" @click="tab = 'stat'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.5 19.5h15"/><rect x="6" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10" rx="1"/><rect x="14.8" y="4.5" width="3.2" height="13" rx="1"/></svg></span><span>統計</span></button>
+      <button type="button" class="nav-add" :class="{ active: tab === 'add' }" :aria-current="tab === 'add' ? 'page' : undefined" aria-label="記録を追加" title="記録を追加" @click="tab = 'add'"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       <button type="button" :class="{ active: tab === 'investments' }" :aria-current="tab === 'investments' ? 'page' : undefined" aria-label="資産・投資" @click="tab = 'investments'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2.5"/><path d="M3.5 10h17M7 4.5h10M15.5 14.5h2"/></svg></span><span>資産</span></button>
       <button type="button" :class="{ active: tab === 'finance' }" :aria-current="tab === 'finance' ? 'page' : undefined" @click="tab = 'finance'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span><span>管理</span></button>
     </nav>

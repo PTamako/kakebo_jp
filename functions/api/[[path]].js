@@ -1,4 +1,5 @@
 import { isAppliedSbiTransfer } from './investment-transfer.js'
+import { handlePortfolio } from './investment-portfolio.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
@@ -344,6 +345,10 @@ export async function onRequest({ request, env, params }) {
       // mixed ledger/settings snapshots between requests or devices.
       const size=await db.prepare('SELECT COUNT(*) AS total FROM entries').first()
       if(Number(size.total)>10000)return json({error:'大容量のバックアップは段階的に作成してください',code:'snapshot_too_large'},413)
+      // Legacy D1 continues to support v3 backups until the explicit
+      // additive portfolio migration has been applied. Never auto-create tables.
+      const schema=await db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('investment_plans','investment_plan_history','investment_holdings','fund_prices','sbi_transfer_links')").first()
+      const portfolioReady=Number(schema?.n)===5
       const statements=[
         'SELECT * FROM entries ORDER BY id',
         'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
@@ -354,12 +359,19 @@ export async function onRequest({ request, env, params }) {
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
         "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
         'SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category',
-        'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id'
+        'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id',
+        ...(portfolioReady ? [
+          'SELECT fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plans ORDER BY fund_code,account_type',
+          'SELECT fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plan_history ORDER BY fund_code,account_type,effective_month',
+          'SELECT fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at FROM investment_holdings ORDER BY fund_code,account_type',
+          'SELECT fund_code,nav_per_10000,price_date,source,updated_at FROM fund_prices ORDER BY fund_code',
+          'SELECT entry_id,purchase_month FROM sbi_transfer_links ORDER BY entry_id'
+        ] : [])
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
       const rows=n=>results[n]?.results||[]
       return json({
-        format:'kakeibo-ledger-backup',version:3,exportedAt:new Date().toISOString(),
+        format:'kakeibo-ledger-backup',version:portfolioReady ? 4 : 3,exportedAt:new Date().toISOString(),
         entries:rows(0),
         plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
@@ -368,7 +380,9 @@ export async function onRequest({ request, env, params }) {
         categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(7).map(x=>x.category)])],
         categoryIcons:Object.fromEntries(rows(8).filter(x=>x.icon).map(x=>[x.category,x.icon])),
         categoryMetadata:rows(8),
-        dismissedTransfers:rows(9).map(x=>x.entry_id)
+        dismissedTransfers:rows(9).map(x=>x.entry_id),
+        ...(portfolioReady ? {investmentPlans:rows(10),investmentPlanHistory:rows(11),
+          investmentHoldings:rows(12),fundPrices:rows(13),transferLinks:rows(14)} : {})
       })
     }
     if (a === 'restore-atomic' && m === 'POST') {
@@ -797,6 +811,10 @@ export async function onRequest({ request, env, params }) {
     if (a === 'transfers' && m === 'GET') {
       const { results } = await db.prepare("SELECT id, date, amount, merchant, note, transfer_target, transfer_applied, transfer_date FROM entries WHERE type = 'transfer' AND transfer_target = 'sbi' AND NOT EXISTS (SELECT 1 FROM dismissed_transfer_reminders d WHERE d.entry_id = entries.id) AND (COALESCE(transfer_date, date) >= date('now', '-60 days') OR COALESCE(transfer_applied, 0) = 0) ORDER BY COALESCE(transfer_date, date) ASC, id DESC LIMIT 100").all()
       return json(results)
+    }
+
+    if (a === 'investment-portfolio') {
+      return handlePortfolio({db,request,method:m,sub:b,url})
     }
 
     if (a === 'investments') {

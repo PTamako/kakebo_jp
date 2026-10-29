@@ -339,6 +339,15 @@ async function loadAll() {
   }
   finally{busy.value=false}
 }
+// During merge-first rollout the legacy D1 has no new SBI tables yet.
+// Keep large ledger backups available, without suppressing unrelated API failures.
+async function exportPortfolioSafely() {
+  try { return await props.api('investment-portfolio/export') }
+  catch(error) {
+    if (/投資テーブルの移行が未実施/.test(String(error.message))) return {}
+    throw error
+  }
+}
 async function downloadBackup(){
   if (busy.value || backupBusy.value) return
   backupBusy.value = true
@@ -363,10 +372,10 @@ async function downloadBackup(){
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
     const snapshot = rows.value.map(row=>({...row}))
     const before = ledgerFingerprint(snapshot)
-    const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata] = await Promise.all([
+    const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio] = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source')
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
     ])
     // Reject mixed-time exports when another device edited the ledger during metadata reads.
     if (!(await loadAll()) || ledgerFingerprint(rows.value)!==before)
@@ -376,16 +385,16 @@ async function downloadBackup(){
     const currentSettings = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders')
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
     ])
     if (JSON.stringify(currentSettings) !== JSON.stringify([
       nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,
-      customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata
+      customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio
     ])) throw Error('設定がバックアップ中に変更されました。もう一度実行してください')
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
       entries:snapshot,plans:nextPlans,bills:nextBills,investments,
-      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata
+      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,...portfolio
     })
     const sealed = await sealBackup(data)
     const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
@@ -434,7 +443,7 @@ async function restore(){
   // committed batches and leaves uncommitted drafts visible for safe retry.
   const BATCH_SIZE=150
   // Use the same settings bound as restoreAtomic; guard before any writes.
-  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata']
+  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
     .reduce((n,key)=>n+(Array.isArray(backup[key])?backup[key].length:0),0)
     + Object.keys(backup.categoryIcons||{}).length
   if(settingTotal<=500){
@@ -460,6 +469,9 @@ async function restore(){
           customRules:first?backup.customRules:[],categories:first?backup.categories:[],
           investments:first?backup.investments:[],categoryIcons:first?backup.categoryIcons:{},
           categoryMetadata:first?backup.categoryMetadata:[],
+          investmentPlans:first?backup.investmentPlans:[], investmentPlanHistory:first?backup.investmentPlanHistory:[],
+          investmentHoldings:first?backup.investmentHoldings:[],fundPrices:first?backup.fundPrices:[],
+          transferLinks:(backup.transferLinks||[]).filter(t=>oldIds.has(Number(t.entry_id))),
           dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id)))}
         const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify(scopedArchive)})
         completed+=result.created
@@ -480,6 +492,12 @@ async function restore(){
       ledgerDirty=true
       message.value=`復元を中断しました。完了済み ${completed}件は保持されます。再試行可能：${e.message}`
     }finally{busy.value=false}
+    return
+  }
+  // Never silently discard portfolio data from a large backup. For this rare
+  // case, keep the archive intact and request a smaller atomic restoration.
+  if(['investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks'].some(k=>(backup[k]||[]).length)){
+    message.value='投資情報を含む大容量バックアップは一括設定500件以内の分割復元が必要です。既存データは変更していません。'
     return
   }
   busy.value=true

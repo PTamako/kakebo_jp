@@ -413,7 +413,7 @@ test('actual SQLite: backup snapshot reads the same consistent entries and setti
     const result=await call('backup-snapshot')
     assert.equal(result.status,200)
     assert.equal(result.body.format,'kakeibo-ledger-backup')
-    assert.equal(result.body.version,3)
+    assert.equal(result.body.version,4)
     assert.equal(result.body.entries.length,1)
     assert.equal(result.body.entries[0].amount,321)
     assert.ok(Array.isArray(result.body.paymentSources))

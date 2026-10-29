@@ -97,3 +97,32 @@ Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=
 - `src/icon-library.js` は SVG path を描く静的なアイコン**部品集**。`src/category-sort.js` は支払方法を含む「その他を最後」にするUI用の純粋関数。両者はカテゴリデータの保存先ではないためD1とは役割が異なる。
 - 古いv3 JSONバックアップは引き続き `categories` と `categoryIcons` を含み、旧版に存在しない `display_name` は新規DBの標準値で復元される。カスタム分類はユーザーが登録した名称をそのまま表示する。
 - 本番 D1 での結果はAPI初回呼出後に `schema_migrations.category-presentation-v1` を読み取り専用で確認し、各 `category_source` レコードの `display_name` と `icon` を確認する。Cloudflare Pages のビルド成功だけでは本番物理更新が完了した証拠にならない。
+
+
+## SBI証券：D1 0006 追加表・一度きりの初期データ（手動移行）
+
+`migrations/0006_sbi_portfolio_linkage.sql` は既存取引や旧手入力評価額を削除・上書きせず、次の5表を追加し、ユーザーが提示した2026/10/30の四銘柄を **INSERT OR IGNORE / NOT EXISTS で1度だけ初期化**する。
+
+- `investment_plans`：現在の4銘柄積立設定（オルカン7000 / S&P500 3000 / 先進国債券3000 / NASDAQ100 2000、9日）。
+- `investment_plan_history`：2026-10の初期配分と、以後の適用開始月ごとの変更。移行を再実行しても後から追加された5本目や値上げ分が過去月に流入しない。
+- `investment_holdings`：SBIの2026/10/30 00:41画面に表示された実際の持分、取得金額、当時の評価額（4銘柄合計 ¥71,560、取得総額 ¥71,439）。3銘柄は成長＋つみたての**合算表示**なので、分けた口数を勝手に作らず `combined` を使う。
+- `fund_prices`：上記スクリーンショットで観察した基準価額。「2026-10-30」は**画面確認日**であり、正式な基準価額算定日ではない。正式な基準価額をユーザー入力した時点で自動計算に切替える。外部NAV自動更新はまだ未実装。
+- `sbi_transfer_links`：既存 `entries` のSBI振替IDと買付月の修正対応。設定のない行は振替日からの**推定**月で表示し、確定した約定と解釈しない。
+
+### 導入順と確認条件
+
+1. 本番D1をバックアップし、既存 `entries` の件数・振替合計、`investment_snapshots` の評価額・損益の値を保存する。
+2. **隔離したコピーD1**に以下と同じSQLを適用し、数量4・定投額15000・評価額71560・旧データ不変・再実行で重複なし・v4バックアップからの復元を照合する。
+3. 同じSQLを本番D1に**明示的に**適用する（画面GET/アプリ起動時にスキーマを新設しない）。通常の `wrangler` 設定を使う場合のコマンド例：
+   
+   ```bash
+   npx wrangler d1 execute kakeibo --remote --file=./migrations/0006_sbi_portfolio_linkage.sql
+   ```
+   
+   実行前に対象D1の名前・IDと本番環境を確認し、プレビューDBと取り違えないこと。
+4. 旧評価額と古い資産移動明細が残っていることを読み取り専用で再照合し、アプリのPRをマージしてCloudflare Pagesに配置する。移行済みDBでは初回の「登録」ボタンは不要で、四銘柄が自動表示される。
+5. ¥15,000の資産移動と配分¥7,000+¥3,000+¥3,000+¥2,000の月次照合が見えること、未来日・二度処理が二重に資産計上されないことを確認する。
+
+**本番D1の移行は未実施。** GitHubコミット・ローカルSQLite検証はCloudflare D1の本番書き込みやCI成功を証明しない。移行前にアプリを表示した場合、投資用APIは503になり、旧 `investment_snapshots` は別の表示領域に残る。Actionsは現在workflow_dispatchのみで、勝手な無料枠消費はしない。
+
+撤回が必要なら旧 `investment_snapshots` と `entries` はそのまま保持されているため、表示を切り戻せる。新規投資表を削除するのは別途バックアップと明示承認がある場合だけ。

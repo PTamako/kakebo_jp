@@ -726,7 +726,7 @@ async function loadTransfers() {
   } catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
   finally { transferLoading.value = false }
 }
-const transferStatus = item => Number(item.transfer_applied) === 1 ? '処理成功' : (String(item.transfer_date || item.date) > new Date().toLocaleDateString('sv-SE') ? '入金予定' : '未処理')
+const transferStatus = item => Number(item.transfer_applied) === 1 ? '記帳反映済み' : (String(item.transfer_date || item.date) > new Date().toLocaleDateString('sv-SE') ? '入金予定' : '未処理')
 const transferStatusClass = item => Number(item.transfer_applied) === 1 ? 'transfer-done' : 'transfer-waiting'
 const transferActionId = ref(null)
 async function retryTransfer(item) {

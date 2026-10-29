@@ -415,17 +415,17 @@ test('actual SQLite: backup snapshot reads the same consistent entries and setti
 })
 
 
-test('actual SQLite: Other payment source persists at 99999 and new cards sort above it',async()=>{
+test('actual SQLite: Other display order is stable without rewriting migrated card ranks',async()=>{
   const {db,call}=await createClient()
   try {
-    // Simulate an old installation where その他 was inserted between real cards.
+    // Read requests must not rewrite an existing persisted card rank.
     db.db.prepare("INSERT INTO payment_sources(name,sort_order) VALUES('既存カード',0),('その他',1)").run()
     const before= db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='その他'").get()
     assert.equal(before.sort_order,1)
     let sources=await call('payment-sources')
     assert.equal(sources.status,200)
     assert.equal(sources.body.at(-1).name,'その他')
-    assert.equal(db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='その他'").get().sort_order,99999)
+    assert.equal(db.db.prepare("SELECT sort_order FROM payment_sources WHERE name='その他'").get().sort_order,1)
     for(const name of ['新規カードA','新規カードB']){
       assert.equal((await call('payment-sources','POST',{name})).status,200)
       assert.ok(db.db.prepare('SELECT sort_order FROM payment_sources WHERE name=?').get(name).sort_order<99999)
@@ -437,7 +437,7 @@ test('actual SQLite: Other payment source persists at 99999 and new cards sort a
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries").get().n,0)
     const backup=(await call('backup-snapshot')).body
     assert.equal(backup.paymentSources.at(-1).name,'その他')
-    assert.equal(backup.paymentSources.at(-1).sort_order,99999)
+    assert.equal(backup.paymentSources.at(-1).sort_order,1)
   }finally{db.close()}
 })
 

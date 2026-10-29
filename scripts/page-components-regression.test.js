@@ -64,16 +64,17 @@ test('finance_settings is retired, while login attempt throttling remains active
   assert.match(api,/attempt\.attempts >= 5/)
 })
 
-test('calendar legend and accessible peak labels use natural Japanese, not Chinese abbreviations',()=>{
+test('compact calendar legend is natural Japanese and accessible labels explain monetary peaks',()=>{
   const legend=ledger.match(/<div class="calendar-legend"[\s\S]*?<\/div>/)?.[0]
   assert.ok(legend)
   assert.match(legend, /<i class="legend-today"><\/i>今日/)
-  assert.match(legend, /支出額が最も多い日/)
-  assert.match(legend, /収入額が最も多い日/)
+  assert.match(legend, /<i class="calendar-peak-expense">支<\/i>支出ピーク/)
+  assert.match(legend, /<i class="calendar-peak-income">収<\/i>収入ピーク/)
+  assert.doesNotMatch(legend,/最も多い日|支出最多|収入最多/)
+  // Screen readers and tooltip titles retain the precise meaning: amount, not count.
   for(const label of ['支出額が最も多い日','収入額が最も多い日']){
-    assert.equal(ledger.split(label).length-1,3, label+' must be used in legend, screen-reader label and badge title')
+    assert.equal(ledger.split(label).length-1,2,label+' must appear in aria-label and badge title')
+    assert.match(ledger,new RegExp('title="'+label+'"'))
   }
-  assert.doesNotMatch(ledger, /支出最多|収入最多/)
-  assert.match(ledger, /title="支出額が最も多い日"/)
-  assert.match(ledger, /title="収入額が最も多い日"/)
+  assert.doesNotMatch(ledger,/支出最多|収入最多/)
 })

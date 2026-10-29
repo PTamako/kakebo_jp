@@ -1,8 +1,9 @@
 <script setup>
 import { inject } from 'vue'
+import SbiPortfolio from '../SbiPortfolio.vue'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
-const { month, input, yen, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, investmentItems, investments, investmentBusy, investmentReturn, saveInvestment } = inject('kakeibo-page-context')
+const { month, input, yen, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, investmentItems, investments, investmentBusy, investmentReturn, saveInvestment, api } = inject('kakeibo-page-context')
 </script>
 <template>
 <section  class="page-section">
@@ -18,7 +19,9 @@ const { month, input, yen, pendingTransfers, transferLoading, transferDue, loadT
           </div>
         </div>
       </article>
-      <div class="page-heading"><div><h1>資産・投資</h1><p class="heading-subtitle">積立額は自動集計 · 評価額は手動</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
+      <div class="page-heading"><div><h1>資産・投資</h1><p class="heading-subtitle">資産移動と積立予定を照合</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
+      <SbiPortfolio :api="api" />
+      <details class="legacy-investment-details"><summary>旧評価額（過去の手入力データ）</summary>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
         <div class="investment-card-heading"><div><h2>{{ item.label }}</h2><p>{{ item.detail }}</p></div><span class="investment-unit">{{ item.unit }}</span></div>
         <div class="investment-principal"><small>積立累計</small><strong>{{ yen(investments[item.id].investedTotal) }}</strong></div>
@@ -31,5 +34,11 @@ const { month, input, yen, pendingTransfers, transferLoading, transferDue, loadT
         <p class="investment-updated">最終更新：{{ investments[item.id].updatedAt ? new Date(investments[item.id].updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '未更新' }}</p>
         <button class="button-primary investment-save" :disabled="investmentBusy" @click="saveInvestment(item)">最新データを保存</button>
       </article>
+      </details>
     </section>
 </template>
+<style scoped>
+.legacy-investment-details{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;color:var(--muted)}
+.legacy-investment-details summary{font-size:12px;cursor:pointer;padding:10px 0}
+.legacy-investment-details[open] summary{margin-bottom:10px}
+</style>

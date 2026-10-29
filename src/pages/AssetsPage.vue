@@ -20,7 +20,7 @@ const { month, input, yen, pendingTransfers, transferLoading, transferDue, loadT
         </div>
       </article>
       <div class="page-heading"><div><h1>資産・投資</h1><p class="heading-subtitle">資産移動と積立予定を照合</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
-      <SbiPortfolio :api="api" />
+      <SbiPortfolio :api="api" :transfer-loading="transferLoading" />
       <details class="legacy-investment-details"><summary>旧評価額（過去の手入力データ）</summary>
       <article v-for="item in investmentItems" :key="item.id" class="panel investment-card">
         <div class="investment-card-heading"><div><h2>{{item.label}}</h2><p>移行前の手入力履歴（参照のみ）</p></div><span class="investment-unit">{{item.unit}}</span></div>

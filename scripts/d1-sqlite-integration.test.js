@@ -345,6 +345,12 @@ test('same-day same-merchant payment is warned regardless of a five-minute time 
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE merchant='ローソン'").get().n,1)
     assert.equal((await call('entries','POST',{...base,time:'18:35',allowDuplicate:true,clientRequestId:'time-second-003'})).status,200)
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE merchant='ローソン'").get().n,2)
+    // A purchase much later in the day is legitimate and needs no duplicate override.
+    assert.equal((await call('entries','POST',{...base,time:'19:10',clientRequestId:'time-later-004'})).status,200)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE merchant='ローソン'").get().n,3)
+    // An untimed imported entry is still suspicious against an existing timed payment.
+    assert.equal((await call('entries','POST',{...base,time:'',clientRequestId:'time-unknown-005'})).status,409)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE merchant='ローソン'").get().n,3)
     assert.equal((await call('entries','POST',{...base,time:'99:99',clientRequestId:'time-invalid-001'})).status,400)
   }finally{db.close()}
 })

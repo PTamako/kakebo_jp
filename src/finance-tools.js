@@ -1,5 +1,5 @@
 // Read-only financial checks and portable backup format. Never mutate ledger records here.
-export const backupVersion = 2
+export const backupVersion = 3
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 
@@ -33,7 +33,7 @@ export function prepareRestoreRows(existing, incoming) {
 
 export function validateBackup(value) {
   if (!value || value.format !== 'kakeibo-ledger-backup' ||
-      ![1, backupVersion].includes(value.version) || !Array.isArray(value.entries)) {
+      ![1, 2, backupVersion].includes(value.version) || !Array.isArray(value.entries)) {
     throw Error('対応していないバックアップ形式です')
   }
   if (value.entries.length > 100000) throw Error('バックアップ件数が多すぎます')
@@ -48,6 +48,11 @@ export function validateBackup(value) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
     }
+  }
+  if (value.dismissedTransfers != null && (!Array.isArray(value.dismissedTransfers) ||
+      value.dismissedTransfers.length > 100000 ||
+      value.dismissedTransfers.some(id => !Number.isSafeInteger(id) || id <= 0))) {
+    throw Error('振替通知情報を確認してください')
   }
   if (value.categoryIcons != null && (typeof value.categoryIcons !== 'object' || Array.isArray(value.categoryIcons))) {
     throw Error('バックアップのアイコン情報が不正です')

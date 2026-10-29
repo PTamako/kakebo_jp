@@ -59,7 +59,7 @@ test('A05/A09/A10/A11/A12: filters, privacy, quota, local imagery and due transf
   assert.match(app,/detailFilter\.value\.paymentMethod \|\| ''/)
   assert.match(app,/setRememberDevice\(/)
   assert.match(app,/function clearLocalDraft\(/)
-  assert.match(api,/ai_ocr_daily_usage/)
+  assert.match(read('functions/api/ai-quota.js'),/ai_ocr_daily_usage/)
   assert.match(app,/本日の残り：\{\{aiQuota\.remaining\}\}/)
   assert.doesNotMatch(app,/cdn2\.cdnstep\.com/)
   assert.match(app,/api\('transfers\/process-due',\{method:'POST'\}\)/)

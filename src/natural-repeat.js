@@ -8,7 +8,7 @@ export function parseRepeatedExpense(text, now=new Date()) {
   if(!when)return null
   const repeated=input.match(/(?:毎週|每周|每週)\s*(?:の)?\s*(?:星期|礼拜|週)?\s*([月火水木金土日一二三四五六天])(?:曜日)?/)
   if(!repeated)return null
-  const amountMatch=input.match(/(?:[¥￥]\s*(\d{1,8})|(\d{1,8})\s*(?:円|元|日元))/)
+  const amountMatch=input.match(/(?:^|[^\d])(?:[¥￥]\s*(\d{1,8})(?!\d)|(\d{1,8})\s*(?:円|元|日元))/)
   if(!amountMatch)return null
   const amount=Number(amountMatch[1]||amountMatch[2])
   if(!Number.isSafeInteger(amount)||amount<1||amount>99999999)return null

@@ -508,3 +508,41 @@ test('actual SQLite: legacy category icon and rank data is copied into one table
     assert.equal((await call('backup-snapshot')).body.categoryIcons['旧自作カテゴリ'],'books')
   }finally{db.close()}
 })
+
+test('manual-only legacy cleanup succeeds after both migrations and leaves ledger and SBI unchanged',async()=>{
+  const {db,call}=await createClient()
+  try {
+    db.db.exec("CREATE TABLE custom_rules(keyword TEXT PRIMARY KEY,category TEXT NOT NULL); CREATE TABLE merchant_payment_rules(keyword TEXT PRIMARY KEY,payment_source TEXT NOT NULL);")
+    db.db.exec("CREATE TABLE category_sort_order(category TEXT PRIMARY KEY,sort_order INTEGER NOT NULL); CREATE TABLE category_icons(category TEXT PRIMARY KEY,icon TEXT NOT NULL);")
+    db.db.exec("INSERT INTO custom_rules VALUES('移行済の店','宠物'); INSERT INTO merchant_payment_rules VALUES('移行済の店','現金');")
+    db.db.exec("INSERT INTO category_sort_order VALUES('移行済カテゴリ',23); INSERT INTO category_icons VALUES('移行済カテゴリ','books');")
+    db.db.exec("INSERT INTO rules(keyword,category) VALUES('__category__:移行済カテゴリ','移行済カテゴリ')")
+    assert.equal((await call('entries','POST',{date:'2026-10-29',amount:1234,merchant:'テスト費用',type:'expense'})).status,200)
+    assert.equal((await call('backup-snapshot')).status,200)
+    const before=db.db.prepare("SELECT amount FROM entries WHERE merchant='テスト費用'").get().amount
+    const sbiBefore=db.db.prepare("SELECT current_value,pnl FROM investment_snapshots WHERE platform='sbi'").get()
+    const cleanup=readFileSync(new URL('../migrations/0005_cleanup_legacy_rule_and_category_tables.sql',import.meta.url),'utf8')
+    db.db.exec(cleanup)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('custom_rules','merchant_payment_rules','category_sort_order','category_icons')").get().n,0)
+    assert.deepEqual({...db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='移行済の店'").get()},{category:'宠物',payment_source:'現金'})
+    assert.deepEqual({...db.db.prepare("SELECT sort_order,icon FROM category_source WHERE category='移行済カテゴリ'").get()},{sort_order:23,icon:'books'})
+    assert.equal(db.db.prepare("SELECT amount FROM entries WHERE merchant='テスト費用'").get().amount,before)
+    assert.deepEqual(db.db.prepare("SELECT current_value,pnl FROM investment_snapshots WHERE platform='sbi'").get(),sbiBefore)
+    assert.equal((await call('custom-rules')).status,200)
+    assert.equal((await call('category-icons')).body['移行済カテゴリ'],'books')
+  }finally{db.close()}
+})
+
+test('manual-only cleanup refuses to delete an unmigrated historical category icon',async()=>{
+  const {db,call}=await createClient()
+  try {
+    db.db.exec("CREATE TABLE custom_rules(keyword TEXT PRIMARY KEY,category TEXT NOT NULL); CREATE TABLE merchant_payment_rules(keyword TEXT PRIMARY KEY,payment_source TEXT NOT NULL);")
+    db.db.exec("CREATE TABLE category_sort_order(category TEXT PRIMARY KEY,sort_order INTEGER NOT NULL); CREATE TABLE category_icons(category TEXT PRIMARY KEY,icon TEXT NOT NULL);")
+    assert.equal((await call('backup-snapshot')).status,200)
+    db.db.exec("INSERT INTO category_icons VALUES('未移行のアイコン','pet')")
+    const cleanup=readFileSync(new URL('../migrations/0005_cleanup_legacy_rule_and_category_tables.sql',import.meta.url),'utf8')
+    assert.throws(()=>db.db.exec(cleanup),/CHECK constraint failed/)
+    assert.equal(db.db.prepare("SELECT name FROM sqlite_master WHERE name='category_icons'").get().name,'category_icons')
+    assert.equal(db.db.prepare("SELECT name FROM sqlite_master WHERE name='custom_rules'").get().name,'custom_rules')
+  }finally{db.close()}
+})

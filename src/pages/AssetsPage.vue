@@ -6,8 +6,10 @@ import SbiPortfolio from '../SbiPortfolio.vue'
 const { pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, api } = inject('kakeibo-page-context')
 </script>
 <template>
-<section  class="page-section">
-      <article class="panel pending-transfer-panel">
+<section class="page-section assets-page">
+      <div class="page-heading"><div><h1>資産・投資</h1><p class="heading-subtitle">保有状況と積立をひと目で</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
+      <SbiPortfolio :api="api" :transfer-loading="transferLoading" />
+      <article v-if="transferLoading || pendingTransfers.length" class="panel pending-transfer-panel">
         <div class="pending-transfer-heading"><h2>振替予定</h2><button class="pending-refresh" :disabled="transferLoading" @click="loadTransfers" aria-label="振替予定を更新" title="更新">↻ 更新</button></div>
         <p class="microcopy">期日で家計簿に反映。SBIへの着金確認・買付は別です</p>
         <div v-if="transferLoading" class="pending-transfer-empty">読み込み中…</div>
@@ -19,8 +21,11 @@ const { pendingTransfers, transferLoading, transferDue, loadTransfers, transferS
           </div>
         </div>
       </article>
-      <div class="page-heading"><div><h1>資産・投資</h1><p class="heading-subtitle">資産移動と積立予定を照合</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
-      <SbiPortfolio :api="api" :transfer-loading="transferLoading" />
 
     </section>
 </template>
+<style scoped>
+.assets-page{display:grid;gap:12px;min-width:0}
+.assets-page .page-heading{margin-bottom:0}
+.assets-page .pending-transfer-panel{margin:2px 0 0}
+</style>

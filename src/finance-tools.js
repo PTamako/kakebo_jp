@@ -38,7 +38,7 @@ export function validateBackup(value) {
   }
   if (value.entries.length > 100000) throw Error('バックアップ件数が多すぎます')
   for (const e of value.entries) {
-    if (!validDate(e.date) || !Number.isSafeInteger(Number(e.amount)) ||
+    if (!validDate(e.date) || (e.time != null && e.time !== '' && (typeof e.time !== 'string' || !/^(?:[01]\\d|2[0-3]):[0-5]\\d$/.test(e.time))) || !Number.isSafeInteger(Number(e.amount)) ||
         Number(e.amount) <= 0 || !['income','expense','transfer'].includes(e.type)) {
       throw Error('取引データに不正な値があります')
     }

@@ -657,11 +657,18 @@ async function saveCardBill() {
   if (!settingsReady.value || !loaded.value || !bill.value.name || !/^\d{4}-(0[1-9]|1[0-2])$/.test(bill.value.month) || !cardPeriod.value) {
     message.value='カード・締め月・明細を確認してください'; return
   }
-  const record={name:bill.value.name,month:bill.value.month,start:cardPeriod.value.start,end:cardPeriod.value.end,total:cardTotal.value,count:cardTransactions.value.length}
+  const record={name:bill.value.name,month:bill.value.month,start:cardPeriod.value.start,end:cardPeriod.value.end}
+  if(busy.value)return
+  busy.value=true
   try {
-    await props.api('card-bills',{method:'PUT',body:JSON.stringify(record)})
-    bills.value=await props.api('card-bills');message.value='カード利用額の記録を保存しました'
+    const latest=await props.api('card-bills/recalculate',{method:'POST',body:JSON.stringify(record)})
+    bills.value=await props.api('card-bills')
+    ledgerDirty=true
+    message.value='D1の最新明細で計算しました：'+yen(latest.total)+'（'+latest.count+'件）'
+    // Refresh the displayed comparison too; no cached total is saved.
+    await loadAll()
   } catch(e) { message.value='カード利用額を保存できませんでした：'+e.message }
+  finally{busy.value=false}
 }
 async function removeCardBill(record) {
   if (!record?.name || !record?.month || !confirm(record.name+' '+record.month+' の請求額を削除しますか？明細は残ります。')) return

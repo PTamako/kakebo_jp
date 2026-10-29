@@ -58,7 +58,7 @@ class LedgerDb {
         if (sql.startsWith('SELECT name, is_default, closing_day FROM payment_sources')) return {results:[...db.paymentSources].map(name=>({name,is_default:0,closing_day:db.paymentClosingDays.has(name)?db.paymentClosingDays.get(name):null}))}
         if (sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans')) return {results:[...db.recurringPlans.values()].map(p=>({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0}))}
         if (sql.startsWith('SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills')) return {results:[...db.cardBills.values()].map(v=>({payment_source:v.name,bill_month:v.month,period_start:v.start,period_end:v.end,total_amount:v.total,transaction_count:v.count}))}
-        if (sql.startsWith('SELECT category, icon FROM category_icons')) return { results: db.icons }
+        if (sql.startsWith('SELECT category, icon FROM category_source')) return { results: db.icons }
         if (sql.startsWith('SELECT keyword, category FROM rules WHERE substr')) return { results: db.rules }
         if (sql.startsWith('SELECT * FROM rules WHERE keyword')) return { results: db.rules }
         if (sql.startsWith('SELECT keyword, category FROM custom_rules')) return { results: db.customRules }
@@ -160,7 +160,7 @@ class LedgerDb {
         if (sql.startsWith('DELETE FROM entries')) db.entries = db.entries.filter(e => e.id !== this.args[0])
         if (sql.startsWith('DELETE FROM rules')) throw Error('migration attempted to delete user rules')
         if (sql.startsWith('INSERT OR REPLACE INTO rules')) throw Error('migration attempted to overwrite user rules')
-        if (sql.startsWith('INSERT OR IGNORE INTO category_icons') && !db.icons.some(r => r.category === this.args[0])) db.icons.push({ category: this.args[0], icon: this.args[1] })
+        if (sql.startsWith('INSERT INTO category_source(category,sort_order,icon)') && !db.icons.some(r => r.category === this.args[0])) db.icons.push({ category: this.args[0], icon: this.args[1] })
         if (sql.startsWith('INSERT OR IGNORE INTO custom_rules') && !db.customRules.some(r => r.keyword === this.args[0]))
           db.customRules.push({ keyword: this.args[0], category: this.args[1] })
         if (sql.startsWith('INSERT OR IGNORE INTO rules') && !db.rules.some(r => r.keyword === this.args[0]))

@@ -275,14 +275,8 @@ export async function onRequest({ request, env, params }) {
       }
     }
 
-    // Investment balances exist independently from household income/expense totals.
-    await db.prepare(`CREATE TABLE IF NOT EXISTS investment_snapshots (
-      platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),
-      current_value INTEGER,
-      pnl INTEGER,
-      updated_at TEXT
-    )`).run()
-    await db.prepare("INSERT OR IGNORE INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES ('sbi', NULL, NULL, NULL)").run()
+    // Investment snapshots are initialized only by the /investments route.
+    // Ordinary ledger reads must not write to the investment table.
     // Applied transfers are ledger facts, NOT investment valuations.
     // Do not mutate investment_snapshots.current_value here: it is a manually
     // entered market valuation that may already include the purchase.

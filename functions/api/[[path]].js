@@ -1,5 +1,6 @@
 import { isAppliedSbiTransfer } from './investment-transfer.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
+import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 // Cloudflare Pages Functions：/api/*
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 const json = (d, s = 200) =>
@@ -180,12 +181,8 @@ export async function onRequest({ request, env, params }) {
   catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
   if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
   if (a === 'ai-ocr' && b === 'quota' && m === 'GET') {
-    const day = new Date(Date.now() + 9 * 3600000).toISOString().slice(0,10)
-    const limit = Number.isSafeInteger(Number(env.AI_OCR_DAILY_LIMIT)) && Number(env.AI_OCR_DAILY_LIMIT) >= 0
-      ? Math.min(30,Number(env.AI_OCR_DAILY_LIMIT)) : 3
-    await db.prepare('CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0)').run()
-    const row = await db.prepare('SELECT attempts FROM ai_ocr_daily_usage WHERE day=?1').bind(day).first()
-    return json({day,limit,remaining:Math.max(0,limit-Number(row?.attempts || 0))})
+    try { return json(await aiQuotaState(db,env)) }
+    catch { return json({error:'AI利用枠を確認できません'},503) }
   }
   if (a === 'ai-ocr' && m === 'POST') {
     if (!env.AI) return json({ error: 'AI接続が未設定です。Cloudflare PagesのAIバインディングを確認してください' }, 503)
@@ -197,20 +194,11 @@ export async function onRequest({ request, env, params }) {
     const mode = body.get('mode') === 'receipt' ? 'receipt' : 'statement'
     if (!file || typeof file.arrayBuffer !== 'function' || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024)
       return json({ error: 'JPEG・PNG・WebP画像（4MB以下）を選択してください' }, 400)
-    // One private household account, one app-wide daily cap regardless of new sessions.
-    // Count attempts even if the external model fails: protect the free usage budget.
-    const day = new Date(Date.now() + 9 * 3600000).toISOString().slice(0,10)
-    const limit = Number.isSafeInteger(Number(env.AI_OCR_DAILY_LIMIT)) && Number(env.AI_OCR_DAILY_LIMIT) >= 0
-      ? Math.min(30,Number(env.AI_OCR_DAILY_LIMIT)) : 3
-    if(limit === 0)return json({error:'AI画像認識は管理設定で無効です',code:'daily_limit'},429)
+    // Reserve a daily attempt before invoking Cloudflare AI; if quota D1 fails, use local OCR.
     try {
-      await db.prepare('CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0)').run()
-      const count=await db.batch([
-        db.prepare('INSERT OR IGNORE INTO ai_ocr_daily_usage(day,attempts) VALUES(?1,0)').bind(day),
-        db.prepare('UPDATE ai_ocr_daily_usage SET attempts=attempts+1 WHERE day=?1 AND attempts < ?2').bind(day,limit)
-      ])
-      if(!count[1]?.meta?.changes)return json({error:'本日のAI画像認識の無料枠を使い切りました。端末内OCRをご利用ください',code:'daily_limit'},429)
-    }catch { return json({error:'AI使用枠を確認できないため、端末内OCRをご利用ください',code:'quota_unavailable'},503) }
+      const quota=await reserveAiAttempt(db,env)
+      if(!quota.allowed)return json({error:'本日のAI画像認識の上限に達しました。端末内OCRをご利用ください',code:'daily_limit'},429)
+    }catch {return json({error:'AI使用枠を確認できないため、端末内OCRをご利用ください',code:'quota_unavailable'},503)}
     try {
       const text = await recognizeWithGemma(env.AI, await file.arrayBuffer(), file.type, mode)
       return json({ text, engine: 'gemma4' })

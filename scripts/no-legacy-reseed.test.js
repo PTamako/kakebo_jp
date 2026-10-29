@@ -1,0 +1,40 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {readFileSync,existsSync} from 'node:fs'
+const read = path => readFileSync(new URL('../'+path,import.meta.url),'utf8')
+
+test('normal production API never runs completed legacy migrations or imports old rule tables',()=>{
+ const api=read('functions/api/[[path]].js')
+ assert.doesNotMatch(api,/ensureUnifiedMerchantRules|ensureCategorySource|FROM custom_rules|FROM merchant_payment_rules|FROM category_sort_order|FROM category_icons/)
+ assert.doesNotMatch(api,/api-compat-v1|ALTER TABLE entries ADD COLUMN|ALTER TABLE payment_sources ADD COLUMN/)
+ assert.doesNotMatch(api,/__kakeibo_japanese_rules_v9_initialized__|__kakeibo_d1_category_rules_v10__/)
+ assert.doesNotMatch(api,/INSERT OR IGNORE INTO rules\s*\(keyword, category\) VALUES\s*\+ placeholders/)
+ assert.doesNotMatch(api,/INSERT INTO category_source\(category,sort_order\) VALUES\('其他',99999\)/)
+ assert.equal(existsSync(new URL('../functions/api/merchant-rules-store.js',import.meta.url)),false)
+ assert.equal(existsSync(new URL('../functions/api/category-source-store.js',import.meta.url)),false)
+})
+
+test('category reads and rule listing preserve current D1 data without automatic writes',()=>{
+ const api=read('functions/api/[[path]].js')
+ const begin=api.indexOf("if (a === 'categories')")
+ const end=api.indexOf("if (a === 'custom-rules')",begin)
+ assert.ok(begin>=0&&end>begin)
+ const categories=api.slice(begin,end)
+ const get=categories.slice(0,categories.indexOf("if (m === 'POST')"))
+ assert.match(get,/SELECT category,sort_order FROM category_source/)
+ assert.doesNotMatch(get,/INSERT|UPDATE|DELETE|ALTER TABLE|CREATE TABLE/)
+ const r=api.indexOf("if (a === 'rules')")
+ const ruleGet=api.slice(r,api.indexOf("if (m === 'POST')",r))
+ assert.match(ruleGet,/SELECT keyword, category FROM merchant_rules/)
+ assert.doesNotMatch(ruleGet,/INSERT|UPDATE|DELETE|ALTER TABLE|CREATE TABLE/)
+})
+
+test('explicit user adds and backup restore continue to write intended new data',()=>{
+ const api=read('functions/api/[[path]].js')
+ const restore=read('functions/api/restore-atomic.js')
+ assert.match(api,/INSERT INTO merchant_rules/)
+ assert.match(api,/INSERT INTO category_source\(category,sort_order,icon,display_name\)/)
+ assert.match(restore,/INSERT INTO merchant_rules/)
+ assert.match(restore,/INSERT INTO category_source/)
+ assert.doesNotMatch(restore,/FROM custom_rules|FROM merchant_payment_rules|FROM category_sort_order|FROM category_icons/)
+})

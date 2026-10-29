@@ -1210,9 +1210,9 @@ provide('kakeibo-page-context', { tab, statsPeriod, themes, storedTheme, theme, 
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" role="img" aria-label="家計簿のノートとコイン">
-          <img class="brand-local-logo" src="/branding/kakeibo-ledger.svg" alt="" width="48" height="40" decoding="async" />
+          <img class="brand-local-logo" src="/branding/kakeibo-ledger.svg" alt="" width="44" height="44" decoding="async" />
         </span>
-        <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
+        <div><strong>家計簿</strong><small>家計をかんたんに記録</small></div>
       </div>
       
       <div class="header-actions">
@@ -1336,7 +1336,7 @@ html,body,#app{min-height:100%;height:auto;overflow-y:auto;-webkit-overflow-scro
 main{height:auto;overflow:visible}
 .annual-page{display:block;min-height:0;overflow:visible;padding-bottom:18px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0 24px}
-.brand{display:flex;align-items:center;gap:10px}.brand-mark{display:grid;place-items:center;width:58px;height:42px;border-radius:15px;background:linear-gradient(135deg,#fff0e6,#ffeaf1);color:var(--blue);font-size:20px;font-weight:800;letter-spacing:-7px;padding-right:7px;box-shadow:inset 0 0 0 1px #f8dce4}.brand strong{display:block;font-size:17px;letter-spacing:.02em}.brand-heart{color:#e985a2;font-size:15px}.brand small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
+.brand{display:flex;align-items:center;gap:10px}.brand-mark{display:grid;place-items:center;width:58px;height:42px;border-radius:15px;background:linear-gradient(135deg,#fff0e6,#ffeaf1);color:var(--blue);font-size:20px;font-weight:800;letter-spacing:-7px;padding-right:7px;box-shadow:inset 0 0 0 1px #f8dce4}.brand strong{display:block;font-size:17px;letter-spacing:.02em}.brand small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
 input,select,textarea{width:100%;min-width:0;border:1px solid #e0e6ed;border-radius:11px;background:#fff;color:var(--ink);padding:11px 12px;outline:none;transition:border-color .15s,box-shadow .15s}
 input:focus,select:focus,textarea:focus{border-color:#8da9e8;box-shadow:0 0 0 3px #315fbd18}
 .month{width:142px;padding:9px 8px;font-size:12px;font-weight:650;background:#fff}
@@ -1550,7 +1550,7 @@ main{--touch-height:44px;--card-padding:16px;--section-gap:14px;--radius-sm:10px
 width:100%;max-width:560px;padding:calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 100px);
 overscroll-behavior-y:contain}
 main .topbar{gap:8px;padding:5px 0 15px;min-height:58px}
-main .brand-mark{width:49px;height:40px}
+main .brand-mark{width:44px;height:44px}
 main .brand strong{font-size:16px}
 main .page-heading{margin-bottom:14px}
 main .page-heading h1{font-size:24px}

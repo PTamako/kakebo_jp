@@ -475,6 +475,27 @@ export async function onRequest({ request, env, params }) {
       const { results } = await db.prepare('SELECT name, is_default, closing_day FROM payment_sources ORDER BY sort_order, name').all()
       return json(results)
     }
+    if (a === 'payment-sources' && b === 'restore-missing' && m === 'POST') {
+      const body = await request.json()
+      const name = typeof body?.name === 'string' ? body.name.trim() : ''
+      const closingDay = body?.closingDay ?? null
+      if (!name || name.length > 80 ||
+          (closingDay !== null && (!Number.isInteger(closingDay) || closingDay < 0 || closingDay > 31)))
+        return json({error:'復元するカード設定を確認してください'},400)
+      // Insert name and closing day atomically; no later update may replace a
+      // different device's card settings created in the meantime.
+      const result = await db.prepare('INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day) VALUES(?1,(SELECT COALESCE(MAX(sort_order),0)+1 FROM payment_sources),?2)')
+        .bind(name,closingDay).run()
+      return json({ok:true,created:!!result.meta?.changes})
+    }
+    if (a === 'payment-sources' && b === 'restore-default' && m === 'POST') {
+      const body = await request.json()
+      const name = typeof body?.name === 'string' ? body.name.trim() : ''
+      if (!name || name.length > 80) return json({error:'既定カードを確認してください'},400)
+      // Never reset a newer default set by another device while restoring.
+      const result = await db.prepare('UPDATE payment_sources SET is_default=1 WHERE name=?1 AND NOT EXISTS (SELECT 1 FROM payment_sources WHERE is_default=1)').bind(name).run()
+      return json({ok:true,restored:!!result.meta?.changes})
+    }
     if (a === 'payment-sources' && b === 'closing-day' && m === 'POST') {
       const body = await request.json()
       const name = typeof body?.name === 'string' ? body.name.trim() : ''

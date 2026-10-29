@@ -188,14 +188,25 @@ const categoryLabel = name => CATEGORY_LABELS[name] || name
 
 // Store only a revocable, 30-day device session; never persist the access code.
 localStorage.removeItem('token')
-const token = ref(localStorage.getItem('kakeibo-device-session') || '')
+const rememberDevice = ref(localStorage.getItem('kakeibo-remember-device') !== '0')
+const token = ref(sessionStorage.getItem('kakeibo-device-session') || (rememberDevice.value ? localStorage.getItem('kakeibo-device-session') : '') || '')
+function setRememberDevice(remember) {
+  rememberDevice.value=remember
+  try {
+    localStorage.setItem('kakeibo-remember-device',remember ? '1':'0')
+    if(remember && token.value) localStorage.setItem('kakeibo-device-session',token.value)
+    else localStorage.removeItem('kakeibo-device-session')
+    if(!remember && token.value)sessionStorage.setItem('kakeibo-device-session',token.value)
+  } catch { flash('ログイン保存設定を変更できませんでした') }
+}
 const locked = ref(!token.value && localStorage.getItem('kakeibo-logged-out') === '1')
 async function signIn(code) {
   const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) })
   const result = await response.json()
   if (!response.ok) throw new Error(result.error || 'アクセスコードを確認してください')
   token.value = result.session
-  localStorage.setItem('kakeibo-device-session', result.session)
+  sessionStorage.setItem('kakeibo-device-session', result.session)
+  if(rememberDevice.value)localStorage.setItem('kakeibo-device-session', result.session)
   localStorage.removeItem('kakeibo-logged-out')
   sessionStorage.removeItem('kakeibo-token')
   locked.value = false
@@ -206,6 +217,7 @@ async function logout() {
   const oldSession = token.value
   token.value = ''
   localStorage.removeItem('kakeibo-device-session')
+  sessionStorage.removeItem('kakeibo-device-session')
   sessionStorage.removeItem('kakeibo-token')
   localStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
@@ -243,6 +255,7 @@ async function api(path, opt = {}) {
       rejectedSession = requestToken
       token.value = ''
       localStorage.removeItem('kakeibo-device-session')
+      sessionStorage.removeItem('kakeibo-device-session')
     }
     await ensureLogin()
     return api(path, opt)
@@ -1463,6 +1476,14 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     </section>
 
     <FinanceTools v-show="tab === 'finance'" :active="tab === 'finance'" :api="api" :categories="categories" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @ledger-updated="load(); loadYear()" />
+    <details v-if="tab === 'finance'" class="panel device-security-settings">
+      <summary>端末のプライバシー設定</summary>
+      <label class="form-field"><span>ログイン状態</span><select :value="rememberDevice ? 'remember' : 'session'" @change="setRememberDevice($event.target.value === 'remember')">
+        <option value="remember">この端末にログインを保存（30日間）</option>
+        <option value="session">アプリを終了したら保存しない</option>
+      </select></label>
+      <p class="microcopy">ログイン情報は端末内に保存します。共有端末では「保存しない」を選択してください。未保存の入力は「入力」画面から個別に破棄できます。</p>
+    </details>
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button type="button" :class="{ active: tab === 'add' }" :aria-current="tab === 'add' ? 'page' : undefined" @click="tab = 'add'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>入力</span></button>
       <button type="button" :class="{ active: tab === 'list' }" :aria-current="tab === 'list' ? 'page' : undefined" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

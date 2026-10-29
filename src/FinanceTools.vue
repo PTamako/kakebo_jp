@@ -276,6 +276,14 @@ async function restore(){
       }
       settingsCount++
     }
+    // Only recover a default card if the current database has no default.
+    if(!existingSources.some(source=>source.is_default)){
+      const source=(backup.paymentSources||[]).find(source=>source?.is_default)
+      if(source?.name && (await props.api('payment-sources')).some(current=>current.name===source.name)){
+        await props.api('payment-sources/default',{method:'POST',body:JSON.stringify({name:source.name})})
+        settingsCount++
+      }
+    }
     const existingCategories=await props.api('categories')
     for(const name of restoreMissingByKey(existingCategories,backup.categories||[],x=>x)){
       if(typeof name!=='string' || !name.trim() || name.length>20)continue

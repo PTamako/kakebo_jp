@@ -7,6 +7,8 @@ const emit = defineEmits(['update:modelValue'])
 const moneyInput = ref(null)
 const launchButton = ref(null)
 const closeButton = ref(null)
+const sheetElement = ref(null)
+const themeStyle = ref({})
 const draft = ref(formatYenInput(props.modelValue))
 watch(() => props.modelValue, value => {
   // Tool result and externally loaded/edited records must update the field.
@@ -68,11 +70,26 @@ async function openTools() {
   if (opened.value) return
   document.activeElement?.blur()
   if (!expression.value && Number(props.modelValue) > 0) expression.value = String(props.modelValue)
+  const host = launchButton.value?.closest('main')
+  if (host) {
+    const styles = getComputedStyle(host)
+    themeStyle.value = Object.fromEntries(['--ink', '--muted', '--line', '--blue', '--blue-dark', '--paper', '--card']
+      .map(name => [name, styles.getPropertyValue(name).trim()]).filter(([, value]) => value))
+  }
   opened.value = true
   lockScroll()
   await nextTick()
   closeButton.value?.focus({ preventScroll: true })
 }
+function trapFocus(event) {
+  const controls = [...(sheetElement.value?.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled)') || [])]
+  if (!controls.length) return
+  if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1)?.focus() }
+  else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0]?.focus() }
+}
+let grabStartY = 0
+function grabStart(event) { grabStartY = event.changedTouches[0]?.clientY || 0 }
+function grabEnd(event) { if ((event.changedTouches[0]?.clientY || 0) - grabStartY > 90) closeTools() }
 function closeTools() {
   if (!opened.value) return
   opened.value = false
@@ -162,9 +179,9 @@ function apply() {
     </button>
   </div>
   <Teleport to="body">
-    <div v-if="opened" class="money-modal-backdrop" @click.self="closeTools" @keydown.esc.stop.prevent="closeTools">
-      <section class="money-sheet" role="dialog" aria-modal="true" aria-labelledby="money-sheet-title" @keydown.enter.stop.prevent>
-        <div class="money-sheet-grabber" aria-hidden="true"></div>
+    <div v-if="opened" class="money-modal-backdrop" :style="themeStyle" @click.self="closeTools" @keydown.esc.stop.prevent="closeTools">
+      <section ref="sheetElement" class="money-sheet" role="dialog" aria-modal="true" aria-labelledby="money-sheet-title" @keydown.enter.stop.prevent @keydown.tab="trapFocus">
+        <div class="money-sheet-grabber" aria-hidden="true" @touchstart.passive="grabStart" @touchend.passive="grabEnd"></div>
         <div class="money-sheet-header">
           <h2 id="money-sheet-title">金額ツール</h2>
           <button ref="closeButton" type="button" class="money-sheet-close" aria-label="閉じる" @click="closeTools">×</button>

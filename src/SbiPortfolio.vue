@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 
-const emit = defineEmits(['migration-status'])
 const props = defineProps({
   api: { type: Function, required: true },
   transferLoading: { type: Boolean, default: false }
@@ -57,12 +56,10 @@ async function load() {
     const response = await props.api('investment-portfolio?month=' + targetMonth)
     if (sequence !== loadSequence || targetMonth !== month.value) return
     data.value = response
-    emit('migration-status', false)
   } catch(e) {
     if (sequence !== loadSequence || targetMonth !== month.value) return
     error.value = e.message
     data.value = null
-    emit('migration-status', /投資テーブルの移行が未実施/.test(e.message))
   } finally {
     if (sequence === loadSequence) loading.value = false
   }

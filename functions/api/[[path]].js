@@ -363,7 +363,7 @@ export async function onRequest({ request, env, params }) {
         ...(portfolioReady ? [
           'SELECT fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plans ORDER BY fund_code,account_type',
           'SELECT fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plan_history ORDER BY fund_code,account_type,effective_month',
-          'SELECT fund_code,account_type,fund_name,units,acquisition_cost,updated_at FROM investment_holdings ORDER BY fund_code,account_type',
+          'SELECT fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at FROM investment_holdings ORDER BY fund_code,account_type',
           'SELECT fund_code,nav_per_10000,price_date,source,updated_at FROM fund_prices ORDER BY fund_code',
           'SELECT entry_id,purchase_month FROM sbi_transfer_links ORDER BY entry_id'
         ] : [])

@@ -14,6 +14,8 @@ import { CATEGORY_ICON_PATHS, ICON_LIBRARY, CATEGORY_LABELS } from './category-u
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
+// Show a bundled vector dog if the LINE sticker CDN is offline or blocked.
+const brandImageFailed = ref(false)
 const statsPeriod = ref('month')
 const themes = [{ id: 'pink', label: 'ピンク', color: '#d96f91' }, { id: 'blue', label: 'ブルー', color: '#78a9d6' }, { id: 'yellow', label: 'イエロー', color: '#d9b957' }, { id: 'green', label: 'グリーン', color: '#78ad91' }]
 const storedTheme = localStorage.getItem('kakeibo-theme')
@@ -1093,7 +1095,18 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <div v-if="receiptSaveError" role="alert" class="receipt-error-banner"><span>{{ receiptSaveError }}</span><button type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button></div>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-label="しろちゃんとちび毛"><img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="しろちゃん" /><img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="ちび毛" /></span>
+        <span class="brand-mark" role="img" aria-label="しろちゃんとちび毛">
+          <template v-if="!brandImageFailed">
+            <img src="https://stickershop.line-scdn.net/stickershop/v1/product/17142161/LINEStorePC/main.png?v=1" alt="" @error="brandImageFailed = true" />
+            <img src="https://stickershop.line-scdn.net/stickershop/v1/product/24856095/LINEStorePC/main.png?v=1" alt="" @error="brandImageFailed = true" />
+          </template>
+          <svg v-else class="brand-doodle" viewBox="0 0 52 42" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 13 8 10c-3-1-5 2-4 6l2 9c1 3 4 4 7 2M38 13l6-3c3-1 5 2 4 6l-2 9c-1 3-4 4-7 2" />
+            <path d="M12 18C12 10 18 6 26 6s14 4 14 12v8c0 7-6 12-14 12S12 33 12 26z" />
+            <path d="M20 22v1M32 22v1M24 28c1-1 3-1 4 0l-2 2z" />
+            <path d="M26 30v2m0 0c-2 2-4 2-6 0m6 0c2 2 4 2 6 0" />
+          </svg>
+        </span>
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>
       <span v-if="tab === 'add'" class="today-date">{{ todayLabel }}</span>

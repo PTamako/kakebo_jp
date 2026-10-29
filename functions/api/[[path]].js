@@ -130,7 +130,12 @@ export async function onRequest({ request, env, params }) {
   // Cloudflare Pages preview deployments must never mutate the production ledger,
   // even if a dashboard binding accidentally points to the production DB.
   // Login/logout stay usable for read-only preview QA.
-  const isPagesPreview = /^[^.]+\.kakeibo-f17\.pages\.dev$/.test(url.hostname)
+  const host = url.hostname.toLowerCase()
+  // Runtime environment markers cover custom preview domains; the host rule
+  // covers Pages previews even when the dashboard forgets to set a marker.
+  const isPagesPreview = (host.endsWith('.kakeibo-f17.pages.dev') && host !== 'kakeibo-f17.pages.dev') ||
+    env.APP_ENV === 'preview' ||
+    (typeof env.CF_PAGES_BRANCH === 'string' && !!env.CF_PAGES_BRANCH && env.CF_PAGES_BRANCH !== 'main')
   // Preview bindings cannot be inspected from this repo. Fail closed on ALL preview
   // API access until a dedicated Preview D1 binding is explicitly verified.
   if (isPagesPreview && env.PREVIEW_D1_ISOLATED !== 'true')

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS entries (
   transfer_applied INTEGER NOT NULL DEFAULT 0,
   transfer_date TEXT,
   client_request_id TEXT,
+  payment_source TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
@@ -84,3 +85,12 @@ CREATE TABLE IF NOT EXISTS finance_settings (
   name TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- New installations can bootstrap these tables immediately; old installations
+-- retain their existing tables and are upgraded additively.
+CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS device_sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS login_attempts (ip_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at INTEGER NOT NULL);

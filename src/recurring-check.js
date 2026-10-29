@@ -1,5 +1,5 @@
 // Run due recurring entries on app open. Existing records remain untouched.
-export async function checkRecurringEntries(api) {
+export async function checkRecurringEntries(api, onConflict = () => {}) {
   // Normalized D1 plan records are the only source of recurring schedules.
   const plans = await api('recurring-plans')
   if (!Array.isArray(plans) || !plans.length) return 0
@@ -21,6 +21,6 @@ export async function checkRecurringEntries(api) {
       month++;if(month===13){month=1;year++}
     }
   }
-  if (conflicts) console.warn('既存の明細と一致する固定支出を自動追加しませんでした：'+conflicts+'件')
+  if (conflicts) onConflict(conflicts)
   return created
 }

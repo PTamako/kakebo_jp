@@ -153,6 +153,17 @@ export async function onRequest({ request, env, params }) {
     env.PREVIEW_D1_ID.toLowerCase() !== env.PRODUCTION_D1_ID.toLowerCase()
   if (isPagesPreview && !previewDbVerified)
     return json({error:'プレビュー環境のテスト専用DBが未確認です。本番のデータを保護するためAPIを停止しています',code:'preview_db_not_verified'},503)
+  // Verify the ID stored INSIDE the actual bound D1, not just variables.
+  // A Preview accidentally bound to production has no matching identity and
+  // fails CLOSED before session/auth or other data is accessible.
+  if (isPagesPreview) {
+    let actualIdentity
+    try {
+      actualIdentity=await db.prepare("SELECT value FROM environment_identity WHERE name='database_id'").first()
+    }catch { return json({error:'テスト用DBの識別情報がありません',code:'preview_db_not_verified'},503) }
+    if(actualIdentity?.value?.toLowerCase()!==env.PREVIEW_D1_ID.toLowerCase())
+      return json({error:'テスト用DBの識別情報が一致しません',code:'preview_db_not_verified'},503)
+  }
   if (isPagesPreview && m !== 'GET' && a !== 'auth')
     return json({error:'プレビュー画面では明細・設定を更新できません。本番サイトをご利用ください',code:'preview_read_only'},403)
   if (a === 'auth') {

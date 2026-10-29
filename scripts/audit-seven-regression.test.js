@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parseEntry, parseEntries } from '../src/parse.js'
+import { DEFAULT_RULE_ROWS } from '../functions/api/[[path]].js'
 import { sealBackup, verifyBackupIntegrity } from '../src/backup-integrity.js'
 
 const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
@@ -47,6 +48,8 @@ test('new database default categorization agrees with D1 runtime defaults',()=>{
   for(const kw of ['ローソン','セブン','ファミリーマート','イオン','スーパー']) {
     assert.match(schema,new RegExp('\\(' + "'" + kw + "','饮食料品'" + '\\)'))
   }
+  const runtime = new Map(DEFAULT_RULE_ROWS)
+  for (const kw of ['ローソン','セブン','ファミリーマート','イオン','スーパー']) assert.equal(runtime.get(kw),'饮食料品',kw)
   assert.match(schema,/payment_source TEXT NOT NULL DEFAULT ''/)
   assert.match(source('migrations/0001_support_tables.sql'),/CREATE TABLE IF NOT EXISTS/)
 })

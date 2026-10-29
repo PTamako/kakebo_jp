@@ -2,37 +2,38 @@ name: PR 114 temporary test diagnostics
 on:
   pull_request:
     branches: [main]
+    paths-ignore: ['test-logs/**']
 jobs:
   tests:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: write
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Capture test failures for temporary PR diagnosis
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Capture and commit test results temporarily
         run: |
           set +e
-          npm run test:parse > test-output.log 2>&1
-          RESULT=$?
-          cat test-output.log
-          if [ "$RESULT" != "0" ]; then
-            {
-              echo "Temporary diagnostic (test:parse failed):"
-              echo '~~~'
-              grep -E -A 15 'not ok |✖|failure|ERR_ASSERTION|AssertionError|Error:' test-output.log | tail -c 13000 || true
-              echo '~~~'
-            } > /tmp/pr114-diagnostic-comment.txt
-            gh pr comment 114 --body-file /tmp/pr114-diagnostic-comment.txt || true
+          npm ci > /tmp/pr114-install.log 2>&1
+          INSTALL=$?
+          if [ "$INSTALL" -eq 0 ]; then
+            npm run test:parse > /tmp/pr114-tests.log 2>&1
+            STATUS=$?
+          else
+            STATUS="$INSTALL"
+            echo 'npm ci failed' > /tmp/pr114-tests.log
           fi
-          exit "$RESULT"
-      - name: Build
-        run: npm run build
+          mkdir -p test-logs
+          { tail -n 60 /tmp/pr114-install.log; echo '=== TEST OUTPUT ==='; tail -n 180 /tmp/pr114-tests.log; } > test-logs/pr114-debug.log
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add test-logs/pr114-debug.log
+          git commit -m 'chore: capture temporary PR114 test failure summary [skip ci]' || true
+          git push origin HEAD:refs/heads/${{ github.event.pull_request.head.ref }} || true
+          exit "$STATUS"

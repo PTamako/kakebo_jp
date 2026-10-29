@@ -402,6 +402,30 @@ async function restore(){
     message.value='明細が変更されました。バックアップを選び直してください'
     return
   }
+  // A bounded import commits ALL rows/settings in a single D1 batch.
+  // Large archives retain the existing resumable path without losing any data.
+  const settingTotal=['plans','bills','paymentSources','merchantPaymentRules','customRules','categories','investments','dismissedTransfers']
+    .reduce((n,k)=>n+(backup[k]?.length||0),0)+Object.keys(backup.categoryIcons||{}).length
+  if(selectedRows.length<=500 && settingTotal<=500){
+    busy.value=true
+    try{
+      const atomicRows=[]
+      for(const e of selectedRows){
+        const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
+        const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
+        const clientRequestId='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
+        atomicRows.push({...e,clientRequestId})
+      }
+      const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify({...backup,integrity:undefined,entries:atomicRows})})
+      loaded.value=false;backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
+      restoreIncludeConflicts.value=false;restoreOwnKeys.value=new Map()
+      message.value='復元完了：明細 '+result.created+'件・設定 '+result.settings+'件（重複除外 '+result.skipped+'件）'
+      await loadFinanceSettings()
+      emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
+    }catch(e){message.value='一括復元を中止しました。登録済みデータは保持されます：'+e.message}
+    finally{busy.value=false}
+    return
+  }
   busy.value=true
   let count=0,settingsCount=0,skipped=0
   try{

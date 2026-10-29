@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
@@ -732,9 +732,14 @@ async function openDuplicateDate(date) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return
   clearDetailFilter()
   entryTypeFilter.value = 'all'
+  const targetMonth = date.slice(0, 7)
+  if (month.value !== targetMonth) {
+    month.value = targetMonth
+    // The month watcher resets the selected day and calendar view.
+    await nextTick()
+  }
   calendarExpanded.value = true
   selectedDay.value = date
-  month.value = date.slice(0, 7)
   tab.value = 'list'
   await load()
 }
@@ -1296,7 +1301,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polygon v-if="expenseTrendArea" :points="expenseTrendArea" class="expense-chart-area" />
             <polyline :points="expenseTrendLine" class="chart-line expense-chart-line" />
-            <circle v-for="point in expenseTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point expense-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '支出 ' + yen(point.amount) + '。タップして明細を表示'" @click="openMonthDetails(point, 'expense')" @keydown.enter.prevent="openMonthDetails(point, 'expense')" @keydown.space.prevent="openMonthDetails(point, 'expense')" />
+            <circle v-for="point in expenseTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point expense-chart-point clickable-chart-point" aria-hidden="true" pointer-events="none" />
+            <circle v-for="point in expenseTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="14" class="chart-point-hit" role="button" tabindex="0" :aria-label="point.label + '支出 ' + yen(point.amount) + '。タップして明細を表示'" @click="openMonthDetails(point, 'expense')" @keydown.enter.prevent="openMonthDetails(point, 'expense')" @keydown.space.prevent="openMonthDetails(point, 'expense')" />
           </svg>
           <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" @click="openMonthDetails(item, 'expense')">{{ Number(item.month.slice(5)) }}</button></div>
         </div>
@@ -1306,7 +1312,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年収入の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
-            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" role="button" tabindex="0" :aria-label="point.label + '収入 ' + yen(point.income) + '。タップして明細を表示'" @click="openMonthDetails(point, 'income')" @keydown.enter.prevent="openMonthDetails(point, 'income')" @keydown.space.prevent="openMonthDetails(point, 'income')" />
+            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point income-chart-point clickable-chart-point" aria-hidden="true" pointer-events="none" />
+            <circle v-for="point in incomeTrendPoints" :key="point.month" :cx="point.x" :cy="point.y" r="14" class="chart-point-hit" role="button" tabindex="0" :aria-label="point.label + '収入 ' + yen(point.income) + '。タップして明細を表示'" @click="openMonthDetails(point, 'income')" @keydown.enter.prevent="openMonthDetails(point, 'income')" @keydown.space.prevent="openMonthDetails(point, 'income')" />
           </svg>
 <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" @click="openMonthDetails(item, 'income')">{{ Number(item.month.slice(5)) }}</button></div>
         </div>
@@ -1318,7 +1325,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             <line x1="16" y1="64.27" x2="304" y2="64.27" class="chart-reference-line" />
             <line x1="16" y1="53.33" x2="304" y2="53.33" class="chart-reference-line chart-reference-danger" />
             <polyline v-if="ratioTrendLine" :points="ratioTrendLine" class="chart-line ratio-chart-line" />
-            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point ratio-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '支出割合 ' + Math.round(point.ratio * 100) + '%。タップして当月の収支を確認'" @click="selectRatioMonth(point)" @keydown.enter.prevent="selectRatioMonth(point)" @keydown.space.prevent="selectRatioMonth(point)" />
+            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point ratio-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" aria-hidden="true" pointer-events="none" />
+            <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="14" class="chart-point-hit" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '支出割合 ' + Math.round(point.ratio * 100) + '%。タップして当月の収支を確認'" @click="selectRatioMonth(point)" @keydown.enter.prevent="selectRatioMonth(point)" @keydown.space.prevent="selectRatioMonth(point)" />
           </svg>
           <div class="trend-month-labels"><button v-for="item in yearMonthRows" :key="item.month" type="button" :class="{ 'trend-month-selected': selectedRatioMonth === item.month }" @click="selectRatioMonth(item)">{{ Number(item.month.slice(5)) }}</button></div>
           <div v-if="selectedRatioMonthRow" class="income-month-breakdown ratio-month-breakdown">

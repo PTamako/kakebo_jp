@@ -97,17 +97,10 @@ test('changing cards while editing refreshes the name and cannot rename the prev
   assert.match(finance, /async function renameCard\(\) \{\s*if \(busy\.value\) return/)
 })
 
-test('header puppies remain visible with CSP permission and a local vector fallback', () => {
+test('CSP permits local header logo without allowing the unused LINE image domain', () => {
   const headers = source('public/_headers')
-  assert.match(headers, /img-src[^;\n]*https:\/\/stickershop\.line-scdn\.net/)
-  const logo = app.match(/<span class="brand-mark"[\s\S]*?<\/span>/)?.[0]
-  assert.ok(logo, 'the header brand contains its own puppy mark')
-  assert.match(logo, /src="https:\/\/stickershop\.line-scdn\.net\/stickershop\/v1\/product\/17142161/)
-  assert.match(logo, /src="https:\/\/stickershop\.line-scdn\.net\/stickershop\/v1\/product\/24856095/)
-  assert.match(logo, /@error="brandImageFailed = true"/)
-  assert.match(logo, /<svg v-else class="brand-doodle"/)
-  assert.match(app, /const brandImageFailed = ref\(false\)/)
-  assert.match(mobile, /main \.brand-mark \.brand-doodle \{/)
+  assert.match(headers, /img-src[^;\n]*'self'/)
+  assert.doesNotMatch(headers, /stickershop\.line-scdn\.net/)
 })
 
 test('header puppy logo is a committed self-hosted asset, never a third-party image', () => {

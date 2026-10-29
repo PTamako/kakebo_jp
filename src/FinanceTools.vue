@@ -30,6 +30,7 @@ async function saveClosingDay(name, day) {
   } catch(e) { cardMessage.value = '締め日の保存に失敗しました：'+e.message }
 }
 async function renameCard() {
+  if (busy.value) return
   const name = editedCardName.value.trim(), old = selectedCard.value
   if (!old || old === '現金' || !name || name.length > 80 || (name !== old && props.paymentSources.includes(name))) {
     cardMessage.value = '名称を確認してください（重複・現金の変更不可）'
@@ -76,6 +77,11 @@ const cardPeriod = computed(() => {
 })
 const newPaymentSource = ref('')
 const cardMessage = ref('')
+// Changing the selected card must replace any unsaved name from the previous card.
+// Keep the editor open so the new card's name and closing day appear immediately.
+watch(selectedCard, (name) => {
+  editedCardName.value = name || ''
+})
 const merchantRulesCombined = computed(() => {
   const items = new Map()
   for (const r of props.categoryRules) items.set(r.keyword, { keyword: r.keyword, category: r.category, payment_source: '' })
@@ -467,7 +473,7 @@ async function removeCardBill(record) {
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>支払方法・カード管理</h2>
     <div class="finance-inputs card-controls card-main-controls">
-      <select v-model="selectedCard" aria-label="管理するカード"><option value="" disabled>支払方法・カードを選択</option><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option></select>
+      <select v-model="selectedCard" :disabled="busy" @change="cardMessage = ''" aria-label="管理するカード"><option value="" disabled>支払方法・カードを選択</option><option v-for="source in props.paymentSources" :key="source" :value="source">{{source}}</option></select>
       <button type="button" class="card-icon-action" :disabled="!selectedCard || selectedCard === defaultPaymentSource" @click="emit('set-default-payment-source', selectedCard)" aria-label="デフォルトに設定" title="デフォルトに設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.5l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9L12 3Z"/></svg></button>
       <button type="button" class="card-icon-action" :disabled="!selectedCard" @click="selectCardForEdit" aria-label="カードを編集" title="カードを編集"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 4.5a2.1 2.1 0 0 1 3 3L9 18l-4 1 1-4L16.5 4.5Z"/></svg></button>
       <button type="button" class="card-icon-action" @click="cardMode = 'add'" aria-label="カードを追加" title="カードを追加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
@@ -479,16 +485,16 @@ async function removeCardBill(record) {
       <button type="button" @click="cardMode = ''">キャンセル</button>
     </div>
     <div v-if="cardMode === 'edit' && selectedCard" class="card-editor">
-      <label>名称<input v-model="editedCardName" maxlength="80" :disabled="selectedCard === '現金'" aria-label="カード名を編集"></label>
+      <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
       <label v-if="!['現金','その他','Suica'].includes(selectedCard)">締め日
         <select :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
           <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
         </select>
       </label>
       <div class="finance-inputs card-edit-actions">
-        <button type="button" @click="renameCard">保存</button>
-        <button type="button" @click="cardMode = ''">閉じる</button>
-        <button v-if="selectedCard !== '現金'" type="button" @click="removePaymentSource(selectedCard)">削除</button>
+        <button type="button" :disabled="busy" @click="renameCard">保存</button>
+        <button type="button" :disabled="busy" @click="cardMode = ''">閉じる</button>
+        <button v-if="selectedCard !== '現金'" type="button" :disabled="busy" @click="removePaymentSource(selectedCard)">削除</button>
       </div>
     </div>
     <p v-if="cardMessage" role="status">{{cardMessage}}</p>

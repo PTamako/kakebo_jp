@@ -5,7 +5,8 @@ export async function checkRecurringEntries(api) {
   if (!Array.isArray(plans) || !plans.length) return 0
   const now = new Date()
   const today = [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-')
-  let checked = 0
+  let created = 0
+  let conflicts = 0
   for (const p of plans) {
     if (!p || !p.enabled || !/^\d{4}-(0[1-9]|1[0-2])$/.test(p.startMonth || '') || !/^\d+$/.test(String(p.day)) || Number(p.day)<1 || Number(p.day)>31 || !p.id || !Number.isFinite(Number(p.amount)) || Number(p.amount)<=0) continue
     let [year,month] = p.startMonth.split('-').map(Number)
@@ -13,12 +14,13 @@ export async function checkRecurringEntries(api) {
       const last = new Date(year,month,0).getDate()
       const date = [year,String(month).padStart(2,'0'),String(Math.min(Number(p.day),last)).padStart(2,'0')].join('-')
       if (date<=today) {
-        const clientRequestId = 'recurring_'+String(p.id).replace(/-/g,'')+'_'+year+String(month).padStart(2,'0')
-        await api('entries',{method:'POST',body:JSON.stringify({date,time:'',amount:Number(p.amount),type:'expense',category:p.category||'その他',merchant:p.name,note:'毎月の固定支出（自動記録）',paymentSource:p.paymentSource||'',clientRequestId})})
-        checked++
+        const result = await api('recurring-post',{method:'POST',body:JSON.stringify({planId:p.id,month:year+'-'+String(month).padStart(2,'0')})})
+        if (result.created) created++
+        if (result.conflict) conflicts++
       }
       month++;if(month===13){month=1;year++}
     }
   }
-  return checked
+  if (conflicts) console.warn('既存の明細と一致する固定支出を自動追加しませんでした：'+conflicts+'件')
+  return created
 }

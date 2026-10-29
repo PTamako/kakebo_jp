@@ -96,7 +96,8 @@ CREATE TABLE IF NOT EXISTS finance_settings (
 CREATE TABLE IF NOT EXISTS category_source (
   category TEXT PRIMARY KEY,
   sort_order INTEGER,
-  icon TEXT
+  icon TEXT,
+  display_name TEXT
 );
 -- New installs only use merchant_rules; legacy tables are not created.
 CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);

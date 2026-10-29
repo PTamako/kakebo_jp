@@ -339,6 +339,15 @@ async function loadAll() {
   }
   finally{busy.value=false}
 }
+// During merge-first rollout the legacy D1 has no new SBI tables yet.
+// Keep large ledger backups available, without suppressing unrelated API failures.
+async function exportPortfolioSafely() {
+  try { return await props.api('investment-portfolio/export') }
+  catch(error) {
+    if (/投資テーブルの移行が未実施/.test(String(error.message))) return {}
+    throw error
+  }
+}
 async function downloadBackup(){
   if (busy.value || backupBusy.value) return
   backupBusy.value = true
@@ -366,7 +375,7 @@ async function downloadBackup(){
     const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio] = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),props.api('investment-portfolio/export')
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
     ])
     // Reject mixed-time exports when another device edited the ledger during metadata reads.
     if (!(await loadAll()) || ledgerFingerprint(rows.value)!==before)
@@ -376,7 +385,7 @@ async function downloadBackup(){
     const currentSettings = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),props.api('investment-portfolio/export')
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
     ])
     if (JSON.stringify(currentSettings) !== JSON.stringify([
       nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,

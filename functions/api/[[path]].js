@@ -344,7 +344,7 @@ export async function onRequest({ request, env, params }) {
     // Old tables remain untouched for rollback; the unified table is authoritative.
     if (['rules','custom-rules','merchant-payment-rules','payment-sources','backup-snapshot','restore-atomic'].includes(a))
       await ensureUnifiedMerchantRules(db)
-    if (['categories','category-icons','backup-snapshot','restore-atomic'].includes(a))
+    if (['categories','category-icons','category-source','backup-snapshot','restore-atomic'].includes(a))
       await ensureCategorySource(db)
     // Settings are independent of historical ledger rows and safe to create on existing D1.
     // Personal finance configuration is kept on D1, not in browser storage.
@@ -836,6 +836,10 @@ export async function onRequest({ request, env, params }) {
         return json({ ok: true, changes: result.meta?.changes ?? 0 })
       }
     }
+    if (a === 'category-source' && m === 'GET') {
+      const { results } = await db.prepare('SELECT category,sort_order,icon,display_name FROM category_source ORDER BY sort_order,category').all()
+      return json(results)
+    }
     if (a === 'category-icons') {
       if (m === 'GET') {
         const { results } = await db.prepare('SELECT category, icon FROM category_source WHERE icon IS NOT NULL').all()
@@ -885,11 +889,12 @@ export async function onRequest({ request, env, params }) {
         // A single transaction registers the category and both metadata fields.
         await db.batch([
           db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name),
-          db.prepare(`INSERT INTO category_source(category,sort_order,icon)
-            VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999),?2)
+          db.prepare(`INSERT INTO category_source(category,sort_order,icon,display_name)
+            VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999),?2,?1)
             ON CONFLICT(category) DO UPDATE SET
               sort_order=COALESCE(category_source.sort_order,excluded.sort_order),
-              icon=COALESCE(category_source.icon,excluded.icon)`).bind(name, icon)
+              icon=COALESCE(category_source.icon,excluded.icon),
+              display_name=COALESCE(category_source.display_name,excluded.display_name)`).bind(name, icon)
         ])
         return json({ ok: true, category: name })
       }

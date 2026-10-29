@@ -392,26 +392,14 @@ export async function onRequest({ request, env, params }) {
       return json({error:'この旧設定APIは廃止されました。現在の管理画面をご利用ください',code:'deprecated_finance_settings'},410)
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
       await db.prepare("CREATE TABLE IF NOT EXISTS payment_sources (name TEXT PRIMARY KEY, sort_order INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)), closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31))").run()
-      // Unified merchant_rules is created/migrated by ensureUnifiedMerchantRules.
-    }
-    if (a === 'payment-sources') {
-      // Existing D1 installations lack closing_day. Leave all card records intact.
-      const columns = await db.prepare('PRAGMA table_info(payment_sources)').all()
-      if (!(columns.results || []).some(column => column.name === 'closing_day')) {
-        try {
-          await db.prepare('ALTER TABLE payment_sources ADD COLUMN closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31)').run()
-        } catch (e) {
-          // A concurrent first request may have added the field already.
-          if (!/duplicate column name/i.test(String(e))) throw e
-        }
-      }
+      // Use the already migrated merchant_rules table; never re-import old mappings.
     }
     if (a === 'payment-sources' && !b && m === 'GET') {
       // Closing days are authoritative on payment_sources.closing_day.
       // Never recreate the deprecated finance_settings table.
       // Enforce the persisted sentinel on existing databases, without touching
       // transaction/payment references or any user-created payment method.
-      await db.prepare("UPDATE payment_sources SET sort_order=99999 WHERE name IN ('その他','其他') AND sort_order<>99999").run()
+      // The completed migration already persisted payment sorting. Read only.
       const { results } = await db.prepare("SELECT name, is_default, closing_day FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
       return json(results)
     }

@@ -34,6 +34,14 @@ export async function getReceiptImage(entryId) {
 export async function deleteReceiptImage(entryId) {
   await operate('readwrite', store => store.delete(Number(entryId)))
 }
+// These device-only controls are separate from the existing 30-day TTL policy.
+// Reading the count never deletes images; clearing requires explicit UI confirmation.
+export async function countReceiptImages() {
+  return operate('readonly', store => store.count())
+}
+export async function clearAllReceiptImages() {
+  await operate('readwrite', store => store.clear())
+}
 export async function cleanupReceiptImages() {
   const db = await openDb()
   try {

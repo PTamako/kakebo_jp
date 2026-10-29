@@ -64,7 +64,7 @@ test('all years are dynamically discovered; monthly API uses pages',()=>{
   assert.match(finance,/await props\.api\('entry-years'\)/)
   assert.doesNotMatch(finance,/for\(let year=2018;year<=/)
   assert.match(app,/async function fetchMonthEntries\(targetMonth\)/)
-  assert.match(app,/api\('entries\?month=' \+ targetMonth \+ '&offset=' \+ offset\)/)
+  assert.match(app,/api\('entries\?month=' \+ targetMonth \+ '&cursor=' \+ cursor\)/)
 })
 
 test('stats and calendar do not show old-period data or unfiltered payment amounts',()=>{

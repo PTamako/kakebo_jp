@@ -9,7 +9,6 @@ import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
-import { checkRecurringEntries } from './recurring-check.js'
 import { CATEGORY_ICON_PATHS, ICON_LIBRARY, CATEGORY_LABELS } from './category-ui.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
@@ -200,7 +199,6 @@ async function signIn(code) {
   localStorage.removeItem('kakeibo-logged-out')
   sessionStorage.removeItem('kakeibo-token')
   locked.value = false
-  checkRecurringEntries(api, count => flash('手入力と重複する固定支出 '+count+'件は自動登録しませんでした。管理で確認してください')).then(() => { load(); loadYear() }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message))
 }
 async function logout() {
   if (busy.value || editSaving.value || investmentBusy.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
@@ -319,7 +317,14 @@ async function loadYear() {
     }
   }
 }
-onMounted(() => { cleanupReceiptImages().catch(() => {}); if (!locked.value) { load(); loadYear(); loadInvestments(); loadTransfers(); checkRecurringEntries(api, count => flash('手入力と重複する固定支出 '+count+'件は自動登録しませんでした。管理で確認してください')).then(count => { if (count) { load(); loadYear() } }).catch(e => flash('固定支出の自動記録に失敗しました：'+e.message)) } })
+onMounted(async () => {
+  cleanupReceiptImages().catch(() => {}) // Keep the existing A01 thirty-day receipt behavior unchanged.
+  if (!locked.value) {
+    // Never auto-post fixed expenses on app open. User reviews the schedule in management.
+    await load()
+    await Promise.allSettled([loadYear(), loadInvestments(), loadTransfers()])
+  }
+})
 
 watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; swipedReceiptId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month') })
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year') })

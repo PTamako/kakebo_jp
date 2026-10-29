@@ -146,6 +146,7 @@ async function removePaymentSource(name) {
 
 const rows = ref([])
 const loaded = ref(false)
+const loadError = ref('')
 const lastLoadedAt = ref(null)
 const lastLoadedLabel = computed(() => lastLoadedAt.value ? new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit'}).format(lastLoadedAt.value) : '')
 const busy = ref(false)
@@ -167,8 +168,8 @@ async function loadFinanceSettings() {
 }
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 async function loadAll() {
-  if (busy.value) return
-  busy.value=true; message.value=''
+  if (busy.value) return false
+  busy.value=true; message.value=''; loadError.value=''
   try {
     const all=[]
     for(let year=2018;year<=new Date().getFullYear();year++){
@@ -180,7 +181,14 @@ async function loadAll() {
       }
     }
     rows.value=all;loaded.value=true;lastLoadedAt.value=new Date();message.value=all.length+'件の明細を読み込みました'
-  }catch(e){message.value='読み込み失敗：'+e.message}
+    return true
+  }catch(e){
+    // Never show or export stale data as if it were a complete ledger.
+    rows.value=[];loaded.value=false;lastLoadedAt.value=null
+    loadError.value='全明細の読み込みに失敗しました：'+e.message
+    message.value=loadError.value
+    return false
+  }
   finally{busy.value=false}
 }
 function downloadBackup(){
@@ -279,17 +287,25 @@ async function applyRecurring(){
   finally{recurringBusy.value=false}
 }
 let financeInitialized = false
+let financeInitPromise = null
 async function initializeFinance() {
-  if (financeInitialized) return
-  financeInitialized = true
-  try {
-    await loadFinanceSettings()
-    await applyRecurring()
-    await loadAll()
-  } catch(e) {
-    financeInitialized = false
-    message.value = '設定の読込に失敗しました：' + e.message
-  }
+  if (financeInitialized && loaded.value) return true
+  if (financeInitPromise) return financeInitPromise
+  financeInitPromise = (async () => {
+    try {
+      await loadFinanceSettings()
+      await applyRecurring()
+      financeInitialized = await loadAll()
+      return financeInitialized
+    } catch (e) {
+      financeInitialized = false
+      loadError.value = '設定の読込に失敗しました：' + e.message
+      message.value = loadError.value
+      return false
+    }
+  })()
+  try { return await financeInitPromise }
+  finally { financeInitPromise = null }
 }
 onMounted(() => { if (props.active) void initializeFinance() })
 watch(() => props.active, active => { if (active) void initializeFinance() })
@@ -329,6 +345,7 @@ async function removeCardBill(record) {
 <section class="finance-tools">
   <div class="finance-page-heading"><h1 class="finance-heading">管理・照合</h1><button type="button" class="finance-global-load" :disabled="busy" @click="loadAll"><span aria-hidden="true" class="finance-refresh-icon">↻</span>{{busy ? "読み込み中…" : "全明細を更新"}}</button></div>
   <p class="finance-last-loaded" role="status">{{loaded ? "最終更新："+lastLoadedLabel+" · "+rows.length+"件読み込み済み" : busy ? "明細を読み込み中…" : "明細は未読み込みです"}}</p>
+  <p v-if="loadError" class="finance-load-error" role="alert">{{ loadError }}。再試行するには「全明細を更新」を押してください。</p>
   <div class="finance-section-tabs" role="group" aria-label="管理項目">
     <button type="button" :class="{ selected: managementTab === 'cards' }" :aria-pressed="managementTab === 'cards'" @click="managementTab = 'cards'">カード</button>
     <button type="button" :class="{ selected: managementTab === 'plans' }" :aria-pressed="managementTab === 'plans'" @click="managementTab = 'plans'">固定支出</button>

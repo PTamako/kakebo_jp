@@ -248,6 +248,11 @@ export async function onRequest({ request, env, params }) {
   const entriesYear = url.searchParams.get('year') || ''
 
   try {
+    const tokyoToday = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const applyDueTransfers = async () => {
+      await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
+        .bind(tokyoToday()).run()
+    }
     // Versioned, fail-safe compatibility migration: one cheap read after
     // completion, rather than six column probes and a DDL index per request.
     let compatibilityReady=false
@@ -312,11 +317,7 @@ export async function onRequest({ request, env, params }) {
     // Applied transfers are ledger facts, NOT investment valuations.
     // Do not mutate investment_snapshots.current_value here: it is a manually
     // entered market valuation that may already include the purchase.
-    const tokyoToday = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    const applyDueTransfers = async () => {
-      await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
-        .bind(tokyoToday()).run()
-    }
+
     // Transfer state is applied only by the explicit POST transfers/process-due endpoint.
 
     // D1 unique index makes OCR retries idempotent even when a response is lost.

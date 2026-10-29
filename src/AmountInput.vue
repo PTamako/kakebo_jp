@@ -1,0 +1,272 @@
+<script setup>
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { formatYenInput, normalizeYenInput, calculateYenExpression, convertToYen } from './amount-tools.js'
+
+const props = defineProps({ modelValue: { type: [Number, String], default: 0 } })
+const emit = defineEmits(['update:modelValue'])
+const moneyInput = ref(null)
+const launchButton = ref(null)
+const closeButton = ref(null)
+const draft = ref(formatYenInput(props.modelValue))
+watch(() => props.modelValue, value => {
+  // Tool result and externally loaded/edited records must update the field.
+  draft.value = formatYenInput(value)
+})
+function onAmountInput(event) {
+  const el = event.target
+  const raw = el.value
+  const caret = el.selectionStart ?? raw.length
+  const digitsBeforeCaret = (raw.slice(0, caret).match(/[0-9０-９]/g) || []).length
+  const value = normalizeYenInput(raw)
+  if (value === null) {
+    el.value = draft.value
+    return
+  }
+  const formatted = value === 0 && /[0-9０-９]/.test(raw) ? '0' : formatYenInput(value)
+  draft.value = formatted
+  emit('update:modelValue', value)
+  el.value = formatted
+  let index = 0, count = 0
+  while (index < formatted.length && count < digitsBeforeCaret) {
+    if (/\d/.test(formatted[index])) count++
+    index++
+  }
+  el.setSelectionRange(index, index)
+}
+function onAmountBlur() {
+  draft.value = formatYenInput(props.modelValue)
+}
+
+const opened = ref(false)
+const activeTab = ref('calc')
+const expression = ref('')
+const calculatorResult = computed(() => calculateYenExpression(expression.value))
+const currencies = ['CNY', 'USD', 'EUR', 'KRW', 'JPY']
+function storedCurrency() {
+  try {
+    const value = localStorage.getItem('kakeibo-fx-currency')
+    return currencies.includes(value) ? value : 'CNY'
+  } catch { return 'CNY' }
+}
+const currency = ref(storedCurrency())
+const foreignAmount = ref('')
+const info = ref(null)
+const fxLoading = ref(false)
+const fxError = ref('')
+const manualRate = ref(false)
+const manualRateText = ref('')
+let requestSequence = 0
+let previousBodyOverflow = ''
+function lockScroll() {
+  previousBodyOverflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
+}
+function unlockScroll() {
+  document.body.style.overflow = previousBodyOverflow
+}
+async function openTools() {
+  if (opened.value) return
+  document.activeElement?.blur()
+  if (!expression.value && Number(props.modelValue) > 0) expression.value = String(props.modelValue)
+  opened.value = true
+  lockScroll()
+  await nextTick()
+  closeButton.value?.focus({ preventScroll: true })
+}
+function closeTools() {
+  if (!opened.value) return
+  opened.value = false
+  requestSequence++
+  unlockScroll()
+  nextTick(() => launchButton.value?.focus({ preventScroll: true }))
+}
+onBeforeUnmount(() => {
+  requestSequence++
+  if (opened.value) unlockScroll()
+})
+function addKey(key) {
+  if (key === 'C') { expression.value = ''; return }
+  if (key === '⌫') { expression.value = expression.value.slice(0, -1); return }
+  if (key === '=') {
+    if (calculatorResult.value != null) expression.value = String(calculatorResult.value)
+    return
+  }
+  if (expression.value.length < 80) expression.value += key
+}
+function setExpression(event) {
+  expression.value = event.target.value.slice(0, 80)
+}
+async function loadRate() {
+  const selected = currency.value
+  const sequence = ++requestSequence
+  info.value = null
+  fxError.value = ''
+  if (selected === 'JPY') {
+    info.value = { from: 'JPY', to: 'JPY', rate: 1, date: '', source: 'identity' }
+    fxLoading.value = false
+    return
+  }
+  fxLoading.value = true
+  try {
+    const response = await fetch('/api/exchange-rate?from=' + encodeURIComponent(selected), { headers: { Accept: 'application/json' } })
+    if (!response.ok) throw Error('rate')
+    const data = await response.json()
+    if (data.from !== selected || data.to !== 'JPY' || !Number.isFinite(data.rate) || data.rate <= 0 ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(data.date)) throw Error('rate')
+    if (opened.value && sequence === requestSequence) info.value = data
+  } catch {
+    if (opened.value && sequence === requestSequence) fxError.value = 'レートを取得できません。手動入力もできます。'
+  } finally {
+    if (sequence === requestSequence) fxLoading.value = false
+  }
+}
+watch(currency, selected => {
+  try { localStorage.setItem('kakeibo-fx-currency', selected) } catch { /* private browsing */ }
+  manualRate.value = false
+  manualRateText.value = ''
+  if (opened.value && activeTab.value === 'fx') void loadRate()
+})
+function switchTab(tab) {
+  activeTab.value = tab
+  if (tab === 'fx' && !info.value && !fxLoading.value) void loadRate()
+}
+function switchManualRate() {
+  manualRate.value = !manualRate.value
+  if (manualRate.value && !manualRateText.value && info.value) manualRateText.value = String(info.value.rate)
+}
+const appliedRate = computed(() => manualRate.value ? Number(manualRateText.value) : info.value?.rate)
+const fxResult = computed(() => convertToYen(foreignAmount.value, appliedRate.value))
+const chosenResult = computed(() => activeTab.value === 'calc' ? calculatorResult.value : fxResult.value)
+function apply() {
+  if (chosenResult.value == null) return
+  const amount = chosenResult.value
+  emit('update:modelValue', amount)
+  draft.value = formatYenInput(amount)
+  closeTools()
+}
+</script>
+
+<template>
+  <div class="money-entry-row">
+    <div class="money-entry-input">
+      <span class="money-symbol" aria-hidden="true">¥</span>
+      <input ref="moneyInput" :value="draft" type="text" inputmode="numeric" autocomplete="off"
+        aria-label="金額（円）" placeholder="0" required
+        @input="onAmountInput" @blur="onAmountBlur" />
+    </div>
+    <button ref="launchButton" class="money-tools-trigger" type="button" aria-label="計算・為替換算を開く" @click="openTools">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="5" y="2.5" width="14" height="19" rx="2.5"/>
+        <path d="M8 7h8M8 11h2M14 11h2M8 15h2M14 15h2M8 19h2M14 19h2"/>
+      </svg>
+    </button>
+  </div>
+  <Teleport to="body">
+    <div v-if="opened" class="money-modal-backdrop" @click.self="closeTools" @keydown.esc.stop.prevent="closeTools">
+      <section class="money-sheet" role="dialog" aria-modal="true" aria-labelledby="money-sheet-title" @keydown.enter.stop.prevent>
+        <div class="money-sheet-grabber" aria-hidden="true"></div>
+        <div class="money-sheet-header">
+          <h2 id="money-sheet-title">金額ツール</h2>
+          <button ref="closeButton" type="button" class="money-sheet-close" aria-label="閉じる" @click="closeTools">×</button>
+        </div>
+        <div class="money-sheet-tabs" role="tablist" aria-label="金額ツールの種類">
+          <button type="button" role="tab" :aria-selected="activeTab==='calc'" :class="{selected:activeTab==='calc'}" @click="switchTab('calc')">計算</button>
+          <button type="button" role="tab" :aria-selected="activeTab==='fx'" :class="{selected:activeTab==='fx'}" @click="switchTab('fx')">為替換算</button>
+        </div>
+        <div class="money-sheet-scroll">
+          <div v-if="activeTab==='calc'" class="money-calculator" role="tabpanel">
+            <label class="money-caption" for="money-expression">計算式</label>
+            <input id="money-expression" class="money-expression" :value="expression" inputmode="none" type="text" autocomplete="off"
+              aria-label="計算式" @input="setExpression" />
+            <div class="money-result-box">
+              <span>計算結果</span>
+              <strong>{{ calculatorResult == null ? '—' : '¥' + calculatorResult.toLocaleString('ja-JP') }}</strong>
+            </div>
+            <div class="money-keypad">
+              <button v-for="key in ['C','⌫','(',')','7','8','9','÷','4','5','6','×','1','2','3','−','0','.','=','+']"
+                :key="key" type="button" :class="{operator:['÷','×','−','+','='].includes(key),muted:['C','⌫','(',')'].includes(key)}"
+                :aria-label="key==='⌫'?'1文字削除':key==='C'?'クリア':key" @click="addKey(key)">{{ key }}</button>
+            </div>
+          </div>
+          <div v-else class="money-fx" role="tabpanel">
+            <label class="money-caption" for="money-from">換算元</label>
+            <div class="money-fx-source">
+              <select id="money-from" v-model="currency" aria-label="換算元の通貨">
+                <option value="CNY">CNY · 人民元</option>
+                <option value="USD">USD · 米ドル</option>
+                <option value="EUR">EUR · ユーロ</option>
+                <option value="KRW">KRW · 韓国ウォン</option>
+                <option value="JPY">JPY · 日本円</option>
+              </select>
+              <input v-model="foreignAmount" type="text" inputmode="decimal" autocomplete="off"
+                aria-label="換算元の金額" placeholder="0" />
+            </div>
+            <div class="money-fx-arrow">↓ <span>JPY · 日本円</span></div>
+            <div class="money-result-box">
+              <span>換算結果</span>
+              <strong>{{ fxResult == null ? '—' : '¥' + fxResult.toLocaleString('ja-JP') }}</strong>
+            </div>
+            <div class="money-rate-info" role="status">
+              <span v-if="fxLoading && !manualRate">レート取得中…</span>
+              <span v-else-if="manualRate">手動レート · 1 {{currency}} = {{manualRateText || '—'}} 円</span>
+              <span v-else-if="info">参考レート · 1 {{currency}} = {{info.rate.toLocaleString('ja-JP', { maximumFractionDigits: 6 })}} 円<span v-if="info.date"> · {{info.date}} 基準</span></span>
+              <span v-else-if="fxError">{{fxError}}</span>
+            </div>
+            <button type="button" class="money-rate-change" :aria-pressed="manualRate" @click="switchManualRate">{{manualRate ? '参考レートに戻す' : 'レートを手入力'}}</button>
+            <label v-if="manualRate" class="money-manual-rate">
+              <span>1 {{ currency }} あたりの円</span>
+              <input v-model="manualRateText" type="text" inputmode="decimal" autocomplete="off" placeholder="例：21.5" />
+            </label>
+          </div>
+        </div>
+        <div class="money-sheet-footer">
+          <button type="button" class="money-apply" :disabled="chosenResult == null" @click="apply">金額に反映</button>
+        </div>
+      </section>
+    </div>
+  </Teleport>
+</template>
+
+<style scoped>
+.money-entry-row{display:flex;align-items:stretch;gap:9px;min-width:0;width:100%}
+.money-entry-input{display:flex;align-items:center;gap:9px;min-width:0;flex:1;border:1px solid var(--line,#e0e6ed);border-radius:14px;background:var(--card,#fff);padding:0 12px}
+.money-entry-input:focus-within{border-color:var(--blue,#7b9ce9);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue,#7b9ce9) 15%,transparent)}
+.money-symbol{font-size:20px;font-weight:800;color:var(--blue,#6798d8)}
+.money-entry-input input{font-size:26px!important;font-weight:800;letter-spacing:-.03em;color:var(--ink,#253246);border:0!important;background:transparent!important;box-shadow:none!important;outline:0!important;min-height:50px;padding:8px 0!important;width:100%!important;min-width:0!important;font-variant-numeric:tabular-nums}
+.money-tools-trigger{display:grid;place-items:center;flex:0 0 52px;min-height:52px;border:1px solid var(--line,#e0e6ed);border-radius:14px;background:var(--tint,#f4f6fe);color:var(--blue-dark,var(--blue,#486ca9));padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.money-tools-trigger svg{width:23px;height:23px}
+.money-tools-trigger:active{transform:scale(.97)}
+.money-tools-trigger:focus-visible,.money-sheet button:focus-visible{outline:2px solid var(--blue,#7b9ce9);outline-offset:2px}
+.money-modal-backdrop{position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-end;background:rgba(19,30,48,.45);padding:0;overscroll-behavior:contain}
+.money-sheet{width:100%;max-width:540px;max-height:min(90dvh,760px);margin-inline:auto;display:flex;flex-direction:column;min-height:0;border-radius:24px 24px 0 0;background:var(--card,#fff);color:var(--ink,#283346);box-shadow:0 -15px 60px #15223935;overflow:hidden}
+.money-sheet-grabber{width:38px;height:5px;border-radius:99px;background:var(--line,#dadce2);margin:9px auto 2px;flex:none}
+.money-sheet-header{padding:5px 17px 12px;display:flex;align-items:center;justify-content:space-between;flex:none}
+.money-sheet-header h2{margin:0;font-size:17px;font-weight:800}
+.money-sheet-close{width:42px;height:42px;border:0;border-radius:14px;font-size:27px;line-height:1;background:var(--paper,#f2f4f7);color:var(--ink,#283346)}
+.money-sheet-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0 17px 10px;padding:4px;gap:4px;border-radius:13px;background:var(--paper,#f3f5fa);flex:none}
+.money-sheet-tabs button{border:0;min-height:44px;border-radius:10px;background:transparent;color:var(--muted,#63718a);font-size:14px;font-weight:750}
+.money-sheet-tabs button.selected{color:var(--blue-dark,var(--blue,#486ca9));background:var(--card,#fff);box-shadow:0 2px 8px #192d3c16}
+.money-sheet-scroll{overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:4px 17px 14px;flex:1}
+.money-caption{display:block;font-size:12px;font-weight:700;color:var(--muted,#6e7a90);margin:0 0 7px}
+.money-expression{width:100%;box-sizing:border-box;min-height:45px;font-size:20px!important;font-weight:750!important;text-align:right!important;border:1px solid var(--line,#dde3e9)!important;border-radius:12px!important;padding:8px 12px!important;background:var(--paper,#fafbff)!important;color:var(--ink,#283346)}
+.money-result-box{margin:10px 0 14px;display:flex;flex-direction:column;gap:3px;align-items:flex-end;justify-content:center;border-radius:14px;padding:12px 14px;background:var(--tint,#f3f6fc);min-height:70px}
+.money-result-box span{font-size:12px;color:var(--muted,#6e7a90)}
+.money-result-box strong{font-size:clamp(24px,7vw,32px);font-weight:850;line-height:1.25;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.money-keypad{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.money-keypad button{min-width:0;min-height:48px;border:1px solid var(--line,#dfe3eb);border-radius:13px;background:var(--paper,#f9fafc);color:var(--ink,#283346);font-size:20px;font-weight:750;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.money-keypad button:active{transform:scale(.96)}
+.money-keypad button.operator{background:var(--tint,#edf2ff);color:var(--blue-dark,var(--blue,#486ca9))}
+.money-keypad button.muted{color:var(--muted,#6e7a90)}
+.money-fx-source{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:9px}
+.money-fx-source select,.money-fx-source input,.money-manual-rate input{box-sizing:border-box;min-width:0;width:100%;min-height:50px;padding:10px!important;border:1px solid var(--line,#dfe3eb)!important;border-radius:12px!important;background:var(--paper,#fafbff)!important;color:var(--ink,#283346);font-size:16px!important}
+.money-fx-arrow{text-align:center;margin:12px auto 2px;color:var(--muted,#6e7a90);font-size:16px}
+.money-fx-arrow span{font-size:13px;font-weight:750}
+.money-rate-info{min-height:38px;padding:2px 0;font-size:12px;line-height:1.5;color:var(--muted,#6e7a90)}
+.money-rate-change{min-height:44px;border:0;background:transparent;color:var(--blue-dark,var(--blue,#486ca9));font-size:13px;font-weight:750;padding:5px 0}
+.money-manual-rate{display:grid;gap:6px;font-size:12px;color:var(--muted,#6e7a90);padding:4px 0 8px}
+.money-sheet-footer{flex:none;background:var(--card,#fff);border-top:1px solid var(--line,#e5e8ee);padding:12px 17px calc(12px + env(safe-area-inset-bottom,0px))}
+.money-apply{display:block;width:100%;min-height:52px;border:0;border-radius:14px;background:var(--blue,#668bdd);color:white;font-size:16px;font-weight:800;touch-action:manipulation}
+.money-apply:disabled{opacity:.4;cursor:not-allowed}
+@media(max-height:650px){.money-sheet{max-height:96dvh}.money-keypad button{min-height:44px}.money-result-box{min-height:56px;margin:7px 0 9px}}
+@media(min-width:600px){.money-modal-backdrop{align-items:center;padding:20px}.money-sheet{border-radius:24px;max-height:min(90dvh,760px)}}
+</style>

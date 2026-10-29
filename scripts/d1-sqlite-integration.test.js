@@ -5,6 +5,13 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
+const approvedPost = (plan, month = '2026-10') => ({
+  planId:plan.id,month,
+  expected:{name:plan.name,amount:plan.amount,day:plan.day,category:plan.category,
+    paymentSource:plan.paymentSource || '',startMonth:plan.startMonth,
+    date:month+'-'+String(Math.min(plan.day,new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).getUTCDate())).padStart(2,'0')}
+})
+
 import { aiQuotaState, reserveAiAttempt } from '../functions/api/ai-quota.js'
 
 class SqliteD1 {
@@ -79,18 +86,18 @@ test('actual SQLite: manual and old automated recurring conflicts, idempotency a
     assert.equal((await call('recurring-plans','POST',first)).status,200)
     assert.equal((await call('recurring-plans','POST',second)).status,200)
     assert.equal((await call('entries','POST',{date:'2026-10-25',amount:102000,type:'expense',merchant:'家賃',paymentSource:'現金'})).status,200)
-    const conflict=await call('recurring-post','POST',{planId:first.id,month:'2026-10'})
+    const conflict=await call('recurring-post','POST',approvedPost(first))
     assert.equal(conflict.status,200)
     assert.equal(conflict.body.conflict,true)
     const monthly=await call('entries?month=2026-10&offset=0')
     assert.equal(monthly.body.length,1)
     db.db.prepare('DELETE FROM entries WHERE id=?').run(monthly.body[0].id)
-    const created=await call('recurring-post','POST',{planId:first.id,month:'2026-10'})
+    const created=await call('recurring-post','POST',approvedPost(first))
     assert.equal(created.status,200)
     assert.equal(created.body.created,true)
-    const repeated=await call('recurring-post','POST',{planId:first.id,month:'2026-10'})
+    const repeated=await call('recurring-post','POST',approvedPost(first))
     assert.equal(repeated.body.duplicate,true)
-    const independent=await call('recurring-post','POST',{planId:second.id,month:'2026-10'})
+    const independent=await call('recurring-post','POST',approvedPost(second))
     assert.equal(independent.body.conflict,true, 'an identical plan with a new ID cannot create a duplicate expense')
     assert.equal((await call('entries?month=2026-10&offset=0')).body.length,1)
     const edited=await call('recurring-plans/'+first.id,'PUT',{...first,amount:103000,enabled:false})

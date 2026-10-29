@@ -64,7 +64,15 @@ test('manual text runs structured parsing before fallback without switching to i
   assert.match(fn,/const effectiveMode = structured \|\| repeated \? 'statement' : mode/)
   assert.doesNotMatch(fn,/entryInputMode\.value\s*=\s*'scan'/)
   assert.doesNotMatch(fn,/api\('entries'/)
-  assert.match(app,/例：勉強会10月毎週の金曜日 100円/)
+  // Check the documented input formats without pinning a user-edited sentence.
+  const hint=app.match(/<textarea id="entry-text"[^>]*>/)?.[0]
+  assert.ok(hint)
+  assert.match(hint,/v-model="input"/)
+  assert.match(hint,/recognitionMode === 'statement'/)
+  assert.match(hint,/勉強会/)
+  assert.match(hint,/10月毎週の金曜日/)
+  assert.match(hint,/10\/10/)
+  assert.match(hint,/100円/)
 })
 
 
@@ -92,6 +100,10 @@ test('single-line names and dates support a single date and multiple independent
   assert.equal(result.rows[0].merchant,'昼食')
   assert.equal(result.rows[0].date,'2026-10-29')
   assert.equal(result.rows[0].amount,850)
+  // The shorter date in the UI hint must work in a single-line draft too.
+  const shortDate=parseNamedExpenseBlocks('勉強会 10/10 100円',now)
+  assert.ok(shortDate && !shortDate.error)
+  assert.deepEqual(shortDate.rows.map(row=>[row.date,row.merchant,row.amount]),[['2026-10-10','勉強会',100]])
   assert.ok(result.rows.slice(1).every(row=>row.merchant==='勉強会'))
   assert.equal(parseNamedExpenseBlocks('勉強会10月毎週の金曜日 0円',now).rows,undefined)
   assert.match(parseNamedExpenseBlocks('勉強会10月毎週の金曜日 999999999円',now).error,/金額/)

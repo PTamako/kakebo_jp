@@ -419,7 +419,7 @@ export async function onRequest({ request, env, params }) {
         if (m === 'POST' && b === 'recalculate') {
           const item=await request.json()
           if(typeof item?.name!=='string'||!item.name.trim()||item.name.length>80||
-             !/^\\d{4}-(0[1-9]|1[0-2])$/.test(item.month||'')||
+             !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month||'')||
              !validDate(item.start)||!validDate(item.end)||item.start>item.end)
             return json({error:'カードの対象期間を確認してください'},400)
           // One SQL statement calculates and writes the bill from authoritative

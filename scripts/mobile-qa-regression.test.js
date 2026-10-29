@@ -103,14 +103,16 @@ test('CSP permits local header logo without allowing the unused LINE image domai
   assert.doesNotMatch(headers, /stickershop\.line-scdn\.net/)
 })
 
-test('header puppy logo is a committed self-hosted asset, never a third-party image', () => {
-  const asset = source('public/branding/line-dogs.svg')
+test('bookkeeping logo is a bundled and self-hosted SVG with no puppy graphics', () => {
+  const asset = source('public/branding/kakeibo-ledger.svg')
   const header = app.match(/<header class="topbar">[\s\S]*?<\/header>/)?.[0]
   assert.ok(header, 'the app header exists')
-  assert.match(header, /<img class="brand-local-logo" src="\/branding\/line-dogs\.svg"/)
-  assert.doesNotMatch(header, /https?:\/\/|brandImageFailed|@error=/)
+  assert.match(header, /aria-label="家計簿のノートとコイン"/)
+  assert.match(header, /<img class="brand-local-logo" src="\/branding\/kakeibo-ledger\.svg"/)
+  assert.doesNotMatch(header, /https?:\/\/|line-dogs|brandImageFailed|@error=/)
   assert.match(app, /\.brand-mark img\.brand-local-logo\{[^}]*width:100%;height:100%/)
   assert.match(asset, /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
-  assert.match(asset, /viewBox="0 0 96 64"/)
+  assert.match(asset, /viewBox="0 0 64 64"/)
+  assert.match(asset, /<circle[^>]+fill="#FFDA8B"/)
   assert.doesNotMatch(asset, /<image\b|<script\b|href=|https?:\/\/(?!www\.w3\.org\/2000\/svg)/)
 })

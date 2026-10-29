@@ -157,8 +157,8 @@ test('Pages previews reject ledger mutations before touching the D1 binding',asy
       body:JSON.stringify({date:'2026-10-29',amount:100,type:'expense'})}),
     env:{AUTH_TOKEN:'readonly-test-only',DB:null},params:{path:['entries']}
   })
-  assert.equal(response.status,403)
-  assert.equal((await response.json()).code,'preview_read_only')
+  assert.equal(response.status,503)
+  assert.equal((await response.json()).code,'preview_db_not_verified')
 })
 
 test('manual priority: editing a ¥101,500 planned debit to ¥98,000 is never overwritten',async()=>{
@@ -203,4 +203,14 @@ test('stale recurring confirmation is rejected instead of recording another devi
     assert.equal((await call('entries?month=2026-10')).body.length,0)
     assert.equal((await call('recurring-post','POST',{planId:original.id,month:'2026-10'})).status,409)
   }finally{db.close()}
+})
+
+test('verified isolated Pages preview still rejects financial mutation',async()=>{
+  const response=await onRequest({
+    request:new Request('https://testbuild.kakeibo-f17.pages.dev/api/entries',{
+      method:'POST',headers:{'content-type':'application/json'},body:'{}'}),
+    env:{AUTH_TOKEN:'test-only',DB:null,PREVIEW_D1_ISOLATED:'true'},params:{path:['entries']}
+  })
+  assert.equal(response.status,403)
+  assert.equal((await response.json()).code,'preview_read_only')
 })

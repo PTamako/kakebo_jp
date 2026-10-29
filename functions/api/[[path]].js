@@ -596,7 +596,10 @@ export async function onRequest({ request, env, params }) {
         const insertSql = checkDuplicate
           ? `INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
             SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13
-            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND COALESCE(time,'')=COALESCE(?2,'') AND amount=?3
+            WHERE NOT EXISTS (SELECT 1 FROM entries WHERE date=?1 AND amount=?3
+              AND (COALESCE(time,'')='' OR COALESCE(?2,'')=''
+                OR ABS((CAST(SUBSTR(time,1,2) AS INTEGER)*60 + CAST(SUBSTR(time,4,2) AS INTEGER))
+                  - (CAST(SUBSTR(?2,1,2) AS INTEGER)*60 + CAST(SUBSTR(?2,4,2) AS INTEGER))) <= 5)
               AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13)
             ON CONFLICT(client_request_id) DO NOTHING`
           : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'

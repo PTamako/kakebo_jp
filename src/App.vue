@@ -1254,7 +1254,7 @@ provide('kakeibo-page-context', { tab, statsPeriod, themes, storedTheme, theme, 
           <summary>テキストを貼り付けて読み取る</summary>
           <label class="field-label" for="entry-text">テキスト入力</label>
           <label class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
-          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? '例：勉強会10月毎週の金曜日 100円（3行入力も可）' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
+          <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? '例：勉強会　10月毎週の金曜日（もしくは　10/10） 100円' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
           <div class="action-row">
             <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
           </div>

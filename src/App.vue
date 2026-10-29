@@ -12,7 +12,8 @@ import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
-import { CATEGORY_ICON_PATHS, ICON_LIBRARY, CATEGORY_LABELS, sortOtherLast } from './category-ui.js'
+import { ICON_LIBRARY } from './icon-library.js'
+import { sortOtherLast } from './category-sort.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
@@ -186,14 +187,19 @@ function onReceiptImagesCleared() {
 const editingEntry = ref(null)
 const INCOME_CATEGORIES = sortOtherLast(['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入'])
 const categoryIcons = ref({})
+const categoryDisplayNames = ref({})
 const availableIcons = computed(() => {
   const used = new Set(Object.values(categoryIcons.value))
-  const existingPaths = new Set(categories.value.map(name => CATEGORY_ICON_PATHS[name]).filter(Boolean))
-  const existingLabels = new Set(categories.value.map(name => CATEGORY_LABELS[name] || name))
-  return ICON_LIBRARY.filter(icon => icon.id === 'other' || (!used.has(icon.id) && !existingPaths.has(icon.path) && !existingLabels.has(icon.label)))
+  const existingLabels = new Set(categories.value.map(name => categoryDisplayNames.value[name] || name))
+  return ICON_LIBRARY.filter(icon => icon.id === 'other' || (!used.has(icon.id) && !existingLabels.has(icon.label)))
 })
-const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || CATEGORY_ICON_PATHS[name] || ICON_LIBRARY.at(-1).path
-const categoryLabel = name => CATEGORY_LABELS[name] || name
+const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || ICON_LIBRARY.at(-1).path
+const categoryLabel = name => categoryDisplayNames.value[name] || name
+async function loadCategoryMetadata() {
+  const rows = await api('category-source')
+  categoryIcons.value = Object.fromEntries(rows.filter(row => row.icon).map(row => [row.category, row.icon]))
+  categoryDisplayNames.value = Object.fromEntries(rows.filter(row => row.display_name).map(row => [row.category, row.display_name]))
+}
 
 // Store only a revocable, 30-day device session; never persist the access code.
 localStorage.removeItem('token')
@@ -308,7 +314,7 @@ async function load() {
     const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), fetchMonthEntries(requestedMonth), api('stats?month=' + requestedMonth)])
     if (requestId !== loadRequestId || requestedMonth !== month.value) return
     categories.value = sortOtherLast(nextCategories)
-    try { categoryIcons.value = await api('category-icons') } catch { /* Existing categories keep their default icons. */ }
+    try { await loadCategoryMetadata() } catch { /* Keep previously loaded category metadata until the next request. */ }
     entries.value = nextEntries
     refreshReceiptImageIds().catch(() => {})
     stats.value = nextStats
@@ -539,7 +545,7 @@ async function saveCategory() {
   try {
     await api('categories', { method: 'POST', body: JSON.stringify({ name, icon: categoryIcon.value }) })
     categories.value = sortOtherLast(await api('categories'))
-    categoryIcons.value = await api('category-icons')
+    await loadCategoryMetadata()
     categoryDialog.value = false
     flash('カテゴリを追加しました')
   } catch (e) { flash('カテゴリの追加に失敗しました：' + e.message) }

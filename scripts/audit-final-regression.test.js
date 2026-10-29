@@ -10,7 +10,7 @@ const finance = readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),
 const base = {format:'kakeibo-ledger-backup',version:3,entries:[]}
 
 test('old backups remain accepted without categoryMetadata',()=>{
-  assert.equal(validateBackup({...base}),undefined)
+  assert.deepEqual(validateBackup({...base}),base)
 })
 test('categoryMetadata preserves Japanese labels, icon and sort and rejects invalid data',()=>{
   const meta=[{category:'勉強会',display_name:'勉強会',icon:'education',sort_order:9}]

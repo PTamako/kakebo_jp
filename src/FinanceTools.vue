@@ -408,6 +408,7 @@ const monthExpenses=(period,source)=>period ? rows.value.filter(e=>e.date>=perio
 const cardTransactions=computed(()=>monthExpenses(cardPeriod.value,bill.value.name))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
 const selectedSavedBill = computed(() => bills.value.find(record => record.name === bill.value.name && record.month === bill.value.month) || null)
+const savedBillDifference = computed(() => selectedSavedBill.value && loaded.value ? cardTotal.value - Number(selectedSavedBill.value.total) : null)
 const cardBillHistory = computed(() => bills.value.filter(record => record.name === bill.value.name && record.month !== bill.value.month).slice().sort((a,b) => b.month.localeCompare(a.month)))
 
 async function saveCardBill() {
@@ -525,7 +526,7 @@ async function removeCardBill(record) {
     <p v-else>カードと締め月を選択し、カード管理で締め日を設定してください。</p>
     <button type="button" :disabled="!settingsReady || !loaded || !bill.name || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
     <div v-if="selectedSavedBill" class="finance-saved-bill">
-      <div class="finance-saved-bill-text"><span class="finance-saved-bill-caption">保存済みの請求額 · {{selectedSavedBill.month}}</span><strong>{{yen(selectedSavedBill.total)}}</strong></div>
+      <div class="finance-saved-bill-text"><span class="finance-saved-bill-caption">保存済みの請求額 · {{selectedSavedBill.month}}</span><strong>{{yen(selectedSavedBill.total)}}</strong><span v-if="savedBillDifference !== null" role="status">{{savedBillDifference === 0 ? '現在の明細と一致' : '現在の明細との差額：'+yen(savedBillDifference)+'（再保存すると更新）'}}</span></div>
       <button type="button" class="finance-compact-action" @click="removeCardBill(selectedSavedBill)" :aria-label="selectedSavedBill.month+' の保存済み請求額を削除'">削除</button>
     </div>
     <details v-if="bill.name && cardBillHistory.length" class="finance-bill-history">

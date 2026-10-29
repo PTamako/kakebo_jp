@@ -411,18 +411,17 @@ async function restore(){
     const sources=restoreMissingByKey(existingSources,backup.paymentSources||[],x=>x.name)
     for (const source of sources) {
       if(!source || typeof source.name!=='string' || !source.name.trim() || source.name.length>80) continue
-      await props.api('payment-sources',{method:'POST',body:JSON.stringify({name:source.name})})
-      if(Number.isInteger(source.closing_day) && source.closing_day>=0 && source.closing_day<=31) {
-        await props.api('payment-sources/closing-day',{method:'POST',body:JSON.stringify({name:source.name,closingDay:source.closing_day})})
-      }
-      settingsCount++
+      const saved = await props.api('payment-sources/restore-missing',{method:'POST',body:JSON.stringify({
+        name:source.name,closingDay:source.closing_day ?? null
+      })})
+      if(saved.created)settingsCount++
     }
     // Only recover a default card if the current database has no default.
     if(!existingSources.some(source=>source.is_default)){
       const source=(backup.paymentSources||[]).find(source=>source?.is_default)
       if(source?.name && (await props.api('payment-sources')).some(current=>current.name===source.name)){
-        await props.api('payment-sources/default',{method:'POST',body:JSON.stringify({name:source.name})})
-        settingsCount++
+        const saved = await props.api('payment-sources/restore-default',{method:'POST',body:JSON.stringify({name:source.name})})
+        if(saved.restored)settingsCount++
       }
     }
     const existingCategories=await props.api('categories')

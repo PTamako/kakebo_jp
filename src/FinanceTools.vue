@@ -308,7 +308,12 @@ async function initializeFinance() {
   finally { financeInitPromise = null }
 }
 onMounted(() => { if (props.active) void initializeFinance() })
-watch(() => props.active, active => { if (active) void initializeFinance() })
+watch(() => props.active, active => {
+  if (!active) return
+  // A new visit should see newly added or edited transactions before exporting.
+  if (financeInitialized && loaded.value) void loadAll()
+  else void initializeFinance()
+})
 async function removePlan(id) {
   if (!settingsReady.value) return
   try {
@@ -452,6 +457,7 @@ async function removeCardBill(record) {
   </article>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
     <summary>バックアップ・復元<span>必要なときに開く</span></summary>
+    <p>収支明細・固定支出・カード請求のバックアップです。SBI証券の評価額は含まれません。</p>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||!loaded" @click="downloadBackup">JSON を保存</button><label class="backup-upload" :class="{ 'is-disabled': busy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||!loaded" @change="preview"></label></div>
     <button v-if="restoreRows.length" :disabled="busy" @click="restore">追加候補 {{restoreRows.length}} 件を確認して復元</button>
     <p v-if="message" role="status">{{message}}</p>

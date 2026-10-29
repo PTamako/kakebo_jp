@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { sortOtherLast } from './category-ui.js'
+import AmountInput from './AmountInput.vue'
 const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false } })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
@@ -15,7 +16,7 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
   <div class="type-switch" role="group" aria-label="記録の種類">
     <button v-for="t in [{id:'expense',label:'支出'},{id:'income',label:'収入'},{id:'transfer',label:'資産移動'}]" :key="t.id" type="button" :class="{selected:record.type===t.id}" @click="emit('change-type',t.id)">{{t.label}}</button>
   </div>
-  <label class="form-field amount-field"><span>金額（円）</span><div class="amount-input-wrap"><span>¥</span><input v-model.number="record.amount" type="number" min="0" inputmode="numeric" required aria-label="金額（円）" /></div></label>
+  <div class="form-field amount-field"><span>金額（円）</span><AmountInput v-model="record.amount" /></div>
   <div v-if="!(Number(record.amount)>0)" class="amount-warning" role="alert">金額を確認してください。</div>
   <div class="field-grid">
     <label class="form-field"><span>日付</span><input v-model="record.date" type="date" required /></label>

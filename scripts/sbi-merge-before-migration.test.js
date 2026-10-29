@@ -27,5 +27,5 @@ test('0006 migration is additive and never edits/deletes an existing transaction
   assert.match(migration,/INSERT OR IGNORE INTO investment_plan_history/)
   assert.match(migration,/WHERE NOT EXISTS\(SELECT 1 FROM investment_holdings WHERE fund_code=/)
   assert.match(schema,/CREATE TABLE IF NOT EXISTS investment_plan_history/)
-  assert.match(component,/毎月の振替は買付予定と照合/)
+  assert.match(component,/期日反映は家計簿上の処理です。証券口座への着金・買付成立を意味しません。/)
 })

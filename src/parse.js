@@ -1,3 +1,4 @@
+import { findTransactionTime } from './entry-time.js'
 // テキスト・OCR解析：日付、時刻、金額、店舗、カテゴリー（ブラウザ内で処理）
 export const CATEGORIES = ['餐饮', '饮食料品', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
 
@@ -68,13 +69,13 @@ export function classify(text, rules = []) {
 
 function parseAiCsvRow(raw, rules) {
   const line = normalize(raw).trim()
-  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日))\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*(?:円)?\s*(?:[,，]\s*(.*))?$/)
+  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日)(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*(?:円)?\s*(?:[,，]\s*(.*))?$/)
   if (!m) return null
   const merchant = m[2].replace(/^QP\s*[/／]\s*/i, '').trim()
   const amount = Number(m[3].replace(/[^\d]/g, ''))
   if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
   const { category, keyword } = classify(merchant, rules)
-  return { date: findDate(m[1]), time: '', amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
+  return { date: findDate(m[1]), time: findTransactionTime(m[1]), amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
 }
 export function parseEntry(raw, rules) {
   const ai = parseAiCsvRow(raw, rules)
@@ -209,7 +210,7 @@ export function parseReceipt(raw, rules = []) {
   }
   return {
     date: receiptDate,
-    time: dateLine ? findTime(dateLine) : '',
+    time: findTransactionTime(text, dateLine),
     amount,
     category,
     merchant: merchant.slice(0, 60),
@@ -219,7 +220,7 @@ export function parseReceipt(raw, rules = []) {
 }
 
 // 貼り付けテキストまたはOCR画像から複数の明細を抽出する。
-export function parseEntries(raw, rules) {
+function parseEntriesInternal(raw, rules) {
   const marker = '\n__QP_AMOUNT_COLUMN__\n'
   let qpColumnAmounts = []
   if (typeof raw === 'string' && raw.includes(marker)) {
@@ -234,7 +235,7 @@ export function parseEntries(raw, rules) {
   // Preserve original word boundaries for space-delimited AI statements.
   const originalLines = String(raw).split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   const originalSpacedRows = originalLines.map(line => {
-    const m = line.normalize('NFKC').match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2})\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)$/)
+    const m = line.normalize('NFKC').match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)$/)
     if (!m) return null
     const merchant = m[2].trim()
     const amount = Number(m[3].replace(/[^\d]/g, ''))
@@ -250,7 +251,7 @@ export function parseEntries(raw, rules) {
   if (csvRows.length && csvRows.every(Boolean)) return csvRows
   // Space-delimited AI card rows: date, merchant, yen amount, installment count.
   const spacedRows = csvLines.map(line => {
-    const match = line.match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2})\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)\s*$/)
+    const match = line.match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)\s*$/)
     if (!match) return null
     const merchant = match[2].trim()
     const amount = Number(match[3].replace(/[^\d]/g, ''))
@@ -610,6 +611,18 @@ export function parseEntries(raw, rules) {
   if (hasCardPaymentMetadata && dateLines.length && !hasExplicitAmount) return [{ ...entry, amount: 0 }]
   return [entry]
 }
+// Parsed statement rows must carry the printed transaction time when present.
+// Never assign the current time to imported OCR/credit-card records.
+export function parseEntries(raw, rules) {
+  const rows = parseEntriesInternal(raw, rules)
+  return rows.map(row => {
+    if (row.time) return row
+    const time = findTransactionTime(row.raw || '') ||
+      (rows.length === 1 ? findTransactionTime(raw) : '')
+    return time ? { ...row, time } : row
+  })
+}
+
 // 画像から文字を抽出：Tesseract.jsを端末のブラウザ内で実行し、画像はアップロードしない
 export async function ocrImage(file, onProgress) {
   const { createWorker } = await import('tesseract.js')

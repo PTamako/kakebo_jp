@@ -64,5 +64,39 @@ test('manual text runs structured parsing before fallback without switching to i
   assert.match(fn,/const effectiveMode = structured \|\| repeated \? 'statement' : mode/)
   assert.doesNotMatch(fn,/entryInputMode\.value\s*=\s*'scan'/)
   assert.doesNotMatch(fn,/api\('entries'/)
-  assert.match(app,/勉強会\\n10月毎週の金曜日\\n100円/)
+  assert.match(app,/例：勉強会10月毎週の金曜日 100円/)
+})
+
+
+test('single-line named weekly expenses keep the item name and expand to five dates',()=>{
+  for(const value of [
+    '勉強会10月毎週の金曜日 100円',
+    '勉強会 10月毎週の金曜日 100円',
+    '勉強会十月毎週の金曜日　１００円',
+    '勉強会2026年10月毎週の金曜日 ¥100'
+  ]){
+    const result=parseNamedExpenseBlocks(value,now)
+    assert.ok(result && !result.error,value)
+    assert.deepEqual(result.rows.map(row=>row.date),[
+      '2026-10-02','2026-10-09','2026-10-16','2026-10-23','2026-10-30'
+    ],value)
+    assert.ok(result.rows.every(row=>row.merchant==='勉強会' && row.amount===100),value)
+    assert.ok(result.rows.every(row=>!row.clientRequestId&&!row.paymentSource),value)
+  }
+})
+
+test('single-line names and dates support a single date and multiple independent rows',()=>{
+  const result=parseNamedExpenseBlocks('昼食10月29日 850円\n勉強会10月毎週の金曜日 100円',now)
+  assert.ok(result && !result.error)
+  assert.equal(result.rows.length,6)
+  assert.equal(result.rows[0].merchant,'昼食')
+  assert.equal(result.rows[0].date,'2026-10-29')
+  assert.equal(result.rows[0].amount,850)
+  assert.ok(result.rows.slice(1).every(row=>row.merchant==='勉強会'))
+  assert.equal(parseNamedExpenseBlocks('勉強会10月毎週の金曜日 0円',now).rows,undefined)
+  assert.match(parseNamedExpenseBlocks('勉強会10月毎週の金曜日 999999999円',now).error,/金額/)
+  assert.equal(parseNamedExpenseBlocks('11月毎週の金曜日 100円',now),null)
+  assert.equal(parseNamedExpenseBlocks('2026年10月25日,ベルク,8323円,クレジットカード',now),null)
+  assert.equal(parseNamedExpenseBlocks('勉強会\n10月毎週の金曜日\n100円',now).rows.length,5)
+  assert.equal(parseRepeatedExpense('11月毎週の金曜日 100円',now).length,4)
 })

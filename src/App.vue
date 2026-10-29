@@ -7,6 +7,7 @@ import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
 import { classify, parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
+import { localHHMM } from './entry-time.js'
 import { compressReceiptImage } from './receipt-image.js'
 import FinanceTools from './FinanceTools.vue'
 import TransactionForm from './TransactionForm.vue'
@@ -499,8 +500,10 @@ async function onImage(e, mode = 'statement') {
 }
 function addBlank(type = 'expense') {
   entryInputMode.value = 'manual'
+  const now = new Date()
+  const today = now.toLocaleDateString('sv-SE')
   const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
-  forms.value.push({ date: new Date().toLocaleDateString('sv-SE'), transferDate: new Date().toLocaleDateString('sv-SE'), transferTarget: '', time: '', amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  forms.value.push({ date: today, transferDate: today, transferTarget: '', time: type === 'expense' ? localHHMM(now) : '', amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   if (form.type !== type) {

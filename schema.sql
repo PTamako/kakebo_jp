@@ -145,10 +145,15 @@ CREATE INDEX IF NOT EXISTS idx_plan_history_month ON investment_plan_history(eff
 
 CREATE TABLE IF NOT EXISTS investment_holdings (
   fund_code TEXT NOT NULL,
-  account_type TEXT NOT NULL CHECK(account_type IN ('growth','tsumitate')),
+  -- SBI「銘柄でまとめる」 may combine both NISA account types in one row.
+  -- Never pretend an aggregate position belongs only to tsumitate/growth.
+  account_type TEXT NOT NULL CHECK(account_type IN ('growth','tsumitate','combined')),
   fund_name TEXT NOT NULL,
   units INTEGER NOT NULL CHECK(units >= 0),
   acquisition_cost INTEGER NOT NULL CHECK(acquisition_cost >= 0),
+  -- Exact SBI-screen values; use only until a newer NAV / changed holding supersedes them.
+  reported_value INTEGER CHECK(reported_value IS NULL OR reported_value >= 0),
+  reported_at TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY(fund_code, account_type)
 );

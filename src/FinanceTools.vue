@@ -184,7 +184,16 @@ const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const editingPlanId = ref('')
 const recurringHistoricalMonths = ref(0)
 const recurringPreview = ref([])
-const recurringPreviewTotal = computed(() => recurringPreview.value.filter(row => !row.conflict).reduce((sum,row) => sum + row.amount,0))
+const recurringSelected = ref(new Set())
+const recurringKey = row => row.planId + ':' + row.month
+const selectedRecurring = computed(() => recurringPreview.value.filter(row => !row.conflict && recurringSelected.value.has(recurringKey(row))))
+function toggleRecurringSelection(row, checked) {
+  const next = new Set(recurringSelected.value)
+  if (checked && !row.conflict) next.add(recurringKey(row))
+  else next.delete(recurringKey(row))
+  recurringSelected.value = next
+}
+const recurringPreviewTotal = computed(() => selectedRecurring.value.reduce((sum,row) => sum + row.amount,0))
 function beginEditPlan(item) {
   editingPlanId.value = item.id
   plan.value = {...item, paymentSource:item.paymentSource || '現金'}
@@ -436,12 +445,14 @@ function reviewRecurring() {
   if(recurringBusy.value || !settingsReady.value || !loaded.value) {recurringMessage.value='先に全明細を更新してください';return}
   const preview=previewRecurringEntries(plans.value,rows.value,{historicalMonths:Number(recurringHistoricalMonths.value)})
   recurringPreview.value=preview
+  const current = new Date().toLocaleDateString('sv-SE').slice(0,7)
+  recurringSelected.value = new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
   const conflicts=preview.filter(x=>x.conflict).length
   recurringMessage.value=preview.length ? '未記録候補 '+preview.length+'件（重複確認 '+conflicts+'件）。確認するまで追加されません。' : '対象期間に未記録の固定支出はありません'
 }
 async function applyRecurring(){
   if(recurringBusy.value || !loaded.value || !recurringPreview.value.length)return
-  const safe=recurringPreview.value.filter(row=>!row.conflict)
+  const safe=selectedRecurring.value
   if(!safe.length){recurringMessage.value='同一内容の記録があるため自動登録しません。必要な場合は明細から確認してください。';return}
   const summary=safe.length+'件、合計 '+yen(safe.reduce((sum,row)=>sum+row.amount,0))+
     ' の固定支出を登録します。日付と金額を確認しましたか？'
@@ -484,7 +495,9 @@ watch(() => props.active, active => {
   else void initializeFinance()
 })
 async function removePlan(id) {
-  if (!settingsReady.value) return
+  if (!settingsReady.value || recurringBusy.value) return
+  const target=plans.value.find(p=>p.id===id)
+  if (!confirm('固定支出「'+(target?.name||'')+'」の計画を削除しますか？停止だけなら「停止」を選んでください。既存の明細は削除されません。')) return
   try {
     await props.api('recurring-plans/'+encodeURIComponent(id),{method:'DELETE'})
     plans.value = plans.value.filter(x=>x.id!==id)
@@ -597,9 +610,9 @@ async function removeCardBill(record) {
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <label class="form-field"><span>未記録を確認する期間</span><select v-model.number="recurringHistoricalMonths" @change="recurringPreview=[]"><option :value="0">今月のみ（初期設定）</option><option :value="3">過去3か月も確認</option><option :value="12">過去12か月も確認</option><option :value="119">過去10年分も確認</option></select></label>
     <div class="finance-actions"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
-    <button v-if="recurringPreview.some(row=>!row.conflict)" type="button" :disabled="recurringBusy" @click="applyRecurring">確認した{{recurringPreview.filter(row=>!row.conflict).length}}件を登録</button></div>
+    <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
     <p v-if="recurringPreview.length" class="microcopy" role="status">候補：{{recurringPreview.length}}件 · 登録予定：{{yen(recurringPreviewTotal)}}。重複候補は登録しません。</p>
-    <div v-for="candidate in recurringPreview" :key="candidate.planId+'-'+candidate.month" class="finance-row" :class="{'recurring-conflict':candidate.conflict}">{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細と重複（対象外）' : '· 登録予定'}}</div>
+    <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
     <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 毎月{{p.day}}日 · {{p.paymentSource || "未設定"}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true) : '停止中'}} <button type="button" :disabled="recurringBusy" @click="beginEditPlan(p)">編集</button> <button type="button" :disabled="recurringBusy" @click="togglePlanEnabled(p)">{{p.enabled ? '停止' : '再開'}}</button> <button type="button" :disabled="recurringBusy" @click="removePlan(p.id)">削除</button></div>
   </article>

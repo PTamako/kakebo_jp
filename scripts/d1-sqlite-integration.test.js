@@ -372,8 +372,10 @@ test('D1 restore of a missing category icon does not overwrite a user icon',asyn
   const {db,call}=await createClient()
   try{
     const path='category-icons/restore-missing'
-    // Built-in icon IDs are now preseeded from D1 metadata; testing an
-    // unknown category proves restore-missing remains insert-only.
+    // The production D1 was migrated already. Seed a representative existing
+    // icon explicitly in the test fixture, not through an API read.
+    db.db.prepare("UPDATE category_source SET icon='home' WHERE category='居住'").run()
+    // Unknown categories still use insert-only restore semantics.
     assert.equal((await call(path,'POST',{category:'テスト分類',icon:'home'})).body.created,true)
     assert.equal((await call(path,'POST',{category:'テスト分類',icon:'water'})).body.created,false)
     const icons=(await call('category-icons')).body

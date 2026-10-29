@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { validateBackup, transactionKey, nextScheduledDate } from './finance-tools.js'
+import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion } from './finance-tools.js'
 const props = defineProps({ active: { type: Boolean, default: false }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh'])
 
@@ -152,6 +152,10 @@ const lastLoadedLabel = computed(() => lastLoadedAt.value ? new Intl.DateTimeFor
 const busy = ref(false)
 const message = ref('')
 const restoreRows = ref([])
+const restoreConflicts = ref([])
+const restoreIncludeConflicts = ref(false)
+const backupPreview = ref(null)
+const backupBusy = ref(false)
 const plans = ref([])
 const bills = ref([])
 const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費'}
@@ -172,13 +176,19 @@ async function loadAll() {
   busy.value=true; message.value=''; loadError.value=''
   try {
     const all=[]
-    for(let year=2018;year<=new Date().getFullYear();year++){
+    const years = await props.api('entry-years')
+    if (!Array.isArray(years)) throw Error('記録年の一覧を取得できません')
+    for(const item of years){
+      const year=String(item.year), expected=Number(item.count)
+      if(!/^\d{4}$/.test(year) || !Number.isSafeInteger(expected) || expected<0) throw Error('記録年の一覧が不正です')
+      let fetched=0
       for(let offset=0;;offset+=500){
         const page=await props.api('entries?year='+year+'&offset='+offset)
         if(!Array.isArray(page))throw Error('読み込み形式が不正です')
-        all.push(...page)
+        all.push(...page);fetched+=page.length
         if(page.length<500)break
       }
+      if(fetched!==expected) throw Error('読み込み中に明細件数が変わりました。もう一度更新してください')
     }
     rows.value=all;loaded.value=true;lastLoadedAt.value=new Date();message.value=all.length+'件の明細を読み込みました'
     return true
@@ -191,43 +201,120 @@ async function loadAll() {
   }
   finally{busy.value=false}
 }
-function downloadBackup(){
-  if(!loaded.value)return
-  const data={format:'kakeibo-ledger-backup',version:1,exportedAt:new Date().toISOString(),entries:rows.value,plans:plans.value,bills:bills.value}
-  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
-  const a=document.createElement('a');a.href=url;a.download='kakeibo-ledger-'+new Date().toISOString().slice(0,10)+'.json';a.click()
-  setTimeout(()=>URL.revokeObjectURL(url),30000)
+async function downloadBackup(){
+  if (busy.value || backupBusy.value) return
+  backupBusy.value = true
+  try {
+    // Refresh ledger and D1 metadata immediately before export. A partial fetch
+    // must not be mistaken for a complete, safe recovery archive.
+    if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
+    const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons] = await Promise.all([
+      props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
+      props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
+      props.api('categories'),props.api('category-icons')
+    ])
+    const data = validateBackup({
+      format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
+      entries:rows.value,plans:nextPlans,bills:nextBills,investments,
+      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons
+    })
+    const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
+    const a=document.createElement('a')
+    a.href=url;a.download='kakeibo-complete-'+new Date().toISOString().slice(0,10)+'.json';a.click()
+    setTimeout(()=>URL.revokeObjectURL(url),30000)
+    message.value='バックアップを作成しました。明細・SBI評価額・登録設定を含みます'
+  } catch(e) { message.value='バックアップを作成できませんでした：'+e.message }
+  finally { backupBusy.value=false }
 }
 async function preview(event){
-  const file=event.target.files?.[0];event.target.value='';restoreRows.value=[]
+  const file=event.target.files?.[0];event.target.value=''
+  restoreRows.value=[];restoreConflicts.value=[];backupPreview.value=null;restoreIncludeConflicts.value=false
   if(!file)return
   try{
     if(!loaded.value)throw Error('先に全明細を読み込んでください')
     if(file.size>25*1024*1024)throw Error('ファイルが大きすぎます')
     const backup=validateBackup(JSON.parse(await file.text()))
-    const known=new Set(rows.value.map(transactionKey)),seen=new Set()
-    restoreRows.value=backup.entries.filter(e=>{
-      const key=transactionKey(e)
-      if(known.has(key)||seen.has(key))return false
-      seen.add(key);return true
-    })
-    message.value=backup.entries.length+'件中、追加候補 '+restoreRows.value.length+'件。既存の取引は変更しません'
-  }catch(e){message.value='確認失敗：'+e.message}
+    const result=prepareRestoreRows(rows.value,backup.entries)
+    restoreRows.value=result.newRows
+    restoreConflicts.value=result.conflicts
+    backupPreview.value=backup
+    const settingsCount=(backup.plans?.length||0)+(backup.bills?.length||0)+(backup.paymentSources?.length||0)+(backup.customRules?.length||0)
+    message.value=backup.entries.length+'件中、追加候補 '+restoreRows.value.length+'件・重複確認 '+restoreConflicts.value.length+'件。設定データ '+settingsCount+'件を確認できます'
+  }catch(e){backupPreview.value=null;message.value='確認失敗：'+e.message}
 }
 async function restore(){
-  if(!restoreRows.value.length||busy.value||!confirm(restoreRows.value.length+'件を追加します。既存データは変更しません。よろしいですか？'))return
-  busy.value=true;let count=0
+  const backup=backupPreview.value
+  if(!backup || busy.value || backupBusy.value)return
+  const selectedRows=[...restoreRows.value,...(restoreIncludeConflicts.value?restoreConflicts.value:[])]
+  const descriptions=selectedRows.length+'件の明細と、未登録の設定・空欄のSBI評価額のみを追加します。既存データは上書きしません。'
+  if(!confirm(descriptions+' 続けますか？'))return
+  if(restoreIncludeConflicts.value && restoreConflicts.value.length &&
+      !confirm('同一内容の取引 '+restoreConflicts.value.length+'件を別の取引として追加します。本当に登録しますか？')) return
+  busy.value=true
+  let count=0,settingsCount=0,skipped=0
   try{
-    while(restoreRows.value.length){
-      const e=restoreRows.value[0]
-      const payload=JSON.stringify([e.id,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note])
+    // Restore settings additively. Existing payment sources, rules, plans, bills
+    // and snapshots always win over uploaded content.
+    const existingSources=await props.api('payment-sources')
+    const sources=restoreMissingByKey(existingSources,backup.paymentSources||[],x=>x.name)
+    for (const source of sources) {
+      if(!source || typeof source.name!=='string' || !source.name.trim() || source.name.length>80) continue
+      await props.api('payment-sources',{method:'POST',body:JSON.stringify({name:source.name})})
+      if(Number.isInteger(source.closing_day) && source.closing_day>=0 && source.closing_day<=31) {
+        await props.api('payment-sources/closing-day',{method:'POST',body:JSON.stringify({name:source.name,closingDay:source.closing_day})})
+      }
+      settingsCount++
+    }
+    const existingCategories=await props.api('categories')
+    for(const name of restoreMissingByKey(existingCategories,backup.categories||[],x=>x)){
+      if(typeof name!=='string' || !name.trim() || name.length>20)continue
+      await props.api('categories',{method:'POST',body:JSON.stringify({name,icon:backup.categoryIcons?.[name]||'other'})})
+      settingsCount++
+    }
+    const existingCategoryRules=await props.api('custom-rules')
+    for(const rule of restoreMissingByKey(existingCategoryRules,backup.customRules||[],x=>x.keyword)){
+      if(!rule?.keyword || !rule?.category)continue
+      await props.api('rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,category:rule.category})})
+      settingsCount++
+    }
+    const existingPaymentRules=await props.api('merchant-payment-rules')
+    for(const rule of restoreMissingByKey(existingPaymentRules,backup.merchantPaymentRules||[],x=>x.keyword)){
+      if(!rule?.keyword || !rule?.payment_source)continue
+      await props.api('merchant-payment-rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,paymentSource:rule.payment_source})})
+      settingsCount++
+    }
+    const existingPlans=await props.api('recurring-plans')
+    for(const plan of restoreMissingByKey(existingPlans,backup.plans||[],x=>x.id)){
+      if(!plan?.id)continue
+      await props.api('recurring-plans',{method:'POST',body:JSON.stringify(plan)})
+      settingsCount++
+    }
+    const existingBills=await props.api('card-bills')
+    for(const bill of restoreMissingByKey(existingBills,backup.bills||[],x=>x.name+'|'+x.month)){
+      if(!bill?.name || !bill?.month)continue
+      await props.api('card-bills',{method:'PUT',body:JSON.stringify(bill)})
+      settingsCount++
+    }
+    const sbi=(backup.investments||[]).find(x=>x.platform==='sbi')
+    if(sbi && Number.isSafeInteger(sbi.current_value) && Number.isSafeInteger(sbi.pnl)){
+      const saved=await props.api('investments/restore-empty',{method:'POST',body:JSON.stringify({platform:'sbi',currentValue:sbi.current_value,pnl:sbi.pnl})})
+      if(saved.restored)settingsCount++;else skipped++
+    }
+    for (const e of selectedRows){
+      // Stable across retry; source backup identity disambiguates identical purchases.
+      const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
       const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
       const key='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
-      await props.api('entries',{method:'POST',body:JSON.stringify({...e,clientRequestId:key,transferTarget:e.transfer_target||'',transferDate:e.transfer_date||e.date,paymentSource:e.payment_source||''})})
-      restoreRows.value.shift();count++
+      const {backupIndex,...entry}=e
+      const result=await props.api('entries',{method:'POST',body:JSON.stringify({...entry,clientRequestId:key,transferTarget:e.transfer_target||'',transferDate:e.transfer_date||e.date,paymentSource:e.payment_source||''})})
+      if(result.duplicate)skipped++;else count++
+      restoreRows.value=restoreRows.value.filter(row=>row.backupIndex!==e.backupIndex)
+      restoreConflicts.value=restoreConflicts.value.filter(row=>row.backupIndex!==e.backupIndex)
     }
-    loaded.value=false;message.value=count+'件追加しました。全明細を再読み込みしてください'
-  }catch(e){message.value=count+'件追加済み。残りは再試行できます：'+e.message}
+    loaded.value=false;backupPreview.value=null;restoreIncludeConflicts.value=false
+    message.value='明細 '+count+'件・設定 '+settingsCount+'件を追加しました。既存の情報は上書きしていません。スキップ '+skipped+'件。全明細を更新してください'
+    emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
+  }catch(e){message.value='明細 '+count+'件・設定 '+settingsCount+'件追加済み。残りは再試行できます：'+e.message}
   finally{busy.value=false}
 }
 const duplicates=computed(()=>{

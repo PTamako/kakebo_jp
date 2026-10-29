@@ -5,6 +5,13 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
+const approvedPost = (plan, month = '2026-10') => ({
+  planId:plan.id,month,
+  expected:{name:plan.name,amount:plan.amount,day:plan.day,category:plan.category,
+    paymentSource:plan.paymentSource || '',startMonth:plan.startMonth,
+    date:month+'-'+String(Math.min(plan.day,new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).getUTCDate())).padStart(2,'0')}
+})
+
 import { aiQuotaState, reserveAiAttempt } from '../functions/api/ai-quota.js'
 
 class SqliteD1 {
@@ -79,18 +86,18 @@ test('actual SQLite: manual and old automated recurring conflicts, idempotency a
     assert.equal((await call('recurring-plans','POST',first)).status,200)
     assert.equal((await call('recurring-plans','POST',second)).status,200)
     assert.equal((await call('entries','POST',{date:'2026-10-25',amount:102000,type:'expense',merchant:'家賃',paymentSource:'現金'})).status,200)
-    const conflict=await call('recurring-post','POST',{planId:first.id,month:'2026-10'})
+    const conflict=await call('recurring-post','POST',approvedPost(first))
     assert.equal(conflict.status,200)
     assert.equal(conflict.body.conflict,true)
     const monthly=await call('entries?month=2026-10&offset=0')
     assert.equal(monthly.body.length,1)
     db.db.prepare('DELETE FROM entries WHERE id=?').run(monthly.body[0].id)
-    const created=await call('recurring-post','POST',{planId:first.id,month:'2026-10'})
+    const created=await call('recurring-post','POST',approvedPost(first))
     assert.equal(created.status,200)
     assert.equal(created.body.created,true)
-    const repeated=await call('recurring-post','POST',{planId:first.id,month:'2026-10'})
+    const repeated=await call('recurring-post','POST',approvedPost(first))
     assert.equal(repeated.body.duplicate,true)
-    const independent=await call('recurring-post','POST',{planId:second.id,month:'2026-10'})
+    const independent=await call('recurring-post','POST',approvedPost(second))
     assert.equal(independent.body.conflict,true, 'an identical plan with a new ID cannot create a duplicate expense')
     assert.equal((await call('entries?month=2026-10&offset=0')).body.length,1)
     const edited=await call('recurring-plans/'+first.id,'PUT',{...first,amount:103000,enabled:false})
@@ -149,6 +156,60 @@ test('Pages previews reject ledger mutations before touching the D1 binding',asy
       method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({date:'2026-10-29',amount:100,type:'expense'})}),
     env:{AUTH_TOKEN:'readonly-test-only',DB:null},params:{path:['entries']}
+  })
+  assert.equal(response.status,503)
+  assert.equal((await response.json()).code,'preview_db_not_verified')
+})
+
+test('manual priority: editing a ¥101,500 planned debit to ¥98,000 is never overwritten',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const plan={id:'99999999-2222-3333-4444-555555555555',name:'家賃',amount:101500,day:25,
+      category:'居住',paymentSource:'現金',startMonth:'2026-10',enabled:true}
+    assert.equal((await call('recurring-plans','POST',plan)).status,200)
+    const first=await call('recurring-post','POST',approvedPost(plan))
+    assert.equal(first.body.created,true)
+    const entry=(await call('entries?month=2026-10')).body[0]
+    assert.equal(entry.amount,101500)
+    const edited=await call('entries/'+entry.id,'PUT',{...entry,date:'2026-10-25',
+      amount:98000,type:'expense',category:'居住',merchant:'家賃',paymentSource:'現金'})
+    assert.equal(edited.status,200)
+    const again=await call('recurring-post','POST',approvedPost(plan))
+    assert.equal(again.body.duplicate,true)
+    let rows=(await call('entries?month=2026-10')).body
+    assert.equal(rows.length,1)
+    assert.equal(rows[0].amount,98000)
+    // A manually entered amount in a month without the original request ID takes priority too.
+    const alternate={...plan,id:'88888888-2222-3333-4444-555555555555'}
+    assert.equal((await call('recurring-plans','POST',alternate)).status,200)
+    const dup=await call('recurring-post','POST',approvedPost(alternate))
+    assert.equal(dup.body.conflict,true)
+    rows=(await call('entries?month=2026-10')).body
+    assert.equal(rows.length,1)
+    assert.equal(rows[0].amount,98000)
+  } finally{db.close()}
+})
+
+test('stale recurring confirmation is rejected instead of recording another device new amount',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const original={id:'77777777-2222-3333-4444-555555555555',name:'家賃',amount:101500,
+      day:25,category:'居住',paymentSource:'現金',startMonth:'2026-10',enabled:true}
+    assert.equal((await call('recurring-plans','POST',original)).status,200)
+    assert.equal((await call('recurring-plans/'+original.id,'PUT',{...original,amount:120000})).status,200)
+    const stale=await call('recurring-post','POST',approvedPost(original))
+    assert.equal(stale.status,409)
+    assert.equal(stale.body.code,'plan_changed')
+    assert.equal((await call('entries?month=2026-10')).body.length,0)
+    assert.equal((await call('recurring-post','POST',{planId:original.id,month:'2026-10'})).status,409)
+  }finally{db.close()}
+})
+
+test('verified isolated Pages preview still rejects financial mutation',async()=>{
+  const response=await onRequest({
+    request:new Request('https://testbuild.kakeibo-f17.pages.dev/api/entries',{
+      method:'POST',headers:{'content-type':'application/json'},body:'{}'}),
+    env:{AUTH_TOKEN:'test-only',DB:null,PREVIEW_D1_ISOLATED:'true'},params:{path:['entries']}
   })
   assert.equal(response.status,403)
   assert.equal((await response.json()).code,'preview_read_only')

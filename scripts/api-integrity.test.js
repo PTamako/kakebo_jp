@@ -1,6 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { onRequest } from '../functions/api/[[path]].js'
+const approvedPost = (plan, month = '2026-10') => ({
+  planId:plan.id,month,
+  expected:{name:plan.name,amount:plan.amount,day:plan.day,category:plan.category,
+    paymentSource:plan.paymentSource || '',startMonth:plan.startMonth,
+    date:month+'-'+String(Math.min(plan.day,new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).getUTCDate())).padStart(2,'0')}
+})
+
 
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
@@ -115,7 +122,7 @@ class LedgerDb {
         }
         if (sql.startsWith('INSERT INTO entries') && sql.includes('WHERE NOT EXISTS')) {
           const [date,amount,category,merchant,requestId,paymentSource]=this.args
-          const existing=db.entries.some(e=>e.date===date && e.amount===amount && e.merchant===merchant &&
+          const existing=db.entries.some(e=>String(e.date).slice(0,7)===String(date).slice(0,7) && e.merchant===merchant &&
             (e.payment_source||'')===paymentSource && e.type==='expense')
           if(existing||db.entries.some(e=>e.client_request_id===requestId))return {meta:{changes:0}}
           db.entries.push({id:db.nextId++,date,amount,category,merchant,type:'expense',payment_source:paymentSource,client_request_id:requestId})
@@ -452,15 +459,15 @@ test('server skips matching hand-entered recurring expense and retries are idemp
   const p={id:'plan-regular-001',name:'家賃',amount:102000,day:25,category:'居住',paymentSource:'現金',startMonth:'2026-10',enabled:true}
   db.recurringPlans.set(p.id,p)
   db.entries.push({id:1,date:'2026-10-25',amount:102000,type:'expense',merchant:'家賃',payment_source:'現金',client_request_id:null})
-  let response=await call(db,'recurring-post','POST',{planId:p.id,month:'2026-10'})
+  let response=await call(db,'recurring-post','POST',approvedPost(p))
   assert.equal(response.status,200)
   assert.equal(response.body.conflict,true)
   assert.equal(db.entries.length,1)
   db.entries=[];db.nextId=1
-  response=await call(db,'recurring-post','POST',{planId:p.id,month:'2026-10'})
+  response=await call(db,'recurring-post','POST',approvedPost(p))
   assert.equal(response.body.created,true)
   assert.equal(db.entries.length,1)
-  response=await call(db,'recurring-post','POST',{planId:p.id,month:'2026-10'})
+  response=await call(db,'recurring-post','POST',approvedPost(p))
   assert.equal(response.body.duplicate,true)
   assert.equal(db.entries.length,1)
 })

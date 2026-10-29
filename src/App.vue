@@ -1195,7 +1195,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
             </button>
           </div>
         </div>
-        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">Cloudflare AIへ送信します。1日あたりの使用回数に上限があります。<span v-if="aiQuota">本日の残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
+        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">Cloudflare AIへ送信します。1日の回数上限は料金上限ではありません。<span v-if="aiQuota">本日の残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? 'カード利用明細などを複数件に分けて読み取ります。' : 'レシートの合計金額を1件として読み取ります。' }}</p>
@@ -1452,6 +1452,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <section v-else-if="tab === 'investments'" class="page-section">
       <article class="panel pending-transfer-panel">
         <div class="pending-transfer-heading"><h2>振替予定</h2><button class="pending-refresh" :disabled="transferLoading" @click="loadTransfers" aria-label="振替予定を更新" title="更新">↻ 更新</button></div>
+        <p class="microcopy">振替予定日になった資産移動は、起動時・再読込時に自動反映されます。SBIの手入力評価額は変更しません。</p>
         <div v-if="transferLoading" class="pending-transfer-empty">読み込み中…</div>
         <div v-else-if="!pendingTransfers.length" class="pending-transfer-empty">確認が必要な振替はありません</div>
         <div v-else class="pending-transfer-list">
@@ -1480,8 +1481,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <details v-if="tab === 'finance'" class="panel device-security-settings">
       <summary>端末のプライバシー設定</summary>
       <label class="form-field"><span>ログイン状態</span><select :value="rememberDevice ? 'remember' : 'session'" @change="setRememberDevice($event.target.value === 'remember')">
-        <option value="remember">この端末にログインを保存（30日間）</option>
-        <option value="session">アプリを終了したら保存しない</option>
+        <option value="remember">この端末にログイン状態を保存（最長30日）</option>
+        <option value="session">ブラウザのセッション内のみ保存（終了時の破棄は端末に依存）</option>
       </select></label>
       <p class="microcopy">ログイン情報は端末内に保存します。共有端末では「保存しない」を選択してください。未保存の入力は「入力」画面から個別に破棄できます。</p>
     </details>
@@ -1809,4 +1810,16 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 .batch-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;min-width:0;width:100%}
 .batch-actions>*{min-width:0;max-width:100%;width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;overflow-wrap:anywhere;min-height:44px}
 .batch-actions .upload-disabled{opacity:.55;pointer-events:none;cursor:not-allowed}
+/* Remove the logo's outer frame across all cream themes. */
+main .brand-mark,
+main.theme-pink .brand-mark,
+main.theme-blue .brand-mark,
+main.theme-yellow .brand-mark,
+main.theme-green .brand-mark{
+  background:transparent;
+  box-shadow:none;
+  border:none;
+  border-radius:0;
+  padding:0;
+}
 </style>

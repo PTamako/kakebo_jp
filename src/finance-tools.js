@@ -49,6 +49,35 @@ export function validateBackup(value) {
       throw Error('バックアップの' + name + 'が不正です')
     }
   }
+
+  // Validate every writeable setting before the first restore API call.
+  // Older v1/v2 archives may omit a whole collection; present collections must be sound.
+  const isText = (value, max = 120) => typeof value === 'string' && value.trim().length > 0 && value.length <= max
+  const month = x => /^\d{4}-(0[1-9]|1[0-2])$/.test(x || '')
+  const safeAmount = x => Number.isSafeInteger(x) && x >= 0
+  const validPlan = x => x && isText(x.id,80) && /^[a-zA-Z0-9-]{8,80}$/.test(x.id) &&
+    isText(x.name) && Number.isSafeInteger(x.amount) && x.amount > 0 &&
+    Number.isInteger(x.day) && x.day >= 1 && x.day <= 31 &&
+    isText(x.category) && typeof x.paymentSource === 'string' && x.paymentSource.length <= 80 &&
+    month(x.startMonth) && typeof x.enabled === 'boolean'
+  const validBill = x => x && isText(x.name,80) && month(x.month) &&
+    validDate(x.start) && validDate(x.end) && x.start <= x.end &&
+    safeAmount(x.total) && safeAmount(x.count)
+  const validSource = x => x && isText(x.name,80) &&
+    (x.closing_day == null || (Number.isInteger(x.closing_day) && x.closing_day >= 0 && x.closing_day <= 31)) &&
+    (x.is_default == null || x.is_default === 0 || x.is_default === 1 || typeof x.is_default === 'boolean')
+  const validCustom = x => x && isText(x.keyword,120) && isText(x.category,120)
+  const validPaymentRule = x => x && isText(x.keyword,120) && isText(x.payment_source,80)
+  for (const [name, check] of [
+    ['plans',validPlan],['bills',validBill],['paymentSources',validSource],
+    ['customRules',validCustom],['merchantPaymentRules',validPaymentRule],
+    ['categories',x => isText(x,20)]
+  ]) {
+    if (Array.isArray(value[name]) && value[name].some(x => !check(x)))
+      throw Error('バックアップの' + name + 'に不正な設定があります')
+  }
+  if (value.categoryIcons && Object.entries(value.categoryIcons).some(([k,v]) =>
+      !isText(k,20) || !isText(v,80))) throw Error('カテゴリーアイコンが不正です')
   if (value.dismissedTransfers != null && (!Array.isArray(value.dismissedTransfers) ||
       value.dismissedTransfers.length > 100000 ||
       value.dismissedTransfers.some(id => !Number.isSafeInteger(id) || id <= 0))) {

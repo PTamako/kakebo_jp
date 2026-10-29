@@ -48,7 +48,7 @@ test('A04/A07/A08: backward-compatible backup v3, cursor pagination and pre-rest
   assert.throws(()=>validateBackup({...data,dismissedTransfers:[-3]}))
   const ui=read('src/FinanceTools.vue')
   assert.match(ui,/api\('entries\?year='\+year\+'&cursor='\+cursor\)/)
-  assert.match(ui,/backupLedgerFingerprint\.value!==ledgerFingerprint\(rows\.value\)/)
+  assert.match(ui,/backupLedgerFingerprint\.value!==unrelatedLedgerFingerprint\(rows\.value\)/)
   assert.match(ui,/props\.api\('dismissed-transfer-reminders'\)/)
   assert.match(read('functions/api/[[path]].js'),/SELECT \* FROM entries WHERE date LIKE \?1 AND id > \?2 ORDER BY id ASC LIMIT 500/)
 })

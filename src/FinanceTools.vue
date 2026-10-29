@@ -174,6 +174,14 @@ const restoreConflicts = ref([])
 const restoreIncludeConflicts = ref(false)
 const backupPreview = ref(null)
 const backupLedgerFingerprint = ref('')
+// Restore progress survives a recoverable API error in this page, without ever modifying existing records.
+const restoreOwnKeys = ref(new Map())
+function unrelatedLedgerFingerprint(items) {
+  return ledgerFingerprint(items.filter(row => {
+    const expected = restoreOwnKeys.value.get(row.client_request_id)
+    return !expected || transactionKey(row) !== expected
+  }))
+}
 const ledgerFingerprint = items => items.map(x=>[x.id,transactionKey(x),x.raw||'',x.transfer_applied||0].join('|')).sort().join('\n')
 const backupBusy = ref(false)
 const plans = ref([])
@@ -184,7 +192,16 @@ const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const editingPlanId = ref('')
 const recurringHistoricalMonths = ref(0)
 const recurringPreview = ref([])
-const recurringPreviewTotal = computed(() => recurringPreview.value.filter(row => !row.conflict).reduce((sum,row) => sum + row.amount,0))
+const recurringSelected = ref(new Set())
+const recurringKey = row => row.planId + ':' + row.month
+const selectedRecurring = computed(() => recurringPreview.value.filter(row => !row.conflict && recurringSelected.value.has(recurringKey(row))))
+function toggleRecurringSelection(row, checked) {
+  const next = new Set(recurringSelected.value)
+  if (checked && !row.conflict) next.add(recurringKey(row))
+  else next.delete(recurringKey(row))
+  recurringSelected.value = next
+}
+const recurringPreviewTotal = computed(() => selectedRecurring.value.reduce((sum,row) => sum + row.amount,0))
 function beginEditPlan(item) {
   editingPlanId.value = item.id
   plan.value = {...item, paymentSource:item.paymentSource || '現金'}
@@ -256,19 +273,24 @@ async function downloadBackup(){
     // Refresh ledger and D1 metadata immediately before export. A partial fetch
     // must not be mistaken for a complete, safe recovery archive.
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
+    const snapshot = rows.value.map(row=>({...row}))
+    const before = ledgerFingerprint(snapshot)
     const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers] = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
       props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders')
     ])
+    // Reject mixed-time exports when another device edited the ledger during metadata reads.
+    if (!(await loadAll()) || ledgerFingerprint(rows.value)!==before)
+      throw Error('明細がバックアップ作成中に変更されました。もう一度実行してください')
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
-      entries:rows.value,plans:nextPlans,bills:nextBills,investments,
+      entries:snapshot,plans:nextPlans,bills:nextBills,investments,
       paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers
     })
     const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
     const a=document.createElement('a')
-    a.href=url;a.download='kakeibo-complete-'+new Date().toISOString().slice(0,10)+'.json';a.click()
+    a.href=url;a.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+'.json';a.click()
     setTimeout(()=>URL.revokeObjectURL(url),30000)
     message.value='帳簿・設定JSONを保存しました（端末内レシート画像を除く）'
   } catch(e) { message.value='バックアップを作成できませんでした：'+e.message }
@@ -277,6 +299,7 @@ async function downloadBackup(){
 async function preview(event){
   const file=event.target.files?.[0];event.target.value=''
   restoreRows.value=[];restoreConflicts.value=[];backupPreview.value=null;restoreIncludeConflicts.value=false
+  restoreOwnKeys.value=new Map()
   if(!file)return
   try{
     if(!loaded.value)throw Error('先に全明細を読み込んでください')
@@ -301,7 +324,7 @@ async function restore(){
       !confirm('同一内容の取引 '+restoreConflicts.value.length+'件を別の取引として追加します。本当に登録しますか？')) return
   // Re-fetch before writing: preview must still refer to the same server ledger.
   if(!(await loadAll())) {message.value='最新の明細を再取得できません。復元を中止しました';return}
-  if(backupLedgerFingerprint.value!==ledgerFingerprint(rows.value)){
+  if(backupLedgerFingerprint.value!==unrelatedLedgerFingerprint(rows.value)){
     backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
     message.value='確認後に明細が更新されました。安全のため復元を中止しました。バックアップを選び直してください'
     return
@@ -367,6 +390,9 @@ async function restore(){
       const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
       const key='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
       const {backupIndex,...entry}=e
+      // Register this precise intended row before the network request: even a lost response
+      // can be checked against its idempotency ID on the next read.
+      restoreOwnKeys.value = new Map([...restoreOwnKeys.value,[key,transactionKey(entry)]])
       const result=await props.api('entries',{method:'POST',body:JSON.stringify({...entry,clientRequestId:key,transferTarget:e.transfer_target||'',transferDate:e.transfer_date||e.date,paymentSource:e.payment_source||''})})
       if(result.duplicate)skipped++;else count++
       if(e.id && result?.id)restoredIds.set(Number(e.id),Number(result.id))
@@ -397,6 +423,7 @@ async function restore(){
     }
     await loadFinanceSettings()
     loaded.value=false;backupPreview.value=null;restoreIncludeConflicts.value=false
+    restoreOwnKeys.value=new Map()
     message.value='明細 '+count+'件・設定 '+settingsCount+'件を追加しました。既存の情報は上書きしていません。スキップ '+skipped+'件。全明細を更新してください'
     emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
   }catch(e){message.value='明細 '+count+'件・設定 '+settingsCount+'件追加済み。残りは再試行できます：'+e.message}
@@ -436,12 +463,14 @@ function reviewRecurring() {
   if(recurringBusy.value || !settingsReady.value || !loaded.value) {recurringMessage.value='先に全明細を更新してください';return}
   const preview=previewRecurringEntries(plans.value,rows.value,{historicalMonths:Number(recurringHistoricalMonths.value)})
   recurringPreview.value=preview
+  const current = new Date().toLocaleDateString('sv-SE').slice(0,7)
+  recurringSelected.value = new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
   const conflicts=preview.filter(x=>x.conflict).length
   recurringMessage.value=preview.length ? '未記録候補 '+preview.length+'件（重複確認 '+conflicts+'件）。確認するまで追加されません。' : '対象期間に未記録の固定支出はありません'
 }
 async function applyRecurring(){
   if(recurringBusy.value || !loaded.value || !recurringPreview.value.length)return
-  const safe=recurringPreview.value.filter(row=>!row.conflict)
+  const safe=selectedRecurring.value
   if(!safe.length){recurringMessage.value='同一内容の記録があるため自動登録しません。必要な場合は明細から確認してください。';return}
   const summary=safe.length+'件、合計 '+yen(safe.reduce((sum,row)=>sum+row.amount,0))+
     ' の固定支出を登録します。日付と金額を確認しましたか？'
@@ -484,7 +513,9 @@ watch(() => props.active, active => {
   else void initializeFinance()
 })
 async function removePlan(id) {
-  if (!settingsReady.value) return
+  if (!settingsReady.value || recurringBusy.value) return
+  const target=plans.value.find(p=>p.id===id)
+  if (!confirm('固定支出「'+(target?.name||'')+'」の計画を削除しますか？停止だけなら「停止」を選んでください。既存の明細は削除されません。')) return
   try {
     await props.api('recurring-plans/'+encodeURIComponent(id),{method:'DELETE'})
     plans.value = plans.value.filter(x=>x.id!==id)
@@ -597,9 +628,9 @@ async function removeCardBill(record) {
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <label class="form-field"><span>未記録を確認する期間</span><select v-model.number="recurringHistoricalMonths" @change="recurringPreview=[]"><option :value="0">今月のみ（初期設定）</option><option :value="3">過去3か月も確認</option><option :value="12">過去12か月も確認</option><option :value="119">過去10年分も確認</option></select></label>
     <div class="finance-actions"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
-    <button v-if="recurringPreview.some(row=>!row.conflict)" type="button" :disabled="recurringBusy" @click="applyRecurring">確認した{{recurringPreview.filter(row=>!row.conflict).length}}件を登録</button></div>
+    <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
     <p v-if="recurringPreview.length" class="microcopy" role="status">候補：{{recurringPreview.length}}件 · 登録予定：{{yen(recurringPreviewTotal)}}。重複候補は登録しません。</p>
-    <div v-for="candidate in recurringPreview" :key="candidate.planId+'-'+candidate.month" class="finance-row" :class="{'recurring-conflict':candidate.conflict}">{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細と重複（対象外）' : '· 登録予定'}}</div>
+    <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
     <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 毎月{{p.day}}日 · {{p.paymentSource || "未設定"}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true) : '停止中'}} <button type="button" :disabled="recurringBusy" @click="beginEditPlan(p)">編集</button> <button type="button" :disabled="recurringBusy" @click="togglePlanEnabled(p)">{{p.enabled ? '停止' : '再開'}}</button> <button type="button" :disabled="recurringBusy" @click="removePlan(p.id)">削除</button></div>
   </article>

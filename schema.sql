@@ -53,9 +53,14 @@ CREATE TABLE IF NOT EXISTS payment_sources (
   is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)),
   closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31)
 );
-CREATE TABLE IF NOT EXISTS merchant_payment_rules (
+-- One active merchant preference row can have both a category and a
+-- payment source. Legacy custom_rules/merchant_payment_rules are retained
+-- unchanged on existing D1 installations for rollback only.
+CREATE TABLE IF NOT EXISTS merchant_rules (
   keyword TEXT PRIMARY KEY,
-  payment_source TEXT NOT NULL
+  category TEXT,
+  payment_source TEXT,
+  CHECK (category IS NOT NULL OR payment_source IS NOT NULL)
 );
 
 -- Normalized recurring schedules preserve their IDs for duplicate-safe auto entries.
@@ -89,7 +94,7 @@ CREATE TABLE IF NOT EXISTS finance_settings (
 -- New installations can bootstrap these tables immediately; old installations
 -- retain their existing tables and are upgraded additively.
 CREATE TABLE IF NOT EXISTS category_icons (category TEXT PRIMARY KEY, icon TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS custom_rules (keyword TEXT PRIMARY KEY, category TEXT NOT NULL);
+-- New installs only use merchant_rules; legacy tables are not created.
 CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS device_sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);

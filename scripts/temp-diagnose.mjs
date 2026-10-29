@@ -1,7 +1,7 @@
 // TEMPORARY PR-only CI diagnostic. Remove before merging.
 import { spawnSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
-const run = spawnSync('node',['--test','scripts/api-integrity.test.js'],{encoding:'utf8',maxBuffer:16*1024*1024})
+const run = spawnSync('node',['--test','scripts/d1-sqlite-integration.test.js'],{encoding:'utf8',maxBuffer:16*1024*1024})
 const output=String(run.stdout||'')+'\n'+String(run.stderr||'')
 const lines=output.split(/\r?\n/)
 const filtered=[]

@@ -100,9 +100,11 @@ export function validateBackup(value) {
   const checks=[
     ['investmentPlans',p=>validPlanPortfolio(p)],
     ['investmentPlanHistory',p=>validPlanPortfolio(p) && month(p.effective_month)],
-    ['investmentHoldings',p=>p && fundCode(p.fund_code) && account(p.account_type) &&
+    ['investmentHoldings',p=>p && fundCode(p.fund_code) && (account(p.account_type)||p.account_type==='combined') &&
       isText(p.fund_name,120) && safeAmount(p.units) && safeAmount(p.acquisition_cost) &&
-      p.units<=1000000000000 && p.acquisition_cost<=1000000000000],
+      p.units<=1000000000000 && p.acquisition_cost<=1000000000000 &&
+      (p.reported_value==null || safeAmount(p.reported_value)) &&
+      (p.reported_at==null || (typeof p.reported_at==='string' && p.reported_at.length<=40))],
     ['fundPrices',p=>p && fundCode(p.fund_code) && safeAmount(p.nav_per_10000) &&
       p.nav_per_10000>0 && p.nav_per_10000<=1000000000 && validDate(p.price_date) &&
       isText(p.source,80)],

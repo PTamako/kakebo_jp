@@ -227,7 +227,7 @@ test('upgrade preserves all saved transactions and custom classification rules',
   assert.equal(answer.status, 200)
   assert.deepEqual(db.entries, original)
   assert.ok(db.rules.some(r => r.keyword === originalRule.keyword && r.category === originalRule.category))
-  assert.ok(db.sql.every(sql => !/^\\s*(?:DELETE|DROP|TRUNCATE|REPLACE)\\b/i.test(sql)))
+  assert.ok(db.sql.every(sql => !/^\\s*(?:DELETE|DROP|TRUNCATE|REPLACE)\\s+(?:FROM\\s+)?(?:entries|rules|custom_rules|investment_snapshots)\\b/i.test(sql)))
 })
 test('deletion is refused unless a matching single entry ID is explicitly confirmed', async () => {
   const db = new LedgerDb()

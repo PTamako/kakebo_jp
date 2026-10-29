@@ -129,20 +129,24 @@ export async function handlePortfolio({db,request,method,sub,url}) {
         !Number.isSafeInteger(x.orderDay)||x.orderDay<1||x.orderDay>28||
         typeof x.enabled!=='boolean'||x.monthlyAmount>100000000||!monthOk(x.effectiveMonth))
         return respond({error:'積立設定を確認してください'},400);
-      await db.prepare(`INSERT INTO investment_plans
-        (fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at)
-        VALUES(?1,?2,?3,?4,?5,?6,?7)
-        ON CONFLICT(fund_code,account_type) DO UPDATE SET
-          fund_name=excluded.fund_name,monthly_amount=excluded.monthly_amount,
-          order_day=excluded.order_day,enabled=excluded.enabled,updated_at=excluded.updated_at`)
-        .bind(x.fundCode,x.accountType,x.fundName.trim(),x.monthlyAmount,x.orderDay,x.enabled?1:0,new Date().toISOString()).run();
-      await db.prepare(`INSERT INTO investment_plan_history
-        (fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at)
-        VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
-        ON CONFLICT(fund_code,account_type,effective_month) DO UPDATE SET
-          fund_name=excluded.fund_name,monthly_amount=excluded.monthly_amount,
-          order_day=excluded.order_day,enabled=excluded.enabled,updated_at=excluded.updated_at`)
-        .bind(x.fundCode,x.accountType,x.effectiveMonth,x.fundName.trim(),x.monthlyAmount,x.orderDay,x.enabled?1:0,new Date().toISOString()).run();
+      // The current plan and its month-versioned history must never diverge.
+      const now=new Date().toISOString();
+      await db.batch([
+        db.prepare(`INSERT INTO investment_plans
+          (fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at)
+          VALUES(?1,?2,?3,?4,?5,?6,?7)
+          ON CONFLICT(fund_code,account_type) DO UPDATE SET
+            fund_name=excluded.fund_name,monthly_amount=excluded.monthly_amount,
+            order_day=excluded.order_day,enabled=excluded.enabled,updated_at=excluded.updated_at`)
+          .bind(x.fundCode,x.accountType,x.fundName.trim(),x.monthlyAmount,x.orderDay,x.enabled?1:0,now),
+        db.prepare(`INSERT INTO investment_plan_history
+          (fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at)
+          VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+          ON CONFLICT(fund_code,account_type,effective_month) DO UPDATE SET
+            fund_name=excluded.fund_name,monthly_amount=excluded.monthly_amount,
+            order_day=excluded.order_day,enabled=excluded.enabled,updated_at=excluded.updated_at`)
+          .bind(x.fundCode,x.accountType,x.effectiveMonth,x.fundName.trim(),x.monthlyAmount,x.orderDay,x.enabled?1:0,now)
+      ]);
       return respond({ok:true});
     }
     if(sub==='holding'&&method==='PUT'){

@@ -29,6 +29,9 @@ test('snapshot and both backup paths carry categoryMetadata',()=>{
 test('calendar badges use filtered calendar entries',()=>{
   assert.match(app,/for \(const entry of calendarEntries\.value\) \{\s*const key=String\(entry\.date/)
 })
-test('duplicate candidates take time into account',()=>{
-  assert.match(api,/COALESCE\(time,''\)=COALESCE\(\?2,''\) AND amount=\?3/)
+test('duplicate candidates flag near timestamps without blocking later purchases',()=>{
+  assert.match(api,/WHERE NOT EXISTS \(SELECT 1 FROM entries WHERE date=\?1 AND amount=\?3/)
+  assert.match(api,/COALESCE\(time,''\)='' OR COALESCE\(\?2,''\)=''/)
+  assert.match(api,/ABS\(\(CAST\(SUBSTR\(time,1,2\) AS INTEGER\)\*60/)
+  assert.match(api,/CAST\(SUBSTR\(\?2,4,2\) AS INTEGER\)\)\) <= 5/)
 })

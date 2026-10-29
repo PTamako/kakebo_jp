@@ -283,12 +283,6 @@ async function restore(){
       await props.api('merchant-payment-rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,paymentSource:rule.payment_source})})
       settingsCount++
     }
-    const existingPlans=await props.api('recurring-plans')
-    for(const plan of restoreMissingByKey(existingPlans,backup.plans||[],x=>x.id)){
-      if(!plan?.id)continue
-      await props.api('recurring-plans',{method:'POST',body:JSON.stringify(plan)})
-      settingsCount++
-    }
     const existingBills=await props.api('card-bills')
     for(const bill of restoreMissingByKey(existingBills,backup.bills||[],x=>x.name+'|'+x.month)){
       if(!bill?.name || !bill?.month)continue
@@ -311,6 +305,15 @@ async function restore(){
       restoreRows.value=restoreRows.value.filter(row=>row.backupIndex!==e.backupIndex)
       restoreConflicts.value=restoreConflicts.value.filter(row=>row.backupIndex!==e.backupIndex)
     }
+    // Restore recurring plans last: ledger rows must exist before a future app
+    // launch can generate scheduled records from the restored plans.
+    const existingPlans=await props.api('recurring-plans')
+    for(const plan of restoreMissingByKey(existingPlans,backup.plans||[],x=>x.id)){
+      if(!plan?.id)continue
+      await props.api('recurring-plans',{method:'POST',body:JSON.stringify(plan)})
+      settingsCount++
+    }
+    await loadFinanceSettings()
     loaded.value=false;backupPreview.value=null;restoreIncludeConflicts.value=false
     message.value='明細 '+count+'件・設定 '+settingsCount+'件を追加しました。既存の情報は上書きしていません。スキップ '+skipped+'件。全明細を更新してください'
     emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')

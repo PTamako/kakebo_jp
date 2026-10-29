@@ -112,7 +112,7 @@ test('手入力 text reading keeps the manual tab and review/save controls; only
   assert.ok(image,'image upload handler is present')
   assert.match(app,/@click="recognize\(recognitionMode\)"/)
   assert.match(app,/v-if="entryInputMode === 'manual'"/)
-  assert.match(app,/>入力内容の確認/)
+  assert.match(app,/entryInputMode === 'scan' \? '読み取り結果の確認' : '入力内容の確認'/)
   assert.match(app,/@click="saveAll"/)
   assert.match(manual,/const repeated = parseRepeatedExpense\(input\.value\)/)
   assert.match(manual,/const effectiveMode = repeated \? 'statement' : mode/)

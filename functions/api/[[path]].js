@@ -1,5 +1,6 @@
 import { isAppliedSbiTransfer } from './investment-transfer.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
+import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 // Cloudflare Pages Functions：/api/*
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
@@ -575,19 +576,9 @@ export async function onRequest({ request, env, params }) {
       const plan = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=?1').bind(planId).first()
       if (!plan || !plan.enabled || !Number.isSafeInteger(Number(plan.amount)) || Number(plan.amount)<=0)
         return json({error:'有効な固定支出が見つかりません'},404)
-      // The user approves the exact plan and monthly amount in the client preview.
-      // A plan changed on another device must never create a differently priced debit.
-      const expected = body?.expected
-      if (!expected || typeof expected !== 'object') return json({error:'固定支出の最新内容を再確認してください',code:'preview_required'},409)
-      const approvedFields = {name:plan.name,amount:Number(plan.amount),day:Number(plan.day),category:plan.category,
-        paymentSource:plan.payment_source || '',startMonth:plan.start_month}
-      if (Object.keys(approvedFields).some(key => expected[key] !== approvedFields[key]))
-        return json({error:'固定支出が確認後に変更されました。再確認してから登録してください',code:'plan_changed'},409)
-      if (scheduledMonth < plan.start_month) return json({error:'開始月より前の支出は登録できません'},400)
-      const [year,monthNumber] = scheduledMonth.split('-').map(Number)
-      const day = Math.min(Number(plan.day),new Date(Date.UTC(year,monthNumber,0)).getUTCDate())
-      const date = scheduledMonth+'-'+String(day).padStart(2,'0')
-      if (expected.date !== date) return json({error:'予定日が確認時と異なります',code:'plan_changed'},409)
+      const approved = resolveRecurringApproval(body,plan)
+      if(approved.error)return json({error:approved.error,code:approved.code},approved.status)
+      const date=approved.date
       if (date > tokyoToday()) return json({error:'予定日前の固定支出は登録できません'},409)
       const clientRequestId = 'recurring_'+plan.id.replace(/-/g,'')+'_'+scheduledMonth.replace('-','')
       if (await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())

@@ -66,10 +66,16 @@ VALUES
  ('0331A172','growth','eMAXIS Slim 先進国債券インデックス（除く日本）',3000,9,1),
  ('04317188','tsumitate','iFreeNEXT NASDAQ100インデックス',2000,9,1);
 
+-- Explicit four-fund baseline only. Do not back-fill 2026-10 from the
+-- CURRENT investment_plans table: re-running a migration later must not
+-- rewrite older months using a newer fifth fund or a newer allocation.
 INSERT OR IGNORE INTO investment_plan_history
  (fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled)
-SELECT fund_code,account_type,'2026-10',fund_name,monthly_amount,order_day,enabled
-FROM investment_plans;
+VALUES
+ ('0331418A','tsumitate','2026-10','eMAXIS Slim 全世界株式（オール・カントリー）',7000,9,1),
+ ('03311187','tsumitate','2026-10','eMAXIS Slim 米国株式（S&P500）',3000,9,1),
+ ('0331A172','growth','2026-10','eMAXIS Slim 先進国債券インデックス（除く日本）',3000,9,1),
+ ('04317188','tsumitate','2026-10','iFreeNEXT NASDAQ100インデックス',2000,9,1);
 
 INSERT INTO investment_holdings
  (fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at)

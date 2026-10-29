@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
+import { aiQuotaState, reserveAiAttempt } from '../functions/api/ai-quota.js'
 
 class SqliteD1 {
   constructor() {
@@ -125,4 +126,30 @@ test('actual SQLite: a card referenced by active recurring plan cannot be remove
     assert.equal(removal.status,409)
     assert.ok((await call('payment-sources')).body.some(x=>x.name==='楽天カード'))
   }finally{db.close()}
+})
+
+test('actual SQLite: AI daily quota is atomic and fail-closed without any billing logic',async()=>{
+  const db=new SqliteD1()
+  try {
+    const env={AI_OCR_DAILY_LIMIT:'2'}
+    let quota=await aiQuotaState(db,env)
+    assert.equal(quota.remaining,2)
+    assert.equal((await reserveAiAttempt(db,env)).allowed,true)
+    assert.equal((await reserveAiAttempt(db,env)).allowed,true)
+    assert.equal((await reserveAiAttempt(db,env)).allowed,false)
+    quota=await aiQuotaState(db,env)
+    assert.equal(quota.remaining,0)
+    assert.equal((await reserveAiAttempt(db,{AI_OCR_DAILY_LIMIT:'0'})).allowed,false)
+  }finally{db.close()}
+})
+
+test('Pages previews reject ledger mutations before touching the D1 binding',async()=>{
+  const response=await onRequest({
+    request:new Request('https://mybranch.kakeibo-f17.pages.dev/api/entries',{
+      method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({date:'2026-10-29',amount:100,type:'expense'})}),
+    env:{AUTH_TOKEN:'readonly-test-only',DB:null},params:{path:['entries']}
+  })
+  assert.equal(response.status,403)
+  assert.equal((await response.json()).code,'preview_read_only')
 })

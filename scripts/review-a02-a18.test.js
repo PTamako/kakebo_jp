@@ -54,7 +54,7 @@ test('A04/A07/A08: backward-compatible backup v3, cursor pagination and pre-rest
 })
 
 test('A05/A09/A10/A11/A12: filters, privacy, quota, local imagery and due transfers',()=>{
-  const app=read('src/App.vue')
+  const app=read('src/App.vue')+'\n'+read('src/pages/AssetsPage.vue')
   const api=read('functions/api/[[path]].js')
   assert.match(app,/detailFilter\.value\.paymentMethod \|\| ''/)
   assert.match(app,/setRememberDevice\(/)

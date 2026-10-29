@@ -1094,8 +1094,8 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
     <div v-if="receiptSaveError" role="alert" class="receipt-error-banner"><span>{{ receiptSaveError }}</span><button type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button></div>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" role="img" aria-label="しろちゃんとちび毛">
-          <img class="brand-local-logo" src="/branding/line-dogs.svg" alt="" width="56" height="40" decoding="async" />
+        <span class="brand-mark" role="img" aria-label="家計簿のノートとコイン">
+          <img class="brand-local-logo" src="/branding/kakeibo-ledger.svg" alt="" width="48" height="40" decoding="async" />
         </span>
         <div><strong>家計簿 <span class="brand-heart">♡</span></strong><small>家計をかんたんに記録</small></div>
       </div>

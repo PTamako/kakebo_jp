@@ -329,6 +329,7 @@ test('merged rule migration copies both old columns once and leaves old tables i
     assert.deepEqual({...combined},{category:'宠物',payment_source:'現金'})
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM custom_rules").get().n,2)
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM merchant_payment_rules").get().n,2)
+    await call('payment-sources','POST',{name:'カードB'})
     await call('rules','POST',{keyword:'既存共通店',category:'医疗'})
     await call('merchant-payment-rules','POST',{keyword:'既存共通店',paymentSource:'カードB'})
     assert.deepEqual({...db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='既存共通店'").get()},{category:'医疗',payment_source:'カードB'})

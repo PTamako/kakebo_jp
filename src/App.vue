@@ -1109,7 +1109,18 @@ const ratioTrendPoints = computed(() => yearMonthRows.value.map((item, i) => {
   const ratio = item.income > 0 ? item.amount / item.income : null
   return { ...item, ratio, x: 16 + i * 26.18, y: ratio === null ? null : 108 - Math.min(1.5, ratio) / 1.5 * 82 }
 }))
-const ratioTrendLine = computed(() => ratioTrendPoints.value.filter(point => point.ratio !== null).map(point => `${point.x},${point.y}`).join(' '))
+const ratioTrendSegments = computed(() => {
+  const segments = []
+  let segment = []
+  for (const point of ratioTrendPoints.value) {
+    if (point.ratio === null) {
+      if (segment.length > 1) segments.push(segment.map(p => p.x + ',' + p.y).join(' '))
+      segment = []
+    } else segment.push(point)
+  }
+  if (segment.length > 1) segments.push(segment.map(p => p.x + ',' + p.y).join(' '))
+  return segments
+})
 const incomeTrendMax = computed(() => Math.max(0, ...yearMonthRows.value.map(item => item.income)))
 const ratioTrendMax = computed(() => Math.max(0, ...ratioTrendPoints.value.filter(point => point.ratio !== null).map(point => point.ratio)))
 const maxYearMonth = computed(() => Math.max(1, ...yearMonthRows.value.map(item => item.amount)))
@@ -1416,11 +1427,12 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入。破線は80%と100%の目安</p></div></div>
           <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>月間最高の支出割合</span></div>
+          <p v-if="ratioTrendMax > 1.5" class="trend-note">150%を超える月はグラフ上端に表示します。正確な割合は月を選択して確認してください。</p>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出割合の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <line x1="16" y1="64.27" x2="304" y2="64.27" class="chart-reference-line" />
             <line x1="16" y1="53.33" x2="304" y2="53.33" class="chart-reference-line chart-reference-danger" />
-            <polyline v-if="ratioTrendLine" :points="ratioTrendLine" class="chart-line ratio-chart-line" />
+            <polyline v-for="(segment,i) in ratioTrendSegments" :key="i" :points="segment" class="chart-line ratio-chart-line" />
             <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="4" class="chart-point ratio-chart-point clickable-chart-point" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" aria-hidden="true" pointer-events="none" />
             <circle v-for="point in ratioTrendPoints.filter(point => point.ratio !== null)" :key="point.month" :cx="point.x" :cy="point.y" r="14" class="chart-point-hit" :class="{ 'chart-point-selected': selectedRatioMonth === point.month }" role="button" tabindex="0" :aria-label="point.label + '支出割合 ' + Math.round(point.ratio * 100) + '%。タップして当月の収支を確認'" @click="selectRatioMonth(point)" @keydown.enter.prevent="selectRatioMonth(point)" @keydown.space.prevent="selectRatioMonth(point)" />
           </svg>

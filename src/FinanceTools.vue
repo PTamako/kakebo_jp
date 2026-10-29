@@ -665,10 +665,10 @@ async function saveCardBill() {
     bills.value=await props.api('card-bills')
     ledgerDirty=true
     message.value='D1の最新明細で計算しました：'+yen(latest.total)+'（'+latest.count+'件）'
-    // Refresh the displayed comparison too; no cached total is saved.
-    await loadAll()
   } catch(e) { message.value='カード利用額を保存できませんでした：'+e.message }
   finally{busy.value=false}
+  // loadAll refuses requests while busy; refresh only after it is released.
+  await loadAll()
 }
 async function removeCardBill(record) {
   if (!record?.name || !record?.month || !confirm(record.name+' '+record.month+' の請求額を削除しますか？明細は残ります。')) return

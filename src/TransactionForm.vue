@@ -30,7 +30,7 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
     <label class="bind-rule transaction-bind-rule"><input v-model="record.bindRule" type="checkbox" :disabled="!record.merchant || record.merchant.trim().length<2" /><span>カテゴリを記憶</span></label>
     <label class="bind-rule transaction-bind-rule"><input v-model="record.bindPaymentRule" type="checkbox" :disabled="!record.merchant || record.merchant.trim().length<2 || !record.paymentSource" /><span>支払方法を記憶</span></label>
   </div>
-  <details class="transaction-details" :open="detailsOpen" @toggle="detailsOpen=$event.target.open"><summary>詳細項目 <span v-if="record.type==='expense' && record.time" class="transaction-time-summary">時刻 {{record.time}}</span></summary><div class="field-grid"><label v-if="record.type==='expense'" class="form-field"><span>時刻</span><input v-model="record.time" type="time" /></label><label class="form-field"><span>メモ</span><input v-model="record.note" placeholder="任意" /></label></div></details>
+  <details class="transaction-details" :open="detailsOpen" @toggle="detailsOpen=$event.target.open"><summary>詳細項目 <span v-if="record.time" class="transaction-time-summary">時刻 {{record.time}}</span></summary><div class="field-grid"><label class="form-field"><span>時刻</span><input v-model="record.time" type="time" /></label><label class="form-field"><span>メモ</span><input v-model="record.note" placeholder="任意" /></label></div></details>
 </div>
 </template>
 <style scoped>

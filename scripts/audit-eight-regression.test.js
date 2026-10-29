@@ -52,7 +52,11 @@ test('preview requires separate DB identity and automatic build requires product
 
 test('legacy backup version is not rewritten and user financial settings are not overwritten',()=>{
   const source=read('functions/api/restore-atomic.js')
-  for(const table of ['custom_rules','merchant_payment_rules','card_bills','payment_sources','recurring_plans'])
+  for(const table of ['card_bills','payment_sources','recurring_plans'])
     assert.match(source,new RegExp('INSERT OR IGNORE INTO '+table))
+  assert.match(source,/INSERT INTO merchant_rules\(keyword,category\)/)
+  assert.match(source,/INSERT INTO merchant_rules\(keyword,payment_source\)/)
+  assert.match(source,/COALESCE\(merchant_rules\.category,excluded\.category\)/)
+  assert.match(source,/COALESCE\(merchant_rules\.payment_source,excluded\.payment_source\)/)
   assert.match(source,/updated_at=\?3 WHERE platform='sbi' AND current_value IS NULL/)
 })

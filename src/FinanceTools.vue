@@ -432,6 +432,10 @@ async function restore(){
   // Restore in independently atomic, idempotent batches. A failure preserves
   // committed batches and leaves uncommitted drafts visible for safe retry.
   const BATCH_SIZE=150
+  // Use the same settings bound as restoreAtomic; guard before any writes.
+  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers']
+    .reduce((n,key)=>n+(Array.isArray(backup[key])?backup[key].length:0),0)
+    + Object.keys(backup.categoryIcons||{}).length
   if(settingTotal<=500){
     busy.value=true
     let completed=0,settingsRestored=0,alreadyPresent=0

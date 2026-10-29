@@ -57,13 +57,14 @@ test('new database default categorization agrees with D1 runtime defaults',()=>{
 test('preview remains closed until verified and release audit fails on production High advisories',()=>{
   const api=source('functions/api/[[path]].js')
   assert.match(api,/env\.APP_ENV === 'preview'/)
-  assert.match(api,/PREVIEW_D1_ISOLATED !== 'true'/)
+  assert.match(api,/env\.PREVIEW_D1_ISOLATED === 'true'/)
   assert.match(api,/preview_read_only/)
   const wrangler=source('wrangler.toml')
   assert.doesNotMatch(wrangler,/^\s*\[env\.preview(?:\.[^\]]*)?\]/m,
     'Partial preview env config must not drop non-inherited D1/AI bindings')
   const pkg=JSON.parse(source('package.json'))
-  assert.equal(pkg.scripts['verify:release'],'npm run build && npm run security:audit:prod')
+  assert.equal(pkg.scripts['verify:release'],'npm run build')
+  assert.match(pkg.scripts.build,/npm run security:audit:prod/)
   const workflow=source('.github/workflows/validate.yml')
   assert.match(workflow,/workflow_dispatch/)
   assert.match(workflow,/npm run verify:release/)

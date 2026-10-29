@@ -109,3 +109,15 @@ test('header puppies remain visible with CSP permission and a local vector fallb
   assert.match(app, /const brandImageFailed = ref\(false\)/)
   assert.match(mobile, /main \.brand-mark \.brand-doodle \{/)
 })
+
+test('header puppy logo is a committed self-hosted asset, never a third-party image', () => {
+  const asset = source('public/branding/line-dogs.svg')
+  const header = app.match(/<header class="topbar">[\s\S]*?<\/header>/)?.[0]
+  assert.ok(header, 'the app header exists')
+  assert.match(header, /<img class="brand-local-logo" src="\/branding\/line-dogs\.svg"/)
+  assert.doesNotMatch(header, /https?:\/\/|brandImageFailed|@error=/)
+  assert.match(app, /\.brand-mark img\.brand-local-logo\{[^}]*width:100%;height:100%/)
+  assert.match(asset, /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
+  assert.match(asset, /viewBox="0 0 96 64"/)
+  assert.doesNotMatch(asset, /<image\b|<script\b|href=|https?:\/\/(?!www\.w3\.org\/2000\/svg)/)
+})

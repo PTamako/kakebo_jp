@@ -229,6 +229,21 @@ function unrelatedLedgerFingerprint(items) {
 const ledgerFingerprint = items => items.map(x=>[x.id,transactionKey(x),x.raw||'',x.transfer_applied||0].join('|')).sort().join('\n')
 const backupBusy = ref(false)
 const plans = ref([])
+const recurringListQuery = ref('')
+const recurringListFilter = ref('all')
+const expandedRecurringPlanId = ref('')
+const activeRecurringPlans = computed(() => plans.value.filter(item => item.enabled))
+const recurringMonthlyTotal = computed(() => activeRecurringPlans.value.reduce((sum,item) => sum + Number(item.amount || 0),0))
+const filteredRecurringPlans = computed(() => {
+  const query = recurringListQuery.value.trim().toLocaleLowerCase('ja-JP')
+  return plans.value.filter(item =>
+    (recurringListFilter.value === 'all' || (recurringListFilter.value === 'active' ? item.enabled : !item.enabled)) &&
+    (!query || String(item.name || '').toLocaleLowerCase('ja-JP').includes(query))
+  )
+})
+function toggleRecurringPlanDetails(id) {
+  expandedRecurringPlanId.value = expandedRecurringPlanId.value === id ? '' : id
+}
 const bills = ref([])
 const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費'}
 const categoryLabel = category => categoryJapaneseLabels[category] || category
@@ -674,9 +689,44 @@ async function removeCardBill(record) {
     <div class="finance-actions"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
     <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
     <p v-if="recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
-    <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
+    <div v-if="recurringPreview.length" class="recurring-candidate-list" role="group" aria-label="未登録の固定支出候補">
+      <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
+    </div>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
-    <div v-for="p in plans" :key="p.id" class="finance-row">{{p.name}} {{yen(p.amount)}} · 毎月{{p.day}}日 · {{p.paymentSource || "未設定"}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true) : '停止中'}} <button type="button" :disabled="recurringBusy" @click="beginEditPlan(p)">編集</button> <button type="button" :disabled="recurringBusy" @click="togglePlanEnabled(p)">{{p.enabled ? '停止' : '再開'}}</button> <button type="button" :disabled="recurringBusy" @click="removePlan(p.id)">削除</button></div>
+    <details class="recurring-list-disclosure">
+      <summary class="recurring-list-summary">
+        <span class="recurring-list-summary-title">登録済みの固定支出 <strong>{{plans.length}}件</strong></span>
+        <span class="recurring-list-summary-total">有効 {{activeRecurringPlans.length}}件 · 月額 {{yen(recurringMonthlyTotal)}}</span>
+      </summary>
+      <div class="recurring-list-body">
+        <div class="recurring-list-filters">
+          <input v-model="recurringListQuery" type="search" placeholder="名前で検索" aria-label="固定支出を検索" />
+          <select v-model="recurringListFilter" aria-label="固定支出の状態"><option value="all">すべて</option><option value="active">有効</option><option value="stopped">停止中</option></select>
+        </div>
+        <div v-if="!filteredRecurringPlans.length" class="recurring-list-empty">{{plans.length ? '該当する固定支出はありません' : '固定支出はまだありません'}}</div>
+        <div v-else class="recurring-plan-scroll" role="list" aria-label="固定支出一覧">
+          <div v-for="p in filteredRecurringPlans" :key="p.id" class="recurring-plan-item" role="listitem">
+            <button type="button" class="recurring-plan-toggle" :aria-expanded="expandedRecurringPlanId===p.id" :aria-controls="'recurring-plan-actions-'+p.id" @click="toggleRecurringPlanDetails(p.id)">
+              <span class="recurring-plan-text">
+                <span class="recurring-plan-name">{{p.name}}</span>
+                <span class="recurring-plan-meta">毎月{{p.day}}日 · {{p.paymentSource || '未設定'}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true).slice(5).replace('-','/') : '停止中'}}</span>
+              </span>
+              <span class="recurring-plan-amount">{{yen(p.amount)}}</span>
+              <span class="recurring-plan-chevron" aria-hidden="true">{{expandedRecurringPlanId===p.id ? '⌃' : '⌄'}}</span>
+            </button>
+            <div v-if="expandedRecurringPlanId===p.id" :id="'recurring-plan-actions-'+p.id" class="recurring-plan-more">
+              <span class="recurring-plan-category">{{categoryLabel(p.category)}} · {{p.enabled ? '有効' : '停止中'}}</span>
+              <div class="recurring-plan-actions">
+                <button type="button" :disabled="recurringBusy" @click="beginEditPlan(p)">編集</button>
+                <button type="button" :disabled="recurringBusy" @click="togglePlanEnabled(p)">{{p.enabled ? '停止' : '再開'}}</button>
+                <button type="button" :disabled="recurringBusy" @click="removePlan(p.id)">削除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="recurring-list-count">{{filteredRecurringPlans.length}} / {{plans.length}}件</p>
+      </div>
+    </details>
   </article>
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>カード別利用額</h2>
@@ -816,4 +866,33 @@ async function removeCardBill(record) {
 .device-receipt-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
 .device-privacy-panel .device-receipt-clear{color:var(--blue-dark);background:var(--card)}
 @media(max-width:360px){.device-privacy-panel .device-receipt-actions button{font-size:12px;padding-inline:5px}}
+
+/* Recurring expense manager: compact, expandable, touch-friendly and height-bounded. */
+.recurring-list-disclosure{min-width:0;border:1px solid var(--line);border-radius:13px;background:var(--card);overflow:hidden}
+.recurring-list-summary{display:flex;flex-wrap:wrap;align-items:center;gap:3px 12px;min-height:54px;padding:11px 13px;cursor:pointer;list-style:none}
+.recurring-list-summary::-webkit-details-marker{display:none}
+.recurring-list-summary:after{content:'⌄';margin-left:auto;color:var(--muted);font-size:19px;line-height:1}
+.recurring-list-disclosure[open] .recurring-list-summary:after{content:'⌃'}
+.recurring-list-summary-title{display:inline-flex;gap:7px;align-items:center;min-width:0;font-weight:700;font-size:14px;color:var(--ink)}
+.recurring-list-summary-title strong{font-variant-numeric:tabular-nums}
+.recurring-list-summary-total{font-size:12px;color:var(--muted);white-space:normal}
+.recurring-list-body{display:grid;gap:9px;padding:0 10px 10px;min-width:0}
+.recurring-list-filters{display:grid;grid-template-columns:minmax(0,1fr) 102px;gap:8px}
+.finance-panel .recurring-list-filters input,.finance-panel .recurring-list-filters select{width:100%;min-width:0;max-width:100%;height:44px;min-height:44px;padding:0 9px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;font-size:16px}
+.recurring-plan-scroll{display:grid;gap:6px;max-height:320px;overflow-y:auto;overscroll-behavior:contain;padding:1px 3px 3px 1px}
+.recurring-plan-item{min-width:0;border:1px solid var(--line);border-radius:11px;background:var(--tint);overflow:hidden}
+.finance-panel .recurring-plan-toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;align-items:center;gap:7px;width:100%;min-width:0;min-height:57px;text-align:left;padding:9px 10px;border:0;border-radius:0;background:transparent;box-shadow:none;color:var(--ink)}
+.recurring-plan-text{display:grid;gap:3px;min-width:0}
+.recurring-plan-name{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recurring-plan-meta{font-size:11px;line-height:1.3;color:var(--muted);overflow-wrap:anywhere}
+.recurring-plan-amount{font-size:14px;font-weight:750;white-space:nowrap;font-variant-numeric:tabular-nums}
+.recurring-plan-chevron{color:var(--muted);font-size:16px}
+.recurring-plan-more{display:grid;gap:8px;padding:8px 10px 10px;border-top:1px solid var(--line)}
+.recurring-plan-category{font-size:11px;color:var(--muted)}
+.recurring-plan-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.finance-panel .recurring-plan-actions button{padding:8px 4px;min-height:44px;font-size:12px}
+.recurring-list-empty{padding:12px 6px;text-align:center;color:var(--muted);font-size:13px}
+.finance-panel p.recurring-list-count{font-size:11px;text-align:right;margin:0;color:var(--muted)}
+.recurring-candidate-list{display:grid;gap:5px;max-height:240px;overflow-y:auto;overscroll-behavior:contain;min-width:0;padding-right:3px}
+@media(max-width:360px){.recurring-list-filters{grid-template-columns:minmax(0,1fr) 92px;gap:5px}.recurring-list-summary{padding:10px}.recurring-plan-meta{font-size:10px}}
 </style>

@@ -147,6 +147,13 @@ test('actual SQLite: AI daily quota is atomic and fail-closed without any billin
     quota=await aiQuotaState(db,env)
     assert.equal(quota.remaining,0)
     assert.equal((await reserveAiAttempt(db,{AI_OCR_DAILY_LIMIT:'0'})).allowed,false)
+    // Raising the default to 20 keeps today's usage instead of resetting it.
+    const normal=await aiQuotaState(db,{})
+    assert.equal(normal.limit,20)
+    assert.equal(normal.remaining,18)
+    for(let i=0;i<18;i++)assert.equal((await reserveAiAttempt(db,{})).allowed,true)
+    assert.equal((await reserveAiAttempt(db,{})).allowed,false)
+    assert.equal((await aiQuotaState(db,{})).remaining,0)
   }finally{db.close()}
 })
 

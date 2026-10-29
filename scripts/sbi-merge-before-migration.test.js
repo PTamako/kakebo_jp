@@ -9,16 +9,15 @@ const component=read('src/SbiPortfolio.vue')
 const schema=read('schema.sql')
 const migration=read('migrations/0006_sbi_portfolio_linkage.sql')
 
-test('merging before D1 migration fails closed ONLY for portfolio API and retains legacy investment editing',()=>{
+test('missing portfolio tables fail closed without deleting historical SBI values or reintroducing old UI',()=>{
   assert.match(portfolio,/portfolio_migration_required/)
   assert.match(portfolio,/no such table:/)
   assert.match(api,/if \(a === 'investment-portfolio'\)/)
   assert.match(api,/if \(a === 'investments'\)/)
-  assert.match(ui,/@migration-status="migrationPending = \$event"/)
-  assert.match(ui,/:open="migrationPending"/)
-  assert.match(ui,/v-if="migrationPending" class="legacy-edit-controls"/)
-  assert.match(ui,/@click="saveInvestment\(item\)"/)
-  assert.match(component,/emit\('migration-status', \/投資テーブルの移行が未実施\/\.test\(e\.message\)\)/)
+  assert.match(ui,/<SbiPortfolio :api="api" :transfer-loading="transferLoading" \\/>/)
+  assert.doesNotMatch(ui,/旧評価額|旧評価損益|legacy-investment-details|investment-card/)
+  assert.match(component,/投資テーブルの移行が未実施/)
+  assert.match(api,/SELECT platform, current_value, pnl, updated_at/)
   assert.match(api,/portfolioReady \? 4 : 3/)
 })
 

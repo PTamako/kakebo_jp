@@ -46,12 +46,23 @@ function fillFund(target) {
   const match = availableFunds.value.find(item=>item.code===target.fundCode)
   if(match){target.fundName=match.name; if(editing.value==='plan')target.accountType=match.account}
 }
+let loadSequence = 0
 async function load() {
+  const sequence = ++loadSequence
+  const targetMonth = month.value
   loading.value = true
   error.value = ''
-  try { data.value = await props.api('investment-portfolio?month=' + month.value) }
-  catch(e) { error.value = e.message; data.value = null }
-  finally { loading.value = false }
+  try {
+    const response = await props.api('investment-portfolio?month=' + targetMonth)
+    if (sequence !== loadSequence || targetMonth !== month.value) return
+    data.value = response
+  } catch(e) {
+    if (sequence !== loadSequence || targetMonth !== month.value) return
+    error.value = e.message
+    data.value = null
+  } finally {
+    if (sequence === loadSequence) loading.value = false
+  }
 }
 function editPlan(p) {
   existingIdentity.value = !!p

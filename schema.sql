@@ -36,17 +36,6 @@ INSERT OR IGNORE INTO rules (keyword, category) VALUES
 ('映画','娱乐'),('カラオケ','娱乐'),('Netflix','娱乐');
 
 
--- 投資は家計の収支明細と分離し、最新スナップショットのみを保存する。
-CREATE TABLE IF NOT EXISTS investment_snapshots (
-  platform TEXT PRIMARY KEY CHECK (platform IN ('sbi', 'paypay')),
-  current_value INTEGER,
-  pnl INTEGER,
-  updated_at TEXT
-);
-
--- First-time database provisioning only. Existing D1 values must never be replaced.
-INSERT OR IGNORE INTO investment_snapshots(platform,current_value,pnl,updated_at) VALUES('sbi',NULL,NULL,NULL);
-
 -- SBI投信積立などの資金移動は entries.type='transfer' とし、生活費統計から除外する。
 
 -- Payment settings are independent from immutable historical transaction amounts.

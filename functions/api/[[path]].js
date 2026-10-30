@@ -257,7 +257,7 @@ export async function onRequest({ request, env, params }) {
           + " FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
-        "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
+        'SELECT category FROM category_source ORDER BY CASE WHEN category IN (\'其他\',\'その他\') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category',
         'SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category',
         'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id',
         ...(portfolioReady ? [
@@ -277,7 +277,7 @@ export async function onRequest({ request, env, params }) {
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
         paymentSources:rows(3),merchantPaymentRules:rows(4),
         customRules:rows(5),
-        categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(6).map(x=>x.category)])],
+        categories:rows(6).map(x=>x.category),
         categoryIcons:Object.fromEntries(rows(7).filter(x=>x.icon).map(x=>[x.category,x.icon])),
         categoryMetadata:rows(7),
         dismissedTransfers:rows(8).map(x=>x.entry_id),
@@ -311,7 +311,7 @@ export async function onRequest({ request, env, params }) {
       // transaction/payment references or any user-created payment method.
       // The completed migration already persisted payment sorting. Read only.
       const migrated=await prepaidSchemaReady(db)
-      const columns=migrated?'name,is_default,closing_day,source_type,opening_balance,opening_date':"name,is_default,closing_day,'standard' AS source_type,0 AS opening_balance,'' AS opening_date"
+      const columns=migrated?'name,is_default,closing_day,source_type,opening_balance,opening_date,opening_entry_id':"name,is_default,closing_day,'standard' AS source_type,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id"
       const {results}=await db.prepare("SELECT "+columns+" FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
       return json(results)
     }
@@ -622,42 +622,28 @@ export async function onRequest({ request, env, params }) {
       }
     }
     if (a === 'categories') {
-      // Read from completed category_source. Do not write ranks or old defaults.
       if (m === 'GET') {
-        const base = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
-        const { results } = await db.prepare(`SELECT category,sort_order FROM category_source
-          WHERE category IN ('餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他')
-             OR EXISTS(SELECT 1 FROM rules WHERE keyword='__category__:'||category_source.category)
-          ORDER BY CASE WHEN category='其他' THEN 99999 ELSE COALESCE(sort_order,10000) END,category`).all()
-        const ranks = new Map((results || []).map(row=>[row.category,row.sort_order]))
-        return json([...new Set([...base,...ranks.keys()])].sort((a,b)=>
-          (a==='其他' ? 99999 : (ranks.get(a) ?? base.indexOf(a))) -
-          (b==='其他' ? 99999 : (ranks.get(b) ?? base.indexOf(b))) ||
-          a.localeCompare(b,'ja')
-        ))
+        // D1 category_source is the single source. Do not read historic
+        // rules markers or manufacture categories absent from production.
+        const {results}=await db.prepare("SELECT category FROM category_source ORDER BY CASE WHEN category IN ('其他','その他') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category").all()
+        return json(results.map(row=>row.category))
       }
       if (m === 'POST') {
         const body = await request.json()
-        const name = String(body.name || '').trim().slice(0, 20)
-        if (name.length < 1) return json({ error: 'カテゴリー名を入力してください' }, 400)
+        const name = String(body.name || '').trim().slice(0,20)
+        if (!name) return json({error:'カテゴリー名を入力してください'},400)
         const reserved = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他','その他','其他收入','その他の収入']
         const icon = String(body.icon || 'other')
         const validIcons = ['food','dining','daily','transport','shopping','home','medical','pet','beauty','education','insurance','utilities','phone','tax','travel','subscriptions','gift','electricity','water','gas','rent','internet','hair','cosmetics','clothes','shoes','books','lessons','childcare','family','car','bicycle','fuel','parking','fitness','health','medicine','dental','cafe','hobby','music','movie','electronics','furniture','repair','charity','bank','savings','fees','delivery','cleaning','events','work','phone-device','other']
-        if (!validIcons.includes(icon)) return json({ error: 'アイコンを確認してください' }, 400)
-        if (reserved.includes(name)) return json({ error: '同じカテゴリが既にあります' }, 409)
-        const existing = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind('__category__:' + name).first()
-        if (existing) return json({ error: '同じカテゴリが既にあります' }, 409)
-        // A single transaction registers the category and both metadata fields.
-        await db.batch([
-          db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name),
-          db.prepare(`INSERT INTO category_source(category,sort_order,icon,display_name)
-            VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999),?2,?1)
-            ON CONFLICT(category) DO UPDATE SET
-              sort_order=COALESCE(category_source.sort_order,excluded.sort_order),
-              icon=COALESCE(category_source.icon,excluded.icon),
-              display_name=COALESCE(category_source.display_name,excluded.display_name)`).bind(name, icon)
-        ])
-        return json({ ok: true, category: name })
+        if (!validIcons.includes(icon)) return json({error:'アイコンを確認してください'},400)
+        if (reserved.includes(name)) return json({error:'同じカテゴリが既にあります'},409)
+        // User-confirmed category creation only; never write the old rules
+        // table or reinsert historical category defaults.
+        const result=await db.prepare(`INSERT INTO category_source(category,sort_order,icon,display_name)
+          VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999),?2,?1)
+          ON CONFLICT(category) DO NOTHING`).bind(name,icon).run()
+        if (!result.meta?.changes) return json({error:'同じカテゴリが既にあります'},409)
+        return json({ok:true,category:name})
       }
     }
     if (a === 'custom-rules') {

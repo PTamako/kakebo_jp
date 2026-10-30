@@ -32,7 +32,9 @@ export function recognizeAssetTransfer({ merchant = '', note = '', raw = '', pre
   const label = normalizeText([merchant, note].filter(Boolean).join(' ') || raw)
   if (reversal(label) || feeOrGoods(label)) return { isTransfer: false, transferTarget: '', kind: '' }
 
-  const matchingPrepaid = detectPrepaidRecharge(text, prepaidNames)
+  // Only the parsed merchant/memo determines the target. OCR receipts can
+  // contain unrelated product lines mentioning another wallet.
+  const matchingPrepaid = detectPrepaidRecharge([merchant, note].filter(Boolean).join(' ') || raw, prepaidNames)
   if (matchingPrepaid) return { isTransfer: true, transferTarget: prepaidTarget(matchingPrepaid), kind: 'recharge' }
   // Generic "○○チャージ": recognized, but never guess the destination or
   // fabricate a prepaid card. The existing form requires manual destination.

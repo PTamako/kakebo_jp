@@ -13,6 +13,15 @@ test('card creation has its own single-column form, not the card icon toolbar gr
   assert.match(creation, /class="card-add-field">種類/)
 })
 
+test('card creation uses one cancel control and no redundant header or close icon', () => {
+  assert.doesNotMatch(creation, /card-add-heading|card-add-close|追加を閉じる/)
+  assert.doesNotMatch(source, /\.card-add-heading|\.card-add-close/)
+  assert.match(creation, /role="group" aria-label="カードを追加"/)
+  assert.match(creation, /class="card-add-cancel"[^>]*@click="cardMode = ''"/)
+  assert.match(source, /\.card-add-editor\{[^}]*gap:8px;[^}]*padding:10px 12px 12px/)
+  assert.match(source, /\.finance-panel \.card-add-actions button\{[^}]*min-height:44px/)
+})
+
 test('save and cancel use two equal-width mobile action columns', () => {
   assert.match(creation, /class="card-add-actions"/)
   assert.match(source, /\.card-add-actions\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)

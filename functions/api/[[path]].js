@@ -354,8 +354,11 @@ export async function onRequest({ request, env, params }) {
         'SELECT * FROM entries ORDER BY id',
         'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
-        'SELECT platform,current_value,pnl,updated_at FROM investment_snapshots ORDER BY platform',
-        "SELECT name,closing_day,is_default,sort_order FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
+        
+        "SELECT " + (await prepaidSchemaReady(db)
+          ? "name,closing_day,is_default,sort_order,source_type,opening_balance,opening_date,opening_entry_id"
+          : "name,closing_day,is_default,sort_order,'standard' AS source_type,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id")
+          + " FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
         "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
@@ -376,14 +379,14 @@ export async function onRequest({ request, env, params }) {
         entries:rows(0),
         plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
-        investments:rows(3),paymentSources:rows(4),merchantPaymentRules:rows(5),
-        customRules:rows(6),
-        categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(7).map(x=>x.category)])],
-        categoryIcons:Object.fromEntries(rows(8).filter(x=>x.icon).map(x=>[x.category,x.icon])),
-        categoryMetadata:rows(8),
-        dismissedTransfers:rows(9).map(x=>x.entry_id),
-        ...(portfolioReady ? {investmentPlans:rows(10),investmentPlanHistory:rows(11),
-          investmentHoldings:rows(12),fundPrices:rows(13),transferLinks:rows(14)} : {})
+        paymentSources:rows(3),merchantPaymentRules:rows(4),
+        customRules:rows(5),
+        categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(6).map(x=>x.category)])],
+        categoryIcons:Object.fromEntries(rows(7).filter(x=>x.icon).map(x=>[x.category,x.icon])),
+        categoryMetadata:rows(7),
+        dismissedTransfers:rows(8).map(x=>x.entry_id),
+        ...(portfolioReady ? {investmentPlans:rows(9),investmentPlanHistory:rows(10),
+          investmentHoldings:rows(11),fundPrices:rows(12),transferLinks:rows(13)} : {})
       })
     }
     if (a === 'restore-atomic' && m === 'POST') {
@@ -854,36 +857,6 @@ export async function onRequest({ request, env, params }) {
 
     if (a === 'investment-portfolio') {
       return handlePortfolio({db,request,method:m,sub:b,url})
-    }
-
-    if (a === 'investments') {
-      if (m === 'GET') {
-        const { results } = await db.prepare("SELECT platform, current_value, pnl, updated_at, (SELECT COALESCE(SUM(amount),0) FROM entries WHERE type = 'transfer' AND transfer_target = investment_snapshots.platform AND transfer_applied = 1) AS invested_total FROM investment_snapshots ORDER BY CASE platform WHEN 'sbi' THEN 1 ELSE 2 END").all()
-        return json(results)
-      }
-      if (m === 'POST' && b === 'restore-empty') {
-        const body = await request.json()
-        if (body?.platform !== 'sbi' ||
-            (body.currentValue !== null && (!Number.isSafeInteger(body.currentValue) || body.currentValue < 0)) ||
-            (body.pnl !== null && !Number.isSafeInteger(body.pnl)) ||
-            (body.currentValue === null && body.pnl === null)) return json({error:'バックアップの資産データを確認してください'},400)
-        // Fill an entirely blank snapshot only; never modify a manually entered SBI valuation.
-        const result = await db.prepare("UPDATE investment_snapshots SET current_value=?1, pnl=?2, updated_at=?3 WHERE platform='sbi' AND current_value IS NULL AND pnl IS NULL")
-          .bind(body.currentValue,body.pnl,new Date().toISOString()).run()
-        return json({ok:true,restored:!!result.meta?.changes})
-      }
-      if (m === 'PUT') {
-        const body = await request.json()
-        const platform = String(body.platform || '')
-        const currentValue = Number(body.currentValue)
-        const pnl = Number(body.pnl)
-        if (platform !== 'sbi' ||
-            !Number.isSafeInteger(currentValue) || currentValue < 0 ||
-            !Number.isSafeInteger(pnl)) return json({ error: '入力内容を確認してください' }, 400)
-        const updatedAt = new Date().toISOString()
-        await db.prepare('INSERT INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(platform) DO UPDATE SET current_value = excluded.current_value, pnl = excluded.pnl, updated_at = excluded.updated_at').bind(platform, currentValue, pnl, updatedAt).run()
-        return json({ platform, current_value: currentValue, pnl, updated_at: updatedAt })
-      }
     }
 
     if (a === 'stats' && m === 'GET') {

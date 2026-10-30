@@ -3,6 +3,7 @@ import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js'
 import { groupFundHoldings } from './sbi-fund-groups.js'
 import { parseSbiHoldingsText } from './sbi-holdings-import.js'
+import { parseSbiFundDetailText, applySbiFundDetailUpdates } from './sbi-fund-detail-import.js'
 import { reconcileSbiScreens } from './sbi-dual-screens.js'
 import { ocrImage } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
@@ -119,7 +120,7 @@ watch(holdingsData,holdings=>{
 })
 
 const fundGroups = computed(() => groupFundHoldings(holdingsData.value))
-const visibleHoldings = computed(() => showAllHoldings.value ? fundGroups.value : fundGroups.value.slice(0,2))
+const visibleHoldings = computed(() => showAllHoldings.value ? fundGroups.value : fundGroups.value.slice(0,4))
 const accountSummary = fund => {
   const accounts = fund.accounts.map(h=>h.account_type)
   if (accounts.includes('growth') && accounts.includes('tsumitate')) return '成長・つみたて'
@@ -140,6 +141,16 @@ const allocationRows = computed(() => {
   }))
 })
 const bulkRows = ref([])
+const importedScreenshotKeys = ref([])
+const scannedFundCount = computed(() => new Set(importedScreenshotKeys.value.map(key => key.split(':')[0])).size)
+const bulkPreviewGroups = computed(() => {
+  const groups = new Map()
+  for (const row of bulkChanged.value) {
+    if (!groups.has(row.fundCode)) groups.set(row.fundCode, {fundCode:row.fundCode,fundName:row.fundName,accounts:[]})
+    groups.get(row.fundCode).accounts.push(row)
+  }
+  return [...groups.values()]
+})
 const bulkText = ref('')
 const bulkWarning = ref('')
 const bulkInfo = ref('')
@@ -154,6 +165,7 @@ function openBulk() {
   if (!holdingsData.value.length) return
   error.value = ''
   bulkText.value = ''
+  importedScreenshotKeys.value = []
   bulkWarning.value = ''
   bulkInfo.value = ''
   dualProfit.value = ''; dualPositions.value = ''; dualActive.value = false; dualVerified.value = false; dualInfo.value = ''
@@ -247,6 +259,61 @@ async function readSbiScreen(event,kind){
     bulkWarning.value='画像を読み取れませんでした：'+e.message
   }finally{await refreshSharedQuota();bulkBusy.value=false}
 }
+async function readFundDetailImages(event) {
+  const files = Array.from(event.target.files || [])
+  event.target.value = ''
+  if (!files.length || bulkBusy.value || saving.value) return
+  bulkBusy.value = true
+  bulkWarning.value = ''
+  bulkInfo.value = '銘柄詳細を確認中…'
+  const problems = []
+  let accepted = 0
+  try {
+    for (const file of files) {
+      try {
+        if (dualActive.value) throw Error('旧2画面方式とは同時に使用できません。クリアしてから選択してください')
+        let recognized = ''
+        if (useAi.value) {
+          await refreshSharedQuota()
+          if (aiExhausted.value) throw Error('本日のAI利用枠がありません。端末内OCRか手入力をご利用ください')
+          const image = file.size <= 4*1024*1024 && ['image/png','image/jpeg','image/webp'].includes(file.type)
+            ? file : await compressReceiptImage(file,1600,1300*1024)
+          const form = new FormData()
+          form.append('image',image,image.type==='image/jpeg'?'fund.jpg':'fund.webp')
+          form.append('mode','portfolio-detail')
+          const result = await props.api('ai-ocr',{method:'POST',body:form})
+          recognized = String(result?.text || '')
+        } else {
+          recognized = await ocrImage(file)
+        }
+        if (!recognized.trim()) throw Error('文字を読み取れませんでした')
+        const parsed = parseSbiFundDetailText(recognized,holdingsData.value)
+        if (parsed.error) throw Error(parsed.error)
+        const merged = applySbiFundDetailUpdates(bulkRows.value,parsed.updates,importedScreenshotKeys.value)
+        if (merged.error) throw Error(merged.error)
+        bulkRows.value = merged.rows
+        importedScreenshotKeys.value = merged.importedKeys
+        accepted++
+      } catch(e) {
+        problems.push(file.name + '：' + (e?.message || '読み取り失敗'))
+      }
+    }
+    bulkInfo.value = accepted
+      ? scannedFundCount.value + '銘柄を読み取りました。変更内容を確認して更新してください。'
+      : '読み取り結果を確認してください。'
+    bulkWarning.value = problems.slice(0,5).join(' / ')
+  } finally {
+    await refreshSharedQuota()
+    bulkBusy.value = false
+  }
+}
+function clearFundDetailImports() {
+  if (bulkBusy.value || saving.value) return
+  importedScreenshotKeys.value = []
+  clearDual()
+  bulkInfo.value = '読み取り結果をクリアしました'
+}
+
 async function readBulkImage(event) {
   const file = event.target.files?.[0]
   event.target.value = ''

@@ -133,8 +133,8 @@ test('SBI fund holdings and saved NAV value accurately without mutating the lega
     const status=await call('investment-portfolio?month='+currentMonth)
     assert.equal(status.body.holdings.find(x=>x.fund_code==='03311187').market_value,70000)
     assert.equal(status.body.holdings.find(x=>x.fund_code==='03311187').pnl,1000)
-    const old=await call('investments')
-    assert.equal(old.body.find(x=>x.platform==='sbi').current_value,null)
+    const legacy=await call('investments')
+    assert.equal(legacy.status,410)
     assert.equal((await call('investment-portfolio/price','PUT',{
       fundCode:'03311187',navPer10000:100,priceDate:'2026-10-29'
     })).status,409)

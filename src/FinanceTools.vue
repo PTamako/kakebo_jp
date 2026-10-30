@@ -1098,4 +1098,8 @@ async function removeCardBill(record) {
 @media(max-width:360px){.card-add-editor{padding:9px 10px 10px;gap:7px}.card-add-actions{gap:8px}}
 .finance-investment-panel{display:grid;gap:9px;min-width:0}
 .finance-investment-panel .sbi-portfolio{min-width:0}
+/* Four management destinations stay in one compact row on narrow iPhones. */
+.finance-section-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;width:100%;min-width:0}
+.finance-section-tabs>button{min-width:0;min-height:44px;padding:8px 3px;white-space:nowrap;font-size:12px}
+@media(max-width:360px){.finance-section-tabs{gap:3px}.finance-section-tabs>button{font-size:11px;padding-inline:2px}}
 </style>

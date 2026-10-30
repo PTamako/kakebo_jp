@@ -7,12 +7,12 @@ const page = read('src/pages/AssetsPage.vue')
 const portfolio = read('src/SbiPortfolio.vue')
 const api = read('functions/api/investment-portfolio.js')
 
-test('mobile balance page starts with four focused summaries, scheduled transfers and compact wallet/holdings', () => {
-  const pageMarkers = ['class="asset-overview"', 'class="panel pending-transfer-panel"', '<SbiPortfolio', '<PrepaidAssets']
+test('mobile balance page only exposes funds and wallet sections; management moves to 管理', () => {
+  const pageMarkers = ['class="asset-overview"', 'class="balance-view-switch"', '<SbiPortfolio', '<PrepaidAssets']
   const pageIndices = pageMarkers.map(marker => page.indexOf(marker))
   assert.ok(pageIndices.every(index => index >= 0))
   assert.deepEqual([...pageIndices].sort((a,b)=>a-b),pageIndices)
-  const portfolioMarkers = ['<slot name="before-holdings" />', 'class="panel sbi-card sbi-holdings" open', 'class="panel sbi-card sbi-plans"', 'class="panel sbi-card sbi-transfers"']
+  const portfolioMarkers = ['class="panel sbi-card sbi-holdings" open', '<slot name="before-holdings" />', 'class="panel sbi-card sbi-investment-manage"', 'class="sbi-transfer-disclosure"']
   const indices = portfolioMarkers.map(marker => portfolio.indexOf(marker))
   assert.ok(indices.every(index => index >= 0))
   assert.deepEqual([...indices].sort((a,b)=>a-b),indices)
@@ -22,8 +22,20 @@ test('mobile balance page starts with four focused summaries, scheduled transfer
   assert.match(page,/電子マネー残高/)
   assert.match(page,/投資信託評価額/)
   assert.match(page,/評価損益/)
-  assert.match(page,/振替/)
+  assert.doesNotMatch(page,/積立管理|振替予定|pending-transfer-panel/)
+  assert.match(page,/@click="selectView\('funds'\)"/)
+  assert.match(page,/@click="selectView\('wallets'\)"/)
   assert.match(page,/pnl = computed/)
+  assert.match(portfolio,/v-show="activeView==='funds'"/)
+  assert.match(portfolio,/v-show="activeView==='wallets'"/)
+  assert.match(portfolio,/v-show="activeView==='plans'"/)
+  assert.match(page,/class="asset-investment"/)
+  assert.match(page,/class="asset-wallet"/)
+  assert.doesNotMatch(page,/class="asset-stat asset-stat-compact"/)
+  assert.match(portfolio,/class="sbi-bulk-primary"/)
+  assert.match(portfolio,/@click="openBulk"/)
+  assert.match(portfolio,/@click="editPlan\(null\)"/)
+  assert.match(portfolio,/@click="submitTransfer|@submit.prevent="submitTransfer"/)
   assert.match(portfolio,/pnl:response\.valuation\.pnl/)
   assert.match(portfolio,/class="sbi-hero-value"/)
   assert.match(portfolio,/data\.valuation\.value === null \? '—'/)

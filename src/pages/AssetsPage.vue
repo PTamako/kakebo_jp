@@ -2,7 +2,9 @@
 import { computed, inject, ref } from 'vue'
 import SbiPortfolio from '../SbiPortfolio.vue'
 import PrepaidAssets from '../PrepaidAssets.vue'
-const { tab, openPrepaidHistoryDetails, ledgerRevision, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, api } = inject('kakeibo-page-context')
+const { tab, openPrepaidHistoryDetails, ledgerRevision, transferLoading, api } = inject('kakeibo-page-context')
+const activeView = ref('funds')
+const selectView = value => { activeView.value = value }
 const portfolioSummary = ref(null)
 const prepaidSummary = ref(null)
 const onPortfolioSummary = value => { portfolioSummary.value = value }
@@ -11,76 +13,47 @@ const openCardSettings = () => { tab.value = 'finance' }
 const yen = value => value === null || !Number.isFinite(Number(value)) ? '—' : '¥'+Number(value).toLocaleString('ja-JP')
 const investment = computed(() => portfolioSummary.value?.valuation ?? null)
 const prepaid = computed(() => prepaidSummary.value?.balance ?? null)
-// The balance page only summarizes tracked wallets and fund holdings.
-// Never present their sum as the user's total wealth or net worth.
+// This is a view of *tracked* wallets and funds, not a total net-worth figure.
 const pnl = computed(() => portfolioSummary.value?.pnl ?? null)
 const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '—' : (Number(value) >= 0 ? '+' : '−') + '¥' + Math.abs(Number(value)).toLocaleString('ja-JP')
-const recon = computed(() => portfolioSummary.value?.reconciliation || null)
-const plan = computed(() => recon.value?.monthly_amount ?? null)
-const posted = computed(() => recon.value?.funded ?? null)
-const pending = computed(() => recon.value?.pending ?? null)
-const progress = computed(() => !plan.value || posted.value === null ? 0 : Math.max(0,Math.min(100,100*posted.value/plan.value)))
-const monthLabel = computed(() => portfolioSummary.value?.month ? portfolioSummary.value.month.replace('-', '年')+'月' : '今月')
 </script>
 <template>
   <section class="page-section assets-page">
     <div class="page-heading">
-      <div><h1>残高</h1><p class="heading-subtitle">電子マネーと投信の状況</p></div>
-      <span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span>
+      <div><h1>残高</h1><p class="heading-subtitle">電子マネー・投資信託</p></div>
     </div>
 
     <section class="asset-overview" aria-label="残高の概要">
-      <div class="asset-stat asset-stat-main">
-        <span>電子マネー残高</span>
-        <strong>{{yen(prepaid)}}</strong>
-        <small>Suica・PASMO など</small>
+      <div class="asset-investment" :class="{'asset-investment-loss':pnl !== null && pnl < 0}">
+        <div class="asset-overview-label">
+          <span class="asset-label-icon asset-label-investment" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9m6 9V5m6 13v-6m4 6V8"/><path d="M3 21h18"/></svg>
+          </span>
+          <span>投資信託評価額<small>SBI証券</small></span>
+        </div>
+        <strong class="asset-investment-value">{{yen(investment)}}</strong>
+        <div class="asset-investment-foot">
+          <span>評価損益</span>
+          <strong :class="{'asset-pnl-negative':pnl !== null && pnl < 0}">{{gainYen(pnl)}}</strong>
+        </div>
       </div>
-      <div class="asset-stat asset-stat-main asset-stat-investment">
-        <span>投資信託評価額</span>
-        <strong>{{yen(investment)}}</strong>
-        <small>SBI証券</small>
-      </div>
-      <div class="asset-stat asset-stat-compact" :class="{ 'asset-stat-loss': pnl !== null && pnl < 0 }">
-        <span>評価損益</span>
-        <strong>{{gainYen(pnl)}}</strong>
-        <small>投資信託</small>
-      </div>
-      <div class="asset-stat asset-stat-compact">
-        <span>{{monthLabel}}の振替</span>
-        <strong>{{yen(posted)}}</strong>
-        <small>積立予定 {{yen(plan)}}</small>
+      <div class="asset-wallet">
+        <div class="asset-overview-label">
+          <span class="asset-label-icon asset-label-wallet" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg>
+          </span>
+          <span>電子マネー残高<small>Suica・PASMO など</small></span>
+        </div>
+        <strong class="asset-wallet-value">{{yen(prepaid)}}</strong>
       </div>
     </section>
 
-    <details class="panel pending-transfer-panel">
-      <summary class="pending-summary">
-        <span class="pending-title"><strong>振替予定</strong><small>{{pendingTransfers.length}}件の確認項目</small><span class="pending-chevron" aria-hidden="true">⌄</span></span>
-        <span class="pending-numbers">
-          <span><small>積立予定</small><b>{{yen(plan)}}</b></span>
-          <span><small>反映済</small><b>{{yen(posted)}}</b></span>
-          <span><small>未反映</small><b>{{yen(pending)}}</b></span>
-        </span>
-        <span class="pending-progress" role="progressbar" aria-label="予定額に対する記帳済金額" :aria-valuemin="0" :aria-valuemax="Math.max(1,plan ?? 0)" :aria-valuenow="Math.min(Math.max(0,posted ?? 0),Math.max(1,plan ?? 0))"><span :style="{width:progress+'%'}"></span></span>
-      </summary>
-      <div class="pending-body">
-        <div class="pending-tools"><small>期日反映は記帳上の処理です</small><button type="button" class="pending-refresh" :disabled="transferLoading" @click="loadTransfers" aria-label="振替予定を更新">↻ 更新</button></div>
-        <p v-if="transferLoading" class="pending-transfer-empty" role="status">読み込み中…</p>
-        <p v-else-if="!pendingTransfers.length" class="pending-transfer-empty">確認が必要な振替はありません</p>
-        <div v-else class="pending-transfer-list">
-          <div v-for="item in pendingTransfers" :key="item.id" class="pending-transfer-row">
-            <div class="pending-transfer-main"><strong>{{item.merchant || item.note || 'SBI証券への振替'}}</strong><span>予定日 {{item.transfer_date || item.date}} · {{yen(item.amount)}}</span></div>
-            <div class="pending-transfer-actions">
-              <span class="pending-transfer-status" :class="transferStatusClass(item)">{{transferStatus(item)}}</span>
-              <button v-if="Number(item.transfer_applied) === 1" class="pending-delete" :disabled="transferActionId !== null" aria-label="通知を閉じる" title="通知を閉じる" @click="dismissTransferReminder(item)">×</button>
-              <button v-else-if="transferDue(item)" class="pending-retry" :disabled="transferActionId !== null" @click="retryTransfer(item)">記帳に反映</button>
-            </div>
-          </div>
-        </div>
-        <details class="pending-explanation"><summary>振替の反映について</summary><p>期日反映は証券口座への入金・買付完了を保証しません。買付月は別途確認してください。</p></details>
-      </div>
-    </details>
+    <nav class="balance-view-switch" aria-label="残高の表示切替" role="tablist">
+      <button type="button" role="tab" :aria-selected="activeView==='funds'" :class="{selected:activeView==='funds'}" @click="selectView('funds')">投資信託</button>
+      <button type="button" role="tab" :aria-selected="activeView==='wallets'" :class="{selected:activeView==='wallets'}" @click="selectView('wallets')">電子マネー</button>
+    </nav>
 
-    <SbiPortfolio :api="api" :transfer-loading="transferLoading" @summary="onPortfolioSummary">
+    <SbiPortfolio :api="api" :transfer-loading="transferLoading" :active-view="activeView" @summary="onPortfolioSummary">
       <template #before-holdings>
         <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" @summary="onPrepaidSummary" @open-card-settings="openCardSettings" @open-history="openPrepaidHistoryDetails" />
       </template>
@@ -88,32 +61,29 @@ const monthLabel = computed(() => portfolioSummary.value?.month ? portfolioSumma
   </section>
 </template>
 <style scoped>
-.assets-page{display:grid;gap:10px;min-width:0}.assets-page .page-heading{margin-bottom:1px}
-.asset-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-.asset-stat{display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:4px;min-width:0;min-height:99px;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
-.asset-stat>span{font-size:11px;font-weight:750;color:var(--muted);line-height:1.35}
-.asset-stat strong{display:block;font-size:clamp(17px,4.7vw,23px);font-weight:850;letter-spacing:-.045em;font-variant-numeric:tabular-nums;line-height:1.25;overflow-wrap:anywhere;max-width:100%}
-.asset-stat small{font-size:10px;color:var(--muted);line-height:1.35}
-.asset-stat-main{min-height:108px;background:linear-gradient(140deg,color-mix(in srgb,var(--blue) 14%,var(--card)),var(--card) 88%);border-color:color-mix(in srgb,var(--blue) 18%,var(--line))}
-.asset-stat-investment{background:linear-gradient(140deg,color-mix(in srgb,var(--teal) 11%,var(--card)),var(--card) 88%);border-color:color-mix(in srgb,var(--teal) 20%,var(--line))}
-.asset-stat-compact{min-height:81px;padding:11px 12px}
-.asset-stat-compact strong{font-size:clamp(16px,4.4vw,20px)}
-.asset-stat-loss strong{color:#c44d69}
-.pending-transfer-panel{min-width:0;margin:0;padding:0;overflow:visible}
-.pending-summary{display:grid;gap:7px;min-height:0;padding:11px 14px;list-style:none;cursor:pointer}
-.pending-summary::-webkit-details-marker{display:none}
-.pending-summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
-.pending-title{display:flex;align-items:center;gap:8px}.pending-title strong{font-size:14px}.pending-title small{font-size:10px;color:var(--muted);flex:1}.pending-chevron{font-size:19px;line-height:1;color:var(--muted);transition:transform .18s}
-.pending-transfer-panel[open] .pending-chevron{transform:rotate(180deg)}
-.pending-numbers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
-.pending-numbers>span{display:grid;gap:2px;min-width:0}.pending-numbers small{color:var(--muted);font-size:10px}.pending-numbers b{font-size:clamp(12px,3.7vw,15px);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
-.pending-progress{height:4px;overflow:hidden;border-radius:100px;background:var(--line)}.pending-progress>span{display:block;height:100%;border-radius:inherit;background:var(--blue)}
-.pending-body{padding:2px 14px 13px;border-top:1px solid var(--line)}
-.pending-tools{display:flex;align-items:center;justify-content:space-between;gap:8px}.pending-tools small{font-size:10px;color:var(--muted)}
-.pending-refresh{border:0;background:transparent;color:var(--blue-dark);font-size:11px;font-weight:750;min-height:39px;padding:7px 5px}
-.pending-transfer-list{display:grid;gap:0}.pending-transfer-row{padding:10px 0;border-top:1px solid var(--line)}
-.pending-explanation{border-top:1px solid var(--line)}.pending-explanation summary{padding:12px 0;font-size:11px;color:var(--muted);cursor:pointer}
-.pending-explanation p,.pending-transfer-empty{margin:0 0 8px;color:var(--muted);font-size:11px;line-height:1.5}
-@media(max-width:365px){.asset-stat{padding:10px}.asset-stat-main{min-height:100px}.asset-stat-compact{min-height:76px}.pending-summary{padding:11px}.pending-numbers{gap:4px}.pending-numbers b{font-size:12px}}
+.assets-page{display:grid;gap:9px;min-width:0}
+.assets-page .page-heading{margin-bottom:0;min-height:0}
+.assets-page .page-heading h1{letter-spacing:-.035em}
+.asset-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
+.asset-investment,.asset-wallet{box-sizing:border-box;display:flex;flex-direction:column;min-width:0;min-height:106px;padding:12px;border:1px solid var(--line);border-radius:15px;background:var(--card)}
+.asset-investment{background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 12%,var(--card)),var(--card) 85%);border-color:color-mix(in srgb,var(--blue) 18%,var(--line))}
+.asset-wallet{background:linear-gradient(135deg,color-mix(in srgb,var(--teal) 9%,var(--card)),var(--card) 85%);border-color:color-mix(in srgb,var(--teal) 17%,var(--line))}
+.asset-overview-label{display:flex;gap:6px;align-items:center;min-width:0}
+.asset-overview-label>span:last-child{display:grid;gap:1px;color:var(--ink);font-size:11px;font-weight:800;min-width:0;line-height:1.3}
+.asset-overview-label small{color:var(--muted);font-size:9px;font-weight:500}
+.asset-label-icon{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:9px}
+.asset-label-icon svg{width:15px;height:15px}
+.asset-label-investment{background:color-mix(in srgb,var(--blue) 17%,var(--card));color:var(--blue-dark)}
+.asset-label-wallet{background:color-mix(in srgb,var(--teal) 15%,var(--card));color:var(--teal)}
+.asset-investment-value,.asset-wallet-value{display:block;margin-top:auto;padding-top:8px;font-size:clamp(18px,5.4vw,25px);font-weight:850;letter-spacing:-.045em;font-variant-numeric:tabular-nums;line-height:1.15;overflow-wrap:anywhere}
+.asset-investment-foot{display:flex;align-items:center;gap:5px;justify-content:space-between;margin-top:7px;padding-top:5px;border-top:1px solid color-mix(in srgb,var(--blue) 15%,var(--line));font-size:10px;color:var(--muted)}
+.asset-investment-foot strong{font-size:10px;color:#18876c;font-variant-numeric:tabular-nums;white-space:nowrap}
+.asset-investment-foot .asset-pnl-negative{color:#bf516d}
+.balance-view-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;min-width:0;padding:4px;border-radius:13px;border:1px solid var(--line);background:var(--paper)}
+.balance-view-switch button{display:flex;justify-content:center;align-items:center;gap:4px;min-width:0;min-height:43px;padding:8px 3px;border:1px solid transparent;background:transparent;border-radius:10px;color:var(--muted);font-size:12px;font-weight:750;white-space:nowrap;cursor:pointer}
+.balance-view-switch button.selected{color:var(--blue-dark);background:var(--card);border-color:color-mix(in srgb,var(--blue) 17%,var(--line));box-shadow:0 1px 5px #0000000a}
+.balance-view-switch button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.balance-view-count{display:inline-grid;place-items:center;min-width:15px;height:15px;padding:0 3px;border-radius:9px;background:color-mix(in srgb,var(--blue) 16%,var(--card));font-size:9px;line-height:1.1}
+@media(max-width:370px){.asset-investment,.asset-wallet{padding:10px}.asset-overview-label{gap:4px}.asset-overview-label>span:last-child{font-size:10px}.asset-label-icon{width:24px;height:24px}.asset-investment-value,.asset-wallet-value{font-size:18px}.balance-view-switch button{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.pending-chevron{transition:none}}
 </style>

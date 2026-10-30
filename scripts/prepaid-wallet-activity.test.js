@@ -99,3 +99,25 @@ test('wallet tile displays last usage/card/amount and last top-up/card/funding w
   assert.doesNotMatch(api,/INSERT INTO entries|UPDATE entries|CREATE TABLE|DROP TABLE/)
   assert.doesNotMatch(page,/assetsTotal|資産合計/)
 })
+
+test('wallet-to-wallet transfers and SBI funding debit the prepaid source exactly once',async()=>{
+  const {db,sqlite,addCard,add}=createDB()
+  try{
+    const day=dateOffset(0),future=dateOffset(2),old=dateOffset(-2)
+    addCard.run('Suica',0,5000,old,0)
+    addCard.run('PASMO',1,2000,old,0)
+    add(day,'09:00','transfer',1000,'Suica','prepaid:PASMO',day)
+    add(day,'10:00','transfer',500,'Suica','sbi',day)
+    add(day,'11:00','transfer',200,'Suica','prepaid:PASMO',future)
+    add(day,'12:00','expense',300,'Suica')
+    const result=await get(db)
+    const suica=result.cards.find(c=>c.name==='Suica'),pasmo=result.cards.find(c=>c.name==='PASMO')
+    assert.equal(suica.charged,0)
+    assert.equal(suica.spent,300)
+    assert.equal(suica.transferred_out,1500)
+    assert.equal(suica.balance,3200)
+    assert.equal(pasmo.charged,1000)
+    assert.equal(pasmo.balance,3000)
+    assert.equal(result.cards.reduce((sum,c)=>sum+c.balance,0),6200)
+  }finally{sqlite.close()}
+})

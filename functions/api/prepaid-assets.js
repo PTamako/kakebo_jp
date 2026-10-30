@@ -34,8 +34,30 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) spent
     FROM payment_sources p WHERE p.source_type='prepaid'
     ORDER BY p.sort_order,p.name`).bind(today).all()
-  // History is rendered by the ledger with per-card filters; no duplicate history query here.
-  return json({cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)-Number(p.spent)}))})
+  // Latest activity is read-only and uses exactly the same opening anchor/date
+  // predicates as the balance and card-history filters. No extra ledger table.
+  const [latestUsage,latestCharge] = await Promise.all([
+    db.prepare(`SELECT p.name AS card,e.id,e.date,e.amount,e.merchant
+      FROM entries e
+      JOIN payment_sources p ON p.source_type='prepaid' AND e.payment_source=p.name
+      WHERE e.type='expense' AND e.id>p.opening_entry_id
+        AND e.date>=p.opening_date AND e.date<=?1
+      ORDER BY e.date DESC,COALESCE(e.time,'') DESC,e.id DESC LIMIT 1`).bind(today).first(),
+    db.prepare(`SELECT p.name AS card,e.id,COALESCE(e.transfer_date,e.date) AS date,
+        e.amount,e.payment_source AS funding_source
+      FROM entries e
+      JOIN payment_sources p ON p.source_type='prepaid' AND e.transfer_target='prepaid:'||p.name
+      WHERE e.type='transfer' AND e.id>p.opening_entry_id
+        AND e.date>=p.opening_date AND e.date<=?1
+        AND COALESCE(e.transfer_date,e.date)<=?1
+      ORDER BY COALESCE(e.transfer_date,e.date) DESC,
+        e.date DESC,COALESCE(e.time,'') DESC,e.id DESC LIMIT 1`).bind(today).first()
+  ])
+  return json({
+    cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)-Number(p.spent)})),
+    latestUsage:latestUsage || null,
+    latestCharge:latestCharge || null
+  })
 }
 export async function validPrepaidTarget(db,target){
   if(typeof target!=='string'||!target.startsWith('prepaid:')||target.length>88)return false

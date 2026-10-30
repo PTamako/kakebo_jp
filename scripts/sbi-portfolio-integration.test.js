@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite'
 import {readFileSync} from 'node:fs'
 import {onRequest} from '../functions/api/[[path]].js'
 import {inferredPurchaseMonth} from '../functions/api/investment-portfolio.js'
-import {sbiInitialHoldings, SBI_SNAPSHOT_DAY, SBI_SNAPSHOT_OBSERVED_AT} from '../functions/api/sbi-initial-holdings.js'
+import {sbiInitialHoldings, SBI_SNAPSHOT_DAY, SBI_SNAPSHOT_OBSERVED_AT} from './fixtures/sbi-initial-holdings.js'
 
 // This harness runs real SQLite (the D1 SQL dialect), never production D1.
 class SqliteD1 {

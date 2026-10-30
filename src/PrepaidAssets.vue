@@ -56,13 +56,16 @@ onMounted(()=>{if(props.active)void refresh()})
             <div class="wallet-name"><strong>{{card.name}}</strong><small>プリペイド · チャージ {{money(card.charged)}} · 利用 {{money(card.spent)}}</small></div>
             <div class="wallet-money" :class="{'wallet-negative':card.balance<0}"><strong>{{money(card.balance)}}</strong><small v-if="card.balance<0">要確認</small></div>
           </div>
-          <div class="wallet-row-actions"><button type="button" class="wallet-edit" @click="startOpening(card)">編集</button></div>
+          <div class="wallet-row-actions">
+            <nav class="wallet-history-links" :aria-label="card.name+'の履歴'">
+              <button type="button" :aria-label="card.name+'のチャージ履歴'" @click="emit('open-history',card.name,'charge')">チャージ履歴</button>
+              <button type="button" :aria-label="card.name+'の利用履歴'" @click="emit('open-history',card.name,'usage')">利用履歴</button>
+            </nav>
+            <button type="button" class="wallet-edit" :aria-label="card.name+'の期首残高を編集'" @click="startOpening(card)">編集</button>
+          </div>
         </div>
         <button v-if="data.cards.length>2" type="button" class="wallet-show-more" :aria-expanded="showAll" @click="showAll=!showAll">{{showAll?'閉じる':'あと'+(data.cards.length-2)+'件を表示'}}</button>
-        <nav class="wallet-history-links" aria-label="プリペイドの明細">
-          <button type="button" @click="emit('open-history','charge')">チャージ履歴 <span aria-hidden="true">›</span></button>
-          <button type="button" @click="emit('open-history','usage')">利用履歴 <span aria-hidden="true">›</span></button>
-        </nav>
+
         
       </template>
     </div>
@@ -92,12 +95,12 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:7px}
 .wallet-name{display:grid;gap:3px;min-width:0}.wallet-name strong{font-size:13px;overflow-wrap:anywhere}.wallet-name small{color:var(--muted);font-size:10px;line-height:1.5}
 .wallet-money{display:grid;justify-items:end;flex:none;font-variant-numeric:tabular-nums;white-space:nowrap}.wallet-money strong{font-size:15px}.wallet-money small{font-size:10px;color:var(--muted)}.wallet-negative{color:#c54d68}
-.wallet-row-actions{display:flex;justify-content:flex-end;margin-top:1px}.wallet-edit{border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750;min-height:44px;padding:5px 8px}
+.wallet-row-actions{display:flex;align-items:center;gap:5px;min-width:0;margin-top:3px}
+.wallet-history-links{display:flex;flex:1;min-width:0;gap:4px}
+.wallet-history-links button,.wallet-edit{border:0;background:transparent;color:var(--blue-dark);font-weight:750;font-size:11px;min-height:44px;padding:6px 6px;white-space:nowrap;cursor:pointer}
+.wallet-history-links button:focus-visible,.wallet-edit:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px;border-radius:7px}
+.wallet-edit{font-size:12px;margin-left:auto}
 .wallet-show-more{display:block;margin:2px auto 5px;border:0;background:transparent;color:var(--blue-dark);min-height:44px;font-size:12px;font-weight:750;padding:8px}
-.wallet-history-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:12px 0 1px;border-top:1px solid var(--line)}
-.wallet-history-links button{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;min-height:44px;padding:9px 5px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--blue-dark);font-size:12px;font-weight:750;white-space:nowrap;cursor:pointer}
-.wallet-history-links button span{font-size:19px;line-height:1}
-.wallet-history-links button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .wallet-hint{font-size:11px;color:var(--muted);line-height:1.6;margin:0}
 .wallet-error{font-size:12px;color:#9b2938}.wallet-success{font-size:11px;color:#178367;margin:0}
 .wallet-overlay{position:fixed;z-index:61;inset:0;background:#23273588;display:flex;align-items:flex-end;justify-content:center}

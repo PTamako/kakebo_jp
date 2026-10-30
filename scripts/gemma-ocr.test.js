@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeGemmaText, recognizeWithGemma, GEMMA_MODEL } from '../functions/api/gemma-ocr.js'
 import { parseReceipt } from '../src/parse.js'
-import { detectRegisteredReceiptPayment } from '../src/receipt-payment.js'
+import { detectRegisteredReceiptPayment, isQuicPayReceipt } from '../src/receipt-payment.js'
 import { paymentForDraft } from '../src/payment-rules.js'
 
 test('Gemma response is bounded and rejects empty text', () => {
@@ -72,8 +72,14 @@ test('Gemma 4 mock MyBasket uses till purchase time, not duplicate payment-slip 
   ].join('\n')
   const record=parseReceipt(raw,[{keyword:'まいばすけっと',category:'饮食料品',is_custom:false}])
   assert.deepEqual([record.date,record.time,record.amount,record.category],['2026-10-30','12:36',311,'饮食料品'])
-  assert.equal(detectRegisteredReceiptPayment(raw,['QUICPay']),'QUICPay')
+  assert.equal(isQuicPayReceipt(raw),true)
+  const sources=['セゾンローズゴールドAMEX','Suica','QUICPay']
+  const meta={'セゾンローズゴールドAMEX':{source_type:'standard'},'Suica':{source_type:'prepaid'}}
+  assert.equal(detectRegisteredReceiptPayment(raw,sources,meta),'セゾンローズゴールドAMEX')
+  assert.equal(detectRegisteredReceiptPayment(raw,['QUICPay']), '', 'QUICPay is not a standalone card')
   assert.equal(detectRegisteredReceiptPayment(raw,['Suica']), '', 'receipt is not a Suica expense')
+  assert.equal(detectRegisteredReceiptPayment(raw,['セゾンA','セゾンB']), '', 'ambiguous credit card must be chosen manually')
+  assert.equal(detectRegisteredReceiptPayment(raw,['セゾンIC'],{'セゾンIC':{source_type:'prepaid'}}),'','never charge a stored-value card')
 })
 
 test('Gemma unreadable purchase date or time must not fall through to coupon period',()=>{
@@ -93,4 +99,17 @@ test('receipt payment extraction supports arbitrary registered names',()=>{
   assert.equal(detectRegisteredReceiptPayment('わたし専用IC支払 ¥120',registered),'わたし専用IC')
   assert.equal(detectRegisteredReceiptPayment('Suica残高 ¥9,126',registered),'')
   assert.equal(detectRegisteredReceiptPayment('支払方法: その他のカード',registered),'')
+})
+
+
+test('QUICPay receipt maps to unique registered Saison credit card, never generic fallback or new card',()=>{
+  const source=['店名: まいばすけっと 架空店','日付: 2026-10-30','時刻: 12:36','合計: ¥311','支払方法: QUICPay'].join('\n')
+  const cards=['現金','セゾンカード','Suica']
+  const meta={'セゾンカード':{source_type:'standard'},'Suica':{source_type:'prepaid'}}
+  const card=detectRegisteredReceiptPayment(source,cards,meta)
+  assert.equal(card,'セゾンカード')
+  assert.ok(cards.includes(card))
+  assert.equal(paymentForDraft({merchant:'まいばすけっと',recognized:card,defaultSource:'現金'}),'セゾンカード')
+  assert.equal(detectRegisteredReceiptPayment(source,['現金','QUICPay'],{}),'')
+  assert.equal(isQuicPayReceipt('支払方法: Suica'),false)
 })

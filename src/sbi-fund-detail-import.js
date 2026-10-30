@@ -15,7 +15,12 @@ export function parseSbiFundDetailText(text, holdings) {
     // only some entries or the wrong fund from the rest of its response.
     if (pipeRows.length !== lines.length || pipeRows.some(row => row.split('|').length !== 4))
       return { updates: [], error: '銘柄コード・口座区分・保有口数・取得金額を確認してください' }
-    const parsed = parseSbiHoldingsText(lines.join('\n'), all)
+    const normalizedRows = lines.map(line => {
+      const columns = line.split('|').map(value => value.trim())
+      const account = {growth:'成長',tsumitate:'つみたて',combined:'合算'}[columns[1].toLowerCase()] || columns[1]
+      return [columns[0],account,columns[2],columns[3]].join('|')
+    })
+    const parsed = parseSbiHoldingsText(normalizedRows.join('\n'), all)
     if (parsed.warnings.length || parsed.updates.length !== pipeRows.length)
       return { updates: [], error: parsed.warnings[0] || '登録済み銘柄と口座を照合できませんでした' }
     updates = parsed.updates

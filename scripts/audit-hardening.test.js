@@ -55,7 +55,7 @@ test('fixed expenses use atomic server-side conflict avoidance and existing valu
   assert.match(api,/ON CONFLICT\(client_request_id\) DO NOTHING/)
   assert.match(recurring,/api\('recurring-post'/)
   assert.match(finance,/postApprovedRecurringEntries\(props\.api/)
-  assert.match(api,/current_value IS NULL AND pnl IS NULL/)
+  assert.doesNotMatch(api,/SELECT .*investment_snapshots|UPDATE investment_snapshots|INSERT INTO investment_snapshots/)
   assert.doesNotMatch(api,/UPDATE investment_snapshots SET current_value\s*=\s*current_value\s*\+/)
 })
 
@@ -77,12 +77,12 @@ test('stats and calendar do not show old-period data or unfiltered payment amoun
 
 test('restoring backup data never overwrites existing finance or category settings',()=>{
   assert.match(finance,/async function downloadBackup\(\)/)
-  assert.match(finance,/await props\.api\('investments'\)|props\.api\('investments'\)/)
+  assert.doesNotMatch(finance,/props\.api\('investments'\)/)
   assert.match(finance,/backupPreview\.value/)
   assert.match(finance,/restoreIncludeConflicts/)
   assert.match(finance,/restoreMissingByKey\(existingPlans,backup\.plans/)
   assert.match(finance,/restoreMissingByKey\(existingBills,backup\.bills/)
-  assert.match(finance,/props\.api\('investments\/restore-empty'/)
+  assert.doesNotMatch(finance,/props\.api\('investments\/restore-empty'/)
   assert.doesNotMatch(api,/UPDATE rules SET category = \?1 WHERE keyword = \?2 AND category = \?3/)
 })
 

@@ -63,7 +63,7 @@ test('full fresh schema is compatible with the explicit one-time SBI migration',
     db.exec(migration)
     assert.equal(db.prepare('SELECT COUNT(*) n FROM investment_holdings').get().n,4)
     assert.equal(db.prepare('SELECT SUM(monthly_amount) n FROM investment_plan_history').get().n,15000)
-    assert.equal(db.prepare("SELECT current_value FROM investment_snapshots WHERE platform='sbi'").get().current_value,null)
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='investment_snapshots'").get().n,0)
   }finally{db.close()}
 })
 

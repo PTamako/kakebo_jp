@@ -32,7 +32,7 @@ test('cross-month duplicate navigation selects date after month watcher resets i
 })
 
 test('finance management starts loading only when tab is active and refreshes on revisit', () => {
-  assert.match(app, /<ManagementPage v-show="tab === 'finance'" :active="tab === 'finance'"/)
+  assert.match(app, /<ManagementPage [^>]*v-show="tab === 'finance'" :active="tab === 'finance'"/)
   assert.match(finance, /onMounted\(\(\) => \{ if \(props\.active\) void initializeFinance\(\) \}\)/)
   // Revisit reuses a fresh ledger; mutations, expiration and explicit backup force refresh.
   assert.match(finance, /watch\(\(\) => props\.ledgerRevision, \(\) => \{/)
@@ -114,7 +114,9 @@ test('changing cards while editing refreshes the name and cannot rename the prev
   assert.ok(editor)
   assert.match(editor, /<input :key="selectedCard" v-model="editedCardName"/)
   assert.match(editor, /:disabled="busy \|\| selectedCard === '現金'"/)
-  assert.match(editor, /<button type="button" :disabled="busy" @click="renameCard">保存<\/button>/)
+  assert.match(editor, /<button type="button" :disabled="busy" @click="saveCardType">\{\{editSourceType!==selectedSourceType\?'種別を保存':'保存'\}\}<\/button>/)
+  assert.match(finance, /if\(kind===selectedSourceType\.value\)return renameCard\(\)/)
+  assert.match(finance, /名称変更と種別変更は分けて保存してください/)
   assert.match(finance, /async function renameCard\(\) \{\s*if \(busy\.value\) return/)
 })
 

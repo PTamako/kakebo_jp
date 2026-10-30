@@ -1,4 +1,5 @@
 import { isAppliedSbiTransfer } from './investment-transfer.js'
+import { handlePrepaid, validPrepaidTarget, prepaidSchemaReady } from './prepaid-assets.js'
 import { handlePortfolio } from './investment-portfolio.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
@@ -353,8 +354,11 @@ export async function onRequest({ request, env, params }) {
         'SELECT * FROM entries ORDER BY id',
         'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
-        'SELECT platform,current_value,pnl,updated_at FROM investment_snapshots ORDER BY platform',
-        "SELECT name,closing_day,is_default,sort_order FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
+        
+        "SELECT " + (await prepaidSchemaReady(db)
+          ? "name,closing_day,is_default,sort_order,source_type,opening_balance,opening_date,opening_entry_id"
+          : "name,closing_day,is_default,sort_order,'standard' AS source_type,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id")
+          + " FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
         "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
@@ -375,14 +379,14 @@ export async function onRequest({ request, env, params }) {
         entries:rows(0),
         plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
-        investments:rows(3),paymentSources:rows(4),merchantPaymentRules:rows(5),
-        customRules:rows(6),
-        categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(7).map(x=>x.category)])],
-        categoryIcons:Object.fromEntries(rows(8).filter(x=>x.icon).map(x=>[x.category,x.icon])),
-        categoryMetadata:rows(8),
-        dismissedTransfers:rows(9).map(x=>x.entry_id),
-        ...(portfolioReady ? {investmentPlans:rows(10),investmentPlanHistory:rows(11),
-          investmentHoldings:rows(12),fundPrices:rows(13),transferLinks:rows(14)} : {})
+        paymentSources:rows(3),merchantPaymentRules:rows(4),
+        customRules:rows(5),
+        categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(6).map(x=>x.category)])],
+        categoryIcons:Object.fromEntries(rows(7).filter(x=>x.icon).map(x=>[x.category,x.icon])),
+        categoryMetadata:rows(7),
+        dismissedTransfers:rows(8).map(x=>x.entry_id),
+        ...(portfolioReady ? {investmentPlans:rows(9),investmentPlanHistory:rows(10),
+          investmentHoldings:rows(11),fundPrices:rows(12),transferLinks:rows(13)} : {})
       })
     }
     if (a === 'restore-atomic' && m === 'POST') {
@@ -403,13 +407,16 @@ export async function onRequest({ request, env, params }) {
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
       // Use the already migrated merchant_rules table; never re-import old mappings.
     }
+    if (a === 'prepaid-assets') return handlePrepaid({db,request,method:m,sub:b})
     if (a === 'payment-sources' && !b && m === 'GET') {
       // Closing days are authoritative on payment_sources.closing_day.
       // Never recreate the deprecated finance_settings table.
       // Enforce the persisted sentinel on existing databases, without touching
       // transaction/payment references or any user-created payment method.
       // The completed migration already persisted payment sorting. Read only.
-      const { results } = await db.prepare("SELECT name, is_default, closing_day FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
+      const migrated=await prepaidSchemaReady(db)
+      const columns=migrated?'name,is_default,closing_day,source_type,opening_balance,opening_date':"name,is_default,closing_day,'standard' AS source_type,0 AS opening_balance,'' AS opening_date"
+      const {results}=await db.prepare("SELECT "+columns+" FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
       return json(results)
     }
     if (a === 'payment-sources' && b === 'restore-missing' && m === 'POST') {
@@ -457,8 +464,32 @@ export async function onRequest({ request, env, params }) {
       const body = await request.json()
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
       if (!name || name.length > 80) return json({ error: 'カード名を確認してください' }, 400)
-      await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END)").bind(name).run()
-      return json({ ok: true })
+      const kind=body.sourceType||'standard'
+      if(!['standard','prepaid'].includes(kind))return json({error:'カード種別を確認してください'},400)
+      if(kind==='prepaid'){
+        if(['現金','その他','其他'].includes(name))return json({error:'現金・その他はプリペイドに設定できません'},400)
+        if(!await prepaidSchemaReady(db))return json({error:'プリペイド設定の移行が必要です'},409)
+        await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order,source_type,opening_balance,opening_date,opening_entry_id) VALUES(?1,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE sort_order<99999),'prepaid',0,?2,(SELECT COALESCE(MAX(id),0) FROM entries))").bind(name,new Date(Date.now()+9*3600000).toISOString().slice(0,10)).run()
+      } else {
+        await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END)").bind(name).run()
+      }
+      return json({ok:true})
+    }
+    if (a === 'payment-sources' && b === 'type' && m === 'POST') {
+      if(!await prepaidSchemaReady(db))return json({error:'プリペイド設定の移行が必要です'},409)
+      const body=await request.json(),name=String(body?.name||'').trim(),kind=body?.sourceType
+      if(!name||name.length>80||['現金','その他','其他'].includes(name)||!['standard','prepaid'].includes(kind))return json({error:'カード種別を確認してください'},400)
+      const existing=await db.prepare('SELECT source_type FROM payment_sources WHERE name=?1').bind(name).first()
+      if(!existing)return json({error:'カードが見つかりません'},404)
+      if(existing.source_type===kind)return json({ok:true})
+      if(kind==='standard'){
+        const used=await db.prepare("SELECT id FROM entries WHERE type='transfer' AND transfer_target=?1 LIMIT 1").bind('prepaid:'+name).first()
+        if(used)return json({error:'チャージ履歴があるため通常カードに変更できません'},409)
+        await db.prepare("UPDATE payment_sources SET source_type='standard',opening_balance=0,opening_date='',opening_entry_id=0 WHERE name=?1").bind(name).run()
+      } else {
+        await db.prepare("UPDATE payment_sources SET source_type='prepaid',opening_balance=0,opening_date=?1,opening_entry_id=(SELECT COALESCE(MAX(id),0) FROM entries) WHERE name=?2 AND source_type='standard'").bind(new Date(Date.now()+9*3600000).toISOString().slice(0,10),name).run()
+      }
+      return json({ok:true})
     }
     if (a === 'payment-sources' && b === 'default' && m === 'POST') {
       const body = await request.json()
@@ -475,6 +506,10 @@ export async function onRequest({ request, env, params }) {
       // Do not remove a card that is still used by an enabled automatic charge.
       const activePlan = await db.prepare('SELECT id FROM recurring_plans WHERE payment_source=?1 AND enabled=1 LIMIT 1').bind(name).first()
       if (activePlan) return json({error:'このカードを利用する固定支出が残っています。先に固定支出の設定を整理してください'},409)
+      if(await prepaidSchemaReady(db)){
+        const card=await db.prepare('SELECT source_type FROM payment_sources WHERE name=?1').bind(name).first()
+        if(card?.source_type==='prepaid')return json({error:'プリペイドカードは通常タイプへ戻してから削除してください'},409)
+      }
       await db.batch([
         db.prepare('DELETE FROM merchant_rules WHERE payment_source=?1 AND category IS NULL').bind(name),
         db.prepare('UPDATE merchant_rules SET payment_source=NULL WHERE payment_source=?1').bind(name),
@@ -526,6 +561,7 @@ export async function onRequest({ request, env, params }) {
         db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName),
         db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
         db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
+        db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2').bind('prepaid:'+newName,'prepaid:'+oldName),
         db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
         db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName)
       ])
@@ -594,7 +630,9 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日付または金額が正しくありません' }, 400)
         const paymentSource = e.paymentSource == null ? '' : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
-        const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
+        const rawTarget=transfer?String(e.transferTarget||''):''
+        if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
+        const target=transfer?(rawTarget||null):null
         const transferDate = transfer ? (e.transferDate || e.date) : null
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -614,7 +652,8 @@ export async function onRequest({ request, env, params }) {
               AND (COALESCE(time,'')='' OR COALESCE(?2,'')=''
                 OR ABS((CAST(SUBSTR(time,1,2) AS INTEGER)*60 + CAST(SUBSTR(time,4,2) AS INTEGER))
                   - (CAST(SUBSTR(?2,1,2) AS INTEGER)*60 + CAST(SUBSTR(?2,4,2) AS INTEGER))) <= 5)
-              AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13)
+              AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13
+              AND (type<>'transfer' OR COALESCE(transfer_target,'')=COALESCE(?9,'')))
             ON CONFLICT(client_request_id) DO NOTHING`
           : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
         const inserted = await db.prepare(insertSql).bind(e.date, e.time || '', amount,
@@ -641,11 +680,13 @@ export async function onRequest({ request, env, params }) {
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
         const paymentSource = e.paymentSource == null ? (previous.payment_source || '') : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
-        const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
+        const rawTarget=transfer?String(e.transferTarget||''):''
+        if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
+        const target=transfer?(rawTarget||null):null
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-        const applied = target && transferDate <= today ? 1 : 0
+        const applied = target==='sbi' && transferDate <= today ? 1 : 0
         const result = await db.prepare(
           'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11, payment_source = ?12 WHERE id = ?13'
         ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied ? 1 : 0, transferDate, paymentSource, id).run()
@@ -817,36 +858,7 @@ export async function onRequest({ request, env, params }) {
       return handlePortfolio({db,request,method:m,sub:b,url})
     }
 
-    if (a === 'investments') {
-      if (m === 'GET') {
-        const { results } = await db.prepare("SELECT platform, current_value, pnl, updated_at, (SELECT COALESCE(SUM(amount),0) FROM entries WHERE type = 'transfer' AND transfer_target = investment_snapshots.platform AND transfer_applied = 1) AS invested_total FROM investment_snapshots ORDER BY CASE platform WHEN 'sbi' THEN 1 ELSE 2 END").all()
-        return json(results)
-      }
-      if (m === 'POST' && b === 'restore-empty') {
-        const body = await request.json()
-        if (body?.platform !== 'sbi' ||
-            (body.currentValue !== null && (!Number.isSafeInteger(body.currentValue) || body.currentValue < 0)) ||
-            (body.pnl !== null && !Number.isSafeInteger(body.pnl)) ||
-            (body.currentValue === null && body.pnl === null)) return json({error:'バックアップの資産データを確認してください'},400)
-        // Fill an entirely blank snapshot only; never modify a manually entered SBI valuation.
-        const result = await db.prepare("UPDATE investment_snapshots SET current_value=?1, pnl=?2, updated_at=?3 WHERE platform='sbi' AND current_value IS NULL AND pnl IS NULL")
-          .bind(body.currentValue,body.pnl,new Date().toISOString()).run()
-        return json({ok:true,restored:!!result.meta?.changes})
-      }
-      if (m === 'PUT') {
-        const body = await request.json()
-        const platform = String(body.platform || '')
-        const currentValue = Number(body.currentValue)
-        const pnl = Number(body.pnl)
-        if (platform !== 'sbi' ||
-            !Number.isSafeInteger(currentValue) || currentValue < 0 ||
-            !Number.isSafeInteger(pnl)) return json({ error: '入力内容を確認してください' }, 400)
-        const updatedAt = new Date().toISOString()
-        await db.prepare('INSERT INTO investment_snapshots (platform, current_value, pnl, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(platform) DO UPDATE SET current_value = excluded.current_value, pnl = excluded.pnl, updated_at = excluded.updated_at').bind(platform, currentValue, pnl, updatedAt).run()
-        return json({ platform, current_value: currentValue, pnl, updated_at: updatedAt })
-      }
-    }
-
+    if (a === 'investments') return json({error:'旧版の資産評価APIは廃止されました',code:'deprecated_investments'},410)
     if (a === 'stats' && m === 'GET') {
       const year = url.searchParams.get('year') || ''
       if (year) {

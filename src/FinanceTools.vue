@@ -3,11 +3,11 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { sortOtherLast } from './category-sort.js'
 import { findLedgerDuplicateGroups } from './duplicate-review.js'
 import AmountInput from './AmountInput.vue'
-import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion } from './finance-tools.js'
+import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances } from './finance-tools.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
-const props = defineProps({ active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
+const props = defineProps({ active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -70,6 +70,7 @@ const closingDayFor = name => closingDays.value[name] === 0 ? '末日' : closing
 function selectCardForEdit() {
   if (!selectedCard.value) return
   editedCardName.value = selectedCard.value
+  editSourceType.value=selectedSourceType.value
   cardMode.value = 'edit'
 }
 async function saveClosingDay(name, day) {
@@ -127,6 +128,26 @@ const cardPeriod = computed(() => {
   return {start,end}
 })
 const newPaymentSource = ref('')
+const newSourceType = ref('standard')
+const editSourceType = ref('standard')
+const selectedSourceType = computed(() => props.paymentSourceMeta[selectedCard.value]?.source_type || 'standard')
+async function saveCardType(){
+  if(!selectedCard.value||busy.value)return
+  const kind=editSourceType.value
+  if(kind===selectedSourceType.value)return renameCard()
+  if(editedCardName.value.trim()!==selectedCard.value){
+    cardMessage.value='名称変更と種別変更は分けて保存してください'
+    return
+  }
+  busy.value=true
+  try{
+    await props.api('payment-sources/type',{method:'POST',body:JSON.stringify({name:selectedCard.value,sourceType:kind})})
+    emit('payment-settings-refresh')
+    cardMessage.value='カード種別を更新しました'
+    cardMode.value=''
+  }catch(e){cardMessage.value='種別を保存できませんでした：'+e.message}
+  finally{busy.value=false}
+}
 const cardMessage = ref('')
 // Changing the selected card must replace any unsaved name from the previous card.
 // Keep the editor open so the new card's name and closing day appear immediately.
@@ -190,9 +211,10 @@ async function addPaymentSource() {
   if (busy.value) return
   busy.value = true
   try {
-    await props.api('payment-sources',{method:'POST',body:JSON.stringify({name})})
+    await props.api('payment-sources',{method:'POST',body:JSON.stringify({name,sourceType:newSourceType.value})})
     emit('payment-settings-refresh')
     newPaymentSource.value = ''
+    newSourceType.value = 'standard'
     cardMode.value = ''
     cardMessage.value = name + 'を追加しました'
   } catch(e) { cardMessage.value = 'カードを追加できませんでした：' + e.message }
@@ -372,8 +394,8 @@ async function downloadBackup(){
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
     const snapshot = rows.value.map(row=>({...row}))
     const before = ledgerFingerprint(snapshot)
-    const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio] = await Promise.all([
-      props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
+    const [nextPlans,nextBills,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio] = await Promise.all([
+      props.api('recurring-plans'),props.api('card-bills'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
       props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
     ])
@@ -383,17 +405,17 @@ async function downloadBackup(){
     // Settings have their own write APIs. Read a second time to avoid exporting
     // a mixed ledger/setting revision; a true cross-table snapshot still needs D1.
     const currentSettings = await Promise.all([
-      props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
+      props.api('recurring-plans'),props.api('card-bills'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
       props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
     ])
     if (JSON.stringify(currentSettings) !== JSON.stringify([
-      nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,
+      nextPlans,nextBills,paymentSources,merchantPaymentRules,
       customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio
     ])) throw Error('設定がバックアップ中に変更されました。もう一度実行してください')
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
-      entries:snapshot,plans:nextPlans,bills:nextBills,investments,
+      entries:snapshot,plans:nextPlans,bills:nextBills,
       paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,...portfolio
     })
     const sealed = await sealBackup(data)
@@ -439,11 +461,14 @@ async function restore(){
     message.value='明細が変更されました。バックアップを選び直してください'
     return
   }
+  let prepaidFinal=[]
+  try{prepaidFinal=prepaidRestoreBalances(backup)}
+  catch(e){message.value=e.message;return}
   // Restore in independently atomic, idempotent batches. A failure preserves
   // committed batches and leaves uncommitted drafts visible for safe retry.
   const BATCH_SIZE=150
   // Use the same settings bound as restoreAtomic; guard before any writes.
-  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
+  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
     .reduce((n,key)=>n+(Array.isArray(backup[key])?backup[key].length:0),0)
     + Object.keys(backup.categoryIcons||{}).length
   if(settingTotal<=500){
@@ -462,17 +487,19 @@ async function restore(){
           restoreOwnKeys.value=new Map([...restoreOwnKeys.value,[clientRequestId,transactionKey(e)]])
         }
         const first=offset===0
+        const last=offset+BATCH_SIZE>=sourceRows.length
         const oldIds=new Set(subset.map(e=>Number(e.id)))
         const scopedArchive={...backup,integrity:undefined,entries:atomicRows,
           plans:first?backup.plans:[],bills:first?backup.bills:[],
           paymentSources:first?backup.paymentSources:[],merchantPaymentRules:first?backup.merchantPaymentRules:[],
           customRules:first?backup.customRules:[],categories:first?backup.categories:[],
-          investments:first?backup.investments:[],categoryIcons:first?backup.categoryIcons:{},
+          categoryIcons:first?backup.categoryIcons:{},
           categoryMetadata:first?backup.categoryMetadata:[],
           investmentPlans:first?backup.investmentPlans:[], investmentPlanHistory:first?backup.investmentPlanHistory:[],
           investmentHoldings:first?backup.investmentHoldings:[],fundPrices:first?backup.fundPrices:[],
           transferLinks:(backup.transferLinks||[]).filter(t=>oldIds.has(Number(t.entry_id))),
-          dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id)))}
+          dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id))),
+          prepaidRestoreInProgress:true,prepaidFinalize:last?prepaidFinal:[]}
         const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify(scopedArchive)})
         completed+=result.created
         settingsRestored+=result.settings
@@ -496,6 +523,10 @@ async function restore(){
   }
   // Never silently discard portfolio data from a large backup. For this rare
   // case, keep the archive intact and request a smaller atomic restoration.
+  if(prepaidFinal.length){
+    message.value='プリペイド残高を含む大容量バックアップは分割作業が必要です。誤った残高を復元しないため、処理を中止しました。'
+    return
+  }
   if(['investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks'].some(k=>(backup[k]||[]).length)){
     message.value='投資情報を含む大容量バックアップは一括設定500件以内の分割復元が必要です。既存データは変更していません。'
     return
@@ -504,7 +535,7 @@ async function restore(){
   let count=0,settingsCount=0,skipped=0
   try{
     // Restore settings additively. Existing payment sources, rules, plans, bills
-    // and snapshots always win over uploaded content.
+    // and portfolio holdings always win over uploaded content.
     const existingSources=await props.api('payment-sources')
     const sources=restoreMissingByKey(existingSources,backup.paymentSources||[],x=>x.name)
     for (const source of sources) {
@@ -555,13 +586,7 @@ async function restore(){
       await props.api('card-bills',{method:'POST',body:JSON.stringify(bill)})
       settingsCount++
     }
-    const sbi=(backup.investments||[]).find(x=>x.platform==='sbi')
-    if(sbi && (sbi.current_value === null || Number.isSafeInteger(sbi.current_value)) &&
-       (sbi.pnl === null || Number.isSafeInteger(sbi.pnl)) &&
-       (sbi.current_value !== null || sbi.pnl !== null)){
-      const saved=await props.api('investments/restore-empty',{method:'POST',body:JSON.stringify({platform:'sbi',currentValue:sbi.current_value,pnl:sbi.pnl})})
-      if(saved.restored)settingsCount++;else skipped++
-    }
+    // Older backup investments snapshots are intentionally ignored.
     const restoredIds = new Map()
     for (const e of selectedRows){
       // Stable across retry; source backup identity disambiguates identical purchases.
@@ -766,18 +791,20 @@ async function removeCardBill(record) {
     <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
     <div v-if="cardMode === 'add'" class="finance-inputs card-controls">
       <input v-model="newPaymentSource" maxlength="80" placeholder="新しいカード名・支払方法" aria-label="新しい支払方法">
+      <label>種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">通常の支払方法</option><option value="prepaid">プリペイド（Suica・PASMO等）</option></select></label><p v-if="newSourceType==='prepaid'" class="card-type-hint">期首残高は「資産」画面から設定します。</p>
       <button type="button" @click="addPaymentSource">保存</button>
       <button type="button" @click="cardMode = ''">キャンセル</button>
     </div>
     <div v-if="cardMode === 'edit' && selectedCard" class="card-editor">
       <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
-      <label v-if="!['現金','その他','Suica'].includes(selectedCard)">締め日
+      <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">通常の支払方法</option><option value="prepaid">プリペイド</option></select></label><p v-if="editSourceType==='prepaid'" class="card-type-hint">期首残高の入力・修正は「資産」画面で行います。</p>
+      <label v-if="editSourceType==='standard' && !['現金','その他','其他'].includes(selectedCard)">締め日
         <select :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
           <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
         </select>
       </label>
       <div class="finance-inputs card-edit-actions">
-        <button type="button" :disabled="busy" @click="renameCard">保存</button>
+        <button type="button" :disabled="busy" @click="saveCardType">{{editSourceType!==selectedSourceType?'種別を保存':'保存'}}</button>
         <button type="button" :disabled="busy" @click="cardMode = ''">閉じる</button>
         <button v-if="selectedCard !== '現金'" type="button" :disabled="busy" @click="removePaymentSource(selectedCard)">削除</button>
       </div>
@@ -868,7 +895,7 @@ async function removeCardBill(record) {
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>カード別利用額</h2>
     <div class="finance-inputs card-billing-fields">
-      <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in orderedPayments.filter(x => !['現金','その他','Suica'].includes(x))" :key="source" :value="source">{{source}}</option><option v-if="bill.name && !props.paymentSources.includes(bill.name)" :value="bill.name">{{bill.name}}（既存の設定）</option></select></label>
+      <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in orderedPayments.filter(x => !['現金','その他','其他'].includes(x) && props.paymentSourceMeta[x]?.source_type!=='prepaid')" :key="source" :value="source">{{source}}</option><option v-if="bill.name && !props.paymentSources.includes(bill.name)" :value="bill.name">{{bill.name}}（既存の設定）</option></select></label>
       <label>締め月<input class="card-closing-month" v-model="bill.month" type="month" aria-label="締め月"></label>
       <label>利用額<output class="card-usage-total" aria-live="polite">{{loaded && bill.name && cardPeriod ? yen(cardTotal) : "—"}}</output></label>
     </div>

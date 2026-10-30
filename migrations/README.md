@@ -126,3 +126,16 @@ Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=
 **本番D1の移行は未実施。** GitHubコミット・ローカルSQLite検証はCloudflare D1の本番書き込みやCI成功を証明しない。移行前にアプリを表示した場合、投資用APIは503になり、旧 `investment_snapshots` は別の表示領域に残る。Actionsは現在workflow_dispatchのみで、勝手な無料枠消費はしない。
 
 撤回が必要なら旧 `investment_snapshots` と `entries` はそのまま保持されているため、表示を切り戻せる。新規投資表を削除するのは別途バックアップと明示承認がある場合だけ。
+
+
+## 2026-10-30: 0007 — 交通系ICプリペイド（Suica / PASMO）
+
+- 現行 `payment_sources` に `source_type`, `opening_balance`, `opening_date`, `opening_entry_id` の **4列だけ追加**する。新しいデータ表の作成、既存行の更新、種別の自動判定・変更は行わない。
+- `entries.transfer_target='prepaid:Suica'` 等をプリペイドへのチャージ先に使用し、チャージは `transfer`（生活費の支出合計に含めない）、実利用は `expense`（支出に含める）。残高は期首残高＋期首以降のチャージ－期首以降の支出から取得し、別に残高数値を保存しない。
+- 既にある取引の種別や支払先は **自動変更しない**。ユーザーがカードをプリペイドに切り替えた時点を起点にし、実残高を「資産」画面で入力する。古い明細を巻き戻して再集計しない。
+- 本番 D1 に 0007 を**一度だけ**明示適用する。既存 `payment_sources` の列を `PRAGMA table_info(payment_sources)` で事前確認し、すでに適用済みなら再実行しない。適用は確認後、次のコマンド（`wrangler.toml` が本番DBを指すことを確認）:
+  ```bash
+  npx wrangler d1 execute kakeibo --remote --file=./migrations/0007_prepaid_card_assets.sql
+  ```
+- `investment_snapshots` は新規DBの `schema.sql` で作成せず、実行時の API・自動取得・バックアップ・復元から完全に切り離した。旧エンドポイント `/api/investments` は 410。古い v1–v3 バックアップの `investments` データは検証可能だが、書き戻しはしない。**本番の旧テーブルとデータは削除しない**。
+- `migrations/0006_sbi_portfolio_linkage.sql` に関する上記の「移行未実施」「旧画面に表示」「自動NAV未実装」の記述は当時の履歴であり、2026-10-30の現行構成・進捗の説明ではない。SBI保有管理・NAVの更新用Workerは独立して維持する。

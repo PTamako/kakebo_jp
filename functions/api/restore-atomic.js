@@ -6,7 +6,7 @@ import { validateBackup } from '../../src/finance-tools.js'
 export async function restoreAtomic(db, archive) {
   validateBackup(archive)
   const entries = archive.entries
-  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
+  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills' ,'dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
   // A bounded single transaction is preferable to pretending a many-request
   // restore is atomic. The older resumable path remains for large archives.
@@ -19,10 +19,26 @@ export async function restoreAtomic(db, archive) {
   if (entries.some(e=>!validText(e.merchant ?? '',500) && e.merchant !== '' && e.merchant != null) ||
       entries.some(e=>typeof e.note==='string' && e.note.length>2000))
     throw Error('atomic_restore_invalid_entries')
+  const prepaidSources=(archive.paymentSources||[]).filter(x=>x?.source_type==='prepaid')
+  const prepaidFinal=archive.prepaidFinalize||[]
+  if((prepaidSources.length||prepaidFinal.length) && archive.prepaidRestoreInProgress!==true)
+    throw Error('atomic_restore_prepaid_requires_review')
+  if(!Array.isArray(prepaidFinal)||prepaidFinal.length>100 ||
+    prepaidFinal.some(x=>!validText(x?.name,80)||!Number.isSafeInteger(x?.openingBalance)||x.openingBalance<0||x.openingBalance>100000000))
+    throw Error('atomic_restore_invalid_prepaid')
+  if(prepaidSources.length||prepaidFinal.length){
+    const {results:cols}=await db.prepare('PRAGMA table_info(payment_sources)').all()
+    if(!['source_type','opening_balance','opening_date','opening_entry_id'].every(k=>cols.some(x=>x.name===k)))
+      throw Error('atomic_restore_prepaid_requires_migration')
+  }
   const statements=[]
   const add = (sql,...args) => statements.push(db.prepare(sql).bind(...args))
-  for (const s of archive.paymentSources||[]) {
-    add("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END,?2)",s.name,s.closing_day??null)
+  for (const source of archive.paymentSources||[]) {
+    if(source.source_type==='prepaid'){
+      add("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day,source_type,opening_balance,opening_date,opening_entry_id) VALUES(?1,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE sort_order<99999),?2,'prepaid',0,'__restore_pending__',0)",source.name,source.closing_day??null)
+    }else{
+      add("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END,?2)",source.name,source.closing_day??null)
+    }
   }
   const preferred=(archive.paymentSources||[]).find(s=>s.is_default)
   if(preferred)add('UPDATE payment_sources SET is_default=1 WHERE name=?1 AND NOT EXISTS(SELECT 1 FROM payment_sources WHERE is_default=1)',preferred.name)
@@ -50,13 +66,9 @@ export async function restoreAtomic(db, archive) {
     add('INSERT INTO merchant_rules(keyword,payment_source) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM payment_sources WHERE name=?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=COALESCE(merchant_rules.payment_source,excluded.payment_source)',rule.keyword,rule.payment_source)
   }
   for(const bill of archive.bills||[])add('INSERT OR IGNORE INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6)',bill.name,bill.month,bill.start,bill.end,bill.total,bill.count)
-  const sbi=(archive.investments||[]).find(x=>x.platform==='sbi')
-  if(sbi && (sbi.current_value!==null || sbi.pnl!==null)) {
-    add("UPDATE investment_snapshots SET current_value=?1,pnl=?2,updated_at=?3 WHERE platform='sbi' AND current_value IS NULL AND pnl IS NULL",
-      sbi.current_value,sbi.pnl,new Date().toISOString())
-  }
+  // Legacy v1-v3 investments snapshots are accepted but never restored.
   // Optional v4 portfolio data. Restore is insert-only and never replaces
-  // the newer local holdings, allocations, prices or legacy SBI snapshots.
+  // the newer local holdings, allocations or prices.
   for(const p of archive.investmentPlans||[])
     add('INSERT OR IGNORE INTO investment_plans(fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7)',
       p.fund_code,p.account_type,p.fund_name,p.monthly_amount,p.order_day,p.enabled,p.updated_at||new Date().toISOString())
@@ -72,12 +84,12 @@ export async function restoreAtomic(db, archive) {
   const insertStart=statements.length
   for(const e of entries) {
     const type=e.type, transfer=type==='transfer'
-    const target=transfer && e.transfer_target==='sbi'?'sbi':null
+    const target=transfer && (e.transfer_target==='sbi' || /^prepaid:[^:]{1,80}$/.test(e.transfer_target||'')) ? e.transfer_target : null
     const transferDate=transfer?(e.transfer_date||e.date):null
     // Applied status is a derived fact, NEVER trust a backup's flag for
     // future-dated SBI transfers. Preserve the manual valuation separately.
     const tokyoToday=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10)
-    const transferApplied=target && transferDate<=tokyoToday ? 1 : 0
+    const transferApplied=target==='sbi' && transferDate<=tokyoToday ? 1 : 0
     if(transfer && transferDate!==null && !/^\d{4}-\d{2}-\d{2}$/.test(transferDate))throw Error('atomic_restore_invalid_transfer_date')
     add('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING',
       e.date,e.time||'',Number(e.amount),transfer?'投資・資産移動':e.category||'其他',e.merchant||'',e.note||'',String(e.raw||'').slice(0,2000),
@@ -97,6 +109,12 @@ export async function restoreAtomic(db, archive) {
     if(e)add("INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) SELECT id,?1 FROM entries WHERE client_request_id=?2 AND type='transfer' AND transfer_target='sbi'",
       link.purchase_month,e.clientRequestId)
   }
+  // Only the card inserted by this restore has the temporary marker. Existing
+  // records and their manually entered opening balances are never overwritten.
+  const restoredAt=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+  for(const card of prepaidFinal)
+    add("UPDATE payment_sources SET opening_balance=?1,opening_date=?2,opening_entry_id=(SELECT COALESCE(MAX(id),0) FROM entries) WHERE name=?3 AND source_type='prepaid' AND opening_date='__restore_pending__'",
+      card.openingBalance,restoredAt,card.name)
   for(const plan of archive.plans||[])add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
     plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0)
   if(!statements.length) return {ok:true,created:0,settings:0,skipped:0}

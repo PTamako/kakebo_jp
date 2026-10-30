@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
+import { prepaidRestoreBalances } from '../src/finance-tools.js'
 const approvedPost = (plan, month = '2026-10') => ({
   planId:plan.id,month,
   expected:{name:plan.name,amount:plan.amount,day:plan.day,category:plan.category,
@@ -111,17 +112,12 @@ test('actual SQLite: manual and old automated recurring conflicts, idempotency a
   }finally{db.close()}
 })
 
-test('actual SQLite: restoring a snapshot only fills an entirely blank SBI row',async()=>{
+test('actual SQLite: deprecated snapshot APIs return 410 with no legacy table access',async()=>{
   const {db,call}=await createClient()
-  try {
-    let restored=await call('investments/restore-empty','POST',{platform:'sbi',currentValue:70000,pnl:2000})
-    assert.equal(restored.status,200)
-    assert.equal(restored.body.restored,true)
-    restored=await call('investments/restore-empty','POST',{platform:'sbi',currentValue:90000,pnl:10000})
-    assert.equal(restored.body.restored,false)
-    const rows=(await call('investments')).body
-    assert.equal(rows.find(x=>x.platform==='sbi').current_value,70000)
-    assert.equal(rows.find(x=>x.platform==='sbi').pnl,2000)
+  try{
+    assert.equal((await call('investments')).status,410)
+    assert.equal((await call('investments/restore-empty','POST',{platform:'sbi',currentValue:70000,pnl:2000})).status,410)
+    assert.equal((await call('investments','PUT',{platform:'sbi',currentValue:70000,pnl:2000})).status,410)
   }finally{db.close()}
 })
 
@@ -409,7 +405,6 @@ test('actual SQLite: backup snapshot reads the same consistent entries and setti
   const {db,call}=await createClient()
   try{
     assert.equal((await call('entries','POST',{date:'2026-10-03',amount:321,type:'expense',merchant:'検証店舗'})).status,200)
-    await call('investments') // establish the SBI snapshot
     const result=await call('backup-snapshot')
     assert.equal(result.status,200)
     assert.equal(result.body.format,'kakeibo-ledger-backup')
@@ -418,7 +413,7 @@ test('actual SQLite: backup snapshot reads the same consistent entries and setti
     assert.equal(result.body.entries[0].amount,321)
     assert.ok(Array.isArray(result.body.paymentSources))
     assert.ok(Array.isArray(result.body.plans))
-    assert.ok(Array.isArray(result.body.investments))
+    assert.equal(Object.hasOwn(result.body,'investments'),false)
   }finally{db.close()}
 })
 
@@ -517,14 +512,14 @@ test('manual-only legacy cleanup succeeds after both migrations and leaves ledge
     assert.equal((await call('entries','POST',{date:'2026-10-29',amount:1234,merchant:'テスト費用',type:'expense'})).status,200)
     assert.equal((await call('backup-snapshot')).status,200)
     const before=db.db.prepare("SELECT amount FROM entries WHERE merchant='テスト費用'").get().amount
-    const sbiBefore=db.db.prepare("SELECT current_value,pnl FROM investment_snapshots WHERE platform='sbi'").get()
+    const holdingsBefore=db.db.prepare('SELECT COUNT(*) AS n FROM investment_holdings').get()
     const cleanup=readFileSync(new URL('../migrations/0005_cleanup_legacy_rule_and_category_tables.sql',import.meta.url),'utf8')
     db.db.exec(cleanup)
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('custom_rules','merchant_payment_rules','category_sort_order','category_icons')").get().n,0)
     assert.deepEqual({...db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='移行済の店'").get()},{category:'宠物',payment_source:'現金'})
     assert.deepEqual({...db.db.prepare("SELECT sort_order,icon FROM category_source WHERE category='移行済カテゴリ'").get()},{sort_order:23,icon:'books'})
     assert.equal(db.db.prepare("SELECT amount FROM entries WHERE merchant='テスト費用'").get().amount,before)
-    assert.deepEqual(db.db.prepare("SELECT current_value,pnl FROM investment_snapshots WHERE platform='sbi'").get(),sbiBefore)
+    assert.deepEqual(db.db.prepare('SELECT COUNT(*) AS n FROM investment_holdings').get(),holdingsBefore)
     assert.equal((await call('custom-rules')).status,200)
     assert.equal((await call('category-icons')).body['移行済カテゴリ'],'books')
   }finally{db.close()}
@@ -576,4 +571,74 @@ test('missing previously migrated schema fails without automatic ALTER TABLE or 
     assert.deepEqual(after,before)
     assert.equal(after.includes('display_name'),false)
   }finally{db.close()}
+})
+
+test('actual SQLite: Suica and PASMO prepaid balances are ledger-derived, and opening edits never insert transactions',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    const add=await call('payment-sources','POST',{name:'Suica',sourceType:'prepaid'})
+    assert.equal(add.status,200)
+    assert.equal((await call('payment-sources','POST',{name:'PASMO',sourceType:'prepaid'})).status,200)
+    const cards=(await call('payment-sources')).body
+    assert.equal(cards.find(x=>x.name==='Suica').source_type,'prepaid')
+    assert.equal(cards.find(x=>x.name==='PASMO').source_type,'prepaid')
+    assert.equal((await call('prepaid-assets/opening','POST',{name:'Suica',openingBalance:1000})).status,200)
+    assert.equal((await call('prepaid-assets/opening','POST',{name:'PASMO',openingBalance:500})).status,200)
+    const before=db.db.prepare('SELECT COUNT(*) AS n FROM entries').get().n
+    assert.equal(before,0)
+    const topup=await call('entries','POST',{date:today,time:'10:00',amount:3000,type:'transfer',merchant:'Suica チャージ',transferTarget:'prepaid:Suica',transferDate:today,paymentSource:'三井住友カード',clientRequestId:'prepaid_suica_topup_1'})
+    assert.equal(topup.status,200,JSON.stringify(topup.body))
+    const spend=await call('entries','POST',{date:today,time:'11:00',amount:220,type:'expense',merchant:'電車',paymentSource:'Suica',clientRequestId:'prepaid_suica_spend_1'})
+    assert.equal(spend.status,200,JSON.stringify(spend.body))
+    const state=await call('prepaid-assets')
+    assert.equal(state.status,200,JSON.stringify(state.body))
+    const suica=state.body.cards.find(x=>x.name==='Suica')
+    assert.equal(suica.opening_balance,1000)
+    assert.equal(suica.charged,3000)
+    assert.equal(suica.spent,220)
+    assert.equal(suica.balance,3780)
+    assert.equal(state.body.cards.find(x=>x.name==='PASMO').balance,500)
+    assert.equal(db.db.prepare("SELECT type,transfer_target,transfer_applied FROM entries WHERE merchant='Suica チャージ'").get().transfer_applied,0)
+    assert.equal(state.body.recharges.length,1)
+    assert.equal((await call('prepaid-assets/opening','POST',{name:'Suica',openingBalance:1200})).status,200)
+    assert.equal((await call('prepaid-assets')).body.cards.find(x=>x.name==='Suica').balance,3980)
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM entries').get().n,2)
+    assert.equal((await call('entries','POST',{date:today,amount:999,type:'transfer',transferTarget:'prepaid:NotRegistered'})).status,400)
+    assert.equal((await call('payment-sources/type','POST',{name:'Suica',sourceType:'standard'})).status,409)
+    const renamed=await call('payment-sources/rename','POST',{oldName:'Suica',newName:'Suica 交通'})
+    assert.equal(renamed.status,200,JSON.stringify(renamed.body))
+    const postRename=(await call('prepaid-assets')).body.cards.find(x=>x.name==='Suica 交通')
+    assert.equal(postRename.balance,3980)
+    assert.equal(db.db.prepare("SELECT transfer_target FROM entries WHERE merchant='Suica チャージ'").get().transfer_target,'prepaid:Suica 交通')
+    const archive=await call('backup-snapshot')
+    assert.equal(archive.status,200)
+    assert.equal(Object.hasOwn(archive.body,'investments'),false)
+    assert.equal(archive.body.paymentSources.find(x=>x.name==='Suica 交通').opening_balance,1200)
+  }finally{db.close()}
+})
+
+test('actual SQLite: backup restores prepaid current balance once, without replaying existing charges twice',async()=>{
+  const source=await createClient(),target=await createClient()
+  try{
+    const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    await source.call('payment-sources','POST',{name:'Suica',sourceType:'prepaid'})
+    await source.call('prepaid-assets/opening','POST',{name:'Suica',openingBalance:900})
+    await source.call('entries','POST',{date:today,amount:2500,type:'transfer',merchant:'Suica チャージ',transferTarget:'prepaid:Suica',transferDate:today})
+    await source.call('entries','POST',{date:today,amount:180,type:'expense',merchant:'鉄道',paymentSource:'Suica'})
+    const archive=(await source.call('backup-snapshot')).body
+    const baseline=prepaidRestoreBalances(archive)
+    assert.deepEqual(baseline,[{name:'Suica',openingBalance:3220}])
+    const input={...archive,prepaidRestoreInProgress:true,prepaidFinalize:baseline,
+      entries:archive.entries.map((e,i)=>({...e,clientRequestId:'restore_'+String(i+1).padStart(32,'0')}))}
+    const applied=await target.call('restore-atomic','POST',input)
+    assert.equal(applied.status,200,JSON.stringify(applied.body))
+    assert.equal(applied.body.created,2)
+    const restored=(await target.call('prepaid-assets')).body.cards.find(x=>x.name==='Suica')
+    assert.equal(restored.balance,3220)
+    assert.equal(restored.charged,0)
+    assert.equal(restored.spent,0)
+    assert.equal((await target.call('restore-atomic','POST',input)).body.created,0)
+    assert.equal((await target.call('prepaid-assets')).body.cards.find(x=>x.name==='Suica').balance,3220)
+  }finally{source.db.close();target.db.close()}
 })

@@ -218,7 +218,6 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
         <div class="sbi-hero-foot"><span>取得金額 <strong>{{yen(totalAcquisition)}}</strong></span><span>基準日は銘柄ごとに表示</span></div>
       </section>
         </details>
-        <p class="sbi-card-note">自動取得は対応銘柄のみ。保有口数・取得金額は手入力です。</p>
         </div>
       </details>
 
@@ -351,7 +350,6 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
 .sbi-action-list{position:absolute;z-index:5;right:0;top:calc(100% + 5px);min-width:152px;padding:5px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 9px 24px #00000018;display:grid;gap:3px}
 .sbi-action-list button{min-height:43px;text-align:left;border:0;border-radius:8px;background:transparent;padding:9px;color:var(--ink);font-size:12px;white-space:nowrap}
 .sbi-action-list button:active{background:var(--paper)}
-.sbi-card-note{border-top:1px solid var(--line);padding:10px 0 0;margin:2px 0 0;font-size:11px;line-height:1.55;color:var(--muted)}
 .sbi-plan-total{align-items:flex-end;padding:6px 0 13px}
 .sbi-plan-total>div:first-child{display:grid;gap:1px}.sbi-plan-total span{font-size:11px;color:var(--muted)}
 .sbi-plan-total strong{font-size:24px;font-variant-numeric:tabular-nums}.sbi-plan-total strong small{font-size:11px;font-weight:600;color:var(--muted)}

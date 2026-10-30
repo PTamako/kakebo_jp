@@ -806,16 +806,17 @@ const swipedEntryId = ref(null)
 const swipedReceiptId = ref(null)
 const filteredEntries = computed(() => entries.value.filter(e => String(e.date || '').startsWith(month.value) && (!selectedDay.value || String(e.date || '').slice(0, 10) === selectedDay.value)))
 const detailFilter = ref(null)
-const prepaidHistoryFilter = ref('')
-// Prepaid history shows the selected month, limited to registered prepaid cards.
+const prepaidHistoryFilter = ref(null)
+// Histories are scoped to one actual prepaid card, never all transport cards.
 const matchesPrepaidHistory = entry => {
-  if (!prepaidHistoryFilter.value) return true
-  if (prepaidHistoryFilter.value === 'charge')
-    return entry.type === 'transfer' && prepaidSources.value.some(name => entry.transfer_target === prepaidTarget(name))
-  return entry.type === 'expense' && prepaidSources.value.includes(entry.payment_source)
+  const filter = prepaidHistoryFilter.value
+  if (!filter) return true
+  if (filter.kind === 'charge')
+    return entry.type === 'transfer' && entry.transfer_target === prepaidTarget(filter.card)
+  return filter.kind === 'usage' && entry.type === 'expense' && entry.payment_source === filter.card
 }
-async function openPrepaidHistoryDetails(kind) {
-  if (kind !== 'charge' && kind !== 'usage') return
+async function openPrepaidHistoryDetails(cardName,kind) {
+  if (!prepaidSources.value.includes(cardName) || !['charge','usage'].includes(kind)) return
   detailRequestId++
   detailLoading.value = false
   detailFilter.value = null
@@ -824,7 +825,7 @@ async function openPrepaidHistoryDetails(kind) {
   visibleEntryCount.value = 20
   calendarExpanded.value = false
   preserveOperatedDay.value = ''
-  prepaidHistoryFilter.value = kind
+  prepaidHistoryFilter.value = { card:cardName, kind }
   entryTypeFilter.value = kind === 'charge' ? 'transfer' : 'expense'
   const targetMonth = currentMonth()
   const changedMonth = month.value !== targetMonth
@@ -853,7 +854,7 @@ const displayEntries = computed(() => {
   return narrowed.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
 })
 function setEntryTypeFilter(value) {
-  prepaidHistoryFilter.value = ''
+  prepaidHistoryFilter.value = null
   detailRequestId++
   detailLoading.value = false
   entryTypeFilter.value = value
@@ -926,7 +927,7 @@ async function fetchPeriodDetailRows(period, requestId = null) {
   return rows
 }
 async function openCategoryDetails(category, type, period, paymentMethod = '') {
-  prepaidHistoryFilter.value = ''
+  prepaidHistoryFilter.value = null
   detailFilter.value = { category, type, period, paymentMethod }
   entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
   selectedDay.value = ''
@@ -953,7 +954,7 @@ async function refreshDetailSource() {
 }
 function clearDetailFilter() {
   if (prepaidHistoryFilter.value) entryTypeFilter.value = 'all'
-  prepaidHistoryFilter.value = ''
+  prepaidHistoryFilter.value = null
   detailRequestId++
   detailLoading.value = false
   detailFilter.value = null
@@ -966,7 +967,7 @@ let touchStartY = 0
 let suppressRowClick = false
 const calendarEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : entries.value
-  return source.filter(entryMatchesType).filter(entry => !detailFilter.value || (
+  return source.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !detailFilter.value || (
     detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) :
     detailFilter.value.type === 'transfer' ? entry.type === 'transfer' :
     entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer')
@@ -1008,7 +1009,7 @@ const visibleCalendarDays = computed(() => {
   return calendarDays.value.slice(start, start + 7)
 })
 function openLedgerFromNav() {
-  prepaidHistoryFilter.value = ''
+  prepaidHistoryFilter.value = null
   detailFilter.value = null
   entryTypeFilter.value = 'all'
   selectedDay.value = ''
@@ -1151,6 +1152,7 @@ const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCatego
 const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
 function openMonthDetails(point, type) {
   if (!point?.month || !['income', 'expense'].includes(type)) return
+  prepaidHistoryFilter.value = null
   detailRequestId++
   detailLoading.value = false
   detailFilter.value = null

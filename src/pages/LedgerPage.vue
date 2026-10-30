@@ -23,7 +23,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
       <div v-if="prepaidHistoryFilter" class="detail-filter-strip"><span>交通系IC・プリペイドの{{ prepaidHistoryFilter === 'charge' ? 'チャージ' : '利用' }}に絞り込み中</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
       <div v-if="detailFilter" class="detail-filter-strip"><span>{{ detailFilter.type === 'transfer' ? '資産移動で絞り込み中' : 'カテゴリで絞り込み中' }}</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
       <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
-      <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter ? 'このカテゴリの明細はありません' : 'この期間の記録はありません' }}</strong><button v-if="detailFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
+      <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter || prepaidHistoryFilter ? '該当する明細はありません' : 'この期間の記録はありません' }}</strong><button v-if="detailFilter || prepaidHistoryFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
       
       <div v-if="!detailLoading && displayEntries.length && annualDetailMode" class="ledger annual-month-list">
         <section v-for="group in annualMonthGroups" :key="group.month" class="entry-day-group">

@@ -80,7 +80,7 @@ onMounted(()=>{if(props.active)void refresh()})
             <p v-if="card.transferred_out > 0" class="wallet-outgoing">振替出金 <strong>−{{money(card.transferred_out)}}</strong></p>
             <div class="wallet-row-actions">
               <nav class="wallet-history-links" :aria-label="card.name+'の履歴'">
-                <button type="button" :aria-label="card.name+'の利用履歴'" @click="emit('open-history',card.name,'usage')">利用履歴</button>
+                <button type="button" :aria-label="card.name+'の利用・振替履歴'" @click="emit('open-history',card.name,'usage')">利用・振替履歴</button>
                 <button type="button" :aria-label="card.name+'のチャージ履歴'" @click="emit('open-history',card.name,'charge')">チャージ履歴</button>
               </nav>
               <button type="button" class="wallet-edit" :aria-label="card.name+'の期首残高を編集'" @click="startOpening(card)">期首残高</button>
@@ -95,7 +95,7 @@ onMounted(()=>{if(props.active)void refresh()})
     <div v-if="selected" class="wallet-overlay" @click.self="selected=null">
       <form class="wallet-opening-editor" role="dialog" aria-modal="true" :aria-label="selected.name+'の期首残高'" @submit.prevent="saveOpening">
         <div class="wallet-opening-title">{{selected.name}} の期首残高</div>
-        <p class="wallet-hint">{{selected.opening_date}}時点の残高。以後のチャージ・利用から現在残高を計算します。</p>
+        <p class="wallet-hint">{{selected.opening_date}}時点の残高。以後のチャージ・利用・振替から現在残高を計算します。</p>
         <label>期首残高（円）<input v-model.number="openingDraft" type="number" step="1" min="0" max="100000000" required /></label>
         <div class="wallet-editor-actions"><button type="button" @click="selected=null" :disabled="saving">キャンセル</button><button type="submit" :disabled="saving">{{saving?'保存中…':'保存'}}</button></div>
       </form>
@@ -125,7 +125,7 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-name strong{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
 .wallet-name small{color:var(--muted);font-size:10px;line-height:1.3}
 .wallet-money{display:grid;justify-items:end;gap:1px;flex:none;max-width:48%;font-variant-numeric:tabular-nums;text-align:right}
-.wallet-money strong{font-size:17px;line-height:1.35;white-space:nowrap}
+.wallet-money strong{font-size:17px;line-height:1.35;overflow-wrap:anywhere}
 .wallet-money small{font-size:10px;line-height:1.3;color:var(--muted)}
 .wallet-negative strong,.wallet-negative small:last-child{color:#c54d68}
 .wallet-card-flow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;min-width:0}

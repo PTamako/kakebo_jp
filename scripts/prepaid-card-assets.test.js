@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {detectPrepaidRecharge,prepaidTarget,prepaidBalance} from '../src/prepaid-card.js'
-import {prepaidRestoreBalances} from '../src/finance-tools.js'
+import {prepaidRestoreBalances,isFuturePrepaidMovement} from '../src/finance-tools.js'
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 
 test('recharge detector requires an explicitly registered transit card and recharge wording',()=>{
@@ -38,7 +38,7 @@ test('card settings own type only; asset page owns opening balance field',()=>{
   assert.match(finance,/<option value="prepaid">プリペイドカード(?:（Suica・PASMO等）)?<\/option>/)
   assert.doesNotMatch(finance,/<option value="standard">通常の支払方法<\/option>/)
   assert.doesNotMatch(finance,/v-model(?:\.number)?="openingBalance"|v-model(?:\.number)?="editOpeningBalance"/)
-  assert.match(finance,/期首残高は「資産」で設定できます。/)
+  assert.match(finance,/期首残高は「残高」で設定できます。/)
   assert.match(assets,/class="wallet-opening-title"/)
   assert.match(assets,/@click="startOpening\(card\)"/)
   assert.match(assets,/role="dialog" aria-modal="true"/)
@@ -105,8 +105,12 @@ test('portable restore preserves wallet-to-wallet conservation and respects futu
     {name:'Suica',openingBalance:3500},
     {name:'PASMO',openingBalance:3000}
   ])
-  assert.throws(
-    ()=>prepaidRestoreBalances({...source,entries:[...source.entries,{id:4,date:today,type:'transfer',amount:300,payment_source:'Suica',transfer_target:'prepaid:PASMO',transfer_date:'2026-11-01'}]},today),
-    /将来日のプリペイド明細/
-  )
+  const future={id:4,date:today,type:'transfer',amount:300,payment_source:'Suica',transfer_target:'prepaid:PASMO',transfer_date:'2026-11-01'}
+  assert.equal(isFuturePrepaidMovement(future,['Suica','PASMO'],today),true)
+  // The future transfer stays out of the initial balance, and the restore
+  // must append it AFTER the newly rebased anchor.
+  assert.deepEqual(prepaidRestoreBalances({...source,entries:[...source.entries,future]},today),[
+    {name:'Suica',openingBalance:3500},
+    {name:'PASMO',openingBalance:3000}
+  ])
 })

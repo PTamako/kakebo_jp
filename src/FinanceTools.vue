@@ -5,12 +5,12 @@ import { findLedgerDuplicateGroups } from './duplicate-review.js'
 import AmountInput from './AmountInput.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
-import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances } from './finance-tools.js'
+import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings } from './finance-tools.js'
 import { isCardBilledEntry } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
-const props = defineProps({ active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
+const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -81,6 +81,7 @@ watch([() => props.active, managementTab], ([active,tab]) => {
 })
 
 const cardMode = ref('')
+watch(()=>props.cardSettingsRequest,()=>{managementTab.value='cards';cardMode.value='add'})
 const selectedCard = ref('')
 const editedCardName = ref('')
 const closingDays = computed(() => props.paymentClosingDays)
@@ -334,9 +335,9 @@ async function togglePlanEnabled(item) {
     await props.api('recurring-plans/'+encodeURIComponent(item.id),{method:'PUT',body:JSON.stringify({...item,enabled:!item.enabled})})
     plans.value=await props.api('recurring-plans')
     recurringPreview.value=[]
-    recurringMessage.value=item.enabled?'固定支出を停止しました':'固定支出を再開しました。登録前に確認してください'
+    recurringMessage.value=item.enabled?'固定費を停止しました':'固定費を再開しました。登録前に確認してください'
     if(editingPlanId.value===item.id)cancelPlanEdit()
-  }catch(e){recurringMessage.value='固定支出の状態を変更できませんでした：'+e.message}
+  }catch(e){recurringMessage.value='固定費の状態を変更できませんでした：'+e.message}
   finally{recurringBusy.value=false}
 }
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
@@ -497,177 +498,83 @@ async function restore(){
     message.value='明細が変更されました。バックアップを選び直してください'
     return
   }
+  const restoreToday=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
   let prepaidFinal=[]
-  try{prepaidFinal=prepaidRestoreBalances(backup)}
+  try{prepaidFinal=prepaidRestoreBalances(backup,restoreToday)}
   catch(e){message.value=e.message;return}
-  // Restore in independently atomic, idempotent batches. A failure preserves
-  // committed batches and leaves uncommitted drafts visible for safe retry.
-  const BATCH_SIZE=150
-  // Use the same settings bound as restoreAtomic; guard before any writes.
-  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
-    .reduce((n,key)=>n+(Array.isArray(backup[key])?backup[key].length:0),0)
-    + Object.keys(backup.categoryIcons||{}).length
-  if(settingTotal<=500){
-    busy.value=true
-    let completed=0,settingsRestored=0,alreadyPresent=0
-    try{
-      const sourceRows=selectedRows.length ? selectedRows : [null]
-      for(let offset=0;offset<sourceRows.length;offset+=BATCH_SIZE){
-        const subset=sourceRows.slice(offset,offset+BATCH_SIZE).filter(Boolean)
-        const atomicRows=[]
-        for(const e of subset){
-          const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
-          const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
-          const clientRequestId='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
-          atomicRows.push({...e,clientRequestId})
-          restoreOwnKeys.value=new Map([...restoreOwnKeys.value,[clientRequestId,transactionKey(e)]])
-        }
-        const first=offset===0
-        const last=offset+BATCH_SIZE>=sourceRows.length
-        const oldIds=new Set(subset.map(e=>Number(e.id)))
-        const scopedArchive={...backup,integrity:undefined,entries:atomicRows,
-          plans:first?backup.plans:[],bills:first?backup.bills:[],
-          paymentSources:first?backup.paymentSources:[],merchantPaymentRules:first?backup.merchantPaymentRules:[],
-          customRules:first?backup.customRules:[],categories:first?backup.categories:[],
-          categoryIcons:first?backup.categoryIcons:{},
-          categoryMetadata:first?backup.categoryMetadata:[],
-          investmentPlans:first?backup.investmentPlans:[], investmentPlanHistory:first?backup.investmentPlanHistory:[],
-          investmentHoldings:first?backup.investmentHoldings:[],fundPrices:first?backup.fundPrices:[],
-          transferLinks:(backup.transferLinks||[]).filter(t=>oldIds.has(Number(t.entry_id))),
-          dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id))),
-          prepaidRestoreInProgress:true,prepaidFinalize:last?prepaidFinal:[]}
-        const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify(scopedArchive)})
-        completed+=result.created
-        settingsRestored+=result.settings
-        alreadyPresent+=result.skipped
-        for(const e of subset){
-          restoreRows.value=restoreRows.value.filter(row=>row.backupIndex!==e.backupIndex)
-          restoreConflicts.value=restoreConflicts.value.filter(row=>row.backupIndex!==e.backupIndex)
-        }
-        message.value=`復元中 ${Math.min(offset+BATCH_SIZE,sourceRows.length)}/${sourceRows.length}件`
-      }
-      loaded.value=false;backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
-      restoreIncludeConflicts.value=false;restoreOwnKeys.value=new Map()
-      message.value=`復元完了：明細 ${completed}件・設定 ${settingsRestored}件（重複除外 ${alreadyPresent}件）`
-      await loadFinanceSettings()
-      emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
-    }catch(e){
-      ledgerDirty=true
-      message.value=`復元を中断しました。完了済み ${completed}件は保持されます。再試行可能：${e.message}`
-    }finally{busy.value=false}
-    return
+  // Each server call is atomic; a large restore remains resumable without
+  // silently dropping display metadata, investment holdings, or custom settings.
+  // Always stage prepaid future-dated movements after the restored balance anchor.
+  const BATCH_SIZE=80
+  const prepaidNames=(backup.paymentSources||[]).filter(x=>x.source_type==='prepaid').map(x=>x.name)
+  const deferredRows=selectedRows.filter(e=>isFuturePrepaidMovement(e,prepaidNames,restoreToday))
+  const regularRows=selectedRows.filter(e=>!isFuturePrepaidMovement(e,prepaidNames,restoreToday))
+  const chunk=(items,size=BATCH_SIZE)=>{
+    const batches=[]
+    for(let i=0;i<items.length;i+=size)batches.push(items.slice(i,i+size))
+    return batches
   }
-  // Never silently discard portfolio data from a large backup. For this rare
-  // case, keep the archive intact and request a smaller atomic restoration.
-  if(prepaidFinal.length){
-    message.value='プリペイド残高を含む大容量バックアップは分割作業が必要です。誤った残高を復元しないため、処理を中止しました。'
-    return
+  const settingsJobs=chunkRestoreSettings(backup,BATCH_SIZE).map(settings=>({settings,rows:[],deferred:[]}))
+  const regularJobs=chunk(regularRows).map(rows=>({settings:{},rows,deferred:[]}))
+  const jobs=[...settingsJobs,...regularJobs]
+  if(!jobs.length)jobs.push({settings:{},rows:[],deferred:[]})
+  const finalizationIndex=jobs.length-1
+  const futureBatches=chunk(deferredRows)
+  if(futureBatches.length){
+    jobs[finalizationIndex].deferred=futureBatches.shift()
+    for(const deferred of futureBatches)jobs.push({settings:{},rows:[],deferred})
   }
-  if(['investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks'].some(k=>(backup[k]||[]).length)){
-    message.value='投資情報を含む大容量バックアップは一括設定500件以内の分割復元が必要です。既存データは変更していません。'
-    return
+  const emptySettings={
+    paymentSources:[],merchantPaymentRules:[],customRules:[],categories:[],
+    plans:[],bills:[],dismissedTransfers:[],categoryMetadata:[],
+    investmentPlans:[],investmentPlanHistory:[],investmentHoldings:[],
+    fundPrices:[],transferLinks:[],categoryIcons:{}
+  }
+  const makeRestoreRow=async e=>{
+    const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
+    const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
+    const clientRequestId='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
+    restoreOwnKeys.value=new Map([...restoreOwnKeys.value,[clientRequestId,transactionKey(e)]])
+    return {...e,clientRequestId}
   }
   busy.value=true
-  let count=0,settingsCount=0,skipped=0
+  let completed=0,settingsRestored=0,alreadyPresent=0,processed=0
   try{
-    // Restore settings additively. Existing payment sources, rules, plans, bills
-    // and portfolio holdings always win over uploaded content.
-    const existingSources=await props.api('payment-sources')
-    const sources=restoreMissingByKey(existingSources,backup.paymentSources||[],x=>x.name)
-    for (const source of sources) {
-      if(!source || typeof source.name!=='string' || !source.name.trim() || source.name.length>80) continue
-      const saved = await props.api('payment-sources/restore-missing',{method:'POST',body:JSON.stringify({
-        name:source.name,closingDay:source.closing_day ?? null
-      })})
-      if(saved.created)settingsCount++
-    }
-    // Only recover a default card if the current database has no default.
-    if(!existingSources.some(source=>source.is_default)){
-      const source=(backup.paymentSources||[]).find(source=>source?.is_default)
-      if(source?.name && (await props.api('payment-sources')).some(current=>current.name===source.name)){
-        const saved = await props.api('payment-sources/restore-default',{method:'POST',body:JSON.stringify({name:source.name})})
-        if(saved.restored)settingsCount++
+    for(let i=0;i<jobs.length;i++){
+      const job=jobs[i]
+      const [atomicRows,deferredPrepaidEntries]=await Promise.all([
+        Promise.all(job.rows.map(makeRestoreRow)),
+        Promise.all(job.deferred.map(makeRestoreRow))
+      ])
+      const included=[...job.rows,...job.deferred]
+      const oldIds=new Set(included.map(e=>Number(e.id)))
+      const scopedArchive={
+        ...backup,integrity:undefined,...emptySettings,...job.settings,
+        entries:atomicRows,deferredPrepaidEntries,
+        transferLinks:(backup.transferLinks||[]).filter(t=>oldIds.has(Number(t.entry_id))),
+        dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id))),
+        prepaidRestoreInProgress:true,
+        prepaidFinalize:i===finalizationIndex?prepaidFinal:[]
       }
+      const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify(scopedArchive)})
+      completed+=result.created
+      settingsRestored+=result.settings
+      alreadyPresent+=result.skipped
+      processed+=included.length
+      const keys=new Set(included.map(e=>e.backupIndex))
+      restoreRows.value=restoreRows.value.filter(row=>!keys.has(row.backupIndex))
+      restoreConflicts.value=restoreConflicts.value.filter(row=>!keys.has(row.backupIndex))
+      message.value=`復元中 ${processed}/${selectedRows.length}件・${i+1}/${jobs.length}回`
     }
-    const existingCategories=await props.api('categories')
-    for(const name of restoreMissingByKey(existingCategories,backup.categories||[],x=>x)){
-      if(typeof name!=='string' || !name.trim() || name.length>20)continue
-      await props.api('categories',{method:'POST',body:JSON.stringify({name,icon:backup.categoryIcons?.[name]||'other'})})
-      settingsCount++
-    }
-    // A category may already exist while its restored icon is still missing.
-    // Restore missing icons independently; never overwrite the current choice.
-    const existingIcons=await props.api('category-icons')
-    const knownCategories=await props.api('categories')
-    for(const [category,icon] of Object.entries(backup.categoryIcons||{})){
-      if(!knownCategories.includes(category) || existingIcons[category])continue
-      const result=await props.api('category-icons/restore-missing',{method:'POST',body:JSON.stringify({category,icon})})
-      if(result.created)settingsCount++
-    }
-    const existingCategoryRules=await props.api('custom-rules')
-    for(const rule of restoreMissingByKey(existingCategoryRules,backup.customRules||[],x=>x.keyword)){
-      if(!rule?.keyword || !rule?.category)continue
-      await props.api('custom-rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,category:rule.category})})
-      settingsCount++
-    }
-    const existingPaymentRules=await props.api('merchant-payment-rules')
-    for(const rule of restoreMissingByKey(existingPaymentRules,backup.merchantPaymentRules||[],x=>x.keyword)){
-      if(!rule?.keyword || !rule?.payment_source)continue
-      await props.api('merchant-payment-rules',{method:'PUT',body:JSON.stringify({keyword:rule.keyword,paymentSource:rule.payment_source})})
-      settingsCount++
-    }
-    const existingBills=await props.api('card-bills')
-    for(const bill of restoreMissingByKey(existingBills,backup.bills||[],x=>x.name+'|'+x.month)){
-      if(!bill?.name || !bill?.month)continue
-      await props.api('card-bills',{method:'POST',body:JSON.stringify(bill)})
-      settingsCount++
-    }
-    // Older backup investments snapshots are intentionally ignored.
-    const restoredIds = new Map()
-    for (const e of selectedRows){
-      // Stable across retry; source backup identity disambiguates identical purchases.
-      const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
-      const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
-      const key='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
-      const {backupIndex,...entry}=e
-      // Register this precise intended row before the network request: even a lost response
-      // can be checked against its idempotency ID on the next read.
-      restoreOwnKeys.value = new Map([...restoreOwnKeys.value,[key,transactionKey(entry)]])
-      const result=await props.api('entries',{method:'POST',body:JSON.stringify({...entry,clientRequestId:key,transferTarget:e.transfer_target||'',transferDate:e.transfer_date||e.date,paymentSource:e.payment_source||''})})
-      if(result.duplicate)skipped++;else count++
-      if(e.id && result?.id)restoredIds.set(Number(e.id),Number(result.id))
-      restoreRows.value=restoreRows.value.filter(row=>row.backupIndex!==e.backupIndex)
-      restoreConflicts.value=restoreConflicts.value.filter(row=>row.backupIndex!==e.backupIndex)
-    }
-    // An already existing transfer may not be part of the newly inserted rows.
-    // Restore its dismissal only when one unique matching transaction is found.
-    const originalEntries=new Map(backup.entries.filter(e=>Number.isSafeInteger(Number(e.id))).map(e=>[Number(e.id),e]))
-    for(const oldId of backup.dismissedTransfers || []) {
-      let newId=restoredIds.get(Number(oldId))
-      if(!newId) {
-        const original=originalEntries.get(Number(oldId))
-        if(original?.type==='transfer' && original.transfer_target==='sbi'){
-          const matches=rows.value.filter(row=>row.type==='transfer'&&row.transfer_target==='sbi'&&transactionKey(row)===transactionKey(original))
-          if(matches.length===1)newId=Number(matches[0].id)
-        }
-      }
-      if(newId){await props.api('dismissed-transfer-reminders',{method:'POST',body:JSON.stringify({entryId:newId})});settingsCount++}
-    }
-    // Restore recurring plans last: ledger rows must exist before a future app
-    // launch can generate scheduled records from the restored plans.
-    const existingPlans=await props.api('recurring-plans')
-    for(const plan of restoreMissingByKey(existingPlans,backup.plans||[],x=>x.id)){
-      if(!plan?.id)continue
-      await props.api('recurring-plans',{method:'POST',body:JSON.stringify(plan)})
-      settingsCount++
-    }
+    loaded.value=false;backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
+    restoreIncludeConflicts.value=false;restoreOwnKeys.value=new Map()
+    message.value=`復元完了：明細 ${completed}件・設定 ${settingsRestored}件（重複除外 ${alreadyPresent}件）`
     await loadFinanceSettings()
-    loaded.value=false;backupPreview.value=null;restoreIncludeConflicts.value=false
-    restoreOwnKeys.value=new Map()
-    message.value='復元完了：明細 '+count+'件・設定 '+settingsCount+'件（重複除外 '+skipped+'件）'
     emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
-  }catch(e){message.value='一部復元済み：明細 '+count+'件・設定 '+settingsCount+'件。再試行：'+e.message}
-  finally{busy.value=false}
+  }catch(e){
+    ledgerDirty=true
+    message.value=`復元を中断しました。完了済み ${completed}件は保持されます。再試行可能：${e.message}`
+  }finally{busy.value=false}
 }
 // Use a read-only, tolerant comparison for review; backup keys stay strict.
 const duplicates=computed(() => findLedgerDuplicateGroups(rows.value))
@@ -693,8 +600,8 @@ async function addPlan(){
     plans.value=await props.api('recurring-plans')
     cancelPlanEdit()
     recurringPreview.value=[]
-    recurringMessage.value=updated?'固定支出を更新しました':'固定支出を登録しました。記帳前に内容を確認してください'
-  }catch(e){message.value='固定支出の保存に失敗しました：'+e.message}
+    recurringMessage.value=updated?'固定費を更新しました':'固定費を登録しました。記帳前に内容を確認してください'
+  }catch(e){message.value='固定費の保存に失敗しました：'+e.message}
   finally {recurringBusy.value=false}
 }
 const recurringBusy=ref(false)
@@ -706,14 +613,14 @@ function reviewRecurring() {
   const current = new Date().toLocaleDateString('sv-SE').slice(0,7)
   recurringSelected.value = new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
   const conflicts=preview.filter(x=>x.conflict).length
-  recurringMessage.value=preview.length ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）' : '未記録の固定支出はありません'
+  recurringMessage.value=preview.length ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）' : '未記録の固定費はありません'
 }
 async function applyRecurring(){
   if(recurringBusy.value || !loaded.value || !recurringPreview.value.length)return
   const safe=selectedRecurring.value
   if(!safe.length){recurringMessage.value='重複候補は登録できません。明細を確認してください';return}
   const summary=safe.length+'件、合計 '+yen(safe.reduce((sum,row)=>sum+row.amount,0))+
-    ' の固定支出を登録します。日付と金額を確認しましたか？'
+    ' の固定費を登録します。日付と金額を確認しましたか？'
   if(!confirm(summary))return
   recurringBusy.value=true
   try{
@@ -765,13 +672,13 @@ watch(() => props.active, active => {
 async function removePlan(id) {
   if (!settingsReady.value || recurringBusy.value) return
   const target=plans.value.find(p=>p.id===id)
-  if (!confirm('固定支出「'+(target?.name||'')+'」を削除しますか？明細は残ります。')) return
+  if (!confirm('固定費「'+(target?.name||'')+'」を削除しますか？明細は残ります。')) return
   try {
     await props.api('recurring-plans/'+encodeURIComponent(id),{method:'DELETE'})
     plans.value = plans.value.filter(x=>x.id!==id)
     recurringPreview.value=[]
     if(editingPlanId.value===id) cancelPlanEdit()
-  } catch(e) { message.value='固定支出の削除に失敗しました：'+e.message }
+  } catch(e) { message.value='固定費の削除に失敗しました：'+e.message }
 }
 const cardTransactions=computed(()=>rows.value.filter(e=>isCardBilledEntry(e,cardPeriod.value,bill.value.name)))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
@@ -832,7 +739,7 @@ async function removeCardBill(record) {
     <div v-if="cardMode === 'add'" class="card-editor card-add-editor" role="group" aria-label="カードを追加">
       <label class="card-add-field">名称<input v-model="newPaymentSource" maxlength="80" placeholder="例：Suica、楽天カード" aria-label="新しいカード名"></label>
       <label class="card-add-field">種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
-      <p v-if="newSourceType === 'prepaid'" class="card-type-hint">期首残高は「資産」で設定できます。</p>
+      <p v-if="newSourceType === 'prepaid'" class="card-type-hint">期首残高は「残高」で設定できます。</p>
       <div class="card-add-actions">
         <button type="button" class="card-add-cancel" :disabled="busy" @click="cardMode = ''">キャンセル</button>
         <button type="button" class="card-add-save" :disabled="busy || !newPaymentSource.trim()" @click="addPaymentSource">{{busy ? '保存中…' : '保存'}}</button>
@@ -841,7 +748,7 @@ async function removeCardBill(record) {
     <div v-if="cardMode === 'edit' && selectedCard" :key="selectedCard" class="card-editor">
       <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
       <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
-      <p v-if="editSourceType === 'prepaid' && !['現金','その他','其他'].includes(selectedCard)" class="card-type-hint">期首残高の入力・修正は「資産」画面で行います。</p>
+      <p v-if="editSourceType === 'prepaid' && !['現金','その他','其他'].includes(selectedCard)" class="card-type-hint">期首残高は「残高」画面で変更できます。</p>
       <label v-if="isCreditCard(selectedCard) && editSourceType === 'standard'">締め日
         <select :key="selectedCard + '-closing-day'" :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
           <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
@@ -889,30 +796,30 @@ async function removeCardBill(record) {
   </details>
   <article v-show="managementTab === 'plans'" class="finance-panel">
     <h2>固定費の設定</h2>
-    <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><AmountInput v-model="plan.amount" input-label="固定支出額（円）" /></div>
-    <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリ<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
-    <div class="finance-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定支出を登録'}}</button>
+    <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定費名"><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
+    <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリ<select v-model="plan.category" aria-label="固定費カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定費支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
+    <div class="finance-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <label class="form-field"><span>未記帳を確認する期間</span><select v-model.number="recurringHistoricalMonths" @change="recurringPreview=[]"><option :value="0">今月のみ（初期設定）</option><option :value="3">過去3か月も確認</option><option :value="12">過去12か月も確認</option><option :value="119">過去10年分も確認</option></select></label>
     <div class="finance-actions"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
     <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
     <p v-if="recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
-    <div v-if="recurringPreview.length" class="recurring-candidate-list" role="group" aria-label="未登録の固定支出候補">
+    <div v-if="recurringPreview.length" class="recurring-candidate-list" role="group" aria-label="未登録の固定費候補">
       <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
     </div>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
     <details class="recurring-list-disclosure">
       <summary class="recurring-list-summary">
-        <span class="recurring-list-summary-title">登録済みの固定支出 <strong>{{plans.length}}件</strong></span>
+        <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{plans.length}}件</strong></span>
         <span class="recurring-list-summary-total">有効 {{activeRecurringPlans.length}}件 · 月額 {{yen(recurringMonthlyTotal)}}</span>
       </summary>
       <div class="recurring-list-body">
         <div class="recurring-list-filters">
-          <input v-model="recurringListQuery" type="search" placeholder="名前で検索" aria-label="固定支出を検索" />
-          <select v-model="recurringListFilter" aria-label="固定支出の状態"><option value="all">すべて</option><option value="active">有効</option><option value="stopped">停止中</option></select>
+          <input v-model="recurringListQuery" type="search" placeholder="名前で検索" aria-label="固定費を検索" />
+          <select v-model="recurringListFilter" aria-label="固定費の状態"><option value="all">すべて</option><option value="active">有効</option><option value="stopped">停止中</option></select>
         </div>
-        <div v-if="!filteredRecurringPlans.length" class="recurring-list-empty">{{plans.length ? '該当する固定支出はありません' : '固定支出はまだありません'}}</div>
-        <div v-else class="recurring-plan-scroll" role="list" aria-label="固定支出一覧">
+        <div v-if="!filteredRecurringPlans.length" class="recurring-list-empty">{{plans.length ? '該当する固定費はありません' : '固定費はまだありません'}}</div>
+        <div v-else class="recurring-plan-scroll" role="list" aria-label="固定費一覧">
           <div v-for="p in filteredRecurringPlans" :key="p.id" class="recurring-plan-item" role="listitem">
             <button type="button" class="recurring-plan-toggle" :aria-expanded="expandedRecurringPlanId===p.id" :aria-controls="'recurring-plan-actions-'+p.id" @click="toggleRecurringPlanDetails(p.id)">
               <span class="recurring-plan-text">

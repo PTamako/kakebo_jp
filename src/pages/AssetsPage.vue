@@ -2,14 +2,14 @@
 import { computed, inject, ref } from 'vue'
 import SbiPortfolio from '../SbiPortfolio.vue'
 import PrepaidAssets from '../PrepaidAssets.vue'
-const { tab, openPrepaidHistoryDetails, ledgerRevision, transferLoading, api } = inject('kakeibo-page-context')
+const { tab, openPrepaidHistoryDetails, ledgerRevision, transferLoading, api, openCardSettingsFromWallet } = inject('kakeibo-page-context')
 const activeView = ref('funds')
 const selectView = value => { activeView.value = value }
 const portfolioSummary = ref(null)
 const prepaidSummary = ref(null)
 const onPortfolioSummary = value => { portfolioSummary.value = value }
 const onPrepaidSummary = value => { prepaidSummary.value = value }
-const openCardSettings = () => { tab.value = 'finance' }
+const openCardSettings = () => openCardSettingsFromWallet()
 const yen = value => value === null || !Number.isFinite(Number(value)) ? '—' : '¥'+Number(value).toLocaleString('ja-JP')
 const investment = computed(() => portfolioSummary.value?.valuation ?? null)
 const prepaid = computed(() => prepaidSummary.value?.balance ?? null)

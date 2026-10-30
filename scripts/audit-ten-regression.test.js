@@ -74,8 +74,8 @@ test('future dated SBI transfers are not restored as applied even when backup sa
 })
 test('resumable D1 restoration is broken into bounded transactional batches',()=>{
   const ui=source('src/FinanceTools.vue')
-  assert.match(ui,/const BATCH_SIZE=150/)
-  assert.match(ui,/for\(let offset=0;offset<sourceRows\.length;offset\+=BATCH_SIZE\)/)
+  assert.match(ui,/const BATCH_SIZE=80/)
+  assert.match(ui,/for\(let i=0;i<jobs\.length;i\+\+\)/)
   assert.match(ui,/restoreOwnKeys\.value=new Map/)
 })
 

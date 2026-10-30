@@ -9,7 +9,7 @@ test('iPhone PWA remains non-zoomable with full safe area and native-like tab ta
   assert.match(html,/maximum-scale=1, user-scalable=no, viewport-fit=cover/)
   assert.match(css,/safe-area-inset-bottom/)
   assert.match(css,/main \.bottom-nav button \{[\s\S]*?min-height: 55px/)
-  assert.match(css,/main \.month-calendar \.calendar-day small \{[\s\S]*?font-size: clamp\(9px, 2\.6vw, 11px\)/)
+  assert.match(css,/main \.month-calendar \.calendar-day small \{[\s\S]*?font-size: clamp\(11px, 2\.9vw, 12px\)/)
   assert.match(css,/overflow-wrap: anywhere/)
   assert.doesNotMatch(html,/user-scalable=yes/)
 })

@@ -40,8 +40,8 @@ test('restore is atomic for bounded archives and never deletes real records',()=
   assert.match(api,/INSERT INTO category_source\(category,icon\)/)
   assert.match(api,/category_source\.icon IS NULL/)
   assert.doesNotMatch(api,/DELETE FROM entries|DROP TABLE|REPLACE INTO entries/)
-  assert.match(ui,/const BATCH_SIZE=150/)
-  assert.match(ui,/settingTotal<=500/)
+  assert.match(ui,/const BATCH_SIZE=80/)
+  assert.match(ui,/chunkRestoreSettings\(backup,BATCH_SIZE\)/)
 })
 
 test('preview requires separate DB identity and automatic build requires production security audit',()=>{

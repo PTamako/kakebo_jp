@@ -1,9 +1,53 @@
 // Read-only financial checks and portable backup format. Never mutate ledger records here.
 export const backupVersion = 4
 
+const RESTORE_SETTING_ORDER = [
+  'paymentSources','categoryMetadata','categories','categoryIcons',
+  'customRules','merchantPaymentRules','bills',
+  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans'
+]
+// Setting collections are restored in dependency order, with no silent fallback
+// that omits display names, sorting or portfolio data for large archives.
+// Transaction-linked collections are handled alongside their source entries.
+export function chunkRestoreSettings(archive, batchSize=100) {
+  if(!Number.isSafeInteger(batchSize)||batchSize<1||batchSize>500)throw Error('復元単位が正しくありません')
+  const chunks=[]
+  let current={}, size=0
+  const flush=()=>{
+    if(size)chunks.push(current)
+    current={};size=0
+  }
+  const put=(name,key,value)=>{
+    if(size===batchSize)flush()
+    if(name==='categoryIcons')(current.categoryIcons??={})[key]=value
+    else(current[name]??=[]).push(value)
+    size++
+  }
+  for(const name of RESTORE_SETTING_ORDER) {
+    if(name==='categoryIcons'){
+      for(const [key,value] of Object.entries(archive.categoryIcons||{}))put(name,key,value)
+    }else for(const item of archive[name]||[])put(name,null,item)
+  }
+  flush()
+  return chunks
+}
+
 // A portable restore cannot reuse source-database entry IDs. Rebase newly restored
 // wallet cards at the backed-up current balance AFTER historical entries are inserted.
 // Existing target cards always win. Never fabricate a recharge/income entry.
+// Future prepaid movements must be replayed AFTER the restored opening-balance
+// anchor. Otherwise a scheduled transfer already present in the backup is
+// excluded forever because its new entry ID is at or below the new anchor.
+export function isFuturePrepaidMovement(entry, prepaidNames, today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)) {
+  if(!entry || !prepaidNames?.length)return false
+  const source=entry.payment_source||entry.paymentSource||''
+  const prepaidSource=prepaidNames.includes(source)
+  const prepaidTarget=prepaidNames.some(name=>entry.transfer_target==='prepaid:'+name)
+  if(entry.type==='expense')return prepaidSource && entry.date>today
+  if(entry.type!=='transfer' || (!prepaidSource && !prepaidTarget))return false
+  return entry.date>today || (entry.transfer_date||entry.date)>today
+}
+
 export function prepaidRestoreBalances(archive, today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)) {
   const rows=Array.isArray(archive.entries)?archive.entries:[]
   return (archive.paymentSources||[]).filter(source=>source?.source_type==='prepaid').map(source=>{
@@ -11,9 +55,8 @@ export function prepaidRestoreBalances(archive, today=new Date(Date.now()+9*3600
     const cutoff=Number(source.opening_entry_id||0)
     if(!validDate(start)||!Number.isSafeInteger(cutoff)||cutoff<0)throw Error('プリペイドの復元基準が正しくありません')
     const eligible=rows.filter(e=>Number(e.id)>cutoff && e.date>=start)
-    const future=eligible.some(e=>(e.type==='transfer' && (e.transfer_target==='prepaid:'+source.name || e.payment_source===source.name) && (e.date>today || (e.transfer_date||e.date)>today))||
-      (e.type==='expense' && e.payment_source===source.name && e.date>today))
-    if(future)throw Error('将来日のプリペイド明細があります。残高復元は手動確認が必要です')
+    // Future prepaid rows are NOT included in this balance. The restore
+    // workflow stages them after the rebase so they remain effective on due day.
     const charged=eligible.filter(e=>e.type==='transfer'&&e.transfer_target==='prepaid:'+source.name&&e.payment_source!==source.name&&e.date<=today&&(e.transfer_date||e.date)<=today).reduce((n,e)=>n+Number(e.amount),0)
     const spent=eligible.filter(e=>e.type==='expense'&&e.payment_source===source.name&&e.date<=today).reduce((n,e)=>n+Number(e.amount),0)
     const transferredOut=eligible.filter(e=>e.type==='transfer'&&e.payment_source===source.name&&e.transfer_target!=='prepaid:'+source.name&&e.date<=today&&(e.transfer_date||e.date)<=today).reduce((n,e)=>n+Number(e.amount),0)

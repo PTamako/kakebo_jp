@@ -39,10 +39,10 @@ test('fund rows label NAV dates and data sources without claiming all prices are
 })
 
 test('mobile controls keep edit functions, transfer month and keyboard accessible dialogs', () => {
-  for (const name of ['editPlan','editHolding','editPrice','submitTransfer','initialize','closeEditor','onEditorKeydown']) {
+  for (const name of ['editPlan','editHolding','editPrice','submitTransfer','closeEditor','onEditorKeydown']) {
     assert.match(portfolio,new RegExp('function '+name+'\\('))
   }
-  assert.match(portfolio,/aria-label="資産情報を更新"/)
+  assert.match(portfolio,/aria-label="資産情報を更新"/)\n  assert.doesNotMatch(portfolio,/investment-portfolio\\/initialize|async function initialize\\(/)
   assert.match(portfolio,/class="sbi-compact-actions"/)
   assert.match(portfolio,/class="sbi-holding-detail"/)
   assert.match(portfolio,/@click="editHolding\(h\)"/)

@@ -590,7 +590,7 @@ async function restore(){
       if(!rule?.keyword || !rule?.category)continue
       const live=savedRuleByKeyword.get(rule.keyword)
       if(live && !(rule.is_custom===true && live.is_custom!==true && live.category===rule.category))continue
-      await props.api('custom-rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,category:rule.category})})
+      await props.api('custom-rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,category:rule.category,isCustom:rule.is_custom===true})})
       settingsCount++
     }
     const existingPaymentRules=await props.api('merchant-payment-rules')

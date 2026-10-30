@@ -46,7 +46,7 @@ test('charge is asset movement and spend remains expense; UI supports both editi
   const form=read('src/TransactionForm.vue')
   const ledger=read('src/pages/LedgerPage.vue')
   const asset=read('src/pages/AssetsPage.vue')
-  assert.match(app,/matchingPrepaid=effectiveMode==='statement'/)
+  assert.match(app,/matchingPrepaid=effectiveMode==='receipt'\|\|effectiveMode==='statement'/)
   assert.match(app,/matchingPrepaid \? prepaidTarget\(matchingPrepaid\)/)
   assert.match(form,/transferDestinations/)
   assert.match(form,/チャージ元（任意）/)

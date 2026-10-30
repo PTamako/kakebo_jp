@@ -440,6 +440,8 @@ export async function onRequest({ request, env, params }) {
       const newName = typeof body?.newName === 'string' ? body.newName.trim() : ''
       if (!oldName || !newName || oldName === '現金' || oldName.length > 80 || newName.length > 80)
         return json({ error: 'カード名を確認してください' }, 400)
+      if (!(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(oldName).first()))
+        return json({error:'元のカードが見つかりません。明細は変更していません',code:'payment_source_not_found'},404)
       if (oldName === newName) return json({ ok: true, changes: 0 })
       if (await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(newName).first()) return json({ error: '同じカード名が登録されています' }, 409)
       // Schema is provisioned by explicit migrations, never by business requests.
@@ -447,15 +449,21 @@ export async function onRequest({ request, env, params }) {
       // A saved bill for the destination name/month must not be silently overwritten.
       const collision = await db.prepare('SELECT 1 AS found FROM card_bills WHERE payment_source=?1 AND bill_month IN (SELECT bill_month FROM card_bills WHERE payment_source=?2) LIMIT 1').bind(newName,oldName).first()
       if (collision) return json({error:'変更先に同月のカード請求が存在します'},409)
+      // Place the parent-card rename last and guard every dependent UPDATE.
+      // If another device removed the old card before this D1 batch starts,
+      // none of its historical ledger rows may be re-labelled. D1 rolls back
+      // the entire batch on a duplicate target name.
+      const present="EXISTS (SELECT 1 FROM payment_sources WHERE name=?2)"
       const result = await db.batch([
-        db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName),
-        db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
-        db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
-        db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2').bind('prepaid:'+newName,'prepaid:'+oldName),
-        db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
-        db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName)
+        db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
+        db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
+        db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2 AND EXISTS (SELECT 1 FROM payment_sources WHERE name=?3)').bind('prepaid:'+newName,'prepaid:'+oldName,oldName),
+        db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
+        db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
+        db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName)
       ])
-      return json({ ok: true, changes: result[2]?.meta?.changes ?? 0 })
+      if (!result[5]?.meta?.changes) return json({error:'元のカードが見つかりません。明細は変更していません',code:'payment_source_not_found'},404)
+      return json({ ok: true, changes: result[1]?.meta?.changes ?? 0 })
     }
     if (a === 'recurring-post' && m === 'POST') {
       // Atomic, non-destructive fixed-expense insertion; conflicting manual records win.

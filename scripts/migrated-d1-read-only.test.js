@@ -13,13 +13,11 @@ test('migrated production APIs never run schema DDL on any request', () => {
   assert.match(schema, /CREATE TABLE IF NOT EXISTS card_bills/)
 })
 
-test('investment GET is read only while a fresh schema has an empty SBI record', () => {
-  const start = api.indexOf("if (a === 'investments')")
-  const end = api.indexOf("if (a === 'stats'", start)
-  assert.ok(start >= 0 && end > start)
-  const investments = api.slice(start,end)
-  assert.doesNotMatch(investments.slice(0,investments.indexOf("if (m === 'POST' && b === 'restore-empty')")), /INSERT|UPDATE|DELETE|CREATE TABLE/)
-  assert.match(schema, /INSERT OR IGNORE INTO investment_snapshots\(platform,current_value,pnl,updated_at\) VALUES\('sbi',NULL,NULL,NULL\)/)
+test('retired investment snapshot table is neither created nor accessed by runtime APIs',()=>{
+  assert.doesNotMatch(schema,/CREATE TABLE IF NOT EXISTS investment_snapshots/)
+  assert.doesNotMatch(api,/SELECT .* FROM investment_snapshots|UPDATE investment_snapshots|INSERT INTO investment_snapshots/)
+  assert.match(api,/if \(a === 'investments'\) return json\(/)
+  assert.match(api,/deprecated_investments/)
 })
 
 test('expense picker does not include income categories based on display names alone', () => {

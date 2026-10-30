@@ -461,8 +461,34 @@ export async function onRequest({ request, env, params }) {
       const body = await request.json()
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
       if (!name || name.length > 80) return json({ error: 'カード名を確認してください' }, 400)
-      await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END)").bind(name).run()
-      return json({ ok: true })
+      const kind=body.sourceType||'standard'
+      const opening=body.openingBalance===undefined?0:Number(body.openingBalance)
+      if(!['standard','prepaid'].includes(kind)||!Number.isSafeInteger(opening)||opening<0||opening>100000000)return json({error:'カード種別と開始残高を確認してください'},400)
+      if(kind==='prepaid'){
+        if(['現金','その他','其他'].includes(name))return json({error:'現金・その他はプリペイドに設定できません'},400)
+        if(!await prepaidSchemaReady(db))return json({error:'プリペイド設定の移行が必要です'},409)
+        await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order,source_type,opening_balance,opening_date,opening_entry_id) VALUES(?1,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE sort_order<99999),'prepaid',?2,?3,(SELECT COALESCE(MAX(id),0) FROM entries))").bind(name,opening,new Date(Date.now()+9*3600000).toISOString().slice(0,10)).run()
+      } else {
+        await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END)").bind(name).run()
+      }
+      return json({ok:true})
+    }
+    if (a === 'payment-sources' && b === 'type' && m === 'POST') {
+      if(!await prepaidSchemaReady(db))return json({error:'プリペイド設定の移行が必要です'},409)
+      const body=await request.json(),name=String(body?.name||'').trim(),kind=body?.sourceType
+      const opening=Number(body?.openingBalance)
+      if(!name||name.length>80||['現金','その他','其他'].includes(name)||!['standard','prepaid'].includes(kind)||!Number.isSafeInteger(opening)||opening<0||opening>100000000)return json({error:'カード種別と残高を確認してください'},400)
+      const existing=await db.prepare('SELECT source_type FROM payment_sources WHERE name=?1').bind(name).first()
+      if(!existing)return json({error:'カードが見つかりません'},404)
+      if(existing.source_type===kind)return json({ok:true})
+      if(kind==='standard'){
+        const used=await db.prepare("SELECT id FROM entries WHERE type='transfer' AND transfer_target=?1 LIMIT 1").bind('prepaid:'+name).first()
+        if(used)return json({error:'チャージ履歴があるため通常カードに変更できません'},409)
+        await db.prepare("UPDATE payment_sources SET source_type='standard',opening_balance=0,opening_date='',opening_entry_id=0 WHERE name=?1").bind(name).run()
+      } else {
+        await db.prepare("UPDATE payment_sources SET source_type='prepaid',opening_balance=?1,opening_date=?2,opening_entry_id=(SELECT COALESCE(MAX(id),0) FROM entries) WHERE name=?3 AND source_type='standard'").bind(opening,new Date(Date.now()+9*3600000).toISOString().slice(0,10),name).run()
+      }
+      return json({ok:true})
     }
     if (a === 'payment-sources' && b === 'default' && m === 'POST') {
       const body = await request.json()
@@ -479,6 +505,10 @@ export async function onRequest({ request, env, params }) {
       // Do not remove a card that is still used by an enabled automatic charge.
       const activePlan = await db.prepare('SELECT id FROM recurring_plans WHERE payment_source=?1 AND enabled=1 LIMIT 1').bind(name).first()
       if (activePlan) return json({error:'このカードを利用する固定支出が残っています。先に固定支出の設定を整理してください'},409)
+      if(await prepaidSchemaReady(db)){
+        const card=await db.prepare('SELECT source_type FROM payment_sources WHERE name=?1').bind(name).first()
+        if(card?.source_type==='prepaid')return json({error:'プリペイドカードは通常タイプへ戻してから削除してください'},409)
+      }
       await db.batch([
         db.prepare('DELETE FROM merchant_rules WHERE payment_source=?1 AND category IS NULL').bind(name),
         db.prepare('UPDATE merchant_rules SET payment_source=NULL WHERE payment_source=?1').bind(name),

@@ -135,15 +135,6 @@ async function submit(path, body, message) {
   }catch(e){ error.value = e.message }
   finally{ saving.value=false }
 }
-async function initialize() {
-  saving.value=true
-  try{
-    await props.api('investment-portfolio/initialize',{method:'POST'})
-    await load()
-    notice.value='積立設定を登録しました'
-  }catch(e){error.value=e.message}
-  finally{saving.value=false}
-}
 async function submitTransfer() {
   await submit('transfer-month',{entryId:Number(editingTransfer.value),purchaseMonth:newPurchaseMonth.value},'買付月を更新しました')
 }
@@ -224,7 +215,7 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
         <div class="sbi-plan-total"><div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}} <small>/ 月</small></strong></div><div class="sbi-plan-day">注文予定は銘柄別</div></div>
         <div v-if="!data.plans.length" class="sbi-empty">
           <p>積立設定はまだありません</p>
-          <button type="button" class="button-secondary" :disabled="saving" @click="initialize">積立設定を登録</button>
+
         </div>
         <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.fund_code+':'+p.account_type" class="sbi-plan-row">
           <div class="sbi-row-main"><strong>{{shortFundName(p)}}</strong><small>{{accountLabel(p.account_type)}} · 毎月{{p.order_day}}日</small></div>

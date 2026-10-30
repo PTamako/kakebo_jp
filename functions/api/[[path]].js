@@ -102,7 +102,7 @@ export async function onRequest({ request, env, params }) {
       }
       return json({ ok: true })
     }
-    return json({ error: 'not found' }, 404)
+    return json({ error: '対象が見つかりません' }, 404)
   }
   const session = request.headers.get('x-session') || ''
   if (!/^[a-f0-9]{64}$/.test(session)) return json({ error: 'アクセスコードを確認してください' }, 401)
@@ -771,7 +771,7 @@ export async function onRequest({ request, env, params }) {
     if (a === 'stats' && m === 'GET') {
       const year = url.searchParams.get('year') || ''
       if (year) {
-        if (!/^\d{4}$/.test(year)) return json({ error: '年份格式不正确' }, 400)
+        if (!/^\d{4}$/.test(year)) return json({ error: '対象年の形式が正しくありません' }, 400)
         const like = year + '%'
         const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income, COALESCE(SUM(CASE WHEN type = 'transfer' THEN amount ELSE 0 END),0) transferTotal, SUM(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END) transferCount FROM entries WHERE date LIKE ?1").bind(like).first()
         const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()
@@ -790,7 +790,7 @@ export async function onRequest({ request, env, params }) {
       const paymentRows = await db.prepare("SELECT CASE WHEN TRIM(COALESCE(payment_source,'')) = '' OR payment_source = '現金' THEN '現金' ELSE 'カード・電子決済' END method, COUNT(*) count, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY method ORDER BY amount DESC").bind(like).all()
       return json({ paymentMethods: paymentRows.results, total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, byCategory: cat.results, byDay: day.results })
     }
-    return json({ error: 'not found' }, 404)
+    return json({ error: '対象が見つかりません' }, 404)
   } catch (err) {
     console.error('家計簿 API エラー', err)
     return json({ error: 'サーバー処理に失敗しました' }, 500)

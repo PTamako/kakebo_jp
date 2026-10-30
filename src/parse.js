@@ -195,9 +195,14 @@ export function parseReceipt(raw, rules = []) {
   const categorySource = merchant || text.slice(0, 120)
   const { category, keyword } = classify(categorySource, rules)
   // Receipts also print compact two-digit years (26.10.29) and Japanese era dates.
-  const dateLine = lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line))
+  // Gemma 4 uses a dedicated purchase-date field. Do not fall through to
+  // a coupon start date when the purchase date was explicitly unreadable.
+  const labeledDate = lines.find(line => /^日付\s*[:：]/.test(line))
+  const dateLine = labeledDate !== undefined ? labeledDate
+    : lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line))
     || lines.find(line => /(?<!\d)\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?!\d)/.test(line))
     || lines.find(line => /令和\s*(?:元|\d{1,2})\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?/.test(line)) || ''
+  const labeledTime = lines.find(line => /^時刻\s*[:：]/.test(line))
   const era = dateLine.match(/令和\s*(元|\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})/)
   let receiptDate = era
     ? `${2018+(era[1]==='元'?1:Number(era[1]))}-${pad(era[2])}-${pad(era[3])}`
@@ -216,7 +221,7 @@ export function parseReceipt(raw, rules = []) {
   }
   return {
     date: receiptDate,
-    time: findTransactionTime(text, dateLine),
+    time: labeledTime !== undefined ? findTransactionTime(labeledTime) : findTransactionTime(text, dateLine),
     amount,
     category,
     merchant: merchant.slice(0, 60),

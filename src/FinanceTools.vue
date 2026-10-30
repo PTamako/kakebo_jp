@@ -3,6 +3,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { sortOtherLast } from './category-sort.js'
 import { findLedgerDuplicateGroups } from './duplicate-review.js'
 import AmountInput from './AmountInput.vue'
+import SbiPortfolio from './SbiPortfolio.vue'
+import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances } from './finance-tools.js'
 import { isCardBilledEntry } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
@@ -792,8 +794,13 @@ async function removeCardBill(record) {
   <div class="finance-section-tabs" role="group" aria-label="管理項目">
     <button type="button" :class="{ selected: managementTab === 'cards' }" :aria-pressed="managementTab === 'cards'" @click="managementTab = 'cards'">カード</button>
     <button type="button" :class="{ selected: managementTab === 'plans' }" :aria-pressed="managementTab === 'plans'" @click="managementTab = 'plans'">固定支出</button>
+    <button type="button" :class="{ selected: managementTab === 'investment' }" :aria-pressed="managementTab === 'investment'" @click="managementTab = 'investment'">積立</button>
     <button type="button" :class="{ selected: managementTab === 'tools' }" :aria-pressed="managementTab === 'tools'" @click="managementTab = 'tools'">その他</button>
   </div>
+  <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
+    <InvestmentTransferReview />
+    <SbiPortfolio :api="props.api" active-view="plans" />
+  </section>
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>支払方法・カード管理</h2>
     <div class="finance-inputs card-controls card-main-controls">
@@ -1089,4 +1096,6 @@ async function removeCardBill(record) {
 .finance-panel .card-add-cancel{background:var(--card);border-color:var(--line)}
 .finance-panel .card-add-save{background:var(--blue);border-color:var(--blue);color:#fff}
 @media(max-width:360px){.card-add-editor{padding:9px 10px 10px;gap:7px}.card-add-actions{gap:8px}}
+.finance-investment-panel{display:grid;gap:9px;min-width:0}
+.finance-investment-panel .sbi-portfolio{min-width:0}
 </style>

@@ -3,7 +3,7 @@ import { inject } from 'vue'
 import TransactionForm from '../TransactionForm.vue'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
-const { categories, tab, month, resetMonth, selectedYear, input, paymentSources, transferDestinations, editReceiptImage, editReceiptFileName, receiptSaveError, selectEditReceipt, receiptImageIds, viewedReceiptUrl, viewReceipt, closeReceipt, removeReceiptImage, editingEntry, INCOME_CATEGORIES, categoryIconPath, categoryLabel, yen, load, setEntryType, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, detailFilter, prepaidHistoryFilter, detailLoading, visibleEntryCount, listPageSize, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, expandedMonth, annualMonthGroups, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, groupedPagedEntries, toggleEntryDay, clearDetailFilter, visibleCalendarDays, toggleDay, startSwipe, endSwipe, handleEntryClick, monthLabel } = inject('kakeibo-page-context')
+const { categories, tab, month, resetMonth, selectedYear, input, paymentSources, transferDestinations, editReceiptImage, editReceiptFileName, receiptSaveError, selectEditReceipt, receiptImageIds, viewedReceiptUrl, viewReceipt, closeReceipt, removeReceiptImage, editingEntry, INCOME_CATEGORIES, categoryIconPath, categoryLabel, yen, load, setEntryType, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, detailFilter, prepaidHistoryFilter, detailLoading, visibleEntryCount, listPageSize, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, expandedMonth, annualMonthGroups, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, groupedPagedEntries, toggleEntryDay, clearDetailFilter, visibleCalendarDays, toggleDay, startSwipe, endSwipe, handleEntryClick, monthLabel, formatLedgerTotal } = inject('kakeibo-page-context')
 </script>
 <template>
 <section  class="page-section">
@@ -14,8 +14,8 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
         <div class="calendar-legend" aria-label="日付マークの説明"><span><i class="legend-today"></i>今日</span><span><i class="calendar-peak-expense">支</i>支出最多</span><span><i class="calendar-peak-income">収</i>収入最多</span></div>
         <div class="calendar-weekdays"><span v-for="weekday in ['日', '月', '火', '水', '木', '金', '土']" :key="weekday" :aria-label="weekday + '曜日'">{{ weekday }}</span></div>
         <div class="calendar-grid">
-          <button v-for="day in visibleCalendarDays" :key="day.key" type="button" class="calendar-day" :class="{ 'calendar-blank': day.blank, 'calendar-selected': selectedDay === day.date, 'calendar-has-spend': day.amount > 0, 'calendar-today':day.isToday, 'calendar-top-expense':day.topExpense, 'calendar-top-income':day.topIncome }" :disabled="day.blank" @click="toggleDay(day.date)" :aria-current="day.isToday ? 'date' : undefined" :aria-label="day.blank ? undefined : day.date + (day.isToday?' 今日':'') + (day.topExpense?' 支出額が最も多い日':'') + (day.topIncome?' 収入額が最も多い日':'') + ' 記録額 ' + yen(day.amount)">
-            <template v-if="!day.blank"><span class="calendar-day-number">{{ day.day }}</span><span class="calendar-day-badges"><i v-if="day.topExpense" class="calendar-peak-expense" title="支出額が最も多い日" aria-hidden="true">支</i><i v-if="day.topIncome" class="calendar-peak-income" title="収入額が最も多い日" aria-hidden="true">収</i></span><small v-if="day.amount > 0">{{ yen(day.amount) }}</small><small v-else class="calendar-no-spend">—</small></template>
+          <button v-for="day in visibleCalendarDays" :key="day.key" type="button" class="calendar-day" :class="{ 'calendar-blank': day.blank, 'calendar-selected': selectedDay === day.date, 'calendar-has-spend': day.hasEntries, 'calendar-today':day.isToday, 'calendar-top-expense':day.topExpense, 'calendar-top-income':day.topIncome }" :disabled="day.blank" @click="toggleDay(day.date)" :aria-current="day.isToday ? 'date' : undefined" :aria-label="day.blank ? undefined : day.date + (day.isToday?' 今日':'') + (day.topExpense?' 支出額が最も多い日':'') + (day.topIncome?' 収入額が最も多い日':'') + (entryTypeFilter === 'all' ? ' 収支差額 ' : ' 記録額 ') + formatLedgerTotal(day.amount, entryTypeFilter)">
+            <template v-if="!day.blank"><span class="calendar-day-number">{{ day.day }}</span><span class="calendar-day-badges"><i v-if="day.topExpense" class="calendar-peak-expense" title="支出額が最も多い日" aria-hidden="true">支</i><i v-if="day.topIncome" class="calendar-peak-income" title="収入額が最も多い日" aria-hidden="true">収</i></span><small v-if="day.hasEntries">{{ formatLedgerTotal(day.amount, entryTypeFilter) }}</small><small v-else class="calendar-no-spend">—</small></template>
           </button>
         </div>
       </section>
@@ -31,7 +31,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
             <span class="entry-day-chevron">{{ expandedMonth === group.month ? '▾' : '▸' }}</span>
             <strong>{{ Number(group.month.slice(5)) }}月</strong>
             <span class="entry-day-count">{{ group.count }}件</span>
-            <span class="entry-day-total">{{ yen(group.total) }}</span>
+            <span class="entry-day-total">{{ formatLedgerTotal(group.total, entryTypeFilter) }}</span>
           </button>
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
             <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
@@ -54,8 +54,8 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
           <button type="button" class="entry-day-heading" :aria-expanded="expandedEntryDays.has(group.date)" @click="toggleEntryDay(group.date)">
             <span class="entry-day-chevron">{{ expandedEntryDays.has(group.date) ? '▾' : '▸' }}</span>
             <strong>{{ group.date.replace(/-/g, '/') }}</strong>
-            <span class="entry-day-count">{{ group.items.length }}件</span>
-            <span class="entry-day-total">{{ yen(group.items.reduce((sum, entry) => sum + (entry.type === 'income' ? -Number(entry.amount || 0) : Number(entry.amount || 0)), 0)) }}</span>
+            <span class="entry-day-count">{{ group.count }}件</span>
+            <span class="entry-day-total">{{ formatLedgerTotal(group.total, entryTypeFilter) }}</span>
           </button>
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
             <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">

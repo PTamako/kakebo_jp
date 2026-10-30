@@ -46,7 +46,7 @@ test('AI limit is one Japan-time D1 daily bucket capped at 20, not 20 per OCR fe
   assert.equal(aiDailyLimit({AI_OCR_DAILY_LIMIT:'500'}),20)
   assert.equal(aiDailyLimit({AI_OCR_DAILY_LIMIT:'12'}),12)
   assert.equal(tokyoAiDay(Date.parse('2026-10-29T15:01:00Z')),'2026-10-30')
-  const modes=['receipt','statement','portfolio','portfolio-detail','portfolio-profit','portfolio-positions']
+  const modes=['receipt','statement','portfolio','portfolio-detail']
   for(let i=0;i<20;i++){
     // All routes call the SAME reserve function; mode never enters its key.
     assert.equal((await reserveAiAttempt(db,env)).allowed,true,'request '+modes[i % modes.length]+' #'+(i+1))
@@ -55,7 +55,7 @@ test('AI limit is one Japan-time D1 daily bucket capped at 20, not 20 per OCR fe
   assert.equal((await reserveAiAttempt(db,env)).allowed,false,'the 21st attempt must be denied')
 })
 
-test('SBI dual and single-image modes expose a visible shared AI switch before optional details',()=>{
+test('SBI fund-detail and text import share the single visible AI switch',()=>{
   const ui=read('src/SbiPortfolio.vue')
   const app=read('src/App.vue')
   const api=read('functions/api/[[path]].js')
@@ -69,7 +69,7 @@ test('SBI dual and single-image modes expose a visible shared AI switch before o
   assert.match(ui,/aiContext\?\.setAiOcrEnabled\?\.\(enabled\)/)
   assert.match(ui,/共通残り/)
   assert.match(ui,/await refreshSharedQuota\(\)/)
-  assert.match(ui,/mode',kind==='profit'\?'portfolio-profit':'portfolio-positions'/)
+  assert.match(ui,/form\.append\('mode','portfolio-detail'\)/)
   assert.match(ui,/data\.append\('mode','portfolio'\)/)
   assert.match(ui,/if\(useAi\.value\)/)
   assert.match(ui,/if\(!useAi\.value\)/)
@@ -78,6 +78,6 @@ test('SBI dual and single-image modes expose a visible shared AI switch before o
   assert.match(app,/本日の共通AI残り/)
   assert.match(app,/finally \{\s*\/\/ An attempt is reserved/)
   assert.match(api,/const quota=await reserveAiAttempt\(db,env\)/)
-  assert.match(api,/const mode = \['receipt','statement','portfolio','portfolio-detail','portfolio-profit','portfolio-positions'\]/)
+  assert.match(api,/const mode = \['receipt','statement','portfolio','portfolio-detail'\]/)
   assert.match(quota,/Math\.min\(20,value\) : 20/)
 })

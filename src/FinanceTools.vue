@@ -135,6 +135,10 @@ async function saveCardType(){
   if(!selectedCard.value||busy.value)return
   const kind=editSourceType.value
   if(kind===selectedSourceType.value)return renameCard()
+  if(editedCardName.value.trim()!==selectedCard.value){
+    cardMessage.value='名称変更と種別変更は分けて保存してください'
+    return
+  }
   busy.value=true
   try{
     await props.api('payment-sources/type',{method:'POST',body:JSON.stringify({name:selectedCard.value,sourceType:kind})})
@@ -882,7 +886,7 @@ async function removeCardBill(record) {
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>カード別利用額</h2>
     <div class="finance-inputs card-billing-fields">
-      <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in orderedPayments.filter(x => !['現金','その他','Suica'].includes(x))" :key="source" :value="source">{{source}}</option><option v-if="bill.name && !props.paymentSources.includes(bill.name)" :value="bill.name">{{bill.name}}（既存の設定）</option></select></label>
+      <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in orderedPayments.filter(x => !['現金','その他','其他'].includes(x) && props.paymentSourceMeta[x]?.source_type!=='prepaid')" :key="source" :value="source">{{source}}</option><option v-if="bill.name && !props.paymentSources.includes(bill.name)" :value="bill.name">{{bill.name}}（既存の設定）</option></select></label>
       <label>締め月<input class="card-closing-month" v-model="bill.month" type="month" aria-label="締め月"></label>
       <label>利用額<output class="card-usage-total" aria-live="polite">{{loaded && bill.name && cardPeriod ? yen(cardTotal) : "—"}}</output></label>
     </div>

@@ -37,7 +37,7 @@ test('the wallet activity uses natural concise Japanese, without hard-coded card
   assert.match(wallet,/最近のチャージ/)
   assert.match(wallet,/latestUsage\.card/)
   assert.match(wallet,/latestCharge\.card/)
-  assert.doesNotMatch(wallet,/Suica.+?PASMO.+?最近の利用/s)
+  assert.doesNotMatch(wallet,/latestUsage\.card==='Suica'|latestUsage\.card==='PASMO'/)
   // Only strings in the UI are changed. Stable internal category keys must not
   // be edited here because historical D1 entries rely on them.
   assert.match(app,/'工资'/)

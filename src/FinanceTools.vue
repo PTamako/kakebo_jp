@@ -796,11 +796,15 @@ async function removeCardBill(record) {
       <button type="button" class="card-icon-action" @click="cardMode = 'add'" aria-label="カードを追加" title="カードを追加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
     <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
-    <div v-if="cardMode === 'add'" class="finance-inputs card-controls">
-      <input v-model="newPaymentSource" maxlength="80" placeholder="新しいカード名・支払方法" aria-label="新しい支払方法">
-      <label>種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード（Suica・PASMO等）</option></select></label><p v-if="newSourceType==='prepaid'" class="card-type-hint">期首残高は「資産」画面で設定します。</p>
-      <button type="button" @click="addPaymentSource">保存</button>
-      <button type="button" @click="cardMode = ''">キャンセル</button>
+    <div v-if="cardMode === 'add'" class="card-editor card-add-editor" role="group" aria-label="カードを追加">
+      <div class="card-add-heading"><strong>カードを追加</strong><button type="button" class="card-add-close" :disabled="busy" aria-label="追加を閉じる" @click="cardMode = ''">×</button></div>
+      <label class="card-add-field">名称<input v-model="newPaymentSource" maxlength="80" placeholder="例：Suica、楽天カード" aria-label="新しいカード名"></label>
+      <label class="card-add-field">種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
+      <p v-if="newSourceType === 'prepaid'" class="card-type-hint">期首残高は「資産」で設定できます。</p>
+      <div class="card-add-actions">
+        <button type="button" class="card-add-cancel" :disabled="busy" @click="cardMode = ''">キャンセル</button>
+        <button type="button" class="card-add-save" :disabled="busy || !newPaymentSource.trim()" @click="addPaymentSource">{{busy ? '保存中…' : '保存'}}</button>
+      </div>
     </div>
     <div v-if="cardMode === 'edit' && selectedCard" class="card-editor">
       <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
@@ -1067,4 +1071,18 @@ async function removeCardBill(record) {
 .finance-panel p.recurring-list-count{font-size:11px;text-align:right;margin:0;color:var(--muted)}
 .recurring-candidate-list{display:grid;gap:5px;max-height:240px;overflow-y:auto;overscroll-behavior:contain;min-width:0;padding-right:3px}
 @media(max-width:360px){.recurring-list-filters{grid-template-columns:minmax(0,1fr) 92px;gap:5px}.recurring-list-summary{padding:10px}.recurring-plan-meta{font-size:10px}}
+
+/* Adding a card is a form, not the three-icon card toolbar. Never share its grid. */
+.card-add-editor{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--paper)}
+.card-add-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.card-add-heading strong{font-size:14px;font-weight:800;color:var(--ink)}
+.finance-panel .card-add-close{display:grid;place-items:center;width:44px;min-width:44px;height:44px;min-height:44px;border:0;background:transparent;padding:0;color:var(--muted);font-size:24px;line-height:1}
+.card-add-editor .card-add-field{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;min-width:0;font-size:12px;font-weight:700;color:var(--muted)}
+.card-add-editor .card-add-field input,.card-add-editor .card-add-field select{display:block;width:100%;min-width:0;height:44px;min-height:44px;padding:0 11px;font-size:16px;line-height:normal;box-sizing:border-box}
+.card-add-editor .card-type-hint{margin:-3px 0 0;font-size:11px;line-height:1.5}
+.card-add-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0}
+.finance-panel .card-add-actions button{display:inline-flex;align-items:center;justify-content:center;min-width:0;width:100%;min-height:44px;padding:10px 6px;white-space:nowrap;word-break:keep-all;overflow-wrap:normal;font-size:13px;font-weight:750}
+.finance-panel .card-add-cancel{background:var(--card);border-color:var(--line)}
+.finance-panel .card-add-save{background:var(--blue);border-color:var(--blue);color:#fff}
+@media(max-width:360px){.card-add-editor{padding:11px;gap:10px}.card-add-actions{gap:8px}}
 </style>

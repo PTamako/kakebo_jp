@@ -783,7 +783,7 @@ test('audit follow-up: default card switching is a single guarded SQL update',as
     const statements=[]
     const original=db.prepare.bind(db)
     db.prepare=sql=>{
-      if(/UPDATE payment_sources SET is_default/i.test(sql))statements.push(sql)
+      if(/UPDATE payment_sources\s+SET\s+is_default/i.test(sql))statements.push(sql)
       return original(sql)
     }
     assert.equal((await call('payment-sources/default','POST',{name:'カードA'})).status,200)

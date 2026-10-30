@@ -812,7 +812,7 @@ async function removeCardBill(record) {
   <p v-if="loadError" class="finance-load-error" role="alert">{{ loadError }}</p>
   <div class="finance-section-tabs" role="group" aria-label="管理項目">
     <button type="button" :class="{ selected: managementTab === 'cards' }" :aria-pressed="managementTab === 'cards'" @click="managementTab = 'cards'">カード</button>
-    <button type="button" :class="{ selected: managementTab === 'plans' }" :aria-pressed="managementTab === 'plans'" @click="managementTab = 'plans'">固定支出</button>
+    <button type="button" :class="{ selected: managementTab === 'plans' }" :aria-pressed="managementTab === 'plans'" @click="managementTab = 'plans'">固定費</button>
     <button type="button" :class="{ selected: managementTab === 'investment' }" :aria-pressed="managementTab === 'investment'" @click="managementTab = 'investment'">積立</button>
     <button type="button" :class="{ selected: managementTab === 'tools' }" :aria-pressed="managementTab === 'tools'" @click="managementTab = 'tools'">その他</button>
   </div>

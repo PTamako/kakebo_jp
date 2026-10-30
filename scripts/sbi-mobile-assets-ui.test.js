@@ -12,7 +12,7 @@ test('mobile balance page prioritizes fund valuation, compact wallets, actionabl
   const pageIndices = pageMarkers.map(marker => page.indexOf(marker))
   assert.ok(pageIndices.every(index => index >= 0))
   assert.deepEqual([...pageIndices].sort((a,b)=>a-b),pageIndices)
-  const portfolioMarkers = ['<slot name="before-holdings" />', 'class="panel sbi-card sbi-holdings" open', 'class="panel sbi-card sbi-investment-manage"', 'class="sbi-transfer-disclosure"']
+  const portfolioMarkers = ['class="panel sbi-card sbi-holdings" open', '<slot name="before-holdings" />', 'class="panel sbi-card sbi-investment-manage"', 'class="sbi-transfer-disclosure"']
   const indices = portfolioMarkers.map(marker => portfolio.indexOf(marker))
   assert.ok(indices.every(index => index >= 0))
   assert.deepEqual([...indices].sort((a,b)=>a-b),indices)

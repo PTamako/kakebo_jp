@@ -39,6 +39,18 @@ test('prepaid history strictly filters the selected card and entry type',()=>{
  assert.match(app,/function openLedgerFromNav\(\) \{[\s\S]*?prepaidHistoryFilter\.value = null/)
 })
 
+test('new prepaid names are dynamic: no special-case Suica or PASMO requirement',()=>{
+ const arbitraryName='自分専用ウォレット 01'
+ const charge={type:'transfer',transfer_target:'prepaid:'+arbitraryName,amount:2500}
+ const usage={type:'expense',payment_source:arbitraryName,amount:120}
+ assert.equal(matchesPrepaidHistoryEntry(charge,{card:arbitraryName,kind:'charge'}),true)
+ assert.equal(matchesPrepaidHistoryEntry(usage,{card:arbitraryName,kind:'usage'}),true)
+ assert.equal(matchesPrepaidHistoryEntry(charge,{card:'Suica',kind:'charge'}),false)
+ assert.equal(matchesPrepaidHistoryEntry(usage,{card:'PASMO',kind:'usage'}),false)
+ assert.match(wallet,/v-for="card in \(showAll \? data.cards : data.cards.slice\(0,2\)\)"/)
+ assert.match(app,/prepaidSources\.value\.includes\(cardName\)/)
+})
+
 test('navigation does not re-import old payment settings or create D1 history',()=>{
  assert.doesNotMatch(wallet,/prepaid-assets\/initialize|INSERT INTO/)
  assert.doesNotMatch(app,/payment-sources\/initialize|readLegacyPaymentSources/)

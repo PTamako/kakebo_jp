@@ -103,7 +103,7 @@ test('receipt payment extraction supports arbitrary registered names',()=>{
 
 
 test('QUICPay payment uses configured merchant rule then default; never guesses Saison',()=>{
-  const source=['店名: まいばすけっと 架空店','日付: 2026-10-30','時刻: 12:36','合計: ¥311','支払方法: QUICPay'].join('\\n')
+  const source=['店名: まいばすけっと 架空店','日付: 2026-10-30','時刻: 12:36','合計: ¥311','支払方法: QUICPay'].join('\n')
   const cards=['現金','セゾンカード','Suica']
   const meta={'セゾンカード':{source_type:'standard'},'Suica':{source_type:'prepaid'}}
   assert.equal(detectRegisteredReceiptPayment(source,cards,meta),'')

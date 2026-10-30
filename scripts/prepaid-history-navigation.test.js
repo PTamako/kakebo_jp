@@ -91,5 +91,5 @@ test('wallet charge history agrees with balance date, transfer date, and opening
  const sql=read('functions/api/prepaid-assets.js')
  assert.match(sql,/e\.id>p\.opening_entry_id/)
  assert.match(sql,/COALESCE\(e\.transfer_date,e\.date\)<=\?1/)
- assert.match(app,/opening_date,opening_entry_id/)
+ assert.match(read('functions/api/[[path]].js'),/source_type,opening_balance,opening_date,opening_entry_id/)
 })

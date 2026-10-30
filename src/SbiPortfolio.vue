@@ -506,8 +506,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
           </div>
           <p v-if="!data.plans.length" class="sbi-empty">積立設定はまだありません</p>
           <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.fund_code+':'+p.account_type" class="sbi-plan-row">
-            <div class="sbi-row-main"><strong>{{shortFundName(p)}}</strong><small>{{accountLabel(p.account_type)}} · 毎月{{p.order_day}}日</small></div>
-            <div class="sbi-row-end"><strong>{{p.enabled ? yen(p.monthly_amount) : '停止中'}}</strong><button type="button" class="sbi-row-edit" @click="editPlan(p)" :aria-label="shortFundName(p)+'の積立設定を変更'">変更</button></div>
+            <div class="sbi-row-main"><strong>{{shortFundName(p)}}</strong><small>{{accountLabel(p.account_type)}} · {{p.order_day}}日</small></div>
+            <div class="sbi-plan-side"><strong>{{p.enabled ? yen(p.monthly_amount) : '停止中'}}</strong><button type="button" class="sbi-row-edit" @click="editPlan(p)" :aria-label="shortFundName(p)+'の積立設定を変更'">変更</button></div>
           </div>
           <button v-if="data.plans.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllPlans" @click="showAllPlans=!showAllPlans">{{showAllPlans?'閉じる':'あと'+(data.plans.length-2)+'件を表示'}}</button>
 
@@ -521,7 +521,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
               <p v-if="!data.transfers.length" class="sbi-empty">この月の振替記録はありません</p>
               <div v-for="t in (showAllTransfers ? data.transfers : data.transfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
                 <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>{{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '記帳済' : '反映待ち'}}</small></div>
-                <div class="sbi-row-end"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">買付月を変更</button></div>
+                <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の買付月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">変更</button></div>
               </div>
               <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
               <details class="sbi-footnote"><summary>振替の確認について</summary><p>期日反映は証券口座への入金・買付完了を保証しません。買付月が異なる場合は変更できます。</p></details>
@@ -850,4 +850,15 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-fund-price-line .sbi-row-edit{flex:none;white-space:normal;text-align:center;font-size:10px;max-width:124px}
 .sbi-account-edit:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 @media(max-width:370px){.sbi-account-head{align-items:flex-start}.sbi-account-value{display:grid;gap:2px;text-align:right}.sbi-fund-price-line{align-items:flex-start}}
+
+/* Management rows: concise two-line mobile layout, with accessible edit targets. */
+.sbi-management-body .sbi-plan-row,.sbi-management-body .sbi-transfer-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:7px;min-height:48px;padding:5px 0}
+.sbi-management-body .sbi-row-main{gap:1px;min-width:0}
+.sbi-management-body .sbi-row-main strong{font-size:12px;line-height:1.3}
+.sbi-management-body .sbi-row-main small{font-size:10px;line-height:1.25}
+.sbi-plan-side,.sbi-transfer-side{display:flex;align-items:center;justify-content:flex-end;gap:7px;min-width:0}
+.sbi-plan-side>strong{font-size:13px;font-weight:850;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sbi-transfer-side>small{font-size:10px;color:var(--muted);white-space:nowrap}
+.sbi-plan-side .sbi-row-edit,.sbi-transfer-side .sbi-row-edit{min-width:44px;min-height:40px;padding:6px 7px;text-align:center;border:1px solid var(--line);border-radius:9px;font-size:11px;line-height:1.2}
+@media(max-width:370px){.sbi-plan-side,.sbi-transfer-side{gap:4px}.sbi-management-body .sbi-plan-row,.sbi-management-body .sbi-transfer-row{gap:5px}.sbi-transfer-side>small{font-size:9px}}
 </style>

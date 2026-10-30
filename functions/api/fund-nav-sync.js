@@ -101,9 +101,9 @@ export async function syncFundNav(db,{fetcher=fetch,now=new Date(),logger=consol
       ;(Number(result.meta?.changes||0)>0?summary.updated:summary.unchanged).push(code)
     }catch(error){
       const reason=String(error?.message||error)
-      if(/^(provider_http_404|provider_fund_mismatch|provider_payload_invalid|unsupported_mufg_fund)$/.test(reason)){
-        // Unsupported held funds stay manual. Do not write a guessed price
-        // or repeatedly log them as operational failures.
+      if(/^(provider_http_404|unsupported_mufg_fund)$/.test(reason)){
+        // Only confirmed unsupported funds stay manual. Malformed or
+        // code-mismatched vendor responses are failures, not unsupported funds.
         summary.unsupported.push(code)
         continue
       }

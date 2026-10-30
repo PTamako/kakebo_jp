@@ -9,6 +9,7 @@ export async function restoreAtomic(db, archive) {
   const deferredPrepaidEntries = archive.deferredPrepaidEntries || []
   if(!Array.isArray(deferredPrepaidEntries))throw Error('atomic_restore_invalid_deferred')
   const allEntries = [...entries,...deferredPrepaidEntries]
+  if(deferredPrepaidEntries.length)validateBackup({...archive,entries:allEntries})
   const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills' ,'dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
   // Each request is atomic. The client sends bounded, idempotent stages

@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
 import { prepaidRestoreBalances } from '../src/finance-tools.js'
+import { classify } from '../src/parse.js'
 const approvedPost = (plan, month = '2026-10') => ({
   planId:plan.id,month,
   expected:{name:plan.name,amount:plan.amount,day:plan.day,category:plan.category,
@@ -659,7 +660,88 @@ test('rules GET returns migrated D1 rows only and never restores missing default
     db.db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2)').run('登録済みの店','饮食料品')
     const second=await call('rules')
     assert.equal(second.status,200)
-    assert.deepEqual(second.body,[{keyword:'登録済みの店',category:'饮食料品',is_custom:true}])
+    assert.deepEqual(second.body,[{keyword:'登録済みの店',category:'饮食料品',is_custom:false}])
     assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,1)
   }finally{db.close()}
+})
+
+test('missing source card cannot rename orphaned ledger rows or manufacture a card',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const created=await call('entries','POST',{date:'2026-10-20',amount:1200,merchant:'安全テスト',category:'日用品',type:'expense',paymentSource:'過去に削除したカード',clientRequestId:'orphan-card-test-001'})
+    assert.equal(created.status,200)
+    const before=db.db.prepare('SELECT id,amount,type,payment_source FROM entries WHERE id=?1').get(created.body.id)
+    const response=await call('payment-sources/rename','POST',{oldName:'過去に削除したカード',newName:'別カード'})
+    assert.equal(response.status,404)
+    assert.deepEqual({...db.db.prepare('SELECT id,amount,type,payment_source FROM entries WHERE id=?1').get(created.body.id)},{...before})
+    assert.equal(db.db.prepare("SELECT name FROM payment_sources WHERE name='別カード'").get(),undefined)
+  }finally{db.close()}
+})
+
+test('existing card rename is atomic and preserves amounts plus prepaid transfer references',async()=>{
+  const {db,call}=await createClient()
+  try{
+    db.db.prepare("INSERT INTO payment_sources(name,sort_order) VALUES('古いカード',2)").run()
+    const entry=await call('entries','POST',{date:'2026-10-20',amount:1234,type:'expense',paymentSource:'古いカード',merchant:'古い記録',clientRequestId:'existing-rename-01'})
+    assert.equal(entry.status,200)
+    const response=await call('payment-sources/rename','POST',{oldName:'古いカード',newName:'新しいカード'})
+    assert.equal(response.status,200)
+    assert.equal(response.body.changes,1)
+    const row=db.db.prepare('SELECT amount,payment_source FROM entries WHERE id=?1').get(entry.body.id)
+    assert.deepEqual({...row},{amount:1234,payment_source:'新しいカード'})
+    assert.equal(db.db.prepare("SELECT name FROM payment_sources WHERE name='古いカード'").get(),undefined)
+    assert.equal(db.db.prepare("SELECT name FROM payment_sources WHERE name='新しいカード'").get().name,'新しいカード')
+  }finally{db.close()}
+})
+
+test('D1 category_source is authoritative without old markers, fallback categories or writes on read',async()=>{
+  const {db,call}=await createClient()
+  try {
+    db.db.prepare("INSERT INTO category_source(category,sort_order,icon,display_name) VALUES('自作カテゴリ',37,'books','自作カテゴリ')").run()
+    const before=db.db.prepare("SELECT COUNT(*) AS n FROM category_source").get().n
+    const categories=await call('categories')
+    assert.equal(categories.status,200)
+    assert.ok(categories.body.includes('自作カテゴリ'))
+    assert.ok(!categories.body.includes('其他收入'),'income categories must stay out of expense picker')
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM rules WHERE keyword='__category__:自作カテゴリ'").get().n,0)
+    const backup=(await call('backup-snapshot')).body
+    assert.ok(backup.categories.includes('自作カテゴリ'))
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM category_source").get().n,before)
+    db.db.prepare("DELETE FROM category_source WHERE category='自作カテゴリ'").run()
+    const after=await call('categories')
+    assert.ok(!after.body.includes('自作カテゴリ'),'missing categories must not be recreated on GET')
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM category_source").get().n,before-1)
+    const inserted=await call('categories','POST',{name:'手動カテゴリ',icon:'books'})
+    assert.equal(inserted.status,200)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM rules WHERE keyword='__category__:手動カテゴリ'").get().n,0,'do not insert old category markers')
+    assert.equal(db.db.prepare("SELECT category FROM category_source WHERE category='手動カテゴリ'").get().category,'手動カテゴリ')
+  }finally{db.close()}
+})
+
+test('D1 rule priority marks only explicit user edits, preserving them through backups',async()=>{
+  const source=await createClient(),target=await createClient()
+  try{
+    source.db.db.prepare("INSERT INTO merchant_rules(keyword,category) VALUES('まいばすけっと','饮食料品'),('まいばす','购物')").run()
+    let rules=(await source.call('rules')).body
+    assert.ok(rules.every(row=>row.is_custom===false),'old migrated rules have unknown provenance and are not marked automatically')
+    assert.equal(classify('まいばすけっと高砂店',rules).category,'饮食料品')
+    assert.equal((await source.call('rules','POST',{keyword:'まいばす',category:'娱乐'})).status,200)
+    rules=(await source.call('rules')).body
+    assert.equal(rules.find(row=>row.keyword==='まいばす').is_custom,true)
+    assert.equal(rules.find(row=>row.keyword==='まいばすけっと').is_custom,false)
+    assert.equal(classify('まいばすけっと高砂店',rules).category,'娱乐','explicit user rule must override longer migrated rule')
+    assert.equal(source.db.db.prepare("SELECT COUNT(*) AS n FROM merchant_rules WHERE keyword='__user_priority__:まいばす'").get().n,1)
+    assert.ok(!(await source.call('custom-rules')).body.some(row=>row.keyword.startsWith('__user_priority__:')))
+    const backup=(await source.call('backup-snapshot')).body
+    assert.equal(backup.customRules.find(row=>row.keyword==='まいばす').is_custom,true)
+    assert.equal(backup.customRules.some(row=>row.keyword.startsWith('__user_priority__:')),false)
+    const restored=await target.call('restore-atomic','POST',{...backup,prepaidRestoreInProgress:true})
+    assert.equal(restored.status,200,JSON.stringify(restored.body))
+    const after=(await target.call('rules')).body
+    assert.equal(after.find(row=>row.keyword==='まいばす').is_custom,true)
+    assert.equal(classify('まいばすけっと高砂店',after).category,'娱乐')
+    const deleted=await target.call('custom-rules?keyword='+encodeURIComponent('まいばす'),'DELETE')
+    assert.equal(deleted.status,200)
+    assert.equal(target.db.db.prepare("SELECT COUNT(*) AS n FROM merchant_rules WHERE keyword='__user_priority__:まいばす'").get().n,0)
+  }finally{source.db.close();target.db.close()}
 })

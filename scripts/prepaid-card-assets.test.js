@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {detectPrepaidRecharge,prepaidTarget,prepaidBalance} from '../src/prepaid-card.js'
+import {prepaidRestoreBalances} from '../src/finance-tools.js'
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 
 test('recharge detector requires an explicitly registered transit card and recharge wording',()=>{
@@ -85,4 +86,27 @@ test('credit-card billing excludes prepaid and non-card payment methods',()=>{
   assert.match(finance,/isCreditCard\(bill\.value\.name\) \? bills\.value\.filter/)
   assert.doesNotMatch(finance,/source_type!=='prepaid'/)
   assert.doesNotMatch(finance,/カードを選択<\/option><option v-for="source in orderedPayments\.filter/)
+})
+
+test('portable restore preserves wallet-to-wallet conservation and respects future transfer dates',()=>{
+  const today='2026-10-30'
+  const source={
+    paymentSources:[
+      {name:'Suica',source_type:'prepaid',opening_balance:5000,opening_date:'2026-10-01',opening_entry_id:0},
+      {name:'PASMO',source_type:'prepaid',opening_balance:2000,opening_date:'2026-10-01',opening_entry_id:0}
+    ],
+    entries:[
+      {id:1,date:today,type:'transfer',amount:1000,payment_source:'Suica',transfer_target:'prepaid:PASMO',transfer_date:today},
+      {id:2,date:today,type:'expense',amount:300,payment_source:'Suica'},
+      {id:3,date:today,type:'transfer',amount:200,payment_source:'Suica',transfer_target:'sbi',transfer_date:today}
+    ]
+  }
+  assert.deepEqual(prepaidRestoreBalances(source,today),[
+    {name:'Suica',openingBalance:3500},
+    {name:'PASMO',openingBalance:3000}
+  ])
+  assert.throws(
+    ()=>prepaidRestoreBalances({...source,entries:[...source.entries,{id:4,date:today,type:'transfer',amount:300,payment_source:'Suica',transfer_target:'prepaid:PASMO',transfer_date:'2026-11-01'}]},today),
+    /将来日のプリペイド明細/
+  )
 })

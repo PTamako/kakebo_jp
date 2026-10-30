@@ -315,8 +315,11 @@ test('SBI account-level NAV valuation truncates fractional yen before summing fu
   try{
     // Actual SBI NISA subaccounts (2026-10-30). Never reinsert these into production D1.
     const positions=[
+      ['03311187','growth','S&P500',2248,10000,10074,74],
+      ['03311187','tsumitate','S&P500',1795,8000,8044,44],
       ['0331418A','growth','オール・カントリー',3292,12559,12416,-143],
       ['0331418A','tsumitate','オール・カントリー',4741,18000,17881,-119],
+      ['0331A172','growth','先進国債券',5293,8000,8007,7],
       ['04317188','growth','NASDAQ100',1577,8880,8705,-175],
       ['04317188','tsumitate','NASDAQ100',1074,6000,5928,-72]
     ]
@@ -328,12 +331,15 @@ test('SBI account-level NAV valuation truncates fractional yen before summing fu
     const nav=db.db.prepare(
       "INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES(?,?,'2026-10-30','manual')"
     )
+    nav.run('03311187',44816)
     nav.run('0331418A',37716)
+    nav.run('0331A172',15128)
     nav.run('04317188',55204)
 
     const {status,body}=await call('investment-portfolio?month='+currentMonth)
     assert.equal(status,200)
-    assert.equal(body.holdings.length,4)
+    assert.equal(body.holdings.length,7)
+    assert.equal(new Set(body.holdings.map(h=>h.fund_code)).size,4)
     assert.equal(body.holdings.filter(h=>h.account_type==='combined').length,0)
     for(const [code,account,,units,cost,expectedValue,expectedPnl] of positions){
       const position=body.holdings.find(h=>h.fund_code===code && h.account_type===account)
@@ -344,9 +350,9 @@ test('SBI account-level NAV valuation truncates fractional yen before summing fu
       assert.equal(position.pnl,expectedPnl)
       assert.equal(position.valuation_source,'calculated')
     }
-    assert.equal(body.valuation.value,44930,'SBI fund totals: ¥30,297 and ¥14,633')
-    assert.equal(body.valuation.pnl,-509,'sum per-account profit and loss after truncation')
-    assert.equal(positions.reduce((sum,row)=>sum+row[4],0),45439,'acquisition amounts remain unchanged')
+    assert.equal(body.valuation.value,71055,'SBI fund totals: ¥18,118 + ¥30,297 + ¥8,007 + ¥14,633')
+    assert.equal(body.valuation.pnl,-384,'sum per-account profit and loss after truncation')
+    assert.equal(positions.reduce((sum,row)=>sum+row[4],0),71439,'acquisition amounts remain unchanged')
     assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM entries').get().n,0,'no ledger entries are touched')
   }finally{db.close()}
 })

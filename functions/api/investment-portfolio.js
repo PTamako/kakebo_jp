@@ -1,4 +1,3 @@
-import { sbiInitialHoldings, SBI_SNAPSHOT_DAY, SBI_SNAPSHOT_OBSERVED_AT } from './sbi-initial-holdings.js'
 // SBI bookkeeping only; NEVER sends bank transfers or securities orders.
 // D1 stores explicit holdings and a monthly funding-to-plan reconciliation.
 const respond=(value,status=200)=>new Response(JSON.stringify(value),{
@@ -30,12 +29,6 @@ export function fundingStatus(transfers,month,orderDay=9) {
     return total;
   },{funded:0,count:0});
 }
-const initialPlans=[
-  ['0331418A','tsumitate','eMAXIS Slim 全世界株式（オール・カントリー）',7000,9],
-  ['03311187','tsumitate','eMAXIS Slim 米国株式（S&P500）',3000,9],
-  ['0331A172','growth','eMAXIS Slim 先進国債券インデックス（除く日本）',3000,9],
-  ['04317188','tsumitate','iFreeNEXT NASDAQ100インデックス',2000,9]
-];
 export async function handlePortfolio({db,request,method,sub,url}) {
   try{
     if(method==='GET'&&sub==='export'){
@@ -95,33 +88,9 @@ export async function handlePortfolio({db,request,method,sub,url}) {
         note:'資産移動の期日処理は帳簿上の反映であり、SBI口座への着金や約定を保証しません。自動紐付け月は推定です。'
       });
     }
-    if(sub==='initialize'&&method==='POST'){
-      // Explicit user-selected one-time bootstrap. Never modify existing
-      // holdings or reinitialize investment history after user edits.
-      const existing=await db.prepare('SELECT COUNT(*) AS n FROM investment_plan_history').first();
-      const now=new Date().toISOString();
-      const month=new Date(Date.now()+9*3600000).toISOString().slice(0,7);
-      const stmts=[];
-      if(!Number(existing?.n)){
-        for(const [code,account,name,amount,day] of initialPlans){
-          stmts.push(db.prepare('INSERT OR IGNORE INTO investment_plans(fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,1,?6)').bind(code,account,name,amount,day,now));
-          stmts.push(db.prepare('INSERT OR IGNORE INTO investment_plan_history(fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at) VALUES(?1,?2,?3,?4,?5,?6,1,?7)').bind(code,account,month,name,amount,day,now));
-        }
-      }
-      for(const h of sbiInitialHoldings){
-        stmts.push(db.prepare(`INSERT INTO investment_holdings
-          (fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at)
-          SELECT ?1,?2,?3,?4,?5,?6,?7,?8 WHERE NOT EXISTS
-            (SELECT 1 FROM investment_holdings WHERE fund_code=?1)`)
-          .bind(h.fundCode,h.accountType,h.fundName,h.units,h.acquisitionCost,h.reportedValue,SBI_SNAPSHOT_OBSERVED_AT,now));
-        stmts.push(db.prepare(`INSERT OR IGNORE INTO fund_prices
-          (fund_code,nav_per_10000,price_date,source,updated_at)
-          VALUES(?1,?2,?3,'sbi_screenshot',?4)`)
-          .bind(h.fundCode,h.screenshotNav,SBI_SNAPSHOT_DAY,now));
-      }
-      const results=await db.batch(stmts);
-      return respond({ok:true,created:results.some(row=>Number(row.meta?.changes||0)>0)});
-    }
+    // One-time historical SBI snapshot bootstrap has been retired.
+    // Never insert default plans, screenshot positions or old NAVs on a request.
+    if(sub==='initialize')return respond({error:'旧SBI初期データの登録は終了しました'},410);
     if(sub==='plan'&&method==='PUT'){
       const x=await request.json();
       if(!codeOk(x.fundCode)||!accountOk(x.accountType)||typeof x.fundName!=='string'||

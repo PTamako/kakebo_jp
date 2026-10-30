@@ -126,6 +126,7 @@ const allocationRows = computed(() => {
   if (holdingsData.value.some(h => h.market_value == null || !Number.isFinite(Number(h.market_value)))) return []
   return holdingsData.value.map((h, index) => ({
     key: h.fund_code + ':' + h.account_type,
+    name: shortFundName(h),
     ratio: Math.max(0, Number(h.market_value) / total * 100),
     color: allocationColors[index % allocationColors.length]
   }))

@@ -64,7 +64,7 @@ test('OCR readout and create/edit share the existing time field without a data m
   const app = source('src/App.vue')
   const form = source('src/TransactionForm.vue')
   const parser = source('src/parse.js')
-  assert.match(parser, /time: findTransactionTime\(text, dateLine\)/)
+  assert.match(parser,/time: labeledTime !== undefined \? findTransactionTime\(labeledTime\) : findTransactionTime\(text, dateLine\)/)
   assert.match(parser, /export function parseEntries\(raw, rules\)/)
   assert.match(parser, /findTransactionTime\(row\.raw \|\| ''\)/)
   assert.match(app, /return \{ \.\.\.f, type, category:/, 'OCR fields, including time, are spread into drafts')

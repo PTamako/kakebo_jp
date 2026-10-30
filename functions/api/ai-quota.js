@@ -6,14 +6,14 @@ export const aiDailyLimit = env => {
 }
 export async function aiQuotaState(db,env) {
   const day=tokyoAiDay(),limit=aiDailyLimit(env)
-  await db.prepare('CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0)').run()
+  // Fail closed when the migrated table is absent; leave schema and existing data untouched.
   const row=await db.prepare('SELECT attempts FROM ai_ocr_daily_usage WHERE day=?1').bind(day).first()
   return {day,limit,remaining:Math.max(0,limit-Number(row?.attempts || 0))}
 }
 export async function reserveAiAttempt(db,env) {
   const day=tokyoAiDay(),limit=aiDailyLimit(env)
   if(limit===0)return {allowed:false,limit}
-  await db.prepare('CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0)').run()
+  // Fail closed when the migrated table is absent; leave schema and existing data untouched.
   const results=await db.batch([
     db.prepare('INSERT OR IGNORE INTO ai_ocr_daily_usage(day,attempts) VALUES(?1,0)').bind(day),
     db.prepare('UPDATE ai_ocr_daily_usage SET attempts=attempts+1 WHERE day=?1 AND attempts < ?2').bind(day,limit)

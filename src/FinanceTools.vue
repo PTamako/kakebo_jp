@@ -12,6 +12,8 @@ const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-dupl
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
 const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
+const isCreditCard = name => !!name && !['現金','その他','其他'].includes(name) && props.paymentSourceMeta[name]?.source_type === 'standard'
+const creditCardSources = computed(() => orderedPayments.value.filter(isCreditCard))
 const managementTab = ref('cards')
 const localReceiptCount = ref(null)
 const receiptImagesBusy = ref(false)
@@ -114,6 +116,7 @@ async function renameCard() {
   cardMode.value = ''
 }
 const cardPeriod = computed(() => {
+  if (!isCreditCard(bill.value.name)) return null
   const match = /^(\d{4})-(\d{2})$/.exec(bill.value.month)
   const day = closingDayFor(bill.value.name)
   if (!match || !day) return null
@@ -308,6 +311,10 @@ async function togglePlanEnabled(item) {
   finally{recurringBusy.value=false}
 }
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
+// A source reclassified as prepaid must disappear from credit-card billing immediately.
+watch(creditCardSources, sources => {
+  if (bill.value.name && !sources.includes(bill.value.name)) bill.value.name = ''
+})
 const settingsReady = ref(false)
 async function loadFinanceSettings() {
   const [loadedPlans,loadedBills] = await Promise.all([props.api('recurring-plans'),props.api('card-bills')])
@@ -740,12 +747,12 @@ async function removePlan(id) {
 const monthExpenses=(period,source)=>period ? rows.value.filter(e=>e.date>=period.start&&e.date<=period.end&&e.type==='expense'&&e.payment_source===source) : []
 const cardTransactions=computed(()=>monthExpenses(cardPeriod.value,bill.value.name))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
-const selectedSavedBill = computed(() => bills.value.find(record => record.name === bill.value.name && record.month === bill.value.month) || null)
+const selectedSavedBill = computed(() => isCreditCard(bill.value.name) ? bills.value.find(record => record.name === bill.value.name && record.month === bill.value.month) || null : null)
 const savedBillDifference = computed(() => selectedSavedBill.value && loaded.value ? cardTotal.value - Number(selectedSavedBill.value.total) : null)
-const cardBillHistory = computed(() => bills.value.filter(record => record.name === bill.value.name && record.month !== bill.value.month).slice().sort((a,b) => b.month.localeCompare(a.month)))
+const cardBillHistory = computed(() => isCreditCard(bill.value.name) ? bills.value.filter(record => record.name === bill.value.name && record.month !== bill.value.month).slice().sort((a,b) => b.month.localeCompare(a.month)) : [])
 
 async function saveCardBill() {
-  if (!settingsReady.value || !loaded.value || !bill.value.name || !/^\d{4}-(0[1-9]|1[0-2])$/.test(bill.value.month) || !cardPeriod.value) {
+  if (!settingsReady.value || !loaded.value || !isCreditCard(bill.value.name) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(bill.value.month) || !cardPeriod.value) {
     message.value='カード・締め月・明細を確認してください'; return
   }
   const record={name:bill.value.name,month:bill.value.month,start:cardPeriod.value.start,end:cardPeriod.value.end}
@@ -895,7 +902,7 @@ async function removeCardBill(record) {
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>カード別利用額</h2>
     <div class="finance-inputs card-billing-fields">
-      <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in orderedPayments.filter(x => !['現金','その他','其他'].includes(x) && props.paymentSourceMeta[x]?.source_type!=='prepaid')" :key="source" :value="source">{{source}}</option><option v-if="bill.name && !props.paymentSources.includes(bill.name)" :value="bill.name">{{bill.name}}（既存の設定）</option></select></label>
+      <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in creditCardSources" :key="source" :value="source">{{source}}</option></select></label>
       <label>締め月<input class="card-closing-month" v-model="bill.month" type="month" aria-label="締め月"></label>
       <label>利用額<output class="card-usage-total" aria-live="polite">{{loaded && bill.name && cardPeriod ? yen(cardTotal) : "—"}}</output></label>
     </div>
@@ -906,7 +913,7 @@ async function removeCardBill(record) {
       <span>{{cardTransactions.length}}件の支出</span>
     </div>
     <p v-else>カードと締め月を選択してください。</p>
-    <button type="button" :disabled="!settingsReady || !loaded || !bill.name || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
+    <button type="button" :disabled="!settingsReady || !loaded || !isCreditCard(bill.name) || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
     <div v-if="selectedSavedBill" class="finance-saved-bill">
       <div class="finance-saved-bill-text"><span class="finance-saved-bill-caption">保存済みの請求額 · {{selectedSavedBill.month}}</span><strong>{{yen(selectedSavedBill.total)}}</strong><span v-if="savedBillDifference !== null" role="status">{{savedBillDifference === 0 ? '現在の明細と一致' : '現在の明細との差額：'+yen(savedBillDifference)+'（再保存すると更新）'}}</span></div>
       <button type="button" class="finance-compact-action" @click="removeCardBill(selectedSavedBill)" :aria-label="selectedSavedBill.month+' の保存済み請求額を削除'">削除</button>

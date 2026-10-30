@@ -90,8 +90,10 @@ test('Pages production build runs API and OCR regression suite before Vite', () 
 })
 
 test('OCR engine uses a compact, accessible two-option selector without changing free default', () => {
-  const picker = app.match(/<div class="ocr-engine-picker"[\s\S]*?<\/div>\s*<p class="ocr-engine-note"/)?.[0]
+  const picker = app.match(/<div class="ocr-engine-picker"[\s\S]*?<\/div>\s*<p[^>]*class="ocr-engine-note"/)?.[0]
   assert.ok(picker, 'the scanner shows a dedicated compact engine selector')
+  assert.match(picker,/v-if="aiQuota"/)
+  assert.match(app,/本日のAI残り回数/)
   assert.match(picker, /role="group" aria-label="画像の読み取り方法"/)
   assert.match(picker, /:aria-pressed="!aiOcrEnabled"/)
   assert.match(picker, /:aria-pressed="aiOcrEnabled"/)

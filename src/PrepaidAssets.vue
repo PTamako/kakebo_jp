@@ -39,9 +39,9 @@ watch(()=>[props.active,props.revision],()=>{if(props.active)void refresh()})
 onMounted(()=>{if(props.active)void refresh()})
 </script>
 <template>
-  <details class="panel wallet-panel" open aria-label="交通系IC・プリペイド">
+  <details class="panel wallet-panel" open aria-label="プリペイド・電子マネー">
     <summary class="wallet-section-heading">
-      <span><strong>交通系IC・プリペイド</strong><small>{{data ? data.cards.length+'件' : '残高を確認'}}</small></span>
+      <span><strong>プリペイド・電子マネー</strong><small>{{data ? data.cards.length+'件' : '残高を確認'}}</small></span>
       <span class="wallet-heading-end"><b v-if="data">{{money(data.cards.reduce((sum,card)=>sum+Number(card.balance),0))}}</b><span class="wallet-chevron" aria-hidden="true">⌄</span></span>
     </summary>
     <div class="wallet-body">

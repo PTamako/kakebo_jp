@@ -1,4 +1,6 @@
 # Separate scheduled Worker; this does not replace Pages wrangler.toml.
+# Workers Builds production deploy: npx wrangler deploy --config wrangler.nav.toml
+# Keep the repository root wrangler.toml for Pages; never rename it to this Worker.
 # One deploy creates a daily 20:30 JST Cron Trigger (11:30 UTC).
 name = "kakeibo-nav-sync"
 main = "workers/fund-nav-cron.js"

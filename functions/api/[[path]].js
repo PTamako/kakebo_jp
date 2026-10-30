@@ -656,8 +656,12 @@ export async function onRequest({ request, env, params }) {
           return json({error:'カテゴリー規則を確認してください'},400)
         // Only add missing keys when restoring. User-edited mappings are never overwritten.
         if (keyword.startsWith('__user_priority__:')) return json({error:'無効な店舗名です'},400)
-        await db.batch([
-          db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)').bind(keyword,category),
+        const saveCategory=db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)').bind(keyword,category)
+        // In a reviewed large-backup restore, an unmarked historical rule
+        // stays unmarked. Normal user edits still gain explicit priority.
+        if(body.isCustom===false) await saveCategory.run()
+        else await db.batch([
+          saveCategory,
           db.prepare("INSERT INTO merchant_rules(keyword,category) VALUES('__user_priority__:'||?1,'__priority__') ON CONFLICT(keyword) DO UPDATE SET category='__priority__'").bind(keyword)
         ]).run()
         return json({ok:true})

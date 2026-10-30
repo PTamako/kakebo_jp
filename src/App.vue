@@ -15,6 +15,7 @@ import AssetsPage from './pages/AssetsPage.vue'
 import ManagementPage from './pages/ManagementPage.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
+import { detectRegisteredReceiptPayment } from './receipt-payment.js'
 import { detectPrepaidRecharge, prepaidTarget } from './prepaid-card.js'
 import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
@@ -429,7 +430,17 @@ function recognize(mode = recognitionMode.value, append = false) {
     const matchingPrepaid=effectiveMode==='receipt'||effectiveMode==='statement' ? detectPrepaidRecharge(transferText,prepaidSources.value) : ''
     const type = transfer || matchingPrepaid ? 'transfer' : effectiveMode === 'receipt' ? 'expense' : normalizedDraftType(f.type)
     const imported = effectiveMode === 'statement' ? importPaymentSource.value : ''
-    return { ...f, type, category: type==='transfer' ? '投資・資産移動' : f.category, transferTarget: matchingPrepaid ? prepaidTarget(matchingPrepaid) : f.transferTarget || (transfer ? 'sbi' : ''), transferDate: f.transferDate || f.date, paymentSource: type==='transfer' ? (imported || '') : suggestedPayment(f.merchant, f.paymentSource, type, imported), recognizedPayment: f.paymentSource || '', importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
+    const receiptPayment=effectiveMode==='receipt'
+      ? detectRegisteredReceiptPayment(f.raw||input.value,paymentSources.value,paymentSourceMeta.value) : ''
+    // Rule > registered OCR card > default, with a user-selected card
+    // remaining authoritative after an edit. Payment networks like QUICPay
+    // are not standalone cards and can never silently create one.
+    const recognizedPayment=effectiveMode==='receipt'
+      ? (receiptPayment || (paymentSources.value.includes(f.paymentSource) ? f.paymentSource : ''))
+      : (f.paymentSource || '')
+    const chosenPayment=type==='transfer' ? (imported||'')
+      : suggestedPayment(f.merchant,recognizedPayment,type,imported)
+    return { ...f, type, category: type==='transfer' ? '投資・資産移動' : f.category, transferTarget: matchingPrepaid ? prepaidTarget(matchingPrepaid) : f.transferTarget || (transfer ? 'sbi' : ''), transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   // Preserve the current input tab: pasted text stays in 手入力. Only the
@@ -488,6 +499,9 @@ async function onImage(e, mode = 'statement') {
         receiptSaveError.value = '読み取りは成功しましたが、画像を保存用に準備できませんでした。下の「レシート画像を追加」から再選択してください。'
       }
     }
+    // Do not classify a scanned receipt before saved merchant-payment rules
+    // and the configured default card are available from existing D1.
+    if (!paymentSettingsLoaded) await loadPaymentSettings()
     recognize(mode, true)
     entryInputMode.value = 'scan'
   } catch (err) { pendingReceiptImage.value = null; pendingReceiptFileName.value = ''; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
@@ -820,7 +834,11 @@ async function openPrepaidHistoryDetails(cardName,kind) {
   visibleEntryCount.value = 20
   calendarExpanded.value = false
   preserveOperatedDay.value = ''
-  prepaidHistoryFilter.value = { card:cardName, kind }
+  const source=paymentSourceMeta.value[cardName]
+  prepaidHistoryFilter.value = {
+    card:cardName, kind, openingDate:source?.opening_date||'',
+    openingEntryId:Number(source?.opening_entry_id||0)
+  }
   entryTypeFilter.value = kind === 'charge' ? 'transfer' : 'expense'
   const targetMonth = currentMonth()
   const changedMonth = month.value !== targetMonth

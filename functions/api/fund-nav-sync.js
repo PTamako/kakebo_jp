@@ -1,10 +1,7 @@
 // Explicit official provider for MUFG-managed funds only.
 // Never fetch the SBI portfolio or infer a purchase from a price update.
-export const MUFG_FUNDS = Object.freeze({
-  '0331418A': 'eMAXIS Slim 全世界株式（オール・カントリー）',
-  '03311187': 'eMAXIS Slim 米国株式（S&P500）',
-  '0331A172': 'eMAXIS Slim 先進国債券インデックス（除く日本）'
-})
+import { MUFG_FUNDS } from '../../src/fund-nav-coverage.js'
+export { MUFG_FUNDS } from '../../src/fund-nav-coverage.js'
 export const PENDING_NAV_FUNDS = Object.freeze({
   '04317188': 'iFreeNEXT NASDAQ100インデックス' // Daiwa: verified programmatic JSON feed not yet available.
 })

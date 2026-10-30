@@ -45,8 +45,7 @@ export async function restoreAtomic(db, archive) {
   for(const category of archive.categories||[]) {
     // Never rewrite historical category assignments; these rows only register
     // a user-added category in the category dropdown.
-    add('INSERT OR IGNORE INTO rules(keyword,category) VALUES(?1,?2)','__category__:'+category,category)
-    add("INSERT INTO category_source(category,sort_order) VALUES(?1,CASE WHEN ?1 IN ('其他','其他收入') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999) END) ON CONFLICT(category) DO UPDATE SET sort_order=COALESCE(category_source.sort_order,excluded.sort_order)",category)
+    add("INSERT INTO category_source(category,sort_order) VALUES(?1,CASE WHEN ?1 IN ('其他','其他收入') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999) END) ON CONFLICT(category) DO NOTHING",category)
   }
   for (const row of archive.categoryMetadata||[]) {
     add(`INSERT INTO category_source(category,sort_order,icon,display_name) VALUES(?1,?2,?3,?4)
@@ -60,7 +59,9 @@ export async function restoreAtomic(db, archive) {
     if(!/^[a-z][a-z-]{1,40}$/.test(icon))throw Error('atomic_restore_invalid_icon')
     add('INSERT INTO category_source(category,icon) VALUES(?1,?2) ON CONFLICT(category) DO UPDATE SET icon=excluded.icon WHERE category_source.icon IS NULL',category,icon)
   }
-  for(const rule of archive.customRules||[])add('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)',rule.keyword,rule.category)
+  // Backup user rules go into merchant_rules only. Never seed the defaults.
+  for(const rule of archive.customRules||[])
+    add('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)',rule.keyword,rule.category)
   for(const rule of archive.merchantPaymentRules||[]) {
     // Missing cards are not imported as dangling rules.
     add('INSERT INTO merchant_rules(keyword,payment_source) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM payment_sources WHERE name=?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=COALESCE(merchant_rules.payment_source,excluded.payment_source)',rule.keyword,rule.payment_source)

@@ -257,7 +257,7 @@ export async function onRequest({ request, env, params }) {
           + " FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
-        "SELECT category FROM rules WHERE substr(keyword,1,13)='__category__:' ORDER BY category",
+        'SELECT category FROM category_source ORDER BY CASE WHEN category IN (\'其他\',\'その他\') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category',
         'SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category',
         'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id',
         ...(portfolioReady ? [
@@ -276,8 +276,8 @@ export async function onRequest({ request, env, params }) {
         plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
         paymentSources:rows(3),merchantPaymentRules:rows(4),
-        customRules:rows(5),
-        categories:[...new Set(['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他',...rows(6).map(x=>x.category)])],
+        customRules:rows(5).map(rule=>({...rule,is_custom:true})),
+        categories:rows(6).map(x=>x.category),
         categoryIcons:Object.fromEntries(rows(7).filter(x=>x.icon).map(x=>[x.category,x.icon])),
         categoryMetadata:rows(7),
         dismissedTransfers:rows(8).map(x=>x.entry_id),
@@ -311,7 +311,7 @@ export async function onRequest({ request, env, params }) {
       // transaction/payment references or any user-created payment method.
       // The completed migration already persisted payment sorting. Read only.
       const migrated=await prepaidSchemaReady(db)
-      const columns=migrated?'name,is_default,closing_day,source_type,opening_balance,opening_date':"name,is_default,closing_day,'standard' AS source_type,0 AS opening_balance,'' AS opening_date"
+      const columns=migrated?'name,is_default,closing_day,source_type,opening_balance,opening_date,opening_entry_id':"name,is_default,closing_day,'standard' AS source_type,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id"
       const {results}=await db.prepare("SELECT "+columns+" FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
       return json(results)
     }
@@ -440,6 +440,8 @@ export async function onRequest({ request, env, params }) {
       const newName = typeof body?.newName === 'string' ? body.newName.trim() : ''
       if (!oldName || !newName || oldName === '現金' || oldName.length > 80 || newName.length > 80)
         return json({ error: 'カード名を確認してください' }, 400)
+      if (!(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(oldName).first()))
+        return json({error:'元のカードが見つかりません。明細は変更していません',code:'payment_source_not_found'},404)
       if (oldName === newName) return json({ ok: true, changes: 0 })
       if (await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(newName).first()) return json({ error: '同じカード名が登録されています' }, 409)
       // Schema is provisioned by explicit migrations, never by business requests.
@@ -447,15 +449,21 @@ export async function onRequest({ request, env, params }) {
       // A saved bill for the destination name/month must not be silently overwritten.
       const collision = await db.prepare('SELECT 1 AS found FROM card_bills WHERE payment_source=?1 AND bill_month IN (SELECT bill_month FROM card_bills WHERE payment_source=?2) LIMIT 1').bind(newName,oldName).first()
       if (collision) return json({error:'変更先に同月のカード請求が存在します'},409)
+      // Place the parent-card rename last and guard every dependent UPDATE.
+      // If another device removed the old card before this D1 batch starts,
+      // none of its historical ledger rows may be re-labelled. D1 rolls back
+      // the entire batch on a duplicate target name.
+      const present="EXISTS (SELECT 1 FROM payment_sources WHERE name=?2)"
       const result = await db.batch([
-        db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName),
-        db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
-        db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
-        db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2').bind('prepaid:'+newName,'prepaid:'+oldName),
-        db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
-        db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName)
+        db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
+        db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
+        db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2 AND EXISTS (SELECT 1 FROM payment_sources WHERE name=?3)').bind('prepaid:'+newName,'prepaid:'+oldName,oldName),
+        db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
+        db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
+        db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName)
       ])
-      return json({ ok: true, changes: result[2]?.meta?.changes ?? 0 })
+      if (!result[5]?.meta?.changes) return json({error:'元のカードが見つかりません。明細は変更していません',code:'payment_source_not_found'},404)
+      return json({ ok: true, changes: result[1]?.meta?.changes ?? 0 })
     }
     if (a === 'recurring-post' && m === 'POST') {
       // Atomic, non-destructive fixed-expense insertion; conflicting manual records win.
@@ -614,85 +622,85 @@ export async function onRequest({ request, env, params }) {
       }
     }
     if (a === 'categories') {
-      // Read from completed category_source. Do not write ranks or old defaults.
       if (m === 'GET') {
-        const base = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他']
-        const { results } = await db.prepare(`SELECT category,sort_order FROM category_source
-          WHERE category IN ('餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他')
-             OR EXISTS(SELECT 1 FROM rules WHERE keyword='__category__:'||category_source.category)
-          ORDER BY CASE WHEN category='其他' THEN 99999 ELSE COALESCE(sort_order,10000) END,category`).all()
-        const ranks = new Map((results || []).map(row=>[row.category,row.sort_order]))
-        return json([...new Set([...base,...ranks.keys()])].sort((a,b)=>
-          (a==='其他' ? 99999 : (ranks.get(a) ?? base.indexOf(a))) -
-          (b==='其他' ? 99999 : (ranks.get(b) ?? base.indexOf(b))) ||
-          a.localeCompare(b,'ja')
-        ))
+        // D1 category_source is the single source. Do not read historic
+        // rules markers or manufacture categories absent from production.
+        const {results}=await db.prepare("SELECT category FROM category_source WHERE category NOT IN ('工资','奖金','副业','老公生活费','父母赠与','亲友赠与','退款','其他收入') ORDER BY CASE WHEN category IN ('其他','その他') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category").all()
+        return json(results.map(row=>row.category))
       }
       if (m === 'POST') {
         const body = await request.json()
-        const name = String(body.name || '').trim().slice(0, 20)
-        if (name.length < 1) return json({ error: 'カテゴリー名を入力してください' }, 400)
+        const name = String(body.name || '').trim().slice(0,20)
+        if (!name) return json({error:'カテゴリー名を入力してください'},400)
         const reserved = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他','その他','其他收入','その他の収入']
         const icon = String(body.icon || 'other')
         const validIcons = ['food','dining','daily','transport','shopping','home','medical','pet','beauty','education','insurance','utilities','phone','tax','travel','subscriptions','gift','electricity','water','gas','rent','internet','hair','cosmetics','clothes','shoes','books','lessons','childcare','family','car','bicycle','fuel','parking','fitness','health','medicine','dental','cafe','hobby','music','movie','electronics','furniture','repair','charity','bank','savings','fees','delivery','cleaning','events','work','phone-device','other']
-        if (!validIcons.includes(icon)) return json({ error: 'アイコンを確認してください' }, 400)
-        if (reserved.includes(name)) return json({ error: '同じカテゴリが既にあります' }, 409)
-        const existing = await db.prepare('SELECT keyword FROM rules WHERE keyword = ?1').bind('__category__:' + name).first()
-        if (existing) return json({ error: '同じカテゴリが既にあります' }, 409)
-        // A single transaction registers the category and both metadata fields.
-        await db.batch([
-          db.prepare('INSERT OR IGNORE INTO rules (keyword, category) VALUES (?1, ?2)').bind('__category__:' + name, name),
-          db.prepare(`INSERT INTO category_source(category,sort_order,icon,display_name)
-            VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999),?2,?1)
-            ON CONFLICT(category) DO UPDATE SET
-              sort_order=COALESCE(category_source.sort_order,excluded.sort_order),
-              icon=COALESCE(category_source.icon,excluded.icon),
-              display_name=COALESCE(category_source.display_name,excluded.display_name)`).bind(name, icon)
-        ])
-        return json({ ok: true, category: name })
+        if (!validIcons.includes(icon)) return json({error:'アイコンを確認してください'},400)
+        if (reserved.includes(name)) return json({error:'同じカテゴリが既にあります'},409)
+        // User-confirmed category creation only; never write the old rules
+        // table or reinsert historical category defaults.
+        const result=await db.prepare(`INSERT INTO category_source(category,sort_order,icon,display_name)
+          VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999),?2,?1)
+          ON CONFLICT(category) DO NOTHING`).bind(name,icon).run()
+        if (!result.meta?.changes) return json({error:'同じカテゴリが既にあります'},409)
+        return json({ok:true,category:name})
       }
     }
     if (a === 'custom-rules') {
-      // Only the combined merchant_rules table is used for active preferences.
+      // All merchant_rules category rows are user-defined, including old rows.
       if (m === 'POST') {
         const body = await request.json()
         const keyword = typeof body?.keyword === 'string' ? body.keyword.trim() : ''
         const category = typeof body?.category === 'string' ? body.category.trim() : ''
-        if (keyword.length < 2 || keyword.length > 120 || !category || category.length > 120)
+        if (keyword.length < 2 || keyword.length > 120 || !category || category.length > 120 || keyword.startsWith('__'))
           return json({error:'カテゴリー規則を確認してください'},400)
-        // Only add missing keys when restoring. User-edited mappings are never overwritten.
+        // Restore adds missing category mappings, never overwrites a newer
+        // user rule or payment selection; no default rules table mutation.
         await db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)').bind(keyword,category).run()
         return json({ok:true})
       }
       if (m === 'GET') {
-        const { results } = await db.prepare('SELECT keyword, category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword').all()
-        return json(results)
+        const {results}=await db.prepare('SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword').all()
+        return json(results.map(rule=>({...rule,is_custom:true})))
       }
       if (m === 'DELETE') {
         const keyword = url.searchParams.get('keyword') || ''
         if (keyword.length < 2 || keyword.length > 80) return json({ error: '店舗名を確認してください' }, 400)
         await db.batch([
-        db.prepare('DELETE FROM merchant_rules WHERE keyword=?1 AND payment_source IS NULL').bind(keyword),
-        db.prepare('UPDATE merchant_rules SET category=NULL WHERE keyword=?1').bind(keyword)
-      ])
+          db.prepare('DELETE FROM merchant_rules WHERE keyword=?1 AND payment_source IS NULL').bind(keyword),
+          db.prepare('UPDATE merchant_rules SET category=NULL WHERE keyword=?1').bind(keyword)
+        ])
         return json({ ok: true })
       }
     }
     if (a === 'rules') {
       if (m === 'GET') {
-        // Migrated D1 is authoritative. No hard-coded defaults, fallback rows or historical imports.
-        const {results} = await db.prepare('SELECT keyword, category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword').all()
-        return json(results.map(rule => ({...rule,is_custom:true})))
+        // Both rule tables already exist in production D1. Read without
+        // initializing anything: rules = defaults; merchant_rules = user edits.
+        const sources=await db.batch([
+          db.prepare('SELECT keyword,category FROM rules ORDER BY keyword'),
+          db.prepare('SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword')
+        ])
+        const merged=new Map()
+        for(const rule of sources[0]?.results||[]) {
+          if(rule.keyword && rule.category && !String(rule.keyword).startsWith('__'))
+            merged.set(rule.keyword,{keyword:rule.keyword,category:rule.category,is_custom:false})
+        }
+        for(const rule of sources[1]?.results||[]) {
+          if(rule.keyword && rule.category && !String(rule.keyword).startsWith('__'))
+            merged.set(rule.keyword,{keyword:rule.keyword,category:rule.category,is_custom:true})
+        }
+        return json([...merged.values()])
       }
       if (m === 'POST') {
-        const r = await request.json()
-        const kw = String(r.keyword || '').trim()
-        const category = String(r.category || '').trim()
-        if (kw.length < 2) return json({ error: 'キーワードは2文字以上で入力してください' }, 400)
-        if (!category) return json({ error: 'カテゴリーを指定してください' }, 400)
-        // Keep the user's payment mapping when updating the custom category.
-        await db.prepare('INSERT INTO merchant_rules (keyword,category) VALUES (?1,?2) ON CONFLICT(keyword) DO UPDATE SET category = excluded.category').bind(kw, category).run()
-        return json({ ok: true, keyword: kw, category })
+        const r=await request.json()
+        const kw=String(r.keyword||'').trim()
+        const category=String(r.category||'').trim()
+        if(kw.length<2 || kw.length>120 || kw.startsWith('__'))return json({error:'キーワードは2文字以上で入力してください'},400)
+        if(!category || category.length>120)return json({error:'カテゴリーを指定してください'},400)
+        // User saves always belong to merchant_rules; default rules are read-only.
+        await db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=excluded.category').bind(kw,category).run()
+        return json({ok:true,keyword:kw,category})
       }
     }
 

@@ -150,7 +150,13 @@ class LedgerDb {
         if (sql.startsWith('DELETE FROM entries')) db.entries = db.entries.filter(e => e.id !== this.args[0])
         if (sql.startsWith('DELETE FROM rules')) throw Error('migration attempted to delete user rules')
         if (sql.startsWith('INSERT OR REPLACE INTO rules')) throw Error('migration attempted to overwrite user rules')
-        if (sql.startsWith('INSERT INTO category_source(category,sort_order,icon') && !db.icons.some(r => r.category === this.args[0])) db.icons.push({ category: this.args[0], icon: this.args[1] })
+        if (sql.startsWith('INSERT INTO category_source(category,sort_order,icon')) {
+          // Mirror SQLite's ON CONFLICT(category) DO NOTHING behavior so a
+          // second insertion cannot falsely report success in the API test.
+          if (db.icons.some(r => r.category === this.args[0])) return {meta:{changes:0}}
+          db.icons.push({category:this.args[0],icon:this.args[1]})
+          return {meta:{changes:1}}
+        }
         if (sql.startsWith('INSERT OR IGNORE INTO custom_rules') && !db.customRules.some(r => r.keyword === this.args[0]))
           db.customRules.push({ keyword: this.args[0], category: this.args[1] })
         if (sql.startsWith('INSERT OR IGNORE INTO rules') && !db.rules.some(r => r.keyword === this.args[0]))
@@ -323,6 +329,7 @@ test('renaming a card rejects existing destination without touching transactions
 })
 test('renaming a card rebinds historical payments without altering amounts or investments', async () => {
   const db = new LedgerDb()
+  db.paymentSources.add('旧カード')
   await call(db,'entries','POST',{date:'2026-10-01',amount:1200,type:'expense',paymentSource:'旧カード',clientRequestId:'rename-test-001'})
   await call(db,'entries','POST',{date:'2026-10-02',amount:15000,type:'transfer',transferTarget:'sbi',paymentSource:'旧カード',clientRequestId:'rename-test-002'})
   const before = db.entries.map(e=>({id:e.id,amount:e.amount,type:e.type,transfer_target:e.transfer_target}))
@@ -334,6 +341,16 @@ test('renaming a card rebinds historical payments without altering amounts or in
   assert.ok(db.sql.every(sql=>!/investment_snapshots/i.test(sql)))
 })
 
+
+test('orphaned ledger entries are never renamed when old payment source is missing',async()=>{
+  const db=new LedgerDb()
+  db.entries.push({id:1,date:'2026-10-20',amount:2000,type:'expense',payment_source:'削除済の名前',transfer_target:null})
+  const before=JSON.stringify(db.entries)
+  const result=await call(db,'payment-sources/rename','POST',{oldName:'削除済の名前',newName:'別カード'})
+  assert.equal(result.status,404)
+  assert.equal(JSON.stringify(db.entries),before)
+  assert.ok(!db.paymentSources.has('別カード'))
+})
 test('retired finance-settings APIs never recreate deprecated D1 tables',async()=>{
   const db=new LedgerDb()
   for(const key of ['plans','bills','closing-days','theme']) {

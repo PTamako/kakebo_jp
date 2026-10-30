@@ -1,4 +1,5 @@
 import { findTransactionTime } from './entry-time.js'
+import { isStationMerchant } from './station-merchant.js'
 // テキスト・OCR解析：日付、時刻、金額、店舗、カテゴリー（ブラウザ内で処理）
 export const CATEGORIES = ['餐饮', '饮食料品', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
 
@@ -61,9 +62,12 @@ export function classify(text, rules = []) {
   // rule when the database contains a more precise supermarket rule.
   const isGenericBusCollision = rule => normalize(rule.keyword).toLowerCase() === 'バス'
     && matchedDefaults.some(base => normalize(base.keyword).toLowerCase().includes('まいばす'))
-  const chosen = candidates.find(r => r.is_custom !== false && matches(r) && !isGenericBusCollision(r))
-    || matchedDefaults[0]
-    || candidates.find(matches)
+  const custom = candidates.find(r => r.is_custom !== false && matches(r) && !isGenericBusCollision(r))
+  if (custom) return { category: custom.category, keyword: custom.keyword }
+  // Default station fallback, never an auto-created user rule. A named shop
+  // such as 「新宿駅店」 must NOT match, and user-defined rules always win.
+  if (isStationMerchant(text)) return { category: '交通', keyword: '駅' }
+  const chosen = matchedDefaults[0] || candidates.find(matches)
   return chosen ? { category: chosen.category, keyword: chosen.keyword } : { category: '日用品', keyword: '' }
 }
 

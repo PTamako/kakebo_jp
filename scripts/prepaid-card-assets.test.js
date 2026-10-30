@@ -13,6 +13,7 @@ test('recharge detector requires an explicitly registered transit card and recha
   assert.equal(detectPrepaidRecharge('Suica チャージ 3000',['Suica','モバイルSuica']),'')
   assert.equal(prepaidTarget('Suica'),'prepaid:Suica')
   assert.equal(prepaidBalance({opening_balance:1000,charged:3000,spent:220}),3780)
+  assert.equal(prepaidBalance({opening_balance:1000,charged:3000,spent:220,transferred_out:500}),3280)
 })
 
 test('newly registered prepaid card names work without a fixed brand list',()=>{

@@ -1,4 +1,5 @@
 import { isAppliedSbiTransfer } from './investment-transfer.js'
+import { handlePrepaid, validPrepaidTarget, prepaidSchemaReady } from './prepaid-assets.js'
 import { handlePortfolio } from './investment-portfolio.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
@@ -403,13 +404,16 @@ export async function onRequest({ request, env, params }) {
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
       // Use the already migrated merchant_rules table; never re-import old mappings.
     }
+    if (a === 'prepaid-assets') return handlePrepaid({db,method:m,sub:b})
     if (a === 'payment-sources' && !b && m === 'GET') {
       // Closing days are authoritative on payment_sources.closing_day.
       // Never recreate the deprecated finance_settings table.
       // Enforce the persisted sentinel on existing databases, without touching
       // transaction/payment references or any user-created payment method.
       // The completed migration already persisted payment sorting. Read only.
-      const { results } = await db.prepare("SELECT name, is_default, closing_day FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
+      const migrated=await prepaidSchemaReady(db)
+      const columns=migrated?'name,is_default,closing_day,source_type,opening_balance,opening_date':"name,is_default,closing_day,'standard' AS source_type,0 AS opening_balance,'' AS opening_date"
+      const {results}=await db.prepare("SELECT "+columns+" FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
       return json(results)
     }
     if (a === 'payment-sources' && b === 'restore-missing' && m === 'POST') {
@@ -526,6 +530,7 @@ export async function onRequest({ request, env, params }) {
         db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName),
         db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
         db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
+        db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2').bind('prepaid:'+newName,'prepaid:'+oldName),
         db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName),
         db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2').bind(newName,oldName)
       ])
@@ -594,7 +599,9 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日付または金額が正しくありません' }, 400)
         const paymentSource = e.paymentSource == null ? '' : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
-        const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
+        const rawTarget=transfer?String(e.transferTarget||''):''
+        if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
+        const target=transfer?(rawTarget||null):null
         const transferDate = transfer ? (e.transferDate || e.date) : null
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -641,11 +648,13 @@ export async function onRequest({ request, env, params }) {
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
         const paymentSource = e.paymentSource == null ? (previous.payment_source || '') : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
-        const target = transfer && e.transferTarget === 'sbi' ? e.transferTarget : null
+        const rawTarget=transfer?String(e.transferTarget||''):''
+        if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
+        const target=transfer?(rawTarget||null):null
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-        const applied = target && transferDate <= today ? 1 : 0
+        const applied = target==='sbi' && transferDate <= today ? 1 : 0
         const result = await db.prepare(
           'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11, payment_source = ?12 WHERE id = ?13'
         ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied ? 1 : 0, transferDate, paymentSource, id).run()

@@ -32,15 +32,39 @@ function standaloneTime(line) {
   const trailing = (line.slice(0, clock.index) + line.slice(clock.index + clock[0].length)).trim()
   return trailing === '' || /^[（(][月火水木金土日][)）]$/.test(trailing) ? readClockTime(clock[0]) : ''
 }
+// On printed receipts, OCR may move "レジ0107 12:36" to the next line
+// after the transaction date. Only trust this compact till-number layout
+// immediately beside an actual date, never as a generic clock anywhere.
+function adjacentTillTime(line) {
+  const normalized=FULL_WIDTH(line)
+  const match=normalized.match(/^(?:レジ\s*\d{1,8}|REG\s*\d{1,8})\s+(.+)$/i)
+  return match ? standaloneTime(match[1]) : ''
+}
+function printedDateSpacedTime(line) {
+  const normalized=FULL_WIDTH(line)
+  const date=normalized.match(DATE_MARKER)
+  if(!date) return ''
+  // OCR sometimes loses the colon in "12:36" while retaining the space.
+  // This is only allowed AFTER the printed date, not elsewhere on a receipt.
+  const after=normalized.slice(date.index+date[0].length).replace(/^\s*[（(][月火水木金土日][)）]\s*/,'').trim()
+  const match=after.match(/^([01]?\d|2[0-3])\s+([0-5]\d)\s*$/)
+  return match ? String(Number(match[1])).padStart(2,'0')+':'+match[2] : ''
+}
 export function findTransactionTime(raw, preferredDateLine = '') {
   const lines = FULL_WIDTH(raw).split(/\r?\n/).map(s => s.trim()).filter(Boolean)
   if (!lines.length) return ''
   const probe = i => {
     const line = lines[i]
     if (!line || /営業時間|開店|閉店/.test(line)) return ''
-    const directlyPrinted = readClockTime(line)
+    const directlyPrinted = readClockTime(line) || printedDateSpacedTime(line)
     if (directlyPrinted) return directlyPrinted
-    return standaloneTime(lines[i + 1] || '') || standaloneTime(lines[i - 1] || '')
+    const next=lines[i+1] || ''
+    const nearby=standaloneTime(next) || adjacentTillTime(next) || standaloneTime(lines[i-1]||'')
+    if(nearby) return nearby
+    // A separate till number is a common OCR line break:
+    // 2026/10/30(金) / レジ0107 / 12:36
+    if(/^(?:レジ|REG)\s*\d{1,8}$/i.test(next))return standaloneTime(lines[i+2]||'')
+    return ''
   }
   if (preferredDateLine) {
     const target = FULL_WIDTH(preferredDateLine).trim()

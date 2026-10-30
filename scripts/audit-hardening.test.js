@@ -55,7 +55,7 @@ test('fixed expenses use atomic server-side conflict avoidance and existing valu
   assert.match(api,/ON CONFLICT\(client_request_id\) DO NOTHING/)
   assert.match(recurring,/api\('recurring-post'/)
   assert.match(finance,/postApprovedRecurringEntries\(props\.api/)
-  assert.match(api,/current_value IS NULL AND pnl IS NULL/)
+  assert.doesNotMatch(api,/SELECT .*investment_snapshots|UPDATE investment_snapshots|INSERT INTO investment_snapshots/)
   assert.doesNotMatch(api,/UPDATE investment_snapshots SET current_value\s*=\s*current_value\s*\+/)
 })
 

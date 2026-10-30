@@ -54,7 +54,11 @@ CREATE TABLE IF NOT EXISTS payment_sources (
   name TEXT PRIMARY KEY,
   sort_order INTEGER NOT NULL DEFAULT 0,
   is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)),
-  closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31)
+  closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31),
+  source_type TEXT NOT NULL DEFAULT 'standard' CHECK(source_type IN ('standard','prepaid')),
+  opening_balance INTEGER NOT NULL DEFAULT 0 CHECK(opening_balance >= 0),
+  opening_date TEXT NOT NULL DEFAULT '',
+  opening_entry_id INTEGER NOT NULL DEFAULT 0 CHECK(opening_entry_id >= 0)
 );
 -- One active merchant preference row can have both a category and a
 -- payment source. Legacy custom_rules/merchant_payment_rules are retained

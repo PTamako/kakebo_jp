@@ -2,7 +2,7 @@
 export const backupVersion = 4
 
 const RESTORE_SETTING_ORDER = [
-  'paymentSources','categories','categoryMetadata','categoryIcons',
+  'paymentSources','categoryMetadata','categories','categoryIcons',
   'customRules','merchantPaymentRules','bills',
   'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans'
 ]

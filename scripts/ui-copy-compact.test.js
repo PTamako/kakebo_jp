@@ -30,7 +30,7 @@ test('remove redundant visual helper paragraphs without changing chart labels or
   // The duplicate NAV explanation was deliberately removed. Every holding
   // and the add/edit dialog show their own dynamic auto/manual sync status.
   assert.doesNotMatch(app,/基準価額の更新について|自動取得は対応銘柄のみ。保有口数・取得金額は手入力です。/)
-  assert.match(app,/\{\{navModeLabel\(h\.fund_code\)\}\}/)
+  assert.match(app,/\{\{navModeLabel\(fund\.fund_code\)\}\}/)
   assert.match(app,/\{\{navModeLabel\(holding\.fundCode\)\}\}/)
   assert.match(app, /class="sbi-footnote"/)
 })

@@ -442,34 +442,34 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-disclosure-summary small{font-size:11px;color:var(--muted)}
 .sbi-chevron{font-size:20px;line-height:1;color:var(--muted);transition:transform .18s}
 .sbi-card[open] > .sbi-disclosure-summary .sbi-chevron{transform:rotate(180deg)}
-.sbi-disclosure-summary:focus-visible,.sbi-show-more:focus-visible,.sbi-holding-detail summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.sbi-disclosure-summary:focus-visible,.sbi-show-more:focus-visible,.sbi-holding-action:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .sbi-section-body{padding:0 14px 12px}.sbi-inline-action{display:flex;justify-content:flex-end;padding:0 0 5px}.sbi-inline-action .sbi-text-action{background:var(--paper);min-height:38px;border-radius:10px}
 .sbi-inline-action .sbi-text-action{padding:4px 10px;min-height:44px}
 .sbi-holding-row,.sbi-plan-row,.sbi-transfer-row{padding:9px 0}
 .sbi-holding-top{gap:7px}
 .sbi-holding-value strong{font-size:15px}
-.sbi-holding-row{display:block!important;min-height:0!important;margin:0!important;padding:11px 0!important;border-top:1px solid var(--line)}
-.sbi-holding-top{display:grid!important;grid-template-columns:10px minmax(0,1fr) auto;align-items:start!important;gap:9px;min-height:0}
+/* One stable two-row grid per holding. The expanded details live OUTSIDE
+   the actions container and can never push 編集 / 詳細 out of alignment. */
+.sbi-holding-row{display:grid;gap:5px;min-height:0;margin:0;padding:11px 0 10px;border-top:1px solid var(--line)}
+.sbi-holding-top{display:grid;grid-template-columns:10px minmax(0,1fr) minmax(82px,max-content);align-items:start;gap:9px;min-height:0}
 .sbi-fund-dot{margin-top:5px}
 .sbi-holding-name{min-width:0;gap:3px}
-.sbi-holding-name strong{font-size:13px;line-height:1.4}
-.sbi-holding-name small{font-size:10px;line-height:1.4}
-.sbi-holding-value{min-width:78px;align-items:flex-end;gap:2px}
-.sbi-holding-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:3px 0 0 18px;min-height:38px}
-.sbi-nav-status{display:inline-flex;align-items:center;border-radius:8px;font-size:10px;font-weight:750;padding:4px 7px;line-height:1.4;white-space:nowrap}
+.sbi-holding-name strong{font-size:13px;line-height:1.35}
+.sbi-holding-name small{font-size:10px;line-height:1.35}
+.sbi-holding-value{min-width:82px;align-items:flex-end;gap:2px}
+.sbi-holding-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin:0 0 0 19px;min-height:42px;min-width:0}
+.sbi-nav-status{display:inline-flex;align-items:center;justify-self:start;border-radius:8px;font-size:10px;font-weight:750;padding:5px 7px;line-height:1.3;white-space:nowrap}
 .sbi-nav-auto{color:#16816b;background:color-mix(in srgb,var(--teal) 13%,var(--card))}
 .sbi-nav-manual{color:var(--muted);background:var(--paper)}
-.sbi-holding-commands{display:flex;align-items:center;gap:4px}
-.sbi-holding-commands .sbi-row-edit,.sbi-holding-detail>summary{font-size:12px;min-height:40px;padding:6px 10px;font-weight:750;color:var(--blue-dark);background:transparent;border:0;white-space:nowrap}
-.sbi-holding-detail{position:static}
-.sbi-holding-detail summary{list-style:none;cursor:pointer}
-.sbi-holding-detail summary::-webkit-details-marker{display:none}
-.sbi-holding-detail[open] .sbi-holding-expanded{display:grid}
-.sbi-holding-row:has(.sbi-holding-detail[open]) .sbi-holding-footer{flex-wrap:wrap}
-.sbi-holding-detail[open]{width:100%;flex-basis:100%}
-.sbi-holding-expanded{display:grid;gap:5px;width:100%;min-width:0;margin:0 0 5px;padding:9px;border-radius:10px;background:var(--paper);color:var(--muted);font-size:11px}
+.sbi-nav-checking,.sbi-nav-unknown,.sbi-nav-invalid{color:var(--muted);background:var(--paper)}
+.sbi-holding-commands{display:flex;justify-content:flex-end;align-items:center;gap:6px;min-width:0}
+.sbi-holding-commands .sbi-holding-action{display:inline-flex;justify-content:center;align-items:center;gap:5px;min-height:42px;min-width:54px;padding:7px 9px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--blue-dark);font-size:12px;line-height:1.2;font-weight:750;white-space:nowrap}
+.sbi-detail-chevron{color:var(--muted);font-size:13px;line-height:1}
+.sbi-holding-expanded{display:grid;gap:6px;min-width:0;margin:2px 0 2px 19px;padding:11px;border-radius:11px;background:var(--paper);color:var(--muted);font-size:11px;line-height:1.5}
+.sbi-holding-expanded .sbi-row-edit{justify-self:start;min-height:40px;padding:8px 9px;color:var(--blue-dark)}
 .sbi-nav-guidance{display:flex;align-items:flex-start;gap:9px;padding:10px;background:var(--paper);border-radius:11px;font-size:11px;line-height:1.5;color:var(--muted)}
-.sbi-nav-guidance span:last-child{flex:1;min-width:0}
+.sbi-nav-guidance span:nth-child(2){flex:1;min-width:0}
+.sbi-nav-retry{flex:none;align-self:center;padding:7px 8px;min-height:40px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--blue-dark);font-size:11px;font-weight:750}
 .sbi-show-more{display:block;margin:2px auto 4px;min-height:44px;padding:7px;border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750}
 .sbi-valuation-details,.sbi-footnote{border-top:1px solid var(--line);margin-top:3px}
 .sbi-valuation-details>summary,.sbi-footnote>summary{cursor:pointer;padding:12px 0;min-height:40px;font-size:11px;color:var(--muted);font-weight:750}

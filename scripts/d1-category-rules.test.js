@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { classify } from '../src/parse.js'
-import { DEFAULT_RULE_ROWS } from '../functions/api/[[path]].js'
+import { DEFAULT_RULE_ROWS } from './fixtures/default-rule-rows.js'
 
 const rows = DEFAULT_RULE_ROWS.map(([keyword, category]) => ({ keyword, category, is_custom: false }))
 

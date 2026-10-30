@@ -5,6 +5,7 @@ import { parseNamedExpenseBlocks } from './named-expense.js'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
+import { ledgerEntryAmount, ledgerEntriesTotal, formatLedgerTotal } from './ledger-totals.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
 import { classify, parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
 import { localHHMM } from './entry-time.js'
@@ -896,7 +897,7 @@ const annualDetailMode = computed(() => detailFilter.value?.period === 'year')
 const pagedEntries = computed(() => sortedDisplayEntries.value.slice(0, visibleEntryCount.value))
 const expandedMonth = ref('')
 const annualVisibleCounts = ref({})
-const annualMonthGroups = computed(() => groupAnnualEntries(sortedDisplayEntries.value, annualVisibleCounts.value, listPageSize))
+const annualMonthGroups = computed(() => groupAnnualEntries(sortedDisplayEntries.value, annualVisibleCounts.value, listPageSize, entryTypeFilter.value))
 function loadMoreAnnualEntries(group) {
   annualVisibleCounts.value = { ...annualVisibleCounts.value, [group.month]: Math.min(group.count, group.items.length + listPageSize) }
 }
@@ -907,13 +908,24 @@ function loadMoreEntries() { visibleEntryCount.value = Math.min(sortedDisplayEnt
 const expandedEntryDays = ref(new Set())
 const preserveOperatedDay = ref('')
 const groupedPagedEntries = computed(() => {
+  // Use every matching row for each day's headline, not just the first 20 visible rows.
+  const fullDays = new Map()
+  for (const entry of sortedDisplayEntries.value) {
+    const day = String(entry.date || '').slice(0, 10)
+    if (!fullDays.has(day)) fullDays.set(day, [])
+    fullDays.get(day).push(entry)
+  }
+  const totalsByDay = new Map()
+  for (const [day, all] of fullDays) {
+    totalsByDay.set(day, { count: all.length, total: ledgerEntriesTotal(all, entryTypeFilter.value) })
+  }
   const groups = new Map()
   for (const entry of pagedEntries.value) {
     const day = String(entry.date || '').slice(0, 10)
-    if (!groups.has(day)) groups.set(day, [])
-    groups.get(day).push(entry)
+    if (!groups.has(day)) groups.set(day, { date: day, items: [], ...totalsByDay.get(day) })
+    groups.get(day).items.push(entry)
   }
-  return [...groups.entries()].map(([date, items]) => ({ date, items }))
+  return [...groups.values()]
 })
 function toggleEntryDay(date) {
   expandedEntryDays.value = expandedEntryDays.value.has(date) ? new Set() : new Set([date])
@@ -1005,23 +1017,22 @@ const calendarDays = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
   const daysInMonth = new Date(year, monthNumber, 0).getDate()
   const firstDayOffset = sundayFirstOffset(year, monthNumber - 1)
-  const amounts = new Map(), expenses = new Map(), incomes = new Map()
-  // Peak badges follow the same transaction and category filters as the calendar.
-  for (const entry of calendarEntries.value) {
-    const key=String(entry.date||'').slice(0,10),amount=Number(entry.amount||0)
-    if(entry.type==='expense')expenses.set(key,(expenses.get(key)||0)+amount)
-    if(entry.type==='income')incomes.set(key,(incomes.get(key)||0)+amount)
-  }
+  const amounts = new Map(), expenses = new Map(), incomes = new Map(), entryCounts = new Map()
+  // Use the same signed totals as the full day heading. Transfers are not spending in "all".
   for (const entry of calendarEntries.value) {
     const key = String(entry.date || '').slice(0, 10)
-    amounts.set(key, (amounts.get(key) || 0) + Number(entry.amount || 0))
+    const amount = Number(entry.amount || 0)
+    amounts.set(key, (amounts.get(key) || 0) + ledgerEntryAmount(entry, entryTypeFilter.value))
+    entryCounts.set(key, (entryCounts.get(key) || 0) + 1)
+    if (entry.type === 'expense' || !entry.type) expenses.set(key, (expenses.get(key) || 0) + amount)
+    if (entry.type === 'income') incomes.set(key, (incomes.get(key) || 0) + amount)
   }
   const maxExpense=Math.max(0,...expenses.values()),maxIncome=Math.max(0,...incomes.values())
   const today=liveNow.value.toLocaleDateString('sv-SE')
   const days = Array.from({ length: firstDayOffset }, (_, i) => ({ key: `blank-${i}`, blank: true }))
   for (let day = 1; day <= daysInMonth; day++) {
     const date = `${year}-${String(monthNumber).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    days.push({ key: date, date, day, amount: amounts.get(date) || 0,
+    days.push({ key: date, date, day, amount: amounts.get(date) || 0, hasEntries: entryCounts.has(date),
       isToday:date===today, topExpense:maxExpense>0 && expenses.get(date)===maxExpense,
       topIncome:maxIncome>0 && incomes.get(date)===maxIncome, blank:false })
   }
@@ -1213,7 +1224,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
 // All page links share these same reactive refs and navigation handlers.
 // Child page components never create separate ledger selection state.
-provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, draftSaveTimer, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, ratioTrendMax, maxYearMonth, highestSpendMonth, annualAverage, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
+provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, draftSaveTimer, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, ratioTrendMax, maxYearMonth, highestSpendMonth, annualAverage, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
 </script>
 
 <template>

@@ -335,9 +335,9 @@ async function togglePlanEnabled(item) {
     await props.api('recurring-plans/'+encodeURIComponent(item.id),{method:'PUT',body:JSON.stringify({...item,enabled:!item.enabled})})
     plans.value=await props.api('recurring-plans')
     recurringPreview.value=[]
-    recurringMessage.value=item.enabled?'固定支出を停止しました':'固定支出を再開しました。登録前に確認してください'
+    recurringMessage.value=item.enabled?'固定費を停止しました':'固定費を再開しました。登録前に確認してください'
     if(editingPlanId.value===item.id)cancelPlanEdit()
-  }catch(e){recurringMessage.value='固定支出の状態を変更できませんでした：'+e.message}
+  }catch(e){recurringMessage.value='固定費の状態を変更できませんでした：'+e.message}
   finally{recurringBusy.value=false}
 }
 const bill = ref({name:'',month:new Date().toLocaleDateString('sv-SE').slice(0,7)})
@@ -600,8 +600,8 @@ async function addPlan(){
     plans.value=await props.api('recurring-plans')
     cancelPlanEdit()
     recurringPreview.value=[]
-    recurringMessage.value=updated?'固定支出を更新しました':'固定支出を登録しました。記帳前に内容を確認してください'
-  }catch(e){message.value='固定支出の保存に失敗しました：'+e.message}
+    recurringMessage.value=updated?'固定費を更新しました':'固定費を登録しました。記帳前に内容を確認してください'
+  }catch(e){message.value='固定費の保存に失敗しました：'+e.message}
   finally {recurringBusy.value=false}
 }
 const recurringBusy=ref(false)
@@ -613,14 +613,14 @@ function reviewRecurring() {
   const current = new Date().toLocaleDateString('sv-SE').slice(0,7)
   recurringSelected.value = new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
   const conflicts=preview.filter(x=>x.conflict).length
-  recurringMessage.value=preview.length ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）' : '未記録の固定支出はありません'
+  recurringMessage.value=preview.length ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）' : '未記録の固定費はありません'
 }
 async function applyRecurring(){
   if(recurringBusy.value || !loaded.value || !recurringPreview.value.length)return
   const safe=selectedRecurring.value
   if(!safe.length){recurringMessage.value='重複候補は登録できません。明細を確認してください';return}
   const summary=safe.length+'件、合計 '+yen(safe.reduce((sum,row)=>sum+row.amount,0))+
-    ' の固定支出を登録します。日付と金額を確認しましたか？'
+    ' の固定費を登録します。日付と金額を確認しましたか？'
   if(!confirm(summary))return
   recurringBusy.value=true
   try{
@@ -672,13 +672,13 @@ watch(() => props.active, active => {
 async function removePlan(id) {
   if (!settingsReady.value || recurringBusy.value) return
   const target=plans.value.find(p=>p.id===id)
-  if (!confirm('固定支出「'+(target?.name||'')+'」を削除しますか？明細は残ります。')) return
+  if (!confirm('固定費「'+(target?.name||'')+'」を削除しますか？明細は残ります。')) return
   try {
     await props.api('recurring-plans/'+encodeURIComponent(id),{method:'DELETE'})
     plans.value = plans.value.filter(x=>x.id!==id)
     recurringPreview.value=[]
     if(editingPlanId.value===id) cancelPlanEdit()
-  } catch(e) { message.value='固定支出の削除に失敗しました：'+e.message }
+  } catch(e) { message.value='固定費の削除に失敗しました：'+e.message }
 }
 const cardTransactions=computed(()=>rows.value.filter(e=>isCardBilledEntry(e,cardPeriod.value,bill.value.name)))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
@@ -739,7 +739,7 @@ async function removeCardBill(record) {
     <div v-if="cardMode === 'add'" class="card-editor card-add-editor" role="group" aria-label="カードを追加">
       <label class="card-add-field">名称<input v-model="newPaymentSource" maxlength="80" placeholder="例：Suica、楽天カード" aria-label="新しいカード名"></label>
       <label class="card-add-field">種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
-      <p v-if="newSourceType === 'prepaid'" class="card-type-hint">期首残高は「資産」で設定できます。</p>
+      <p v-if="newSourceType === 'prepaid'" class="card-type-hint">期首残高は「残高」で設定できます。</p>
       <div class="card-add-actions">
         <button type="button" class="card-add-cancel" :disabled="busy" @click="cardMode = ''">キャンセル</button>
         <button type="button" class="card-add-save" :disabled="busy || !newPaymentSource.trim()" @click="addPaymentSource">{{busy ? '保存中…' : '保存'}}</button>
@@ -748,7 +748,7 @@ async function removeCardBill(record) {
     <div v-if="cardMode === 'edit' && selectedCard" :key="selectedCard" class="card-editor">
       <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
       <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
-      <p v-if="editSourceType === 'prepaid' && !['現金','その他','其他'].includes(selectedCard)" class="card-type-hint">期首残高の入力・修正は「資産」画面で行います。</p>
+      <p v-if="editSourceType === 'prepaid' && !['現金','その他','其他'].includes(selectedCard)" class="card-type-hint">期首残高は「残高」画面で変更できます。</p>
       <label v-if="isCreditCard(selectedCard) && editSourceType === 'standard'">締め日
         <select :key="selectedCard + '-closing-day'" :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
           <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
@@ -796,30 +796,30 @@ async function removeCardBill(record) {
   </details>
   <article v-show="managementTab === 'plans'" class="finance-panel">
     <h2>固定費の設定</h2>
-    <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><AmountInput v-model="plan.amount" input-label="固定支出額（円）" /></div>
-    <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリ<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
-    <div class="finance-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定支出を登録'}}</button>
+    <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定費名"><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
+    <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリ<select v-model="plan.category" aria-label="固定費カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定費支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
+    <div class="finance-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <label class="form-field"><span>未記帳を確認する期間</span><select v-model.number="recurringHistoricalMonths" @change="recurringPreview=[]"><option :value="0">今月のみ（初期設定）</option><option :value="3">過去3か月も確認</option><option :value="12">過去12か月も確認</option><option :value="119">過去10年分も確認</option></select></label>
     <div class="finance-actions"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
     <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
     <p v-if="recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
-    <div v-if="recurringPreview.length" class="recurring-candidate-list" role="group" aria-label="未登録の固定支出候補">
+    <div v-if="recurringPreview.length" class="recurring-candidate-list" role="group" aria-label="未登録の固定費候補">
       <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
     </div>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
     <details class="recurring-list-disclosure">
       <summary class="recurring-list-summary">
-        <span class="recurring-list-summary-title">登録済みの固定支出 <strong>{{plans.length}}件</strong></span>
+        <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{plans.length}}件</strong></span>
         <span class="recurring-list-summary-total">有効 {{activeRecurringPlans.length}}件 · 月額 {{yen(recurringMonthlyTotal)}}</span>
       </summary>
       <div class="recurring-list-body">
         <div class="recurring-list-filters">
-          <input v-model="recurringListQuery" type="search" placeholder="名前で検索" aria-label="固定支出を検索" />
-          <select v-model="recurringListFilter" aria-label="固定支出の状態"><option value="all">すべて</option><option value="active">有効</option><option value="stopped">停止中</option></select>
+          <input v-model="recurringListQuery" type="search" placeholder="名前で検索" aria-label="固定費を検索" />
+          <select v-model="recurringListFilter" aria-label="固定費の状態"><option value="all">すべて</option><option value="active">有効</option><option value="stopped">停止中</option></select>
         </div>
-        <div v-if="!filteredRecurringPlans.length" class="recurring-list-empty">{{plans.length ? '該当する固定支出はありません' : '固定支出はまだありません'}}</div>
-        <div v-else class="recurring-plan-scroll" role="list" aria-label="固定支出一覧">
+        <div v-if="!filteredRecurringPlans.length" class="recurring-list-empty">{{plans.length ? '該当する固定費はありません' : '固定費はまだありません'}}</div>
+        <div v-else class="recurring-plan-scroll" role="list" aria-label="固定費一覧">
           <div v-for="p in filteredRecurringPlans" :key="p.id" class="recurring-plan-item" role="listitem">
             <button type="button" class="recurring-plan-toggle" :aria-expanded="expandedRecurringPlanId===p.id" :aria-controls="'recurring-plan-actions-'+p.id" @click="toggleRecurringPlanDetails(p.id)">
               <span class="recurring-plan-text">

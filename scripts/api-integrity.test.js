@@ -265,7 +265,7 @@ test('editing respects explicit expense or income even for investment-looking te
     assert.equal(result.status, 200)
     assert.equal(db.entries[0].type, type)
     assert.equal(db.entries[0].transfer_target, null)
-    assert.equal(db.snapshot, 120000)
+    assert.ok(db.sql.every(sql=>!/investment_snapshots/i.test(sql)))
   }
 })
 test('editing rejects fractional and unsafe amounts without changing the entry', async () => {
@@ -331,7 +331,7 @@ test('renaming a card rebinds historical payments without altering amounts or in
   assert.equal(response.body.changes,2)
   assert.deepEqual(db.entries.map(e=>({id:e.id,amount:e.amount,type:e.type,transfer_target:e.transfer_target})),before)
   assert.ok(db.entries.every(e=>e.payment_source==='新カード'))
-  assert.equal(db.snapshot,120000)
+  assert.ok(db.sql.every(sql=>!/investment_snapshots/i.test(sql)))
 })
 
 test('retired finance-settings APIs never recreate deprecated D1 tables',async()=>{

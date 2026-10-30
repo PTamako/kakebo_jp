@@ -305,7 +305,7 @@ function toggleRecurringPlanDetails(id) {
   expandedRecurringPlanId.value = expandedRecurringPlanId.value === id ? '' : id
 }
 const bills = ref([])
-const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費'}
+const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費','工资':'給与','奖金':'賞与','副业':'副業','老公生活费':'夫からの生活費','父母赠与':'両親からの援助','亲友赠与':'親族・友人からの援助','退款':'返金','其他收入':'その他の収入'}
 const categoryLabel = category => categoryJapaneseLabels[category] || category
 const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
 const editingPlanId = ref('')
@@ -808,7 +808,7 @@ async function removeCardBill(record) {
 <template>
 <section class="finance-tools">
   <div class="finance-page-heading"><h1 class="finance-heading">管理</h1><button type="button" class="finance-global-load" :disabled="busy || refreshingEverything" @click="refreshEverything"><span aria-hidden="true" class="finance-refresh-icon">↻</span>{{busy || refreshingEverything ? "更新中…" : "すべて更新"}}</button></div>
-  <p class="finance-last-loaded" role="status">{{loaded ? "更新："+lastLoadedLabel+" · "+rows.length+"件" : busy ? "明細を読み込み中…" : "未読み込み"}}</p>
+  <p class="finance-last-loaded" role="status">{{loaded ? "最終更新："+lastLoadedLabel+" · "+rows.length+"件" : busy ? "明細を読み込み中…" : "未読み込み"}}</p>
   <p v-if="loadError" class="finance-load-error" role="alert">{{ loadError }}</p>
   <div class="finance-section-tabs" role="group" aria-label="管理項目">
     <button type="button" :class="{ selected: managementTab === 'cards' }" :aria-pressed="managementTab === 'cards'" @click="managementTab = 'cards'">カード</button>
@@ -888,9 +888,9 @@ async function removeCardBill(record) {
     </div>
   </details>
   <article v-show="managementTab === 'plans'" class="finance-panel">
-    <h2>固定費の登録</h2>
+    <h2>固定費の設定</h2>
     <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><AmountInput v-model="plan.amount" input-label="固定支出額（円）" /></div>
-    <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリー<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
+    <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリ<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
     <div class="finance-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定支出を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <label class="form-field"><span>未記帳を確認する期間</span><select v-model.number="recurringHistoricalMonths" @change="recurringPreview=[]"><option :value="0">今月のみ（初期設定）</option><option :value="3">過去3か月も確認</option><option :value="12">過去12か月も確認</option><option :value="119">過去10年分も確認</option></select></label>

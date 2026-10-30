@@ -846,3 +846,45 @@ test('audit follow-up: previously saved future NAV can be corrected, but valid p
     assert.deepEqual(db.db.prepare('SELECT nav_per_10000,price_date FROM fund_prices WHERE fund_code=?').get(fundCode),current)
   }finally{db.close()}
 })
+
+
+test('D1 credit-card bill includes SBI and Suica transfers without changing expense totals',async()=>{
+  const {db,call}=await createClient()
+  try{
+    assert.equal((await call('payment-sources','POST',{name:'楽天カード'})).status,200)
+    assert.equal((await call('payment-sources','POST',{name:'Suica',sourceType:'prepaid'})).status,200)
+    const add=async row=>{
+      const response=await call('entries','POST',row)
+      assert.equal(response.status,200,JSON.stringify(response.body))
+      return response.body.id
+    }
+    const sbi=await add({date:'2026-10-14',amount:15000,type:'transfer',merchant:'SBI証券',
+      transferTarget:'sbi',transferDate:'2026-11-16',paymentSource:'楽天カード'})
+    await add({date:'2026-10-30',amount:1000,type:'transfer',merchant:'Suica チャージ',
+      transferTarget:'prepaid:Suica',transferDate:'2026-10-30',paymentSource:'楽天カード'})
+    await add({date:'2026-10-16',amount:2000,type:'expense',merchant:'カード購入',paymentSource:'楽天カード'})
+    await add({date:'2026-10-30',amount:300,type:'expense',merchant:'電車',paymentSource:'Suica'})
+    await add({date:'2026-10-20',amount:700,type:'income',merchant:'入金',paymentSource:'楽天カード'})
+    await add({date:'2026-10-22',amount:500,type:'transfer',merchant:'振替先なし',paymentSource:'楽天カード'})
+    await add({date:'2026-10-23',amount:800,type:'transfer',merchant:'別のカード',
+      transferTarget:'sbi',transferDate:'2026-11-16',paymentSource:'現金'})
+
+    const expenses=()=>db.db.prepare("SELECT COALESCE(SUM(amount),0) amount FROM entries WHERE type='expense'").get().amount
+    assert.equal(expenses(),2300,'asset transfers must remain excluded from household spending')
+    const recalc=()=>call('card-bills/recalculate','POST',
+      {name:'楽天カード',month:'2026-10',start:'2026-10-01',end:'2026-10-31'})
+    const first=await recalc()
+    assert.equal(first.status,200)
+    assert.equal(first.body.total,18000,'15000 SBI + 1000 prepaid charge + 2000 purchase')
+    assert.equal(first.body.count,3,'do not count prepaid spending, income, cash funding or targetless transfers')
+    assert.equal((await call('card-bills')).body.find(x=>x.name==='楽天カード').total,18000)
+
+    const edited=await call('entries/'+sbi,'PUT',{date:'2026-10-14',amount:15000,
+      type:'transfer',transferTarget:'sbi',transferDate:'2026-11-16',paymentSource:'現金',merchant:'SBI証券'})
+    assert.equal(edited.status,200)
+    const second=await recalc()
+    assert.equal(second.body.total,3000,'editing funding source changes bill, never creates extra expense')
+    assert.equal(second.body.count,2)
+    assert.equal(expenses(),2300,'card-bill recalculation must not mutate ledger expenses')
+  }finally{db.close()}
+})

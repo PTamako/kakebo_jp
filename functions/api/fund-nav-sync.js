@@ -1,6 +1,7 @@
 // Explicit official provider for MUFG-managed funds only.
 // Never fetch the SBI portfolio or infer a purchase from a price update.
 import { MUFG_FUNDS, KNOWN_MANUAL_NAV_FUNDS } from '../../src/fund-nav-coverage.js'
+import { DAIWA_FUND_CODE, fetchDaiwaNav } from './daiwa-nav.js'
 export { MUFG_FUNDS } from '../../src/fund-nav-coverage.js'
 export const PENDING_NAV_FUNDS = KNOWN_MANUAL_NAV_FUNDS
 const provider = 'official_mufg'
@@ -75,38 +76,41 @@ export async function probeFundNavSupport(fundCode,{fetcher=fetch,now=new Date()
   }
 }
 
-export async function syncFundNav(db,{fetcher=fetch,now=new Date(),logger=console}={}) {
+// The experimental Daiwa provider is isolated: failure never blocks MUFG updates.
+export async function syncFundNav(db,{
+  fetcher=fetch,now=new Date(),logger=console,enableDaiwaCsv=false,retryOnlyDaiwa=false
+}={}) {
   if(!db)throw Error('missing_d1_binding')
-  // Funds not held by this user are never inserted. Orders and acquisitions
-  // are not queried or mutated by this scheduled task.
-  const result=await db.prepare(
+  const {results=[]}=await db.prepare(
     'SELECT DISTINCT fund_code FROM investment_holdings ORDER BY fund_code LIMIT 100'
   ).all()
-  const codes=(result.results||[]).map(x=>String(x.fund_code||'').trim().toUpperCase())
-  const unsupported=codes.filter(code=>Object.hasOwn(PENDING_NAV_FUNDS,code))
-  const targetCodes=codes.filter(code=>!Object.hasOwn(PENDING_NAV_FUNDS,code))
+  const codes=results.map(x=>String(x.fund_code||'').trim().toUpperCase())
+  const hasDaiwa=codes.includes(DAIWA_FUND_CODE)
+  const activeDaiwa=hasDaiwa && enableDaiwaCsv
+  const ordinaryCodes=retryOnlyDaiwa?[]:codes.filter(code=>code!==DAIWA_FUND_CODE)
+  const unsupported=ordinaryCodes.filter(code=>Object.hasOwn(PENDING_NAV_FUNDS,code))
+  if(hasDaiwa&&!activeDaiwa&&!retryOnlyDaiwa)unsupported.push(DAIWA_FUND_CODE)
+  const targetCodes=ordinaryCodes.filter(code=>!Object.hasOwn(PENDING_NAV_FUNDS,code))
   const summary={checked:targetCodes.length,updated:[],unchanged:[],failed:[],unsupported}
-  for (const code of targetCodes) {
+  if(activeDaiwa)summary.optionalFailed=[]
+  const store=async quote=>{
+    const result=await db.prepare(`INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source,updated_at)
+      VALUES(?1,?2,?3,?4,?5)
+      ON CONFLICT(fund_code) DO UPDATE SET
+        nav_per_10000=excluded.nav_per_10000,
+        price_date=excluded.price_date,
+        source=excluded.source,
+        updated_at=excluded.updated_at
+      WHERE fund_prices.source='sbi_screenshot' OR fund_prices.price_date<excluded.price_date`)
+      .bind(quote.fundCode,quote.navPer10000,quote.priceDate,quote.source,now.toISOString()).run()
+    ;(Number(result.meta?.changes||0)>0?summary.updated:summary.unchanged).push(quote.fundCode)
+  }
+  for(const code of targetCodes){
     try{
-      const quote=await fetchMufgNav(code,{fetcher,now})
-      // D1 performs a conditional atomic UPSERT, preventing older job runs
-      // from overwriting a more recent manual/automatic quote. The legacy
-      // screenshot date is observation time, not the actual fund NAV date.
-      const result=await db.prepare(`INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source,updated_at)
-        VALUES(?1,?2,?3,?4,?5)
-        ON CONFLICT(fund_code) DO UPDATE SET
-          nav_per_10000=excluded.nav_per_10000,
-          price_date=excluded.price_date,
-          source=excluded.source,
-          updated_at=excluded.updated_at
-        WHERE fund_prices.source='sbi_screenshot' OR fund_prices.price_date<excluded.price_date`)
-        .bind(quote.fundCode,quote.navPer10000,quote.priceDate,quote.source,now.toISOString()).run()
-      ;(Number(result.meta?.changes||0)>0?summary.updated:summary.unchanged).push(code)
+      await store(await fetchMufgNav(code,{fetcher,now}))
     }catch(error){
       const reason=String(error?.message||error)
       if(/^(provider_http_404|unsupported_mufg_fund)$/.test(reason)){
-        // Only confirmed unsupported funds stay manual. Malformed or
-        // code-mismatched vendor responses are failures, not unsupported funds.
         summary.unsupported.push(code)
         continue
       }
@@ -114,5 +118,32 @@ export async function syncFundNav(db,{fetcher=fetch,now=new Date(),logger=consol
       logger.warn('NAV refresh skipped',code,String(error))
     }
   }
+  if(activeDaiwa){
+    // Only the extra 23:15 event is conditional. Never request the same day's
+    // official quote a second time, and never run an unnecessary weekend retry.
+    let shouldFetch=true
+    if(retryOnlyDaiwa){
+      const weekday=new Date(todayJstDate(now)+'T00:00:00Z').getUTCDay()
+      if(weekday===0||weekday===6)shouldFetch=false
+      if(shouldFetch){
+        const current=await db.prepare('SELECT price_date,source FROM fund_prices WHERE fund_code=?1')
+          .bind(DAIWA_FUND_CODE).first()
+        if(current?.source?.startsWith('official_') && current.price_date>=todayJstDate(now))
+          shouldFetch=false
+      }
+    }
+    if(shouldFetch){
+      summary.checked++
+      try{
+        await store(await fetchDaiwaNav({fetcher,now}))
+      }catch(error){
+        const reason=String(error?.message||error).slice(0,120)
+        summary.optionalFailed.push({fund_code:DAIWA_FUND_CODE,reason})
+        logger.warn('NAV optional Daiwa skipped',DAIWA_FUND_CODE,reason)
+        // Keep the previous manual/official quote; do not fail the MUFG job.
+      }
+    }
+  }
   return summary
 }
+const todayJstDate = now => new Date(now.getTime()+9*3600000).toISOString().slice(0,10)

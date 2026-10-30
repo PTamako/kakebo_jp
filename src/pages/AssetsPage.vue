@@ -36,7 +36,7 @@ const monthLabel = computed(() => portfolioSummary.value?.month ? portfolioSumma
       <div class="asset-stat">
         <span>プリペイド残高</span>
         <strong>{{yen(prepaid)}}</strong>
-        <small>Suica・PASMOなど</small>
+        <small>登録済みのプリペイド</small>
       </div>
       <div class="asset-stat">
         <span>投資信託評価額</span>

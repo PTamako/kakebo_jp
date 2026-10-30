@@ -826,9 +826,10 @@ async function openPrepaidHistoryDetails(kind) {
   preserveOperatedDay.value = ''
   prepaidHistoryFilter.value = kind
   entryTypeFilter.value = kind === 'charge' ? 'transfer' : 'expense'
+  const changedMonth = month.value !== currentMonth()
   month.value = currentMonth()
   tab.value = 'list'
-  await load()
+  if (!changedMonth) await load()
 }
 const paymentMethodMatches = (entry, method) => method === '現金' ? !String(entry.payment_source || '').trim() || entry.payment_source === '現金' : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
 async function openPaymentMethodDetails(method, period) {

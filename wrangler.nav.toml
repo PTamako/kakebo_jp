@@ -9,6 +9,12 @@ compatibility_date = "2026-10-01"
 [triggers]
 crons = ["30 11 * * *"]
 
+# Preserve every once-daily scheduled invocation and its console messages.
+# Workers Logs are separate from Workers Builds deployment logs.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [[d1_databases]]
 binding = "DB"
 database_name = "kakeibo"

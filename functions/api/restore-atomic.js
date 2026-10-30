@@ -64,7 +64,7 @@ export async function restoreAtomic(db, archive) {
     // Existing live category mappings always win over an older backup.
     add('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)',rule.keyword,rule.category)
     if(rule.is_custom===true)
-      add("INSERT INTO merchant_rules(keyword,category) SELECT '__user_priority__:'||?1,'__priority__' WHERE EXISTS(SELECT 1 FROM merchant_rules WHERE keyword=?1 AND category IS NOT NULL) ON CONFLICT(keyword) DO NOTHING",rule.keyword)
+      add("INSERT INTO merchant_rules(keyword,category) SELECT '__user_priority__:'||?1,'__priority__' WHERE EXISTS(SELECT 1 FROM merchant_rules WHERE keyword=?1 AND category=?2) ON CONFLICT(keyword) DO NOTHING",rule.keyword,rule.category)
   }
   for(const rule of archive.merchantPaymentRules||[]) {
     // Missing cards are not imported as dangling rules.

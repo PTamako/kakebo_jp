@@ -47,7 +47,7 @@ onMounted(()=>{if(props.active)void refresh()})
     <div class="wallet-body">
       <div class="wallet-tools">
         <button type="button" class="wallet-refresh" :disabled="loading" aria-label="プリペイド残高を更新" @click="refresh"><span aria-hidden="true">↻</span> 更新</button>
-        <button type="button" class="wallet-add" @click="emit('open-card-settings')">＋ カード追加</button>
+        <button type="button" class="wallet-add" @click="emit('open-card-settings')">＋ カードを追加</button>
       </div>
       <p v-if="loading && !data" class="wallet-hint" role="status">残高を読み込み中…</p>
       <p v-if="error" class="wallet-error" role="alert">{{error}}</p>

@@ -44,9 +44,12 @@ export async function fetchMufgNav(fundCode,{fetcher=fetch,now=new Date()}={}) {
   const url='https://developer.am.mufg.jp/fund_information_latest/association_fund_cd/'+fundCode
   const response=await fetcher(url,{
     headers:{Accept:'application/json'},
-    redirect:'error',
+    // Workers supports only 'follow' or 'manual'; never follow provider redirects.
+    redirect:'manual',
     signal:AbortSignal.timeout(10000)
   })
+  // Reject redirects explicitly instead of following another host.
+  if(response.status>=300 && response.status<400)throw Error('provider_redirect_blocked')
   if(!response.ok)throw Error('provider_http_'+response.status)
   const text=await response.text()
   if(text.length>150_000)throw Error('provider_response_too_large')

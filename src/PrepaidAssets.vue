@@ -45,7 +45,7 @@ onMounted(()=>{if(props.active)void refresh()})
         <small>登録済みの残高合計</small>
         <strong>{{money(data.cards.reduce((sum,card)=>sum+Number(card.balance),0))}}</strong>
       </div>
-      <p v-else class="wallet-hint">管理 → カード設定から「プリペイド」を選んで登録できます。</p>
+      <p v-else class="wallet-hint">管理 → カード設定で「プリペイドカード」を選んで登録できます。</p>
       <div v-for="card in data.cards" :key="card.name" class="wallet-row">
         <div><strong>{{card.name}}</strong><small>チャージ {{money(card.charged)}} · 利用 {{money(card.spent)}}</small><small>開始 {{card.opening_date}} · 期首残高 {{money(card.opening_balance)}}</small><button type="button" class="wallet-edit" @click="startOpening(card)">期首残高を設定・修正</button></div>
         <div class="wallet-money" :class="{'wallet-negative':card.balance<0}">{{money(card.balance)}}<small v-if="card.balance<0">履歴を確認してください</small></div>

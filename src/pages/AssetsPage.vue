@@ -5,6 +5,8 @@ import PrepaidAssets from '../PrepaidAssets.vue'
 const { ledgerRevision, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, api } = inject('kakeibo-page-context')
 const portfolioSummary = ref(null)
 const prepaidSummary = ref(null)
+const onPortfolioSummary = value => { portfolioSummary.value = value }
+const onPrepaidSummary = value => { prepaidSummary.value = value }
 const yen = value => value === null || !Number.isFinite(Number(value)) ? '—' : '¥'+Number(value).toLocaleString('ja-JP')
 const investment = computed(() => portfolioSummary.value?.valuation ?? null)
 const prepaid = computed(() => prepaidSummary.value?.balance ?? null)
@@ -76,9 +78,9 @@ const monthLabel = computed(() => portfolioSummary.value?.month ? portfolioSumma
       </div>
     </details>
 
-    <SbiPortfolio :api="api" :transfer-loading="transferLoading" @summary="portfolioSummary=$event">
+    <SbiPortfolio :api="api" :transfer-loading="transferLoading" @summary="onPortfolioSummary">
       <template #before-holdings>
-        <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" @summary="prepaidSummary=$event" />
+        <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" @summary="onPrepaidSummary" />
       </template>
     </SbiPortfolio>
   </section>

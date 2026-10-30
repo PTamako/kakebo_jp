@@ -624,7 +624,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
             </div>
           </section>
         </div>
-        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving || bulkBusy" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving || bulkBusy || !bulkChanged.length ">{{saving ? '保存中…' : '更新 '+bulkChanged.length+'件'}}</button></div>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving || bulkBusy" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving || bulkBusy || !bulkChanged.length">{{saving ? '保存中…' : '更新 '+bulkChanged.length+'件'}}</button></div>
       </form>
       <form v-else-if="editing==='holding'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="保有情報の編集" @submit.prevent="submit('holding',{...holding,units:Number(holding.units),acquisitionCost:Number(holding.acquisitionCost)},'保有情報を更新しました')">
         <div class="sbi-line-heading"><h3>保有口数・取得金額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
@@ -818,7 +818,6 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 
 .sbi-single-import>summary{font-size:11px;color:var(--muted);font-weight:700;padding:8px 0;cursor:pointer}
 .sbi-single-import[open]{display:grid;gap:8px}
-.sbi-dual-panel .sbi-bulk-heading{font-size:12px}
 
 /* Balance screen: make the monthly screenshot update the unmistakable primary action. */
 .sbi-holding-toolbar{justify-content:space-between;gap:8px;padding:3px 0 9px}

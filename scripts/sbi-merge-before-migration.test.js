@@ -27,5 +27,7 @@ test('0006 migration is additive and never edits/deletes an existing transaction
   assert.doesNotMatch(migration,/INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+(?:investment_plans|investment_plan_history|investment_holdings|fund_prices)\b/i)
   assert.match(migration,/CREATE TABLE IF NOT EXISTS investment_plan_history/)
   assert.match(schema,/CREATE TABLE IF NOT EXISTS investment_plan_history/)
-  assert.match(component,/買付月は推定です。期日反映は記帳上の処理であり、証券口座への着金・買付成立の確認ではありません。/)
+  assert.match(component,/期日反映は証券口座への入金・買付完了を保証しません。買付月が異なる場合は変更できます。/)
+  assert.match(component,/class="sbi-transfer-disclosure"/)
+  assert.match(component,/@click="editingTransfer=t\.id;newPurchaseMonth=t\.effective_month"/)
 })

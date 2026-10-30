@@ -678,7 +678,7 @@ async function addPlan(){
   if(!plan.value.name.trim() || !Number.isSafeInteger(Number(plan.value.amount)) || Number(plan.value.amount)<=0 ||
     !Number.isInteger(Number(plan.value.day)) || Number(plan.value.day)<1 || Number(plan.value.day)>31 ||
     !props.categories.includes(plan.value.category) || !props.paymentSources.includes(plan.value.paymentSource)) {
-    message.value='名称・金額・登録日・カテゴリー・支払方法を選択してください';return
+    message.value='名称・金額・記帳日・カテゴリ・支払方法を確認してください';return
   }
   if(!settingsReady.value || recurringBusy.value)return
   recurringBusy.value=true
@@ -888,7 +888,7 @@ async function removeCardBill(record) {
     </div>
   </details>
   <article v-show="managementTab === 'plans'" class="finance-panel">
-    <h2>毎月の固定支出</h2>
+    <h2>固定費の登録</h2>
     <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定支出名"><AmountInput v-model="plan.amount" input-label="固定支出額（円）" /></div>
     <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリー<select v-model="plan.category" aria-label="固定支出カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定支出支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
     <div class="finance-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定支出を登録'}}</button>

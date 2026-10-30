@@ -60,7 +60,7 @@ onMounted(()=>{if(props.active)void refresh()})
         </div>
         <button v-if="data.cards.length>2" type="button" class="wallet-show-more" :aria-expanded="showAll" @click="showAll=!showAll">{{showAll?'閉じる':'あと'+(data.cards.length-2)+'件を表示'}}</button>
         <details v-if="data.recharges.length" class="wallet-recharge">
-          <summary>最近のチャージ <span>{{data.recharges.length}}件</span></summary>
+          <summary>チャージ履歴 <span>{{data.recharges.length}}件</span></summary>
           <div v-for="entry in (showAllRecharges ? data.recharges : data.recharges.slice(0,3))" :key="entry.id" class="wallet-recharge-row"><span>{{entry.date}} · {{entry.transfer_target.slice(8)}}</span><strong>+{{money(entry.amount)}}</strong></div>
           <button v-if="data.recharges.length>3" type="button" class="wallet-show-more" :aria-expanded="showAllRecharges" @click="showAllRecharges=!showAllRecharges">{{showAllRecharges?'閉じる':'あと'+(data.recharges.length-3)+'件を表示'}}</button>
         </details>

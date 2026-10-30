@@ -625,7 +625,7 @@ export async function onRequest({ request, env, params }) {
       if (m === 'GET') {
         // D1 category_source is the single source. Do not read historic
         // rules markers or manufacture categories absent from production.
-        const {results}=await db.prepare("SELECT category FROM category_source ORDER BY CASE WHEN category IN ('其他','その他') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category").all()
+        const {results}=await db.prepare("SELECT category FROM category_source WHERE category NOT IN ('工资','奖金','副业','老公生活费','父母赠与','亲友赠与','退款','其他收入') ORDER BY CASE WHEN category IN ('其他','その他') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category").all()
         return json(results.map(row=>row.category))
       }
       if (m === 'POST') {

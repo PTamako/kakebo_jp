@@ -80,7 +80,7 @@ export function reconcileSbiScreens(profitText,positionsText,holdings){
     // Acquisition unit prices are rounded to whole yen. Cross-check within
     // small rounding variance; do not override exact value from NAV-PnL.
     const approx=Math.round(h.units*p.acquisitionUnitPrice/10000)
-    if(Math.abs(approx-acquisitionCost)>2)
+    if(Math.abs(approx-acquisitionCost)>Math.max(2,Math.ceil(h.units/20000)+1))
       return {updates:[],error:'取得単価・評価損益の整合性がありません：'+h.fundCode}
     updates.push({fundCode:h.fundCode,accountType:h.accountType,units:h.units,acquisitionCost})
   }

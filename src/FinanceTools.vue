@@ -5,7 +5,7 @@ import { findLedgerDuplicateGroups } from './duplicate-review.js'
 import AmountInput from './AmountInput.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
-import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances } from './finance-tools.js'
+import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings } from './finance-tools.js'
 import { isCardBilledEntry } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
@@ -497,177 +497,83 @@ async function restore(){
     message.value='明細が変更されました。バックアップを選び直してください'
     return
   }
+  const restoreToday=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
   let prepaidFinal=[]
-  try{prepaidFinal=prepaidRestoreBalances(backup)}
+  try{prepaidFinal=prepaidRestoreBalances(backup,restoreToday)}
   catch(e){message.value=e.message;return}
-  // Restore in independently atomic, idempotent batches. A failure preserves
-  // committed batches and leaves uncommitted drafts visible for safe retry.
-  const BATCH_SIZE=150
-  // Use the same settings bound as restoreAtomic; guard before any writes.
-  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
-    .reduce((n,key)=>n+(Array.isArray(backup[key])?backup[key].length:0),0)
-    + Object.keys(backup.categoryIcons||{}).length
-  if(settingTotal<=500){
-    busy.value=true
-    let completed=0,settingsRestored=0,alreadyPresent=0
-    try{
-      const sourceRows=selectedRows.length ? selectedRows : [null]
-      for(let offset=0;offset<sourceRows.length;offset+=BATCH_SIZE){
-        const subset=sourceRows.slice(offset,offset+BATCH_SIZE).filter(Boolean)
-        const atomicRows=[]
-        for(const e of subset){
-          const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
-          const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
-          const clientRequestId='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
-          atomicRows.push({...e,clientRequestId})
-          restoreOwnKeys.value=new Map([...restoreOwnKeys.value,[clientRequestId,transactionKey(e)]])
-        }
-        const first=offset===0
-        const last=offset+BATCH_SIZE>=sourceRows.length
-        const oldIds=new Set(subset.map(e=>Number(e.id)))
-        const scopedArchive={...backup,integrity:undefined,entries:atomicRows,
-          plans:first?backup.plans:[],bills:first?backup.bills:[],
-          paymentSources:first?backup.paymentSources:[],merchantPaymentRules:first?backup.merchantPaymentRules:[],
-          customRules:first?backup.customRules:[],categories:first?backup.categories:[],
-          categoryIcons:first?backup.categoryIcons:{},
-          categoryMetadata:first?backup.categoryMetadata:[],
-          investmentPlans:first?backup.investmentPlans:[], investmentPlanHistory:first?backup.investmentPlanHistory:[],
-          investmentHoldings:first?backup.investmentHoldings:[],fundPrices:first?backup.fundPrices:[],
-          transferLinks:(backup.transferLinks||[]).filter(t=>oldIds.has(Number(t.entry_id))),
-          dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id))),
-          prepaidRestoreInProgress:true,prepaidFinalize:last?prepaidFinal:[]}
-        const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify(scopedArchive)})
-        completed+=result.created
-        settingsRestored+=result.settings
-        alreadyPresent+=result.skipped
-        for(const e of subset){
-          restoreRows.value=restoreRows.value.filter(row=>row.backupIndex!==e.backupIndex)
-          restoreConflicts.value=restoreConflicts.value.filter(row=>row.backupIndex!==e.backupIndex)
-        }
-        message.value=`復元中 ${Math.min(offset+BATCH_SIZE,sourceRows.length)}/${sourceRows.length}件`
-      }
-      loaded.value=false;backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
-      restoreIncludeConflicts.value=false;restoreOwnKeys.value=new Map()
-      message.value=`復元完了：明細 ${completed}件・設定 ${settingsRestored}件（重複除外 ${alreadyPresent}件）`
-      await loadFinanceSettings()
-      emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
-    }catch(e){
-      ledgerDirty=true
-      message.value=`復元を中断しました。完了済み ${completed}件は保持されます。再試行可能：${e.message}`
-    }finally{busy.value=false}
-    return
+  // Each server call is atomic; a large restore remains resumable without
+  // silently dropping display metadata, investment holdings, or custom settings.
+  // Always stage prepaid future-dated movements after the restored balance anchor.
+  const BATCH_SIZE=80
+  const prepaidNames=(backup.paymentSources||[]).filter(x=>x.source_type==='prepaid').map(x=>x.name)
+  const deferredRows=selectedRows.filter(e=>isFuturePrepaidMovement(e,prepaidNames,restoreToday))
+  const regularRows=selectedRows.filter(e=>!isFuturePrepaidMovement(e,prepaidNames,restoreToday))
+  const chunk=(items,size=BATCH_SIZE)=>{
+    const batches=[]
+    for(let i=0;i<items.length;i+=size)batches.push(items.slice(i,i+size))
+    return batches
   }
-  // Never silently discard portfolio data from a large backup. For this rare
-  // case, keep the archive intact and request a smaller atomic restoration.
-  if(prepaidFinal.length){
-    message.value='プリペイド残高を含む大容量バックアップは分割作業が必要です。誤った残高を復元しないため、処理を中止しました。'
-    return
+  const settingsJobs=chunkRestoreSettings(backup,BATCH_SIZE).map(settings=>({settings,rows:[],deferred:[]}))
+  const regularJobs=chunk(regularRows).map(rows=>({settings:{},rows,deferred:[]}))
+  const jobs=[...settingsJobs,...regularJobs]
+  if(!jobs.length)jobs.push({settings:{},rows:[],deferred:[]})
+  const finalizationIndex=jobs.length-1
+  const futureBatches=chunk(deferredRows)
+  if(futureBatches.length){
+    jobs[finalizationIndex].deferred=futureBatches.shift()
+    for(const deferred of futureBatches)jobs.push({settings:{},rows:[],deferred})
   }
-  if(['investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks'].some(k=>(backup[k]||[]).length)){
-    message.value='投資情報を含む大容量バックアップは一括設定500件以内の分割復元が必要です。既存データは変更していません。'
-    return
+  const emptySettings={
+    paymentSources:[],merchantPaymentRules:[],customRules:[],categories:[],
+    plans:[],bills:[],dismissedTransfers:[],categoryMetadata:[],
+    investmentPlans:[],investmentPlanHistory:[],investmentHoldings:[],
+    fundPrices:[],transferLinks:[],categoryIcons:{}
+  }
+  const makeRestoreRow=async e=>{
+    const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
+    const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
+    const clientRequestId='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
+    restoreOwnKeys.value=new Map([...restoreOwnKeys.value,[clientRequestId,transactionKey(e)]])
+    return {...e,clientRequestId}
   }
   busy.value=true
-  let count=0,settingsCount=0,skipped=0
+  let completed=0,settingsRestored=0,alreadyPresent=0,processed=0
   try{
-    // Restore settings additively. Existing payment sources, rules, plans, bills
-    // and portfolio holdings always win over uploaded content.
-    const existingSources=await props.api('payment-sources')
-    const sources=restoreMissingByKey(existingSources,backup.paymentSources||[],x=>x.name)
-    for (const source of sources) {
-      if(!source || typeof source.name!=='string' || !source.name.trim() || source.name.length>80) continue
-      const saved = await props.api('payment-sources/restore-missing',{method:'POST',body:JSON.stringify({
-        name:source.name,closingDay:source.closing_day ?? null
-      })})
-      if(saved.created)settingsCount++
-    }
-    // Only recover a default card if the current database has no default.
-    if(!existingSources.some(source=>source.is_default)){
-      const source=(backup.paymentSources||[]).find(source=>source?.is_default)
-      if(source?.name && (await props.api('payment-sources')).some(current=>current.name===source.name)){
-        const saved = await props.api('payment-sources/restore-default',{method:'POST',body:JSON.stringify({name:source.name})})
-        if(saved.restored)settingsCount++
+    for(let i=0;i<jobs.length;i++){
+      const job=jobs[i]
+      const [atomicRows,deferredPrepaidEntries]=await Promise.all([
+        Promise.all(job.rows.map(makeRestoreRow)),
+        Promise.all(job.deferred.map(makeRestoreRow))
+      ])
+      const included=[...job.rows,...job.deferred]
+      const oldIds=new Set(included.map(e=>Number(e.id)))
+      const scopedArchive={
+        ...backup,integrity:undefined,...emptySettings,...job.settings,
+        entries:atomicRows,deferredPrepaidEntries,
+        transferLinks:(backup.transferLinks||[]).filter(t=>oldIds.has(Number(t.entry_id))),
+        dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id))),
+        prepaidRestoreInProgress:true,
+        prepaidFinalize:i===finalizationIndex?prepaidFinal:[]
       }
+      const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify(scopedArchive)})
+      completed+=result.created
+      settingsRestored+=result.settings
+      alreadyPresent+=result.skipped
+      processed+=included.length
+      const keys=new Set(included.map(e=>e.backupIndex))
+      restoreRows.value=restoreRows.value.filter(row=>!keys.has(row.backupIndex))
+      restoreConflicts.value=restoreConflicts.value.filter(row=>!keys.has(row.backupIndex))
+      message.value=`復元中 ${processed}/${selectedRows.length}件・${i+1}/${jobs.length}回`
     }
-    const existingCategories=await props.api('categories')
-    for(const name of restoreMissingByKey(existingCategories,backup.categories||[],x=>x)){
-      if(typeof name!=='string' || !name.trim() || name.length>20)continue
-      await props.api('categories',{method:'POST',body:JSON.stringify({name,icon:backup.categoryIcons?.[name]||'other'})})
-      settingsCount++
-    }
-    // A category may already exist while its restored icon is still missing.
-    // Restore missing icons independently; never overwrite the current choice.
-    const existingIcons=await props.api('category-icons')
-    const knownCategories=await props.api('categories')
-    for(const [category,icon] of Object.entries(backup.categoryIcons||{})){
-      if(!knownCategories.includes(category) || existingIcons[category])continue
-      const result=await props.api('category-icons/restore-missing',{method:'POST',body:JSON.stringify({category,icon})})
-      if(result.created)settingsCount++
-    }
-    const existingCategoryRules=await props.api('custom-rules')
-    for(const rule of restoreMissingByKey(existingCategoryRules,backup.customRules||[],x=>x.keyword)){
-      if(!rule?.keyword || !rule?.category)continue
-      await props.api('custom-rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,category:rule.category})})
-      settingsCount++
-    }
-    const existingPaymentRules=await props.api('merchant-payment-rules')
-    for(const rule of restoreMissingByKey(existingPaymentRules,backup.merchantPaymentRules||[],x=>x.keyword)){
-      if(!rule?.keyword || !rule?.payment_source)continue
-      await props.api('merchant-payment-rules',{method:'PUT',body:JSON.stringify({keyword:rule.keyword,paymentSource:rule.payment_source})})
-      settingsCount++
-    }
-    const existingBills=await props.api('card-bills')
-    for(const bill of restoreMissingByKey(existingBills,backup.bills||[],x=>x.name+'|'+x.month)){
-      if(!bill?.name || !bill?.month)continue
-      await props.api('card-bills',{method:'POST',body:JSON.stringify(bill)})
-      settingsCount++
-    }
-    // Older backup investments snapshots are intentionally ignored.
-    const restoredIds = new Map()
-    for (const e of selectedRows){
-      // Stable across retry; source backup identity disambiguates identical purchases.
-      const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
-      const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
-      const key='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
-      const {backupIndex,...entry}=e
-      // Register this precise intended row before the network request: even a lost response
-      // can be checked against its idempotency ID on the next read.
-      restoreOwnKeys.value = new Map([...restoreOwnKeys.value,[key,transactionKey(entry)]])
-      const result=await props.api('entries',{method:'POST',body:JSON.stringify({...entry,clientRequestId:key,transferTarget:e.transfer_target||'',transferDate:e.transfer_date||e.date,paymentSource:e.payment_source||''})})
-      if(result.duplicate)skipped++;else count++
-      if(e.id && result?.id)restoredIds.set(Number(e.id),Number(result.id))
-      restoreRows.value=restoreRows.value.filter(row=>row.backupIndex!==e.backupIndex)
-      restoreConflicts.value=restoreConflicts.value.filter(row=>row.backupIndex!==e.backupIndex)
-    }
-    // An already existing transfer may not be part of the newly inserted rows.
-    // Restore its dismissal only when one unique matching transaction is found.
-    const originalEntries=new Map(backup.entries.filter(e=>Number.isSafeInteger(Number(e.id))).map(e=>[Number(e.id),e]))
-    for(const oldId of backup.dismissedTransfers || []) {
-      let newId=restoredIds.get(Number(oldId))
-      if(!newId) {
-        const original=originalEntries.get(Number(oldId))
-        if(original?.type==='transfer' && original.transfer_target==='sbi'){
-          const matches=rows.value.filter(row=>row.type==='transfer'&&row.transfer_target==='sbi'&&transactionKey(row)===transactionKey(original))
-          if(matches.length===1)newId=Number(matches[0].id)
-        }
-      }
-      if(newId){await props.api('dismissed-transfer-reminders',{method:'POST',body:JSON.stringify({entryId:newId})});settingsCount++}
-    }
-    // Restore recurring plans last: ledger rows must exist before a future app
-    // launch can generate scheduled records from the restored plans.
-    const existingPlans=await props.api('recurring-plans')
-    for(const plan of restoreMissingByKey(existingPlans,backup.plans||[],x=>x.id)){
-      if(!plan?.id)continue
-      await props.api('recurring-plans',{method:'POST',body:JSON.stringify(plan)})
-      settingsCount++
-    }
+    loaded.value=false;backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
+    restoreIncludeConflicts.value=false;restoreOwnKeys.value=new Map()
+    message.value=`復元完了：明細 ${completed}件・設定 ${settingsRestored}件（重複除外 ${alreadyPresent}件）`
     await loadFinanceSettings()
-    loaded.value=false;backupPreview.value=null;restoreIncludeConflicts.value=false
-    restoreOwnKeys.value=new Map()
-    message.value='復元完了：明細 '+count+'件・設定 '+settingsCount+'件（重複除外 '+skipped+'件）'
     emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
-  }catch(e){message.value='一部復元済み：明細 '+count+'件・設定 '+settingsCount+'件。再試行：'+e.message}
-  finally{busy.value=false}
+  }catch(e){
+    ledgerDirty=true
+    message.value=`復元を中断しました。完了済み ${completed}件は保持されます。再試行可能：${e.message}`
+  }finally{busy.value=false}
 }
 // Use a read-only, tolerant comparison for review; backup keys stay strict.
 const duplicates=computed(() => findLedgerDuplicateGroups(rows.value))

@@ -256,7 +256,7 @@ export async function onRequest({ request, env, params }) {
           : "name,closing_day,is_default,sort_order,'standard' AS source_type,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id")
           + " FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
-        'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
+        "SELECT r.keyword,r.category,EXISTS(SELECT 1 FROM merchant_rules p WHERE p.keyword='__user_priority__:'||r.keyword AND p.category='__priority__') AS is_custom FROM merchant_rules r WHERE r.category IS NOT NULL AND substr(r.keyword,1,18)<>'__user_priority__:' ORDER BY r.keyword",
         'SELECT category FROM category_source ORDER BY CASE WHEN category IN (\'其他\',\'その他\') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category',
         'SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category',
         'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id',
@@ -276,7 +276,7 @@ export async function onRequest({ request, env, params }) {
         plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
         paymentSources:rows(3),merchantPaymentRules:rows(4),
-        customRules:rows(5),
+        customRules:rows(5).map(rule=>({...rule,is_custom:Boolean(rule.is_custom)})),
         categories:rows(6).map(x=>x.category),
         categoryIcons:Object.fromEntries(rows(7).filter(x=>x.icon).map(x=>[x.category,x.icon])),
         categoryMetadata:rows(7),
@@ -655,19 +655,24 @@ export async function onRequest({ request, env, params }) {
         if (keyword.length < 2 || keyword.length > 120 || !category || category.length > 120)
           return json({error:'カテゴリー規則を確認してください'},400)
         // Only add missing keys when restoring. User-edited mappings are never overwritten.
-        await db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)').bind(keyword,category).run()
+        if (keyword.startsWith('__user_priority__:')) return json({error:'無効な店舗名です'},400)
+        await db.batch([
+          db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)').bind(keyword,category),
+          db.prepare("INSERT INTO merchant_rules(keyword,category) VALUES('__user_priority__:'||?1,'__priority__') ON CONFLICT(keyword) DO UPDATE SET category='__priority__'").bind(keyword)
+        ]).run()
         return json({ok:true})
       }
       if (m === 'GET') {
-        const { results } = await db.prepare('SELECT keyword, category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword').all()
-        return json(results)
+        const { results } = await db.prepare("SELECT r.keyword,r.category,EXISTS(SELECT 1 FROM merchant_rules p WHERE p.keyword='__user_priority__:'||r.keyword AND p.category='__priority__') AS is_custom FROM merchant_rules r WHERE r.category IS NOT NULL AND substr(r.keyword,1,18)<>'__user_priority__:' ORDER BY r.keyword").all()
+        return json(results.map(rule=>({...rule,is_custom:Boolean(rule.is_custom)})))
       }
       if (m === 'DELETE') {
         const keyword = url.searchParams.get('keyword') || ''
         if (keyword.length < 2 || keyword.length > 80) return json({ error: '店舗名を確認してください' }, 400)
         await db.batch([
         db.prepare('DELETE FROM merchant_rules WHERE keyword=?1 AND payment_source IS NULL').bind(keyword),
-        db.prepare('UPDATE merchant_rules SET category=NULL WHERE keyword=?1').bind(keyword)
+        db.prepare('UPDATE merchant_rules SET category=NULL WHERE keyword=?1').bind(keyword),
+        db.prepare("DELETE FROM merchant_rules WHERE keyword='__user_priority__:'||?1").bind(keyword)
       ])
         return json({ ok: true })
       }
@@ -675,8 +680,8 @@ export async function onRequest({ request, env, params }) {
     if (a === 'rules') {
       if (m === 'GET') {
         // Migrated D1 is authoritative. No hard-coded defaults, fallback rows or historical imports.
-        const {results} = await db.prepare('SELECT keyword, category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword').all()
-        return json(results.map(rule => ({...rule,is_custom:true})))
+        const {results} = await db.prepare("SELECT r.keyword,r.category,EXISTS(SELECT 1 FROM merchant_rules p WHERE p.keyword='__user_priority__:'||r.keyword AND p.category='__priority__') AS is_custom FROM merchant_rules r WHERE r.category IS NOT NULL AND substr(r.keyword,1,18)<>'__user_priority__:' ORDER BY r.keyword").all()
+        return json(results.map(rule=>({...rule,is_custom:Boolean(rule.is_custom)})))
       }
       if (m === 'POST') {
         const r = await request.json()
@@ -685,7 +690,11 @@ export async function onRequest({ request, env, params }) {
         if (kw.length < 2) return json({ error: 'キーワードは2文字以上で入力してください' }, 400)
         if (!category) return json({ error: 'カテゴリーを指定してください' }, 400)
         // Keep the user's payment mapping when updating the custom category.
-        await db.prepare('INSERT INTO merchant_rules (keyword,category) VALUES (?1,?2) ON CONFLICT(keyword) DO UPDATE SET category = excluded.category').bind(kw, category).run()
+        if (kw.startsWith('__user_priority__:')) return json({error:'無効な店舗名です'},400)
+        await db.batch([
+          db.prepare('INSERT INTO merchant_rules (keyword,category) VALUES (?1,?2) ON CONFLICT(keyword) DO UPDATE SET category = excluded.category').bind(kw,category),
+          db.prepare("INSERT INTO merchant_rules(keyword,category) VALUES('__user_priority__:'||?1,'__priority__') ON CONFLICT(keyword) DO UPDATE SET category='__priority__'").bind(kw)
+        ])
         return json({ ok: true, keyword: kw, category })
       }
     }

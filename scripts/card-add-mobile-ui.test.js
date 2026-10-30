@@ -27,3 +27,18 @@ test('both card types remain available and prepaid remains linked to assets', ()
   assert.match(creation, /value="prepaid">プリペイドカード/)
   assert.match(creation, /期首残高は「資産」で設定できます。/)
 })
+
+test('switching cards immediately refreshes the editor name and card type', () => {
+  assert.match(source, /watch\(selectedCard, \(name\) => \{[\s\S]*?editedCardName\.value = name \|\| ''[\s\S]*?editSourceType\.value = selectedSourceType\.value[\s\S]*?\}, \{ flush: 'sync' \}\)/)
+  assert.match(source, /watch\(selectedSourceType, \(type, previousType\) => \{[\s\S]*?editSourceType\.value = type/)
+  assert.match(source, /v-if="cardMode === 'edit' && selectedCard" :key="selectedCard"/)
+  assert.match(source, /:key="selectedCard \+ '-closing-day'"/)
+  assert.match(source, /const selectedSourceType = computed\(\(\) => props\.paymentSourceMeta\[selectedCard\.value\]/)
+})
+
+test('closing day only appears for an actual credit card, never cash, other or prepaid', () => {
+  assert.match(source, /const isCreditCard = name => [^\n]*!\['現金','その他','其他'\]\.includes\(name\)[^\n]*source_type === 'standard'/)
+  assert.match(source, /v-if="isCreditCard\(selectedCard\) && editSourceType === 'standard'">締め日/)
+  assert.match(source, /:value="closingDayFor\(selectedCard\)"/)
+  assert.match(source, /@change="saveClosingDay\(selectedCard,\$event\.target\.value\)"/)
+})

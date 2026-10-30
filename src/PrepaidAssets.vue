@@ -45,24 +45,46 @@ onMounted(()=>{if(props.active)void refresh()})
       <span class="wallet-heading-end"><b v-if="data">{{money(data.cards.reduce((sum,card)=>sum+Number(card.balance),0))}}</b><span class="wallet-chevron" aria-hidden="true">⌄</span></span>
     </summary>
     <div class="wallet-body">
-      <div class="wallet-tools"><button type="button" class="wallet-refresh" :disabled="loading" aria-label="プリペイド残高を更新" @click="refresh">↻ 更新</button><button type="button" class="wallet-add" @click="emit('open-card-settings')">＋ 追加</button></div>
+      <div class="wallet-tools">
+        <button type="button" class="wallet-refresh" :disabled="loading" aria-label="プリペイド残高を更新" @click="refresh"><span aria-hidden="true">↻</span> 更新</button>
+        <button type="button" class="wallet-add" @click="emit('open-card-settings')">＋ カード追加</button>
+      </div>
       <p v-if="loading && !data" class="wallet-hint" role="status">残高を読み込み中…</p>
       <p v-if="error" class="wallet-error" role="alert">{{error}}</p>
       <p v-if="notice" class="wallet-success" role="status">{{notice}}</p>
       <template v-if="data">
         <p v-if="!data.cards.length" class="wallet-hint">管理のカード設定からプリペイドカードを追加できます。</p>
-        <div v-for="card in (showAll ? data.cards : data.cards.slice(0,2))" :key="card.name" class="wallet-row">
-          <div class="wallet-row-top">
-            <div class="wallet-name"><strong>{{card.name}}</strong><small>プリペイド · チャージ {{money(card.charged)}} · 利用 {{money(card.spent)}}</small></div>
-            <div class="wallet-money" :class="{'wallet-negative':card.balance<0}"><strong>{{money(card.balance)}}</strong><small v-if="card.balance<0">要確認</small></div>
-          </div>
-          <div class="wallet-row-actions">
-            <nav class="wallet-history-links" :aria-label="card.name+'の履歴'">
-              <button type="button" :aria-label="card.name+'のチャージ履歴'" @click="emit('open-history',card.name,'charge')">チャージ履歴</button>
-              <button type="button" :aria-label="card.name+'の利用履歴'" @click="emit('open-history',card.name,'usage')">利用履歴</button>
-            </nav>
-            <button type="button" class="wallet-edit" :aria-label="card.name+'の期首残高を編集'" @click="startOpening(card)">編集</button>
-          </div>
+        <div class="wallet-list">
+          <article v-for="card in (showAll ? data.cards : data.cards.slice(0,2))" :key="card.name" class="wallet-row">
+            <div class="wallet-row-top">
+              <div class="wallet-card-identity">
+                <span class="wallet-card-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h5"/></svg>
+                </span>
+                <div class="wallet-name"><strong :title="card.name">{{card.name}}</strong><small>プリペイド</small></div>
+              </div>
+              <div class="wallet-money" :class="{'wallet-negative':card.balance<0}">
+                <small>現在残高</small>
+                <strong>{{money(card.balance)}}</strong>
+                <small v-if="card.balance<0">要確認</small>
+              </div>
+            </div>
+            <div class="wallet-card-flow" aria-label="チャージと利用の累計">
+              <div class="wallet-flow-value">
+                <span>チャージ累計</span><strong class="wallet-charge-value">＋{{money(card.charged)}}</strong>
+              </div>
+              <div class="wallet-flow-value">
+                <span>利用累計</span><strong>−{{money(card.spent)}}</strong>
+              </div>
+            </div>
+            <div class="wallet-row-actions">
+              <nav class="wallet-history-links" :aria-label="card.name+'の履歴'">
+                <button type="button" :aria-label="card.name+'の利用履歴'" @click="emit('open-history',card.name,'usage')">利用履歴</button>
+                <button type="button" :aria-label="card.name+'のチャージ履歴'" @click="emit('open-history',card.name,'charge')">チャージ履歴</button>
+              </nav>
+              <button type="button" class="wallet-edit" :aria-label="card.name+'の期首残高を編集'" @click="startOpening(card)">期首残高</button>
+            </div>
+          </article>
         </div>
         <button v-if="data.cards.length>2" type="button" class="wallet-show-more" :aria-expanded="showAll" @click="showAll=!showAll">{{showAll?'閉じる':'あと'+(data.cards.length-2)+'件を表示'}}</button>
 
@@ -88,19 +110,35 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-chevron{font-size:20px;color:var(--muted);transition:transform .18s}.wallet-panel[open] .wallet-chevron{transform:rotate(180deg)}
 .wallet-section-heading:focus-visible,.wallet-show-more:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .wallet-body{padding:0 14px 13px}
-.wallet-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:3px}.wallet-tools span{font-size:10px;color:var(--muted)}
-.wallet-add{border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750;min-height:44px;padding:7px 10px}
-.wallet-refresh{min-height:44px;border:0;background:var(--paper);color:var(--blue-dark);font-weight:750;border-radius:9px;padding:7px 10px;font-size:11px;white-space:nowrap}
-.wallet-row{border-top:1px solid var(--line);padding:10px 0 7px;min-width:0}
-.wallet-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:7px}
-.wallet-name{display:grid;gap:3px;min-width:0}.wallet-name strong{font-size:13px;overflow-wrap:anywhere}.wallet-name small{color:var(--muted);font-size:10px;line-height:1.5}
-.wallet-money{display:grid;justify-items:end;flex:none;font-variant-numeric:tabular-nums;white-space:nowrap}.wallet-money strong{font-size:15px}.wallet-money small{font-size:10px;color:var(--muted)}.wallet-negative{color:#c54d68}
-.wallet-row-actions{display:flex;align-items:center;gap:5px;min-width:0;margin-top:3px}
-.wallet-history-links{display:flex;flex:1;min-width:0;gap:4px}
-.wallet-history-links button,.wallet-edit{border:0;background:transparent;color:var(--blue-dark);font-weight:750;font-size:11px;min-height:44px;padding:6px 6px;white-space:nowrap;cursor:pointer}
-.wallet-history-links button:focus-visible,.wallet-edit:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px;border-radius:7px}
-.wallet-edit{font-size:12px;margin-left:auto}
-.wallet-show-more{display:block;margin:2px auto 5px;border:0;background:transparent;color:var(--blue-dark);min-height:44px;font-size:12px;font-weight:750;padding:8px}
+.wallet-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 9px}
+.wallet-add,.wallet-refresh{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:40px;box-sizing:border-box;padding:7px 11px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--blue-dark);font-size:11px;font-weight:750;white-space:nowrap;cursor:pointer}
+.wallet-add{background:var(--card)}
+.wallet-refresh span{font-size:17px;line-height:1}
+.wallet-list{display:grid;gap:9px;min-width:0}
+.wallet-row{display:grid;gap:10px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.wallet-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:9px;min-width:0}
+.wallet-card-identity{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+.wallet-card-icon{display:grid;place-items:center;width:35px;height:35px;flex:none;border-radius:11px;background:color-mix(in srgb,var(--blue) 11%,var(--card));color:var(--blue-dark)}
+.wallet-card-icon svg{width:21px;height:21px}
+.wallet-name{display:grid;gap:2px;min-width:0}
+.wallet-name strong{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.wallet-name small{color:var(--muted);font-size:10px;line-height:1.3}
+.wallet-money{display:grid;justify-items:end;gap:1px;flex:none;max-width:48%;font-variant-numeric:tabular-nums;text-align:right}
+.wallet-money strong{font-size:17px;line-height:1.35;white-space:nowrap}
+.wallet-money small{font-size:10px;line-height:1.3;color:var(--muted)}
+.wallet-negative strong,.wallet-negative small:last-child{color:#c54d68}
+.wallet-card-flow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;min-width:0}
+.wallet-flow-value{display:grid;gap:3px;min-width:0;padding:8px 10px;border-radius:10px;background:var(--paper)}
+.wallet-flow-value span{font-size:10px;line-height:1.3;color:var(--muted)}
+.wallet-flow-value strong{font-size:12px;line-height:1.4;font-weight:750;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.wallet-flow-value .wallet-charge-value{color:#16816b}
+.wallet-row-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px;min-width:0}
+.wallet-history-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;min-width:0}
+.wallet-history-links button,.wallet-edit{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-height:42px;min-width:0;padding:7px 4px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--blue-dark);font-weight:750;font-size:11px;line-height:1.3;text-align:center;cursor:pointer}
+.wallet-edit{padding:7px 9px;background:var(--paper)}
+.wallet-history-links button:focus-visible,.wallet-edit:focus-visible,.wallet-add:focus-visible,.wallet-refresh:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.wallet-show-more{display:block;margin:6px auto 2px;border:0;background:transparent;color:var(--blue-dark);min-height:44px;font-size:12px;font-weight:750;padding:8px}
+@media(max-width:370px){.wallet-row{padding:10px;gap:8px}.wallet-card-icon{width:31px;height:31px}.wallet-card-identity{gap:6px}.wallet-money strong{font-size:15px}.wallet-history-links{gap:4px}.wallet-row-actions{gap:4px}.wallet-history-links button,.wallet-edit{font-size:10px;padding-inline:4px}.wallet-flow-value{padding:7px 8px}}
 .wallet-hint{font-size:11px;color:var(--muted);line-height:1.6;margin:0}
 .wallet-error{font-size:12px;color:#9b2938}.wallet-success{font-size:11px;color:#178367;margin:0}
 .wallet-overlay{position:fixed;z-index:61;inset:0;background:#23273588;display:flex;align-items:flex-end;justify-content:center}

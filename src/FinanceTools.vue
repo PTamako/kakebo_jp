@@ -4,6 +4,7 @@ import { sortOtherLast } from './category-sort.js'
 import { findLedgerDuplicateGroups } from './duplicate-review.js'
 import AmountInput from './AmountInput.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances } from './finance-tools.js'
+import { isCardBilledEntry } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
@@ -751,8 +752,7 @@ async function removePlan(id) {
     if(editingPlanId.value===id) cancelPlanEdit()
   } catch(e) { message.value='固定支出の削除に失敗しました：'+e.message }
 }
-const monthExpenses=(period,source)=>period ? rows.value.filter(e=>e.date>=period.start&&e.date<=period.end&&e.type==='expense'&&e.payment_source===source) : []
-const cardTransactions=computed(()=>monthExpenses(cardPeriod.value,bill.value.name))
+const cardTransactions=computed(()=>rows.value.filter(e=>isCardBilledEntry(e,cardPeriod.value,bill.value.name)))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))
 const selectedSavedBill = computed(() => isCreditCard(bill.value.name) ? bills.value.find(record => record.name === bill.value.name && record.month === bill.value.month) || null : null)
 const savedBillDifference = computed(() => selectedSavedBill.value && loaded.value ? cardTotal.value - Number(selectedSavedBill.value.total) : null)
@@ -921,7 +921,7 @@ async function removeCardBill(record) {
     <div v-else-if="bill.name && cardPeriod" class="finance-row">
       <strong>{{bill.name}} · {{bill.month}}締め</strong><span>{{cardPeriod.start}} ～ {{cardPeriod.end}}</span>
       <strong>{{yen(cardTotal)}}</strong>
-      <span>{{cardTransactions.length}}件の支出</span>
+      <span>{{cardTransactions.length}}件の利用（資産移動を含む）</span>
     </div>
     <p v-else>カードと締め月を選択してください。</p>
     <button type="button" :disabled="!settingsReady || !loaded || !isCreditCard(bill.name) || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>

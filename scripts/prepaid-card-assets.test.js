@@ -67,6 +67,8 @@ test('charge is asset movement and spend remains expense; UI supports both editi
   assert.match(app,/matchingPrepaid \? prepaidTarget\(matchingPrepaid\)/)
   assert.match(form,/transferDestinations/)
   assert.match(form,/チャージ元（任意）/)
+  assert.match(form,/振替元（任意）/)
+  assert.match(form,/record\.type==='transfer'[^>]*class="form-field"/)
   assert.match(ledger,/transfer-destinations="transferDestinations"/)
   assert.match(asset,/PrepaidAssets/)
 })

@@ -1124,3 +1124,12 @@ async function removeCardBill(record) {
 .finance-section-tabs>button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 @media(max-width:360px){.finance-tools > .finance-section-tabs{gap:2px}.finance-tools > .finance-section-tabs>button{font-size:11px;padding-inline:1px}}
 </style>
+
+<style scoped>
+/* Mobile-only: keep card and closing month readable, with the total on its own row. */
+@media (max-width: 520px) {
+  .card-billing-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card-billing-fields > label:last-child { grid-column: 1 / -1; }
+  .card-billing-fields .card-usage-total { font-size: 15px; padding-inline: 10px; }
+}
+</style>

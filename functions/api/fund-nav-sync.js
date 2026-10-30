@@ -111,7 +111,8 @@ export async function syncFundNav(db,{
   for(const code of targetCodes){
     try{
       if(retryPendingNav){
-        const current=await db.prepare('SELECT price_date,source FROM fund_prices WHERE fund_code=?1').bind(code).first()
+        const {results:currentQuotes=[]}=await db.prepare('SELECT price_date,source FROM fund_prices WHERE fund_code=?1').bind(code).all()
+        const current=currentQuotes[0]
         if(current?.source?.startsWith('official_') && current.price_date>=jstToday){
           summary.unchanged.push(code)
           continue

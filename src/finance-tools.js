@@ -1,5 +1,28 @@
 // Read-only financial checks and portable backup format. Never mutate ledger records here.
 export const backupVersion = 4
+
+// A portable restore cannot reuse source-database entry IDs. Rebase newly restored
+// wallet cards at the backed-up current balance AFTER historical entries are inserted.
+// Existing target cards always win. Never fabricate a recharge/income entry.
+export function prepaidRestoreBalances(archive, today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)) {
+  const rows=Array.isArray(archive.entries)?archive.entries:[]
+  return (archive.paymentSources||[]).filter(source=>source?.source_type==='prepaid').map(source=>{
+    const start=source.opening_date||today
+    const cutoff=Number(source.opening_entry_id||0)
+    if(!validDate(start)||!Number.isSafeInteger(cutoff)||cutoff<0)throw Error('プリペイドの復元基準が正しくありません')
+    const eligible=rows.filter(e=>Number(e.id)>cutoff && e.date>=start)
+    const future=eligible.some(e=>(e.transfer_target==='prepaid:'+source.name && e.type==='transfer' && (e.date>today || (e.transfer_date||e.date)>today))||
+      (e.type==='expense' && e.payment_source===source.name && e.date>today))
+    if(future)throw Error('将来日のプリペイド明細があります。残高復元は手動確認が必要です')
+    const charged=eligible.filter(e=>e.type==='transfer'&&e.transfer_target==='prepaid:'+source.name&&e.date<=today&&(e.transfer_date||e.date)<=today).reduce((n,e)=>n+Number(e.amount),0)
+    const spent=eligible.filter(e=>e.type==='expense'&&e.payment_source===source.name&&e.date<=today).reduce((n,e)=>n+Number(e.amount),0)
+    const opening=Number(source.opening_balance||0)
+    const balance=opening+charged-spent
+    if(!Number.isSafeInteger(balance)||balance<0||balance>100000000)throw Error('プリペイド残高が計算できません。復元を中止しました')
+    return {name:source.name,openingBalance:balance}
+  })
+}
+
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 

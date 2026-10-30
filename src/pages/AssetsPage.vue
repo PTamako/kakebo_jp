@@ -44,40 +44,53 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
           <strong :class="{'asset-pnl-negative':pnl !== null && pnl < 0}">{{gainYen(pnl)}}<small v-if="pnlRatio!==null"> ({{pnlRatio>=0?'+':''}}{{pnlRatio.toFixed(2)}}%)</small></strong>
         </div>
         <div class="asset-cost-line"><span>取得金額</span><strong>{{yen(acquisition)}}</strong></div>
-        <div v-if="allocation.length" class="asset-allocation" aria-label="銘柄別の評価額比率">
-          <span v-for="a in allocation" :key="a.key" :style="{width:a.ratio+'%',background:a.color}" :title="a.ratio.toFixed(1)+'%'"></span>
+        <div v-if="allocation.length" class="asset-allocation-breakdown">
+          <div class="asset-allocation" role="img" :aria-label="'銘柄別評価額比率：'+allocation.map(a=>a.name+' '+a.ratio.toFixed(1)+'%').join('、')">
+            <span v-for="a in allocation" :key="a.key" :style="{width:a.ratio+'%',background:a.color}" aria-hidden="true"></span>
+          </div>
+          <div class="asset-allocation-legend" aria-label="各銘柄の評価額比率">
+            <div v-for="a in allocation" :key="a.key" class="asset-allocation-legend-item" :title="a.name+' '+a.ratio.toFixed(1)+'%'">
+              <span class="asset-allocation-dot" :style="{background:a.color}" aria-hidden="true"></span>
+              <span class="asset-allocation-name">{{a.name}}</span>
+              <strong>{{a.ratio.toFixed(1)}}%</strong>
+            </div>
+          </div>
         </div>
       </div>
       <div class="asset-wallet">
-        <div class="asset-overview-label">
-          <span class="asset-label-icon asset-label-wallet" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg>
-          </span>
-          <span>電子マネー残高<small>Suica・PASMO など</small></span>
+        <div class="asset-wallet-head">
+          <div class="asset-overview-label">
+            <span class="asset-label-icon asset-label-wallet" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg>
+            </span>
+            <span>電子マネー残高<small>Suica・PASMO など</small></span>
+          </div>
+          <strong class="asset-wallet-value">{{yen(prepaid)}}</strong>
         </div>
-        <strong class="asset-wallet-value">{{yen(prepaid)}}</strong>
         <div class="asset-wallet-activity" aria-label="電子マネーの最近の記録">
           <div class="asset-wallet-event">
-            <div class="asset-wallet-event-top">
+            <div class="asset-wallet-event-info">
               <span class="asset-wallet-event-kind">↘ 最近の利用</span>
-              <strong v-if="latestUsage" class="asset-wallet-event-amount">{{'−'+yen(latestUsage.amount)}}</strong>
+              <strong v-if="latestUsage" class="asset-wallet-card" :title="latestUsage.card">{{latestUsage.card}}</strong>
+              <small v-if="latestUsage" class="asset-wallet-event-meta" :title="latestUsage.merchant || ''">{{latestUsage.merchant || '店舗名なし'}}</small>
+              <small v-else class="asset-wallet-event-empty">{{prepaidSummary ? '記録なし' : '—'}}</small>
             </div>
-            <div v-if="latestUsage" class="asset-wallet-event-detail">
-              <strong class="asset-wallet-card" :title="latestUsage.card">{{latestUsage.card}}</strong>
-              <small>{{shortDate(latestUsage.date)}}<span v-if="latestUsage.merchant" :title="latestUsage.merchant"> · {{latestUsage.merchant}}</span></small>
+            <div v-if="latestUsage" class="asset-wallet-event-side">
+              <strong class="asset-wallet-event-amount">{{'−'+yen(latestUsage.amount)}}</strong>
+              <small>{{shortDate(latestUsage.date)}}</small>
             </div>
-            <small v-else class="asset-wallet-event-empty">{{prepaidSummary ? '記録なし' : '—'}}</small>
           </div>
           <div class="asset-wallet-event">
-            <div class="asset-wallet-event-top">
+            <div class="asset-wallet-event-info">
               <span class="asset-wallet-event-kind">↗ 最近のチャージ</span>
-              <strong v-if="latestCharge" class="asset-wallet-event-amount asset-wallet-plus">{{'+'+yen(latestCharge.amount)}}</strong>
+              <strong v-if="latestCharge" class="asset-wallet-card" :title="latestCharge.card">{{latestCharge.card}}</strong>
+              <small v-if="latestCharge" class="asset-wallet-event-meta" :title="latestCharge.funding_source || ''">{{latestCharge.funding_source ? latestCharge.funding_source+'から' : 'チャージ元未設定'}}</small>
+              <small v-else class="asset-wallet-event-empty">{{prepaidSummary ? '記録なし' : '—'}}</small>
             </div>
-            <div v-if="latestCharge" class="asset-wallet-event-detail">
-              <strong class="asset-wallet-card" :title="latestCharge.card">{{latestCharge.card}}</strong>
-              <small :title="latestCharge.funding_source || ''">{{shortDate(latestCharge.date)}}<span v-if="latestCharge.funding_source"> · {{latestCharge.funding_source}}から</span></small>
+            <div v-if="latestCharge" class="asset-wallet-event-side">
+              <strong class="asset-wallet-event-amount asset-wallet-plus">{{'+'+yen(latestCharge.amount)}}</strong>
+              <small>{{shortDate(latestCharge.date)}}</small>
             </div>
-            <small v-else class="asset-wallet-event-empty">{{prepaidSummary ? '記録なし' : '—'}}</small>
           </div>
         </div>
       </div>
@@ -99,7 +112,7 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
 .assets-page{display:grid;gap:9px;min-width:0}
 .assets-page .page-heading{margin-bottom:0;min-height:0}
 .assets-page .page-heading h1{letter-spacing:-.035em}
-.asset-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
+.asset-overview{display:grid;grid-template-columns:minmax(0,1fr);gap:9px;min-width:0}
 .asset-investment,.asset-wallet{box-sizing:border-box;display:flex;flex-direction:column;min-width:0;min-height:123px;padding:12px;border:1px solid var(--line);border-radius:15px;background:var(--card)}
 .asset-investment{background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 12%,var(--card)),var(--card) 85%);border-color:color-mix(in srgb,var(--blue) 18%,var(--line))}
 .asset-wallet{background:linear-gradient(135deg,color-mix(in srgb,var(--teal) 9%,var(--card)),var(--card) 85%);border-color:color-mix(in srgb,var(--teal) 17%,var(--line))}
@@ -110,17 +123,23 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
 .asset-label-icon svg{width:15px;height:15px}
 .asset-label-investment{background:color-mix(in srgb,var(--blue) 17%,var(--card));color:var(--blue-dark)}
 .asset-label-wallet{background:color-mix(in srgb,var(--teal) 15%,var(--card));color:var(--teal)}
-.asset-investment-value,.asset-wallet-value{display:block;margin-top:auto;padding-top:8px;font-size:clamp(18px,5.4vw,25px);font-weight:850;letter-spacing:-.045em;font-variant-numeric:tabular-nums;line-height:1.15;overflow-wrap:anywhere}
-.asset-wallet-activity{display:grid;gap:5px;margin-top:8px;padding-top:7px;border-top:1px solid color-mix(in srgb,var(--teal) 20%,var(--line))}
-.asset-wallet-event{display:grid;gap:2px;min-width:0}
-.asset-wallet-event+.asset-wallet-event{padding-top:5px;border-top:1px solid color-mix(in srgb,var(--teal) 10%,var(--line))}
-.asset-wallet-event-top{display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0}
+.asset-investment-value,.asset-wallet-value{display:block;font-size:clamp(21px,5.6vw,28px);font-weight:850;letter-spacing:-.045em;font-variant-numeric:tabular-nums;line-height:1.15;overflow-wrap:anywhere}
+.asset-investment-value{padding-top:8px}
+.asset-wallet-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.asset-wallet-head>.asset-overview-label{flex:1;min-width:0}
+.asset-wallet-value{flex:0 1 auto;max-width:52%;min-width:0;text-align:right}
+.asset-wallet-activity{display:grid;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid color-mix(in srgb,var(--teal) 20%,var(--line));min-width:0}
+.asset-wallet-event{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;min-width:0}
+.asset-wallet-event+.asset-wallet-event{padding-top:8px;border-top:1px solid color-mix(in srgb,var(--teal) 10%,var(--line))}
+.asset-wallet-event-info{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;max-width:100%}
 .asset-wallet-event-kind{font-size:10px;color:var(--muted);font-weight:750;white-space:nowrap}
-.asset-wallet-event-amount{font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;letter-spacing:-.015em}
+.asset-wallet-card,.asset-wallet-event-meta{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asset-wallet-card{font-size:12px;line-height:1.3}
+.asset-wallet-event-meta{font-size:10px;color:var(--muted)}
+.asset-wallet-event-side{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0}
+.asset-wallet-event-amount{font-size:13px;white-space:nowrap;font-weight:850;font-variant-numeric:tabular-nums;letter-spacing:-.015em}
 .asset-wallet-event-amount.asset-wallet-plus{color:var(--teal)}
-.asset-wallet-event-detail{display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0}
-.asset-wallet-card{min-width:0;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
-.asset-wallet-event-detail small{display:block;min-width:0;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:9px;color:var(--muted)}
+.asset-wallet-event-side small{font-size:10px;color:var(--muted);white-space:nowrap}
 .asset-wallet-event-empty{font-size:10px;color:var(--muted)}
 .asset-investment-foot{display:flex;align-items:center;gap:5px;justify-content:space-between;margin-top:7px;padding-top:5px;border-top:1px solid color-mix(in srgb,var(--blue) 15%,var(--line));font-size:10px;color:var(--muted)}
 .asset-investment-foot strong{font-size:10px;color:#18876c;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -128,13 +147,20 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
 .asset-investment-foot strong small{font-size:9px;font-weight:650}
 .asset-cost-line{display:flex;align-items:center;justify-content:space-between;gap:4px;color:var(--muted);font-size:10px}
 .asset-cost-line strong{color:var(--ink);font-size:10px;font-variant-numeric:tabular-nums}
-.asset-allocation{display:flex;width:100%;height:5px;border-radius:99px;overflow:hidden;gap:2px;background:var(--line);margin-top:3px}
+.asset-allocation-breakdown{display:grid;gap:8px;padding-top:3px;min-width:0}
+.asset-allocation{display:flex;width:100%;height:7px;border-radius:99px;overflow:hidden;gap:2px;background:var(--line)}
 .asset-allocation>span{height:100%;min-width:0}
+.asset-allocation-legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;min-width:0}
+.asset-allocation-legend-item{display:flex;align-items:center;gap:5px;min-width:0;font-size:10px}
+.asset-allocation-dot{width:7px;height:7px;flex:none;border-radius:50%}
+.asset-allocation-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.asset-allocation-legend-item strong{flex:none;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:10px}
 .balance-view-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;min-width:0;padding:4px;border-radius:13px;border:1px solid var(--line);background:var(--paper)}
 .balance-view-switch button{display:flex;justify-content:center;align-items:center;gap:4px;min-width:0;min-height:43px;padding:8px 3px;border:1px solid transparent;background:transparent;border-radius:10px;color:var(--muted);font-size:12px;font-weight:750;white-space:nowrap;cursor:pointer}
 .balance-view-switch button.selected{color:var(--blue-dark);background:var(--card);border-color:color-mix(in srgb,var(--blue) 17%,var(--line));box-shadow:0 1px 5px #0000000a}
 .balance-view-switch button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .balance-view-count{display:inline-grid;place-items:center;min-width:15px;height:15px;padding:0 3px;border-radius:9px;background:color-mix(in srgb,var(--blue) 16%,var(--card));font-size:9px;line-height:1.1}
-@media(max-width:370px){.asset-investment,.asset-wallet{padding:10px}.asset-overview-label{gap:4px}.asset-overview-label>span:last-child{font-size:10px}.asset-label-icon{width:24px;height:24px}.asset-investment-value,.asset-wallet-value{font-size:18px}.balance-view-switch button{font-size:11px}}
+@media(min-width:768px){.asset-overview{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}}
+@media(max-width:370px){.asset-investment,.asset-wallet{padding:10px}.asset-overview-label{gap:4px}.asset-overview-label>span:last-child{font-size:10px}.asset-label-icon{width:24px;height:24px}.asset-investment-value,.asset-wallet-value{font-size:20px}.asset-wallet-card{font-size:11px}.asset-wallet-event{gap:8px}.asset-wallet-event-amount{font-size:12px}.asset-allocation-legend{column-gap:7px}.balance-view-switch button{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.pending-chevron{transition:none}}
 </style>

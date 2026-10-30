@@ -24,14 +24,14 @@ test('prepaid history navigates to current month in existing ledger tab',()=>{
  assert.match(app,/month\.value = targetMonth/)
  assert.match(app,/tab\.value = 'list'/)
  assert.match(app,/entryTypeFilter\.value = kind === 'charge' \? 'transfer' : 'expense'/)
- assert.match(app,/prepaidHistoryFilter\.value = \{ card:cardName, kind \}/)
+ assert.match(app,/openingEntryId:Number\(source\?\.opening_entry_id\|\|0\)/)
  assert.match(ledger,/prepaidHistoryFilter\.card \+ ' · '/)
 })
 
 test('prepaid history strictly filters the selected card and entry type',()=>{
  assert.match(app,/matchesPrepaidHistoryEntry\(entry, prepaidHistoryFilter\.value\)/)
- assert.match(read('src/prepaid-history.js'),/entry\.transfer_target === prepaidTarget\(filter\.card\)/)
- assert.match(read('src/prepaid-history.js'),/entry\.payment_source === filter\.card/)
+ assert.match(read('src/prepaid-history.js'),/entry\.transfer_target===prepaidTarget\(filter\.card\)/)
+ assert.match(read('src/prepaid-history.js'),/entry\.payment_source===filter\.card/)
  assert.match(app,/\.filter\(entryMatchesType\)\.filter\(matchesPrepaidHistory\)/)
  assert.match(ledger,/v-if="!detailFilter && !prepaidHistoryFilter"/)
  assert.match(ledger,/v-if="prepaidHistoryFilter" class="detail-filter-strip"/)
@@ -41,8 +41,8 @@ test('prepaid history strictly filters the selected card and entry type',()=>{
 
 test('new prepaid names are dynamic: no special-case Suica or PASMO requirement',()=>{
  const arbitraryName='自分専用ウォレット 01'
- const charge={type:'transfer',transfer_target:'prepaid:'+arbitraryName,amount:2500}
- const usage={type:'expense',payment_source:arbitraryName,amount:120}
+ const charge={id:11,date:'2026-10-29',type:'transfer',transfer_target:'prepaid:'+arbitraryName,amount:2500}
+ const usage={id:12,date:'2026-10-29',type:'expense',payment_source:arbitraryName,amount:120}
  assert.equal(matchesPrepaidHistoryEntry(charge,{card:arbitraryName,kind:'charge'}),true)
  assert.equal(matchesPrepaidHistoryEntry(usage,{card:arbitraryName,kind:'usage'}),true)
  assert.equal(matchesPrepaidHistoryEntry(charge,{card:'Suica',kind:'charge'}),false)
@@ -59,12 +59,12 @@ test('navigation does not re-import old payment settings or create D1 history',(
 
 test('Suica history never includes PASMO, ordinary transfers, income or other expenses',()=>{
  const entries=[
-  {type:'transfer',transfer_target:'prepaid:Suica',amount:3000},
-  {type:'transfer',transfer_target:'prepaid:PASMO',amount:4000},
-  {type:'transfer',transfer_target:'sbi',amount:15000},
-  {type:'expense',payment_source:'Suica',amount:210},
-  {type:'expense',payment_source:'PASMO',amount:180},
-  {type:'income',payment_source:'Suica',amount:100}
+  {id:1,date:'2026-10-29',type:'transfer',transfer_target:'prepaid:Suica',amount:3000},
+  {id:2,date:'2026-10-29',type:'transfer',transfer_target:'prepaid:PASMO',amount:4000},
+  {id:3,date:'2026-10-29',type:'transfer',transfer_target:'sbi',amount:15000},
+  {id:4,date:'2026-10-29',type:'expense',payment_source:'Suica',amount:210},
+  {id:5,date:'2026-10-29',type:'expense',payment_source:'PASMO',amount:180},
+  {id:6,date:'2026-10-29',type:'income',payment_source:'Suica',amount:100}
  ]
  assert.deepEqual(entries.filter(e=>matchesPrepaidHistoryEntry(e,{card:'Suica',kind:'charge'})),[entries[0]])
  assert.deepEqual(entries.filter(e=>matchesPrepaidHistoryEntry(e,{card:'PASMO',kind:'charge'})),[entries[1]])
@@ -72,4 +72,24 @@ test('Suica history never includes PASMO, ordinary transfers, income or other ex
  assert.deepEqual(entries.filter(e=>matchesPrepaidHistoryEntry(e,{card:'PASMO',kind:'usage'})),[entries[4]])
  assert.equal(matchesPrepaidHistoryEntry(entries[0],{card:'Suica',kind:'invalid'}),false)
  assert.equal(matchesPrepaidHistoryEntry(entries[0],null),true)
+})
+
+test('wallet charge history agrees with balance date, transfer date, and opening-entry anchor',()=>{
+ const today='2026-10-30'
+ const card={card:'任意の新規カード',kind:'charge',openingDate:'2026-10-01',openingEntryId:10}
+ const charge={id:11,date:'2026-10-29',type:'transfer',transfer_target:'prepaid:任意の新規カード',transfer_date:'2026-10-29',amount:3000}
+ assert.equal(matchesPrepaidHistoryEntry(charge,card,today),true)
+ assert.equal(matchesPrepaidHistoryEntry({...charge,transfer_date:'2026-11-10'},card,today),false,'unapplied future transfer is not in current balance/history')
+ assert.equal(matchesPrepaidHistoryEntry({...charge,date:'2026-10-31'},card,today),false,'future ledger entry must not appear')
+ assert.equal(matchesPrepaidHistoryEntry({...charge,id:10},card,today),false,'old entry already covered by opening balance')
+ assert.equal(matchesPrepaidHistoryEntry({...charge,date:'2026-09-30'},card,today),false,'old date before card baseline')
+ assert.equal(matchesPrepaidHistoryEntry({...charge,transfer_target:'prepaid:違うカード'},card,today),false)
+ const usage={id:12,date:'2026-10-28',type:'expense',payment_source:'任意の新規カード',amount:270}
+ assert.equal(matchesPrepaidHistoryEntry(usage,{...card,kind:'usage'},today),true)
+ assert.equal(matchesPrepaidHistoryEntry({...usage,id:10},{...card,kind:'usage'},today),false)
+ assert.equal(matchesPrepaidHistoryEntry({...usage,date:'2026-11-01'},{...card,kind:'usage'},today),false)
+ const sql=read('functions/api/prepaid-assets.js')
+ assert.match(sql,/e\.id>p\.opening_entry_id/)
+ assert.match(sql,/COALESCE\(e\.transfer_date,e\.date\)<=\?1/)
+ assert.match(app,/opening_date,opening_entry_id/)
 })

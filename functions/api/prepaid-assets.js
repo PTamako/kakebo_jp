@@ -27,7 +27,7 @@ export async function handlePrepaid({db,request,method,sub}) {
   const {results:cards}=await db.prepare(`SELECT p.name,p.opening_balance,p.opening_entry_id,p.opening_date,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name
-        AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1
+        AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
         AND COALESCE(e.transfer_date,e.date)<=?1
         AND COALESCE(e.payment_source,'')<>p.name),0) charged,
     COALESCE((SELECT SUM(e.amount) FROM entries e
@@ -35,7 +35,7 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) spent,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.payment_source=p.name
-        AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1
+        AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
         AND COALESCE(e.transfer_date,e.date)<=?1
         AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out
     FROM payment_sources p WHERE p.source_type='prepaid'
@@ -54,7 +54,7 @@ export async function handlePrepaid({db,request,method,sub}) {
       FROM entries e
       JOIN payment_sources p ON p.source_type='prepaid' AND e.transfer_target='prepaid:'||p.name
       WHERE e.type='transfer' AND e.id>p.opening_entry_id
-        AND e.date>=p.opening_date AND e.date<=?1
+        AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
         AND COALESCE(e.transfer_date,e.date)<=?1
         AND COALESCE(e.payment_source,'')<>p.name
       ORDER BY COALESCE(e.transfer_date,e.date) DESC,

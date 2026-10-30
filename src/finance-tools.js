@@ -96,7 +96,7 @@ export function validateBackup(value) {
     (x.opening_date == null || x.opening_date==='' || validDate(x.opening_date)) &&
     (x.closing_day == null || (Number.isInteger(x.closing_day) && x.closing_day >= 0 && x.closing_day <= 31)) &&
     (x.is_default == null || x.is_default === 0 || x.is_default === 1 || typeof x.is_default === 'boolean')
-  const validCustom = x => x && isText(x.keyword,120) && isText(x.category,120) && (x.is_custom == null || typeof x.is_custom === 'boolean')
+  const validCustom = x => x && isText(x.keyword,120) && isText(x.category,120)
   const validPaymentRule = x => x && isText(x.keyword,120) && isText(x.payment_source,80)
   for (const [name, check] of [
     ['plans',validPlan],['bills',validBill],['paymentSources',validSource],

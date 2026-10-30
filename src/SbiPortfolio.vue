@@ -389,16 +389,16 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
 .sbi-card[open] > .sbi-disclosure-summary .sbi-chevron{transform:rotate(180deg)}
 .sbi-disclosure-summary:focus-visible,.sbi-show-more:focus-visible,.sbi-holding-detail summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .sbi-section-body{padding:0 14px 12px}.sbi-inline-action{display:flex;justify-content:flex-end;padding:0 0 2px}
-.sbi-inline-action .sbi-text-action{padding:4px 10px;min-height:34px}
+.sbi-inline-action .sbi-text-action{padding:4px 10px;min-height:44px}
 .sbi-holding-row,.sbi-plan-row,.sbi-transfer-row{padding:9px 0}
 .sbi-holding-top{gap:7px}
 .sbi-holding-value strong{font-size:15px}
 .sbi-compact-actions{display:flex;justify-content:flex-end;align-items:center;gap:9px;padding:0 0 0 17px}
-.sbi-compact-actions .sbi-row-edit,.sbi-holding-detail summary{min-height:36px;padding:5px 8px;color:var(--blue-dark);font-size:11px;font-weight:750}
+.sbi-compact-actions .sbi-row-edit,.sbi-holding-detail summary{min-height:44px;padding:5px 8px;color:var(--blue-dark);font-size:11px;font-weight:750}
 .sbi-compact-actions:has(.sbi-holding-detail[open]){flex-wrap:wrap}\n.sbi-holding-detail[open]{width:100%}.sbi-holding-detail[open] summary{text-align:right}\n.sbi-holding-detail{position:relative}.sbi-holding-detail summary{cursor:pointer;list-style:none}.sbi-holding-detail summary::-webkit-details-marker{display:none}
 .sbi-holding-expanded{display:grid;gap:5px;margin:0 0 6px;padding:9px;border-radius:10px;background:var(--paper);color:var(--muted);font-size:11px}
 .sbi-holding-expanded button{justify-self:end}
-.sbi-show-more{display:block;margin:2px auto 4px;min-height:40px;padding:7px;border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750}
+.sbi-show-more{display:block;margin:2px auto 4px;min-height:44px;padding:7px;border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750}
 .sbi-valuation-details,.sbi-footnote{border-top:1px solid var(--line);margin-top:3px}
 .sbi-valuation-details>summary,.sbi-footnote>summary{cursor:pointer;padding:12px 0;min-height:40px;font-size:11px;color:var(--muted);font-weight:750}
 .sbi-valuation-details .sbi-hero{margin-bottom:9px;padding:12px;border-radius:14px}

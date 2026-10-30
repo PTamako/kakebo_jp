@@ -1,14 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
-import {DEFAULT_RULE_ROWS, onRequest} from '../functions/api/[[path]].js'
+import {onRequest} from '../functions/api/[[path]].js'
+import {DEFAULT_RULE_ROWS} from './fixtures/default-rule-rows.js'
 import {classify} from '../src/parse.js'
 import {restoreAtomic} from '../functions/api/restore-atomic.js'
 
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
-test('legacy built-in categories are not loaded into the runtime defaults',()=>{
+test('legacy merchant examples are test-only and runtime has no built-in fallback',()=>{
   const api=read('functions/api/[[path]].js')
-  assert.match(api,/const merged = new Map\(DEFAULT_RULE_ROWS\.map/)
+  assert.doesNotMatch(api,/const merged = new Map\(DEFAULT_RULE_ROWS\.map/)
+  assert.match(api,/SELECT keyword, category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword/)
   assert.doesNotMatch(api,/const merged = new Map\(\(baseResult\.results/)
   const rules=DEFAULT_RULE_ROWS.map(([keyword,category])=>({keyword,category,is_custom:false}))
   assert.equal(classify('スーパーABC',rules).category,'饮食料品')

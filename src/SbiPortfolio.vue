@@ -380,7 +380,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
       <details class="panel sbi-card sbi-holdings" open>
         <summary class="sbi-disclosure-summary"><strong>投資信託の保有</strong><small>{{holdingsData.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
         <div class="sbi-section-body">
-        <div class="sbi-inline-action sbi-holding-toolbar"><button v-if="holdingsData.length" type="button" class="sbi-text-action" @click="openBulk">保有を一括更新</button><button type="button" class="sbi-text-action" @click="editHolding(null)">＋ 保有を追加</button></div>
+        <div class="sbi-inline-action sbi-holding-toolbar"><button v-if="holdingsData.length" type="button" class="sbi-bulk-primary" @click="openBulk"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 18h7M17.5 14.5v7"/></svg><span>保有を一括更新</span></button><button type="button" class="sbi-text-action sbi-add-holding" @click="editHolding(null)">＋ 追加</button></div>
         <p v-if="!holdingsData.length" class="sbi-empty">保有銘柄はまだありません</p>
         <article v-for="(h,index) in visibleHoldings" :key="h.fund_code+':'+h.account_type" class="sbi-holding-row">
           <div class="sbi-holding-top">
@@ -427,45 +427,53 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
         </div>
       </details>
 
-      <details class="panel sbi-card sbi-plans">
-        <summary class="sbi-disclosure-summary"><strong>毎月の積立設定</strong><small>{{data.plans.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
-        <div class="sbi-section-body">
-        <div class="sbi-inline-action"><button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button></div>
-        <div class="sbi-plan-total"><div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}} <small>/ 月</small></strong></div><div class="sbi-plan-day">注文予定は銘柄別</div></div>
-        <div v-if="!data.plans.length" class="sbi-empty">
-          <p>積立設定はまだありません</p>
+      <details class="panel sbi-card sbi-investment-manage">
+        <summary class="sbi-disclosure-summary">
+          <span class="sbi-manage-title"><strong>毎月の積立</strong><small>{{yen(data.reconciliation.monthly_amount)}} / 月 · {{data.plans.filter(p=>p.enabled).length}}銘柄</small></span>
+          <span class="sbi-manage-link">設定</span>
+          <span class="sbi-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="sbi-section-body sbi-management-body">
+          <div class="sbi-month-pulse">
+            <div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}}</strong></div>
+            <div><span>振替記帳</span><strong>{{yen(data.reconciliation.funded)}}</strong></div>
+          </div>
+          <div class="sbi-progress" role="progressbar" aria-label="積立予定に対する振替記帳額" :aria-valuemax="Math.max(1,data.reconciliation.monthly_amount)" :aria-valuenow="Math.max(0,Math.min(data.reconciliation.monthly_amount,data.reconciliation.funded))">
+            <span :style="{width:Math.min(100,100*data.reconciliation.funded/Math.max(1,data.reconciliation.monthly_amount))+'%'}"></span>
+          </div>
+          <div class="sbi-reconcile-state">
+            <span v-if="data.reconciliation.difference === 0 && data.reconciliation.funded > 0" class="sbi-positive">予定額と一致</span>
+            <span v-else-if="data.reconciliation.difference < 0 && data.reconciliation.funded > 0" class="sbi-hint">差額 {{yen(Math.abs(data.reconciliation.difference))}}</span>
+            <span v-else-if="data.reconciliation.difference > 0" class="sbi-hint">超過 {{yen(data.reconciliation.difference)}}</span>
+            <span v-if="data.reconciliation.pending">反映待ち {{yen(data.reconciliation.pending)}}</span>
+          </div>
+          <div class="sbi-manage-subhead">
+            <strong>積立設定</strong>
+            <button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button>
+          </div>
+          <p v-if="!data.plans.length" class="sbi-empty">積立設定はまだありません</p>
+          <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.fund_code+':'+p.account_type" class="sbi-plan-row">
+            <div class="sbi-row-main"><strong>{{shortFundName(p)}}</strong><small>{{accountLabel(p.account_type)}} · 毎月{{p.order_day}}日</small></div>
+            <div class="sbi-row-end"><strong>{{p.enabled ? yen(p.monthly_amount) : '停止中'}}</strong><button type="button" class="sbi-row-edit" @click="editPlan(p)" :aria-label="shortFundName(p)+'の積立設定を変更'">変更</button></div>
+          </div>
+          <button v-if="data.plans.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllPlans" @click="showAllPlans=!showAllPlans">{{showAllPlans?'閉じる':'あと'+(data.plans.length-2)+'件を表示'}}</button>
 
-        </div>
-        <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.fund_code+':'+p.account_type" class="sbi-plan-row">
-          <div class="sbi-row-main"><strong>{{shortFundName(p)}}</strong><small>{{accountLabel(p.account_type)}} · 毎月{{p.order_day}}日</small></div>
-          <div class="sbi-row-end"><strong>{{p.enabled ? yen(p.monthly_amount) : '停止中'}}</strong><button type="button" class="sbi-row-edit" @click="editPlan(p)" :aria-label="shortFundName(p)+'の積立設定を変更'">変更</button></div>
-        </div>
-        <button v-if="data.plans.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllPlans" @click="showAllPlans=!showAllPlans">{{showAllPlans?'閉じる':'あと'+(data.plans.length-2)+'件を表示'}}</button>
-        </div>
-      </details>
-
-      <details class="panel sbi-card sbi-transfers">
-        <summary class="sbi-disclosure-summary"><strong>振替と買付月</strong><small>{{data.transfers.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
-        <div class="sbi-section-body">
-        <div class="sbi-funding-stats">
-          <div><span>記帳反映済</span><strong>{{yen(data.reconciliation.funded)}}</strong></div>
-          <div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}}</strong></div>
-        </div>
-        <div class="sbi-progress" role="progressbar" aria-label="積立予定に対する振替記帳額" :aria-valuemax="Math.max(1,data.reconciliation.monthly_amount)" :aria-valuenow="Math.max(0,Math.min(data.reconciliation.monthly_amount,data.reconciliation.funded))">
-          <span :style="{width:Math.min(100,100*data.reconciliation.funded/Math.max(1,data.reconciliation.monthly_amount))+'%'}"></span>
-        </div>
-        <div class="sbi-reconcile-state">
-          <span v-if="data.reconciliation.difference === 0 && data.reconciliation.funded > 0" class="sbi-positive">予定額と一致</span>
-          <span v-else-if="data.reconciliation.difference < 0" class="sbi-hint">不足 {{yen(Math.abs(data.reconciliation.difference))}}</span>
-          <span v-else-if="data.reconciliation.difference > 0" class="sbi-hint">超過 {{yen(data.reconciliation.difference)}}</span>
-          <span v-if="data.reconciliation.pending">反映待ち {{yen(data.reconciliation.pending)}}</span>
-        </div>
-        <div v-for="t in (showAllTransfers ? data.transfers : data.transfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
-          <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>{{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '記帳済' : '反映待ち'}}</small></div>
-          <div class="sbi-row-end"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">買付月を変更</button></div>
-        </div>
-        <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
-        <details class="sbi-footnote"><summary>振替と買付月の注意事項</summary><p>買付月は推定です。期日反映は記帳上の処理であり、証券口座への着金・買付成立の確認ではありません。</p></details>
+          <details class="sbi-transfer-disclosure">
+            <summary class="sbi-transfer-summary">
+              <strong>振替記録・買付月</strong>
+              <small>{{data.transfers.length}}件</small>
+              <span class="sbi-detail-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="sbi-transfer-content">
+              <p v-if="!data.transfers.length" class="sbi-empty">この月の振替記録はありません</p>
+              <div v-for="t in (showAllTransfers ? data.transfers : data.transfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
+                <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>{{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '記帳済' : '反映待ち'}}</small></div>
+                <div class="sbi-row-end"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">買付月を変更</button></div>
+              </div>
+              <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
+              <details class="sbi-footnote"><summary>振替の確認について</summary><p>振替の記帳反映は証券口座での着金・買付完了を意味しません。買付月が異なる場合は変更できます。</p></details>
+            </div>
+          </details>
         </div>
       </details>
     </template>
@@ -722,4 +730,34 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-single-import>summary{font-size:11px;color:var(--muted);font-weight:700;padding:8px 0;cursor:pointer}
 .sbi-single-import[open]{display:grid;gap:8px}
 .sbi-dual-panel .sbi-bulk-heading{font-size:12px}
+
+/* Balance screen: make the monthly screenshot update the unmistakable primary action. */
+.sbi-holding-toolbar{justify-content:space-between;gap:8px;padding:3px 0 9px}
+.sbi-holding-toolbar .sbi-bulk-primary{display:flex;flex:1;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:45px;padding:9px 12px;border:1px solid var(--blue);border-radius:12px;background:var(--blue);color:#fff;font-size:12px;font-weight:800;letter-spacing:-.015em;cursor:pointer}
+.sbi-bulk-primary svg{width:18px;height:18px;flex:none}
+.sbi-holding-toolbar .sbi-add-holding{flex:none;min-height:45px;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:var(--paper);font-size:12px}
+.sbi-investment-manage .sbi-disclosure-summary{min-height:58px}
+.sbi-manage-title{display:grid;gap:3px;flex:1;min-width:0}
+.sbi-manage-title strong{font-size:14px}
+.sbi-manage-title small{font-size:11px;font-weight:500;color:var(--muted)}
+.sbi-manage-link{font-size:11px;font-weight:750;color:var(--blue-dark)}
+.sbi-management-body{padding-top:4px}
+.sbi-month-pulse{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:10px}
+.sbi-month-pulse>div{display:grid;gap:3px;padding:12px;border-radius:12px;background:var(--paper);min-width:0}
+.sbi-month-pulse span{font-size:10px;color:var(--muted)}
+.sbi-month-pulse strong{font-size:clamp(15px,4.5vw,19px);font-weight:850;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.sbi-manage-subhead{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-top:13px;padding-top:11px;border-top:1px solid var(--line)}
+.sbi-manage-subhead>strong{font-size:12px}
+.sbi-manage-subhead .sbi-text-action{min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-size:11px}
+.sbi-transfer-disclosure{margin-top:9px;border-top:1px solid var(--line)}
+.sbi-transfer-summary{display:flex;align-items:center;gap:8px;min-height:49px;padding:7px 0;list-style:none;cursor:pointer}
+.sbi-transfer-summary::-webkit-details-marker{display:none}
+.sbi-transfer-summary strong{font-size:12px;flex:1}
+.sbi-transfer-summary small{font-size:11px;color:var(--muted)}
+.sbi-transfer-summary .sbi-detail-chevron{transition:transform .18s}
+.sbi-transfer-disclosure[open] .sbi-transfer-summary .sbi-detail-chevron{transform:rotate(180deg)}
+.sbi-transfer-content{border-top:1px solid var(--line);padding-top:4px}
+.sbi-transfer-summary:focus-visible,.sbi-bulk-primary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:3px}
+@media(max-width:370px){.sbi-holding-toolbar .sbi-bulk-primary{padding:8px 6px;font-size:11px}.sbi-holding-toolbar .sbi-add-holding{padding:8px;font-size:11px}}
+@media(prefers-reduced-motion:reduce){.sbi-transfer-summary .sbi-detail-chevron{transition:none}}
 </style>

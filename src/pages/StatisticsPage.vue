@@ -29,7 +29,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
         <div class="stats-card">
           <div class="section-title"><div><h2>カテゴリ別支出</h2></div></div>
           <div class="pie-chart-layout donut-vertical">
-            <div class="category-pie donut-chart" :style="{ background: monthlyCategoryPie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'なし') + ' ' + donutPercent('month') + '%'" @click="selectDonutSlice($event, 'month')">
+            <div class="category-pie donut-chart" :style="{ background: monthlyCategoryPie }" role="group" :aria-label="'カテゴリ別支出ドーナツグラフ。選択中 ' + (donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'なし') + ' ' + donutPercent('month') + '%'" @click="selectDonutSlice($event, 'month')">
               <div class="donut-center"><span>{{ donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('month')?.amount || 0) }}</strong><small>{{ donutPercent('month') }}%</small></div>
             </div>
             <div class="category-list pie-legend" role="group" aria-label="カテゴリを選択すると明細を表示">
@@ -129,7 +129,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
         <div class="stats-card">
           <div class="section-title"><div><h2>年間の支出内訳</h2></div></div>
           <div class="pie-chart-layout donut-vertical">
-            <div class="category-pie donut-chart" :style="{ background: annualExpensePie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'なし') + ' ' + donutPercent('year') + '%'" @click="selectDonutSlice($event, 'year')">
+            <div class="category-pie donut-chart" :style="{ background: annualExpensePie }" role="group" :aria-label="'カテゴリ別支出ドーナツグラフ。選択中 ' + (donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'なし') + ' ' + donutPercent('year') + '%'" @click="selectDonutSlice($event, 'year')">
               <div class="donut-center"><span>{{ donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('year')?.amount || 0) }}</strong><small>{{ donutPercent('year') }}%</small></div>
             </div>
             <div class="category-list pie-legend" role="group" aria-label="カテゴリを選択すると明細を表示">

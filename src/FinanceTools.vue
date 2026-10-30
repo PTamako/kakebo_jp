@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { sortOtherLast } from './category-sort.js'
 import { findLedgerDuplicateGroups } from './duplicate-review.js'
 import AmountInput from './AmountInput.vue'
-import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion } from './finance-tools.js'
+import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances } from './finance-tools.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
@@ -461,6 +461,9 @@ async function restore(){
     message.value='明細が変更されました。バックアップを選び直してください'
     return
   }
+  let prepaidFinal=[]
+  try{prepaidFinal=prepaidRestoreBalances(backup)}
+  catch(e){message.value=e.message;return}
   // Restore in independently atomic, idempotent batches. A failure preserves
   // committed batches and leaves uncommitted drafts visible for safe retry.
   const BATCH_SIZE=150
@@ -484,6 +487,7 @@ async function restore(){
           restoreOwnKeys.value=new Map([...restoreOwnKeys.value,[clientRequestId,transactionKey(e)]])
         }
         const first=offset===0
+        const last=offset+BATCH_SIZE>=sourceRows.length
         const oldIds=new Set(subset.map(e=>Number(e.id)))
         const scopedArchive={...backup,integrity:undefined,entries:atomicRows,
           plans:first?backup.plans:[],bills:first?backup.bills:[],
@@ -494,7 +498,8 @@ async function restore(){
           investmentPlans:first?backup.investmentPlans:[], investmentPlanHistory:first?backup.investmentPlanHistory:[],
           investmentHoldings:first?backup.investmentHoldings:[],fundPrices:first?backup.fundPrices:[],
           transferLinks:(backup.transferLinks||[]).filter(t=>oldIds.has(Number(t.entry_id))),
-          dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id)))}
+          dismissedTransfers:(backup.dismissedTransfers||[]).filter(id=>oldIds.has(Number(id))),
+          prepaidRestoreInProgress:true,prepaidFinalize:last?prepaidFinal:[]}
         const result=await props.api('restore-atomic',{method:'POST',body:JSON.stringify(scopedArchive)})
         completed+=result.created
         settingsRestored+=result.settings
@@ -518,6 +523,10 @@ async function restore(){
   }
   // Never silently discard portfolio data from a large backup. For this rare
   // case, keep the archive intact and request a smaller atomic restoration.
+  if(prepaidFinal.length){
+    message.value='プリペイド残高を含む大容量バックアップは分割作業が必要です。誤った残高を復元しないため、処理を中止しました。'
+    return
+  }
   if(['investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks'].some(k=>(backup[k]||[]).length)){
     message.value='投資情報を含む大容量バックアップは一括設定500件以内の分割復元が必要です。既存データは変更していません。'
     return

@@ -51,5 +51,5 @@ test('balance edit and transfer adjustment remain available without changing D1 
   assert.match(portfolio, /editHolding\(h\)/)
   assert.match(portfolio, /editPrice\(h\)/)
   assert.match(portfolio, /submitTransfer/)
-  assert.match(portfolio, /emit\('summary',\{month:response\.month/)
+  assert.match(portfolio, /emit\('summary',\{[\s\S]*?month:response\.month/)
 })

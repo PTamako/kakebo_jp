@@ -23,7 +23,7 @@ test('prepaid history navigates to current month in existing ledger tab',()=>{
  assert.match(app,/const targetMonth = currentMonth\(\)/)
  assert.match(app,/month\.value = targetMonth/)
  assert.match(app,/tab\.value = 'list'/)
- assert.match(app,/entryTypeFilter\.value = kind === 'charge' \? 'transfer' : 'expense'/)
+ assert.match(app,/entryTypeFilter\.value = kind === 'charge' \? 'transfer' : 'all'/)
  assert.match(app,/openingEntryId:Number\(source\?\.opening_entry_id\|\|0\)/)
  assert.match(ledger,/prepaidHistoryFilter\.card \+ ' · '/)
 })
@@ -92,4 +92,15 @@ test('wallet charge history agrees with balance date, transfer date, and opening
  assert.match(sql,/e\.id>p\.opening_entry_id/)
  assert.match(sql,/COALESCE\(e\.transfer_date,e\.date\)<=\?1/)
  assert.match(read('functions/api/[[path]].js'),/source_type,opening_balance,opening_date,opening_entry_id/)
+})
+
+test('prepaid usage history includes source transfers only after effective date',()=>{
+ const filter={card:'Suica',kind:'usage',openingDate:'2026-10-01',openingEntryId:2}
+ const today='2026-10-30'
+ const outgoing={id:5,date:today,type:'transfer',payment_source:'Suica',transfer_target:'prepaid:PASMO',transfer_date:today}
+ assert.equal(matchesPrepaidHistoryEntry(outgoing,filter,today),true)
+ assert.equal(matchesPrepaidHistoryEntry({...outgoing,transfer_date:'2026-10-31'},filter,today),false)
+ assert.equal(matchesPrepaidHistoryEntry({...outgoing,payment_source:'現金'},filter,today),false)
+ assert.equal(matchesPrepaidHistoryEntry({...outgoing,transfer_target:'prepaid:Suica'},filter,today),false)
+ assert.equal(matchesPrepaidHistoryEntry({...outgoing,id:2},filter,today),false)
 })

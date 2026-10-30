@@ -13,6 +13,9 @@ const openCardSettings = () => { tab.value = 'finance' }
 const yen = value => value === null || !Number.isFinite(Number(value)) ? '—' : '¥'+Number(value).toLocaleString('ja-JP')
 const investment = computed(() => portfolioSummary.value?.valuation ?? null)
 const prepaid = computed(() => prepaidSummary.value?.balance ?? null)
+const latestUsage = computed(() => prepaidSummary.value?.latestUsage || null)
+const latestCharge = computed(() => prepaidSummary.value?.latestCharge || null)
+const shortDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value||'')) ? String(value).slice(5).replace('-', '/') : ''
 // This is a view of *tracked* wallets and funds, not a total net-worth figure.
 const pnl = computed(() => portfolioSummary.value?.pnl ?? null)
 const acquisition = computed(() => portfolioSummary.value?.acquisition ?? null)
@@ -53,6 +56,30 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
           <span>電子マネー残高<small>Suica・PASMO など</small></span>
         </div>
         <strong class="asset-wallet-value">{{yen(prepaid)}}</strong>
+        <div class="asset-wallet-activity" aria-label="電子マネーの最近の記録">
+          <div class="asset-wallet-event">
+            <div class="asset-wallet-event-top">
+              <span class="asset-wallet-event-kind">↘ 最近の利用</span>
+              <strong v-if="latestUsage" class="asset-wallet-event-amount">{{'−'+yen(latestUsage.amount)}}</strong>
+            </div>
+            <div v-if="latestUsage" class="asset-wallet-event-detail">
+              <strong class="asset-wallet-card" :title="latestUsage.card">{{latestUsage.card}}</strong>
+              <small>{{shortDate(latestUsage.date)}}<span v-if="latestUsage.merchant" :title="latestUsage.merchant"> · {{latestUsage.merchant}}</span></small>
+            </div>
+            <small v-else class="asset-wallet-event-empty">{{prepaidSummary ? '記録なし' : '—'}}</small>
+          </div>
+          <div class="asset-wallet-event">
+            <div class="asset-wallet-event-top">
+              <span class="asset-wallet-event-kind">↗ 最近のチャージ</span>
+              <strong v-if="latestCharge" class="asset-wallet-event-amount asset-wallet-plus">{{'+'+yen(latestCharge.amount)}}</strong>
+            </div>
+            <div v-if="latestCharge" class="asset-wallet-event-detail">
+              <strong class="asset-wallet-card" :title="latestCharge.card">{{latestCharge.card}}</strong>
+              <small :title="latestCharge.funding_source || ''">{{shortDate(latestCharge.date)}}<span v-if="latestCharge.funding_source"> · {{latestCharge.funding_source}}から</span></small>
+            </div>
+            <small v-else class="asset-wallet-event-empty">{{prepaidSummary ? '記録なし' : '—'}}</small>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -84,6 +111,17 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
 .asset-label-investment{background:color-mix(in srgb,var(--blue) 17%,var(--card));color:var(--blue-dark)}
 .asset-label-wallet{background:color-mix(in srgb,var(--teal) 15%,var(--card));color:var(--teal)}
 .asset-investment-value,.asset-wallet-value{display:block;margin-top:auto;padding-top:8px;font-size:clamp(18px,5.4vw,25px);font-weight:850;letter-spacing:-.045em;font-variant-numeric:tabular-nums;line-height:1.15;overflow-wrap:anywhere}
+.asset-wallet-activity{display:grid;gap:5px;margin-top:8px;padding-top:7px;border-top:1px solid color-mix(in srgb,var(--teal) 20%,var(--line))}
+.asset-wallet-event{display:grid;gap:2px;min-width:0}
+.asset-wallet-event+.asset-wallet-event{padding-top:5px;border-top:1px solid color-mix(in srgb,var(--teal) 10%,var(--line))}
+.asset-wallet-event-top{display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0}
+.asset-wallet-event-kind{font-size:10px;color:var(--muted);font-weight:750;white-space:nowrap}
+.asset-wallet-event-amount{font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;letter-spacing:-.015em}
+.asset-wallet-event-amount.asset-wallet-plus{color:var(--teal)}
+.asset-wallet-event-detail{display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0}
+.asset-wallet-card{min-width:0;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.asset-wallet-event-detail small{display:block;min-width:0;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:9px;color:var(--muted)}
+.asset-wallet-event-empty{font-size:10px;color:var(--muted)}
 .asset-investment-foot{display:flex;align-items:center;gap:5px;justify-content:space-between;margin-top:7px;padding-top:5px;border-top:1px solid color-mix(in srgb,var(--blue) 15%,var(--line));font-size:10px;color:var(--muted)}
 .asset-investment-foot strong{font-size:10px;color:#18876c;font-variant-numeric:tabular-nums;white-space:nowrap}
 .asset-investment-foot .asset-pnl-negative{color:#bf516d}

@@ -8,8 +8,11 @@ export function matchesPrepaidHistoryEntry(entry, filter, today=new Date(Date.no
   if (!filter.card || !['charge','usage'].includes(filter.kind)) return false
   const idCutoff=Number(filter.openingEntryId||0)
   const opened=String(filter.openingDate||'')
-  if (!entry?.date || entry.date>today || entry.date<opened ||
-      Number(entry.id)<=idCutoff) return false
+  // A scheduled transfer booked before a restore/rebase may become effective
+  // after the new opening date. Use its effective date for the anchor boundary.
+  const effective=entry?.type==='transfer' ? (entry.transfer_date||entry.date) : entry?.date
+  if (!entry?.date || entry.date>today ||
+      (entry.date<opened && effective<opened) || Number(entry.id)<=idCutoff) return false
   if (filter.kind === 'charge') {
     return entry.type==='transfer' && entry.transfer_target===prepaidTarget(filter.card) && entry.payment_source!==filter.card &&
       (entry.transfer_date||entry.date)<=today

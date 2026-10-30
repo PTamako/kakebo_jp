@@ -41,7 +41,7 @@ test('D1 persistence gives Other sentinel 99999 in all card creation, restore an
   assert.doesNotMatch(api,/UPDATE payment_sources SET sort_order=99999 WHERE name IN/, 'reading card settings never rewrites migrated sorting')
   assert.match(api,/ORDER BY CASE WHEN name IN \('その他','其他'\) THEN 1 ELSE 0 END/)
   assert.doesNotMatch(api,/ensureCategorySource|category_sort_order|category_icons/)
-  assert.match(api,/SELECT category,sort_order FROM category_source/)
+  assert.match(api,/SELECT category FROM category_source WHERE category NOT IN/)
   assert.match(api,/CASE WHEN category='其他' THEN 99999/)
   assert.match(api,/WHEN \?1 IN \('その他','其他'\) THEN 99999/g)
   assert.match(atomic,/WHEN \?1 IN \('その他','其他'\) THEN 99999/)

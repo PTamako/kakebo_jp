@@ -111,17 +111,12 @@ test('actual SQLite: manual and old automated recurring conflicts, idempotency a
   }finally{db.close()}
 })
 
-test('actual SQLite: restoring a snapshot only fills an entirely blank SBI row',async()=>{
+test('actual SQLite: deprecated snapshot APIs return 410 with no legacy table access',async()=>{
   const {db,call}=await createClient()
-  try {
-    let restored=await call('investments/restore-empty','POST',{platform:'sbi',currentValue:70000,pnl:2000})
-    assert.equal(restored.status,200)
-    assert.equal(restored.body.restored,true)
-    restored=await call('investments/restore-empty','POST',{platform:'sbi',currentValue:90000,pnl:10000})
-    assert.equal(restored.body.restored,false)
-    const rows=(await call('investments')).body
-    assert.equal(rows.find(x=>x.platform==='sbi').current_value,70000)
-    assert.equal(rows.find(x=>x.platform==='sbi').pnl,2000)
+  try{
+    assert.equal((await call('investments')).status,410)
+    assert.equal((await call('investments/restore-empty','POST',{platform:'sbi',currentValue:70000,pnl:2000})).status,410)
+    assert.equal((await call('investments','PUT',{platform:'sbi',currentValue:70000,pnl:2000})).status,410)
   }finally{db.close()}
 })
 
@@ -409,7 +404,6 @@ test('actual SQLite: backup snapshot reads the same consistent entries and setti
   const {db,call}=await createClient()
   try{
     assert.equal((await call('entries','POST',{date:'2026-10-03',amount:321,type:'expense',merchant:'検証店舗'})).status,200)
-    await call('investments') // establish the SBI snapshot
     const result=await call('backup-snapshot')
     assert.equal(result.status,200)
     assert.equal(result.body.format,'kakeibo-ledger-backup')
@@ -418,7 +412,7 @@ test('actual SQLite: backup snapshot reads the same consistent entries and setti
     assert.equal(result.body.entries[0].amount,321)
     assert.ok(Array.isArray(result.body.paymentSources))
     assert.ok(Array.isArray(result.body.plans))
-    assert.ok(Array.isArray(result.body.investments))
+    assert.equal(Object.hasOwn(result.body,'investments'),false)
   }finally{db.close()}
 })
 
@@ -517,14 +511,14 @@ test('manual-only legacy cleanup succeeds after both migrations and leaves ledge
     assert.equal((await call('entries','POST',{date:'2026-10-29',amount:1234,merchant:'テスト費用',type:'expense'})).status,200)
     assert.equal((await call('backup-snapshot')).status,200)
     const before=db.db.prepare("SELECT amount FROM entries WHERE merchant='テスト費用'").get().amount
-    const sbiBefore=db.db.prepare("SELECT current_value,pnl FROM investment_snapshots WHERE platform='sbi'").get()
+    const holdingsBefore=db.db.prepare('SELECT COUNT(*) AS n FROM investment_holdings').get()
     const cleanup=readFileSync(new URL('../migrations/0005_cleanup_legacy_rule_and_category_tables.sql',import.meta.url),'utf8')
     db.db.exec(cleanup)
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('custom_rules','merchant_payment_rules','category_sort_order','category_icons')").get().n,0)
     assert.deepEqual({...db.db.prepare("SELECT category,payment_source FROM merchant_rules WHERE keyword='移行済の店'").get()},{category:'宠物',payment_source:'現金'})
     assert.deepEqual({...db.db.prepare("SELECT sort_order,icon FROM category_source WHERE category='移行済カテゴリ'").get()},{sort_order:23,icon:'books'})
     assert.equal(db.db.prepare("SELECT amount FROM entries WHERE merchant='テスト費用'").get().amount,before)
-    assert.deepEqual(db.db.prepare("SELECT current_value,pnl FROM investment_snapshots WHERE platform='sbi'").get(),sbiBefore)
+    assert.deepEqual(db.db.prepare('SELECT COUNT(*) AS n FROM investment_holdings').get(),holdingsBefore)
     assert.equal((await call('custom-rules')).status,200)
     assert.equal((await call('category-icons')).body['移行済カテゴリ'],'books')
   }finally{db.close()}

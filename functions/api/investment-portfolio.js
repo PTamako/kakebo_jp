@@ -75,7 +75,10 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const relevant=normalizedTransfers.filter(t=>t.effective_month===month||t.purchase_month===month).slice(0,20);
       const positions=holdings.map(h=>{
         const nav=h.nav_per_10000==null?null:Number(h.nav_per_10000);
-        const calculated=nav==null?null:(BigInt(h.units)*BigInt(nav)+5000n)/10000n;
+        // SBI displays each NISA account's investment trust valuation after
+        // truncating fractions of one yen. Aggregate only these per-account
+        // integer valuations; do not round the combined fund position.
+        const calculated=nav==null?null:(BigInt(h.units)*BigInt(nav))/10000n;
         const computedMarket=calculated==null||calculated>BigInt(Number.MAX_SAFE_INTEGER)?null:Number(calculated);
         // First setup retains SBI's exact displayed valuations. Reported whole
         // units and rounded screen NAV can differ by ¥1 from SBI's own valuation.

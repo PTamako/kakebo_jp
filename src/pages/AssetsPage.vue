@@ -44,17 +44,8 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
           <strong :class="{'asset-pnl-negative':pnl !== null && pnl < 0}">{{gainYen(pnl)}}<small v-if="pnlRatio!==null"> ({{pnlRatio>=0?'+':''}}{{pnlRatio.toFixed(2)}}%)</small></strong>
         </div>
         <div class="asset-cost-line"><span>取得金額</span><strong>{{yen(acquisition)}}</strong></div>
-        <div v-if="allocation.length" class="asset-allocation-breakdown">
-          <div class="asset-allocation" role="img" :aria-label="'銘柄別評価額比率：'+allocation.map(a=>a.name+' '+a.ratio.toFixed(1)+'%').join('、')">
-            <span v-for="a in allocation" :key="a.key" :style="{width:a.ratio+'%',background:a.color}" aria-hidden="true"></span>
-          </div>
-          <div class="asset-allocation-legend" aria-label="各銘柄の評価額比率">
-            <div v-for="a in allocation" :key="a.key" class="asset-allocation-legend-item" :title="a.name+' '+a.ratio.toFixed(1)+'%'">
-              <span class="asset-allocation-dot" :style="{background:a.color}" aria-hidden="true"></span>
-              <span class="asset-allocation-name">{{a.name}}</span>
-              <strong>{{a.ratio.toFixed(1)}}%</strong>
-            </div>
-          </div>
+        <div v-if="allocation.length" class="asset-allocation" role="img" :aria-label="'銘柄別評価額比率：'+allocation.map(a=>a.name+' '+a.ratio.toFixed(1)+'%').join('、')">
+          <span v-for="a in allocation" :key="a.key" :style="{width:a.ratio+'%',background:a.color}" aria-hidden="true"></span>
         </div>
       </div>
       <div class="asset-wallet">
@@ -154,20 +145,14 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
 .asset-investment-foot strong small{font-size:9px;font-weight:650}
 .asset-cost-line{display:flex;align-items:center;justify-content:space-between;gap:4px;color:var(--muted);font-size:10px}
 .asset-cost-line strong{color:var(--ink);font-size:10px;font-variant-numeric:tabular-nums}
-.asset-allocation-breakdown{display:grid;gap:5px;padding-top:1px;min-width:0}
-.asset-allocation{display:flex;width:100%;height:6px;border-radius:99px;overflow:hidden;gap:2px;background:var(--line)}
+.asset-allocation{display:flex;width:100%;height:6px;margin-top:6px;border-radius:99px;overflow:hidden;gap:2px;background:var(--line)}
 .asset-allocation>span{height:100%;min-width:0}
-.asset-allocation-legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 10px;min-width:0}
-.asset-allocation-legend-item{display:flex;align-items:center;gap:5px;min-width:0;font-size:10px}
-.asset-allocation-dot{width:7px;height:7px;flex:none;border-radius:50%}
-.asset-allocation-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
-.asset-allocation-legend-item strong{flex:none;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:10px}
 .balance-view-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;min-width:0;padding:4px;border-radius:13px;border:1px solid var(--line);background:var(--paper)}
 .balance-view-switch button{display:flex;justify-content:center;align-items:center;gap:4px;min-width:0;min-height:43px;padding:8px 3px;border:1px solid transparent;background:transparent;border-radius:10px;color:var(--muted);font-size:12px;font-weight:750;white-space:nowrap;cursor:pointer}
 .balance-view-switch button.selected{color:var(--blue-dark);background:var(--card);border-color:color-mix(in srgb,var(--blue) 17%,var(--line));box-shadow:0 1px 5px #0000000a}
 .balance-view-switch button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .balance-view-count{display:inline-grid;place-items:center;min-width:15px;height:15px;padding:0 3px;border-radius:9px;background:color-mix(in srgb,var(--blue) 16%,var(--card));font-size:9px;line-height:1.1}
 @media(min-width:768px){.asset-overview{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}}
-@media(max-width:370px){.asset-investment,.asset-wallet{padding:10px}.asset-overview-label{gap:4px}.asset-overview-label>span:last-child{font-size:10px}.asset-label-icon{width:24px;height:24px}.asset-investment-value,.asset-wallet-value{font-size:20px}.asset-wallet-card{font-size:11px}.asset-wallet-event{gap:8px}.asset-wallet-event-amount{font-size:12px}.asset-allocation-legend{column-gap:7px}.balance-view-switch button{font-size:11px}}
+@media(max-width:370px){.asset-investment,.asset-wallet{padding:10px}.asset-overview-label{gap:4px}.asset-overview-label>span:last-child{font-size:10px}.asset-label-icon{width:24px;height:24px}.asset-investment-value,.asset-wallet-value{font-size:20px}.asset-wallet-card{font-size:11px}.asset-wallet-event{gap:8px}.asset-wallet-event-amount{font-size:12px}.balance-view-switch button{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.pending-chevron{transition:none}}
 </style>

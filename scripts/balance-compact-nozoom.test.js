@@ -10,7 +10,7 @@ test('balance summary remains stacked on mobile and keeps allocation bars and wa
   assert.match(page,/\.asset-overview\{display:grid;grid-template-columns:minmax\(0,1fr\)/)
   assert.match(page,/@media\(min-width:768px\)\{\.asset-overview\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
   assert.match(page,/class="asset-allocation"/)
-  assert.match(page,/class="asset-allocation-legend"/)
+  assert.doesNotMatch(page,/class="asset-allocation-legend"/)
   assert.match(page,/allocation\.map\(a=>a\.name/)
   assert.match(page,/最近の利用/)
   assert.match(page,/最近のチャージ/)
@@ -21,14 +21,14 @@ test('balance summary remains stacked on mobile and keeps allocation bars and wa
   assert.match(page,/\.asset-wallet-event\{display:grid;grid-template-columns:minmax\(0,1fr\) auto/)
 })
 
-test('cards are shorter by reducing only whitespace and not hiding any data',()=>{
+test('cards stay compact while keeping value, date and accessible allocation details',()=>{
   assert.match(page,/\.asset-investment,\.asset-wallet\{[^}]*min-height:0;padding:10px 12px/)
   assert.match(page,/\.asset-wallet-event-primary\{display:flex;align-items:center;gap:7px;min-width:0;width:100%/)
   assert.match(page,/\.asset-wallet-activity\{display:grid;gap:6px;margin-top:7px;padding-top:7px/)
-  assert.match(page,/\.asset-allocation-breakdown\{display:grid;gap:5px;padding-top:1px/)
-  assert.match(page,/\.asset-allocation-legend\{[^}]*gap:3px 10px/)
+  assert.doesNotMatch(page,/\.asset-allocation-breakdown\{/)
+  assert.doesNotMatch(page,/\.asset-allocation-legend\{/)
   assert.match(page,/\.asset-allocation\{[^}]*height:6px/)
-  assert.match(page,/\{\{a\.ratio\.toFixed\(1\)\}\}%/)
+  assert.match(page,/allocation\.map\(a=>a\.name\+' '\+a\.ratio\.toFixed\(1\)\+'%'\)/)
   assert.match(page,/\{\{shortDate\(latestUsage\.date\)\}\}/)
   assert.match(page,/\{\{shortDate\(latestCharge\.date\)\}\}/)
 })

@@ -13,18 +13,16 @@ test('phone: one-column investment/wallet overview, desktop: side by side',()=>{
   assert.doesNotMatch(page,/資産合計|assetsTotal/)
 })
 
-test('investment allocation remains colored and displays every fund name + value percentage',()=>{
+test('investment allocation retains its color bar but removes the growing fund legend',()=>{
   assert.match(portfolio,/const allocationRows = computed\(\(\) => \{/)
-  assert.match(portfolio,/Number\(h.market_value\) \/ total \* 100/)
-  assert.match(portfolio,/name: shortFundName\(h\)/)
+  assert.match(portfolio,/Number\(fund.market_value\) \/ total \* 100/)
+  assert.match(portfolio,/name: shortFundName\(fund\)/)
   assert.match(portfolio,/color: allocationColors\[index % allocationColors.length\]/)
   assert.match(page,/class="asset-allocation" role="img"/)
-  assert.match(page,/class="asset-allocation-legend"/)
   assert.match(page,/v-for="a in allocation"/)
-  assert.match(page,/\{\{a\.name\}\}/)
-  assert.match(page,/\{\{a\.ratio\.toFixed\(1\)\}\}%/)
   assert.match(page,/background:a.color/)
-  assert.match(page,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
+  assert.match(page,/allocation.map\(a=>a.name\+' '\+a.ratio.toFixed\(1\)\+'%'\)/)
+  assert.doesNotMatch(page,/asset-allocation-legend|asset-allocation-legend-item|asset-allocation-name/)
 })
 
 test('long card and merchant names truncate without pushing monetary amounts out of the card',()=>{

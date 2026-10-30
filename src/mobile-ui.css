@@ -1,5 +1,6 @@
 /* Mobile-first visual shell: presentation only, no persistence or financial logic. */
-html { -webkit-text-size-adjust: 100%; }
+/* Keep the PWA at device width; allow normal scrolling but not pinch zoom. */
+html { -webkit-text-size-adjust: 100%; touch-action: pan-x pan-y; }
 main {
   --mobile-gutter: clamp(12px, 3.7vw, 18px);
   padding-inline: var(--mobile-gutter);

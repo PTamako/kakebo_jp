@@ -12,7 +12,19 @@ export async function recognizeWithGemma(ai, bytes, mime, mode) {
   if (bytes.byteLength > 4 * 1024 * 1024) throw new Error('画像は4MB以下にしてください')
   const base64 = Array.from(new Uint8Array(bytes), b => String.fromCharCode(b)).join('')
   const imageUrl = 'data:' + mime + ';base64,' + btoa(base64)
-  const instruction = mode === 'portfolio-profit'
+  const instruction = mode === 'portfolio-detail'
+    ? [
+      'これはSBI証券の投資信託「銘柄詳細」画面です。1銘柄の下にNISA（成長）とNISA（つみたて）が別々のカードで表示される場合があります。',
+      '画面上の8桁の銘柄コードを読み、口座カードごとに保有数量と取得金額だけを読み取ってください。',
+      '各口座につき1行を「銘柄コード|口座区分|保有口数|取得金額」の順番で出力してください。',
+      '口座区分は成長投資枠ならgrowth、つみたて投資枠ならtsumitate。成長とつみたての両方があれば必ず2行を出してください。',
+      '画面上の共通見出しに両口座名が並んでいても、それだけでは口座区分を判定せず、各カード左上のNISAラベルを使用してください。',
+      '保有数量は口数、取得金額は円の整数です。4桁以上の数値に付くカンマを除いてください。',
+      '評価額、基準価額、取得単価、前日比、売却注文中、評価損益は絶対に取得金額や口数として使用しないでください。',
+      '保有数量・取得金額・口座区分のいずれかが読めないカードは行を補完せず、推測は禁止です。',
+      '各カードを画像上から正確に転記してください。説明、見出し、コードフェンス、Markdownなどは一切不要です。'
+    ].join('\\n')
+    : mode === 'portfolio-profit'
     ? [
       'これはSBI証券の投資信託一覧で、各銘柄の「基準価額 / 取得単価 / 評価損益(%)」を表示した画面です。',
       '画面の「更新日時」「評価額 合計」「評価損益(%)の合計」を必ず読んでください。',

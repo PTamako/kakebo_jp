@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node --test scripts/audit-*.test.js scripts/prepaid-*.test.js scripts/card-add-mobile-ui.test.js scripts/compact-recurring-and-drafts.test.js scripts/post-audit-restore.test.js && vite build",
+    "build": "node --test scripts/audit-*.test.js && vite build",
     "cf:dev": "vite build && wrangler pages dev dist",
     "test:parse": "node --test scripts/*.test.js",
     "security:audit": "npm audit --audit-level=high",

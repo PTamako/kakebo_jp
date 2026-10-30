@@ -60,7 +60,7 @@ test('N04/N09/N10/N11/logo: safe preview gate, transfer disclosure, no logo bord
   assert.match(api,/env\.PREVIEW_D1_ISOLATED === 'true'/)
   // New UI states the distinction more clearly: bookkeeping application is
   // neither SBI account funding nor completed fund purchase.
-  assert.match(app,/期日で家計簿に反映。SBIへの着金確認・買付は別です/)
+  assert.match(app,/期日反映は証券口座への入金・買付完了を保証しません/)
   assert.match(app,/回数上限≠料金上限/)
   assert.match(app,/main\.theme-green \.brand-mark\{[\s\S]*?background:transparent;[\s\S]*?box-shadow:none;/)
 })

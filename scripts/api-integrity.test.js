@@ -55,7 +55,7 @@ class LedgerDb {
           return {results:[...counts].map(([year,count])=>({year,count}))}
         }
         if (sql.startsWith('PRAGMA table_info(payment_sources)')) return {results:[{name:'closing_day'}]}
-        if (sql.startsWith('SELECT name, is_default, closing_day FROM payment_sources')) return {results:[...db.paymentSources].map(name=>({name,is_default:0,closing_day:db.paymentClosingDays.has(name)?db.paymentClosingDays.get(name):null}))}
+        if (sql.startsWith('SELECT name,is_default,closing_day,') && sql.includes('FROM payment_sources')) return {results:[...db.paymentSources].map(name=>({name,is_default:0,closing_day:db.paymentClosingDays.has(name)?db.paymentClosingDays.get(name):null}))}
         if (sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans')) return {results:[...db.recurringPlans.values()].map(p=>({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0}))}
         if (sql.startsWith('SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills')) return {results:[...db.cardBills.values()].map(v=>({payment_source:v.name,bill_month:v.month,period_start:v.start,period_end:v.end,total_amount:v.total,transaction_count:v.count}))}
         if (sql.startsWith('SELECT category, icon FROM category_source')) return { results: db.icons }

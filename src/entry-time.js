@@ -63,8 +63,9 @@ export function findTransactionTime(raw, preferredDateLine = '') {
   for (let i=0;i<lines.length;i++) {
     const line=lines[i]
     if (TIME_LABEL.test(line)) {
-      const value=standaloneTime(line) ||
-        (TIME_LABEL.test(line) && /^\s*(?:時刻|時間|日時|取引|決済|会計)/.test(line) ? standaloneTime(lines[i+1]||'') : '')
+      // Printed OCR labels often occupy a separate line from the clock
+      // (e.g. 利用時刻 on one line, 18:35 on the next).
+      const value=standaloneTime(line) || standaloneTime(lines[i+1]||'')
       if (value) return value
     }
   }

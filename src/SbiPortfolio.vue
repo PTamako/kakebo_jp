@@ -5,6 +5,8 @@ const props = defineProps({
   api: { type: Function, required: true },
   transferLoading: { type: Boolean, default: false }
 })
+const emit = defineEmits(['summary'])
+const showAllHoldings = ref(false), showAllPlans = ref(false), showAllTransfers = ref(false)
 const today = () => new Date().toLocaleDateString('sv-SE')
 const month = ref(today().slice(0, 7))
 const data = ref(null)
@@ -43,6 +45,7 @@ const shortFundName = item => ({
 })[item.fund_code] || item.fund_name
 const sourceLabel = source => source === 'official_mufg' ? '公式自動更新' : source === 'manual' ? '手入力' : source === 'sbi_screenshot' ? '初期記録' : '価格未取得'
 const holdingsData = computed(() => data.value?.holdings || [])
+const visibleHoldings = computed(() => showAllHoldings.value ? holdingsData.value : holdingsData.value.slice(0,2))
 const totalAcquisition = computed(() => holdingsData.value.reduce((sum,h) => sum + Number(h.acquisition_cost || 0),0))
 const returnRatio = computed(() => data.value?.valuation?.pnl == null || !totalAcquisition.value ? null : data.value.valuation.pnl / totalAcquisition.value * 100)
 const allocationColors = ['var(--blue)', 'var(--teal)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
@@ -77,16 +80,17 @@ async function load() {
   loading.value = true
   error.value = ''
   // A different month must never briefly show a previous month's reconciliation.
-  if (data.value?.month !== targetMonth) data.value = null
+  if (data.value?.month !== targetMonth) { data.value = null; emit('summary',null) }
   try {
     const response = await props.api('investment-portfolio?month=' + targetMonth)
     if (sequence !== loadSequence || targetMonth !== month.value) return
     data.value = response
+    emit('summary',{month:response.month,valuation:response.valuation.value,reconciliation:response.reconciliation})
   } catch(e) {
     if (sequence !== loadSequence || targetMonth !== month.value) return
     error.value = e.message
     // Keep the current month's successfully loaded values visible if a refresh fails.
-    if (data.value?.month !== targetMonth) data.value = null
+    if (data.value?.month !== targetMonth) { data.value = null; emit('summary',null) }
   } finally {
     if (sequence === loadSequence) loading.value = false
   }
@@ -152,9 +156,11 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
 
 <template>
   <div class="sbi-portfolio">
+    <slot name="before-holdings" />
     <div class="sbi-toolbar">
       <div class="sbi-provider"><span class="sbi-provider-dot" aria-hidden="true"></span><span>SBI証券</span></div>
       <div class="sbi-toolbar-actions">
+        <label class="sbi-month-label"><span class="sr-only">積立・振替の対象月</span><input v-model="month" type="month" aria-label="積立・振替の対象月" @change="load" /></label>
         <button type="button" class="sbi-icon-button" @click="load" :disabled="loading" aria-label="資産情報を更新" title="更新">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14 5l2-2"/><path d="M20 20v-4h-4"/></svg>
         </button>
@@ -166,6 +172,33 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
     <p v-if="notice" class="sbi-success" role="status">{{notice}}</p>
 
     <template v-if="data">
+
+      <details class="panel sbi-card sbi-holdings" open>
+        <summary class="sbi-disclosure-summary"><strong>投資信託の保有</strong><small>{{holdingsData.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="sbi-section-body">
+        <div class="sbi-inline-action"><button type="button" class="sbi-text-action" @click="editHolding(null)">＋ 追加</button></div>
+        <p v-if="!holdingsData.length" class="sbi-empty">保有銘柄はまだありません</p>
+        <article v-for="(h,index) in visibleHoldings" :key="h.fund_code+':'+h.account_type" class="sbi-holding-row">
+          <div class="sbi-holding-top">
+            <span class="sbi-fund-dot" :style="{background:allocationColors[index % allocationColors.length]}" aria-hidden="true"></span>
+            <div class="sbi-holding-name"><strong :title="h.fund_name">{{shortFundName(h)}}</strong><small>{{accountLabel(h.account_type)}} · {{h.fund_code}}</small></div>
+            <div class="sbi-holding-value"><strong>{{h.market_value === null ? '—' : yen(h.market_value)}}</strong><small v-if="h.pnl !== null" :class="h.pnl >= 0 ? 'sbi-positive' : 'sbi-negative'">{{signYen(h.pnl)}}</small></div>
+          </div>
+          <div class="sbi-compact-actions">
+            <button type="button" class="sbi-row-edit" @click="editHolding(h)">編集</button>
+            <details class="sbi-holding-detail">
+              <summary>明細</summary>
+              <div class="sbi-holding-expanded">
+                <span>{{Number(h.units).toLocaleString('ja-JP')}}口 · 取得 {{yen(h.acquisition_cost)}}</span>
+                <span>基準価額 {{h.nav_per_10000 ? yen(h.nav_per_10000) : '未設定'}} · {{sourceLabel(h.source)}}</span>
+                <span v-if="h.price_date">{{h.source==='sbi_screenshot'?'確認日':'基準日'}} {{h.price_date}}</span>
+                <button type="button" class="sbi-row-edit" @click="editPrice(h)">基準価額を変更</button>
+              </div>
+            </details>
+          </div>
+        </article>
+        <button v-if="holdingsData.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllHoldings" @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(holdingsData.length-2)+'件を表示'}}</button>
+        <details class="sbi-valuation-details"><summary>評価額・損益の内訳</summary>
       <section class="sbi-hero" aria-label="資産サマリー" :aria-busy="loading">
         <div class="sbi-hero-head"><span>投資信託の評価額</span><small>{{holdingsData.length}}銘柄</small></div>
         <div class="sbi-hero-value">{{data.valuation.value === null ? '—' : yen(data.valuation.value)}}</div>
@@ -179,57 +212,31 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
         </div>
         <div class="sbi-hero-foot"><span>取得金額 <strong>{{yen(totalAcquisition)}}</strong></span><span>基準日は銘柄ごとに表示</span></div>
       </section>
-
-      <section class="panel sbi-card sbi-holdings" aria-labelledby="sbi-holdings-title">
-        <div class="sbi-line-heading">
-          <h3 id="sbi-holdings-title">保有銘柄</h3>
-          <button type="button" class="sbi-text-action" @click="editHolding(null)">＋ 追加</button>
+        </details>
+        <details class="sbi-footnote"><summary>基準価額の更新について</summary><p>対象銘柄の一部は自動更新します。その他は手入力です。</p></details>
         </div>
-        <p v-if="!holdingsData.length" class="sbi-empty">保有銘柄はまだありません</p>
-        <article v-for="(h,index) in holdingsData" :key="h.fund_code+':'+h.account_type" class="sbi-holding-row">
-          <div class="sbi-holding-top">
-            <span class="sbi-fund-dot" :style="{background:allocationColors[index % allocationColors.length]}" aria-hidden="true"></span>
-            <div class="sbi-holding-name"><strong :title="h.fund_name">{{shortFundName(h)}}</strong><small>{{accountLabel(h.account_type)}} · {{h.fund_code}}</small></div>
-            <div class="sbi-holding-value"><strong>{{h.market_value === null ? '—' : yen(h.market_value)}}</strong><small v-if="h.pnl !== null" :class="h.pnl >= 0 ? 'sbi-positive' : 'sbi-negative'">{{signYen(h.pnl)}}</small></div>
-          </div>
-          <div class="sbi-holding-bottom">
-            <div class="sbi-fund-meta">
-              <span>{{Number(h.units).toLocaleString('ja-JP')}}口</span>
-              <span>取得 {{yen(h.acquisition_cost)}}</span>
-              <span>基準価額 {{h.nav_per_10000 ? yen(h.nav_per_10000) : '未設定'}}</span>
-            </div>
-            <div class="sbi-holding-actions">
-              <span class="sbi-nav-source" :class="{'sbi-source-auto':h.source==='official_mufg'}">{{sourceLabel(h.source)}}</span>
-              <small v-if="h.price_date">{{h.source==='sbi_screenshot'?'確認日':'基準日'}} {{h.price_date}}</small>
-              <details class="sbi-action-menu">
-                <summary :aria-label="shortFundName(h)+'の編集メニュー'">管理</summary>
-                <div class="sbi-action-list"><button type="button" @click="editHolding(h)">口数・取得額</button><button type="button" @click="editPrice(h)">基準価額</button></div>
-              </details>
-            </div>
-          </div>
-        </article>
-        <p class="sbi-card-note">基準価額は三菱UFJ運用の3銘柄を自動更新します。NASDAQ100は手入力です。</p>
-      </section>
+      </details>
 
-      <div class="sbi-period-filter">
-        <span>積立・振替の対象月</span>
-        <label class="sbi-month-label"><span class="sr-only">積立・振替の対象月</span><input v-model="month" type="month" aria-label="積立・振替の対象月" @change="load" /></label>
-      </div>
-      <section class="panel sbi-card" aria-labelledby="sbi-plans-title">
-        <div class="sbi-line-heading"><h3 id="sbi-plans-title">毎月の積立</h3><button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button></div>
+      <details class="panel sbi-card sbi-plans">
+        <summary class="sbi-disclosure-summary"><strong>毎月の積立設定</strong><small>{{data.plans.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="sbi-section-body">
+        <div class="sbi-inline-action"><button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button></div>
         <div class="sbi-plan-total"><div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}} <small>/ 月</small></strong></div><div class="sbi-plan-day">注文予定は銘柄別</div></div>
         <div v-if="!data.plans.length" class="sbi-empty">
           <p>積立設定はまだありません</p>
           <button type="button" class="button-secondary" :disabled="saving" @click="initialize">積立設定を登録</button>
         </div>
-        <div v-for="p in data.plans" :key="p.fund_code+':'+p.account_type" class="sbi-plan-row">
+        <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.fund_code+':'+p.account_type" class="sbi-plan-row">
           <div class="sbi-row-main"><strong>{{shortFundName(p)}}</strong><small>{{accountLabel(p.account_type)}} · 毎月{{p.order_day}}日</small></div>
           <div class="sbi-row-end"><strong>{{p.enabled ? yen(p.monthly_amount) : '停止中'}}</strong><button type="button" class="sbi-row-edit" @click="editPlan(p)" :aria-label="shortFundName(p)+'の積立設定を変更'">変更</button></div>
         </div>
-      </section>
+        <button v-if="data.plans.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllPlans" @click="showAllPlans=!showAllPlans">{{showAllPlans?'閉じる':'あと'+(data.plans.length-2)+'件を表示'}}</button>
+        </div>
+      </details>
 
-      <section class="panel sbi-card" aria-labelledby="sbi-transfer-title">
-        <div class="sbi-line-heading"><h3 id="sbi-transfer-title">振替の確認</h3><span class="sbi-count">{{data.transfers.length}}件</span></div>
+      <details class="panel sbi-card sbi-transfers">
+        <summary class="sbi-disclosure-summary"><strong>振替と買付月</strong><small>{{data.transfers.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="sbi-section-body">
         <div class="sbi-funding-stats">
           <div><span>記帳反映済</span><strong>{{yen(data.reconciliation.funded)}}</strong></div>
           <div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}}</strong></div>
@@ -243,12 +250,14 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
           <span v-else-if="data.reconciliation.difference > 0" class="sbi-hint">超過 {{yen(data.reconciliation.difference)}}</span>
           <span v-if="data.reconciliation.pending">反映待ち {{yen(data.reconciliation.pending)}}</span>
         </div>
-        <div v-for="t in data.transfers" :key="t.id" class="sbi-transfer-row">
+        <div v-for="t in (showAllTransfers ? data.transfers : data.transfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
           <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>{{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '記帳済' : '反映待ち'}}</small></div>
           <div class="sbi-row-end"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">買付月を変更</button></div>
         </div>
-        <p class="sbi-card-note">期日反映は家計簿上の処理です。証券口座への着金・買付成立を意味しません。</p>
-      </section>
+        <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
+        <details class="sbi-footnote"><summary>振替と買付月の注意事項</summary><p>買付月は推定です。期日反映は記帳上の処理であり、証券口座への着金・買付成立の確認ではありません。</p></details>
+        </div>
+      </details>
     </template>
     <div v-if="editing || editingTransfer!==null" class="sbi-overlay" @click.self="closeEditor">
       <form v-if="editing==='plan'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="積立設定の編集" @submit.prevent="submit('plan',{...plan,monthlyAmount:Number(plan.monthlyAmount),orderDay:Number(plan.orderDay)},'積立設定を保存しました')">
@@ -366,4 +375,37 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
 .sbi-portfolio button:focus-visible,.sbi-action-menu summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 @media (min-width:720px){.sbi-overlay{align-items:center;padding:16px}.sbi-dialog{border-radius:20px;max-height:88dvh;padding:22px}.sbi-card{padding:20px}.sbi-hero{padding:22px 24px}}
 @media (max-width:370px){.sbi-holding-bottom{margin-left:0}.sbi-holding-actions{width:100%;justify-content:flex-start}.sbi-holding-value strong{font-size:14px}.sbi-plan-day{display:none}.sbi-hero-value{font-size:30px}}
+
+/* The summary area lives on AssetsPage. Keep detail panels short until opened. */
+.sbi-portfolio{gap:10px}
+.sbi-toolbar{min-height:39px;padding:1px 2px}
+.sbi-toolbar-actions{min-width:0}.sbi-month-label{display:block;min-width:0}.sbi-month-label input{width:133px;max-width:100%;min-height:40px}
+.sbi-card:has(> .sbi-disclosure-summary){padding:0}
+.sbi-disclosure-summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;min-height:56px;padding:12px 14px}
+.sbi-disclosure-summary::-webkit-details-marker{display:none}
+.sbi-disclosure-summary strong{font-size:15px;flex:1}
+.sbi-disclosure-summary small{font-size:11px;color:var(--muted)}
+.sbi-chevron{font-size:20px;line-height:1;color:var(--muted);transition:transform .18s}
+.sbi-card[open] > .sbi-disclosure-summary .sbi-chevron{transform:rotate(180deg)}
+.sbi-disclosure-summary:focus-visible,.sbi-show-more:focus-visible,.sbi-holding-detail summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.sbi-section-body{padding:0 14px 12px}.sbi-inline-action{display:flex;justify-content:flex-end;padding:0 0 2px}
+.sbi-inline-action .sbi-text-action{padding:4px 10px;min-height:34px}
+.sbi-holding-row,.sbi-plan-row,.sbi-transfer-row{padding:9px 0}
+.sbi-holding-top{gap:7px}
+.sbi-holding-value strong{font-size:15px}
+.sbi-compact-actions{display:flex;justify-content:flex-end;align-items:center;gap:9px;padding:0 0 0 17px}
+.sbi-compact-actions .sbi-row-edit,.sbi-holding-detail summary{min-height:36px;padding:5px 8px;color:var(--blue-dark);font-size:11px;font-weight:750}
+.sbi-holding-detail{position:relative}.sbi-holding-detail summary{cursor:pointer;list-style:none}.sbi-holding-detail summary::-webkit-details-marker{display:none}
+.sbi-holding-expanded{display:grid;gap:5px;margin:0 0 6px;padding:9px;border-radius:10px;background:var(--paper);color:var(--muted);font-size:11px}
+.sbi-holding-expanded button{justify-self:end}
+.sbi-show-more{display:block;margin:2px auto 4px;min-height:40px;padding:7px;border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750}
+.sbi-valuation-details,.sbi-footnote{border-top:1px solid var(--line);margin-top:3px}
+.sbi-valuation-details>summary,.sbi-footnote>summary{cursor:pointer;padding:12px 0;min-height:40px;font-size:11px;color:var(--muted);font-weight:750}
+.sbi-valuation-details .sbi-hero{margin-bottom:9px;padding:12px;border-radius:14px}
+.sbi-valuation-details .sbi-hero-value{font-size:24px}.sbi-valuation-details .sbi-hero-foot{margin-top:7px;padding-top:8px}
+.sbi-footnote p{font-size:11px;color:var(--muted);line-height:1.6;margin:0 0 6px}
+.sbi-plan-total{padding:3px 0 9px}.sbi-plan-total strong{font-size:18px}
+.sbi-funding-stats{margin:4px 0 9px}.sbi-funding-stats strong{font-size:16px}.sbi-progress{height:5px}
+@media(max-width:370px){.sbi-month-label input{width:120px;padding:7px 5px;font-size:12px}.sbi-toolbar-actions{gap:4px}.sbi-disclosure-summary{padding:11px 12px}.sbi-section-body{padding:0 12px 10px}}
+@media(prefers-reduced-motion:reduce){.sbi-chevron{transition:none}}
 </style>

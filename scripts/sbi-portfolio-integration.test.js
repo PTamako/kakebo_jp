@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite'
 import {readFileSync} from 'node:fs'
 import {onRequest} from '../functions/api/[[path]].js'
 import {inferredPurchaseMonth} from '../functions/api/investment-portfolio.js'
+import {sbiInitialHoldings, SBI_SNAPSHOT_DAY, SBI_SNAPSHOT_OBSERVED_AT} from '../functions/api/sbi-initial-holdings.js'
 
 // This harness runs real SQLite (the D1 SQL dialect), never production D1.
 class SqliteD1 {
@@ -50,13 +51,38 @@ async function client(){
 const currentMonth=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,7)
 const nextMonth=month=>{const [y,m]=month.split('-').map(Number);return new Date(Date.UTC(y,m,1)).toISOString().slice(0,7)}
 
+// Historical portfolio fixtures exist only in a disposable in-memory test DB.
+// Production has no import/initialization endpoint after migration completion.
+function seedPortfolioInTest(db){
+  const plans=[
+    ['0331418A','tsumitate','eMAXIS Slim 全世界株式（オール・カントリー）',7000],
+    ['03311187','tsumitate','eMAXIS Slim 米国株式（S&P500）',3000],
+    ['0331A172','growth','eMAXIS Slim 先進国債券インデックス（除く日本）',3000],
+    ['04317188','tsumitate','iFreeNEXT NASDAQ100インデックス',2000]
+  ]
+  const plan=db.db.prepare('INSERT INTO investment_plans(fund_code,account_type,fund_name,monthly_amount,order_day) VALUES(?1,?2,?3,?4,9)')
+  const history=db.db.prepare('INSERT INTO investment_plan_history(fund_code,account_type,effective_month,fund_name,monthly_amount,order_day) VALUES(?1,?2,?3,?4,?5,9)')
+  for(const [code,account,name,amount] of plans){
+    plan.run(code,account,name,amount)
+    history.run(code,account,currentMonth,name,amount)
+  }
+  const holding=db.db.prepare('INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at) VALUES(?1,?2,?3,?4,?5,?6,?7)')
+  const price=db.db.prepare("INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES(?1,?2,?3,'sbi_screenshot')")
+  for(const h of sbiInitialHoldings){
+    holding.run(h.fundCode,h.accountType,h.fundName,h.units,h.acquisitionCost,h.reportedValue,SBI_SNAPSHOT_OBSERVED_AT)
+    price.run(h.fundCode,h.screenshotNav,SBI_SNAPSHOT_DAY)
+  }
+}
+
+
 test('SBI 15,000 yen transfer reconciles with four monthly allocations without double counting',async()=>{
   const {db,call}=await client()
   try{
     const empty=await call('investment-portfolio?month='+currentMonth)
     assert.equal(empty.status,200)
     assert.equal(empty.body.reconciliation.monthly_amount,0)
-    assert.equal((await call('investment-portfolio/initialize','POST')).status,200)
+    seedPortfolioInTest(db)
+    assert.equal((await call('investment-portfolio/initialize','POST')).status,410,'historical initialisation is retired')
     const initial=await call('investment-portfolio?month='+currentMonth)
     assert.equal(initial.body.plans.length,4)
     assert.equal(initial.body.holdings.length,4)
@@ -65,7 +91,7 @@ test('SBI 15,000 yen transfer reconciles with four monthly allocations without d
     assert.deepEqual(initial.body.holdings.map(h=>h.fund_code).sort(),
       ['03311187','0331418A','0331A172','04317188'])
     assert.equal(initial.body.holdings.filter(h=>h.account_type==='combined').length,3)
-    assert.equal((await call('investment-portfolio/initialize','POST')).body.created,false,'repeated initialisation must never overwrite holdings')
+    assert.equal((await call('investment-portfolio/initialize','POST')).status,410,'reseed remains blocked')
     assert.equal(initial.body.reconciliation.monthly_amount,15000)
     const transfer=await call('entries','POST',{
       date:currentMonth+'-01',type:'transfer',amount:15000,category:'投資・資産移動',
@@ -96,7 +122,7 @@ test('SBI 15,000 yen transfer reconciles with four monthly allocations without d
 test('future investment allocations can change independently while prior months remain unchanged',async()=>{
   const {db,call}=await client()
   try{
-    await call('investment-portfolio/initialize','POST')
+    seedPortfolioInTest(db)
     const monthAfter=nextMonth(currentMonth)
     const save=await call('investment-portfolio/plan','PUT',{
       fundCode:'04317188',fundName:'iFreeNEXT NASDAQ100インデックス',accountType:'tsumitate',
@@ -145,7 +171,7 @@ test('v4 export and restore preserve portfolio settings and mapped transfer link
   const source=await client()
   const target=await client()
   try{
-    await source.call('investment-portfolio/initialize','POST')
+    seedPortfolioInTest(source.db)
     await source.call('investment-portfolio/holding','PUT',{
       fundCode:'03311187',accountType:'combined',fundName:'米国株式',
       units:10000,acquisitionCost:30000
@@ -177,7 +203,7 @@ test('v4 export and restore preserve portfolio settings and mapped transfer link
 test('SBI screenshot bootstrap stores exact reported values and preserves existing edits',async()=>{
   const {db,call}=await client()
   try{
-    await call('investment-portfolio/initialize','POST')
+    seedPortfolioInTest(db)
     const first=await call('investment-portfolio?month='+currentMonth)
     assert.equal(first.body.valuation.value,71560)
     const h=first.body.holdings.find(x=>x.fund_code==='04317188')
@@ -202,7 +228,7 @@ test('SBI screenshot bootstrap stores exact reported values and preserves existi
       fundCode:'04317188',accountType:'combined',fundName:h.fund_name,units:2800,acquisitionCost:15600
     })
     assert.equal(modified.status,200)
-    await call('investment-portfolio/initialize','POST')
+    seedPortfolioInTest(db)
     const final=(await call('investment-portfolio?month='+currentMonth)).body.holdings.find(x=>x.fund_code==='04317188')
     assert.equal(final.units,2800)
     assert.equal(final.acquisition_cost,15600)

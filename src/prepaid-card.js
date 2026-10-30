@@ -5,7 +5,7 @@ export const prepaidName = value => typeof value==='string' && value.startsWith(
 // Only registered prepaid cards are candidates; never hard-code card brands.
 // Require both a recharge verb and an unambiguous full card name.
 // Overlapping names (e.g. one being part of another) require manual selection.
-const normalized = value => String(value||'').normalize('NFKC').toLowerCase().replace(/[\\s　]/g,'')
+const normalized = value => String(value||'').normalize('NFKC').toLowerCase().replace(/[\s　]/g,'')
 export function detectPrepaidRecharge(text, names=[]) {
   const value=normalized(text)
   if(!/(?:チャージ|入金|積増し|積み増し|charge|topup)/i.test(value))return ''

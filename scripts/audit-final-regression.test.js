@@ -20,7 +20,7 @@ test('categoryMetadata preserves Japanese labels, icon and sort and rejects inva
 })
 test('snapshot and both backup paths carry categoryMetadata',()=>{
   assert.match(api,/SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category/)
-  assert.match(api,/categoryMetadata:rows\(8\)/)
+  assert.match(api,/categoryMetadata:rows\(7\)/)
   assert.match(finance,/props\.api\('category-source'\)/)
   assert.match(finance,/categoryMetadata:first\?backup\.categoryMetadata:\[\]/)
   assert.match(restore,/for \(const row of archive\.categoryMetadata\|\|\[\]\)/)

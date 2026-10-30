@@ -1099,7 +1099,9 @@ async function removeCardBill(record) {
 .finance-investment-panel{display:grid;gap:9px;min-width:0}
 .finance-investment-panel .sbi-portfolio{min-width:0}
 /* Four management destinations stay in one compact row on narrow iPhones. */
-.finance-section-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;width:100%;min-width:0}
-.finance-section-tabs>button{min-width:0;min-height:44px;padding:8px 3px;white-space:nowrap;font-size:12px}
+.finance-section-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;width:100%;min-width:0;padding:4px;border-radius:13px;border:1px solid var(--line);background:var(--paper);box-sizing:border-box}
+.finance-section-tabs>button{display:grid;place-items:center;min-width:0;min-height:44px;padding:8px 3px;white-space:nowrap;font-size:12px;font-weight:750;color:var(--muted);border:1px solid transparent;border-radius:10px;background:transparent;cursor:pointer}
+.finance-section-tabs>button.selected{color:var(--blue-dark);background:var(--card);border-color:color-mix(in srgb,var(--blue) 16%,var(--line));box-shadow:0 1px 5px #0000000b}
+.finance-section-tabs>button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 @media(max-width:360px){.finance-section-tabs{gap:3px}.finance-section-tabs>button{font-size:11px;padding-inline:2px}}
 </style>

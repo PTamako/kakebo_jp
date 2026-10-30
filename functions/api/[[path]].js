@@ -540,6 +540,8 @@ export async function onRequest({ request, env, params }) {
         const rawTarget=transfer?String(e.transferTarget||''):''
         if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
         const target=transfer?(rawTarget||null):null
+         if(transfer&&target?.startsWith('prepaid:')&&paymentSource===target.slice('prepaid:'.length))
+           return json({error:'同じプリペイドカードへの振替は登録できません'},400)
         const transferDate = transfer ? (e.transferDate || e.date) : null
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -590,6 +592,8 @@ export async function onRequest({ request, env, params }) {
         const rawTarget=transfer?String(e.transferTarget||''):''
         if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
         const target=transfer?(rawTarget||null):null
+         if(transfer&&target?.startsWith('prepaid:')&&paymentSource===target.slice('prepaid:'.length))
+           return json({error:'同じプリペイドカードへの振替は登録できません'},400)
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date) : null
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)

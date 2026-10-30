@@ -583,8 +583,13 @@ async function restore(){
       if(result.created)settingsCount++
     }
     const existingCategoryRules=await props.api('custom-rules')
-    for(const rule of restoreMissingByKey(existingCategoryRules,backup.customRules||[],x=>x.keyword)){
+    const savedRuleByKeyword=new Map(existingCategoryRules.map(rule=>[rule.keyword,rule]))
+    // A deliberate restore may also recover explicit priority metadata for the
+    // same saved category, but never change a different live category.
+    for(const rule of backup.customRules||[]){
       if(!rule?.keyword || !rule?.category)continue
+      const live=savedRuleByKeyword.get(rule.keyword)
+      if(live && !(rule.is_custom===true && live.is_custom!==true && live.category===rule.category))continue
       await props.api('custom-rules',{method:'POST',body:JSON.stringify({keyword:rule.keyword,category:rule.category})})
       settingsCount++
     }

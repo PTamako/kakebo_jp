@@ -649,3 +649,20 @@ test('actual SQLite: backup restores prepaid current balance once, without repla
     assert.equal((await target.call('prepaid-assets')).body.cards.find(x=>x.name==='Suica').balance,3220)
   }finally{source.db.close();target.db.close()}
 })
+
+test('rules GET returns migrated D1 rows only and never restores missing default records',async()=>{
+  const {db,call}=await createClient()
+  try{
+    db.db.exec('DELETE FROM merchant_rules')
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,0)
+    const first=await call('rules')
+    assert.equal(first.status,200)
+    assert.deepEqual(first.body,[],'empty migrated table must not be repopulated from app defaults')
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,0)
+    db.db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2)').run('登録済みの店','饮食料品')
+    const second=await call('rules')
+    assert.equal(second.status,200)
+    assert.deepEqual(second.body,[{keyword:'登録済みの店',category:'饮食料品',is_custom:true}])
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,1)
+  }finally{db.close()}
+})

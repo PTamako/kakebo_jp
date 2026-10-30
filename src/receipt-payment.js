@@ -1,10 +1,10 @@
 // Receipt payment methods must map only to cards already registered in D1.
 // This never guesses a payment card from the receipt brand or creates new cards.
-const normalize = text => String(text || '').normalize('NFKC').toLowerCase().replace(/[\\s　]/g,'')
+const normalize = text => String(text || '').normalize('NFKC').toLowerCase().replace(/[\s　]/g,'')
 export function detectRegisteredReceiptPayment(receiptText, paymentSources = []) {
   const registered = [...new Set(paymentSources.filter(x=>typeof x==='string' && x.trim()))]
     .sort((a,b)=>b.length-a.length)
-  const lines=String(receiptText||'').normalize('NFKC').split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean)
+  const lines=String(receiptText||'').normalize('NFKC').split(/\r?\n/).map(x=>x.trim()).filter(Boolean)
   for(const line of lines) {
     const condensed=normalize(line)
     const colon=condensed.match(/^(?:支払方法|お支払方法|決済方法|決済手段)[:：](.+)$/)

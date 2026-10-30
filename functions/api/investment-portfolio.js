@@ -127,6 +127,38 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       ]);
       return respond({ok:true});
     }
+    if(sub==='holdings-bulk'&&method==='PUT'){
+      const payload=await request.json();
+      const rows=payload?.holdings;
+      if(!Array.isArray(rows)||rows.length<1||rows.length>30)
+        return respond({error:'一括更新の対象を確認してください'},400);
+      const seen=new Set();
+      for(const h of rows){
+        if(!codeOk(h?.fundCode)||!holdingAccountOk(h?.accountType)||
+          ![h.units,h.acquisitionCost,h.expectedUnits,h.expectedAcquisitionCost]
+            .every(v=>yenOk(v)&&v<=1000000000000))
+          return respond({error:'口数と取得金額を確認してください'},400);
+        const key=h.fundCode+':'+h.accountType;
+        if(seen.has(key))return respond({error:'同じ銘柄・口座が重複しています'},400);
+        seen.add(key);
+      }
+      // One SQL UPDATE: if even one submitted position was edited elsewhere,
+      // update NONE of them. No inserts, no plan/transfer mutations or schema changes.
+      const values=rows.map(()=>'(?,?,?,?,?,?)').join(',');
+      const sql='WITH incoming(fund_code,account_type,new_units,new_cost,old_units,old_cost) AS (VALUES '+values+') '+
+        'UPDATE investment_holdings SET '+
+        'units=(SELECT i.new_units FROM incoming i WHERE i.fund_code=investment_holdings.fund_code AND i.account_type=investment_holdings.account_type),'+
+        'acquisition_cost=(SELECT i.new_cost FROM incoming i WHERE i.fund_code=investment_holdings.fund_code AND i.account_type=investment_holdings.account_type),'+
+        'reported_value=NULL,reported_at=NULL,updated_at=? '+
+        'WHERE EXISTS (SELECT 1 FROM incoming i WHERE i.fund_code=investment_holdings.fund_code AND i.account_type=investment_holdings.account_type) '+
+        'AND (SELECT COUNT(*) FROM incoming i JOIN investment_holdings h ON h.fund_code=i.fund_code AND h.account_type=i.account_type '+
+        'WHERE h.units=i.old_units AND h.acquisition_cost=i.old_cost)=?';
+      const args=rows.flatMap(h=>[h.fundCode,h.accountType,h.units,h.acquisitionCost,h.expectedUnits,h.expectedAcquisitionCost]);
+      const result=await db.prepare(sql).bind(...args,new Date().toISOString(),rows.length).run();
+      if(Number(result.meta?.changes)!==rows.length)
+        return respond({error:'他の端末で保有情報が変更されました。更新してから確認してください',code:'stale_holdings'},409);
+      return respond({ok:true,updated:rows.length});
+    }
     if(sub==='holding'&&method==='PUT'){
       const x=await request.json();
       if(!codeOk(x.fundCode)||!holdingAccountOk(x.accountType)||typeof x.fundName!=='string'||

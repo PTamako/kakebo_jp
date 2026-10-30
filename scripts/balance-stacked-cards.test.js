@@ -15,8 +15,8 @@ test('phone: one-column investment/wallet overview, desktop: side by side',()=>{
 
 test('investment allocation remains colored and displays every fund name + value percentage',()=>{
   assert.match(portfolio,/const allocationRows = computed\(\(\) => \{/)
-  assert.match(portfolio,/Number\(h.market_value\) \/ total \* 100/)
-  assert.match(portfolio,/name: shortFundName\(h\)/)
+  assert.match(portfolio,/Number\(fund.market_value\) \/ total \* 100/)
+  assert.match(portfolio,/name: shortFundName\(fund\)/)
   assert.match(portfolio,/color: allocationColors\[index % allocationColors.length\]/)
   assert.match(page,/class="asset-allocation" role="img"/)
   assert.match(page,/class="asset-allocation-legend"/)

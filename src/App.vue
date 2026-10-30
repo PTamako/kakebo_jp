@@ -15,7 +15,7 @@ import AssetsPage from './pages/AssetsPage.vue'
 import ManagementPage from './pages/ManagementPage.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
-import { detectRegisteredReceiptPayment, isQuicPayReceipt } from './receipt-payment.js'
+import { detectRegisteredReceiptPayment } from './receipt-payment.js'
 import { detectPrepaidRecharge, prepaidTarget } from './prepaid-card.js'
 import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
@@ -430,19 +430,16 @@ function recognize(mode = recognitionMode.value, append = false) {
     const matchingPrepaid=effectiveMode==='receipt'||effectiveMode==='statement' ? detectPrepaidRecharge(transferText,prepaidSources.value) : ''
     const type = transfer || matchingPrepaid ? 'transfer' : effectiveMode === 'receipt' ? 'expense' : normalizedDraftType(f.type)
     const imported = effectiveMode === 'statement' ? importPaymentSource.value : ''
-    const isQuicPay=effectiveMode==='receipt' && isQuicPayReceipt(f.raw||input.value)
     const receiptPayment=effectiveMode==='receipt'
       ? detectRegisteredReceiptPayment(f.raw||input.value,paymentSources.value,paymentSourceMeta.value) : ''
-    // For receipt images, only accept a payment card actually registered in D1.
-    // If OCR cannot match one, honor the user's configured default card.
-    // QUICPay is a payment rail: use the registered Saison card when unique,
-    // otherwise fall back to the default (never manufacture a QUICPay card).
+    // Rule > registered OCR card > default, with a user-selected card
+    // remaining authoritative after an edit. Payment networks like QUICPay
+    // are not standalone cards and can never silently create one.
     const recognizedPayment=effectiveMode==='receipt'
       ? (receiptPayment || (paymentSources.value.includes(f.paymentSource) ? f.paymentSource : ''))
       : (f.paymentSource || '')
     const chosenPayment=type==='transfer' ? (imported||'')
-      : isQuicPay && !receiptPayment ? defaultPaymentSource.value
-        : suggestedPayment(f.merchant,recognizedPayment,type,imported)
+      : suggestedPayment(f.merchant,recognizedPayment,type,imported)
     return { ...f, type, category: type==='transfer' ? '投資・資産移動' : f.category, transferTarget: matchingPrepaid ? prepaidTarget(matchingPrepaid) : f.transferTarget || (transfer ? 'sbi' : ''), transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms

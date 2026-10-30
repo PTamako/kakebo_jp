@@ -7,6 +7,8 @@ export async function prepaidSchemaReady(db) {
 }
 export async function handlePrepaid({db,request,method,sub}) {
   if(!await prepaidSchemaReady(db))return json({error:'プリペイド管理の追加移行が必要です',code:'prepaid_migration_required'},409)
+  const pending=await db.prepare("SELECT name FROM payment_sources WHERE source_type='prepaid' AND opening_date='__restore_pending__' LIMIT 1").first()
+  if(pending)return json({error:'プリペイド残高の復元が完了していません。バックアップ復元を再開してください',code:'prepaid_restore_incomplete'},409)
   if(method==='POST' && sub==='opening'){
     const body=await request.json().catch(()=>null)
     const name=typeof body?.name==='string'?body.name.trim():''

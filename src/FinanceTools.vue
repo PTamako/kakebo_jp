@@ -7,7 +7,7 @@ import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, 
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
-const props = defineProps({ active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
+const props = defineProps({ active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -70,6 +70,8 @@ const closingDayFor = name => closingDays.value[name] === 0 ? '末日' : closing
 function selectCardForEdit() {
   if (!selectedCard.value) return
   editedCardName.value = selectedCard.value
+  editSourceType.value=selectedSourceType.value
+  editOpeningBalance.value=Number(props.paymentSourceMeta[selectedCard.value]?.opening_balance || 0)
   cardMode.value = 'edit'
 }
 async function saveClosingDay(name, day) {
@@ -127,6 +129,25 @@ const cardPeriod = computed(() => {
   return {start,end}
 })
 const newPaymentSource = ref('')
+const newSourceType = ref('standard')
+const openingBalance = ref(0)
+const editSourceType = ref('standard')
+const editOpeningBalance = ref(0)
+const selectedSourceType = computed(() => props.paymentSourceMeta[selectedCard.value]?.source_type || 'standard')
+const isPrepaid = name => props.paymentSourceMeta[name]?.source_type === 'prepaid'
+async function saveCardType(){
+  if(!selectedCard.value||busy.value)return
+  const kind=editSourceType.value
+  if(kind===selectedSourceType.value)return renameCard()
+  busy.value=true
+  try{
+    await props.api('payment-sources/type',{method:'POST',body:JSON.stringify({name:selectedCard.value,sourceType:kind,openingBalance:Number(editOpeningBalance.value)})})
+    emit('payment-settings-refresh')
+    cardMessage.value='カード種別を更新しました'
+    cardMode.value=''
+  }catch(e){cardMessage.value='種別を保存できませんでした：'+e.message}
+  finally{busy.value=false}
+}
 const cardMessage = ref('')
 // Changing the selected card must replace any unsaved name from the previous card.
 // Keep the editor open so the new card's name and closing day appear immediately.
@@ -190,9 +211,11 @@ async function addPaymentSource() {
   if (busy.value) return
   busy.value = true
   try {
-    await props.api('payment-sources',{method:'POST',body:JSON.stringify({name})})
+    await props.api('payment-sources',{method:'POST',body:JSON.stringify({name,sourceType:newSourceType.value,openingBalance:Number(openingBalance.value)})})
     emit('payment-settings-refresh')
     newPaymentSource.value = ''
+    newSourceType.value = 'standard'
+    openingBalance.value = 0
     cardMode.value = ''
     cardMessage.value = name + 'を追加しました'
   } catch(e) { cardMessage.value = 'カードを追加できませんでした：' + e.message }
@@ -766,18 +789,22 @@ async function removeCardBill(record) {
     <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
     <div v-if="cardMode === 'add'" class="finance-inputs card-controls">
       <input v-model="newPaymentSource" maxlength="80" placeholder="新しいカード名・支払方法" aria-label="新しい支払方法">
+      <label>種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">通常の支払方法</option><option value="prepaid">プリペイド（Suica・PASMO等）</option></select></label>
+      <label v-if="newSourceType==='prepaid'">現在の残高（円）<input v-model.number="openingBalance" type="number" min="0" step="1" required></label>
       <button type="button" @click="addPaymentSource">保存</button>
       <button type="button" @click="cardMode = ''">キャンセル</button>
     </div>
     <div v-if="cardMode === 'edit' && selectedCard" class="card-editor">
       <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
-      <label v-if="!['現金','その他','Suica'].includes(selectedCard)">締め日
+      <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">通常の支払方法</option><option value="prepaid">プリペイド</option></select></label>
+      <label v-if="editSourceType==='prepaid' && editSourceType!==selectedSourceType">現在の残高（円）<input v-model.number="editOpeningBalance" type="number" min="0" step="1" required></label>
+      <label v-if="editSourceType==='standard' && !['現金','その他','其他'].includes(selectedCard)">締め日
         <select :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
           <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
         </select>
       </label>
       <div class="finance-inputs card-edit-actions">
-        <button type="button" :disabled="busy" @click="renameCard">保存</button>
+        <button type="button" :disabled="busy" @click="saveCardType">{{editSourceType!==selectedSourceType?'種別を保存':'保存'}}</button>
         <button type="button" :disabled="busy" @click="cardMode = ''">閉じる</button>
         <button v-if="selectedCard !== '現金'" type="button" :disabled="busy" @click="removePaymentSource(selectedCard)">削除</button>
       </div>

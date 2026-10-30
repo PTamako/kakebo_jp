@@ -18,6 +18,6 @@ export function detectPrepaidRecharge(text, names=[]) {
   if(candidates.some(x=>x.name!==candidate.name && x.key.includes(candidate.key)))return ''
   return candidate.name
 }
-export function prepaidBalance({opening_balance=0,charged=0,spent=0}) {
-  return Number(opening_balance)+Number(charged)-Number(spent)
+export function prepaidBalance({opening_balance=0,charged=0,spent=0,transferred_out=0}) {
+  return Number(opening_balance)+Number(charged)-Number(spent)-Number(transferred_out)
 }

@@ -627,8 +627,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
         <label class="sbi-checkbox"><input v-model="plan.enabled" type="checkbox"/>積立中</label>
         <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
       </form>
-      <form v-else-if="editing==='bulk'" class="sbi-dialog sbi-bulk-dialog" role="dialog" aria-modal="true" aria-label="保有を一括更新" @submit.prevent="saveBulk">
-        <div class="sbi-line-heading"><h3>保有を一括更新</h3><button type="button" class="sbi-close" :disabled="saving || bulkBusy" @click="closeEditor">×</button></div>
+      <form v-else-if="editing==='bulk'" class="sbi-dialog sbi-bulk-dialog" role="dialog" aria-modal="true" aria-label="画像から保有を更新" @submit.prevent="saveBulk">
+        <div class="sbi-line-heading"><h3>画像から保有を更新</h3><button type="button" class="sbi-close" :disabled="saving || bulkBusy" @click="closeEditor">×</button></div>
         <div class="sbi-bulk-reader">
           <div class="sbi-ai-picker" role="group" aria-label="画像の読み取り方法">
             <span class="sbi-ai-label">読み取り方法</span>
@@ -638,6 +638,23 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
             </div>
             <span class="sbi-ai-quota" role="status">{{quota ? '共通残り '+quota.remaining+' / '+quota.limit+'回' : '共通枠を確認中'}}</span>
           </div>
+          <section class="sbi-detail-import" aria-label="銘柄詳細画像の取り込み">
+            <div class="sbi-detail-import-heading">
+              <strong>SBIの銘柄詳細を読み取る</strong>
+              <small>1銘柄につき1枚 · 複数選択可</small>
+            </div>
+            <label class="sbi-fund-image-pick" :aria-disabled="saving || bulkBusy || (useAi && aiExhausted)">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m5 16 5-5 4 4 3-3 2 2"/><path d="M8 7h.01"/></svg>
+              <span>{{bulkBusy ? '画像を読み取り中…' : '画像を選ぶ・追加する'}}</span>
+              <input type="file" multiple accept="image/*" hidden :disabled="saving || bulkBusy || (useAi && aiExhausted)" @change="readFundDetailImages" />
+            </label>
+            <div class="sbi-detail-import-meta">
+              <span>{{scannedFundCount}} / {{fundGroups.length}} 銘柄確認済み</span>
+              <button type="button" class="sbi-dual-reset" :disabled="saving || bulkBusy" @click="clearFundDetailImports">クリア</button>
+            </div>
+            <p class="sbi-detail-help">成長・つみたての保有数量と取得金額を読み取り、変更分だけ更新します。画像を送信しても確認前には保存されません。</p>
+          </section>
+          <details class="sbi-legacy-import"><summary>従来の2画面照合</summary>
           <div class="sbi-dual-panel">
             <div class="sbi-bulk-heading"><strong>SBIの2画面から更新</strong><button type="button" class="sbi-dual-reset" :disabled="saving || bulkBusy" @click="clearDual">クリア</button></div>
             <div class="sbi-dual-choices">
@@ -655,8 +672,9 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
             <small class="sbi-dual-help">{{!useAi ? '2画面の照合にはAIを選択してください。' : aiExhausted ? '本日の共通AI利用枠を使い切りました。' : '同じ更新日時の2画面を選択（各1回）。'}} </small>
             <p v-if="dualInfo" role="status" class="sbi-bulk-notice">{{dualInfo}}</p>
           </div>
+          </details>
           <details class="sbi-single-import">
-            <summary>1枚の画像・テキストから更新</summary>
+            <summary>テキスト・従来形式で読み取る</summary>
           <label>保有画面のテキストを貼り付け
             <textarea v-model="bulkText" rows="3" :disabled="saving || bulkBusy" placeholder="銘柄名 / 保有口数 / 取得金額"></textarea>
           </label>
@@ -671,16 +689,25 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
           <p v-if="bulkInfo" class="sbi-bulk-notice" role="status">{{bulkInfo}}</p>
           <p v-if="bulkWarning" class="sbi-bulk-warning" role="alert">{{bulkWarning}}</p>
         </div>
-        <div class="sbi-bulk-heading"><strong>更新内容を確認</strong><span>{{bulkChanged.length}}件変更</span></div>
-        <div class="sbi-bulk-rows">
-          <div v-for="row in bulkRows" :key="row.fundCode+':'+row.accountType" class="sbi-bulk-row">
-            <div class="sbi-bulk-row-name"><strong>{{shortFundName({fund_code:row.fundCode,fund_name:row.fundName})}}</strong><small>{{accountLabel(row.accountType)}} · {{row.fundCode}}</small></div>
-            <div class="sbi-bulk-fields">
-              <label>保有口数<input v-model.number="row.units" type="number" min="0" step="1" required :disabled="saving || bulkBusy" /></label>
-              <label>取得金額（円）<input v-model.number="row.acquisitionCost" type="number" min="0" step="1" required :disabled="saving || bulkBusy" /></label>
+        <div class="sbi-bulk-heading"><strong>変更内容を確認</strong><span>{{bulkChanged.length}}口座変更</span></div>
+        <p v-if="!bulkChanged.length" class="sbi-bulk-idle">変更候補はありません</p>
+        <div v-else class="sbi-bulk-rows">
+          <section v-for="fund in bulkPreviewGroups" :key="fund.fundCode" class="sbi-bulk-fund-preview">
+            <div class="sbi-bulk-fund-title">
+              <strong>{{shortFundName({fund_code:fund.fundCode,fund_name:fund.fundName})}}</strong>
+              <small>{{fund.accounts.length}}口座</small>
             </div>
-            <small v-if="Number(row.units)!==row.expectedUnits || Number(row.acquisitionCost)!==row.expectedAcquisitionCost" class="sbi-bulk-diff">変更前：{{row.expectedUnits.toLocaleString('ja-JP')}}口 · {{yen(row.expectedAcquisitionCost)}}</small>
-          </div>
+            <div v-for="row in fund.accounts" :key="row.fundCode+':'+row.accountType" class="sbi-bulk-row">
+              <div class="sbi-bulk-row-name">
+                <strong>{{accountLabel(row.accountType)}}</strong>
+                <small>変更前 {{row.expectedUnits.toLocaleString('ja-JP')}}口 · {{yen(row.expectedAcquisitionCost)}}</small>
+              </div>
+              <div class="sbi-bulk-fields">
+                <label>保有口数<input v-model.number="row.units" type="number" min="0" step="1" required :disabled="saving || bulkBusy" /></label>
+                <label>取得金額（円）<input v-model.number="row.acquisitionCost" type="number" min="0" step="1" required :disabled="saving || bulkBusy" /></label>
+              </div>
+            </div>
+          </section>
         </div>
         <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving || bulkBusy" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving || bulkBusy || !bulkChanged.length || (dualActive && !dualVerified)">{{saving ? '保存中…' : '更新 '+bulkChanged.length+'件'}}</button></div>
       </form>

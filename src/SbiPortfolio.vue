@@ -8,7 +8,8 @@ import { compressReceiptImage } from './receipt-image.js'
 
 const props = defineProps({
   api: { type: Function, required: true },
-  transferLoading: { type: Boolean, default: false }
+  transferLoading: { type: Boolean, default: false },
+  activeView: { type: String, default: 'funds', validator: value => ['funds','wallets','plans'].includes(value) }
 })
 const emit = defineEmits(['summary'])
 const showAllHoldings = ref(false), showAllPlans = ref(false), showAllTransfers = ref(false)
@@ -360,10 +361,10 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 
 <template>
   <div class="sbi-portfolio">
-    <div class="sbi-toolbar">
+    <div v-if="activeView!=='wallets'" class="sbi-toolbar">
       <div class="sbi-provider"><span class="sbi-provider-dot" aria-hidden="true"></span><span>SBI証券</span></div>
       <div class="sbi-toolbar-actions">
-        <label class="sbi-month-label"><span class="sr-only">積立・振替の対象月</span><input v-model="month" type="month" aria-label="積立・振替の対象月" @change="load" /></label>
+        <label v-if="activeView==='plans'" class="sbi-month-label"><span class="sr-only">積立・振替の対象月</span><input v-model="month" type="month" aria-label="積立・振替の対象月" @change="load" /></label>
         <button type="button" class="sbi-icon-button" @click="load" :disabled="loading" aria-label="残高・積立を更新" title="更新">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14 5l2-2"/><path d="M20 20v-4h-4"/></svg>
         </button>
@@ -374,6 +375,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
     <p v-if="error && /投資テーブルの移行が未実施/.test(error)" class="sbi-hint">投資データを確認してください。既存の家計簿は変更されません。</p>
     <p v-if="notice" class="sbi-success" role="status">{{notice}}</p>
 
+    <div v-show="activeView==='funds'" class="sbi-view-panel">
     <template v-if="data">
 
       <details class="panel sbi-card sbi-holdings" open>
@@ -426,11 +428,15 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
         </div>
       </details>
     </template>
+    </div>
 
-    <slot name="before-holdings" />
+    <div v-show="activeView==='wallets'" class="sbi-view-panel">
+      <slot name="before-holdings" />
+    </div>
 
+    <div v-show="activeView==='plans'" class="sbi-view-panel">
     <template v-if="data">
-      <details class="panel sbi-card sbi-investment-manage">
+      <details class="panel sbi-card sbi-investment-manage" open>
         <summary class="sbi-disclosure-summary">
           <span class="sbi-manage-title"><strong>毎月の積立</strong><small>{{yen(data.reconciliation.monthly_amount)}} / 月 · {{data.plans.filter(p=>p.enabled).length}}銘柄</small></span>
           <span class="sbi-manage-link">設定</span>
@@ -480,6 +486,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
         </div>
       </details>
     </template>
+    </div>
     <div v-if="editing || editingTransfer!==null" class="sbi-overlay" @click.self="closeEditor">
       <form v-if="editing==='plan'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="積立設定の編集" @submit.prevent="submit('plan',{...plan,monthlyAmount:Number(plan.monthlyAmount),orderDay:Number(plan.orderDay)},'積立設定を保存しました')">
         <div class="sbi-line-heading"><h3>積立設定</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
@@ -763,4 +770,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-transfer-summary:focus-visible,.sbi-bulk-primary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:3px}
 @media(max-width:370px){.sbi-holding-toolbar .sbi-bulk-primary{padding:8px 6px;font-size:11px}.sbi-holding-toolbar .sbi-add-holding{padding:8px;font-size:11px}}
 @media(prefers-reduced-motion:reduce){.sbi-transfer-summary .sbi-detail-chevron{transition:none}}
+.sbi-view-panel{display:grid;gap:9px;min-width:0}
+.sbi-portfolio{gap:8px}
+.sbi-view-panel .sbi-disclosure-summary{min-height:48px;padding:10px 13px}
+.sbi-view-panel .sbi-section-body{padding-top:0}
 </style>

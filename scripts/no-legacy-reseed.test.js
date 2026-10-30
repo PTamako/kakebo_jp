@@ -53,3 +53,24 @@ test('completed card and SBI migrations can never be replayed by stale clients',
  assert.doesNotMatch(portfolio,/sbiInitialHoldings|const initialPlans|INSERT OR IGNORE INTO investment_plans/)
  assert.doesNotMatch(migration,/INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+(?:investment_plans|investment_plan_history|investment_holdings|fund_prices)\b/i)
 })
+
+test('migrated D1 is the single source for merchant rules; production code has no built-in fallback',()=>{
+ const api=read('functions/api/[[path]].js')
+ const schema=read('schema.sql')
+ assert.doesNotMatch(api,/DEFAULT_RULES|DEFAULT_RULE_ROWS|PARSER_DEFAULT_RULE_ROWS|LEGACY_DEFAULT_RULE_ROWS/)
+ assert.match(api,/if \(a === 'rules'\)/)
+ assert.match(api,/SELECT keyword, category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword/)
+ assert.match(api,/return json\(results\.map\(rule => \(\{\.\.\.rule,is_custom:true\}\)\)\)/)
+ assert.doesNotMatch(schema,/INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+(?:rules|category_source|investment_plans|investment_holdings|fund_prices)\b/i)
+ assert.doesNotMatch(api,/INSERT\s+OR\s+IGNORE\s+INTO\s+rules\(keyword,category\)/i)
+})
+
+test('historic SBI screenshot data and default merchant records never ship with production API',()=>{
+ const portfolio=read('functions/api/investment-portfolio.js')
+ const snapshotFixture=read('scripts/fixtures/sbi-initial-holdings.js')
+ const ruleFixture=read('scripts/fixtures/default-rule-rows.js')
+ assert.equal(existsSync(new URL('../functions/api/sbi-initial-holdings.js',import.meta.url)),false)
+ assert.match(portfolio,/if\(sub==='initialize'\)return respond\(\{error:'旧SBI初期データの登録は終了しました'\},410\)/)
+ assert.match(snapshotFixture,/sbiInitialHoldings/)
+ assert.match(ruleFixture,/DEFAULT_RULE_ROWS/)
+})

@@ -16,7 +16,8 @@ import ManagementPage from './pages/ManagementPage.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
 import { detectRegisteredReceiptPayment } from './receipt-payment.js'
-import { detectPrepaidRecharge, prepaidTarget } from './prepaid-card.js'
+import { prepaidTarget } from './prepaid-card.js'
+import { recognizeAssetTransfer } from './transfer-recognition.js'
 import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
@@ -425,10 +426,13 @@ function recognize(mode = recognitionMode.value, append = false) {
   }) : repeated || (effectiveMode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value))
   if (effectiveMode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
   const parsedForms = parsed.map(f => {
-    const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
-    const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    const matchingPrepaid=effectiveMode==='receipt'||effectiveMode==='statement' ? detectPrepaidRecharge(transferText,prepaidSources.value) : ''
-    const type = transfer || matchingPrepaid ? 'transfer' : effectiveMode === 'receipt' ? 'expense' : normalizedDraftType(f.type)
+    // Apply the same rules to pasted text, statements and scanned receipts.
+    // An unknown recharge is an editable transfer draft with no guessed target.
+    const detectedTransfer = recognizeAssetTransfer({
+      merchant: f.merchant, note: f.note, raw: f.raw, prepaidNames: prepaidSources.value
+    })
+    const type = detectedTransfer.isTransfer ? 'transfer'
+      : effectiveMode === 'receipt' ? 'expense' : normalizedDraftType(f.type)
     const imported = effectiveMode === 'statement' ? importPaymentSource.value : ''
     const receiptPayment=effectiveMode==='receipt'
       ? detectRegisteredReceiptPayment(f.raw||input.value,paymentSources.value,paymentSourceMeta.value) : ''
@@ -440,7 +444,7 @@ function recognize(mode = recognitionMode.value, append = false) {
       : (f.paymentSource || '')
     const chosenPayment=type==='transfer' ? (imported||'')
       : suggestedPayment(f.merchant,recognizedPayment,type,imported)
-    return { ...f, type, category: type==='transfer' ? '投資・資産移動' : f.category, transferTarget: matchingPrepaid ? prepaidTarget(matchingPrepaid) : f.transferTarget || (transfer ? 'sbi' : ''), transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
+    return { ...f, type, category: type==='transfer' ? '投資・資産移動' : f.category, transferTarget: detectedTransfer.transferTarget || f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && type === 'expense' ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && type === 'expense' && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   // Preserve the current input tab: pasted text stays in 手入力. Only the

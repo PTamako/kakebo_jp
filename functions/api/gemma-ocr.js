@@ -12,7 +12,17 @@ export async function recognizeWithGemma(ai, bytes, mime, mode) {
   if (bytes.byteLength > 4 * 1024 * 1024) throw new Error('画像は4MB以下にしてください')
   const base64 = Array.from(new Uint8Array(bytes), b => String.fromCharCode(b)).join('')
   const imageUrl = 'data:' + mime + ';base64,' + btoa(base64)
-  const instruction = mode === 'receipt'
+  const instruction = mode === 'portfolio'
+    ? [
+      'SBI証券の投資信託保有一覧の画像から、各銘柄の「現在の保有口数」と「累計取得金額」を正確に文字起こししてください。',
+      '読める銘柄ごとに1行、形式は「銘柄名または8桁の銘柄コード|口座区分|保有口数|取得金額」としてください。',
+      '口座区分は画像に明記されている場合のみ「成長」「つみたて」「合算」のいずれかを使い、それ以外は「不明」。',
+      '保有口数は「口」単位の整数、取得金額は円単位の整数です。数字の桁区切りカンマは省略してください。',
+      '評価額、評価損益、平均取得単価、基準価額、月額積立予定額を取得金額と混同しないでください。',
+      '口数または取得金額が欠ける銘柄は出力しないでください。推定・計算・補完は禁止です。',
+      '説明、ヘッダー、Markdown、余分な行は書かないでください。'
+    ].join('\n')
+    : mode === 'receipt'
     ? [
       '日本語レシートから購入取引を1件だけ、印字された内容に従って正確に読み取ってください。',
       '次の5項目を必ずこの順番で書いてください（各行1項目、説明不要）：',

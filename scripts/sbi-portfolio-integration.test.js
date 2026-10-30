@@ -75,6 +75,48 @@ function seedPortfolioInTest(db){
 }
 
 
+test('bulk update changes only matched existing holdings in one SQLite statement',async()=>{
+  const {db,call}=await client()
+  try{
+    seedPortfolioInTest(db)
+    const initial=(await call('investment-portfolio?month='+currentMonth)).body
+    const a=initial.holdings[0],b=initial.holdings[1]
+    const rows=[a,b].map(h=>({
+      fundCode:h.fund_code,accountType:h.account_type,
+      units:Number(h.units)+100,acquisitionCost:Number(h.acquisition_cost)+2000,
+      expectedUnits:Number(h.units),expectedAcquisitionCost:Number(h.acquisition_cost)
+    }))
+    const saved=await call('investment-portfolio/holdings-bulk','PUT',{holdings:rows})
+    assert.equal(saved.status,200,JSON.stringify(saved.body))
+    assert.equal(saved.body.updated,2)
+    const after=(await call('investment-portfolio?month='+currentMonth)).body
+    assert.equal(after.holdings.length,initial.holdings.length)
+    for(const h of rows){
+      const current=after.holdings.find(x=>x.fund_code===h.fundCode&&x.account_type===h.accountType)
+      assert.equal(current.units,h.units)
+      assert.equal(current.acquisition_cost,h.acquisitionCost)
+      assert.equal(current.reported_value,null,'old screenshot valuation is not reused with changed units')
+    }
+    for(const old of initial.holdings.slice(2)){
+      const current=after.holdings.find(x=>x.fund_code===old.fund_code&&x.account_type===old.account_type)
+      assert.equal(current.units,old.units)
+      assert.equal(current.acquisition_cost,old.acquisition_cost)
+    }
+    assert.equal(after.reconciliation.monthly_amount,initial.reconciliation.monthly_amount)
+    assert.equal(after.reconciliation.funded,initial.reconciliation.funded)
+    assert.equal((await call('investment-portfolio/holdings-bulk','PUT',{holdings:rows})).status,409,'stale repeated upload cannot rewrite holdings')
+    const current=after.holdings.find(x=>x.fund_code===rows[0].fundCode)
+    const valid={...rows[0],expectedUnits:current.units,expectedAcquisitionCost:current.acquisition_cost,units:current.units+1}
+    const missing={...rows[1],fundCode:'ABCDEFGH',units:7}
+    assert.equal((await call('investment-portfolio/holdings-bulk','PUT',{holdings:[valid,missing]})).status,409,
+      'unknown fund rejects the entire upload')
+    const unchanged=(await call('investment-portfolio?month='+currentMonth)).body.holdings.find(x=>x.fund_code===valid.fundCode)
+    assert.equal(unchanged.units,current.units,'failed batch never partly updates the valid fund')
+    assert.equal((await call('investment-portfolio/holdings-bulk','PUT',{holdings:[valid,valid]})).status,400,'duplicate identity rejected')
+    assert.equal((await call('investment-portfolio/holdings-bulk','PUT',{holdings:[{...valid,units:-10}]})).status,400)
+  }finally{db.close()}
+})
+
 test('SBI 15,000 yen transfer reconciles with four monthly allocations without double counting',async()=>{
   const {db,call}=await client()
   try{

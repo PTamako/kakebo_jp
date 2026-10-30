@@ -251,7 +251,7 @@ async function api(path, opt = {}) {
   if (!token.value) await ensureLogin()
   const requestToken = token.value
   const r = await fetch('/api/' + path, {
-    ...opt, headers: { 'content-type': 'application/json', 'x-session': requestToken, ...(opt.headers || {}) }
+    ...opt, headers: { ...(opt.body instanceof FormData ? {} : { 'content-type': 'application/json' }), 'x-session': requestToken, ...(opt.headers || {}) }
   })
   if (r.status === 401) {
     // A different request may already have refreshed the session.

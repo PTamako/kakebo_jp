@@ -29,7 +29,7 @@ async function refresh(){
     const payload=await props.api('prepaid-assets')
     if(id===requestId){
       data.value=payload
-      emit('summary',{balance:payload.cards.reduce((sum,card)=>sum+Number(card.balance),0)})
+      emit('summary',{balance:payload.cards.reduce((sum,card)=>sum+Number(card.balance),0), latestUsage:payload.latestUsage || null, latestCharge:payload.latestCharge || null})
     }
   }catch(e){
     if(id===requestId){error.value=e.message;data.value=null;emit('summary',null)}

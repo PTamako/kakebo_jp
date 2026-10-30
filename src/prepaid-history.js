@@ -11,8 +11,10 @@ export function matchesPrepaidHistoryEntry(entry, filter, today=new Date(Date.no
   if (!entry?.date || entry.date>today || entry.date<opened ||
       Number(entry.id)<=idCutoff) return false
   if (filter.kind === 'charge') {
-    return entry.type==='transfer' && entry.transfer_target===prepaidTarget(filter.card) &&
+    return entry.type==='transfer' && entry.transfer_target===prepaidTarget(filter.card) && entry.payment_source!==filter.card &&
       (entry.transfer_date||entry.date)<=today
   }
-  return entry.type==='expense' && entry.payment_source===filter.card
+  return (entry.type==='expense' && entry.payment_source===filter.card) ||
+    (entry.type==='transfer' && entry.payment_source===filter.card &&
+      entry.transfer_target!==prepaidTarget(filter.card) && (entry.transfer_date||entry.date)<=today)
 }

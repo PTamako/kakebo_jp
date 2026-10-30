@@ -1,10 +1,8 @@
 // Explicit official provider for MUFG-managed funds only.
 // Never fetch the SBI portfolio or infer a purchase from a price update.
-import { MUFG_FUNDS } from '../../src/fund-nav-coverage.js'
+import { MUFG_FUNDS, KNOWN_MANUAL_NAV_FUNDS } from '../../src/fund-nav-coverage.js'
 export { MUFG_FUNDS } from '../../src/fund-nav-coverage.js'
-export const PENDING_NAV_FUNDS = Object.freeze({
-  '04317188': 'iFreeNEXT NASDAQ100インデックス' // Daiwa: verified programmatic JSON feed not yet available.
-})
+export const PENDING_NAV_FUNDS = KNOWN_MANUAL_NAV_FUNDS
 const provider = 'official_mufg'
 const isoDate = value => {
   if (typeof value !== 'string') return null
@@ -19,11 +17,12 @@ const isoDate = value => {
 const dateInJapan = now => new Date(now.getTime()+9*3600_000).toISOString().slice(0,10)
 export function parseMufgNav(payload, expectedCode, now=new Date()) {
   const entry=payload?.datasets?.[0]
-  if (!entry || typeof entry !== 'object' || !Object.hasOwn(MUFG_FUNDS,expectedCode))
+  if (!entry || typeof entry !== 'object' || !/^[A-Z0-9]{8}$/.test(expectedCode))
     throw Error('provider_payload_invalid')
   // If the endpoint includes an association code, verify it is the requested fund.
   const returned=entry.association_fund_cd ?? entry.association_fund_code
-  if (returned != null && String(returned).toUpperCase()!==expectedCode)
+  if ((returned == null && !Object.hasOwn(MUFG_FUNDS,expectedCode)) ||
+      (returned != null && String(returned).toUpperCase()!==expectedCode))
     throw Error('provider_fund_mismatch')
   const navRaw=String(entry.nav??'').replaceAll(',','').trim()
   const price=/^[1-9]\d*$/.test(navRaw)?Number(navRaw):NaN
@@ -37,7 +36,11 @@ export function parseMufgNav(payload, expectedCode, now=new Date()) {
   return {fundCode:expectedCode,navPer10000:price,priceDate:date,source:provider}
 }
 export async function fetchMufgNav(fundCode,{fetcher=fetch,now=new Date()}={}) {
-  if (!Object.hasOwn(MUFG_FUNDS,fundCode))throw Error('unsupported_mufg_fund')
+  // No arbitrary URLs or data writes: only 8-character fund association codes
+  // can be queried from MUFG's fixed official endpoint. A live, code-matching
+  // quote is required before declaring a new fund automatically supported.
+  if (!/^[A-Z0-9]{8}$/.test(fundCode) || Object.hasOwn(PENDING_NAV_FUNDS,fundCode))
+    throw Error('unsupported_mufg_fund')
   const url='https://developer.am.mufg.jp/fund_information_latest/association_fund_cd/'+fundCode
   const response=await fetcher(url,{
     headers:{Accept:'application/json'},
@@ -51,15 +54,35 @@ export async function fetchMufgNav(fundCode,{fetcher=fetch,now=new Date()}={}) {
   try{body=JSON.parse(text)}catch{throw Error('provider_non_json')}
   return parseMufgNav(body,fundCode,now)
 }
+// Read-only live support check used while a user enters a NEW fund code.
+// An unreachable provider is not the same as "manual-only".
+export async function probeFundNavSupport(fundCode,{fetcher=fetch,now=new Date()}={}) {
+  const code=String(fundCode||'').trim().toUpperCase()
+  if(!/^[A-Z0-9]{8}$/.test(code))return {status:'invalid'}
+  if(Object.hasOwn(PENDING_NAV_FUNDS,code))return {status:'manual'}
+  if(Object.hasOwn(MUFG_FUNDS,code))return {status:'auto'}
+  try{
+    const quote=await fetchMufgNav(code,{fetcher,now})
+    return {status:'auto',priceDate:quote.priceDate}
+  }catch(error){
+    const reason=String(error?.message||error)
+    if(/^(unsupported_mufg_fund|provider_http_404|provider_fund_mismatch|provider_payload_invalid)$/.test(reason))
+      return {status:'manual'}
+    return {status:'unknown'}
+  }
+}
+
 export async function syncFundNav(db,{fetcher=fetch,now=new Date(),logger=console}={}) {
   if(!db)throw Error('missing_d1_binding')
   // Funds not held by this user are never inserted. Orders and acquisitions
   // are not queried or mutated by this scheduled task.
   const result=await db.prepare(
-    "SELECT DISTINCT fund_code FROM investment_holdings WHERE fund_code IN ('0331418A','03311187','0331A172') ORDER BY fund_code"
+    'SELECT DISTINCT fund_code FROM investment_holdings ORDER BY fund_code LIMIT 100'
   ).all()
-  const targetCodes=(result.results||[]).map(x=>x.fund_code)
-  const summary={checked:targetCodes.length,updated:[],unchanged:[],failed:[],unsupported:Object.keys(PENDING_NAV_FUNDS)}
+  const codes=(result.results||[]).map(x=>String(x.fund_code||'').trim().toUpperCase())
+  const unsupported=codes.filter(code=>Object.hasOwn(PENDING_NAV_FUNDS,code))
+  const targetCodes=codes.filter(code=>!Object.hasOwn(PENDING_NAV_FUNDS,code))
+  const summary={checked:targetCodes.length,updated:[],unchanged:[],failed:[],unsupported}
   for (const code of targetCodes) {
     try{
       const quote=await fetchMufgNav(code,{fetcher,now})
@@ -77,7 +100,14 @@ export async function syncFundNav(db,{fetcher=fetch,now=new Date(),logger=consol
         .bind(quote.fundCode,quote.navPer10000,quote.priceDate,quote.source,now.toISOString()).run()
       ;(Number(result.meta?.changes||0)>0?summary.updated:summary.unchanged).push(code)
     }catch(error){
-      summary.failed.push({fund_code:code,reason:String(error?.message||error).slice(0,120)})
+      const reason=String(error?.message||error)
+      if(/^(provider_http_404|unsupported_mufg_fund)$/.test(reason)){
+        // Only confirmed unsupported funds stay manual. Malformed or
+        // code-mismatched vendor responses are failures, not unsupported funds.
+        summary.unsupported.push(code)
+        continue
+      }
+      summary.failed.push({fund_code:code,reason:reason.slice(0,120)})
       logger.warn('NAV refresh skipped',code,String(error))
     }
   }

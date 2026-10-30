@@ -1,4 +1,5 @@
 // SBI bookkeeping only; NEVER sends bank transfers or securities orders.
+import { probeFundNavSupport } from './fund-nav-sync.js'
 // D1 stores explicit holdings and a monthly funding-to-plan reconciliation.
 const respond=(value,status=200)=>new Response(JSON.stringify(value),{
   status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}
@@ -31,6 +32,14 @@ export function fundingStatus(transfers,month,orderDay=9) {
 }
 export async function handlePortfolio({db,request,method,sub,url}) {
   try{
+    if(method==='GET'&&sub==='nav-eligibility'){
+      // Read-only official API lookup. Does not insert holdings, fund prices,
+      // rules, initial data or new D1 tables.
+      const fundCode=String(url.searchParams.get('fundCode')||'').trim().toUpperCase()
+      if(!codeOk(fundCode))return respond({error:'銘柄コードを確認してください'},400)
+      const result=await probeFundNavSupport(fundCode)
+      return respond({fundCode,...result})
+    }
     if(method==='GET'&&sub==='export'){
       const rows=await db.batch([
         db.prepare('SELECT fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plans'),

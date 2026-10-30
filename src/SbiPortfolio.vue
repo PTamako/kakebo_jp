@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { autoNavSupported } from './fund-nav-coverage.js'
+import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js'
 
 const props = defineProps({
   api: { type: Function, required: true },
@@ -8,6 +8,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['summary'])
 const showAllHoldings = ref(false), showAllPlans = ref(false), showAllTransfers = ref(false)
+const expandedHolding = ref('')
+const navSupport = ref({})
+const holdingKey = h => h.fund_code + ':' + h.account_type
 const today = () => new Date().toLocaleDateString('sv-SE')
 const month = ref(today().slice(0, 7))
 const data = ref(null)
@@ -45,11 +48,57 @@ const shortFundName = item => ({
   '04317188': 'NASDAQ100'
 })[item.fund_code] || item.fund_name
 const sourceLabel = source => source === 'official_mufg' ? '公式取得済' : source === 'manual' ? '手入力' : source === 'sbi_screenshot' ? '初期記録' : '価格未取得'
-const navModeLabel = code => autoNavSupported(code) ? '自動取得対象' : '手動入力'
-const navModeHelp = code => autoNavSupported(code)
-  ? '公式基準価額を毎日20:30ごろ取得（休業日・更新遅延時は最新の取得値）。保有口数と取得金額は手入力です。'
-  : '現在、対応する自動取得APIはありません。保有情報の保存後、「詳細」から基準価額を手入力してください。'
+// Never claim that an unknown fund is manual-only without trying the
+// official read-only provider lookup. A network failure remains "確認不可".
+const navMode = code => {
+  const fundCode=String(code||'').trim().toUpperCase()
+  if (!/^[A-Z0-9]{8}$/.test(fundCode)) return 'invalid'
+  if (autoNavSupported(fundCode)) return 'auto'
+  if (Object.hasOwn(KNOWN_MANUAL_NAV_FUNDS,fundCode)) return 'manual'
+  return navSupport.value[fundCode] || 'checking'
+}
+const navModeLabel = code => ({
+  auto:'自動取得対象', manual:'手動入力',
+  checking:'確認中…', unknown:'確認できません', invalid:'コード入力待ち'
+})[navMode(code)]
+const navModeHelp = code => ({
+  auto:'公式APIに対応。定期更新Workerが稼働しているときは基準価額が更新されます。口数・取得金額は手入力です。',
+  manual:'現在この銘柄に対応する公式APIが確認できません。基準価額は「詳細」から手入力してください。',
+  checking:'公式APIに接続して取得可否を確認しています。',
+  unknown:'公式APIの接続確認に失敗しました。時間をおいて再確認するか、基準価額を手入力してください。',
+  invalid:'8文字の銘柄コードを入力すると、公式APIの対応状況を確認します。'
+})[navMode(code)]
+async function checkNavSupport(code,force=false) {
+  const normalized=String(code||'').trim().toUpperCase()
+  if(!/^[A-Z0-9]{8}$/.test(normalized) ||
+     autoNavSupported(normalized) || Object.hasOwn(KNOWN_MANUAL_NAV_FUNDS,normalized))return
+  if(!force && navSupport.value[normalized])return
+  navSupport.value={...navSupport.value,[normalized]:'checking'}
+  try{
+    const result=await props.api('investment-portfolio/nav-eligibility?fundCode='+encodeURIComponent(normalized))
+    const status=['auto','manual'].includes(result?.status)?result.status:'unknown'
+    navSupport.value={...navSupport.value,[normalized]:status}
+  }catch{
+    navSupport.value={...navSupport.value,[normalized]:'unknown'}
+  }
+}
+function toggleHoldingDetail(h) {
+  const key=holdingKey(h)
+  expandedHolding.value=expandedHolding.value===key?'':key
+}
+let checkTimer=null
+watch(() => holding.value.fundCode,code=>{
+  if(checkTimer!==null)clearTimeout(checkTimer)
+  if(editing.value==='holding'&&/^[A-Z0-9]{8}$/.test(String(code||'').trim().toUpperCase()))
+    checkTimer=setTimeout(()=>{void checkNavSupport(code)},450)
+})
+
 const holdingsData = computed(() => data.value?.holdings || [])
+watch(holdingsData,holdings=>{
+  for(const code of new Set(holdings.map(h=>h.fund_code)))
+    void checkNavSupport(code)
+})
+
 const visibleHoldings = computed(() => showAllHoldings.value ? holdingsData.value : holdingsData.value.slice(0,2))
 const totalAcquisition = computed(() => holdingsData.value.reduce((sum,h) => sum + Number(h.acquisition_cost || 0),0))
 const returnRatio = computed(() => data.value?.valuation?.pnl == null || !totalAcquisition.value ? null : data.value.valuation.pnl / totalAcquisition.value * 100)
@@ -147,7 +196,7 @@ async function submitTransfer() {
 // reconciliation cannot be stale if it raced the automatic due-date update.
 watch(() => props.transferLoading, (busy, previous) => { if (previous && !busy) void load() })
 onMounted(() => { window.addEventListener('keydown',onEditorKeydown); void load() })
-onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
+onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.removeEventListener('keydown',onEditorKeydown) })
 </script>
 
 <template>
@@ -187,19 +236,17 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
             </div>
           </div>
           <div class="sbi-holding-footer">
-            <span class="sbi-nav-status" :class="autoNavSupported(h.fund_code) ? 'sbi-nav-auto' : 'sbi-nav-manual'">{{navModeLabel(h.fund_code)}}</span>
+            <span class="sbi-nav-status" :class="'sbi-nav-'+navMode(h.fund_code)">{{navModeLabel(h.fund_code)}}</span>
             <div class="sbi-holding-commands">
-              <button type="button" class="sbi-row-edit" :aria-label="shortFundName(h)+'の保有を編集'" @click="editHolding(h)">編集</button>
-              <details class="sbi-holding-detail">
-                <summary>詳細</summary>
-                <div class="sbi-holding-expanded">
-                  <span>{{Number(h.units).toLocaleString('ja-JP')}}口 · 取得 {{yen(h.acquisition_cost)}}</span>
-                  <span>基準価額 {{h.nav_per_10000 ? yen(h.nav_per_10000) : '未設定'}} · {{sourceLabel(h.source)}}</span>
-                  <span v-if="h.price_date">{{h.source==='sbi_screenshot'?'確認日':'基準日'}} {{h.price_date}}</span>
-                  <button type="button" class="sbi-row-edit" @click="editPrice(h)">基準価額を変更</button>
-                </div>
-              </details>
+              <button type="button" class="sbi-holding-action" :aria-label="shortFundName(h)+'の保有を編集'" @click="editHolding(h)">編集</button>
+              <button type="button" class="sbi-holding-action" :aria-expanded="expandedHolding===holdingKey(h)" :aria-label="shortFundName(h)+'の詳細を表示'" @click="toggleHoldingDetail(h)">詳細 <span class="sbi-detail-chevron" aria-hidden="true">{{expandedHolding===holdingKey(h)?'⌃':'⌄'}}</span></button>
             </div>
+          </div>
+          <div v-if="expandedHolding===holdingKey(h)" class="sbi-holding-expanded">
+            <span>{{Number(h.units).toLocaleString('ja-JP')}}口 · 取得 {{yen(h.acquisition_cost)}}</span>
+            <span>基準価額 {{h.nav_per_10000 ? yen(h.nav_per_10000) : '未設定'}} · {{sourceLabel(h.source)}}</span>
+            <span v-if="h.price_date">{{h.source==='sbi_screenshot'?'確認日':'基準日'}} {{h.price_date}}</span>
+            <button type="button" class="sbi-row-edit" @click="editPrice(h)">基準価額を変更</button>
           </div>
         </article>
         <button v-if="holdingsData.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllHoldings" @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(holdingsData.length-2)+'件を表示'}}</button>
@@ -278,7 +325,11 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
       <form v-else-if="editing==='holding'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="保有情報の編集" @submit.prevent="submit('holding',{...holding,units:Number(holding.units),acquisitionCost:Number(holding.acquisitionCost)},'保有情報を更新しました')">
         <div class="sbi-line-heading"><h3>保有口数・取得金額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
         <label>銘柄コード<input v-model.trim="holding.fundCode" maxlength="8" required :disabled="existingIdentity" @input="holding.fundCode=holding.fundCode.toUpperCase();fillFund(holding)" /></label>
-        <div class="sbi-nav-guidance" role="status"><span class="sbi-nav-status" :class="autoNavSupported(holding.fundCode) ? 'sbi-nav-auto' : 'sbi-nav-manual'">{{navModeLabel(holding.fundCode)}}</span><span>{{navModeHelp(holding.fundCode)}}</span></div>
+        <div class="sbi-nav-guidance" role="status">
+          <span class="sbi-nav-status" :class="'sbi-nav-'+navMode(holding.fundCode)">{{navModeLabel(holding.fundCode)}}</span>
+          <span>{{navModeHelp(holding.fundCode)}}</span>
+          <button v-if="navMode(holding.fundCode)==='unknown'" type="button" class="sbi-nav-retry" @click="checkNavSupport(holding.fundCode,true)">再確認</button>
+        </div>
         <label>銘柄名<input v-model.trim="holding.fundName" maxlength="120" required /></label>
         <label>口座区分<select v-model="holding.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option><option value="combined">NISA（成長＋つみたて 合算）</option></select></label>
         <label>保有口数<input v-model.number="holding.units" type="number" min="0" step="1" required /></label>
@@ -391,34 +442,34 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
 .sbi-disclosure-summary small{font-size:11px;color:var(--muted)}
 .sbi-chevron{font-size:20px;line-height:1;color:var(--muted);transition:transform .18s}
 .sbi-card[open] > .sbi-disclosure-summary .sbi-chevron{transform:rotate(180deg)}
-.sbi-disclosure-summary:focus-visible,.sbi-show-more:focus-visible,.sbi-holding-detail summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.sbi-disclosure-summary:focus-visible,.sbi-show-more:focus-visible,.sbi-holding-action:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .sbi-section-body{padding:0 14px 12px}.sbi-inline-action{display:flex;justify-content:flex-end;padding:0 0 5px}.sbi-inline-action .sbi-text-action{background:var(--paper);min-height:38px;border-radius:10px}
 .sbi-inline-action .sbi-text-action{padding:4px 10px;min-height:44px}
 .sbi-holding-row,.sbi-plan-row,.sbi-transfer-row{padding:9px 0}
 .sbi-holding-top{gap:7px}
 .sbi-holding-value strong{font-size:15px}
-.sbi-holding-row{display:block!important;min-height:0!important;margin:0!important;padding:11px 0!important;border-top:1px solid var(--line)}
-.sbi-holding-top{display:grid!important;grid-template-columns:10px minmax(0,1fr) auto;align-items:start!important;gap:9px;min-height:0}
+/* One stable two-row grid per holding. The expanded details live OUTSIDE
+   the actions container and can never push 編集 / 詳細 out of alignment. */
+.sbi-holding-row{display:grid;gap:5px;min-height:0;margin:0;padding:11px 0 10px;border-top:1px solid var(--line)}
+.sbi-holding-top{display:grid;grid-template-columns:10px minmax(0,1fr) minmax(82px,max-content);align-items:start;gap:9px;min-height:0}
 .sbi-fund-dot{margin-top:5px}
 .sbi-holding-name{min-width:0;gap:3px}
-.sbi-holding-name strong{font-size:13px;line-height:1.4}
-.sbi-holding-name small{font-size:10px;line-height:1.4}
-.sbi-holding-value{min-width:78px;align-items:flex-end;gap:2px}
-.sbi-holding-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:3px 0 0 18px;min-height:38px}
-.sbi-nav-status{display:inline-flex;align-items:center;border-radius:8px;font-size:10px;font-weight:750;padding:4px 7px;line-height:1.4;white-space:nowrap}
+.sbi-holding-name strong{font-size:13px;line-height:1.35}
+.sbi-holding-name small{font-size:10px;line-height:1.35}
+.sbi-holding-value{min-width:82px;align-items:flex-end;gap:2px}
+.sbi-holding-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin:0 0 0 19px;min-height:42px;min-width:0}
+.sbi-nav-status{display:inline-flex;align-items:center;justify-self:start;border-radius:8px;font-size:10px;font-weight:750;padding:5px 7px;line-height:1.3;white-space:nowrap}
 .sbi-nav-auto{color:#16816b;background:color-mix(in srgb,var(--teal) 13%,var(--card))}
 .sbi-nav-manual{color:var(--muted);background:var(--paper)}
-.sbi-holding-commands{display:flex;align-items:center;gap:4px}
-.sbi-holding-commands .sbi-row-edit,.sbi-holding-detail>summary{font-size:12px;min-height:40px;padding:6px 10px;font-weight:750;color:var(--blue-dark);background:transparent;border:0;white-space:nowrap}
-.sbi-holding-detail{position:static}
-.sbi-holding-detail summary{list-style:none;cursor:pointer}
-.sbi-holding-detail summary::-webkit-details-marker{display:none}
-.sbi-holding-detail[open] .sbi-holding-expanded{display:grid}
-.sbi-holding-row:has(.sbi-holding-detail[open]) .sbi-holding-footer{flex-wrap:wrap}
-.sbi-holding-detail[open]{width:100%;flex-basis:100%}
-.sbi-holding-expanded{display:grid;gap:5px;width:100%;min-width:0;margin:0 0 5px;padding:9px;border-radius:10px;background:var(--paper);color:var(--muted);font-size:11px}
+.sbi-nav-checking,.sbi-nav-unknown,.sbi-nav-invalid{color:var(--muted);background:var(--paper)}
+.sbi-holding-commands{display:flex;justify-content:flex-end;align-items:center;gap:6px;min-width:0}
+.sbi-holding-commands .sbi-holding-action{display:inline-flex;justify-content:center;align-items:center;gap:5px;min-height:42px;min-width:54px;padding:7px 9px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--blue-dark);font-size:12px;line-height:1.2;font-weight:750;white-space:nowrap}
+.sbi-detail-chevron{color:var(--muted);font-size:13px;line-height:1}
+.sbi-holding-expanded{display:grid;gap:6px;min-width:0;margin:2px 0 2px 19px;padding:11px;border-radius:11px;background:var(--paper);color:var(--muted);font-size:11px;line-height:1.5}
+.sbi-holding-expanded .sbi-row-edit{justify-self:start;min-height:40px;padding:8px 9px;color:var(--blue-dark)}
 .sbi-nav-guidance{display:flex;align-items:flex-start;gap:9px;padding:10px;background:var(--paper);border-radius:11px;font-size:11px;line-height:1.5;color:var(--muted)}
-.sbi-nav-guidance span:last-child{flex:1;min-width:0}
+.sbi-nav-guidance span:nth-child(2){flex:1;min-width:0}
+.sbi-nav-retry{flex:none;align-self:center;padding:7px 8px;min-height:40px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--blue-dark);font-size:11px;font-weight:750}
 .sbi-show-more{display:block;margin:2px auto 4px;min-height:44px;padding:7px;border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750}
 .sbi-valuation-details,.sbi-footnote{border-top:1px solid var(--line);margin-top:3px}
 .sbi-valuation-details>summary,.sbi-footnote>summary{cursor:pointer;padding:12px 0;min-height:40px;font-size:11px;color:var(--muted);font-weight:750}

@@ -144,3 +144,22 @@ test('probing unsupported or unreachable funds never inserts a fund quote',async
     assert.equal(db.prepare('SELECT COUNT(*) n FROM investment_holdings').get().n,0)
   }finally{fixture.close()}
 })
+
+test('newly held fund without an official quote remains manual and does not invent a price',async()=>{
+  const fixture=dbFixture()
+  try{
+    const {db,d1}=fixture,code='12345678'
+    db.prepare("INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost) VALUES(?,'growth','公式データなし',1500,5000)").run(code)
+    const original=db.prepare('SELECT * FROM investment_holdings').all()
+    const messages=[]
+    const result=await syncFundNav(d1,{
+      now:today,fetcher:async()=>({ok:false,status:404}),
+      logger:{warn(...items){messages.push(items)}}
+    })
+    assert.ok(result.unsupported.includes(code))
+    assert.deepEqual(result.failed,[])
+    assert.equal(messages.length,0)
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM fund_prices').get().n,0)
+    assert.deepEqual(db.prepare('SELECT * FROM investment_holdings').all(),original)
+  }finally{fixture.close()}
+})

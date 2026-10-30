@@ -114,6 +114,6 @@ const monthLabel = computed(() => portfolioSummary.value?.month ? portfolioSumma
 .pending-transfer-list{display:grid;gap:0}.pending-transfer-row{padding:10px 0;border-top:1px solid var(--line)}
 .pending-explanation{border-top:1px solid var(--line)}.pending-explanation summary{padding:12px 0;font-size:11px;color:var(--muted);cursor:pointer}
 .pending-explanation p,.pending-transfer-empty{margin:0 0 8px;color:var(--muted);font-size:11px;line-height:1.5}
-@media(max-width:365px){.asset-stat{min-height:92px;padding:10px}.pending-summary{padding:11px}.pending-numbers{gap:4px}.pending-numbers b{font-size:12px}}
+@media(max-width:365px){.asset-stat{padding:10px}.asset-stat-main{min-height:100px}.asset-stat-compact{min-height:76px}.pending-summary{padding:11px}.pending-numbers{gap:4px}.pending-numbers b{font-size:12px}}
 @media(prefers-reduced-motion:reduce){.pending-chevron{transition:none}}
 </style>

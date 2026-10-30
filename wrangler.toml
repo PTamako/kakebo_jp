@@ -5,7 +5,7 @@ compatibility_date = "2024-09-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "kakeibo"
-database_id = "4d790915-fc06-4073-b660-bbb51dc74463"   # ← 换成你的 D1 ID
+database_id = "4d790915-fc06-4073-b660-bbb51dc74463"   # 既存の本番 D1 ID。運用環境では変更しないでください。
 
 [ai]
 binding = "AI"

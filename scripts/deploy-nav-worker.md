@@ -1,6 +1,6 @@
 # SBI NAV 毎日自動更新（既存 D1 を使用）
 
-既存の D1 `kakeibo` と `fund_prices` を使用します。NAV 同期のために新規テーブルやデータ移行は必要ありません。売買注文、持有口数、取得金額、取引明細は自動変更しません。
+既存の D1 `kakeibo` と `fund_prices` を使用します。NAV 同期のために新規テーブルやデータ移行は必要ありません。売買注文、保有口数、取得金額、取引明細は自動変更しません。
 
 ## 基準価額の提供範囲と検証
 
@@ -39,7 +39,7 @@ npm ci
 npm run deploy:nav
 ```
 
-いずれの方法でも Worker 設定と D1 バインディングを確認してください。Cron は **毎日 20:30 JST（11:30 UTC）**：`30 11 * * *` です。設定は Cloudflare Dashboard → Workers & Pages → `kakeibo-nav-sync` → Triggers で確認できます。
+いずれの方法でも Worker 設定と D1 バインディングを確認してください。Cron は **日本時間20:30（UTC11:30）**、毎日：`30 11 * * *` です。設定は Cloudflare Dashboard → Workers & Pages → `kakeibo-nav-sync` → Triggers で確認できます。
 
 ## 稼働確認と安全上の注意
 

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js'
 import { parseSbiHoldingsText } from './sbi-holdings-import.js'
 import { reconcileSbiScreens } from './sbi-dual-screens.js'
@@ -12,6 +12,17 @@ const props = defineProps({
   activeView: { type: String, default: 'funds', validator: value => ['funds','wallets','plans'].includes(value) }
 })
 const emit = defineEmits(['summary'])
+// The same persisted AI preference and D1-backed daily budget are shared with
+// the receipt/statement OCR on the home screen. Never track a second count.
+const aiContext = inject('kakeibo-page-context', null)
+const useAi = computed(() => aiContext?.aiOcrEnabled?.value === true)
+const quota = computed(() => aiContext?.aiQuota?.value || null)
+const refreshSharedQuota = async () => { if (aiContext?.refreshAiQuota) await aiContext.refreshAiQuota() }
+const changeAiMode = enabled => {
+  if (bulkBusy.value || saving.value) return
+  aiContext?.setAiOcrEnabled?.(enabled)
+}
+const aiExhausted = computed(() => quota.value !== null && quota.value.remaining <= 0)
 const showAllHoldings = ref(false), showAllPlans = ref(false), showAllTransfers = ref(false)
 const expandedHolding = ref('')
 const navSupport = ref({})
@@ -123,7 +134,6 @@ const bulkText = ref('')
 const bulkWarning = ref('')
 const bulkInfo = ref('')
 const bulkBusy = ref(false)
-const bulkAi = ref(false)
 const dualProfit = ref(''), dualPositions = ref('')
 const dualActive = ref(false), dualVerified = ref(false)
 const dualInfo = ref('')
@@ -137,6 +147,7 @@ function openBulk() {
   bulkWarning.value = ''
   bulkInfo.value = ''
   dualProfit.value = ''; dualPositions.value = ''; dualActive.value = false; dualVerified.value = false; dualInfo.value = ''
+  void refreshSharedQuota()
   bulkRows.value = holdingsData.value.map(h => ({
     fundCode:h.fund_code,accountType:h.account_type,fundName:h.fund_name,
     units:Number(h.units),acquisitionCost:Number(h.acquisition_cost),
@@ -173,6 +184,17 @@ async function readSbiScreen(event,kind){
   const file=event.target.files?.[0]
   event.target.value=''
   if(!file||bulkBusy.value||saving.value)return
+  // The dual-SBI layout requires its image-specific AI prompts. Do not
+  // silently use unverified on-device OCR for accounting totals.
+  if(!useAi.value) {
+    bulkWarning.value='2画面の照合はAIで読み取ります。「AI」を選択してください。'
+    return
+  }
+  await refreshSharedQuota()
+  if(aiExhausted.value) {
+    bulkWarning.value='本日の共通AI利用枠がありません。明日、またはテキスト入力をご利用ください。'
+    return
+  }
   bulkBusy.value=true
   dualActive.value=true
   dualVerified.value=false
@@ -213,7 +235,7 @@ async function readSbiScreen(event,kind){
   }catch(e){
     dualInfo.value=''
     bulkWarning.value='画像を読み取れませんでした：'+e.message
-  }finally{bulkBusy.value=false}
+  }finally{await refreshSharedQuota();bulkBusy.value=false}
 }
 async function readBulkImage(event) {
   const file = event.target.files?.[0]
@@ -224,8 +246,10 @@ async function readBulkImage(event) {
   bulkWarning.value = ''
   try {
     let recognized = ''
-    if(bulkAi.value){
+    if(useAi.value){
       try{
+        await refreshSharedQuota()
+        if(aiExhausted.value)throw Error('本日の共通AI利用枠がありません')
         const image = file.size <= 4*1024*1024 && ['image/png','image/jpeg','image/webp'].includes(file.type)
           ? file : await compressReceiptImage(file,1600,1300*1024)
         const data = new FormData()
@@ -234,8 +258,8 @@ async function readBulkImage(event) {
         const response = await props.api('ai-ocr',{method:'POST',body:data})
         recognized = response.text || ''
       }catch(aiError){
-        bulkWarning.value = 'AIを利用できませんでした。端末内OCRに切り替えました。'
-      }
+        bulkWarning.value = 'AIを利用できませんでした。端末内OCRに切り替えました：'+aiError.message
+      }finally{await refreshSharedQuota()}
     }
     if (!recognized.trim()) recognized = await ocrImage(file)
     if (!recognized.trim()) throw Error('画像から文字を読み取れませんでした')
@@ -502,25 +526,33 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
       <form v-else-if="editing==='bulk'" class="sbi-dialog sbi-bulk-dialog" role="dialog" aria-modal="true" aria-label="保有を一括更新" @submit.prevent="saveBulk">
         <div class="sbi-line-heading"><h3>保有を一括更新</h3><button type="button" class="sbi-close" :disabled="saving || bulkBusy" @click="closeEditor">×</button></div>
         <div class="sbi-bulk-reader">
+          <div class="sbi-ai-picker" role="group" aria-label="画像の読み取り方法">
+            <span class="sbi-ai-label">読み取り方法</span>
+            <div class="sbi-ai-choices">
+              <button type="button" :class="{selected:!useAi}" :aria-pressed="!useAi" :disabled="saving || bulkBusy" @click="changeAiMode(false)">端末内</button>
+              <button type="button" :class="{selected:useAi}" :aria-pressed="useAi" :disabled="saving || bulkBusy" @click="changeAiMode(true)">AI</button>
+            </div>
+            <span class="sbi-ai-quota" role="status">{{quota ? '共通残り '+quota.remaining+' / '+quota.limit+'回' : '共通枠を確認中'}}</span>
+          </div>
           <div class="sbi-dual-panel">
             <div class="sbi-bulk-heading"><strong>SBIの2画面から更新</strong><button type="button" class="sbi-dual-reset" :disabled="saving || bulkBusy" @click="clearDual">クリア</button></div>
             <div class="sbi-dual-choices">
-              <label class="sbi-bulk-upload" :aria-disabled="saving || bulkBusy">
+              <label class="sbi-bulk-upload" :aria-disabled="saving || bulkBusy || !useAi || aiExhausted">
                 <span>① 評価損益・取得単価</span>
                 <small>{{dualProfit ? '読み取り済み ✓' : '画像を選択'}}</small>
-                <input type="file" accept="image/*" hidden :disabled="saving || bulkBusy" @change="readSbiScreen($event,'profit')" />
+                <input type="file" accept="image/*" hidden :disabled="saving || bulkBusy || !useAi || aiExhausted" @change="readSbiScreen($event,'profit')" />
               </label>
-              <label class="sbi-bulk-upload" :aria-disabled="saving || bulkBusy">
+              <label class="sbi-bulk-upload" :aria-disabled="saving || bulkBusy || !useAi || aiExhausted">
                 <span>② 保有数量・評価額</span>
                 <small>{{dualPositions ? '読み取り済み ✓' : '画像を選択'}}</small>
-                <input type="file" accept="image/*" hidden :disabled="saving || bulkBusy" @change="readSbiScreen($event,'positions')" />
+                <input type="file" accept="image/*" hidden :disabled="saving || bulkBusy || !useAi || aiExhausted" @change="readSbiScreen($event,'positions')" />
               </label>
             </div>
-            <small class="sbi-dual-help">同じ更新日時の2画面を選択。AI画像認識を各1回使用します。</small>
+            <small class="sbi-dual-help">{{!useAi ? '2画面の照合にはAIを選択してください。' : aiExhausted ? '本日の共通AI利用枠を使い切りました。' : '同じ更新日時の2画面を選択（各1回）。'}} </small>
             <p v-if="dualInfo" role="status" class="sbi-bulk-notice">{{dualInfo}}</p>
           </div>
           <details class="sbi-single-import">
-            <summary>その他の取り込み方法</summary>
+            <summary>1枚の画像・テキストから更新</summary>
           <label>保有画面のテキストを貼り付け
             <textarea v-model="bulkText" rows="3" :disabled="saving || bulkBusy" placeholder="銘柄名 / 保有口数 / 取得金額"></textarea>
           </label>
@@ -531,7 +563,6 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
               <input type="file" accept="image/*" hidden :disabled="saving || bulkBusy" @change="readBulkImage" />
             </label>
           </div>
-          <label class="sbi-bulk-ai"><input v-model="bulkAi" type="checkbox" :disabled="saving || bulkBusy" /><span>画像はAIで読み取る（オフなら端末内OCR）</span></label>
           </details>
           <p v-if="bulkInfo" class="sbi-bulk-notice" role="status">{{bulkInfo}}</p>
           <p v-if="bulkWarning" class="sbi-bulk-warning" role="alert">{{bulkWarning}}</p>
@@ -710,6 +741,14 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 
 .sbi-holding-toolbar{gap:7px;flex-wrap:wrap}
 .sbi-bulk-dialog{gap:13px}
+.sbi-ai-picker{display:flex;align-items:center;flex-wrap:wrap;gap:7px;padding:7px 0;min-width:0}
+.sbi-ai-label{font-size:11px;font-weight:750;color:var(--muted)}
+.sbi-ai-choices{display:flex;align-items:center;gap:3px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.sbi-ai-choices button{min-height:36px;min-width:52px;padding:6px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--muted);font-size:11px;font-weight:750;cursor:pointer}
+.sbi-ai-choices button.selected{background:var(--card);border-color:color-mix(in srgb,var(--blue) 22%,var(--line));color:var(--blue-dark)}
+.sbi-ai-choices button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.sbi-ai-quota{margin-left:auto;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+
 .sbi-bulk-reader{display:grid;gap:8px}
 .sbi-bulk-reader textarea{box-sizing:border-box;width:100%;min-height:74px;resize:vertical;padding:10px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink);font-size:13px}
 .sbi-bulk-tools{display:grid;grid-template-columns:1fr 1fr;gap:8px}

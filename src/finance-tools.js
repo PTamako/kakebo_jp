@@ -43,7 +43,7 @@ export function validateBackup(value) {
       throw Error('取引データに不正な値があります')
     }
   }
-  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks']
+  const arrayNames = ['plans', 'bills', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks']
   for (const name of arrayNames) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
@@ -64,6 +64,10 @@ export function validateBackup(value) {
     validDate(x.start) && validDate(x.end) && x.start <= x.end &&
     safeAmount(x.total) && safeAmount(x.count)
   const validSource = x => x && isText(x.name,80) &&
+    (x.source_type == null || ['standard','prepaid'].includes(x.source_type)) &&
+    (x.opening_balance == null || (safeAmount(x.opening_balance) && x.opening_balance<=100000000)) &&
+    (x.opening_entry_id == null || safeAmount(x.opening_entry_id)) &&
+    (x.opening_date == null || x.opening_date==='' || validDate(x.opening_date)) &&
     (x.closing_day == null || (Number.isInteger(x.closing_day) && x.closing_day >= 0 && x.closing_day <= 31)) &&
     (x.is_default == null || x.is_default === 0 || x.is_default === 1 || typeof x.is_default === 'boolean')
   const validCustom = x => x && isText(x.keyword,120) && isText(x.category,120)

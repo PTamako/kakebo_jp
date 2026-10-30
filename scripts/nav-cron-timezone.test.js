@@ -5,17 +5,14 @@ import navWorker from '../workers/fund-nav-cron.js'
 
 const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
 
-test('NAV Cron is exactly 21:00 JST (12:00 UTC) every day', () => {
-  const config = read('wrangler.nav.toml')
-  const docs = read('scripts/deploy-nav-worker.md')
-  const match = config.match(/^crons\s*=\s*\["(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*"\]/m)
-  assert.ok(match, 'expected one daily cron at UTC time')
-  const [, minutes, utcHour] = match
-  assert.equal(Number(minutes), 0)
-  assert.equal(Number(utcHour), 12)
-  assert.equal((Number(utcHour) + 9) % 24, 21)
-  assert.match(docs, /日本時間21:00（UTC12:00）/)
-  assert.doesNotMatch(config, /30 11 \* \* \*/)
+test('NAV Cron runs at 21:00 JST and retries Daiwa at 23:15 JST', () => {
+  const config=read('wrangler.nav.toml')
+  const docs=read('scripts/deploy-nav-worker.md')
+  assert.match(config,/crons = \["0 12 \* \* \*", "15 14 \* \* \*"\]/)
+  assert.match(config,/DAIWA_CSV_EXPERIMENT = "true"/)
+  assert.match(docs,/日本時間21:00（UTC12:00）/)
+  assert.match(docs,/23:15（UTC14:15）/)
+  assert.doesNotMatch(config,/30 11 \* \* \*/)
 })
 
 test('NAV job reuses D1 prices and never creates a fresh database or changes transactions', () => {
@@ -23,7 +20,7 @@ test('NAV job reuses D1 prices and never creates a fresh database or changes tra
   const worker = read('workers/fund-nav-cron.js')
   assert.match(config, /name = "kakeibo-nav-sync"/)
   assert.match(config, /database_name = "kakeibo"/)
-  assert.match(worker, /syncFundNav\(env\.DB\)/)
+  assert.match(worker, /syncFundNav\(env\.DB,/)
   assert.doesNotMatch(worker, /DELETE\s+FROM|DROP\s+TABLE|investment_holdings\s+SET/i)
 })
 

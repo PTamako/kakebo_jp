@@ -12,7 +12,10 @@ export default {
     }))
     ctx.waitUntil((async()=>{
       try{
-        const result=await syncFundNav(env.DB)
+        const result=await syncFundNav(env.DB,{
+          enableDaiwaCsv:env?.DAIWA_CSV_EXPERIMENT==='true',
+          retryOnlyDaiwa:event?.cron==='15 14 * * *'
+        })
         console.log('NAV sync',JSON.stringify(result))
         if(result.failed.length)throw Error('some fund quotes could not be refreshed')
       }catch(error){

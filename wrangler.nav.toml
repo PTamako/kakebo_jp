@@ -7,7 +7,12 @@ main = "workers/fund-nav-cron.js"
 compatibility_date = "2026-10-01"
 
 [triggers]
-crons = ["0 12 * * *"]
+crons = ["0 12 * * *", "15 14 * * *"]
+
+# Experimental official Daiwa CSV discovery: errors do not block MUFG.
+# Switch off if the official page does not expose a usable public CSV link.
+[vars]
+DAIWA_CSV_EXPERIMENT = "true"
 
 # Preserve every once-daily scheduled invocation and its console messages.
 # Workers Logs are separate from Workers Builds deployment logs.

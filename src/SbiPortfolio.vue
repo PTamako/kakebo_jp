@@ -395,7 +395,7 @@ onUnmounted(() => window.removeEventListener('keydown',onEditorKeydown))
 .sbi-holding-value strong{font-size:15px}
 .sbi-compact-actions{display:flex;justify-content:flex-end;align-items:center;gap:9px;padding:0 0 0 17px}
 .sbi-compact-actions .sbi-row-edit,.sbi-holding-detail summary{min-height:36px;padding:5px 8px;color:var(--blue-dark);font-size:11px;font-weight:750}
-.sbi-holding-detail{position:relative}.sbi-holding-detail summary{cursor:pointer;list-style:none}.sbi-holding-detail summary::-webkit-details-marker{display:none}
+.sbi-compact-actions:has(.sbi-holding-detail[open]){flex-wrap:wrap}\n.sbi-holding-detail[open]{width:100%}.sbi-holding-detail[open] summary{text-align:right}\n.sbi-holding-detail{position:relative}.sbi-holding-detail summary{cursor:pointer;list-style:none}.sbi-holding-detail summary::-webkit-details-marker{display:none}
 .sbi-holding-expanded{display:grid;gap:5px;margin:0 0 6px;padding:9px;border-radius:10px;background:var(--paper);color:var(--muted);font-size:11px}
 .sbi-holding-expanded button{justify-self:end}
 .sbi-show-more{display:block;margin:2px auto 4px;min-height:40px;padding:7px;border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750}

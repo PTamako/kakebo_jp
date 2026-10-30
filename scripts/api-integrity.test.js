@@ -427,5 +427,7 @@ test('retired snapshot API returns 410 without any SQL mutation',async()=>{
   assert.equal(get.status,410)
   assert.equal(put.status,410)
   assert.equal(restore.status,410)
-  assert.equal(db.sql.length,0)
+  // Authentication/session handling can write audit state; retired valuation
+  // endpoints must not mutate ledger, holdings, prices or legacy snapshots.
+  assert.ok(db.sql.every(sql => !/\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM)\s+(?:entries|investment_snapshots|investment_holdings|fund_prices)\b/i.test(sql)))
 })

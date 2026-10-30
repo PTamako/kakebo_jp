@@ -82,7 +82,8 @@ test('wallet charge history agrees with balance date, transfer date, and opening
  assert.equal(matchesPrepaidHistoryEntry({...charge,transfer_date:'2026-11-10'},card,today),false,'unapplied future transfer is not in current balance/history')
  assert.equal(matchesPrepaidHistoryEntry({...charge,date:'2026-10-31'},card,today),false,'future ledger entry must not appear')
  assert.equal(matchesPrepaidHistoryEntry({...charge,id:10},card,today),false,'old entry already covered by opening balance')
- assert.equal(matchesPrepaidHistoryEntry({...charge,date:'2026-09-30'},card,today),false,'old date before card baseline')
+ assert.equal(matchesPrepaidHistoryEntry({...charge,date:'2026-09-30'},card,today),true,'a transfer booked earlier but effective after the baseline counts')
+ assert.equal(matchesPrepaidHistoryEntry({...charge,date:'2026-09-30',transfer_date:'2026-09-30'},card,today),false,'an already-effective old transfer remains in the baseline')
  assert.equal(matchesPrepaidHistoryEntry({...charge,transfer_target:'prepaid:違うカード'},card,today),false)
  const usage={id:12,date:'2026-10-28',type:'expense',payment_source:'任意の新規カード',amount:270}
  assert.equal(matchesPrepaidHistoryEntry(usage,{...card,kind:'usage'},today),true)

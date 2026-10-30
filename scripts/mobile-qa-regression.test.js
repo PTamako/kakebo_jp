@@ -62,8 +62,11 @@ test('mobile navigation, keyboard and charts retain touch-safe affordances', () 
   assert.match(mobile, /main:has\(input:is\([^\n]+\):focus, textarea:focus\) \.batch-actions/)
   assert.match(mobile, /main \.trend-month-labels button \{ min-height: 44px; \}/)
   assert.equal((app.match(/r="14" class="chart-point-hit"/g) || []).length, 3)
-  assert.match(html, /width=device-width, initial-scale=1, viewport-fit=cover/)
-  assert.doesNotMatch(html, /user-scalable=no|maximum-scale=1/)
+  // The balance app deliberately prevents visual page zoom at the user's request.
+  // Keep the normal viewport width and iPhone form input font sizes so controls stay usable.
+  assert.match(html, /width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover/)
+  assert.match(mobile, /html \{ -webkit-text-size-adjust: 100%; touch-action: pan-x pan-y; \}/)
+  assert.match(mobile, /main input:not\(\[type=checkbox\]\):not\(\[type=radio\]\),[\s\S]*?main select, main textarea \{[\s\S]*?font-size: 16px;/)
 })
 
 test('native select, calendar and time pickers never hide the bottom tab bar on focus', () => {

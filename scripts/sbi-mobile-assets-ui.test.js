@@ -7,7 +7,7 @@ const page = read('src/pages/AssetsPage.vue')
 const portfolio = read('src/SbiPortfolio.vue')
 const api = read('functions/api/investment-portfolio.js')
 
-test('mobile assets start with four summaries, scheduled transfers and then compact wallet/holdings', () => {
+test('mobile balance page starts with four focused summaries, scheduled transfers and compact wallet/holdings', () => {
   const pageMarkers = ['class="asset-overview"', 'class="panel pending-transfer-panel"', '<SbiPortfolio', '<PrepaidAssets']
   const pageIndices = pageMarkers.map(marker => page.indexOf(marker))
   assert.ok(pageIndices.every(index => index >= 0))
@@ -16,11 +16,15 @@ test('mobile assets start with four summaries, scheduled transfers and then comp
   const indices = portfolioMarkers.map(marker => portfolio.indexOf(marker))
   assert.ok(indices.every(index => index >= 0))
   assert.deepEqual([...indices].sort((a,b)=>a-b),indices)
-  assert.match(page,/資産合計/)
-  assert.match(page,/プリペイド残高/)
+  assert.match(page,/<h1>残高<\/h1>/)
+  assert.match(page,/aria-label="残高の概要"/)
+  assert.doesNotMatch(page,/資産合計|assetsTotal/)
+  assert.match(page,/電子マネー残高/)
   assert.match(page,/投資信託評価額/)
-  assert.match(page,/振替状況/)
-  assert.match(page,/現金残高・未登録の資産は含みません/)
+  assert.match(page,/評価損益/)
+  assert.match(page,/振替/)
+  assert.match(page,/pnl = computed/)
+  assert.match(portfolio,/pnl:response\.valuation\.pnl/)
   assert.match(portfolio,/class="sbi-hero-value"/)
   assert.match(portfolio,/data\.valuation\.value === null \? '—'/)
   assert.match(portfolio,/returnRatio !== null/)
@@ -56,7 +60,7 @@ test('mobile controls keep edit functions, transfer month and keyboard accessibl
   for (const name of ['editPlan','editHolding','editPrice','submitTransfer','closeEditor','onEditorKeydown']) {
     assert.match(portfolio,new RegExp('function '+name+'\\('))
   }
-  assert.match(portfolio,/aria-label="資産情報を更新"/)
+  assert.match(portfolio,/aria-label="残高・積立を更新"/)
   assert.doesNotMatch(portfolio,/investment-portfolio\/initialize|async function initialize\(/)
   assert.match(portfolio,/class="sbi-holding-footer"/)
   assert.match(portfolio,/class="sbi-holding-commands"/)

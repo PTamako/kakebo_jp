@@ -4,15 +4,18 @@ import { readFileSync } from 'node:fs'
 
 const read = file => readFileSync(new URL('../src/' + file, import.meta.url), 'utf8')
 
-test('assets overview keeps four real-data summaries and a condensed scheduled transfer', () => {
+test('balance page summarizes wallets, holdings, fund profit/loss and scheduled transfers without a misleading wealth total', () => {
   const source = read('pages/AssetsPage.vue')
-  for (const label of ['資産合計', 'プリペイド残高', '投資信託評価額', '振替状況']) {
+  for (const label of ['残高</h1>', '電子マネー残高', '投資信託評価額', '評価損益', '振替']) {
     assert.ok(source.includes(label), label)
   }
   assert.match(source, /<details class="panel pending-transfer-panel">/)
   assert.match(source, /@summary="onPortfolioSummary"/)
   assert.match(source, /@summary="onPrepaidSummary"/)
-  assert.match(source, /現金残高・未登録の資産は含みません/)
+  assert.match(source, /aria-label="残高の概要"/)
+  assert.match(source, /gainYen\(pnl\)/)
+  assert.doesNotMatch(source, /資産合計|assetsTotal/)
+  assert.match(source, /class="asset-stat asset-stat-compact"/)
   assert.match(source, /Math\.min\(100,100\*posted\.value\/plan\.value\)/)
 })
 

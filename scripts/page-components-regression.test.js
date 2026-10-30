@@ -35,7 +35,7 @@ test('extracted pages share exactly the parent navigation refs and do not create
   const match=app.match(/provide\('kakeibo-page-context',\s*\{([^}]+)\}\)/)
   assert.ok(match,'App injects a single shared ref registry')
   const names=new Set(match[1].split(',').map(s=>s.trim()))
-  for (const [name,source] of [['明細',ledger],['統計',stats],['資産',assets]]) {
+  for (const [name,source] of [['明細',ledger],['統計',stats],['残高',assets]]) {
     const injection=source.match(/const \{([^}]+)\} = inject\('kakeibo-page-context'\)/)
     assert.ok(injection, name+' has parent state')
     for (const symbol of injection[1].split(',').map(x=>x.trim()))

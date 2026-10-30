@@ -59,13 +59,9 @@ export async function restoreAtomic(db, archive) {
     if(!/^[a-z][a-z-]{1,40}$/.test(icon))throw Error('atomic_restore_invalid_icon')
     add('INSERT INTO category_source(category,icon) VALUES(?1,?2) ON CONFLICT(category) DO UPDATE SET icon=excluded.icon WHERE category_source.icon IS NULL',category,icon)
   }
-  for(const rule of archive.customRules||[]) {
-    // Restore saved rule priorities only on an explicit, reviewed restore.
-    // Existing live category mappings always win over an older backup.
+  // Backup user rules go into merchant_rules only. Never seed the defaults.
+  for(const rule of archive.customRules||[])
     add('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)',rule.keyword,rule.category)
-    if(rule.is_custom===true)
-      add("INSERT INTO merchant_rules(keyword,category) SELECT '__user_priority__:'||?1,'__priority__' WHERE EXISTS(SELECT 1 FROM merchant_rules WHERE keyword=?1 AND category=?2) ON CONFLICT(keyword) DO NOTHING",rule.keyword,rule.category)
-  }
   for(const rule of archive.merchantPaymentRules||[]) {
     // Missing cards are not imported as dangling rules.
     add('INSERT INTO merchant_rules(keyword,payment_source) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM payment_sources WHERE name=?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=COALESCE(merchant_rules.payment_source,excluded.payment_source)',rule.keyword,rule.payment_source)

@@ -7,6 +7,7 @@ const portfolioSummary = ref(null)
 const prepaidSummary = ref(null)
 const onPortfolioSummary = value => { portfolioSummary.value = value }
 const onPrepaidSummary = value => { prepaidSummary.value = value }
+const openCardSettings = () => { tab.value = 'finance' }
 const yen = value => value === null || !Number.isFinite(Number(value)) ? '—' : '¥'+Number(value).toLocaleString('ja-JP')
 const investment = computed(() => portfolioSummary.value?.valuation ?? null)
 const prepaid = computed(() => prepaidSummary.value?.balance ?? null)
@@ -80,7 +81,7 @@ const monthLabel = computed(() => portfolioSummary.value?.month ? portfolioSumma
 
     <SbiPortfolio :api="api" :transfer-loading="transferLoading" @summary="onPortfolioSummary">
       <template #before-holdings>
-        <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" @summary="onPrepaidSummary" @open-card-settings="tab = 'finance'" />
+        <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" @summary="onPrepaidSummary" @open-card-settings="openCardSettings" />
       </template>
     </SbiPortfolio>
   </section>

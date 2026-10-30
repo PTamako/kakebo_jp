@@ -7,8 +7,8 @@ const page = read('src/pages/AssetsPage.vue')
 const portfolio = read('src/SbiPortfolio.vue')
 const api = read('functions/api/investment-portfolio.js')
 
-test('mobile balance page prioritizes fund valuation, compact wallets, actionable transfer alerts and portfolio', () => {
-  const pageMarkers = ['class="asset-overview"', 'class="panel pending-transfer-panel"', '<SbiPortfolio', '<PrepaidAssets']
+test('mobile balance page only exposes funds and wallet sections; management moves to 管理', () => {
+  const pageMarkers = ['class="asset-overview"', 'class="balance-view-switch"', '<SbiPortfolio', '<PrepaidAssets']
   const pageIndices = pageMarkers.map(marker => page.indexOf(marker))
   assert.ok(pageIndices.every(index => index >= 0))
   assert.deepEqual([...pageIndices].sort((a,b)=>a-b),pageIndices)
@@ -22,9 +22,13 @@ test('mobile balance page prioritizes fund valuation, compact wallets, actionabl
   assert.match(page,/電子マネー残高/)
   assert.match(page,/投資信託評価額/)
   assert.match(page,/評価損益/)
-  assert.match(page,/振替/)
+  assert.doesNotMatch(page,/積立管理|振替予定|pending-transfer-panel/)
+  assert.match(page,/@click="selectView\('funds'\)"/)
+  assert.match(page,/@click="selectView\('wallets'\)"/)
   assert.match(page,/pnl = computed/)
-  assert.match(page,/v-if="pendingTransfers.length"/)
+  assert.match(portfolio,/v-show="activeView==='funds'"/)
+  assert.match(portfolio,/v-show="activeView==='wallets'"/)
+  assert.match(portfolio,/v-show="activeView==='plans'"/)
   assert.match(page,/class="asset-investment"/)
   assert.match(page,/class="asset-wallet"/)
   assert.doesNotMatch(page,/class="asset-stat asset-stat-compact"/)

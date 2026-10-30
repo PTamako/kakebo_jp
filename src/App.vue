@@ -820,7 +820,11 @@ async function openPrepaidHistoryDetails(cardName,kind) {
   visibleEntryCount.value = 20
   calendarExpanded.value = false
   preserveOperatedDay.value = ''
-  prepaidHistoryFilter.value = { card:cardName, kind }
+  const source=paymentSourceMeta.value[cardName]
+  prepaidHistoryFilter.value = {
+    card:cardName, kind, openingDate:source?.opening_date||'',
+    openingEntryId:Number(source?.opening_entry_id||0)
+  }
   entryTypeFilter.value = kind === 'charge' ? 'transfer' : 'expense'
   const targetMonth = currentMonth()
   const changedMonth = month.value !== targetMonth

@@ -204,9 +204,13 @@ export function parseReceipt(raw, rules = []) {
     || lines.find(line => /令和\s*(?:元|\d{1,2})\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?/.test(line)) || ''
   const labeledTime = lines.find(line => /^時刻\s*[:：]/.test(line))
   const era = dateLine.match(/令和\s*(元|\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})/)
+  // findDate() normally falls back to today's date. That fallback is
+  // unsafe for an unreadable Gemma purchase date: a coupon may carry a
+  // completely unrelated date. Require an actually printed date instead.
+  const printedDate = /(?:20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}|(?<!\d)\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?!\d)|令和\s*(?:元|\d{1,2})\s*年\s*\d{1,2}\s*月\s*\d{1,2}|\d{1,2}\s*月\s*\d{1,2}\s*日?|(?<!\d)\d{1,2}\/\d{1,2}(?!\d))/.test(dateLine)
   let receiptDate = era
     ? `${2018+(era[1]==='元'?1:Number(era[1]))}-${pad(era[2])}-${pad(era[3])}`
-    : dateLine ? findDate(dateLine) : ''
+    : dateLine && printedDate ? findDate(dateLine) : ''
   let dateCorrected = false
   // OCR can read 2026 as 2006. Correct only with two independent clues:
   // the receipt month/day is today and another line contains the current year.

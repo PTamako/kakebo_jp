@@ -99,7 +99,7 @@ async function loadPaymentSettings() {
   return paymentSettingsLoading
 }
 const suggestedPayment = (merchant, source = '', type = 'expense', imported = '') => paymentForDraft({
-  merchant, recognized: source, importSource: imported, rules: merchantPaymentRules.value, defaultSource: defaultPaymentSource.value, type
+  merchant, recognized: source, importSource: imported, rules: merchantPaymentRules.value, registeredSources: paymentSources.value, defaultSource: defaultPaymentSource.value, type
 })
 function applyMerchantPayment(form) {
   if (form.type !== 'expense' || form.paymentManuallySelected || form.importPaymentLocked) return

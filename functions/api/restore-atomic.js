@@ -47,11 +47,6 @@ export async function restoreAtomic(db, archive) {
   }
   const preferred=(archive.paymentSources||[]).find(s=>s.is_default)
   if(preferred)add('UPDATE payment_sources SET is_default=1 WHERE name=?1 AND NOT EXISTS(SELECT 1 FROM payment_sources WHERE is_default=1)',preferred.name)
-  for(const category of archive.categories||[]) {
-    // Never rewrite historical category assignments; these rows only register
-    // a user-added category in the category dropdown.
-    add("INSERT INTO category_source(category,sort_order) VALUES(?1,CASE WHEN ?1 IN ('其他','其他收入') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999) END) ON CONFLICT(category) DO NOTHING",category)
-  }
   for (const row of archive.categoryMetadata||[]) {
     add(`INSERT INTO category_source(category,sort_order,icon,display_name) VALUES(?1,?2,?3,?4)
       ON CONFLICT(category) DO UPDATE SET
@@ -59,6 +54,11 @@ export async function restoreAtomic(db, archive) {
         icon=COALESCE(category_source.icon,excluded.icon),
         display_name=COALESCE(category_source.display_name,excluded.display_name)`,
       row.category,row.sort_order??null,row.icon??null,row.display_name??null)
+  }
+  for(const category of archive.categories||[]) {
+    // Never rewrite historical category assignments; these rows only register
+    // a user-added category in the category dropdown.
+    add("INSERT INTO category_source(category,sort_order) VALUES(?1,CASE WHEN ?1 IN ('其他','其他收入') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999) END) ON CONFLICT(category) DO NOTHING",category)
   }
   for(const [category,icon] of Object.entries(archive.categoryIcons||{})) {
     if(!/^[a-z][a-z-]{1,40}$/.test(icon))throw Error('atomic_restore_invalid_icon')

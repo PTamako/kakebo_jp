@@ -25,7 +25,7 @@ test('category reads and rule listing preserve current D1 data without automatic
  assert.doesNotMatch(get,/INSERT|UPDATE|DELETE|ALTER TABLE|CREATE TABLE/)
  const r=api.indexOf("if (a === 'rules')")
  const ruleGet=api.slice(r,api.indexOf("if (m === 'POST')",r))
- assert.match(ruleGet,/FROM merchant_rules r WHERE r.category IS NOT NULL/)
+ assert.match(ruleGet,/SELECT keyword,category FROM rules ORDER BY keyword/)\n assert.match(ruleGet,/SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword/)\n assert.match(ruleGet,/is_custom:false/)\n assert.match(ruleGet,/is_custom:true/)
  assert.doesNotMatch(ruleGet,/INSERT|UPDATE|DELETE|ALTER TABLE|CREATE TABLE/)
 })
 
@@ -54,7 +54,7 @@ test('completed card and SBI migrations can never be replayed by stale clients',
  assert.doesNotMatch(migration,/INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+(?:investment_plans|investment_plan_history|investment_holdings|fund_prices)\b/i)
 })
 
-test('migrated D1 is the single source for merchant rules; production code has no built-in fallback',()=>{
+test('default rules and user merchant_rules are only read, never seeded or copied',()=>{
  const api=read('functions/api/[[path]].js')
  const schema=read('schema.sql')
  assert.doesNotMatch(api,/DEFAULT_RULES|DEFAULT_RULE_ROWS|PARSER_DEFAULT_RULE_ROWS|LEGACY_DEFAULT_RULE_ROWS/)

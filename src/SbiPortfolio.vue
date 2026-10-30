@@ -92,12 +92,13 @@ watch(() => holding.value.fundCode,code=>{
   if(editing.value==='holding'&&/^[A-Z0-9]{8}$/.test(String(code||'').trim().toUpperCase()))
     checkTimer=setTimeout(()=>{void checkNavSupport(code)},450)
 })
+
+const holdingsData = computed(() => data.value?.holdings || [])
 watch(holdingsData,holdings=>{
   for(const code of new Set(holdings.map(h=>h.fund_code)))
     void checkNavSupport(code)
 })
 
-const holdingsData = computed(() => data.value?.holdings || [])
 const visibleHoldings = computed(() => showAllHoldings.value ? holdingsData.value : holdingsData.value.slice(0,2))
 const totalAcquisition = computed(() => holdingsData.value.reduce((sum,h) => sum + Number(h.acquisition_cost || 0),0))
 const returnRatio = computed(() => data.value?.valuation?.pnl == null || !totalAcquisition.value ? null : data.value.valuation.pnl / totalAcquisition.value * 100)

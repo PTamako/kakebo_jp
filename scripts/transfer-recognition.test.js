@@ -12,6 +12,7 @@ test('Japanese statement: securities mutual fund savings and SBI funding are ass
     '証券投信積立サービス',
     '投信積立サービス',
     '投資信託積立',
+    'SBI証券',
     'SBI証券 買付',
     'SBI証券への入金',
     'SBI証券　投資信託購入'

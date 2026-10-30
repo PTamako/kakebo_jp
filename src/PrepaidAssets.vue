@@ -77,6 +77,7 @@ onMounted(()=>{if(props.active)void refresh()})
                 <span>利用累計</span><strong>−{{money(card.spent)}}</strong>
               </div>
             </div>
+            <p v-if="card.transferred_out > 0" class="wallet-outgoing">振替出金 <strong>−{{money(card.transferred_out)}}</strong></p>
             <div class="wallet-row-actions">
               <nav class="wallet-history-links" :aria-label="card.name+'の履歴'">
                 <button type="button" :aria-label="card.name+'の利用履歴'" @click="emit('open-history',card.name,'usage')">利用履歴</button>
@@ -147,4 +148,9 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-editor-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.wallet-editor-actions button{min-height:46px;border-radius:11px;border:1px solid var(--line);background:var(--card);font-size:12px;font-weight:750;color:var(--ink)}.wallet-editor-actions button[type=submit]{color:#fff;background:var(--blue);border-color:var(--blue)}
 @media(min-width:720px){.wallet-overlay{align-items:center;padding:16px}.wallet-opening-editor{border-radius:20px;padding:22px}}
 @media(prefers-reduced-motion:reduce){.wallet-chevron{transition:none}}
+</style>
+
+<style scoped>
+.wallet-outgoing{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 0;padding:7px 2px;font-size:12px;color:var(--muted)}
+.wallet-outgoing strong{font-variant-numeric:tabular-nums;color:var(--ink)}
 </style>

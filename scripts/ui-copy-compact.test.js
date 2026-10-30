@@ -34,9 +34,9 @@ test('remove redundant visual helper paragraphs without changing chart labels or
   assert.match(app,/\{\{navModeLabel\(holding\.fundCode\)\}\}/)
   assert.match(app, /class="sbi-footnote"/)
 })
-test('input and OCR keep short actionable explanations and AI image disclosure', () => {
-  assert.match(app, /Cloudflare AIに画像を送信/)
-  assert.match(app, /回数上限≠料金上限/)
+test('input and OCR use the single short remaining-count label without pricing warnings', () => {
+  assert.match(app, /本日のAI残り回数/)
+  assert.doesNotMatch(app, /Cloudflare AIに画像を送信|回数上限≠料金上限|本日の共通AI残り|共通残り/)
   assert.match(app, /画像は端末内に30日保存/)
   assert.match(form, /<span>反映日<\/span>/)
   assert.match(form, /選択済み/)

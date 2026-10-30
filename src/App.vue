@@ -951,6 +951,7 @@ async function refreshDetailSource() {
   } catch (e) { flash('明細の再読み込みに失敗しました：' + e.message) }
 }
 function clearDetailFilter() {
+  if (prepaidHistoryFilter.value) entryTypeFilter.value = 'all'
   prepaidHistoryFilter.value = ''
   detailRequestId++
   detailLoading.value = false

@@ -12,7 +12,7 @@ test('each prepaid card exposes its own charge and usage links',()=>{
  assert.match(wallet,/@click="emit\('open-history',card\.name,'charge'\)"/)
  assert.match(wallet,/@click="emit\('open-history',card\.name,'usage'\)"/)
  assert.match(wallet,/card\.name\+'のチャージ履歴'/)
- assert.match(wallet,/card\.name\+'の利用履歴'/)
+ assert.match(wallet,/card\.name\+'の利用・振替履歴'/)
  assert.doesNotMatch(wallet,/wallet-recharge|data\.recharges|最近のチャージ/)
  assert.match(assets,/@open-history="openPrepaidHistoryDetails"/)
 })

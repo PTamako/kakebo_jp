@@ -38,3 +38,18 @@ test('explicit user adds and backup restore continue to write intended new data'
  assert.match(restore,/INSERT INTO category_source/)
  assert.doesNotMatch(restore,/FROM custom_rules|FROM merchant_payment_rules|FROM category_sort_order|FROM category_icons/)
 })
+
+test('completed card and SBI migrations can never be replayed by stale clients',()=>{
+ const app=read('src/App.vue')
+ const api=read('functions/api/[[path]].js')
+ const portfolio=read('functions/api/investment-portfolio.js')
+ const ui=read('src/SbiPortfolio.vue')
+ const migration=read('migrations/0006_sbi_portfolio_linkage.sql')
+ assert.doesNotMatch(app,/readLegacyPaymentSources|payment-sources\\/initialize/)
+ assert.doesNotMatch(ui,/investment-portfolio\\/initialize|async function initialize\\(/)
+ assert.match(api,/if \\(a === 'payment-sources' && b === 'initialize'\\)/)
+ assert.match(api,/旧カード設定の自動移行は終了しました/)
+ assert.match(portfolio,/if\\(sub==='initialize'\\)return respond\\(\\{error:'旧SBI初期データの登録は終了しました'\\},410\\)/)
+ assert.doesNotMatch(portfolio,/sbiInitialHoldings|const initialPlans|INSERT OR IGNORE INTO investment_plans/)
+ assert.doesNotMatch(migration,/INSERT\\s+(?:OR\\s+IGNORE\\s+)?INTO\\s+(?:investment_plans|investment_plan_history|investment_holdings|fund_prices)\\b/i)
+})

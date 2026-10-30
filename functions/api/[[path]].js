@@ -449,16 +449,10 @@ export async function onRequest({ request, env, params }) {
       if (!result.meta?.changes) return json({error:'カードが見つかりません'},404)
       return json({ok:true})
     }
-    if (a === 'payment-sources' && b === 'initialize' && m === 'POST') {
-      const body = await request.json()
-      const names = Array.isArray(body?.names) ? [...new Set(body.names.filter(x => typeof x === 'string').map(x => x.trim()))] : []
-      if (names.length > 100 || names.some(x => !x || x.length > 80)) return json({ error: 'カード名を確認してください' }, 400)
-      const existing = await db.prepare('SELECT COUNT(*) AS n FROM payment_sources').first()
-      if (!existing?.n) {
-        const items = ['現金', ...names.filter(x => x !== '現金')]
-        for (let i = 0; i < items.length; i++) await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE ?2 END)").bind(items[i],i).run()
-      }
-      return json({ ok: true })
+    // Historic browser-card bootstrap is retired after completed D1 migration.
+    // Reject even stale clients; an empty payment_sources table must remain empty.
+    if (a === 'payment-sources' && b === 'initialize') {
+      return json({error:'旧カード設定の自動移行は終了しました'},410)
     }
     if (a === 'payment-sources' && !b && m === 'POST') {
       const body = await request.json()

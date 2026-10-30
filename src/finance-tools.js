@@ -43,7 +43,7 @@ export function validateBackup(value) {
       throw Error('取引データに不正な値があります')
     }
   }
-  const arrayNames = ['plans', 'bills', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks']
+  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks']
   for (const name of arrayNames) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
@@ -63,6 +63,9 @@ export function validateBackup(value) {
   const validBill = x => x && isText(x.name,80) && month(x.month) &&
     validDate(x.start) && validDate(x.end) && x.start <= x.end &&
     safeAmount(x.total) && safeAmount(x.count)
+  // Validate legacy investment payloads for archive safety, but never write them to D1.
+  if (Array.isArray(value.investments) && value.investments.some(x => !x || typeof x.platform!=='string' || (x.current_value!==null && (!Number.isSafeInteger(x.current_value) || x.current_value<0)) || (x.pnl!==null && !Number.isSafeInteger(x.pnl))))
+    throw Error('旧版投資バックアップを確認してください')
   const validSource = x => x && isText(x.name,80) &&
     (x.source_type == null || ['standard','prepaid'].includes(x.source_type)) &&
     (x.opening_balance == null || (safeAmount(x.opening_balance) && x.opening_balance<=100000000)) &&

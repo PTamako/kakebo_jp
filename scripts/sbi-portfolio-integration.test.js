@@ -200,7 +200,7 @@ test('v4 export and restore preserve portfolio settings and mapped transfer link
   }finally{source.db.close();target.db.close()}
 })
 
-test('SBI screenshot bootstrap stores exact reported values and preserves existing edits',async()=>{
+test('saved SBI screenshot valuations survive retired bootstrap attempts and preserve edits',async()=>{
   const {db,call}=await client()
   try{
     seedPortfolioInTest(db)
@@ -228,7 +228,13 @@ test('SBI screenshot bootstrap stores exact reported values and preserves existi
       fundCode:'04317188',accountType:'combined',fundName:h.fund_name,units:2800,acquisitionCost:15600
     })
     assert.equal(modified.status,200)
-    seedPortfolioInTest(db)
+    // The completed migration must not be replayed. A stale initialization
+    // request is rejected rather than recreating the historical four funds.
+    const holdingsBefore=db.db.prepare('SELECT COUNT(*) AS n FROM investment_holdings').get().n
+    const plansBefore=db.db.prepare('SELECT COUNT(*) AS n FROM investment_plans').get().n
+    assert.equal((await call('investment-portfolio/initialize','POST')).status,410)
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM investment_holdings').get().n,holdingsBefore)
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM investment_plans').get().n,plansBefore)
     const final=(await call('investment-portfolio?month='+currentMonth)).body.holdings.find(x=>x.fund_code==='04317188')
     assert.equal(final.units,2800)
     assert.equal(final.acquisition_cost,15600)

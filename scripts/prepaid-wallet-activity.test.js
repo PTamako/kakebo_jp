@@ -91,7 +91,7 @@ test('wallet tile displays last usage/card/amount and last top-up/card/funding w
   assert.match(prepaid,/latestUsage:payload.latestUsage \|\| null/)
   assert.match(prepaid,/latestCharge:payload.latestCharge \|\| null/)
   assert.match(page,/最近の|↘ 利用/)
-  assert.match(page,/↗ チャージ/)
+  assert.match(page,/↗ 最近のチャージ/)
   assert.match(page,/latestUsage\.card/)
   assert.match(page,/latestCharge\.card/)
   assert.match(page,/latestCharge\.funding_source/)

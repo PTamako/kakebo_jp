@@ -12,6 +12,7 @@ export function detectInvestmentFunding(text) {
   if (!value || reversal(value) || /手数料|年会費|配当|利息|税金/.test(value)) return false
   // Japanese card statements may omit "SBI" or wrap the buy-month label.
   if (/証券投信|投信積立|投資信託(?:の)?積立|(?:投信|投資信託)買付|翌月買付分/.test(value)) return true
+  if (/^sbi証券(?:口座)?$/.test(value)) return true
   // "SBI" alone can refer to banking, insurance and ordinary merchants.
   // Require brokerage AND an investment/funding operation.
   return /sbi(?:証券)?/.test(value)

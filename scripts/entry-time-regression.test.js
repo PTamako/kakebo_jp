@@ -91,10 +91,10 @@ QUICPay支払 ¥311
   assert.equal(result.time,'12:36')
   assert.equal(result.amount,311)
   for (const split of [
-    original.replace('レジ0107 2026/10/30(金) 12:36','2026/10/30(金)\\nレジ0107 12:36'),
-    original.replace('レジ0107 2026/10/30(金) 12:36','2026/10/30(金)\\nレジ0107\\n12:36'),
+    original.replace('レジ0107 2026/10/30(金) 12:36','2026/10/30(金)\nレジ0107 12:36'),
+    original.replace('レジ0107 2026/10/30(金) 12:36','2026/10/30(金)\nレジ0107\n12:36'),
     original.replace('レジ0107 2026/10/30(金) 12:36','レジ0107 2026/10/30(金) 12 36'),
-    original.replace('レジ0107 2026/10/30(金) 12:36','レジ0107 2026/10/30(金)\\n12:36')
+    original.replace('レジ0107 2026/10/30(金) 12:36','レジ0107 2026/10/30(金)\n12:36')
   ]) {
     const parsed=parseReceipt(split)
     assert.equal(parsed.date,'2026-10-30')
@@ -111,7 +111,7 @@ test('receipt register IDs, store hours, payment slip IDs and phone numbers cann
     '伝票番号 1236',
     'カード会員番号 XXXX-1236'
   ]) {
-    const receipt='テスト店舗\\n2026/10/30(金)\\n'+text+'\\n合計 ¥311'
+    const receipt='テスト店舗\n2026/10/30(金)\n'+text+'\n合計 ¥311'
     assert.equal(parseReceipt(receipt).time,'',text)
   }
 })

@@ -16,6 +16,7 @@ import ManagementPage from './pages/ManagementPage.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
 import { detectPrepaidRecharge, prepaidTarget } from './prepaid-card.js'
+import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
@@ -808,13 +809,7 @@ const filteredEntries = computed(() => entries.value.filter(e => String(e.date |
 const detailFilter = ref(null)
 const prepaidHistoryFilter = ref(null)
 // Histories are scoped to one actual prepaid card, never all transport cards.
-const matchesPrepaidHistory = entry => {
-  const filter = prepaidHistoryFilter.value
-  if (!filter) return true
-  if (filter.kind === 'charge')
-    return entry.type === 'transfer' && entry.transfer_target === prepaidTarget(filter.card)
-  return filter.kind === 'usage' && entry.type === 'expense' && entry.payment_source === filter.card
-}
+const matchesPrepaidHistory = entry => matchesPrepaidHistoryEntry(entry, prepaidHistoryFilter.value)
 async function openPrepaidHistoryDetails(cardName,kind) {
   if (!prepaidSources.value.includes(cardName) || !['charge','usage'].includes(kind)) return
   detailRequestId++

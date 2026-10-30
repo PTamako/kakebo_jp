@@ -27,8 +27,13 @@ test('snapshot and both backup paths carry categoryMetadata',()=>{
   assert.match(restore,/for \(const row of archive\.categoryMetadata\|\|\[\]\)/)
   assert.match(restore,/display_name=COALESCE\(category_source\.display_name,excluded\.display_name\)/)
 })
-test('calendar badges use filtered calendar entries',()=>{
-  assert.match(app,/for \(const entry of calendarEntries\.value\) \{\s*const key=String\(entry\.date/)
+test('calendar badges use the filtered ledger entries for expense and income peaks',()=>{
+  // Do not depend on whitespace/formatting inside the calendar loop.
+  assert.match(app,/const calendarEntries = computed\(\(\) => \{[\s\S]*?return source\.filter\(entryMatchesType\)\.filter\(matchesPrepaidHistory\)/)
+  assert.match(app,/const calendarDays = computed\(\(\) => \{[\s\S]*?for \(const entry of calendarEntries\.value\) \{\s*const key\s*=\s*String\(entry\.date/)
+  assert.match(app,/if \(entry\.type === 'expense' \|\| !entry\.type\) expenses\.set\(key/)
+  assert.match(app,/if \(entry\.type === 'income'\) incomes\.set\(key/)
+  assert.match(app,/topExpense:maxExpense>0 && expenses\.get\(date\)===maxExpense,[\s\S]*?topIncome:maxIncome>0 && incomes\.get\(date\)===maxIncome/)
 })
 test('duplicate candidates flag near timestamps without blocking later purchases',()=>{
   assert.match(api,/WHERE NOT EXISTS \(SELECT 1 FROM entries WHERE date=\?1 AND amount=\?3/)

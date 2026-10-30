@@ -1,8 +1,8 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 const props=defineProps({ api:{type:Function,required:true}, active:{type:Boolean,default:false}, revision:{type:Number,default:0} })
-const emit=defineEmits(['summary'])
-const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false)
+const emit=defineEmits(['summary','open-card-settings'])
+const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false),showAllRecharges=ref(false)
 const money=value=>'¥'+Number(value||0).toLocaleString('ja-JP')
 const selected=ref(null),openingDraft=ref(0),saving=ref(false),notice=ref('')
 function startOpening(card){ selected.value=card;openingDraft.value=Number(card.opening_balance) }
@@ -45,7 +45,7 @@ onMounted(()=>{if(props.active)void refresh()})
       <span class="wallet-heading-end"><b v-if="data">{{money(data.cards.reduce((sum,card)=>sum+Number(card.balance),0))}}</b><span class="wallet-chevron" aria-hidden="true">⌄</span></span>
     </summary>
     <div class="wallet-body">
-      <div class="wallet-tools"><button type="button" class="wallet-refresh" :disabled="loading" aria-label="プリペイド残高を更新" @click="refresh">↻ 更新</button><span>追加・種類変更は「管理 › カード設定」</span></div>
+      <div class="wallet-tools"><button type="button" class="wallet-refresh" :disabled="loading" aria-label="プリペイド残高を更新" @click="refresh">↻ 更新</button><button type="button" class="wallet-add" @click="emit('open-card-settings')">＋ 追加</button></div>
       <p v-if="loading && !data" class="wallet-hint" role="status">残高を読み込み中…</p>
       <p v-if="error" class="wallet-error" role="alert">{{error}}</p>
       <p v-if="notice" class="wallet-success" role="status">{{notice}}</p>
@@ -61,7 +61,8 @@ onMounted(()=>{if(props.active)void refresh()})
         <button v-if="data.cards.length>2" type="button" class="wallet-show-more" :aria-expanded="showAll" @click="showAll=!showAll">{{showAll?'閉じる':'あと'+(data.cards.length-2)+'件を表示'}}</button>
         <details v-if="data.recharges.length" class="wallet-recharge">
           <summary>最近のチャージ <span>{{data.recharges.length}}件</span></summary>
-          <div v-for="entry in data.recharges" :key="entry.id" class="wallet-recharge-row"><span>{{entry.date}} · {{entry.transfer_target.slice(8)}}</span><strong>+{{money(entry.amount)}}</strong></div>
+          <div v-for="entry in (showAllRecharges ? data.recharges : data.recharges.slice(0,3))" :key="entry.id" class="wallet-recharge-row"><span>{{entry.date}} · {{entry.transfer_target.slice(8)}}</span><strong>+{{money(entry.amount)}}</strong></div>
+          <button v-if="data.recharges.length>3" type="button" class="wallet-show-more" :aria-expanded="showAllRecharges" @click="showAllRecharges=!showAllRecharges">{{showAllRecharges?'閉じる':'あと'+(data.recharges.length-3)+'件を表示'}}</button>
         </details>
         <details class="wallet-explanation"><summary>残高の計算について</summary><p class="wallet-note">チャージは資産移動、利用は支出として計算します。カードとの自動同期はありません。</p></details>
       </template>
@@ -86,6 +87,7 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-section-heading:focus-visible,.wallet-show-more:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .wallet-body{padding:0 14px 13px}
 .wallet-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:3px}.wallet-tools span{font-size:10px;color:var(--muted)}
+.wallet-add{border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750;min-height:40px;padding:7px 10px}
 .wallet-refresh{border:0;background:var(--paper);color:var(--blue-dark);font-weight:750;border-radius:9px;min-height:36px;padding:7px 10px;font-size:11px;white-space:nowrap}
 .wallet-row{border-top:1px solid var(--line);padding:10px 0 7px;min-width:0}
 .wallet-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:7px}

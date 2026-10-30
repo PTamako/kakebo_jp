@@ -26,7 +26,7 @@ test('App only coordinates tabs; all four pages own their templates',()=>{
   assert.match(assets,/<SbiPortfolio :api="api" :transfer-loading="transferLoading" \/>/)
   assert.doesNotMatch(assets,/旧評価額|旧評価損益|legacy-investment-details/)
   assert.match(management,/<FinanceTools v-bind="\$attrs"\s*\/>/)
-  assert.match(app,/<ManagementPage v-show="tab === 'finance'"/)
+  assert.match(app,/<ManagementPage [^>]*v-show="tab === 'finance'"/)
 })
 
 test('extracted pages share exactly the parent navigation refs and do not create independent filters',()=>{

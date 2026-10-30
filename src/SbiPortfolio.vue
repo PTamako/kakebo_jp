@@ -4,7 +4,6 @@ import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js
 import { groupFundHoldings } from './sbi-fund-groups.js'
 import { parseSbiHoldingsText } from './sbi-holdings-import.js'
 import { parseSbiFundDetailText, applySbiFundDetailUpdates } from './sbi-fund-detail-import.js'
-import { reconcileSbiScreens } from './sbi-dual-screens.js'
 import { ocrImage } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
 
@@ -155,9 +154,6 @@ const bulkText = ref('')
 const bulkWarning = ref('')
 const bulkInfo = ref('')
 const bulkBusy = ref(false)
-const dualProfit = ref(''), dualPositions = ref('')
-const dualActive = ref(false), dualVerified = ref(false)
-const dualInfo = ref('')
 const bulkChanged = computed(() => bulkRows.value.filter(row =>
   Number.isSafeInteger(Number(row.units)) && Number.isSafeInteger(Number(row.acquisitionCost)) &&
   (Number(row.units)!==row.expectedUnits || Number(row.acquisitionCost)!==row.expectedAcquisitionCost)))
@@ -168,7 +164,6 @@ function openBulk() {
   importedScreenshotKeys.value = []
   bulkWarning.value = ''
   bulkInfo.value = ''
-  dualProfit.value = ''; dualPositions.value = ''; dualActive.value = false; dualVerified.value = false; dualInfo.value = ''
   void refreshSharedQuota()
   bulkRows.value = holdingsData.value.map(h => ({
     fundCode:h.fund_code,accountType:h.account_type,fundName:h.fund_name,
@@ -191,77 +186,14 @@ function applyBulkText() {
   })
   bulkInfo.value = updates.length + '件を読み取りました。数値を確認してから保存してください。'
 }
-function clearDual(){
-  if(bulkBusy.value||saving.value)return
-  dualProfit.value=''; dualPositions.value=''
-  dualActive.value=false; dualVerified.value=false; dualInfo.value=''
+function resetBulkRows(){
+  if (bulkBusy.value || saving.value) return
   bulkRows.value=holdingsData.value.map(h=>({
     fundCode:h.fund_code,accountType:h.account_type,fundName:h.fund_name,
     units:Number(h.units),acquisitionCost:Number(h.acquisition_cost),
     expectedUnits:Number(h.units),expectedAcquisitionCost:Number(h.acquisition_cost)
   }))
   bulkWarning.value=''
-}
-async function readSbiScreen(event,kind){
-  const file=event.target.files?.[0]
-  event.target.value=''
-  if(!file||bulkBusy.value||saving.value)return
-  if (importedScreenshotKeys.value.length) {
-    bulkWarning.value='銘柄詳細の読み取り結果があります。旧方式に切り替える場合はクリアしてください。'
-    return
-  }
-  // The dual-SBI layout requires its image-specific AI prompts. Do not
-  // silently use unverified on-device OCR for accounting totals.
-  if(!useAi.value) {
-    bulkWarning.value='2画面の照合はAIで読み取ります。「AI」を選択してください。'
-    return
-  }
-  await refreshSharedQuota()
-  if(aiExhausted.value) {
-    bulkWarning.value='本日の共通AI利用枠がありません。明日、またはテキスト入力をご利用ください。'
-    return
-  }
-  bulkBusy.value=true
-  dualActive.value=true
-  dualVerified.value=false
-  dualInfo.value='SBI画面を確認中…'
-  bulkWarning.value=''
-  if(kind==='profit') dualProfit.value=''
-  else dualPositions.value=''
-  try{
-    // The two native SBI screenshots need their own image-layout-aware prompts.
-    // A generic on-device OCR can confuse the values across columns.
-    const image = file.size<=4*1024*1024 && ['image/png','image/jpeg','image/webp'].includes(file.type)
-      ? file : await compressReceiptImage(file,1600,1300*1024)
-    const body=new FormData()
-    body.append('image',image,image.type==='image/jpeg'?'sbi.jpg':'sbi.webp')
-    body.append('mode',kind==='profit'?'portfolio-profit':'portfolio-positions')
-    const result=await props.api('ai-ocr',{method:'POST',body})
-    const text=String(result?.text||'').trim()
-    if(!text)throw Error('文字を読み取れませんでした')
-    if(kind==='profit') dualProfit.value=text
-    else dualPositions.value=text
-    if(!dualProfit.value||!dualPositions.value){
-      dualInfo.value='1枚読み取りました。もう1枚の画面を選んでください。'
-      return
-    }
-    const matched=reconcileSbiScreens(dualProfit.value,dualPositions.value,holdingsData.value)
-    if(matched.error){
-      dualInfo.value=''
-      bulkWarning.value=matched.error+'。画像を確認して再試行してください。'
-      return
-    }
-    const match=new Map(matched.updates.map(x=>[x.fundCode+':'+x.accountType,x]))
-    bulkRows.value=bulkRows.value.map(row=>{
-      const update=match.get(row.fundCode+':'+row.accountType)
-      return update?{...row,units:update.units,acquisitionCost:update.acquisitionCost}:row
-    })
-    dualVerified.value=true
-    dualInfo.value=matched.stamp+' · 評価額 '+yen(matched.totalValue)+' · 評価損益 '+signYen(matched.totalPnl)+' · 取得金額 '+yen(matched.totalCost)+'。確認して保存してください。'
-  }catch(e){
-    dualInfo.value=''
-    bulkWarning.value='画像を読み取れませんでした：'+e.message
-  }finally{await refreshSharedQuota();bulkBusy.value=false}
 }
 async function readFundDetailImages(event) {
   const files = Array.from(event.target.files || [])
@@ -275,7 +207,6 @@ async function readFundDetailImages(event) {
   try {
     for (const file of files) {
       try {
-        if (dualActive.value) throw Error('旧2画面方式とは同時に使用できません。クリアしてから選択してください')
         let recognized = ''
         if (useAi.value) {
           await refreshSharedQuota()
@@ -314,7 +245,7 @@ async function readFundDetailImages(event) {
 function clearFundDetailImports() {
   if (bulkBusy.value || saving.value) return
   importedScreenshotKeys.value = []
-  clearDual()
+  resetBulkRows()
   bulkInfo.value = '読み取り結果をクリアしました'
 }
 
@@ -353,7 +284,6 @@ async function readBulkImage(event) {
 }
 async function saveBulk(){
   if (saving.value || bulkBusy.value || !bulkChanged.value.length) return
-  if (dualActive.value && !dualVerified.value) { error.value='2枚の照合が完了していません。画面を選び直してください'; return }
   const changes = bulkChanged.value
   if (changes.some(h=>![h.units,h.acquisitionCost].every(v=>Number.isSafeInteger(Number(v)) && Number(v)>=0 && Number(v)<=1000000000000))) {
     error.value='保有口数と取得金額を確認してください'
@@ -654,31 +584,12 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
             </label>
             <div class="sbi-detail-import-meta">
               <span>{{scannedFundCount}} / {{fundGroups.length}} 銘柄確認済み</span>
-              <button type="button" class="sbi-dual-reset" :disabled="saving || bulkBusy" @click="clearFundDetailImports">クリア</button>
+              <button type="button" class="sbi-import-reset" :disabled="saving || bulkBusy" @click="clearFundDetailImports">クリア</button>
             </div>
             <p class="sbi-detail-help">成長・つみたての保有数量と取得金額を読み取り、変更分だけ更新します。画像を送信しても確認前には保存されません。</p>
           </section>
-          <details class="sbi-legacy-import"><summary>従来の2画面照合</summary>
-          <div class="sbi-dual-panel">
-            <div class="sbi-bulk-heading"><strong>SBIの2画面から更新</strong><button type="button" class="sbi-dual-reset" :disabled="saving || bulkBusy" @click="clearDual">クリア</button></div>
-            <div class="sbi-dual-choices">
-              <label class="sbi-bulk-upload" :aria-disabled="saving || bulkBusy || !useAi || aiExhausted">
-                <span>① 評価損益・取得単価</span>
-                <small>{{dualProfit ? '読み取り済み ✓' : '画像を選択'}}</small>
-                <input type="file" accept="image/*" hidden :disabled="saving || bulkBusy || !useAi || aiExhausted" @change="readSbiScreen($event,'profit')" />
-              </label>
-              <label class="sbi-bulk-upload" :aria-disabled="saving || bulkBusy || !useAi || aiExhausted">
-                <span>② 保有数量・評価額</span>
-                <small>{{dualPositions ? '読み取り済み ✓' : '画像を選択'}}</small>
-                <input type="file" accept="image/*" hidden :disabled="saving || bulkBusy || !useAi || aiExhausted" @change="readSbiScreen($event,'positions')" />
-              </label>
-            </div>
-            <small class="sbi-dual-help">{{!useAi ? '2画面の照合にはAIを選択してください。' : aiExhausted ? '本日の共通AI利用枠を使い切りました。' : '同じ更新日時の2画面を選択（各1回）。'}} </small>
-            <p v-if="dualInfo" role="status" class="sbi-bulk-notice">{{dualInfo}}</p>
-          </div>
-          </details>
           <details class="sbi-single-import">
-            <summary>テキスト・従来形式で読み取る</summary>
+            <summary>テキストから読み取る</summary>
           <label>保有画面のテキストを貼り付け
             <textarea v-model="bulkText" rows="3" :disabled="saving || bulkBusy" placeholder="銘柄名 / 保有口数 / 取得金額"></textarea>
           </label>
@@ -713,7 +624,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
             </div>
           </section>
         </div>
-        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving || bulkBusy" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving || bulkBusy || !bulkChanged.length || (dualActive && !dualVerified)">{{saving ? '保存中…' : '更新 '+bulkChanged.length+'件'}}</button></div>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving || bulkBusy" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving || bulkBusy || !bulkChanged.length ">{{saving ? '保存中…' : '更新 '+bulkChanged.length+'件'}}</button></div>
       </form>
       <form v-else-if="editing==='holding'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="保有情報の編集" @submit.prevent="submit('holding',{...holding,units:Number(holding.units),acquisitionCost:Number(holding.acquisitionCost)},'保有情報を更新しました')">
         <div class="sbi-line-heading"><h3>保有口数・取得金額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
@@ -905,12 +816,6 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-bulk-fields label input{min-width:0}
 .sbi-bulk-diff{color:var(--blue-dark)}
 
-.sbi-dual-panel{display:grid;gap:8px;padding:11px;border:1px solid var(--line);border-radius:13px;background:var(--paper)}
-.sbi-dual-choices{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.sbi-dual-panel .sbi-bulk-upload{flex-direction:column;gap:3px;text-align:center;background:var(--card);font-size:11px;padding:10px 5px;min-height:62px}
-.sbi-dual-panel .sbi-bulk-upload small{color:var(--muted);font-size:10px;font-weight:500}
-.sbi-dual-help{font-size:10px;color:var(--muted);line-height:1.5}
-.sbi-dual-reset{border:0;background:none;color:var(--blue-dark);font-weight:700;min-height:36px;padding:4px;font-size:11px}
 .sbi-single-import>summary{font-size:11px;color:var(--muted);font-weight:700;padding:8px 0;cursor:pointer}
 .sbi-single-import[open]{display:grid;gap:8px}
 .sbi-dual-panel .sbi-bulk-heading{font-size:12px}
@@ -1015,9 +920,6 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-fund-image-pick svg{width:21px;height:21px;flex:none}
 .sbi-detail-import-meta{display:flex;align-items:center;justify-content:space-between}
 .sbi-detail-help{margin:0;line-height:1.5}
-.sbi-legacy-import{padding:0 2px;border-bottom:1px solid var(--line)}
-.sbi-legacy-import>summary{font-size:11px;font-weight:650;min-height:40px;display:flex;align-items:center;color:var(--muted);cursor:pointer}
-.sbi-legacy-import .sbi-dual-panel{margin-bottom:10px}
 .sbi-bulk-idle{margin:0;color:var(--muted);font-size:11px}
 .sbi-bulk-rows{display:grid;gap:9px}
 .sbi-bulk-fund-preview{display:grid;gap:6px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
@@ -1028,4 +930,5 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-bulk-fund-preview .sbi-bulk-row-name strong{font-size:11px}
 .sbi-bulk-fund-preview .sbi-bulk-row-name small{font-size:10px}
 .sbi-bulk-dialog .sbi-actions{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));padding:10px 0 calc(8px + env(safe-area-inset-bottom,0px));background:var(--card);z-index:2}
+.sbi-import-reset{border:0;background:none;color:var(--blue-dark);font-weight:700;min-height:36px;padding:4px;font-size:11px}
 </style>

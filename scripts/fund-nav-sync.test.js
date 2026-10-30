@@ -163,3 +163,28 @@ test('newly held fund without an official quote remains manual and does not inve
     assert.deepEqual(db.prepare('SELECT * FROM investment_holdings').all(),original)
   }finally{fixture.close()}
 })
+
+test('Cloudflare Worker NAV fetch uses supported manual redirect mode and refuses 302',async()=>{
+  let receivedOptions
+  const quote=await fetchMufgNav('03311187',{
+    now:today,
+    fetcher:async(_url,options)=>{
+      receivedOptions=options
+      // Simulate the Workers runtime that rejects redirect: 'error'.
+      if(!['follow','manual'].includes(options.redirect))throw TypeError('Invalid redirect value')
+      return {ok:true,status:200,text:async()=>JSON.stringify(response('03311187'))}
+    }
+  })
+  assert.equal(receivedOptions.redirect,'manual')
+  assert.equal(quote.navPer10000,39001)
+  let requested=0
+  await assert.rejects(fetchMufgNav('03311187',{
+    now:today,
+    fetcher:async(_url,options)=>{
+      requested++
+      assert.equal(options.redirect,'manual')
+      return {ok:false,status:302,headers:{get:()=> 'https://not-the-provider.example/'}}
+    }
+  }),/provider_redirect_blocked/)
+  assert.equal(requested,1,'redirect targets must never be fetched')
+})

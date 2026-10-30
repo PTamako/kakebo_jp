@@ -39,10 +39,10 @@ npm ci
 npm run deploy:nav
 ```
 
-いずれの方法でも Worker 設定と D1 バインディングを確認してください。Cron は **日本時間21:00（UTC12:00）**、毎日：`0 12 * * *` です。設定は Cloudflare Dashboard → Workers & Pages → `kakeibo-nav-sync` → Triggers で確認できます。
+いずれの方法でも Worker 設定と D1 バインディングを確認してください。Cron は一時的に **日本時間21:15（UTC12:15）**、毎日：`15 12 * * *` に変更しています。再実行を確認したら本来の **21:00（UTC12:00）** に戻してください。設定は Cloudflare Dashboard → Workers & Pages → `kakeibo-nav-sync` → Triggers で確認できます。
 
 ## 稼働確認と安全上の注意
 
-デプロイ成功は定期ジョブ実行成功を意味しません。次回の Cron 実行後、Observability → Logs で `NAV sync` を確認し、`failed` の件数、更新対象銘柄、基準日を確認してください。基準価額の公表が 21:00 に間に合わない場合、次回の実行まで前回値を保持します。
+デプロイ成功は定期ジョブ実行成功を意味しません。次回の Cron 実行後、Observability → Logs で `NAV sync` を確認し、`failed` の件数、更新対象銘柄、基準日を確認してください。基準価額の公表が 21:15 に間に合わない場合、次回の実行まで前回値を保持します。
 
 既存の `investment_holdings`、`investment_plans`、`entries`、移行済みの D1 テーブルを作り直したり、削除・再投入したりしないでください。ユーザー確認のない注文・約定・振替登録は行いません。

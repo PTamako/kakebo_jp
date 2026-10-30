@@ -537,7 +537,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
               <button type="button" :class="{selected:!useAi}" :aria-pressed="!useAi" :disabled="saving || bulkBusy" @click="changeAiMode(false)">端末内</button>
               <button type="button" :class="{selected:useAi}" :aria-pressed="useAi" :disabled="saving || bulkBusy" @click="changeAiMode(true)">AI</button>
             </div>
-            <span class="sbi-ai-quota" role="status">{{quota ? '共通残り '+quota.remaining+' / '+quota.limit+'回' : '共通枠を確認中'}}</span>
+            <span class="sbi-ai-quota" role="status">{{quota ? '本日のAI残り回数：'+quota.remaining+' / '+quota.limit+'回' : '本日のAI残り回数：確認中'}}</span>
           </div>
           <section class="sbi-detail-import" aria-label="銘柄詳細画像の取り込み">
             <div class="sbi-detail-import-heading">

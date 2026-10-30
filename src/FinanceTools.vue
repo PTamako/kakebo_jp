@@ -791,13 +791,13 @@ async function removeCardBill(record) {
     <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
     <div v-if="cardMode === 'add'" class="finance-inputs card-controls">
       <input v-model="newPaymentSource" maxlength="80" placeholder="新しいカード名・支払方法" aria-label="新しい支払方法">
-      <label>種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">通常の支払方法</option><option value="prepaid">プリペイド（Suica・PASMO等）</option></select></label><p v-if="newSourceType==='prepaid'" class="card-type-hint">期首残高は「資産」画面から設定します。</p>
+      <label>種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード（Suica・PASMO等）</option></select></label><p v-if="newSourceType==='prepaid'" class="card-type-hint">期首残高は「資産」画面で設定します。</p>
       <button type="button" @click="addPaymentSource">保存</button>
       <button type="button" @click="cardMode = ''">キャンセル</button>
     </div>
     <div v-if="cardMode === 'edit' && selectedCard" class="card-editor">
       <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
-      <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">通常の支払方法</option><option value="prepaid">プリペイド</option></select></label><p v-if="editSourceType==='prepaid'" class="card-type-hint">期首残高の入力・修正は「資産」画面で行います。</p>
+      <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label><p v-if="editSourceType==='prepaid'" class="card-type-hint">期首残高の入力・修正は「資産」画面で行います。</p>
       <label v-if="editSourceType==='standard' && !['現金','その他','其他'].includes(selectedCard)">締め日
         <select :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
           <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>

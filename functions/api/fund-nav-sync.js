@@ -19,11 +19,12 @@ const isoDate = value => {
 const dateInJapan = now => new Date(now.getTime()+9*3600_000).toISOString().slice(0,10)
 export function parseMufgNav(payload, expectedCode, now=new Date()) {
   const entry=payload?.datasets?.[0]
-  if (!entry || typeof entry !== 'object' || !Object.hasOwn(MUFG_FUNDS,expectedCode))
+  if (!entry || typeof entry !== 'object' || !/^[A-Z0-9]{8}$/.test(expectedCode))
     throw Error('provider_payload_invalid')
   // If the endpoint includes an association code, verify it is the requested fund.
   const returned=entry.association_fund_cd ?? entry.association_fund_code
-  if (returned != null && String(returned).toUpperCase()!==expectedCode)
+  if ((returned == null && !Object.hasOwn(MUFG_FUNDS,expectedCode)) ||
+      (returned != null && String(returned).toUpperCase()!==expectedCode))
     throw Error('provider_fund_mismatch')
   const navRaw=String(entry.nav??'').replaceAll(',','').trim()
   const price=/^[1-9]\d*$/.test(navRaw)?Number(navRaw):NaN
@@ -37,7 +38,11 @@ export function parseMufgNav(payload, expectedCode, now=new Date()) {
   return {fundCode:expectedCode,navPer10000:price,priceDate:date,source:provider}
 }
 export async function fetchMufgNav(fundCode,{fetcher=fetch,now=new Date()}={}) {
-  if (!Object.hasOwn(MUFG_FUNDS,fundCode))throw Error('unsupported_mufg_fund')
+  // No arbitrary URLs or data writes: only 8-character fund association codes
+  // can be queried from MUFG's fixed official endpoint. A live, code-matching
+  // quote is required before declaring a new fund automatically supported.
+  if (!/^[A-Z0-9]{8}$/.test(fundCode) || Object.hasOwn(PENDING_NAV_FUNDS,fundCode))
+    throw Error('unsupported_mufg_fund')
   const url='https://developer.am.mufg.jp/fund_information_latest/association_fund_cd/'+fundCode
   const response=await fetcher(url,{
     headers:{Accept:'application/json'},
@@ -56,10 +61,12 @@ export async function syncFundNav(db,{fetcher=fetch,now=new Date(),logger=consol
   // Funds not held by this user are never inserted. Orders and acquisitions
   // are not queried or mutated by this scheduled task.
   const result=await db.prepare(
-    "SELECT DISTINCT fund_code FROM investment_holdings WHERE fund_code IN ('0331418A','03311187','0331A172') ORDER BY fund_code"
+    'SELECT DISTINCT fund_code FROM investment_holdings ORDER BY fund_code LIMIT 100'
   ).all()
-  const targetCodes=(result.results||[]).map(x=>x.fund_code)
-  const summary={checked:targetCodes.length,updated:[],unchanged:[],failed:[],unsupported:Object.keys(PENDING_NAV_FUNDS)}
+  const codes=(result.results||[]).map(x=>String(x.fund_code||'').trim().toUpperCase())
+  const unsupported=codes.filter(code=>Object.hasOwn(PENDING_NAV_FUNDS,code))
+  const targetCodes=codes.filter(code=>!Object.hasOwn(PENDING_NAV_FUNDS,code))
+  const summary={checked:targetCodes.length,updated:[],unchanged:[],failed:[],unsupported}
   for (const code of targetCodes) {
     try{
       const quote=await fetchMufgNav(code,{fetcher,now})

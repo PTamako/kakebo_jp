@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "npm run test:parse && npm run security:audit:prod && vite build",
     "cf:dev": "vite build && wrangler pages dev dist",
-    "test:parse": "node --test scripts/audit-*.test.js",
+    "test:parse": "node --test scripts/*.test.js",
     "security:audit": "npm audit --audit-level=high",
     "security:audit:prod": "npm audit --omit=dev --audit-level=high",
     "verify:release": "npm run build",

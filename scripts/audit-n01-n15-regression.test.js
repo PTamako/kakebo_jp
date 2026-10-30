@@ -56,7 +56,7 @@ test('N07: backup rejects malformed child settings before touching the database'
 })
 test('N04/N09/N10/N11/logo: safe preview gate, transfer disclosure, no logo border',()=>{
   const api=text('functions/api/[[path]].js')
-  const app=text('src/App.vue')+'\n'+text('src/pages/AssetsPage.vue')
+  const app=text('src/App.vue')+'\n'+text('src/pages/AssetsPage.vue')+'\n'+text('src/InvestmentTransferReview.vue')
   assert.match(api,/env\.PREVIEW_D1_ISOLATED === 'true'/)
   // New UI states the distinction more clearly: bookkeeping application is
   // neither SBI account funding nor completed fund purchase.

@@ -84,6 +84,8 @@ test('new scanner is per fund, accepts multiple files and requires final explici
   const gemma=readFileSync(new URL('../functions/api/gemma-ocr.js',import.meta.url),'utf8')
   const api=readFileSync(new URL('../functions/api/[[path]].js',import.meta.url),'utf8')
   assert.match(ui,/type="file" multiple accept="image\/\*"/)
+  assert.doesNotMatch(ui,/@change="readBulkImage"/)
+  assert.equal((ui.match(/<input type="file"/g) || []).length,1,'only one screenshot uploader is visible in the update dialog')
   assert.match(ui,/readFundDetailImages/)
   assert.match(ui,/parseSbiFundDetailText\(recognized,holdingsData\.value\)/)
   assert.match(ui,/applySbiFundDetailUpdates\(bulkRows\.value,parsed\.updates,importedScreenshotKeys\.value\)/)

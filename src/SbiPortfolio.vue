@@ -795,17 +795,19 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-month-pulse>div{display:grid;gap:3px;padding:12px;border-radius:12px;background:var(--paper);min-width:0}
 .sbi-month-pulse span{font-size:10px;color:var(--muted)}
 .sbi-month-pulse strong{font-size:clamp(15px,4.5vw,19px);font-weight:850;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.sbi-manage-subhead{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-top:13px;padding-top:11px;border-top:1px solid var(--line)}
-.sbi-manage-subhead>strong{font-size:12px}
-.sbi-manage-subhead .sbi-text-action{min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-size:11px}
-.sbi-transfer-disclosure{margin-top:9px;border-top:1px solid var(--line)}
-.sbi-transfer-summary{display:flex;align-items:center;gap:8px;min-height:49px;padding:7px 0;list-style:none;cursor:pointer}
+.sbi-manage-subhead{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;margin-top:8px;padding:8px 0 2px;border-top:1px solid var(--line);box-sizing:border-box}
+.sbi-manage-subhead>strong{display:flex;align-items:center;min-height:40px;font-size:13px;line-height:1.3}
+.sbi-manage-subhead .sbi-text-action{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-size:12px;line-height:1.3}
+.sbi-management-body > .sbi-manage-subhead + .sbi-plan-row{border-top:0}
+.sbi-transfer-disclosure{min-width:0;margin-top:8px;border-top:1px solid var(--line)}
+.sbi-transfer-summary{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;align-items:center;gap:8px;min-height:46px;padding:7px 0;list-style:none;cursor:pointer;box-sizing:border-box}
 .sbi-transfer-summary::-webkit-details-marker{display:none}
-.sbi-transfer-summary strong{font-size:12px;flex:1}
-.sbi-transfer-summary small{font-size:11px;color:var(--muted)}
-.sbi-transfer-summary .sbi-detail-chevron{transition:transform .18s}
+.sbi-transfer-summary strong{min-width:0;font-size:13px;line-height:1.35}
+.sbi-transfer-summary small{font-size:11px;color:var(--muted);line-height:1.35}
+.sbi-transfer-summary .sbi-detail-chevron{display:grid;place-items:center;font-size:14px;line-height:1;transition:transform .18s}
 .sbi-transfer-disclosure[open] .sbi-transfer-summary .sbi-detail-chevron{transform:rotate(180deg)}
-.sbi-transfer-content{border-top:1px solid var(--line);padding-top:4px}
+.sbi-transfer-content{min-width:0;border-top:0;padding-top:1px}
+.sbi-transfer-content > .sbi-transfer-row:first-of-type{border-top:0}
 .sbi-transfer-summary:focus-visible,.sbi-bulk-primary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:3px}
 @media(max-width:370px){.sbi-holding-toolbar .sbi-bulk-primary{padding:8px 6px;font-size:11px}.sbi-holding-toolbar .sbi-add-holding{padding:8px;font-size:11px}}
 @media(prefers-reduced-motion:reduce){.sbi-transfer-summary .sbi-detail-chevron{transition:none}}

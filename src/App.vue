@@ -499,6 +499,9 @@ async function onImage(e, mode = 'statement') {
         receiptSaveError.value = '読み取りは成功しましたが、画像を保存用に準備できませんでした。下の「レシート画像を追加」から再選択してください。'
       }
     }
+    // Do not classify a scanned receipt before saved merchant-payment rules
+    // and the configured default card are available from existing D1.
+    if (!paymentSettingsLoaded) await loadPaymentSettings()
     recognize(mode, true)
     entryInputMode.value = 'scan'
   } catch (err) { pendingReceiptImage.value = null; pendingReceiptFileName.value = ''; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }

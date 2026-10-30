@@ -373,6 +373,8 @@ function setAiOcrEnabled(checked) {
   try { localStorage.setItem('kakeibo-ai-ocr-enabled', checked ? '1' : '0') }
   catch { flash('AI OCRの設定を保存できませんでした') }
 }
+// Entering image-recognition mode always refreshes the shared D1 quota.
+watch(entryInputMode, value => { if (value === 'scan') void refreshAiQuota() })
 // Device-only recovery: never send unfinished drafts to D1. Receipt image blobs
 // are intentionally excluded from localStorage; the original photo stays on device.
 const draftRecoveryInfo = ref('')
@@ -489,6 +491,9 @@ async function onImage(e, mode = 'statement') {
         } catch {
           throw new Error('AIと端末内OCRの両方で読み取れませんでした。再試行してください')
         }
+      } finally {
+        // An attempt is reserved before the model call even if OCR fails.
+        await refreshAiQuota()
       }
     }
     recognitionMode.value = mode
@@ -1283,7 +1288,7 @@ provide('kakeibo-page-context', { tab, statsPeriod, themes, storedTheme, theme, 
             </button>
           </div>
         </div>
-        <p v-if="aiOcrEnabled" class="ocr-engine-note" role="note">Cloudflare AIに画像を送信（回数上限≠料金上限）<span v-if="aiQuota">本日の残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
+        <p class="ocr-engine-note" role="note"><span v-if="aiOcrEnabled">Cloudflare AIに画像を送信（回数上限≠料金上限）</span><span v-if="aiQuota">本日の共通AI残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
         <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? '明細を複数件読み取り' : 'レシートの合計を1件読み取り' }}</p>

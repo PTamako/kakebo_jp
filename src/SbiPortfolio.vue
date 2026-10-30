@@ -161,6 +161,12 @@ function clearDual(){
   if(bulkBusy.value||saving.value)return
   dualProfit.value=''; dualPositions.value=''
   dualActive.value=false; dualVerified.value=false; dualInfo.value=''
+  bulkRows.value=holdingsData.value.map(h=>({
+    fundCode:h.fund_code,accountType:h.account_type,fundName:h.fund_name,
+    units:Number(h.units),acquisitionCost:Number(h.acquisition_cost),
+    expectedUnits:Number(h.units),expectedAcquisitionCost:Number(h.acquisition_cost)
+  }))
+  bulkWarning.value=''
 }
 async function readSbiScreen(event,kind){
   const file=event.target.files?.[0]
@@ -495,7 +501,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
             <small class="sbi-dual-help">同じ更新日時の2画面を選択。AI画像認識を各1回使用します。</small>
             <p v-if="dualInfo" role="status" class="sbi-bulk-notice">{{dualInfo}}</p>
           </div>
-          <details class="sbi-single-import" :open="!dualActive && false">
+          <details class="sbi-single-import">
             <summary>その他の取り込み方法</summary>
           <label>保有画面のテキストを貼り付け
             <textarea v-model="bulkText" rows="3" :disabled="saving || bulkBusy" placeholder="銘柄名 / 保有口数 / 取得金額"></textarea>

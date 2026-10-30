@@ -27,7 +27,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
       <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>集計データがありません</strong><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
         <div class="stats-card">
-          <div class="section-title"><div><h2>カテゴリ支出</h2></div></div>
+          <div class="section-title"><div><h2>カテゴリ別支出</h2></div></div>
           <div class="pie-chart-layout donut-vertical">
             <div class="category-pie donut-chart" :style="{ background: monthlyCategoryPie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'なし') + ' ' + donutPercent('month') + '%'" @click="selectDonutSlice($event, 'month')">
               <div class="donut-center"><span>{{ donutSelected('month') ? categoryLabel(donutSelected('month').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('month')?.amount || 0) }}</strong><small>{{ donutPercent('month') }}%</small></div>
@@ -74,7 +74,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
       <template v-else>
         <div v-if="annualStats?.count" class="stats-card">
           <div class="section-title"><div><h2>支出の推移</h2></div></div>
-          <div class="trend-summary"><strong>{{ yen(highestSpendMonth.amount) }}</strong><span>月間最高支出 · {{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</span></div>
+          <div class="trend-summary"><strong>{{ yen(highestSpendMonth.amount) }}</strong><span>支出が最も多い月 · {{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</span></div>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polygon v-if="expenseTrendArea" :points="expenseTrendArea" class="expense-chart-area" />
@@ -86,7 +86,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>収入の推移</h2></div></div>
-          <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>月間最高収入</span></div>
+          <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>収入が最も多い月</span></div>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年収入の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
@@ -97,7 +97,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入 · 破線：80% / 100%</p></div></div>
-          <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>月間最高の支出割合</span></div>
+          <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>支出割合が最も高い月</span></div>
           <p v-if="ratioTrendMax > 1.5" class="trend-note">150%超は上端に表示</p>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出割合の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
@@ -116,7 +116,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
           
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>年度カテゴリ収入</h2></div></div>
+          <div class="section-title"><div><h2>年間の収入内訳</h2></div></div>
           <div v-if="annualIncomeCategories.length" class="category-list annual-income-bars">
             <div v-for="(c, i) in annualIncomeCategories" :key="c.category" class="category-row category-row-clickable" role="button" tabindex="0" :aria-expanded="categoryDetail?.period === 'year' && categoryDetail?.type === 'income' && categoryDetail?.category === c.category" @click="openCategoryDetails(c.category, 'income', 'year')" @keydown.enter.prevent="openCategoryDetails(c.category, 'income', 'year')" @keydown.space.prevent="openCategoryDetails(c.category, 'income', 'year')">
               <div class="category-row-top"><span class="category-name"><span class="category-swatch category-emoji"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(c.category)"/></svg></span>{{ categoryLabel(c.category) }}</span><strong>{{ yen(c.amount) }}</strong></div>
@@ -127,7 +127,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
           <p v-else class="trend-note">この年の収入記録はありません。</p>
         </div>
         <div class="stats-card">
-          <div class="section-title"><div><h2>年度カテゴリ支出</h2></div></div>
+          <div class="section-title"><div><h2>年間の支出内訳</h2></div></div>
           <div class="pie-chart-layout donut-vertical">
             <div class="category-pie donut-chart" :style="{ background: annualExpensePie }" role="group" :aria-label="'カテゴリ別支出円環グラフ。選択中 ' + (donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'なし') + ' ' + donutPercent('year') + '%'" @click="selectDonutSlice($event, 'year')">
               <div class="donut-center"><span>{{ donutSelected('year') ? categoryLabel(donutSelected('year').category) : 'カテゴリ' }}</span><strong>{{ yen(donutSelected('year')?.amount || 0) }}</strong><small>{{ donutPercent('year') }}%</small></div>

@@ -184,7 +184,9 @@ const availableIcons = computed(() => {
   return ICON_LIBRARY.filter(icon => icon.id === 'other' || (!used.has(icon.id) && !existingLabels.has(icon.label)))
 })
 const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || ICON_LIBRARY.find(icon => icon.id === 'other').path
-const categoryLabel = name => categoryDisplayNames.value[name] || name
+const legacyCategoryLabels = Object.freeze({'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','交通':'交通費','工资':'給与','奖金':'賞与','副业':'副業','老公生活费':'夫からの生活費','父母赠与':'両親からの援助','亲友赠与':'親族・友人からの援助','退款':'返金','其他收入':'その他の収入'})
+// Keep historical D1 identifiers. Only the user-facing fallback is localized.
+const categoryLabel = name => categoryDisplayNames.value[name] && categoryDisplayNames.value[name] !== name ? categoryDisplayNames.value[name] : (legacyCategoryLabels[name] || categoryDisplayNames.value[name] || name)
 async function loadCategoryMetadata() {
   const rows = await api('category-source')
   categoryIcons.value = Object.fromEntries(rows.filter(row => row.icon).map(row => [row.category, row.icon]))

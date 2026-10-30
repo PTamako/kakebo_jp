@@ -1267,7 +1267,7 @@ provide('kakeibo-page-context', { tab, statsPeriod, themes, storedTheme, theme, 
         <details class="text-entry-details">
           <summary>テキストを貼り付けて読み取る</summary>
           <label class="field-label" for="entry-text">テキスト入力</label>
-          <label class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
+          <label class="form-field"><span>読み取り対象のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
           <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? '例：勉強会　10月毎週の金曜日（もしくは　10/10） 100円' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
           <div class="action-row">
             <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
@@ -1290,7 +1290,7 @@ provide('kakeibo-page-context', { tab, statsPeriod, themes, storedTheme, theme, 
         </div>
         <p class="ocr-engine-note" role="note"><span v-if="aiOcrEnabled">Cloudflare AIに画像を送信（回数上限≠料金上限）</span><span v-if="aiQuota">本日の共通AI残り：{{aiQuota.remaining}}/{{aiQuota.limit}}回</span></p>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
-        <label v-if="recognitionMode === 'statement'" class="form-field"><span>今回の明細のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
+        <label v-if="recognitionMode === 'statement'" class="form-field"><span>読み取り対象のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? '明細を複数件読み取り' : 'レシートの合計を1件読み取り' }}</p>
 
 

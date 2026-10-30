@@ -206,6 +206,10 @@ async function readSbiScreen(event,kind){
   const file=event.target.files?.[0]
   event.target.value=''
   if(!file||bulkBusy.value||saving.value)return
+  if (importedScreenshotKeys.value.length) {
+    bulkWarning.value='銘柄詳細の読み取り結果があります。旧方式に切り替える場合はクリアしてください。'
+    return
+  }
   // The dual-SBI layout requires its image-specific AI prompts. Do not
   // silently use unverified on-device OCR for accounting totals.
   if(!useAi.value) {
@@ -972,4 +976,56 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-transfer-side>small{font-size:10px;color:var(--muted);white-space:nowrap}
 .sbi-plan-side .sbi-row-edit,.sbi-transfer-side .sbi-row-edit{min-width:44px;min-height:40px;padding:6px 7px;text-align:center;border:1px solid var(--line);border-radius:9px;font-size:11px;line-height:1.2}
 @media(max-width:370px){.sbi-plan-side,.sbi-transfer-side{gap:4px}.sbi-management-body .sbi-plan-row,.sbi-management-body .sbi-transfer-row{gap:5px}.sbi-transfer-side>small{font-size:9px}}
+
+/* Rebuilt holdings: four comfortably tappable fund tiles with details on demand. */
+.sbi-holdings-redesign .sbi-fund-section-title{display:grid;gap:2px;flex:1;min-width:0}
+.sbi-holdings-redesign .sbi-fund-section-title strong{font-size:15px}
+.sbi-holdings-redesign .sbi-fund-section-title small{font-weight:500;font-size:10px}
+.sbi-holdings-redesign .sbi-holding-toolbar{padding:4px 0 11px}
+.sbi-holdings-redesign .sbi-holding-toolbar .sbi-bulk-primary{background:var(--blue);border-color:var(--blue);border-radius:12px;min-height:46px}
+.sbi-funds-list{display:grid;gap:7px}
+.sbi-holdings-redesign .sbi-fund-tile{padding:11px;border:1px solid var(--line);border-radius:13px;background:var(--card);gap:7px}
+.sbi-holdings-redesign .sbi-holding-top{grid-template-columns:9px minmax(0,1fr) minmax(76px,max-content);gap:8px}
+.sbi-holdings-redesign .sbi-fund-dot{width:8px;height:8px;margin-top:6px}
+.sbi-holdings-redesign .sbi-holding-name{gap:3px}
+.sbi-holdings-redesign .sbi-holding-name strong{font-size:13px;line-height:1.35;overflow-wrap:anywhere}
+.sbi-holdings-redesign .sbi-holding-name small{font-size:10px;line-height:1.25;color:var(--muted)}
+.sbi-holdings-redesign .sbi-holding-value strong{font-size:15px;white-space:nowrap}
+.sbi-holdings-redesign .sbi-holding-value small{font-size:11px;white-space:nowrap}
+.sbi-holdings-redesign .sbi-holding-footer{margin-left:17px;min-height:34px}
+.sbi-holdings-redesign .sbi-fund-meta{align-items:center;flex-wrap:wrap;gap:4px 6px;min-width:0}
+.sbi-holdings-redesign .sbi-fund-meta small{font-size:9px;line-height:1.3;color:var(--muted)}
+.sbi-holdings-redesign .sbi-nav-status{font-size:9px;padding:4px 6px}
+.sbi-holdings-redesign .sbi-holding-action{min-height:38px;min-width:56px;font-size:11px;border-radius:9px}
+.sbi-holdings-redesign .sbi-holding-expanded{margin:0;padding:10px;border-radius:10px;gap:7px}
+.sbi-holdings-redesign .sbi-account-row{background:var(--card)}
+@media(max-width:370px){
+ .sbi-holdings-redesign .sbi-fund-tile{padding:9px}
+ .sbi-holdings-redesign .sbi-holding-top{grid-template-columns:8px minmax(0,1fr) minmax(68px,max-content);gap:6px}
+ .sbi-holdings-redesign .sbi-holding-value strong{font-size:13px}
+ .sbi-holdings-redesign .sbi-holding-name strong{font-size:12px}
+}
+/* SBI details: one image per fund, many image selections, one final confirmation. */
+.sbi-detail-import{display:grid;gap:9px;padding:12px;border:1px solid color-mix(in srgb,var(--blue) 19%,var(--line));background:var(--paper);border-radius:14px}
+.sbi-detail-import-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px}
+.sbi-detail-import-heading strong{font-size:12px}
+.sbi-detail-import-heading small,.sbi-detail-import-meta,.sbi-detail-help{font-size:10px;color:var(--muted)}
+.sbi-fund-image-pick{display:flex!important;flex-direction:row!important;align-items:center;justify-content:center;gap:9px;min-height:56px;padding:12px;border-radius:12px;background:var(--blue);color:white!important;font-weight:800!important;font-size:13px!important;cursor:pointer}
+.sbi-fund-image-pick[aria-disabled="true"]{opacity:.5;pointer-events:none}
+.sbi-fund-image-pick svg{width:21px;height:21px;flex:none}
+.sbi-detail-import-meta{display:flex;align-items:center;justify-content:space-between}
+.sbi-detail-help{margin:0;line-height:1.5}
+.sbi-legacy-import{padding:0 2px;border-bottom:1px solid var(--line)}
+.sbi-legacy-import>summary{font-size:11px;font-weight:650;min-height:40px;display:flex;align-items:center;color:var(--muted);cursor:pointer}
+.sbi-legacy-import .sbi-dual-panel{margin-bottom:10px}
+.sbi-bulk-idle{margin:0;color:var(--muted);font-size:11px}
+.sbi-bulk-rows{display:grid;gap:9px}
+.sbi-bulk-fund-preview{display:grid;gap:6px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.sbi-bulk-fund-title{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.sbi-bulk-fund-title strong{font-size:12px}
+.sbi-bulk-fund-title small{font-size:10px;color:var(--muted)}
+.sbi-bulk-fund-preview .sbi-bulk-row{padding:7px 0 0;gap:5px}
+.sbi-bulk-fund-preview .sbi-bulk-row-name strong{font-size:11px}
+.sbi-bulk-fund-preview .sbi-bulk-row-name small{font-size:10px}
+.sbi-bulk-dialog .sbi-actions{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));padding:10px 0 calc(8px + env(safe-area-inset-bottom,0px));background:var(--card);z-index:2}
 </style>

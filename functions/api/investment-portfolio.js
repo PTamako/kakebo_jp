@@ -155,6 +155,10 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       if(!codeOk(x.fundCode)||!yenOk(x.navPer10000)||x.navPer10000<1||
         x.navPer10000>1000000000||!dayOk(x.priceDate))
         return respond({error:'基準価額と基準日を確認してください'},400);
+      // Never accept a future-dated manual NAV: the scheduled Worker only replaces
+      // prices with newer official dates, so a future placeholder could block updates.
+      const todayJst=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+      if(x.priceDate>todayJst)return respond({error:'基準日に未来日は指定できません'},400);
       const stored=await db.prepare('SELECT price_date,source FROM fund_prices WHERE fund_code=?1').bind(x.fundCode).first();
       // Screenshot day is an observation timestamp, not the official NAV
       // calculation date. Allow replacing that one-time placeholder with a

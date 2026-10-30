@@ -64,13 +64,14 @@ const shortFundName = item => ({
   '0331A172': '先進国債券（除く日本）',
   '04317188': 'NASDAQ100'
 })[item.fund_code] || item.fund_name
-const sourceLabel = source => source === 'official_mufg' ? '公式取得済' : source === 'manual' ? '手入力' : source === 'sbi_screenshot' ? '初期記録' : '価格未取得'
+const sourceLabel = source => ['official_mufg','official_daiwa'].includes(source) ? '公式取得済' : source === 'manual' ? '手入力' : source === 'sbi_screenshot' ? '初期記録' : '価格未取得'
 // Never claim that an unknown fund is manual-only without trying the
 // official read-only provider lookup. A network failure remains "確認不可".
 const navMode = code => {
   const fundCode=String(code||'').trim().toUpperCase()
   if (!/^[A-Z0-9]{8}$/.test(fundCode)) return 'invalid'
   if (autoNavSupported(fundCode)) return 'auto'
+  if (fundCode==='04317188' && holdingsData.value.some(h=>h.fund_code===fundCode&&h.source==='official_daiwa')) return 'auto'
   if (Object.hasOwn(KNOWN_MANUAL_NAV_FUNDS,fundCode)) return 'manual'
   return navSupport.value[fundCode] || 'checking'
 }
@@ -79,8 +80,8 @@ const navModeLabel = code => ({
   checking:'確認中…', unknown:'確認できません', invalid:'コード入力待ち'
 })[navMode(code)]
 const navModeHelp = code => ({
-  auto:'公式APIに対応。定期更新Workerが稼働しているときは基準価額が更新されます。口数・取得金額は手入力です。',
-  manual:'現在この銘柄に対応する公式APIが確認できません。基準価額は「詳細」から手入力してください。',
+  auto:'公式データを取得済みです。基準日をご確認ください。保有口数と取得金額は手入力です。',
+  manual:'公式取得が未確認です。取得できない場合は「詳細」から基準価額を手入力してください。',
   checking:'公式APIに接続して取得可否を確認しています。',
   unknown:'公式APIの接続確認に失敗しました。時間をおいて再確認するか、基準価額を手入力してください。',
   invalid:'8文字の銘柄コードを入力すると、公式APIの対応状況を確認します。'

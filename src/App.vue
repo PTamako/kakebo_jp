@@ -826,8 +826,9 @@ async function openPrepaidHistoryDetails(kind) {
   preserveOperatedDay.value = ''
   prepaidHistoryFilter.value = kind
   entryTypeFilter.value = kind === 'charge' ? 'transfer' : 'expense'
-  const changedMonth = month.value !== currentMonth()
-  month.value = currentMonth()
+  const targetMonth = currentMonth()
+  const changedMonth = month.value !== targetMonth
+  month.value = targetMonth
   tab.value = 'list'
   if (!changedMonth) await load()
 }

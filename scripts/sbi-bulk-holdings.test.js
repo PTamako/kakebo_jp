@@ -64,7 +64,7 @@ test('portfolio reader only appears in SBI holdings section, not main expense OC
   const ai=readFileSync(new URL('../functions/api/gemma-ocr.js',import.meta.url),'utf8')
   const api=readFileSync(new URL('../functions/api/[[path]].js',import.meta.url),'utf8')
   const backend=readFileSync(new URL('../functions/api/investment-portfolio.js',import.meta.url),'utf8')
-  assert.match(component,/保有を一括更新/)
+  assert.match(component,/画像から保有を更新/)
   assert.match(component,/parseSbiHoldingsText\(bulkText\.value,holdingsData\.value\)/)
   assert.match(component,/investment-portfolio\/holdings-bulk/)
   assert.match(api,/body\.get\('mode'\)/)

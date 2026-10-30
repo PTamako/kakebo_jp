@@ -52,7 +52,7 @@ test('mobile fund list groups by code but keeps per-account edit and bulk OCR',(
   assert.match(ui,/groupFundHoldings\(holdingsData\.value\)/)
   assert.match(ui,/fundCount:fundGroups\.value\.length/)
   assert.match(ui,/fundGroups\.value\.map\(\(fund, index\) =>/)
-  assert.match(ui,/fundGroups\.length\}\}件/)
+  assert.match(ui,/fundGroups\.length\}\}銘柄/)
   assert.match(ui,/v-for="h in fund\.accounts"/)
   assert.match(ui,/@click="editHolding\(h\)"/)
   assert.match(ui,/@click="editPrice\(fund\)"/)

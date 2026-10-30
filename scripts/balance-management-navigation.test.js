@@ -49,10 +49,14 @@ test('all due-transfer actions are preserved and do not use new storage',()=>{
   for(const filename of [balance,management,portfolio,reminders])
     assert.doesNotMatch(filename,/\bDROP TABLE\b|\bDELETE FROM\b|CREATE TABLE/i)
 })
-test('two SBI screenshot update and wallet history remain accessible',()=>{
+test('single-fund SBI detail screenshots and wallet history remain accessible',()=>{
   assert.match(portfolio,/@click="openBulk"/)
-  assert.match(portfolio,/@change="readSbiScreen\(\$event,'profit'\)"/)
-  assert.match(portfolio,/@change="readSbiScreen\(\$event,'positions'\)"/)
+  assert.match(portfolio,/@change="readFundDetailImages"/)
+  assert.match(portfolio,/<input type="file" multiple accept="image\/\*"/)
+  assert.match(portfolio,/parseSbiFundDetailText\(recognized,holdingsData\.value\)/)
+  assert.match(portfolio,/applySbiFundDetailUpdates\(bulkRows\.value,parsed\.updates,importedScreenshotKeys\.value\)/)
+  assert.match(portfolio,/@submit.prevent="saveBulk"/)
+  assert.doesNotMatch(portfolio,/readSbiScreen|reconcileSbiScreens|portfolio-profit|portfolio-positions|従来の2画面照合/)
   assert.match(balance,/@open-history="openPrepaidHistoryDetails"/)
   assert.match(balance,/@open-card-settings="openCardSettings"/)
 })

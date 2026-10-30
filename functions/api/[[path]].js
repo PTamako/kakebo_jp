@@ -121,7 +121,7 @@ export async function onRequest({ request, env, params }) {
     let body
     try { body = await request.formData() } catch { return json({ error: '画像を読み込めませんでした' }, 400) }
     const file = body.get('image')
-    const mode = ['receipt','statement','portfolio','portfolio-profit','portfolio-positions'].includes(body.get('mode')) ? body.get('mode') : 'statement'
+    const mode = ['receipt','statement','portfolio','portfolio-detail'].includes(body.get('mode')) ? body.get('mode') : 'statement'
     if (!file || typeof file.arrayBuffer !== 'function' || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024)
       return json({ error: 'JPEG・PNG・WebP画像（4MB以下）を選択してください' }, 400)
     // Reserve a daily attempt before invoking Cloudflare AI; if quota D1 fails, use local OCR.

@@ -26,7 +26,7 @@ export function discoverDaiwaCsvUrl(html){
   const anchors=String(html).match(/<a\b[^>]*>[\s\S]*?<\/a>/gi)||[]
   for(const anchor of anchors){
     if(!/時系列データ|CSV.*ダウンロード/i.test(normalize(anchor)))continue
-    const href=anchor.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1]
+    const href=anchor.match(/\shref\s*=\s*["']([^"']+)["']/i)?.[1]
     if(href && !/^javascript:/i.test(href))
       return safeOfficialUrl(href,DAIWA_FUND_URL)
   }

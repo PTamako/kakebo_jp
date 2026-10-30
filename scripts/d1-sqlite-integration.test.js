@@ -824,3 +824,25 @@ test('audit follow-up: AI quota never creates missing D1 tables during requests'
     assert.equal(db.db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='ai_ocr_daily_usage'").get().n,0)
   }finally{db.close()}
 })
+
+
+test('audit follow-up: previously saved future NAV can be corrected, but valid prices cannot be rewound',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const fundCode='03311187'
+    const todayJst=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    db.db.prepare("INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES(?1,99999,'2099-12-31','manual')").run(fundCode)
+    const corrected=await call('investment-portfolio/price','PUT',{
+      fundCode,navPer10000:45093,priceDate:todayJst
+    })
+    assert.equal(corrected.status,200)
+    const current=db.db.prepare('SELECT nav_per_10000,price_date FROM fund_prices WHERE fund_code=?').get(fundCode)
+    assert.equal(current.nav_per_10000,45093)
+    assert.equal(current.price_date,todayJst)
+    const backdated=await call('investment-portfolio/price','PUT',{
+      fundCode,navPer10000:100,priceDate:'2000-01-01'
+    })
+    assert.equal(backdated.status,409)
+    assert.deepEqual(db.db.prepare('SELECT nav_per_10000,price_date FROM fund_prices WHERE fund_code=?').get(fundCode),current)
+  }finally{db.close()}
+})

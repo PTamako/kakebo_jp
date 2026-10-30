@@ -385,8 +385,15 @@ export async function onRequest({ request, env, params }) {
       const body = await request.json()
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
       if (name && !(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(name).first())) return json({ error: '登録済みのカードを選択してください' }, 400)
-      await db.prepare('UPDATE payment_sources SET is_default=0 WHERE is_default=1').run()
-      if (name) await db.prepare('UPDATE payment_sources SET is_default=1 WHERE name=?1').bind(name).run()
+      // One atomic SQL statement: never leave every card without a default
+      // if a second request fails or another device edits the same setting.
+      // Guard the target inside the statement in case it was deleted after
+      // the existence check above. An empty name explicitly clears defaults.
+      const updated = await db.prepare(`UPDATE payment_sources
+        SET is_default=CASE WHEN name=?1 THEN 1 ELSE 0 END
+        WHERE ?1='' OR EXISTS(SELECT 1 FROM payment_sources WHERE name=?1)`)
+        .bind(name).run()
+      if (name && !updated.meta?.changes) return json({error:'登録済みのカードを選択してください'},404)
       return json({ ok: true })
     }
     if (a === 'payment-sources' && b === 'remove' && m === 'POST') {

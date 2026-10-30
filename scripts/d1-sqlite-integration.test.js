@@ -746,3 +746,103 @@ test('user-defined merchant_rules take priority over longer rules defaults; back
    assert.equal(target.db.db.prepare("SELECT COUNT(*) n FROM merchant_rules WHERE keyword='まいばす'").get().n,1)
  }finally{source.db.close();target.db.close()}
 })
+
+
+test('audit follow-up: future NAV is rejected without inserting or changing existing prices',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const fundCode='03311187'
+    const todayJst=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    const future=await call('investment-portfolio/price','PUT',{
+      fundCode,navPer10000:99999,priceDate:'2099-12-31'
+    })
+    assert.equal(future.status,400)
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM fund_prices').get().n,0)
+
+    const valid=await call('investment-portfolio/price','PUT',{
+      fundCode,navPer10000:45093,priceDate:todayJst
+    })
+    assert.equal(valid.status,200)
+    const current=db.db.prepare('SELECT nav_per_10000,price_date,source FROM fund_prices WHERE fund_code=?').get(fundCode)
+    assert.equal(current.nav_per_10000,45093)
+    assert.equal(current.source,'manual')
+
+    const rejected=await call('investment-portfolio/price','PUT',{
+      fundCode,navPer10000:99999,priceDate:'2099-12-31'
+    })
+    assert.equal(rejected.status,400)
+    assert.deepEqual(db.db.prepare('SELECT nav_per_10000,price_date,source FROM fund_prices WHERE fund_code=?').get(fundCode),current)
+  }finally{db.close()}
+})
+
+test('audit follow-up: default card switching is a single guarded SQL update',async()=>{
+  const {db,call}=await createClient()
+  try{
+    assert.equal((await call('payment-sources','POST',{name:'カードA'})).status,200)
+    assert.equal((await call('payment-sources','POST',{name:'カードB'})).status,200)
+    const statements=[]
+    const original=db.prepare.bind(db)
+    db.prepare=sql=>{
+      if(/UPDATE payment_sources\s+SET\s+is_default/i.test(sql))statements.push(sql)
+      return original(sql)
+    }
+    assert.equal((await call('payment-sources/default','POST',{name:'カードA'})).status,200)
+    assert.equal((await call('payment-sources/default','POST',{name:'カードB'})).status,200)
+    assert.equal(statements.length,2,'exactly one SQL update per user change')
+    assert.ok(statements.every(sql=>/CASE WHEN name=\?1 THEN 1 ELSE 0 END/.test(sql)))
+    const rows=()=>db.db.prepare('SELECT name,is_default FROM payment_sources ORDER BY name').all()
+    assert.deepEqual(rows().map(x=>Number(x.is_default)),[0,1])
+    assert.equal((await call('payment-sources/default','POST',{name:'不存在'})).status,400)
+    assert.deepEqual(rows().map(x=>Number(x.is_default)),[0,1],'unknown card must not reset existing default')
+    const concurrent=await Promise.all([
+      call('payment-sources/default','POST',{name:'カードA'}),
+      call('payment-sources/default','POST',{name:'カードB'})
+    ])
+    assert.ok(concurrent.every(x=>x.status===200))
+    assert.equal(rows().reduce((n,row)=>n+Number(row.is_default),0),1)
+    assert.equal((await call('payment-sources/default','POST',{name:''})).status,200)
+    assert.equal(rows().reduce((n,row)=>n+Number(row.is_default),0),0,'explicit clear remains supported')
+  }finally{db.close()}
+})
+
+test('audit follow-up: AI quota never creates missing D1 tables during requests',async()=>{
+  const db=new SqliteD1()
+  try{
+    const original=db.prepare.bind(db)
+    const sql=[]
+    db.prepare=statement=>{
+      sql.push(statement)
+      if(/^\s*(CREATE|ALTER|DROP)\s+TABLE/i.test(statement))throw Error('runtime schema changes forbidden')
+      return original(statement)
+    }
+    assert.equal((await aiQuotaState(db,{})).limit,20)
+    assert.equal((await reserveAiAttempt(db,{})).allowed,true)
+    assert.ok(!sql.some(statement=>/^\s*(CREATE|ALTER|DROP)\s+TABLE/i.test(statement)))
+    db.db.exec('DROP TABLE ai_ocr_daily_usage')
+    await assert.rejects(aiQuotaState(db,{}),/no such table/i)
+    await assert.rejects(reserveAiAttempt(db,{}),/no such table/i)
+    assert.equal(db.db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='ai_ocr_daily_usage'").get().n,0)
+  }finally{db.close()}
+})
+
+
+test('audit follow-up: previously saved future NAV can be corrected, but valid prices cannot be rewound',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const fundCode='03311187'
+    const todayJst=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    db.db.prepare("INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES(?1,99999,'2099-12-31','manual')").run(fundCode)
+    const corrected=await call('investment-portfolio/price','PUT',{
+      fundCode,navPer10000:45093,priceDate:todayJst
+    })
+    assert.equal(corrected.status,200)
+    const current=db.db.prepare('SELECT nav_per_10000,price_date FROM fund_prices WHERE fund_code=?').get(fundCode)
+    assert.equal(current.nav_per_10000,45093)
+    assert.equal(current.price_date,todayJst)
+    const backdated=await call('investment-portfolio/price','PUT',{
+      fundCode,navPer10000:100,priceDate:'2000-01-01'
+    })
+    assert.equal(backdated.status,409)
+    assert.deepEqual(db.db.prepare('SELECT nav_per_10000,price_date FROM fund_prices WHERE fund_code=?').get(fundCode),current)
+  }finally{db.close()}
+})

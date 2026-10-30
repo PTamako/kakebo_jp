@@ -1,7 +1,10 @@
 (() => {
   let shown = false;
   const showStartupError = (message) => {
-    if (shown) return;
+    // Once Vue has rendered the app, resource errors and async rejections
+    // are runtime concerns, not evidence that application startup failed.
+    const app = document.getElementById('app');
+    if (shown || (app && app.childElementCount > 0)) return;
     shown = true;
     const panel = document.createElement('pre');
     panel.setAttribute('role', 'alert');

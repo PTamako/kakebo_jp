@@ -25,7 +25,7 @@ const yen = value => '¥' + Number(value || 0).toLocaleString('ja-JP')
         </div>
         <div class="investment-review-actions">
           <span :class="transferStatusClass(item)">{{transferStatus(item)}}</span>
-          <button v-if="Number(item.transfer_applied) === 1" type="button" :disabled="transferActionId !== null" :aria-label="item.merchant+'の通知を閉じる'" @click="dismissTransferReminder(item)">×</button>
+          <button v-if="Number(item.transfer_applied) === 1" type="button" :disabled="transferActionId !== null" :aria-label="(item.merchant || item.note || 'SBI証券への振替')+'の通知を閉じる'" @click="dismissTransferReminder(item)">×</button>
           <button v-else-if="transferDue(item)" type="button" :disabled="transferActionId !== null" @click="retryTransfer(item)">記帳に反映</button>
         </div>
       </div>

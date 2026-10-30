@@ -652,7 +652,8 @@ export async function onRequest({ request, env, params }) {
               AND (COALESCE(time,'')='' OR COALESCE(?2,'')=''
                 OR ABS((CAST(SUBSTR(time,1,2) AS INTEGER)*60 + CAST(SUBSTR(time,4,2) AS INTEGER))
                   - (CAST(SUBSTR(?2,1,2) AS INTEGER)*60 + CAST(SUBSTR(?2,4,2) AS INTEGER))) <= 5)
-              AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13)
+              AND TRIM(COALESCE(merchant,''))=TRIM(?5) AND type=?8 AND COALESCE(payment_source,'')=?13
+              AND (type<>'transfer' OR COALESCE(transfer_target,'')=COALESCE(?9,'')))
             ON CONFLICT(client_request_id) DO NOTHING`
           : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
         const inserted = await db.prepare(insertSql).bind(e.date, e.time || '', amount,

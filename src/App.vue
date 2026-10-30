@@ -202,7 +202,7 @@ function setRememberDevice(remember) {
     if(remember && token.value) localStorage.setItem('kakeibo-device-session',token.value)
     else localStorage.removeItem('kakeibo-device-session')
     if(!remember && token.value)sessionStorage.setItem('kakeibo-device-session',token.value)
-  } catch { flash('ログイン保存設定を変更できませんでした') }
+  } catch { flash('ログイン状態の保存設定を変更できませんでした') }
 }
 const locked = ref(!token.value && localStorage.getItem('kakeibo-logged-out') === '1')
 async function signIn(code) {
@@ -218,7 +218,7 @@ async function signIn(code) {
 }
 async function logout() {
   if (busy.value || editSaving.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
-  if (!confirm('ログアウトしますか？未保存の入力はこの端末の草稿として保存されます。')) return
+  if (!confirm('ログアウトしますか？未保存の入力は、この端末に下書きとして残ります。')) return
   const oldSession = token.value
   token.value = ''
   localStorage.removeItem('kakeibo-device-session')

@@ -1,8 +1,8 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 const props=defineProps({ api:{type:Function,required:true}, active:{type:Boolean,default:false}, revision:{type:Number,default:0} })
-const emit=defineEmits(['summary','open-card-settings'])
-const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false),showAllRecharges=ref(false)
+const emit=defineEmits(['summary','open-card-settings','open-history'])
+const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false)
 const money=value=>'¥'+Number(value||0).toLocaleString('ja-JP')
 const selected=ref(null),openingDraft=ref(0),saving=ref(false),notice=ref('')
 function startOpening(card){ selected.value=card;openingDraft.value=Number(card.opening_balance) }
@@ -59,11 +59,10 @@ onMounted(()=>{if(props.active)void refresh()})
           <div class="wallet-row-actions"><button type="button" class="wallet-edit" @click="startOpening(card)">編集</button></div>
         </div>
         <button v-if="data.cards.length>2" type="button" class="wallet-show-more" :aria-expanded="showAll" @click="showAll=!showAll">{{showAll?'閉じる':'あと'+(data.cards.length-2)+'件を表示'}}</button>
-        <details v-if="data.recharges.length" class="wallet-recharge">
-          <summary>チャージ履歴 <span>{{data.recharges.length}}件</span></summary>
-          <div v-for="entry in (showAllRecharges ? data.recharges : data.recharges.slice(0,3))" :key="entry.id" class="wallet-recharge-row"><span>{{entry.date}} · {{entry.transfer_target.slice(8)}}</span><strong>+{{money(entry.amount)}}</strong></div>
-          <button v-if="data.recharges.length>3" type="button" class="wallet-show-more" :aria-expanded="showAllRecharges" @click="showAllRecharges=!showAllRecharges">{{showAllRecharges?'閉じる':'あと'+(data.recharges.length-3)+'件を表示'}}</button>
-        </details>
+        <nav class="wallet-history-links" aria-label="プリペイドの明細">
+          <button type="button" @click="emit('open-history','charge')">チャージ履歴 <span aria-hidden="true">›</span></button>
+          <button type="button" @click="emit('open-history','usage')">利用履歴 <span aria-hidden="true">›</span></button>
+        </nav>
         
       </template>
     </div>
@@ -95,9 +94,10 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-money{display:grid;justify-items:end;flex:none;font-variant-numeric:tabular-nums;white-space:nowrap}.wallet-money strong{font-size:15px}.wallet-money small{font-size:10px;color:var(--muted)}.wallet-negative{color:#c54d68}
 .wallet-row-actions{display:flex;justify-content:flex-end;margin-top:1px}.wallet-edit{border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750;min-height:44px;padding:5px 8px}
 .wallet-show-more{display:block;margin:2px auto 5px;border:0;background:transparent;color:var(--blue-dark);min-height:44px;font-size:12px;font-weight:750;padding:8px}
-.wallet-recharge{border-top:1px solid var(--line)}
-.wallet-recharge summary{font-size:11px;font-weight:750;color:var(--muted);cursor:pointer;min-height:40px;padding:12px 0}.wallet-recharge summary span{font-weight:500}
-.wallet-recharge-row{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:9px 0;border-top:1px solid var(--line)}
+.wallet-history-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:12px 0 1px;border-top:1px solid var(--line)}
+.wallet-history-links button{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;min-height:44px;padding:9px 5px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--blue-dark);font-size:12px;font-weight:750;white-space:nowrap;cursor:pointer}
+.wallet-history-links button span{font-size:19px;line-height:1}
+.wallet-history-links button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .wallet-hint{font-size:11px;color:var(--muted);line-height:1.6;margin:0}
 .wallet-error{font-size:12px;color:#9b2938}.wallet-success{font-size:11px;color:#178367;margin:0}
 .wallet-overlay{position:fixed;z-index:61;inset:0;background:#23273588;display:flex;align-items:flex-end;justify-content:center}

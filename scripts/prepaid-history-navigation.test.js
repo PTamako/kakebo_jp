@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
+import {matchesPrepaidHistoryEntry} from '../src/prepaid-history.js'
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 const wallet=read('src/PrepaidAssets.vue')
 const assets=read('src/pages/AssetsPage.vue')
@@ -28,8 +29,9 @@ test('prepaid history navigates to current month in existing ledger tab',()=>{
 })
 
 test('prepaid history strictly filters the selected card and entry type',()=>{
- assert.match(app,/entry\.type === 'transfer' && entry\.transfer_target === prepaidTarget\(filter\.card\)/)
- assert.match(app,/filter\.kind === 'usage' && entry\.type === 'expense' && entry\.payment_source === filter\.card/)
+ assert.match(app,/matchesPrepaidHistoryEntry\(entry, prepaidHistoryFilter\.value\)/)
+ assert.match(read('src/prepaid-history.js'),/entry\.transfer_target === prepaidTarget\(filter\.card\)/)
+ assert.match(read('src/prepaid-history.js'),/entry\.payment_source === filter\.card/)
  assert.match(app,/\.filter\(entryMatchesType\)\.filter\(matchesPrepaidHistory\)/)
  assert.match(ledger,/v-if="!detailFilter && !prepaidHistoryFilter"/)
  assert.match(ledger,/v-if="prepaidHistoryFilter" class="detail-filter-strip"/)
@@ -41,4 +43,21 @@ test('navigation does not re-import old payment settings or create D1 history',(
  assert.doesNotMatch(wallet,/prepaid-assets\/initialize|INSERT INTO/)
  assert.doesNotMatch(app,/payment-sources\/initialize|readLegacyPaymentSources/)
  assert.match(app,/const cards = await api\('payment-sources'\)/)
+})
+
+test('Suica history never includes PASMO, ordinary transfers, income or other expenses',()=>{
+ const entries=[
+  {type:'transfer',transfer_target:'prepaid:Suica',amount:3000},
+  {type:'transfer',transfer_target:'prepaid:PASMO',amount:4000},
+  {type:'transfer',transfer_target:'sbi',amount:15000},
+  {type:'expense',payment_source:'Suica',amount:210},
+  {type:'expense',payment_source:'PASMO',amount:180},
+  {type:'income',payment_source:'Suica',amount:100}
+ ]
+ assert.deepEqual(entries.filter(e=>matchesPrepaidHistoryEntry(e,{card:'Suica',kind:'charge'})),[entries[0]])
+ assert.deepEqual(entries.filter(e=>matchesPrepaidHistoryEntry(e,{card:'PASMO',kind:'charge'})),[entries[1]])
+ assert.deepEqual(entries.filter(e=>matchesPrepaidHistoryEntry(e,{card:'Suica',kind:'usage'})),[entries[3]])
+ assert.deepEqual(entries.filter(e=>matchesPrepaidHistoryEntry(e,{card:'PASMO',kind:'usage'})),[entries[4]])
+ assert.equal(matchesPrepaidHistoryEntry(entries[0],{card:'Suica',kind:'invalid'}),false)
+ assert.equal(matchesPrepaidHistoryEntry(entries[0],null),true)
 })

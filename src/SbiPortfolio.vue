@@ -360,7 +360,6 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 
 <template>
   <div class="sbi-portfolio">
-    <slot name="before-holdings" />
     <div class="sbi-toolbar">
       <div class="sbi-provider"><span class="sbi-provider-dot" aria-hidden="true"></span><span>SBI証券</span></div>
       <div class="sbi-toolbar-actions">
@@ -426,7 +425,11 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
         </details>
         </div>
       </details>
+    </template>
 
+    <slot name="before-holdings" />
+
+    <template v-if="data">
       <details class="panel sbi-card sbi-investment-manage">
         <summary class="sbi-disclosure-summary">
           <span class="sbi-manage-title"><strong>毎月の積立</strong><small>{{yen(data.reconciliation.monthly_amount)}} / 月 · {{data.plans.filter(p=>p.enabled).length}}銘柄</small></span>

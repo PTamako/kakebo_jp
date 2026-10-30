@@ -77,12 +77,12 @@ test('stats and calendar do not show old-period data or unfiltered payment amoun
 
 test('restoring backup data never overwrites existing finance or category settings',()=>{
   assert.match(finance,/async function downloadBackup\(\)/)
-  assert.match(finance,/await props\.api\('investments'\)|props\.api\('investments'\)/)
+  assert.doesNotMatch(finance,/props\.api\('investments'\)/)
   assert.match(finance,/backupPreview\.value/)
   assert.match(finance,/restoreIncludeConflicts/)
   assert.match(finance,/restoreMissingByKey\(existingPlans,backup\.plans/)
   assert.match(finance,/restoreMissingByKey\(existingBills,backup\.bills/)
-  assert.match(finance,/props\.api\('investments\/restore-empty'/)
+  assert.doesNotMatch(finance,/props\.api\('investments\/restore-empty'/)
   assert.doesNotMatch(api,/UPDATE rules SET category = \?1 WHERE keyword = \?2 AND category = \?3/)
 })
 

@@ -26,8 +26,9 @@ test('remove redundant visual helper paragraphs without changing chart labels or
   assert.doesNotMatch(app, /何にお金を使ったか確認しましょう|月ごとの年間収入の推移/)
   assert.match(app, /支出 ÷ 収入 · 破線：80% \/ 100%/)
   assert.match(app, /150%超は上端に表示/)
-  assert.match(app, /期日で家計簿に反映。SBIへの着金確認・買付は別です/)
-  assert.match(app, /基準価額は三菱UFJ運用の3銘柄を自動更新します。/)
+  assert.match(app, /期日反映は証券口座への入金・買付完了を保証しません/)
+  assert.match(app, /対象銘柄の一部は自動更新します。その他は手入力です。/)
+  assert.match(app, /class="sbi-footnote"/)
 })
 test('input and OCR keep short actionable explanations and AI image disclosure', () => {
   assert.match(app, /Cloudflare AIに画像を送信/)

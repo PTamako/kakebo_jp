@@ -87,14 +87,14 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-section-heading:focus-visible,.wallet-show-more:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .wallet-body{padding:0 14px 13px}
 .wallet-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:3px}.wallet-tools span{font-size:10px;color:var(--muted)}
-.wallet-add{border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750;min-height:40px;padding:7px 10px}
-.wallet-refresh{border:0;background:var(--paper);color:var(--blue-dark);font-weight:750;border-radius:9px;min-height:36px;padding:7px 10px;font-size:11px;white-space:nowrap}
+.wallet-add{min-height:44px;border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750;min-height:40px;padding:7px 10px}
+.wallet-refresh{min-height:44px;border:0;background:var(--paper);color:var(--blue-dark);font-weight:750;border-radius:9px;min-height:44px;padding:7px 10px;font-size:11px;white-space:nowrap}
 .wallet-row{border-top:1px solid var(--line);padding:10px 0 7px;min-width:0}
 .wallet-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:7px}
 .wallet-name{display:grid;gap:3px;min-width:0}.wallet-name strong{font-size:13px;overflow-wrap:anywhere}.wallet-name small{color:var(--muted);font-size:10px;line-height:1.5}
 .wallet-money{display:grid;justify-items:end;flex:none;font-variant-numeric:tabular-nums;white-space:nowrap}.wallet-money strong{font-size:15px}.wallet-money small{font-size:10px;color:var(--muted)}.wallet-negative{color:#c54d68}
-.wallet-row-actions{display:flex;justify-content:flex-end;margin-top:1px}.wallet-edit{border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750;min-height:38px;padding:5px 8px}
-.wallet-show-more{display:block;margin:2px auto 5px;border:0;background:transparent;color:var(--blue-dark);min-height:40px;font-size:12px;font-weight:750;padding:8px}
+.wallet-row-actions{display:flex;justify-content:flex-end;margin-top:1px}.wallet-edit{border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750;min-height:44px;padding:5px 8px}
+.wallet-show-more{display:block;margin:2px auto 5px;border:0;background:transparent;color:var(--blue-dark);min-height:44px;font-size:12px;font-weight:750;padding:8px}
 .wallet-recharge,.wallet-explanation{border-top:1px solid var(--line)}
 .wallet-recharge summary,.wallet-explanation summary{font-size:11px;font-weight:750;color:var(--muted);cursor:pointer;min-height:40px;padding:12px 0}.wallet-recharge summary span{font-weight:500}
 .wallet-recharge-row{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:9px 0;border-top:1px solid var(--line)}

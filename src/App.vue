@@ -437,7 +437,7 @@ function recognize(mode = recognitionMode.value, append = false) {
   const parsedForms = parsed.map(f => {
     const transferText = [f.merchant, f.note, f.raw].filter(Boolean).join(' ')
     const transfer = /証券投信積立サービス|投信積立サービス|翌月買付分/.test(transferText) || (/SBI/i.test(transferText) && /投信積立|投資信託積立/.test(transferText))
-    const matchingPrepaid=effectiveMode==='statement' ? detectPrepaidRecharge(transferText,prepaidSources.value) : ''
+    const matchingPrepaid=effectiveMode==='receipt'||effectiveMode==='statement' ? detectPrepaidRecharge(transferText,prepaidSources.value) : ''
     const type = transfer || matchingPrepaid ? 'transfer' : effectiveMode === 'receipt' ? 'expense' : normalizedDraftType(f.type)
     const imported = effectiveMode === 'statement' ? importPaymentSource.value : ''
     return { ...f, type, category: type==='transfer' ? '投資・資産移動' : f.category, transferTarget: matchingPrepaid ? prepaidTarget(matchingPrepaid) : f.transferTarget || (transfer ? 'sbi' : ''), transferDate: f.transferDate || f.date, paymentSource: type==='transfer' ? (imported || '') : suggestedPayment(f.merchant, f.paymentSource, type, imported), recognizedPayment: f.paymentSource || '', importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }

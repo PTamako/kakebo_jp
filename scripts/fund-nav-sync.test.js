@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
-import { fetchMufgNav, parseMufgNav, syncFundNav, PENDING_NAV_FUNDS } from '../functions/api/fund-nav-sync.js'
+import { fetchMufgNav, parseMufgNav, probeFundNavSupport, syncFundNav, PENDING_NAV_FUNDS } from '../functions/api/fund-nav-sync.js'
 
 const today=new Date('2026-10-30T00:00:00Z')
 const response=(code,date='20261029',nav=39001)=>({
@@ -92,5 +92,55 @@ test('failed vendor response does not overwrite any existing quote',async()=>{
     })
     assert.equal(result.failed.length,1)
     assert.equal(fixture.db.prepare("SELECT nav_per_10000 FROM fund_prices WHERE fund_code='03311187'").get().nav_per_10000,45093)
+  }finally{fixture.close()}
+})
+
+test('new fund code is probed read-only; API success distinguishes auto, 404 manual and outage unknown',async()=>{
+  const newer='0331109A'
+  const fetched=[]
+  const api=mockFetcher(url=>{fetched.push(url);return response(newer,'20261029',12345)})
+  const detected=await probeFundNavSupport(newer,{fetcher:api,now:today})
+  assert.equal(detected.status,'auto')
+  assert.equal(detected.priceDate,'2026-10-29')
+  assert.equal(fetched.length,1)
+  assert.equal(fetched[0],'https://developer.am.mufg.jp/fund_information_latest/association_fund_cd/'+newer)
+  assert.equal((await probeFundNavSupport('04317188',{now:today,fetcher:()=>{throw Error('never')}})).status,'manual')
+  assert.equal((await probeFundNavSupport(newer,{now:today,fetcher:async()=>({ok:false,status:404})})).status,'manual')
+  assert.equal((await probeFundNavSupport(newer,{now:today,fetcher:async()=>{throw Error('network_down')}})).status,'unknown')
+  assert.equal((await probeFundNavSupport('0000000/',{now:today})).status,'invalid')
+  await assert.rejects(
+    fetchMufgNav(newer,{now:today,fetcher:mockFetcher(()=>response('99999999'))}),
+    /provider_fund_mismatch/
+  )
+  // A newly discovered fund must identify its own code in the vendor data.
+  await assert.rejects(
+    fetchMufgNav(newer,{now:today,fetcher:mockFetcher(()=>({datasets:[{nav:12345,base_date:'20261029'}]}))}),
+    /provider_fund_mismatch/
+  )
+})
+
+test('daily NAV job includes a newly held API-supported fund and never changes position quantities',async()=>{
+  const fixture=dbFixture()
+  try{
+    const {db,d1}=fixture,code='0331109A'
+    db.prepare("INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost) VALUES(?,'growth','追加銘柄',2000,5000)").run(code)
+    const holdings=db.prepare('SELECT * FROM investment_holdings').all()
+    const result=await syncFundNav(d1,{now:today,fetcher:mockFetcher(()=>response(code,'20261029',32100)),logger:{warn(){}}})
+    assert.deepEqual(result.updated,[code])
+    assert.equal(db.prepare('SELECT nav_per_10000 FROM fund_prices WHERE fund_code=?').get(code).nav_per_10000,32100)
+    assert.deepEqual(db.prepare('SELECT * FROM investment_holdings').all(),holdings)
+    const next=await syncFundNav(d1,{now:today,fetcher:mockFetcher(()=>response(code,'20261029',32100)),logger:{warn(){}}})
+    assert.deepEqual(next.unchanged,[code])
+  }finally{fixture.close()}
+})
+
+test('probing unsupported or unreachable funds never inserts a fund quote',async()=>{
+  const fixture=dbFixture()
+  try{
+    const {db}=fixture
+    const result=await probeFundNavSupport('12345678',{fetcher:async()=>({ok:false,status:404})})
+    assert.equal(result.status,'manual')
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM fund_prices').get().n,0)
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM investment_holdings').get().n,0)
   }finally{fixture.close()}
 })

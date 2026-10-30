@@ -35,7 +35,7 @@ export async function handlePrepaid({db,request,method,sub}) {
     FROM payment_sources p WHERE p.source_type='prepaid'
     ORDER BY p.sort_order,p.name`).bind(today).all()
   const {results:recharges}=await db.prepare(`SELECT e.id,e.date,e.amount,e.merchant,e.payment_source,e.transfer_target
-    FROM entries e WHERE e.type='transfer' AND e.transfer_target LIKE 'prepaid:%' AND e.date<=?1
+    FROM entries e WHERE e.type='transfer' AND e.transfer_target LIKE 'prepaid:%' AND e.date<=?1\n      AND COALESCE(e.transfer_date,e.date)<=?1
       AND EXISTS (SELECT 1 FROM payment_sources p
         WHERE p.source_type='prepaid' AND e.transfer_target='prepaid:'||p.name
           AND e.id>p.opening_entry_id AND e.date>=p.opening_date)

@@ -15,6 +15,18 @@ test('recharge detector requires an explicitly registered transit card and recha
   assert.equal(prepaidBalance({opening_balance:1000,charged:3000,spent:220}),3780)
 })
 
+test('newly registered prepaid card names work without a fixed brand list',()=>{
+  assert.equal(detectPrepaidRecharge('nanaco チャージ 500円',['nanaco']),'nanaco')
+  assert.equal(detectPrepaidRecharge('WAON入金 1000円',['WAON']),'WAON')
+  assert.equal(detectPrepaidRecharge('楽天 Edy チャージ 1500円',['楽天Edy']),'楽天Edy')
+  assert.equal(detectPrepaidRecharge('オリジナルカード　チャージ 400円',['オリジナルカード']),'オリジナルカード')
+  assert.equal(detectPrepaidRecharge('オリジナルカード 利用 400円',['オリジナルカード']),'')
+  assert.equal(detectPrepaidRecharge('オリジナルカード チャージ 400円',['別のカード']),'')
+  assert.equal(detectPrepaidRecharge('電子マネー チャージ 500円',['電子マネー','電子マネーPlus']),'')
+  assert.equal(detectPrepaidRecharge('電子マネーPlus チャージ 500円',['電子マネー','電子マネーPlus']),'')
+  assert.equal(prepaidTarget('オリジナルカード'),'prepaid:オリジナルカード')
+})
+
 test('card settings own type only; asset page owns opening balance field',()=>{
   const finance=read('src/FinanceTools.vue')
   const assets=read('src/PrepaidAssets.vue')

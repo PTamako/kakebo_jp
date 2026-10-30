@@ -395,8 +395,8 @@ async function downloadBackup(){
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
     const snapshot = rows.value.map(row=>({...row}))
     const before = ledgerFingerprint(snapshot)
-    const [nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio] = await Promise.all([
-      props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
+    const [nextPlans,nextBills,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio] = await Promise.all([
+      props.api('recurring-plans'),props.api('card-bills'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
       props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
     ])
@@ -406,17 +406,17 @@ async function downloadBackup(){
     // Settings have their own write APIs. Read a second time to avoid exporting
     // a mixed ledger/setting revision; a true cross-table snapshot still needs D1.
     const currentSettings = await Promise.all([
-      props.api('recurring-plans'),props.api('card-bills'),props.api('investments'),
+      props.api('recurring-plans'),props.api('card-bills'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
       props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
     ])
     if (JSON.stringify(currentSettings) !== JSON.stringify([
-      nextPlans,nextBills,investments,paymentSources,merchantPaymentRules,
+      nextPlans,nextBills,paymentSources,merchantPaymentRules,
       customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio
     ])) throw Error('設定がバックアップ中に変更されました。もう一度実行してください')
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
-      entries:snapshot,plans:nextPlans,bills:nextBills,investments,
+      entries:snapshot,plans:nextPlans,bills:nextBills,
       paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,...portfolio
     })
     const sealed = await sealBackup(data)
@@ -466,7 +466,7 @@ async function restore(){
   // committed batches and leaves uncommitted drafts visible for safe retry.
   const BATCH_SIZE=150
   // Use the same settings bound as restoreAtomic; guard before any writes.
-  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
+  const settingTotal=['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
     .reduce((n,key)=>n+(Array.isArray(backup[key])?backup[key].length:0),0)
     + Object.keys(backup.categoryIcons||{}).length
   if(settingTotal<=500){
@@ -490,7 +490,7 @@ async function restore(){
           plans:first?backup.plans:[],bills:first?backup.bills:[],
           paymentSources:first?backup.paymentSources:[],merchantPaymentRules:first?backup.merchantPaymentRules:[],
           customRules:first?backup.customRules:[],categories:first?backup.categories:[],
-          investments:first?backup.investments:[],categoryIcons:first?backup.categoryIcons:{},
+          categoryIcons:first?backup.categoryIcons:{},
           categoryMetadata:first?backup.categoryMetadata:[],
           investmentPlans:first?backup.investmentPlans:[], investmentPlanHistory:first?backup.investmentPlanHistory:[],
           investmentHoldings:first?backup.investmentHoldings:[],fundPrices:first?backup.fundPrices:[],
@@ -527,7 +527,7 @@ async function restore(){
   let count=0,settingsCount=0,skipped=0
   try{
     // Restore settings additively. Existing payment sources, rules, plans, bills
-    // and snapshots always win over uploaded content.
+    // and portfolio holdings always win over uploaded content.
     const existingSources=await props.api('payment-sources')
     const sources=restoreMissingByKey(existingSources,backup.paymentSources||[],x=>x.name)
     for (const source of sources) {
@@ -578,13 +578,7 @@ async function restore(){
       await props.api('card-bills',{method:'POST',body:JSON.stringify(bill)})
       settingsCount++
     }
-    const sbi=(backup.investments||[]).find(x=>x.platform==='sbi')
-    if(sbi && (sbi.current_value === null || Number.isSafeInteger(sbi.current_value)) &&
-       (sbi.pnl === null || Number.isSafeInteger(sbi.pnl)) &&
-       (sbi.current_value !== null || sbi.pnl !== null)){
-      const saved=await props.api('investments/restore-empty',{method:'POST',body:JSON.stringify({platform:'sbi',currentValue:sbi.current_value,pnl:sbi.pnl})})
-      if(saved.restored)settingsCount++;else skipped++
-    }
+    // Older backup investments snapshots are intentionally ignored.
     const restoredIds = new Map()
     for (const e of selectedRows){
       // Stable across retry; source backup identity disambiguates identical purchases.

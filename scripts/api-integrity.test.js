@@ -150,7 +150,13 @@ class LedgerDb {
         if (sql.startsWith('DELETE FROM entries')) db.entries = db.entries.filter(e => e.id !== this.args[0])
         if (sql.startsWith('DELETE FROM rules')) throw Error('migration attempted to delete user rules')
         if (sql.startsWith('INSERT OR REPLACE INTO rules')) throw Error('migration attempted to overwrite user rules')
-        if (sql.startsWith('INSERT INTO category_source(category,sort_order,icon') && !db.icons.some(r => r.category === this.args[0])) db.icons.push({ category: this.args[0], icon: this.args[1] })
+        if (sql.startsWith('INSERT INTO category_source(category,sort_order,icon')) {
+          // Mirror SQLite's ON CONFLICT(category) DO NOTHING behavior so a
+          // second insertion cannot falsely report success in the API test.
+          if (db.icons.some(r => r.category === this.args[0])) return {meta:{changes:0}}
+          db.icons.push({category:this.args[0],icon:this.args[1]})
+          return {meta:{changes:1}}
+        }
         if (sql.startsWith('INSERT OR IGNORE INTO custom_rules') && !db.customRules.some(r => r.keyword === this.args[0]))
           db.customRules.push({ keyword: this.args[0], category: this.args[1] })
         if (sql.startsWith('INSERT OR IGNORE INTO rules') && !db.rules.some(r => r.keyword === this.args[0]))

@@ -1,10 +1,8 @@
 // Explicit official provider for MUFG-managed funds only.
 // Never fetch the SBI portfolio or infer a purchase from a price update.
-import { MUFG_FUNDS } from '../../src/fund-nav-coverage.js'
+import { MUFG_FUNDS, KNOWN_MANUAL_NAV_FUNDS } from '../../src/fund-nav-coverage.js'
 export { MUFG_FUNDS } from '../../src/fund-nav-coverage.js'
-export const PENDING_NAV_FUNDS = Object.freeze({
-  '04317188': 'iFreeNEXT NASDAQ100インデックス' // Daiwa: verified programmatic JSON feed not yet available.
-})
+export const PENDING_NAV_FUNDS = KNOWN_MANUAL_NAV_FUNDS
 const provider = 'official_mufg'
 const isoDate = value => {
   if (typeof value !== 'string') return null

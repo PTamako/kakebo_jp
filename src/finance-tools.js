@@ -1,6 +1,37 @@
 // Read-only financial checks and portable backup format. Never mutate ledger records here.
 export const backupVersion = 4
 
+const RESTORE_SETTING_ORDER = [
+  'paymentSources','categories','categoryMetadata','categoryIcons',
+  'customRules','merchantPaymentRules','bills',
+  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans'
+]
+// Setting collections are restored in dependency order, with no silent fallback
+// that omits display names, sorting or portfolio data for large archives.
+// Transaction-linked collections are handled alongside their source entries.
+export function chunkRestoreSettings(archive, batchSize=100) {
+  if(!Number.isSafeInteger(batchSize)||batchSize<1||batchSize>500)throw Error('復元単位が正しくありません')
+  const chunks=[]
+  let current={}, size=0
+  const flush=()=>{
+    if(size)chunks.push(current)
+    current={};size=0
+  }
+  const put=(name,key,value)=>{
+    if(size===batchSize)flush()
+    if(name==='categoryIcons')(current.categoryIcons??={})[key]=value
+    else(current[name]??=[]).push(value)
+    size++
+  }
+  for(const name of RESTORE_SETTING_ORDER) {
+    if(name==='categoryIcons'){
+      for(const [key,value] of Object.entries(archive.categoryIcons||{}))put(name,key,value)
+    }else for(const item of archive[name]||[])put(name,null,item)
+  }
+  flush()
+  return chunks
+}
+
 // A portable restore cannot reuse source-database entry IDs. Rebase newly restored
 // wallet cards at the backed-up current balance AFTER historical entries are inserted.
 // Existing target cards always win. Never fabricate a recharge/income entry.

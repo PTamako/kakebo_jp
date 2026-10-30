@@ -205,7 +205,9 @@ export async function onRequest({ request, env, params }) {
           // D1 entries. A stale browser cache can never overwrite this total.
           await db.prepare(`INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count)
             SELECT ?1,?2,?3,?4,COALESCE(SUM(amount),0),COUNT(*)
-            FROM entries WHERE date>=?3 AND date<=?4 AND type='expense' AND payment_source=?1
+            FROM entries WHERE date>=?3 AND date<=?4 AND payment_source=?1
+              AND (type='expense' OR (type='transfer' AND
+                (transfer_target='sbi' OR (transfer_target LIKE 'prepaid:%' AND LENGTH(transfer_target)>8))))
             ON CONFLICT(payment_source,bill_month) DO UPDATE SET
               period_start=excluded.period_start,period_end=excluded.period_end,
               total_amount=excluded.total_amount,transaction_count=excluded.transaction_count`)

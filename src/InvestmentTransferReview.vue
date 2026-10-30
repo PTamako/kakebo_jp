@@ -38,14 +38,16 @@ const yen = value => '¥' + Number(value || 0).toLocaleString('ja-JP')
 .investment-review-summary small{font-size:10px;color:var(--muted)}
 .investment-review-chevron{font-size:20px;line-height:1;color:var(--muted)}
 .investment-transfer-review[open] .investment-review-chevron{transform:rotate(180deg)}
-.investment-review-body{padding:2px 12px 12px;border-top:1px solid var(--line)}
-.investment-review-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--line)}
-.investment-review-entry{display:grid;gap:3px;flex:1;min-width:0}
-.investment-review-entry strong{font-size:12px;overflow-wrap:anywhere}
-.investment-review-entry small{font-size:10px;color:var(--muted)}
-.investment-review-actions{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:10px}
+.investment-review-body{box-sizing:border-box;min-width:0;padding:2px 12px 11px;border-top:1px solid var(--line)}
+.investment-review-row{box-sizing:border-box;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;width:100%;min-width:0;margin:0;padding:10px 0;border-top:1px solid var(--line)}
+.investment-review-row:first-of-type{border-top:0}
+.investment-review-entry{display:grid;gap:3px;min-width:0;margin:0}
+.investment-review-entry strong{display:block;min-width:0;font-size:12px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
+.investment-review-entry small{min-width:0;font-size:10px;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+.investment-review-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px;min-width:0;color:var(--muted);font-size:10px}
 .investment-review-actions button{min-height:40px;min-width:40px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--blue-dark);font-size:11px;font-weight:750;padding:6px 9px}
 .investment-review-empty{font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.5}
 .investment-review-summary:focus-visible,.investment-review-actions button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.investment-review-chevron{transition:none}}
+@media(max-width:370px){.investment-review-row{grid-template-columns:minmax(0,1fr)}.investment-review-actions{justify-content:flex-start}}
 </style>

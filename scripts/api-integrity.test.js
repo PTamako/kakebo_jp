@@ -12,7 +12,7 @@ const approvedPost = (plan, month = '2026-10') => ({
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.snapshot = 120000; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.recurringPlans = new Map(); this.cardBills = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
+  constructor() { this.entries = []; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.recurringPlans = new Map(); this.cardBills = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
   async batch(statements) { const results=[]; for (const statement of statements) results.push(await statement.run()); return results }
   prepare(sql) {
     const db = this
@@ -62,11 +62,6 @@ class LedgerDb {
         if (sql.startsWith('SELECT keyword, category FROM rules WHERE substr')) return { results: db.rules }
         if (sql.startsWith('SELECT * FROM rules WHERE keyword')) return { results: db.rules }
         if (sql.startsWith('SELECT keyword, category FROM custom_rules')) return { results: db.customRules }
-        if (sql.includes('AS invested_total FROM investment_snapshots')) return { results: [{
-          platform: 'sbi', current_value: db.snapshot, pnl: 10000, updated_at: null,
-          invested_total: db.entries.filter(e => e.type === 'transfer' && e.transfer_target === 'sbi' && e.transfer_applied === 1)
-            .reduce((sum, e) => sum + e.amount, 0)
-        }] }
         return { results: [] }
       },
       async run() {
@@ -126,11 +121,6 @@ class LedgerDb {
             (e.payment_source||'')===paymentSource && e.type==='expense')
           if(existing||db.entries.some(e=>e.client_request_id===requestId))return {meta:{changes:0}}
           db.entries.push({id:db.nextId++,date,amount,category,merchant,type:'expense',payment_source:paymentSource,client_request_id:requestId})
-          return {meta:{changes:1}}
-        }
-        if (sql.startsWith('UPDATE investment_snapshots SET current_value=')) {
-          if(db.snapshot!==null)return {meta:{changes:0}}
-          db.snapshot=this.args[0];db.snapshotPnl=this.args[1]
           return {meta:{changes:1}}
         }
         if (sql.startsWith('INSERT INTO entries')) {
@@ -194,7 +184,7 @@ test('personal API fails closed when authentication is not configured', async ()
 })
 test('rejects a wrong token before accessing the database', async () => {
   const db = new LedgerDb()
-  const r = await call(db, 'investments', 'GET', undefined, { token: 'wrong' })
+  const r = await call(db, 'entries?month=2026-10', 'GET', undefined, { token: 'wrong' })
   assert.equal(r.status, 401)
   assert.equal(db.sql.length, 0)
 })
@@ -210,21 +200,16 @@ test('retrying an identical imported payment never inserts it twice', async () =
   assert.equal(db.entries.length, 1)
   assert.equal(db.entries[0].amount, 580)
 })
-test('investment transfers do not mutate manually entered market valuations', async () => {
-  const db = new LedgerDb()
-  const tx = { date: '2026-01-05', transferDate: '2026-01-05', transferTarget: 'sbi',
-    amount: 15000, type: 'transfer', clientRequestId: 'sbi-payment-001' }
-  assert.equal((await call(db, 'entries', 'POST', tx)).status, 200)
-  const a = await call(db, 'investments')
-  assert.equal(a.body[0].invested_total, 15000)
-  assert.equal(a.body[0].current_value, 120000)
-  assert.equal((await call(db, 'entries/1', 'DELETE')).status, 428)
-  assert.equal(db.entries.length, 1)
-  assert.equal((await call(db, 'entries/1', 'DELETE', undefined, { confirmId: 1 })).status, 200)
-  const b = await call(db, 'investments')
-  assert.equal(b.body[0].invested_total, 0)
-  assert.equal(b.body[0].current_value, 120000)
-  assert.ok(db.sql.every(sql => !sql.startsWith('UPDATE investment_snapshots SET current_value')))
+test('SBI transfers remain independent from the retired snapshot table', async () => {
+  const db=new LedgerDb()
+  const tx={date:'2026-01-05',transferDate:'2026-01-05',transferTarget:'sbi',amount:15000,type:'transfer',clientRequestId:'sbi-payment-001'}
+  assert.equal((await call(db,'entries','POST',tx)).status,200)
+  assert.equal(db.entries.length,1)
+  assert.equal(db.entries[0].transfer_target,'sbi')
+  assert.equal((await call(db,'entries/1','DELETE')).status,428)
+  assert.equal((await call(db,'entries/1','DELETE',undefined,{confirmId:1})).status,200)
+  assert.equal(db.entries.length,0)
+  assert.ok(db.sql.every(sql => !/investment_snapshots/i.test(sql)))
 })
 test('a scheduled future transfer cannot be confirmed early', async () => {
   const db = new LedgerDb()
@@ -309,14 +294,14 @@ test('device session persists, expires and is revoked on logout', async () => {
   assert.equal(login.status, 200)
   const session = login.body.session
   assert.match(session, /^[a-f0-9]{64}$/)
-  assert.equal((await call(db, 'investments', 'GET', undefined, { token: session })).status, 200)
+  assert.equal((await call(db, 'entries?month=2026-10', 'GET', undefined, { token: session })).status, 200)
   assert.equal((await call(db, 'auth/logout', 'POST', undefined, { token: session })).status, 200)
-  assert.equal((await call(db, 'investments', 'GET', undefined, { token: session })).status, 401)
+  assert.equal((await call(db, 'entries?month=2026-10', 'GET', undefined, { token: session })).status, 401)
   const again = await call(db, 'auth/login', 'POST', { code: 'test-secret' }, { token: 'login-request' })
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(again.body.session))
   const key = Array.from(new Uint8Array(hash), x => x.toString(16).padStart(2, '0')).join('')
   db.sessions.set(key, Date.now() - 1)
-  assert.equal((await call(db, 'investments', 'GET', undefined, { token: again.body.session })).status, 401)
+  assert.equal((await call(db, 'entries?month=2026-10', 'GET', undefined, { token: again.body.session })).status, 401)
 })
 test('wrong access codes are rate limited without exposing ledger', async () => {
   const db = new LedgerDb()
@@ -434,17 +419,13 @@ test('server skips matching hand-entered recurring expense and retries are idemp
   assert.equal(db.entries.length,1)
 })
 
-test('SBI backup restore never changes existing nonempty valuation',async()=>{
+test('retired snapshot API returns 410 without any SQL mutation',async()=>{
   const db=new LedgerDb()
-  let answer=await call(db,'investments/restore-empty','POST',{platform:'sbi',currentValue:70000,pnl:2000})
-  assert.equal(answer.status,200)
-  assert.equal(answer.body.restored,false)
-  assert.equal(db.snapshot,120000)
-  db.snapshot=null
-  answer=await call(db,'investments/restore-empty','POST',{platform:'sbi',currentValue:70000,pnl:2000})
-  assert.equal(answer.body.restored,true)
-  assert.equal(db.snapshot,70000)
-  answer=await call(db,'investments/restore-empty','POST',{platform:'sbi',currentValue:90000,pnl:20000})
-  assert.equal(answer.body.restored,false)
-  assert.equal(db.snapshot,70000)
+  const get=await call(db,'investments','GET')
+  const put=await call(db,'investments','PUT',{platform:'sbi',currentValue:70000,pnl:2000})
+  const restore=await call(db,'investments/restore-empty','POST',{platform:'sbi',currentValue:70000,pnl:2000})
+  assert.equal(get.status,410)
+  assert.equal(put.status,410)
+  assert.equal(restore.status,410)
+  assert.equal(db.sql.length,0)
 })

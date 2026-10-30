@@ -152,11 +152,18 @@ async function saveCardType(){
   finally{busy.value=false}
 }
 const cardMessage = ref('')
-// Changing the selected card must replace any unsaved name from the previous card.
-// Keep the editor open so the new card's name and closing day appear immediately.
+// Changing the selected card must discard the previous card's unsaved draft.
+// Keep the editor open, but always show the new card's actual stored type.
 watch(selectedCard, (name) => {
   editedCardName.value = name || ''
-})
+  editSourceType.value = selectedSourceType.value
+  cardMessage.value = ''
+}, { flush: 'sync' })
+// If card metadata arrives after the selection, refresh an untouched type field.
+// Do not overwrite a pending type choice the user has edited manually.
+watch(selectedSourceType, (type, previousType) => {
+  if (editSourceType.value === previousType) editSourceType.value = type
+}, { flush: 'sync' })
 const merchantRulesCombined = computed(() => {
   const items = new Map()
   for (const r of props.categoryRules) items.set(r.keyword, { keyword: r.keyword, category: r.category, payment_source: '' })
@@ -790,7 +797,7 @@ async function removeCardBill(record) {
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>支払方法・カード管理</h2>
     <div class="finance-inputs card-controls card-main-controls">
-      <select v-model="selectedCard" :disabled="busy" @change="cardMessage = ''" aria-label="管理するカード"><option value="" disabled>支払方法・カードを選択</option><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option></select>
+      <select v-model="selectedCard" :disabled="busy" aria-label="管理するカード"><option value="" disabled>支払方法・カードを選択</option><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option></select>
       <button type="button" class="card-icon-action" :disabled="!selectedCard || selectedCard === defaultPaymentSource" @click="emit('set-default-payment-source', selectedCard)" aria-label="デフォルトに設定" title="デフォルトに設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.5l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9L12 3Z"/></svg></button>
       <button type="button" class="card-icon-action" :disabled="!selectedCard" @click="selectCardForEdit" aria-label="カードを編集" title="カードを編集"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 4.5a2.1 2.1 0 0 1 3 3L9 18l-4 1 1-4L16.5 4.5Z"/></svg></button>
       <button type="button" class="card-icon-action" @click="cardMode = 'add'" aria-label="カードを追加" title="カードを追加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
@@ -806,11 +813,12 @@ async function removeCardBill(record) {
         <button type="button" class="card-add-save" :disabled="busy || !newPaymentSource.trim()" @click="addPaymentSource">{{busy ? '保存中…' : '保存'}}</button>
       </div>
     </div>
-    <div v-if="cardMode === 'edit' && selectedCard" class="card-editor">
+    <div v-if="cardMode === 'edit' && selectedCard" :key="selectedCard" class="card-editor">
       <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
-      <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label><p v-if="editSourceType==='prepaid'" class="card-type-hint">期首残高の入力・修正は「資産」画面で行います。</p>
-      <label v-if="editSourceType==='standard' && !['現金','その他','其他'].includes(selectedCard)">締め日
-        <select :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
+      <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
+      <p v-if="editSourceType === 'prepaid' && !['現金','その他','其他'].includes(selectedCard)" class="card-type-hint">期首残高の入力・修正は「資産」画面で行います。</p>
+      <label v-if="isCreditCard(selectedCard) && editSourceType === 'standard'">締め日
+        <select :key="selectedCard + '-closing-day'" :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
           <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
         </select>
       </label>

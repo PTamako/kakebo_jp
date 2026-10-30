@@ -4,6 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
+import {DEFAULT_RULE_ROWS} from './fixtures/default-rule-rows.js'
 import { onRequest } from '../functions/api/[[path]].js'
 import { prepaidRestoreBalances } from '../src/finance-tools.js'
 const approvedPost = (plan, month = '2026-10') => ({
@@ -19,6 +20,11 @@ class SqliteD1 {
   constructor() {
     this.db = new DatabaseSync(':memory:')
     this.db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'))
+    // Sample data is installed exclusively into this disposable in-memory SQLite DB.
+    // Production D1 is already migrated; schema.sql intentionally has no data inserts.
+    this.db.exec("INSERT INTO category_source(category,sort_order) VALUES ('餐饮',0),('饮食料品',1),('日用品',2),('交通',3),('购物',4),('居住',5),('医疗',6),('娱乐',7),('宠物',8),('其他',99999),('其他收入',99999)")
+    const rule=this.db.prepare('INSERT OR IGNORE INTO merchant_rules(keyword,category) VALUES(?1,?2)')
+    for (const [keyword,category] of DEFAULT_RULE_ROWS) rule.run(keyword,category)
   }
   prepare(sql) {
     const db = this.db

@@ -857,6 +857,7 @@ export async function onRequest({ request, env, params }) {
       return handlePortfolio({db,request,method:m,sub:b,url})
     }
 
+    if (a === 'investments') return json({error:'旧版の資産評価APIは廃止されました',code:'deprecated_investments'},410)
     if (a === 'stats' && m === 'GET') {
       const year = url.searchParams.get('year') || ''
       if (year) {

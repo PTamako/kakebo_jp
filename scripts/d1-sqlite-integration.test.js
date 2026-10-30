@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
+import { prepaidRestoreBalances } from '../src/finance-tools.js'
 const approvedPost = (plan, month = '2026-10') => ({
   planId:plan.id,month,
   expected:{name:plan.name,amount:plan.amount,day:plan.day,category:plan.category,
@@ -615,4 +616,29 @@ test('actual SQLite: Suica and PASMO prepaid balances are ledger-derived, and op
     assert.equal(Object.hasOwn(archive.body,'investments'),false)
     assert.equal(archive.body.paymentSources.find(x=>x.name==='Suica 交通').opening_balance,1200)
   }finally{db.close()}
+})
+
+test('actual SQLite: backup restores prepaid current balance once, without replaying existing charges twice',async()=>{
+  const source=await createClient(),target=await createClient()
+  try{
+    const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    await source.call('payment-sources','POST',{name:'Suica',sourceType:'prepaid'})
+    await source.call('prepaid-assets/opening','POST',{name:'Suica',openingBalance:900})
+    await source.call('entries','POST',{date:today,amount:2500,type:'transfer',merchant:'Suica チャージ',transferTarget:'prepaid:Suica',transferDate:today})
+    await source.call('entries','POST',{date:today,amount:180,type:'expense',merchant:'鉄道',paymentSource:'Suica'})
+    const archive=(await source.call('backup-snapshot')).body
+    const baseline=prepaidRestoreBalances(archive)
+    assert.deepEqual(baseline,[{name:'Suica',openingBalance:3220}])
+    const input={...archive,prepaidRestoreInProgress:true,prepaidFinalize:baseline,
+      entries:archive.entries.map((e,i)=>({...e,clientRequestId:'restore_'+String(i+1).padStart(32,'0')}))}
+    const applied=await target.call('restore-atomic','POST',input)
+    assert.equal(applied.status,200,JSON.stringify(applied.body))
+    assert.equal(applied.body.created,2)
+    const restored=(await target.call('prepaid-assets')).body.cards.find(x=>x.name==='Suica')
+    assert.equal(restored.balance,3220)
+    assert.equal(restored.charged,0)
+    assert.equal(restored.spent,0)
+    assert.equal((await target.call('restore-atomic','POST',input)).body.created,0)
+    assert.equal((await target.call('prepaid-assets')).body.cards.find(x=>x.name==='Suica').balance,3220)
+  }finally{source.db.close();target.db.close()}
 })

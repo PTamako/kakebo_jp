@@ -5,13 +5,13 @@ import navWorker from '../workers/fund-nav-cron.js'
 
 const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
 
-test('NAV Cron runs only at 21:00 JST while Daiwa official page returns 403', () => {
+test('NAV Cron runs at 21:00 and retries missing MUFG NAV at 23:15 JST', () => {
   const config=read('wrangler.nav.toml')
   const docs=read('scripts/deploy-nav-worker.md')
-  assert.match(config,/crons = \["0 12 \* \* \*"\]/)
+  assert.match(config,/crons = \["0 12 \* \* \*", "15 14 \* \* \*"\]/)
   assert.match(config,/DAIWA_CSV_EXPERIMENT = "false"/)
   assert.match(docs,/日本時間21:00（UTC12:00）/)
-  assert.doesNotMatch(config,/15 14 \* \* \*/)
+  assert.match(docs,/23:15（UTC14:15）/)
   assert.doesNotMatch(config,/30 11 \* \* \*/)
 })
 

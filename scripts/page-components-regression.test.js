@@ -71,13 +71,13 @@ test('compact calendar legend is natural Japanese and accessible labels explain 
   const legend=ledger.match(/<div class="calendar-legend"[\s\S]*?<\/div>/)?.[0]
   assert.ok(legend)
   assert.match(legend, /<i class="legend-today"><\/i>今日/)
-  assert.match(legend, /<i class="calendar-peak-expense">支<\/i>支出ピーク/)
-  assert.match(legend, /<i class="calendar-peak-income">収<\/i>収入ピーク/)
-  assert.doesNotMatch(legend,/最も多い日|支出最多|収入最多/)
+  assert.match(legend, /<i class="calendar-peak-expense">支<\/i>支出最多/)
+  assert.match(legend, /<i class="calendar-peak-income">収<\/i>収入最多/)
+  assert.doesNotMatch(legend,/最も多い日|支出ピーク|収入ピーク/)
   // Screen readers and tooltip titles retain the precise meaning: amount, not count.
   for(const label of ['支出額が最も多い日','収入額が最も多い日']){
     assert.equal(ledger.split(label).length-1,2,label+' must appear in aria-label and badge title')
     assert.match(ledger,new RegExp('title="'+label+'"'))
   }
-  assert.doesNotMatch(ledger,/支出最多|収入最多/)
+  assert.doesNotMatch(ledger,/支出ピーク|収入ピーク/)
 })

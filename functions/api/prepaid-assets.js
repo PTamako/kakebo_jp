@@ -28,10 +28,16 @@ export async function handlePrepaid({db,request,method,sub}) {
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1
-        AND COALESCE(e.transfer_date,e.date)<=?1),0) charged,
+        AND COALESCE(e.transfer_date,e.date)<=?1
+        AND COALESCE(e.payment_source,'')<>p.name),0) charged,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='expense' AND e.payment_source=p.name
-        AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) spent
+        AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) spent,
+    COALESCE((SELECT SUM(e.amount) FROM entries e
+      WHERE e.type='transfer' AND e.payment_source=p.name
+        AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1
+        AND COALESCE(e.transfer_date,e.date)<=?1
+        AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out
     FROM payment_sources p WHERE p.source_type='prepaid'
     ORDER BY p.sort_order,p.name`).bind(today).all()
   // Latest activity is read-only and uses exactly the same opening anchor/date
@@ -50,11 +56,12 @@ export async function handlePrepaid({db,request,method,sub}) {
       WHERE e.type='transfer' AND e.id>p.opening_entry_id
         AND e.date>=p.opening_date AND e.date<=?1
         AND COALESCE(e.transfer_date,e.date)<=?1
+        AND COALESCE(e.payment_source,'')<>p.name
       ORDER BY COALESCE(e.transfer_date,e.date) DESC,
         e.date DESC,COALESCE(e.time,'') DESC,e.id DESC LIMIT 1`).bind(today).first()
   ])
   return json({
-    cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)-Number(p.spent)})),
+    cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)-Number(p.spent)-Number(p.transferred_out)})),
     latestUsage:latestUsage || null,
     latestCharge:latestCharge || null
   })

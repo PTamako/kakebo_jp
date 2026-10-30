@@ -1,16 +1,16 @@
 # Separate scheduled Worker; this does not replace Pages wrangler.toml.
 # Workers Builds production deploy: npx wrangler deploy --config wrangler.nav.toml
 # Keep the repository root wrangler.toml for Pages; never rename it to this Worker.
-# Daily 21:00 JST (12:00 UTC). Daiwa optional retry suspended after official HTTP 403.
+# Daily 21:00 JST plus conditional 23:15 JST retry for funds missing today's official NAV.
 name = "kakeibo-nav-sync"
 main = "workers/fund-nav-cron.js"
 compatibility_date = "2026-10-01"
 
 [triggers]
-crons = ["0 12 * * *"]
+crons = ["0 12 * * *", "15 14 * * *"]
 
-# Experimental official Daiwa CSV discovery was blocked by HTTP 403 on 2026-10-30.
-# Keep the reader dormant until an authorized, stable source is verified.
+# Daiwa official website currently rejects automated access (HTTP 403).
+# Disable the experimental CSV fetch until an authorized public feed becomes available.
 [vars]
 DAIWA_CSV_EXPERIMENT = "false"
 

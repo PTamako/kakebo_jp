@@ -188,3 +188,28 @@ test('Cloudflare Worker NAV fetch uses supported manual redirect mode and refuse
   }),/provider_redirect_blocked/)
   assert.equal(requested,1,'redirect targets must never be fetched')
 })
+
+test('23:15 retry fetches only MUFG funds without a current-day official NAV',async()=>{
+  const fixture=dbFixture()
+  try{
+    const {db,d1}=fixture
+    for(const code of ['03311187','0331418A']){
+      db.prepare("INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost) VALUES(?,'tsumitate','test',1000,5000)").run(code)
+    }
+    db.prepare("INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES('03311187',40000,'2026-10-30','official_mufg')").run()
+    db.prepare("INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES('0331418A',38000,'2026-10-29','official_mufg')").run()
+    const fetched=[]
+    const late=new Date('2026-10-30T14:15:00Z')
+    const result=await syncFundNav(d1,{
+      now:late,retryPendingNav:true,logger:{warn(){}},
+      fetcher:mockFetcher(url=>{const code=url.slice(-8);fetched.push(code);return response(code,'20261030',41000)})
+    })
+    assert.deepEqual(fetched,['0331418A'])
+    assert.deepEqual(result.updated,['0331418A'])
+    assert.deepEqual(result.unchanged,['03311187'])
+    assert.equal(result.failed.length,0)
+    assert.equal(db.prepare("SELECT nav_per_10000 FROM fund_prices WHERE fund_code='03311187'").get().nav_per_10000,40000)
+    assert.equal(db.prepare("SELECT nav_per_10000 FROM fund_prices WHERE fund_code='0331418A'").get().nav_per_10000,41000)
+    assert.equal(db.prepare("SELECT units FROM investment_holdings WHERE fund_code='0331418A'").get().units,1000)
+  }finally{fixture.close()}
+})

@@ -698,3 +698,34 @@ main .theme-picker .theme-switcher button.theme-swatch:focus-visible {
 @media (prefers-reduced-motion:reduce) {
   main .theme-picker .theme-switcher button.theme-swatch { transition:none; }
 }
+
+/* Audit 2026-10-30: legible compact calendar and no horizontal overflow on small phones.
+   Keep the locked viewport and native PWA bottom navigation unchanged. */
+main .month-calendar .calendar-day small {
+  font-size: clamp(9px, 2.6vw, 11px);
+  line-height: 1.2;
+  letter-spacing: -.025em;
+}
+main .month-calendar .calendar-day {
+  min-width: 0;
+  min-height: 58px;
+}
+main .page-heading,
+main .heading-period,
+main .finance-tools,
+main .finance-panel,
+main .asset-overview,
+main .asset-investment,
+main .asset-wallet {
+  min-width: 0;
+  max-width: 100%;
+}
+main .ledger-info b,
+main .asset-wallet-event-meta,
+main .asset-wallet-card {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 355px) {
+  main .calendar-legend { font-size: 10px; }
+  main .month-calendar .calendar-day small { font-size: 9px; }
+}

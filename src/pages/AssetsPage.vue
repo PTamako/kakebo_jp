@@ -1,14 +1,16 @@
 <script setup>
 import { inject } from 'vue'
 import SbiPortfolio from '../SbiPortfolio.vue'
+import PrepaidAssets from '../PrepaidAssets.vue'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
-const { pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, api } = inject('kakeibo-page-context')
+const { ledgerRevision, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, api } = inject('kakeibo-page-context')
 </script>
 <template>
 <section class="page-section assets-page">
       <div class="page-heading"><div><h1>資産・投資</h1><p class="heading-subtitle">保有状況と積立をひと目で</p></div><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg></span></div>
       <SbiPortfolio :api="api" :transfer-loading="transferLoading" />
+      <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" />
       <article v-if="transferLoading || pendingTransfers.length" class="panel pending-transfer-panel">
         <div class="pending-transfer-heading"><h2>振替予定</h2><button class="pending-refresh" :disabled="transferLoading" @click="loadTransfers" aria-label="振替予定を更新" title="更新">↻ 更新</button></div>
         <p class="microcopy">期日で家計簿に反映。SBIへの着金確認・買付は別です</p>

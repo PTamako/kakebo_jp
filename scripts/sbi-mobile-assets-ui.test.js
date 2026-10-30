@@ -53,7 +53,9 @@ test('mobile controls keep edit functions, transfer month and keyboard accessibl
   }
   assert.match(portfolio,/aria-label="資産情報を更新"/)
   assert.doesNotMatch(portfolio,/investment-portfolio\/initialize|async function initialize\(/)
-  assert.match(portfolio,/class="sbi-holding-footer"/)\n  assert.match(portfolio,/class="sbi-holding-commands"/)\n  assert.match(portfolio,/class="sbi-nav-status"/)
+  assert.match(portfolio,/class="sbi-holding-footer"/)
+  assert.match(portfolio,/class="sbi-holding-commands"/)
+  assert.match(portfolio,/class="sbi-nav-status"/)
   assert.match(portfolio,/class="sbi-holding-detail"/)
   assert.match(portfolio,/@click="editHolding\(h\)"/)
   assert.match(portfolio,/@click="editPrice\(h\)"/)

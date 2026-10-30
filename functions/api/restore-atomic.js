@@ -6,7 +6,7 @@ import { validateBackup } from '../../src/finance-tools.js'
 export async function restoreAtomic(db, archive) {
   validateBackup(archive)
   const entries = archive.entries
-  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','investments','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
+  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills' ,'dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
   // A bounded single transaction is preferable to pretending a many-request
   // restore is atomic. The older resumable path remains for large archives.
@@ -50,11 +50,7 @@ export async function restoreAtomic(db, archive) {
     add('INSERT INTO merchant_rules(keyword,payment_source) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM payment_sources WHERE name=?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=COALESCE(merchant_rules.payment_source,excluded.payment_source)',rule.keyword,rule.payment_source)
   }
   for(const bill of archive.bills||[])add('INSERT OR IGNORE INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6)',bill.name,bill.month,bill.start,bill.end,bill.total,bill.count)
-  const sbi=(archive.investments||[]).find(x=>x.platform==='sbi')
-  if(sbi && (sbi.current_value!==null || sbi.pnl!==null)) {
-    add("UPDATE investment_snapshots SET current_value=?1,pnl=?2,updated_at=?3 WHERE platform='sbi' AND current_value IS NULL AND pnl IS NULL",
-      sbi.current_value,sbi.pnl,new Date().toISOString())
-  }
+  // Legacy v1-v3 investments snapshots are accepted but never restored.
   // Optional v4 portfolio data. Restore is insert-only and never replaces
   // the newer local holdings, allocations, prices or legacy SBI snapshots.
   for(const p of archive.investmentPlans||[])
@@ -72,12 +68,12 @@ export async function restoreAtomic(db, archive) {
   const insertStart=statements.length
   for(const e of entries) {
     const type=e.type, transfer=type==='transfer'
-    const target=transfer && e.transfer_target==='sbi'?'sbi':null
+    const target=transfer && (e.transfer_target==='sbi' || /^prepaid:[^:]{1,80}$/.test(e.transfer_target||'')) ? e.transfer_target : null
     const transferDate=transfer?(e.transfer_date||e.date):null
     // Applied status is a derived fact, NEVER trust a backup's flag for
     // future-dated SBI transfers. Preserve the manual valuation separately.
     const tokyoToday=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10)
-    const transferApplied=target && transferDate<=tokyoToday ? 1 : 0
+    const transferApplied=target==='sbi' && transferDate<=tokyoToday ? 1 : 0
     if(transfer && transferDate!==null && !/^\d{4}-\d{2}-\d{2}$/.test(transferDate))throw Error('atomic_restore_invalid_transfer_date')
     add('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING',
       e.date,e.time||'',Number(e.amount),transfer?'投資・資産移動':e.category||'其他',e.merchant||'',e.note||'',String(e.raw||'').slice(0,2000),

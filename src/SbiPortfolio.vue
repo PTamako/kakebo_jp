@@ -1,6 +1,7 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js'
+import { groupFundHoldings } from './sbi-fund-groups.js'
 import { parseSbiHoldingsText } from './sbi-holdings-import.js'
 import { reconcileSbiScreens } from './sbi-dual-screens.js'
 import { ocrImage } from './parse.js'
@@ -100,9 +101,9 @@ async function checkNavSupport(code,force=false) {
     navSupport.value={...navSupport.value,[normalized]:'unknown'}
   }
 }
-function toggleHoldingDetail(h) {
-  const key=holdingKey(h)
-  expandedHolding.value=expandedHolding.value===key?'':key
+function toggleHoldingDetail(fund) {
+  const code=fund.fund_code
+  expandedHolding.value=expandedHolding.value===code?'':code
 }
 let checkTimer=null
 watch(() => holding.value.fundCode,code=>{
@@ -117,18 +118,24 @@ watch(holdingsData,holdings=>{
     void checkNavSupport(code)
 })
 
-const visibleHoldings = computed(() => showAllHoldings.value ? holdingsData.value : holdingsData.value.slice(0,2))
+const fundGroups = computed(() => groupFundHoldings(holdingsData.value))
+const visibleHoldings = computed(() => showAllHoldings.value ? fundGroups.value : fundGroups.value.slice(0,2))
+const accountSummary = fund => {
+  const accounts = fund.accounts.map(h=>h.account_type)
+  if (accounts.includes('growth') && accounts.includes('tsumitate')) return '成長・つみたて'
+  return accounts.map(accountLabel).join('・')
+}
 const totalAcquisition = computed(() => holdingsData.value.reduce((sum,h) => sum + Number(h.acquisition_cost || 0),0))
 const returnRatio = computed(() => data.value?.valuation?.pnl == null || !totalAcquisition.value ? null : data.value.valuation.pnl / totalAcquisition.value * 100)
 const allocationColors = ['var(--blue)', 'var(--teal)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 const allocationRows = computed(() => {
   const total = data.value?.valuation?.value
-  if (total == null || total <= 0 || !holdingsData.value.length) return []
-  if (holdingsData.value.some(h => h.market_value == null || !Number.isFinite(Number(h.market_value)))) return []
-  return holdingsData.value.map((h, index) => ({
-    key: h.fund_code + ':' + h.account_type,
-    name: shortFundName(h),
-    ratio: Math.max(0, Number(h.market_value) / total * 100),
+  if (total == null || total <= 0 || !fundGroups.value.length) return []
+  if (fundGroups.value.some(fund => fund.market_value == null || !Number.isFinite(Number(fund.market_value)))) return []
+  return fundGroups.value.map((fund, index) => ({
+    key: fund.fund_code,
+    name: shortFundName(fund),
+    ratio: Math.max(0, Number(fund.market_value) / total * 100),
     color: allocationColors[index % allocationColors.length]
   }))
 })
@@ -332,7 +339,7 @@ async function load() {
       pnl:response.valuation.pnl,
       acquisition:totalAcquisition.value,
       ratio:returnRatio.value,
-      fundCount:holdingsData.value.length,
+      fundCount:fundGroups.value.length,
       allocation:allocationRows.value,
       reconciliation:response.reconciliation
     })
@@ -416,37 +423,52 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
     <template v-if="data">
 
       <details class="panel sbi-card sbi-holdings" open>
-        <summary class="sbi-disclosure-summary"><strong>投資信託の保有</strong><small>{{holdingsData.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
+        <summary class="sbi-disclosure-summary"><strong>投資信託の保有</strong><small>{{fundGroups.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
         <div class="sbi-section-body">
         <div class="sbi-inline-action sbi-holding-toolbar"><button v-if="holdingsData.length" type="button" class="sbi-bulk-primary" @click="openBulk"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 18h7M17.5 14.5v7"/></svg><span>保有を一括更新</span></button><button type="button" class="sbi-text-action sbi-add-holding" @click="editHolding(null)">＋ 追加</button></div>
-        <p v-if="!holdingsData.length" class="sbi-empty">保有銘柄はまだありません</p>
-        <article v-for="(h,index) in visibleHoldings" :key="h.fund_code+':'+h.account_type" class="sbi-holding-row">
+        <p v-if="!fundGroups.length" class="sbi-empty">保有銘柄はまだありません</p>
+        <article v-for="(fund,index) in visibleHoldings" :key="fund.fund_code" class="sbi-holding-row">
           <div class="sbi-holding-top">
             <span class="sbi-fund-dot" :style="{background:allocationColors[index % allocationColors.length]}" aria-hidden="true"></span>
             <div class="sbi-holding-name">
-              <strong :title="h.fund_name">{{shortFundName(h)}}</strong>
-              <small>{{accountLabel(h.account_type)}} · {{h.fund_code}}</small>
+              <strong :title="fund.fund_name">{{shortFundName(fund)}}</strong>
+              <small>{{accountSummary(fund)}} · {{fund.fund_code}}</small>
             </div>
             <div class="sbi-holding-value">
-              <strong>{{h.market_value === null ? '—' : yen(h.market_value)}}</strong>
-              <small v-if="h.pnl !== null" :class="h.pnl >= 0 ? 'sbi-positive' : 'sbi-negative'">{{signYen(h.pnl)}}</small>
+              <strong>{{fund.market_value === null ? '—' : yen(fund.market_value)}}</strong>
+              <small v-if="fund.pnl !== null" :class="fund.pnl >= 0 ? 'sbi-positive' : 'sbi-negative'">{{signYen(fund.pnl)}}</small>
             </div>
           </div>
           <div class="sbi-holding-footer">
-            <span class="sbi-nav-status" :class="'sbi-nav-'+navMode(h.fund_code)">{{navModeLabel(h.fund_code)}}</span>
+            <span class="sbi-nav-status" :class="'sbi-nav-'+navMode(fund.fund_code)">{{navModeLabel(fund.fund_code)}}</span>
             <div class="sbi-holding-commands">
-              <button type="button" class="sbi-holding-action" :aria-label="shortFundName(h)+'の保有を編集'" @click="editHolding(h)">編集</button>
-              <button type="button" class="sbi-holding-action" :aria-expanded="expandedHolding===holdingKey(h)" :aria-label="shortFundName(h)+'の詳細を表示'" @click="toggleHoldingDetail(h)">詳細 <span class="sbi-detail-chevron" aria-hidden="true">{{expandedHolding===holdingKey(h)?'⌃':'⌄'}}</span></button>
+              <button type="button" class="sbi-holding-action" :aria-expanded="expandedHolding===fund.fund_code" :aria-controls="'sbi-fund-detail-'+fund.fund_code" :aria-label="shortFundName(fund)+'の口座別詳細を表示'" @click="toggleHoldingDetail(fund)">詳細 <span class="sbi-detail-chevron" aria-hidden="true">{{expandedHolding===fund.fund_code?'⌃':'⌄'}}</span></button>
             </div>
           </div>
-          <div v-if="expandedHolding===holdingKey(h)" class="sbi-holding-expanded">
-            <span>{{Number(h.units).toLocaleString('ja-JP')}}口 · 取得 {{yen(h.acquisition_cost)}}</span>
-            <span>基準価額 {{h.nav_per_10000 ? yen(h.nav_per_10000) : '未設定'}} · {{sourceLabel(h.source)}}</span>
-            <span v-if="h.price_date">{{h.source==='sbi_screenshot'?'確認日':'基準日'}} {{h.price_date}}</span>
-            <button type="button" class="sbi-row-edit" @click="editPrice(h)">基準価額を変更</button>
+          <div v-if="expandedHolding===fund.fund_code" :id="'sbi-fund-detail-'+fund.fund_code" class="sbi-holding-expanded">
+            <div v-for="h in fund.accounts" :key="holdingKey(h)" class="sbi-account-row">
+              <div class="sbi-account-head">
+                <strong>{{accountLabel(h.account_type)}}</strong>
+                <div class="sbi-account-value">
+                  <strong>{{h.market_value === null ? '—' : yen(h.market_value)}}</strong>
+                  <small v-if="h.pnl !== null" :class="h.pnl >= 0 ? 'sbi-positive' : 'sbi-negative'">{{signYen(h.pnl)}}</small>
+                </div>
+              </div>
+              <div class="sbi-account-foot">
+                <span>{{Number(h.units).toLocaleString('ja-JP')}}口 · 取得 {{yen(h.acquisition_cost)}}</span>
+                <button type="button" class="sbi-account-edit" :aria-label="shortFundName(fund)+' '+accountLabel(h.account_type)+'の保有を編集'" @click="editHolding(h)">編集</button>
+              </div>
+            </div>
+            <div class="sbi-fund-price-line">
+              <div class="sbi-fund-price-meta">
+                <span>基準価額 {{fund.nav_per_10000 ? yen(fund.nav_per_10000) : '未設定'}} · {{sourceLabel(fund.source)}}</span>
+                <span v-if="fund.price_date">{{fund.source==='sbi_screenshot'?'確認日':'基準日'}} {{fund.price_date}}</span>
+              </div>
+              <button type="button" class="sbi-row-edit" @click="editPrice(fund)">基準価額を変更</button>
+            </div>
           </div>
         </article>
-        <button v-if="holdingsData.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllHoldings" @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(holdingsData.length-2)+'件を表示'}}</button>
+        <button v-if="fundGroups.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllHoldings" @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(fundGroups.length-2)+'件を表示'}}</button>
         </div>
       </details>
     </template>
@@ -811,4 +833,21 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-portfolio{gap:8px}
 .sbi-view-panel .sbi-disclosure-summary{min-height:48px;padding:10px 13px}
 .sbi-view-panel .sbi-section-body{padding-top:0}
+
+/* One compact fund row; expand only the selected NISA account breakdown. */
+.sbi-holding-expanded{gap:9px}
+.sbi-account-row{display:grid;gap:6px;min-width:0;padding:10px 11px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.sbi-account-head,.sbi-account-foot{display:flex;justify-content:space-between;align-items:center;gap:9px;min-width:0}
+.sbi-account-head>strong{font-size:11px;line-height:1.45;color:var(--ink);min-width:0}
+.sbi-account-value{display:flex;align-items:baseline;justify-content:flex-end;flex-wrap:wrap;gap:3px 8px;min-width:0;font-variant-numeric:tabular-nums}
+.sbi-account-value>strong{font-size:14px;color:var(--ink);white-space:nowrap}
+.sbi-account-value>small{font-size:11px;font-weight:750;white-space:nowrap}
+.sbi-account-foot{font-size:10px;line-height:1.45}
+.sbi-account-foot>span{min-width:0;overflow-wrap:anywhere}
+.sbi-account-edit{flex:none;min-width:48px;min-height:40px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--blue-dark);font-size:11px;font-weight:750}
+.sbi-fund-price-line{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.sbi-fund-price-meta{display:grid;gap:3px;min-width:0;overflow-wrap:anywhere}
+.sbi-fund-price-line .sbi-row-edit{flex:none;white-space:normal;text-align:center;font-size:10px;max-width:124px}
+.sbi-account-edit:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+@media(max-width:370px){.sbi-account-head{align-items:flex-start}.sbi-account-value{display:grid;gap:2px;text-align:right}.sbi-fund-price-line{align-items:flex-start}}
 </style>

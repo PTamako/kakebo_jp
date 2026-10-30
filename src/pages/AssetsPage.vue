@@ -15,6 +15,10 @@ const investment = computed(() => portfolioSummary.value?.valuation ?? null)
 const prepaid = computed(() => prepaidSummary.value?.balance ?? null)
 // This is a view of *tracked* wallets and funds, not a total net-worth figure.
 const pnl = computed(() => portfolioSummary.value?.pnl ?? null)
+const acquisition = computed(() => portfolioSummary.value?.acquisition ?? null)
+const pnlRatio = computed(() => portfolioSummary.value?.ratio ?? null)
+const fundCount = computed(() => portfolioSummary.value?.fundCount ?? 0)
+const allocation = computed(() => portfolioSummary.value?.allocation ?? [])
 const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '—' : (Number(value) >= 0 ? '+' : '−') + '¥' + Math.abs(Number(value)).toLocaleString('ja-JP')
 </script>
 <template>
@@ -29,12 +33,16 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
           <span class="asset-label-icon asset-label-investment" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9m6 9V5m6 13v-6m4 6V8"/><path d="M3 21h18"/></svg>
           </span>
-          <span>投資信託評価額<small>SBI証券</small></span>
+          <span>評価額・損益の内訳<small>SBI証券 · {{fundCount}}銘柄</small></span>
         </div>
         <strong class="asset-investment-value">{{yen(investment)}}</strong>
         <div class="asset-investment-foot">
           <span>評価損益</span>
-          <strong :class="{'asset-pnl-negative':pnl !== null && pnl < 0}">{{gainYen(pnl)}}</strong>
+          <strong :class="{'asset-pnl-negative':pnl !== null && pnl < 0}">{{gainYen(pnl)}}<small v-if="pnlRatio!==null"> ({{pnlRatio>=0?'+':''}}{{pnlRatio.toFixed(2)}}%)</small></strong>
+        </div>
+        <div class="asset-cost-line"><span>取得金額</span><strong>{{yen(acquisition)}}</strong></div>
+        <div v-if="allocation.length" class="asset-allocation" aria-label="銘柄別の評価額比率">
+          <span v-for="a in allocation" :key="a.key" :style="{width:a.ratio+'%',background:a.color}" :title="a.ratio.toFixed(1)+'%'"></span>
         </div>
       </div>
       <div class="asset-wallet">
@@ -65,7 +73,7 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
 .assets-page .page-heading{margin-bottom:0;min-height:0}
 .assets-page .page-heading h1{letter-spacing:-.035em}
 .asset-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
-.asset-investment,.asset-wallet{box-sizing:border-box;display:flex;flex-direction:column;min-width:0;min-height:106px;padding:12px;border:1px solid var(--line);border-radius:15px;background:var(--card)}
+.asset-investment,.asset-wallet{box-sizing:border-box;display:flex;flex-direction:column;min-width:0;min-height:123px;padding:12px;border:1px solid var(--line);border-radius:15px;background:var(--card)}
 .asset-investment{background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 12%,var(--card)),var(--card) 85%);border-color:color-mix(in srgb,var(--blue) 18%,var(--line))}
 .asset-wallet{background:linear-gradient(135deg,color-mix(in srgb,var(--teal) 9%,var(--card)),var(--card) 85%);border-color:color-mix(in srgb,var(--teal) 17%,var(--line))}
 .asset-overview-label{display:flex;gap:6px;align-items:center;min-width:0}
@@ -79,6 +87,11 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
 .asset-investment-foot{display:flex;align-items:center;gap:5px;justify-content:space-between;margin-top:7px;padding-top:5px;border-top:1px solid color-mix(in srgb,var(--blue) 15%,var(--line));font-size:10px;color:var(--muted)}
 .asset-investment-foot strong{font-size:10px;color:#18876c;font-variant-numeric:tabular-nums;white-space:nowrap}
 .asset-investment-foot .asset-pnl-negative{color:#bf516d}
+.asset-investment-foot strong small{font-size:9px;font-weight:650}
+.asset-cost-line{display:flex;align-items:center;justify-content:space-between;gap:4px;color:var(--muted);font-size:10px}
+.asset-cost-line strong{color:var(--ink);font-size:10px;font-variant-numeric:tabular-nums}
+.asset-allocation{display:flex;width:100%;height:5px;border-radius:99px;overflow:hidden;gap:2px;background:var(--line);margin-top:3px}
+.asset-allocation>span{height:100%;min-width:0}
 .balance-view-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;min-width:0;padding:4px;border-radius:13px;border:1px solid var(--line);background:var(--paper)}
 .balance-view-switch button{display:flex;justify-content:center;align-items:center;gap:4px;min-width:0;min-height:43px;padding:8px 3px;border:1px solid transparent;background:transparent;border-radius:10px;color:var(--muted);font-size:12px;font-weight:750;white-space:nowrap;cursor:pointer}
 .balance-view-switch button.selected{color:var(--blue-dark);background:var(--card);border-color:color-mix(in srgb,var(--blue) 17%,var(--line));box-shadow:0 1px 5px #0000000a}

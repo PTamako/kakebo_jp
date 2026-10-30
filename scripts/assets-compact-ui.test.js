@@ -6,7 +6,7 @@ const read = file => readFileSync(new URL('../src/' + file, import.meta.url), 'u
 
 test('balance page summarizes wallets, holdings, fund profit/loss and scheduled transfers without a misleading wealth total', () => {
   const source = read('pages/AssetsPage.vue')
-  for (const label of ['残高</h1>', '電子マネー残高', '投資信託評価額', '評価損益']) {
+  for (const label of ['残高</h1>', '電子マネー残高', '評価額・損益の内訳', '評価損益']) {
     assert.ok(source.includes(label), label)
   }
   assert.match(source, /class="balance-view-switch"/)
@@ -21,6 +21,9 @@ test('balance page summarizes wallets, holdings, fund profit/loss and scheduled 
   assert.match(source, /class="asset-investment"/)
   assert.match(source, /class="asset-wallet"/)
   assert.match(source, /asset-investment-foot/)
+  assert.match(source, /asset-cost-line/)
+  assert.match(source, /asset-allocation/)
+  assert.doesNotMatch(source, /<details class="sbi-valuation-details">/)
   assert.doesNotMatch(source, /class="asset-stat asset-stat-compact"/)
   assert.doesNotMatch(source, /pending-numbers|pending-progress|pending-transfer-list/)
   assert.doesNotMatch(source, /資産合計|assetsTotal/)
@@ -48,5 +51,5 @@ test('balance edit and transfer adjustment remain available without changing D1 
   assert.match(portfolio, /editHolding\(h\)/)
   assert.match(portfolio, /editPrice\(h\)/)
   assert.match(portfolio, /submitTransfer/)
-  assert.match(portfolio, /emit\('summary',\{month:response\.month/)
+  assert.match(portfolio, /emit\('summary',\{[\s\S]*?month:response\.month/)
 })

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, inject, onMounted, watch } from 'vue'
 import { sortOtherLast } from './category-sort.js'
 import { findLedgerDuplicateGroups } from './duplicate-review.js'
 import AmountInput from './AmountInput.vue'
@@ -18,6 +18,25 @@ const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
 const isCreditCard = name => !!name && !['現金','その他','其他'].includes(name) && props.paymentSourceMeta[name]?.source_type === 'standard'
 const creditCardSources = computed(() => orderedPayments.value.filter(isCreditCard))
 const managementTab = ref('cards')
+const appContext = inject('kakeibo-page-context', null)
+const investmentRefreshKey = ref(0)
+const refreshingEverything = ref(false)
+async function refreshEverything() {
+  if (busy.value || refreshingEverything.value) return
+  refreshingEverything.value = true
+  try {
+    // Update scheduled transfer bookkeeping before taking the ledger snapshot,
+    // otherwise a due transfer created during refresh could be missed.
+    if (appContext?.loadTransfers) await appContext.loadTransfers()
+    await loadAll()
+    // Refresh the SBI monthly plans/reconciliation after the transfer state.
+    investmentRefreshKey.value++
+  } catch (e) {
+    loadError.value = '更新に失敗しました：' + e.message
+  } finally {
+    refreshingEverything.value = false
+  }
+}
 const localReceiptCount = ref(null)
 const receiptImagesBusy = ref(false)
 const receiptImagePrivacyMessage = ref('')
@@ -788,7 +807,7 @@ async function removeCardBill(record) {
 </script>
 <template>
 <section class="finance-tools">
-  <div class="finance-page-heading"><h1 class="finance-heading">管理・照合</h1><button type="button" class="finance-global-load" :disabled="busy" @click="loadAll"><span aria-hidden="true" class="finance-refresh-icon">↻</span>{{busy ? "読み込み中…" : "全明細を更新"}}</button></div>
+  <div class="finance-page-heading"><h1 class="finance-heading">管理・照合</h1><button type="button" class="finance-global-load" :disabled="busy || refreshingEverything" @click="refreshEverything"><span aria-hidden="true" class="finance-refresh-icon">↻</span>{{busy || refreshingEverything ? "更新中…" : "すべて更新"}}</button></div>
   <p class="finance-last-loaded" role="status">{{loaded ? "更新："+lastLoadedLabel+" · "+rows.length+"件" : busy ? "明細を読み込み中…" : "未読み込み"}}</p>
   <p v-if="loadError" class="finance-load-error" role="alert">{{ loadError }}</p>
   <div class="finance-section-tabs" role="group" aria-label="管理項目">
@@ -799,7 +818,7 @@ async function removeCardBill(record) {
   </div>
   <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
     <InvestmentTransferReview />
-    <SbiPortfolio :api="props.api" active-view="plans" />
+    <SbiPortfolio :api="props.api" active-view="plans" :refresh-key="investmentRefreshKey" />
   </section>
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>支払方法・カード管理</h2>
@@ -1099,9 +1118,9 @@ async function removeCardBill(record) {
 .finance-investment-panel{display:grid;gap:9px;min-width:0}
 .finance-investment-panel .sbi-portfolio{min-width:0}
 /* Four management destinations stay in one compact row on narrow iPhones. */
-.finance-section-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;width:100%;min-width:0;padding:4px;border-radius:13px;border:1px solid var(--line);background:var(--paper);box-sizing:border-box}
-.finance-section-tabs>button{display:grid;place-items:center;min-width:0;min-height:44px;padding:8px 3px;white-space:nowrap;font-size:12px;font-weight:750;color:var(--muted);border:1px solid transparent;border-radius:10px;background:transparent;cursor:pointer}
+.finance-tools > .finance-section-tabs{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;grid-auto-flow:row;gap:4px;width:100%;min-width:0;padding:4px;border-radius:13px;border:1px solid var(--line);background:var(--paper);box-sizing:border-box;overflow:hidden}
+.finance-tools > .finance-section-tabs>button{display:grid;place-items:center;grid-column:auto!important;min-width:0!important;max-width:100%;width:100%;min-height:44px;padding:8px 2px;white-space:nowrap!important;font-size:12px;font-weight:750;color:var(--muted);border:1px solid transparent;border-radius:10px;background:transparent;cursor:pointer;box-sizing:border-box}
 .finance-section-tabs>button.selected{color:var(--blue-dark);background:var(--card);border-color:color-mix(in srgb,var(--blue) 16%,var(--line));box-shadow:0 1px 5px #0000000b}
 .finance-section-tabs>button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
-@media(max-width:360px){.finance-section-tabs{gap:3px}.finance-section-tabs>button{font-size:11px;padding-inline:2px}}
+@media(max-width:360px){.finance-tools > .finance-section-tabs{gap:2px}.finance-tools > .finance-section-tabs>button{font-size:11px;padding-inline:1px}}
 </style>

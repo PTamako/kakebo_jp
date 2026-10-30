@@ -848,7 +848,7 @@ async function openPrepaidHistoryDetails(cardName,kind) {
     card:cardName, kind, openingDate:source?.opening_date||'',
     openingEntryId:Number(source?.opening_entry_id||0)
   }
-  entryTypeFilter.value = kind === 'charge' ? 'transfer' : 'expense'
+  entryTypeFilter.value = kind === 'charge' ? 'transfer' : 'all'
   const targetMonth = currentMonth()
   const changedMonth = month.value !== targetMonth
   month.value = targetMonth

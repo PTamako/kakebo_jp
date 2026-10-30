@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js'
+import { parseSbiHoldingsText } from './sbi-holdings-import.js'
+import { ocrImage } from './parse.js'
+import { compressReceiptImage } from './receipt-image.js'
 
 const props = defineProps({
   api: { type: Function, required: true },
@@ -113,7 +116,100 @@ const allocationRows = computed(() => {
     color: allocationColors[index % allocationColors.length]
   }))
 })
-function closeEditor() { if(!saving.value){ editing.value = ''; editingTransfer.value = null } }
+const bulkRows = ref([])
+const bulkText = ref('')
+const bulkWarning = ref('')
+const bulkInfo = ref('')
+const bulkBusy = ref(false)
+const bulkAi = ref(false)
+const bulkChanged = computed(() => bulkRows.value.filter(row =>
+  Number.isSafeInteger(Number(row.units)) && Number.isSafeInteger(Number(row.acquisitionCost)) &&
+  (Number(row.units)!==row.expectedUnits || Number(row.acquisitionCost)!==row.expectedAcquisitionCost)))
+function openBulk() {
+  if (!holdingsData.value.length) return
+  error.value = ''
+  bulkText.value = ''
+  bulkWarning.value = ''
+  bulkInfo.value = ''
+  bulkRows.value = holdingsData.value.map(h => ({
+    fundCode:h.fund_code,accountType:h.account_type,fundName:h.fund_name,
+    units:Number(h.units),acquisitionCost:Number(h.acquisition_cost),
+    expectedUnits:Number(h.units),expectedAcquisitionCost:Number(h.acquisition_cost)
+  }))
+  editing.value = 'bulk'
+}
+function applyBulkText() {
+  const {updates,warnings} = parseSbiHoldingsText(bulkText.value,holdingsData.value)
+  bulkWarning.value = warnings.join(' / ')
+  if(!updates.length) {
+    bulkInfo.value = '一致する銘柄と口数・取得金額を読み取れませんでした。SBIの保有画面を確認してください。'
+    return
+  }
+  const incoming = new Map(updates.map(h => [h.fundCode+':'+h.accountType,h]))
+  bulkRows.value = bulkRows.value.map(row => {
+    const update = incoming.get(row.fundCode+':'+row.accountType)
+    return update ? {...row,units:update.units,acquisitionCost:update.acquisitionCost} : row
+  })
+  bulkInfo.value = updates.length + '件を読み取りました。数値を確認してから保存してください。'
+}
+async function readBulkImage(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || bulkBusy.value || saving.value) return
+  bulkBusy.value = true
+  bulkInfo.value = '画像を読み取り中…'
+  bulkWarning.value = ''
+  try {
+    let recognized = ''
+    if(bulkAi.value){
+      try{
+        const image = file.size <= 4*1024*1024 && ['image/png','image/jpeg','image/webp'].includes(file.type)
+          ? file : await compressReceiptImage(file,1600,1300*1024)
+        const data = new FormData()
+        data.append('image',image,image.type==='image/jpeg'?'portfolio.jpg':'portfolio.webp')
+        data.append('mode','portfolio')
+        const response = await props.api('ai-ocr',{method:'POST',body:data})
+        recognized = response.text || ''
+      }catch(aiError){
+        bulkWarning.value = 'AIを利用できませんでした。端末内OCRに切り替えました。'
+      }
+    }
+    if (!recognized.trim()) recognized = await ocrImage(file)
+    if (!recognized.trim()) throw Error('画像から文字を読み取れませんでした')
+    bulkText.value = recognized
+    applyBulkText()
+    if (bulkWarning.value) bulkWarning.value = [...new Set(bulkWarning.value.split(' / '))].join(' / ')
+  }catch(e){
+    bulkInfo.value = '読み取りに失敗しました：'+e.message
+  }finally{ bulkBusy.value=false }
+}
+async function saveBulk(){
+  if (saving.value || bulkBusy.value || !bulkChanged.value.length) return
+  const changes = bulkChanged.value
+  if (changes.some(h=>![h.units,h.acquisitionCost].every(v=>Number.isSafeInteger(Number(v)) && Number(v)>=0 && Number(v)<=1000000000000))) {
+    error.value='保有口数と取得金額を確認してください'
+    return
+  }
+  if(!confirm(changes.length+'件の保有口数・取得金額を更新します。SBIの最新情報と一致していますか？'))return
+  saving.value=true
+  error.value=''
+  try {
+    await props.api('investment-portfolio/holdings-bulk',{
+      method:'PUT',body:JSON.stringify({holdings:changes.map(h=>({
+        fundCode:h.fundCode,accountType:h.accountType,
+        units:Number(h.units),acquisitionCost:Number(h.acquisitionCost),
+        expectedUnits:h.expectedUnits,expectedAcquisitionCost:h.expectedAcquisitionCost
+      }))})
+    })
+    await load()
+    editing.value=''
+    notice.value=changes.length+'件の保有情報を更新しました'
+  }catch(e){
+    error.value=e.message
+    bulkInfo.value=e.message
+  }finally{saving.value=false}
+}
+function closeEditor() { if(!saving.value && !bulkBusy.value){ editing.value = ''; editingTransfer.value = null } }
 function onEditorKeydown(event) { if (event.key === 'Escape') closeEditor() }
 
 const availableFunds = computed(() => {
@@ -221,7 +317,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
       <details class="panel sbi-card sbi-holdings" open>
         <summary class="sbi-disclosure-summary"><strong>投資信託の保有</strong><small>{{holdingsData.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
         <div class="sbi-section-body">
-        <div class="sbi-inline-action"><button type="button" class="sbi-text-action" @click="editHolding(null)">＋ 保有を追加</button></div>
+        <div class="sbi-inline-action sbi-holding-toolbar"><button v-if="holdingsData.length" type="button" class="sbi-text-action" @click="openBulk">保有を一括更新</button><button type="button" class="sbi-text-action" @click="editHolding(null)">＋ 保有を追加</button></div>
         <p v-if="!holdingsData.length" class="sbi-empty">保有銘柄はまだありません</p>
         <article v-for="(h,index) in visibleHoldings" :key="h.fund_code+':'+h.account_type" class="sbi-holding-row">
           <div class="sbi-holding-top">
@@ -321,6 +417,36 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
         <label>適用開始月<input v-model="plan.effectiveMonth" type="month" required /></label><p class="sbi-hint">変更は指定した月以降に適用され、以前の月は変更されません。</p>
         <label class="sbi-checkbox"><input v-model="plan.enabled" type="checkbox"/>積立中</label>
         <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
+      </form>
+      <form v-else-if="editing==='bulk'" class="sbi-dialog sbi-bulk-dialog" role="dialog" aria-modal="true" aria-label="保有を一括更新" @submit.prevent="saveBulk">
+        <div class="sbi-line-heading"><h3>保有を一括更新</h3><button type="button" class="sbi-close" :disabled="saving || bulkBusy" @click="closeEditor">×</button></div>
+        <div class="sbi-bulk-reader">
+          <label>保有画面のテキストを貼り付け
+            <textarea v-model="bulkText" rows="3" :disabled="saving || bulkBusy" placeholder="銘柄名 / 保有口数 / 取得金額"></textarea>
+          </label>
+          <div class="sbi-bulk-tools">
+            <button type="button" class="button-secondary" :disabled="saving || bulkBusy || !bulkText.trim()" @click="applyBulkText">テキストを読み取る</button>
+            <label class="sbi-bulk-upload" :aria-disabled="saving || bulkBusy">
+              画像を読み取る
+              <input type="file" accept="image/*" hidden :disabled="saving || bulkBusy" @change="readBulkImage" />
+            </label>
+          </div>
+          <label class="sbi-bulk-ai"><input v-model="bulkAi" type="checkbox" :disabled="saving || bulkBusy" /><span>画像はAIで読み取る（オフなら端末内OCR）</span></label>
+          <p v-if="bulkInfo" class="sbi-bulk-notice" role="status">{{bulkInfo}}</p>
+          <p v-if="bulkWarning" class="sbi-bulk-warning" role="alert">{{bulkWarning}}</p>
+        </div>
+        <div class="sbi-bulk-heading"><strong>更新内容を確認</strong><span>{{bulkChanged.length}}件変更</span></div>
+        <div class="sbi-bulk-rows">
+          <div v-for="row in bulkRows" :key="row.fundCode+':'+row.accountType" class="sbi-bulk-row">
+            <div class="sbi-bulk-row-name"><strong>{{shortFundName({fund_code:row.fundCode,fund_name:row.fundName})}}</strong><small>{{accountLabel(row.accountType)}} · {{row.fundCode}}</small></div>
+            <div class="sbi-bulk-fields">
+              <label>保有口数<input v-model.number="row.units" type="number" min="0" step="1" required :disabled="saving || bulkBusy" /></label>
+              <label>取得金額（円）<input v-model.number="row.acquisitionCost" type="number" min="0" step="1" required :disabled="saving || bulkBusy" /></label>
+            </div>
+            <small v-if="Number(row.units)!==row.expectedUnits || Number(row.acquisitionCost)!==row.expectedAcquisitionCost" class="sbi-bulk-diff">変更前：{{row.expectedUnits.toLocaleString('ja-JP')}}口 · {{yen(row.expectedAcquisitionCost)}}</small>
+          </div>
+        </div>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving || bulkBusy" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving || bulkBusy || !bulkChanged.length">{{saving ? '保存中…' : '更新 '+bulkChanged.length+'件'}}</button></div>
       </form>
       <form v-else-if="editing==='holding'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="保有情報の編集" @submit.prevent="submit('holding',{...holding,units:Number(holding.units),acquisitionCost:Number(holding.acquisitionCost)},'保有情報を更新しました')">
         <div class="sbi-line-heading"><h3>保有口数・取得金額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
@@ -480,4 +606,27 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-funding-stats{margin:4px 0 9px}.sbi-funding-stats strong{font-size:16px}.sbi-progress{height:5px}
 @media(max-width:370px){.sbi-month-label input{width:120px;padding:7px 5px;font-size:12px}.sbi-toolbar-actions{gap:4px}.sbi-disclosure-summary{padding:11px 12px}.sbi-section-body{padding:0 12px 10px}}
 @media(prefers-reduced-motion:reduce){.sbi-chevron{transition:none}}
+
+.sbi-holding-toolbar{gap:7px;flex-wrap:wrap}
+.sbi-bulk-dialog{gap:13px}
+.sbi-bulk-reader{display:grid;gap:8px}
+.sbi-bulk-reader textarea{box-sizing:border-box;width:100%;min-height:74px;resize:vertical;padding:10px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink);font-size:13px}
+.sbi-bulk-tools{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sbi-bulk-tools button,.sbi-bulk-upload{box-sizing:border-box;display:flex;align-items:center;justify-content:center;min-height:44px;width:100%;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--blue-dark);font-size:12px;font-weight:750;cursor:pointer}
+.sbi-bulk-upload[aria-disabled="true"]{opacity:.55;pointer-events:none}
+.sbi-dialog .sbi-bulk-ai{display:flex;align-items:center;gap:8px;font-weight:500;font-size:11px;color:var(--muted)}
+.sbi-dialog .sbi-bulk-ai input{width:16px;min-height:16px;height:16px;flex:none}
+.sbi-bulk-notice,.sbi-bulk-warning{font-size:11px;line-height:1.5;margin:0;padding:8px 10px;border-radius:8px;background:var(--paper);color:var(--muted)}
+.sbi-bulk-warning{color:#9b2938;background:#fff0f1}
+.sbi-bulk-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px}
+.sbi-bulk-heading span{font-size:11px;color:var(--muted)}
+.sbi-bulk-rows{display:grid;gap:0}
+.sbi-bulk-row{display:grid;gap:8px;padding:11px 0;border-top:1px solid var(--line)}
+.sbi-bulk-row-name{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:5px;min-width:0}
+.sbi-bulk-row-name strong{font-size:12px;overflow-wrap:anywhere}
+.sbi-bulk-row-name small,.sbi-bulk-diff{font-size:10px;color:var(--muted)}
+.sbi-bulk-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:0}
+.sbi-bulk-fields label{min-width:0;font-size:11px}
+.sbi-bulk-fields label input{min-width:0}
+.sbi-bulk-diff{color:var(--blue-dark)}
 </style>

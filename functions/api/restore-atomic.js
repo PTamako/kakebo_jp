@@ -45,8 +45,7 @@ export async function restoreAtomic(db, archive) {
   for(const category of archive.categories||[]) {
     // Never rewrite historical category assignments; these rows only register
     // a user-added category in the category dropdown.
-    add('INSERT OR IGNORE INTO rules(keyword,category) VALUES(?1,?2)','__category__:'+category,category)
-    add("INSERT INTO category_source(category,sort_order) VALUES(?1,CASE WHEN ?1 IN ('其他','其他收入') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999) END) ON CONFLICT(category) DO UPDATE SET sort_order=COALESCE(category_source.sort_order,excluded.sort_order)",category)
+    add("INSERT INTO category_source(category,sort_order) VALUES(?1,CASE WHEN ?1 IN ('其他','其他收入') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999) END) ON CONFLICT(category) DO NOTHING",category)
   }
   for (const row of archive.categoryMetadata||[]) {
     add(`INSERT INTO category_source(category,sort_order,icon,display_name) VALUES(?1,?2,?3,?4)

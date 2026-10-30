@@ -15,7 +15,7 @@ const plan = computed(() => recon.value?.monthly_amount ?? null)
 const posted = computed(() => recon.value?.funded ?? null)
 const pending = computed(() => recon.value?.pending ?? null)
 const progress = computed(() => !plan.value || posted.value === null ? 0 : Math.max(0,Math.min(100,100*posted.value/plan.value)))
-const monthLabel = computed(() => portfolioSummary.value?.month?.replace('-', '年')+'月' || '今月')
+const monthLabel = computed(() => portfolioSummary.value?.month ? portfolioSummary.value.month.replace('-', '年')+'月' : '今月')
 </script>
 <template>
   <section class="page-section assets-page">

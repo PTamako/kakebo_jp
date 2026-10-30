@@ -34,12 +34,12 @@ test('N06/N08: historical recurring rows require individual approval and deletio
   assert.match(ui,/const recurringSelected = ref\(new Set\(\)\)/)
   assert.match(ui,/preview\.filter\(row=>!row\.conflict && row\.month===current\)/)
   assert.match(ui,/<input type="checkbox" :checked="recurringSelected\.has\(/)
-  assert.match(ui,/if \(!confirm\('固定支出「'/)
+  assert.match(ui,/if \(!confirm\('固定費「'/)
 })
 test('N02/N03: restore recognizes verified self writes and export detects concurrent edits',()=>{
   const ui=text('src/FinanceTools.vue')
   assert.match(ui,/unrelatedLedgerFingerprint\(rows\.value\)/)
-  assert.match(ui,/restoreOwnKeys\.value = new Map\(\[\.\.\.restoreOwnKeys\.value,\[key,transactionKey\(entry\)\]\]\)/)
+  assert.match(ui,/restoreOwnKeys\.value=new Map\(\[\.\.\.restoreOwnKeys\.value,\[clientRequestId,transactionKey\(e\)\]\]\)/)
   assert.match(ui,/ledgerFingerprint\(rows\.value\)!==before/)
 })
 test('N07: backup rejects malformed child settings before touching the database',()=>{

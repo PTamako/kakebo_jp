@@ -489,53 +489,70 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
     <div v-show="activeView==='funds'" class="sbi-view-panel">
     <template v-if="data">
 
-      <details class="panel sbi-card sbi-holdings" open>
-        <summary class="sbi-disclosure-summary"><strong>投資信託の保有</strong><small>{{fundGroups.length}}件</small><span class="sbi-chevron" aria-hidden="true">⌄</span></summary>
+      <details class="panel sbi-card sbi-holdings sbi-holdings-redesign" open>
+        <summary class="sbi-disclosure-summary">
+          <span class="sbi-fund-section-title"><strong>投資信託の保有</strong><small>{{fundGroups.length}}銘柄 · SBI証券</small></span>
+          <span class="sbi-chevron" aria-hidden="true">⌄</span>
+        </summary>
         <div class="sbi-section-body">
-        <div class="sbi-inline-action sbi-holding-toolbar"><button v-if="holdingsData.length" type="button" class="sbi-bulk-primary" @click="openBulk"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 18h7M17.5 14.5v7"/></svg><span>保有を一括更新</span></button><button type="button" class="sbi-text-action sbi-add-holding" @click="editHolding(null)">＋ 追加</button></div>
-        <p v-if="!fundGroups.length" class="sbi-empty">保有銘柄はまだありません</p>
-        <article v-for="(fund,index) in visibleHoldings" :key="fund.fund_code" class="sbi-holding-row">
-          <div class="sbi-holding-top">
-            <span class="sbi-fund-dot" :style="{background:allocationColors[index % allocationColors.length]}" aria-hidden="true"></span>
-            <div class="sbi-holding-name">
-              <strong :title="fund.fund_name">{{shortFundName(fund)}}</strong>
-              <small>{{accountSummary(fund)}} · {{fund.fund_code}}</small>
-            </div>
-            <div class="sbi-holding-value">
-              <strong>{{fund.market_value === null ? '—' : yen(fund.market_value)}}</strong>
-              <small v-if="fund.pnl !== null" :class="fund.pnl >= 0 ? 'sbi-positive' : 'sbi-negative'">{{signYen(fund.pnl)}}</small>
-            </div>
+          <div class="sbi-inline-action sbi-holding-toolbar">
+            <button v-if="holdingsData.length" type="button" class="sbi-bulk-primary" @click="openBulk">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10"/><path d="M6 20h12M12 11v7m-3-3 3 3 3-3"/><circle cx="16.5" cy="8.5" r="1.5"/></svg>
+              <span>画像から保有を更新</span>
+            </button>
+            <button type="button" class="sbi-text-action sbi-add-holding" @click="editHolding(null)">＋ 追加</button>
           </div>
-          <div class="sbi-holding-footer">
-            <span class="sbi-nav-status" :class="'sbi-nav-'+navMode(fund.fund_code)">{{navModeLabel(fund.fund_code)}}</span>
-            <div class="sbi-holding-commands">
-              <button type="button" class="sbi-holding-action" :aria-expanded="expandedHolding===fund.fund_code" :aria-controls="'sbi-fund-detail-'+fund.fund_code" :aria-label="shortFundName(fund)+'の口座別詳細を表示'" @click="toggleHoldingDetail(fund)">詳細 <span class="sbi-detail-chevron" aria-hidden="true">{{expandedHolding===fund.fund_code?'⌃':'⌄'}}</span></button>
-            </div>
-          </div>
-          <div v-if="expandedHolding===fund.fund_code" :id="'sbi-fund-detail-'+fund.fund_code" class="sbi-holding-expanded">
-            <div v-for="h in fund.accounts" :key="holdingKey(h)" class="sbi-account-row">
-              <div class="sbi-account-head">
-                <strong>{{accountLabel(h.account_type)}}</strong>
-                <div class="sbi-account-value">
-                  <strong>{{h.market_value === null ? '—' : yen(h.market_value)}}</strong>
-                  <small v-if="h.pnl !== null" :class="h.pnl >= 0 ? 'sbi-positive' : 'sbi-negative'">{{signYen(h.pnl)}}</small>
+          <p v-if="!fundGroups.length" class="sbi-empty">保有銘柄はまだありません</p>
+          <div class="sbi-funds-list">
+            <article v-for="(fund,index) in visibleHoldings" :key="fund.fund_code" class="sbi-holding-row sbi-fund-tile">
+              <div class="sbi-holding-top">
+                <span class="sbi-fund-dot" :style="{background:allocationColors[index % allocationColors.length]}" aria-hidden="true"></span>
+                <div class="sbi-holding-name">
+                  <strong :title="fund.fund_name">{{shortFundName(fund)}}</strong>
+                  <small>{{accountSummary(fund)}} · {{fund.fund_code}}</small>
+                </div>
+                <div class="sbi-holding-value">
+                  <strong>{{fund.market_value === null ? '—' : yen(fund.market_value)}}</strong>
+                  <small v-if="fund.pnl !== null" :class="fund.pnl >= 0 ? 'sbi-positive' : 'sbi-negative'">{{signYen(fund.pnl)}}</small>
                 </div>
               </div>
-              <div class="sbi-account-foot">
-                <span>{{Number(h.units).toLocaleString('ja-JP')}}口 · 取得 {{yen(h.acquisition_cost)}}</span>
-                <button type="button" class="sbi-account-edit" :aria-label="shortFundName(fund)+' '+accountLabel(h.account_type)+'の保有を編集'" @click="editHolding(h)">編集</button>
+              <div class="sbi-holding-footer">
+                <div class="sbi-fund-meta">
+                  <span class="sbi-nav-status" :class="'sbi-nav-'+navMode(fund.fund_code)">{{navModeLabel(fund.fund_code)}}</span>
+                  <small v-if="fund.price_date">{{sourceLabel(fund.source)}} · {{fund.price_date.slice(5).replace('-','/')}}</small>
+                </div>
+                <div class="sbi-holding-commands">
+                  <button type="button" class="sbi-holding-action" :aria-expanded="expandedHolding===fund.fund_code"
+                    :aria-controls="'sbi-fund-detail-'+fund.fund_code" :aria-label="shortFundName(fund)+'の口座別詳細を表示'"
+                    @click="toggleHoldingDetail(fund)">口座別 <span class="sbi-detail-chevron" aria-hidden="true">{{expandedHolding===fund.fund_code?'⌃':'⌄'}}</span></button>
+                </div>
               </div>
-            </div>
-            <div class="sbi-fund-price-line">
-              <div class="sbi-fund-price-meta">
-                <span>基準価額 {{fund.nav_per_10000 ? yen(fund.nav_per_10000) : '未設定'}} · {{sourceLabel(fund.source)}}</span>
-                <span v-if="fund.price_date">{{fund.source==='sbi_screenshot'?'確認日':'基準日'}} {{fund.price_date}}</span>
+              <div v-if="expandedHolding===fund.fund_code" :id="'sbi-fund-detail-'+fund.fund_code" class="sbi-holding-expanded">
+                <div v-for="h in fund.accounts" :key="holdingKey(h)" class="sbi-account-row">
+                  <div class="sbi-account-head">
+                    <strong>{{accountLabel(h.account_type)}}</strong>
+                    <div class="sbi-account-value">
+                      <strong>{{h.market_value === null ? '—' : yen(h.market_value)}}</strong>
+                      <small v-if="h.pnl !== null" :class="h.pnl >= 0 ? 'sbi-positive' : 'sbi-negative'">{{signYen(h.pnl)}}</small>
+                    </div>
+                  </div>
+                  <div class="sbi-account-foot">
+                    <span>{{Number(h.units).toLocaleString('ja-JP')}}口 · 取得 {{yen(h.acquisition_cost)}}</span>
+                    <button type="button" class="sbi-account-edit" :aria-label="shortFundName(fund)+' '+accountLabel(h.account_type)+'の保有を編集'" @click="editHolding(h)">編集</button>
+                  </div>
+                </div>
+                <div class="sbi-fund-price-line">
+                  <div class="sbi-fund-price-meta">
+                    <span>基準価額 {{fund.nav_per_10000 ? yen(fund.nav_per_10000) : '未設定'}} · {{sourceLabel(fund.source)}}</span>
+                    <span v-if="fund.price_date">{{fund.source==='sbi_screenshot'?'確認日':'基準日'}} {{fund.price_date}}</span>
+                  </div>
+                  <button type="button" class="sbi-row-edit" @click="editPrice(fund)">基準価額を変更</button>
+                </div>
               </div>
-              <button type="button" class="sbi-row-edit" @click="editPrice(fund)">基準価額を変更</button>
-            </div>
+            </article>
           </div>
-        </article>
-        <button v-if="fundGroups.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllHoldings" @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(fundGroups.length-2)+'件を表示'}}</button>
+          <button v-if="fundGroups.length>4" type="button" class="sbi-show-more" :aria-expanded="showAllHoldings"
+            @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(fundGroups.length-4)+'銘柄を表示'}}</button>
         </div>
       </details>
     </template>

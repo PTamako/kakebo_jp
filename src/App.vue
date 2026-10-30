@@ -433,11 +433,17 @@ function recognize(mode = recognitionMode.value, append = false) {
     const isQuicPay=effectiveMode==='receipt' && isQuicPayReceipt(f.raw||input.value)
     const receiptPayment=effectiveMode==='receipt'
       ? detectRegisteredReceiptPayment(f.raw||input.value,paymentSources.value,paymentSourceMeta.value) : ''
-    const missingQuicPayCard=isQuicPay && !receiptPayment
-    const recognizedPayment=missingQuicPayCard ? '' : (f.paymentSource || receiptPayment)
+    // For receipt images, only accept a payment card actually registered in D1.
+    // If OCR cannot match one, honor the user's configured default card.
+    // QUICPay is a payment rail: use the registered Saison card when unique,
+    // otherwise fall back to the default (never manufacture a QUICPay card).
+    const recognizedPayment=effectiveMode==='receipt'
+      ? (receiptPayment || (paymentSources.value.includes(f.paymentSource) ? f.paymentSource : ''))
+      : (f.paymentSource || '')
     const chosenPayment=type==='transfer' ? (imported||'')
-      : missingQuicPayCard ? '' : suggestedPayment(f.merchant,recognizedPayment,type,imported)
-    return { ...f, type, category: type==='transfer' ? '投資・資産移動' : f.category, transferTarget: matchingPrepaid ? prepaidTarget(matchingPrepaid) : f.transferTarget || (transfer ? 'sbi' : ''), transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: missingQuicPayCard, bindPaymentRule: false, note: missingQuicPayCard ? [f.note,'要確認：QUICPayの引落カードを選択してください'].filter(Boolean).join(' / ') : f.note, receiptImage: effectiveMode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
+      : isQuicPay && !receiptPayment ? defaultPaymentSource.value
+        : suggestedPayment(f.merchant,recognizedPayment,type,imported)
+    return { ...f, type, category: type==='transfer' ? '投資・資産移動' : f.category, transferTarget: matchingPrepaid ? prepaidTarget(matchingPrepaid) : f.transferTarget || (transfer ? 'sbi' : ''), transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && !transfer ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && !transfer && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   // Preserve the current input tab: pasted text stays in 手入力. Only the

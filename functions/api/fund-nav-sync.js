@@ -100,7 +100,14 @@ export async function syncFundNav(db,{fetcher=fetch,now=new Date(),logger=consol
         .bind(quote.fundCode,quote.navPer10000,quote.priceDate,quote.source,now.toISOString()).run()
       ;(Number(result.meta?.changes||0)>0?summary.updated:summary.unchanged).push(code)
     }catch(error){
-      summary.failed.push({fund_code:code,reason:String(error?.message||error).slice(0,120)})
+      const reason=String(error?.message||error)
+      if(/^(provider_http_404|provider_fund_mismatch|provider_payload_invalid|unsupported_mufg_fund)$/.test(reason)){
+        // Unsupported held funds stay manual. Do not write a guessed price
+        // or repeatedly log them as operational failures.
+        summary.unsupported.push(code)
+        continue
+      }
+      summary.failed.push({fund_code:code,reason:reason.slice(0,120)})
       logger.warn('NAV refresh skipped',code,String(error))
     }
   }

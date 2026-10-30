@@ -56,6 +56,24 @@ export async function fetchMufgNav(fundCode,{fetcher=fetch,now=new Date()}={}) {
   try{body=JSON.parse(text)}catch{throw Error('provider_non_json')}
   return parseMufgNav(body,fundCode,now)
 }
+// Read-only live support check used while a user enters a NEW fund code.
+// An unreachable provider is not the same as "manual-only".
+export async function probeFundNavSupport(fundCode,{fetcher=fetch,now=new Date()}={}) {
+  const code=String(fundCode||'').trim().toUpperCase()
+  if(!/^[A-Z0-9]{8}$/.test(code))return {status:'invalid'}
+  if(Object.hasOwn(PENDING_NAV_FUNDS,code))return {status:'manual'}
+  if(Object.hasOwn(MUFG_FUNDS,code))return {status:'auto'}
+  try{
+    const quote=await fetchMufgNav(code,{fetcher,now})
+    return {status:'auto',priceDate:quote.priceDate}
+  }catch(error){
+    const reason=String(error?.message||error)
+    if(/^(unsupported_mufg_fund|provider_http_404|provider_fund_mismatch|provider_payload_invalid)$/.test(reason))
+      return {status:'manual'}
+    return {status:'unknown'}
+  }
+}
+
 export async function syncFundNav(db,{fetcher=fetch,now=new Date(),logger=console}={}) {
   if(!db)throw Error('missing_d1_binding')
   // Funds not held by this user are never inserted. Orders and acquisitions

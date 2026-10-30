@@ -9,6 +9,7 @@ import { compressReceiptImage } from './receipt-image.js'
 const props = defineProps({
   api: { type: Function, required: true },
   transferLoading: { type: Boolean, default: false },
+  refreshKey: { type: Number, default: 0 },
   activeView: { type: String, default: 'funds', validator: value => ['funds','wallets','plans'].includes(value) }
 })
 const emit = defineEmits(['summary'])
@@ -323,7 +324,16 @@ async function load() {
     const response = await props.api('investment-portfolio?month=' + targetMonth)
     if (sequence !== loadSequence || targetMonth !== month.value) return
     data.value = response
-    emit('summary',{month:response.month,valuation:response.valuation.value,pnl:response.valuation.pnl,reconciliation:response.reconciliation})
+    emit('summary',{
+      month:response.month,
+      valuation:response.valuation.value,
+      pnl:response.valuation.pnl,
+      acquisition:totalAcquisition.value,
+      ratio:returnRatio.value,
+      fundCount:holdingsData.value.length,
+      allocation:allocationRows.value,
+      reconciliation:response.reconciliation
+    })
   } catch(e) {
     if (sequence !== loadSequence || targetMonth !== month.value) return
     error.value = e.message
@@ -379,6 +389,7 @@ async function submitTransfer() {
 // Refresh after existing due-transfer processing completes, so the asset
 // reconciliation cannot be stale if it raced the automatic due-date update.
 watch(() => props.transferLoading, (busy, previous) => { if (previous && !busy) void load() })
+watch(() => props.refreshKey, (value,previous) => { if (value !== previous) void load() })
 onMounted(() => { window.addEventListener('keydown',onEditorKeydown); void load() })
 onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.removeEventListener('keydown',onEditorKeydown) })
 </script>
@@ -389,7 +400,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
       <div class="sbi-provider"><span class="sbi-provider-dot" aria-hidden="true"></span><span>SBI証券</span></div>
       <div class="sbi-toolbar-actions">
         <label v-if="activeView==='plans'" class="sbi-month-label"><span class="sr-only">積立・振替の対象月</span><input v-model="month" type="month" aria-label="積立・振替の対象月" @change="load" /></label>
-        <button type="button" class="sbi-icon-button" @click="load" :disabled="loading" aria-label="残高・積立を更新" title="更新">
+        <button v-if="activeView!=='plans'" type="button" class="sbi-icon-button" @click="load" :disabled="loading" aria-label="残高・積立を更新" title="更新">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14 5l2-2"/><path d="M20 20v-4h-4"/></svg>
         </button>
       </div>
@@ -434,21 +445,6 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
           </div>
         </article>
         <button v-if="holdingsData.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllHoldings" @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(holdingsData.length-2)+'件を表示'}}</button>
-        <details class="sbi-valuation-details"><summary>評価額・損益の内訳</summary>
-      <section class="sbi-hero" aria-label="投資信託の評価内訳" :aria-busy="loading">
-        <div class="sbi-hero-head"><span>投資信託の評価額</span><small>{{holdingsData.length}}銘柄</small></div>
-        <div class="sbi-hero-value">{{data.valuation.value === null ? '—' : yen(data.valuation.value)}}</div>
-        <div v-if="data.valuation.pnl !== null" class="sbi-hero-gain" :class="data.valuation.pnl >= 0 ? 'sbi-gain-plus' : 'sbi-gain-minus'">
-          <span>評価損益</span><strong>{{signYen(data.valuation.pnl)}}</strong>
-          <span v-if="returnRatio !== null" class="sbi-rate">{{returnRatio >= 0 ? '+' : ''}}{{returnRatio.toFixed(2)}}%</span>
-        </div>
-        <div v-else class="sbi-hero-gain"><span>評価額を計算できない銘柄があります</span></div>
-        <div v-if="allocationRows.length" class="sbi-allocation" aria-label="投資信託の評価額比率">
-          <span v-for="row in allocationRows" :key="row.key" :style="{width:row.ratio+'%',background:row.color}" :title="row.ratio.toFixed(1)+'%'" />
-        </div>
-        <div class="sbi-hero-foot"><span>取得金額 <strong>{{yen(totalAcquisition)}}</strong></span><span>基準日は銘柄ごとに表示</span></div>
-      </section>
-        </details>
         </div>
       </details>
     </template>

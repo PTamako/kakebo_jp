@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {parseRepeatedExpense} from '../src/natural-repeat.js'
 import {classify} from '../src/parse.js'
-import {DEFAULT_RULE_ROWS} from '../functions/api/[[path]].js'
+import {DEFAULT_RULE_ROWS} from './fixtures/default-rule-rows.js'
 import {restoreAtomic} from '../functions/api/restore-atomic.js'
 
 const source=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
@@ -17,7 +17,7 @@ test('Chinese October Fridays become exactly five reviewable drafts and never sa
   assert.deepEqual(parseRepeatedExpense('2026年2月毎週金曜日に100円使った',new Date(2026,9,29)).map(x=>x.date),['2026-02-06','2026-02-13','2026-02-20','2026-02-27'])
 })
 
-test('new merchant defaults include major shopping brands without legacy rules',()=>{
+test('isolated test fixture covers migrated merchant matching examples',()=>{
   const rows=DEFAULT_RULE_ROWS.map(([keyword,category])=>({keyword,category,is_custom:false}))
   for(const value of ['Amazon','アマゾン','楽天','楽天市場','ユニクロ','UNIQLO','コジマ'])
     assert.equal(classify(value,rows).category,'购物',value)

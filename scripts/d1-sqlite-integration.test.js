@@ -19,6 +19,9 @@ class SqliteD1 {
   constructor() {
     this.db = new DatabaseSync(':memory:')
     this.db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'))
+    // Standard category names exist only in this disposable in-memory SQLite DB.
+    // Production D1 is already migrated; schema.sql intentionally has no data inserts.
+    this.db.exec("INSERT INTO category_source(category,sort_order) VALUES ('餐饮',0),('饮食料品',1),('日用品',2),('交通',3),('购物',4),('居住',5),('医疗',6),('娱乐',7),('宠物',8),('其他',99999),('其他收入',99999)")
   }
   prepare(sql) {
     const db = this.db
@@ -600,7 +603,8 @@ test('actual SQLite: Suica and PASMO prepaid balances are ledger-derived, and op
     assert.equal(suica.balance,3780)
     assert.equal(state.body.cards.find(x=>x.name==='PASMO').balance,500)
     assert.equal(db.db.prepare("SELECT type,transfer_target,transfer_applied FROM entries WHERE merchant='Suica チャージ'").get().transfer_applied,0)
-    assert.equal(state.body.recharges.length,1)
+    assert.equal(state.body.cards.length,2)
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE transfer_target='prepaid:Suica'").get().n,1)
     assert.equal((await call('prepaid-assets/opening','POST',{name:'Suica',openingBalance:1200})).status,200)
     assert.equal((await call('prepaid-assets')).body.cards.find(x=>x.name==='Suica').balance,3980)
     assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM entries').get().n,2)
@@ -641,4 +645,21 @@ test('actual SQLite: backup restores prepaid current balance once, without repla
     assert.equal((await target.call('restore-atomic','POST',input)).body.created,0)
     assert.equal((await target.call('prepaid-assets')).body.cards.find(x=>x.name==='Suica').balance,3220)
   }finally{source.db.close();target.db.close()}
+})
+
+test('rules GET returns migrated D1 rows only and never restores missing default records',async()=>{
+  const {db,call}=await createClient()
+  try{
+    db.db.exec('DELETE FROM merchant_rules')
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,0)
+    const first=await call('rules')
+    assert.equal(first.status,200)
+    assert.deepEqual(first.body,[],'empty migrated table must not be repopulated from app defaults')
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,0)
+    db.db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2)').run('登録済みの店','饮食料品')
+    const second=await call('rules')
+    assert.equal(second.status,200)
+    assert.deepEqual(second.body,[{keyword:'登録済みの店',category:'饮食料品',is_custom:true}])
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,1)
+  }finally{db.close()}
 })

@@ -24,17 +24,7 @@ CREATE TABLE IF NOT EXISTS rules (
   category TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO rules (keyword, category) VALUES
-('ローソン','饮食料品'),('セブン','饮食料品'),('ファミリーマート','饮食料品'),('ファミマ','饮食料品'),
-('マクドナルド','餐饮'),('スターバックス','餐饮'),('すき家','餐饮'),('吉野家','餐饮'),
-('午饭','餐饮'),('晚饭','餐饮'),('早饭','餐饮'),('咖啡','餐饮'),('ランチ','餐饮'),
-('JR','交通'),('Suica','交通'),('PASMO','交通'),('メトロ','交通'),('バス','交通'),('タクシー','交通'),('打车','交通'),('地铁','交通'),
-('ドラッグ','日用品'),('マツモトキヨシ','日用品'),('ダイソー','日用品'),('ニトリ','日用品'),('スーパー','饮食料品'),('イオン','饮食料品'),
-('Amazon','购物'),('アマゾン','购物'),('ユニクロ','购物'),('楽天','购物'),
-('家賃','居住'),('房租','居住'),('電気','居住'),('ガス','居住'),('水道','居住'),('水电','居住'),
-('病院','医疗'),('薬局','医疗'),('クリニック','医疗'),
-('映画','娱乐'),('カラオケ','娱乐'),('Netflix','娱乐');
-
+-- No historical merchant-rule seeds. Populate a brand-new D1 only through explicit user actions.
 
 -- SBI投信積立などの資金移動は entries.type='transfer' とし、生活費統計から除外する。
 
@@ -103,12 +93,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 CREATE TABLE IF NOT EXISTS device_sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS login_attempts (ip_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at INTEGER NOT NULL);
 
--- One source for category ordering and icon selection. Other stays at 99999.
-INSERT OR IGNORE INTO category_source(category,sort_order) VALUES
-('餐饮',0),('饮食料品',1),('日用品',2),('交通',3),('购物',4),
-('居住',5),('医疗',6),('娱乐',7),('宠物',8),
-('其他',99999),('其他收入',99999);
-
+-- Category ordering is persisted by the migrated D1, never reinserted by schema.sql.
 -- Fresh databases include the additive SBI portfolio tables.
 -- Additive SBI portfolio ledger. Apply to a CLONED D1 first; do not run
 -- DDL during API requests. No existing entries or valuations are modified.

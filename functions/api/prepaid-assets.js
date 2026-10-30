@@ -34,13 +34,8 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) spent
     FROM payment_sources p WHERE p.source_type='prepaid'
     ORDER BY p.sort_order,p.name`).bind(today).all()
-  const {results:recharges}=await db.prepare(`SELECT e.id,e.date,e.amount,e.merchant,e.payment_source,e.transfer_target
-    FROM entries e WHERE e.type='transfer' AND e.transfer_target LIKE 'prepaid:%' AND e.date<=?1
-      AND EXISTS (SELECT 1 FROM payment_sources p
-        WHERE p.source_type='prepaid' AND e.transfer_target='prepaid:'||p.name
-          AND e.id>p.opening_entry_id AND e.date>=p.opening_date)
-    ORDER BY e.date DESC,e.id DESC LIMIT 40`).bind(today).all()
-  return json({cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)-Number(p.spent)})),recharges})
+  // History is rendered by the ledger with per-card filters; no duplicate history query here.
+  return json({cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)-Number(p.spent)}))})
 }
 export async function validPrepaidTarget(db,target){
   if(typeof target!=='string'||!target.startsWith('prepaid:')||target.length>88)return false

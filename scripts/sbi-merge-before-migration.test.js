@@ -24,8 +24,8 @@ test('missing portfolio tables fail closed without deleting historical SBI value
 test('0006 migration is additive and never edits/deletes an existing transaction or old valuation',()=>{
   assert.doesNotMatch(migration,/\b(?:DELETE|UPDATE|DROP|REPLACE)\s+(?:FROM\s+)?(?:entries|investment_snapshots)\b/i)
   assert.match(migration,/CREATE TABLE IF NOT EXISTS investment_holdings/)
-  assert.match(migration,/INSERT OR IGNORE INTO investment_plan_history/)
-  assert.match(migration,/WHERE NOT EXISTS\(SELECT 1 FROM investment_holdings WHERE fund_code=/)
+  assert.doesNotMatch(migration,/INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+(?:investment_plans|investment_plan_history|investment_holdings|fund_prices)\b/i)
+  assert.match(migration,/CREATE TABLE IF NOT EXISTS investment_plan_history/)
   assert.match(schema,/CREATE TABLE IF NOT EXISTS investment_plan_history/)
   assert.match(component,/買付月は推定です。期日反映は記帳上の処理であり、証券口座への着金・買付成立の確認ではありません。/)
 })

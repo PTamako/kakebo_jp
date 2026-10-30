@@ -2,7 +2,7 @@
 import { computed, inject, ref } from 'vue'
 import SbiPortfolio from '../SbiPortfolio.vue'
 import PrepaidAssets from '../PrepaidAssets.vue'
-const { tab, ledgerRevision, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, api } = inject('kakeibo-page-context')
+const { tab, openPrepaidHistoryDetails, ledgerRevision, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, api } = inject('kakeibo-page-context')
 const portfolioSummary = ref(null)
 const prepaidSummary = ref(null)
 const onPortfolioSummary = value => { portfolioSummary.value = value }
@@ -36,7 +36,7 @@ const monthLabel = computed(() => portfolioSummary.value?.month ? portfolioSumma
       <div class="asset-stat">
         <span>プリペイド残高</span>
         <strong>{{yen(prepaid)}}</strong>
-        <small>Suica・PASMOなど</small>
+        <small>登録済みのプリペイド</small>
       </div>
       <div class="asset-stat">
         <span>投資信託評価額</span>
@@ -81,7 +81,7 @@ const monthLabel = computed(() => portfolioSummary.value?.month ? portfolioSumma
 
     <SbiPortfolio :api="api" :transfer-loading="transferLoading" @summary="onPortfolioSummary">
       <template #before-holdings>
-        <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" @summary="onPrepaidSummary" @open-card-settings="openCardSettings" />
+        <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" @summary="onPrepaidSummary" @open-card-settings="openCardSettings" @open-history="openPrepaidHistoryDetails" />
       </template>
     </SbiPortfolio>
   </section>

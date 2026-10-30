@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parseEntry, parseEntries } from '../src/parse.js'
-import { DEFAULT_RULE_ROWS } from '../functions/api/[[path]].js'
+import { DEFAULT_RULE_ROWS } from './fixtures/default-rule-rows.js'
 import { sealBackup, verifyBackupIntegrity } from '../src/backup-integrity.js'
 
 const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
@@ -44,13 +44,12 @@ test('saving imported expenses checks all draft months against D1, never deletes
   assert.match(src,/if \(!f\.clientRequestId\) f\.clientRequestId = crypto\.randomUUID\(\)/)
 })
 
-test('new database default categorization agrees with D1 runtime defaults',()=>{
+test('schema never inserts historical category fixtures into the production D1',()=>{
   const schema=source('schema.sql')
-  for(const kw of ['ローソン','セブン','ファミリーマート','イオン','スーパー']) {
-    assert.match(schema,new RegExp('\\(' + "'" + kw + "','饮食料品'" + '\\)'))
-  }
-  const runtime = new Map(DEFAULT_RULE_ROWS)
-  for (const kw of ['ローソン','セブン','ファミリーマート','イオン','スーパー']) assert.equal(runtime.get(kw),'饮食料品',kw)
+  assert.doesNotMatch(schema,/INSERT\\s+(?:OR\\s+IGNORE\\s+)?INTO\\s+(?:rules|category_source|investment_holdings|fund_prices)\\b/i)
+  const sample=new Map(DEFAULT_RULE_ROWS)
+  for (const keyword of ['ローソン','セブン','ファミリーマート','イオン','スーパー'])
+    assert.equal(sample.get(keyword),'饮食料品',keyword)
   assert.match(schema,/payment_source TEXT NOT NULL DEFAULT ''/)
   assert.match(source('migrations/0001_support_tables.sql'),/CREATE TABLE IF NOT EXISTS/)
 })

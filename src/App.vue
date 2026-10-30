@@ -16,6 +16,7 @@ import ManagementPage from './pages/ManagementPage.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
 import { detectPrepaidRecharge, prepaidTarget } from './prepaid-card.js'
+import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
@@ -56,15 +57,7 @@ const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([.
 const input = ref(''), busy = ref(''), msg = ref('')
 const ocrEngine = ref(''), ocrWarning = ref('')
 const forms = ref([])
-// D1 is the single source of truth for payment methods.
-// Read old browser settings only once when the server table is still empty.
-function readLegacyPaymentSources() {
-  try {
-    const stored = JSON.parse(localStorage.getItem('kakeibo-payment-sources') || 'null')
-    if (Array.isArray(stored)) return [...new Set(stored.filter(x => typeof x === 'string' && x.trim()).map(x => x.trim()))]
-  } catch {}
-  return []
-}
+// D1 is the only source of payment cards; never re-import old browser storage.
 const paymentSources = ref([])
 const paymentClosingDays = ref({})
 const paymentSourceMeta = ref({})
@@ -88,11 +81,7 @@ let paymentSettingsLoading = null
 async function loadPaymentSettings() {
   if (paymentSettingsLoading) return paymentSettingsLoading
   paymentSettingsLoading = (async () => {
-    let cards = await api('payment-sources')
-    if (!cards.length && !paymentSettingsLoaded) {
-      await api('payment-sources/initialize', { method: 'POST', body: JSON.stringify({ names: readLegacyPaymentSources() }) })
-      cards = await api('payment-sources')
-    }
+    const cards = await api('payment-sources')
     paymentSources.value = sortOtherLast(cards.map(x => x.name))
     paymentSourceMeta.value = Object.fromEntries(cards.map(x => [x.name,x]))
     paymentClosingDays.value = Object.fromEntries(cards.filter(x => x.closing_day !== null && x.closing_day !== undefined).map(x => [x.name, x.closing_day]))
@@ -818,6 +807,27 @@ const swipedEntryId = ref(null)
 const swipedReceiptId = ref(null)
 const filteredEntries = computed(() => entries.value.filter(e => String(e.date || '').startsWith(month.value) && (!selectedDay.value || String(e.date || '').slice(0, 10) === selectedDay.value)))
 const detailFilter = ref(null)
+const prepaidHistoryFilter = ref(null)
+// Histories are scoped to one actual prepaid card, never all transport cards.
+const matchesPrepaidHistory = entry => matchesPrepaidHistoryEntry(entry, prepaidHistoryFilter.value)
+async function openPrepaidHistoryDetails(cardName,kind) {
+  if (!prepaidSources.value.includes(cardName) || !['charge','usage'].includes(kind)) return
+  detailRequestId++
+  detailLoading.value = false
+  detailFilter.value = null
+  detailSourceEntries.value = []
+  selectedDay.value = ''
+  visibleEntryCount.value = 20
+  calendarExpanded.value = false
+  preserveOperatedDay.value = ''
+  prepaidHistoryFilter.value = { card:cardName, kind }
+  entryTypeFilter.value = kind === 'charge' ? 'transfer' : 'expense'
+  const targetMonth = currentMonth()
+  const changedMonth = month.value !== targetMonth
+  month.value = targetMonth
+  tab.value = 'list'
+  if (!changedMonth) await load()
+}
 const paymentMethodMatches = (entry, method) => method === '現金' ? !String(entry.payment_source || '').trim() || entry.payment_source === '現金' : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
 async function openPaymentMethodDetails(method, period) {
   await openCategoryDetails('', 'expense', period, method)
@@ -836,9 +846,10 @@ const displayEntries = computed(() => {
   const narrowed = detailFilter.value
     ? source.filter(entry => detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) : detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer'))
     : source
-  return narrowed.filter(entryMatchesType).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
+  return narrowed.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
 })
 function setEntryTypeFilter(value) {
+  prepaidHistoryFilter.value = null
   detailRequestId++
   detailLoading.value = false
   entryTypeFilter.value = value
@@ -911,6 +922,7 @@ async function fetchPeriodDetailRows(period, requestId = null) {
   return rows
 }
 async function openCategoryDetails(category, type, period, paymentMethod = '') {
+  prepaidHistoryFilter.value = null
   detailFilter.value = { category, type, period, paymentMethod }
   entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
   selectedDay.value = ''
@@ -936,6 +948,8 @@ async function refreshDetailSource() {
   } catch (e) { flash('明細の再読み込みに失敗しました：' + e.message) }
 }
 function clearDetailFilter() {
+  if (prepaidHistoryFilter.value) entryTypeFilter.value = 'all'
+  prepaidHistoryFilter.value = null
   detailRequestId++
   detailLoading.value = false
   detailFilter.value = null
@@ -948,7 +962,7 @@ let touchStartY = 0
 let suppressRowClick = false
 const calendarEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : entries.value
-  return source.filter(entryMatchesType).filter(entry => !detailFilter.value || (
+  return source.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !detailFilter.value || (
     detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) :
     detailFilter.value.type === 'transfer' ? entry.type === 'transfer' :
     entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer')
@@ -990,6 +1004,7 @@ const visibleCalendarDays = computed(() => {
   return calendarDays.value.slice(start, start + 7)
 })
 function openLedgerFromNav() {
+  prepaidHistoryFilter.value = null
   detailFilter.value = null
   entryTypeFilter.value = 'all'
   selectedDay.value = ''
@@ -1132,6 +1147,7 @@ const annualIncomeCategories = computed(() => (annualStats.value?.incomeByCatego
 const maxAnnualIncomeCategory = computed(() => Math.max(1, ...annualIncomeCategories.value.map(item => item.amount)))
 function openMonthDetails(point, type) {
   if (!point?.month || !['income', 'expense'].includes(type)) return
+  prepaidHistoryFilter.value = null
   detailRequestId++
   detailLoading.value = false
   detailFilter.value = null
@@ -1164,7 +1180,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
 // All page links share these same reactive refs and navigation handlers.
 // Child page components never create separate ledger selection state.
-provide('kakeibo-page-context', { tab, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, readLegacyPaymentSources, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, draftSaveTimer, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, ratioTrendMax, maxYearMonth, highestSpendMonth, annualAverage, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
+provide('kakeibo-page-context', { tab, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, draftSaveTimer, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, ratioTrendMax, maxYearMonth, highestSpendMonth, annualAverage, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
 </script>
 
 <template>

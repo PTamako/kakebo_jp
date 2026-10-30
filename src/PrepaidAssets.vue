@@ -1,8 +1,8 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 const props=defineProps({ api:{type:Function,required:true}, active:{type:Boolean,default:false}, revision:{type:Number,default:0} })
-const emit=defineEmits(['summary','open-card-settings'])
-const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false),showAllRecharges=ref(false)
+const emit=defineEmits(['summary','open-card-settings','open-history'])
+const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false)
 const money=value=>'¥'+Number(value||0).toLocaleString('ja-JP')
 const selected=ref(null),openingDraft=ref(0),saving=ref(false),notice=ref('')
 function startOpening(card){ selected.value=card;openingDraft.value=Number(card.opening_balance) }
@@ -39,9 +39,9 @@ watch(()=>[props.active,props.revision],()=>{if(props.active)void refresh()})
 onMounted(()=>{if(props.active)void refresh()})
 </script>
 <template>
-  <details class="panel wallet-panel" open aria-label="交通系IC・プリペイド">
+  <details class="panel wallet-panel" open aria-label="プリペイド・電子マネー">
     <summary class="wallet-section-heading">
-      <span><strong>交通系IC・プリペイド</strong><small>{{data ? data.cards.length+'件' : '残高を確認'}}</small></span>
+      <span><strong>プリペイド・電子マネー</strong><small>{{data ? data.cards.length+'件' : '残高を確認'}}</small></span>
       <span class="wallet-heading-end"><b v-if="data">{{money(data.cards.reduce((sum,card)=>sum+Number(card.balance),0))}}</b><span class="wallet-chevron" aria-hidden="true">⌄</span></span>
     </summary>
     <div class="wallet-body">
@@ -56,15 +56,17 @@ onMounted(()=>{if(props.active)void refresh()})
             <div class="wallet-name"><strong>{{card.name}}</strong><small>プリペイド · チャージ {{money(card.charged)}} · 利用 {{money(card.spent)}}</small></div>
             <div class="wallet-money" :class="{'wallet-negative':card.balance<0}"><strong>{{money(card.balance)}}</strong><small v-if="card.balance<0">要確認</small></div>
           </div>
-          <div class="wallet-row-actions"><button type="button" class="wallet-edit" @click="startOpening(card)">編集</button></div>
+          <div class="wallet-row-actions">
+            <nav class="wallet-history-links" :aria-label="card.name+'の履歴'">
+              <button type="button" :aria-label="card.name+'のチャージ履歴'" @click="emit('open-history',card.name,'charge')">チャージ履歴</button>
+              <button type="button" :aria-label="card.name+'の利用履歴'" @click="emit('open-history',card.name,'usage')">利用履歴</button>
+            </nav>
+            <button type="button" class="wallet-edit" :aria-label="card.name+'の期首残高を編集'" @click="startOpening(card)">編集</button>
+          </div>
         </div>
         <button v-if="data.cards.length>2" type="button" class="wallet-show-more" :aria-expanded="showAll" @click="showAll=!showAll">{{showAll?'閉じる':'あと'+(data.cards.length-2)+'件を表示'}}</button>
-        <details v-if="data.recharges.length" class="wallet-recharge">
-          <summary>最近のチャージ <span>{{data.recharges.length}}件</span></summary>
-          <div v-for="entry in (showAllRecharges ? data.recharges : data.recharges.slice(0,3))" :key="entry.id" class="wallet-recharge-row"><span>{{entry.date}} · {{entry.transfer_target.slice(8)}}</span><strong>+{{money(entry.amount)}}</strong></div>
-          <button v-if="data.recharges.length>3" type="button" class="wallet-show-more" :aria-expanded="showAllRecharges" @click="showAllRecharges=!showAllRecharges">{{showAllRecharges?'閉じる':'あと'+(data.recharges.length-3)+'件を表示'}}</button>
-        </details>
-        <details class="wallet-explanation"><summary>残高の計算について</summary><p class="wallet-note">チャージは資産移動、利用は支出として計算します。カードとの自動同期はありません。</p></details>
+
+        
       </template>
     </div>
     <div v-if="selected" class="wallet-overlay" @click.self="selected=null">
@@ -93,12 +95,13 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:7px}
 .wallet-name{display:grid;gap:3px;min-width:0}.wallet-name strong{font-size:13px;overflow-wrap:anywhere}.wallet-name small{color:var(--muted);font-size:10px;line-height:1.5}
 .wallet-money{display:grid;justify-items:end;flex:none;font-variant-numeric:tabular-nums;white-space:nowrap}.wallet-money strong{font-size:15px}.wallet-money small{font-size:10px;color:var(--muted)}.wallet-negative{color:#c54d68}
-.wallet-row-actions{display:flex;justify-content:flex-end;margin-top:1px}.wallet-edit{border:0;background:transparent;color:var(--blue-dark);font-size:12px;font-weight:750;min-height:44px;padding:5px 8px}
+.wallet-row-actions{display:flex;align-items:center;gap:5px;min-width:0;margin-top:3px}
+.wallet-history-links{display:flex;flex:1;min-width:0;gap:4px}
+.wallet-history-links button,.wallet-edit{border:0;background:transparent;color:var(--blue-dark);font-weight:750;font-size:11px;min-height:44px;padding:6px 6px;white-space:nowrap;cursor:pointer}
+.wallet-history-links button:focus-visible,.wallet-edit:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px;border-radius:7px}
+.wallet-edit{font-size:12px;margin-left:auto}
 .wallet-show-more{display:block;margin:2px auto 5px;border:0;background:transparent;color:var(--blue-dark);min-height:44px;font-size:12px;font-weight:750;padding:8px}
-.wallet-recharge,.wallet-explanation{border-top:1px solid var(--line)}
-.wallet-recharge summary,.wallet-explanation summary{font-size:11px;font-weight:750;color:var(--muted);cursor:pointer;min-height:40px;padding:12px 0}.wallet-recharge summary span{font-weight:500}
-.wallet-recharge-row{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:9px 0;border-top:1px solid var(--line)}
-.wallet-hint,.wallet-note{font-size:11px;color:var(--muted);line-height:1.6;margin:0}.wallet-note{padding-bottom:8px}
+.wallet-hint{font-size:11px;color:var(--muted);line-height:1.6;margin:0}
 .wallet-error{font-size:12px;color:#9b2938}.wallet-success{font-size:11px;color:#178367;margin:0}
 .wallet-overlay{position:fixed;z-index:61;inset:0;background:#23273588;display:flex;align-items:flex-end;justify-content:center}
 .wallet-opening-editor{box-sizing:border-box;display:grid;gap:12px;width:100%;max-width:520px;max-height:calc(90dvh - env(safe-area-inset-bottom, 0px));overflow:auto;padding:20px 18px calc(20px + env(safe-area-inset-bottom,0px));border-radius:22px 22px 0 0;background:var(--card);box-shadow:0 -12px 30px #00000018}

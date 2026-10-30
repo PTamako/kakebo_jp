@@ -1,3 +1,4 @@
+// Isolated in-memory test fixture. Never loaded by production Pages Functions or D1.
 // User-confirmed SBI grouped-by-fund snapshot, displayed 2026-10-30 00:41 JST.
 // Positions tagged 成長 + つみたて are aggregated. Do not invent per-account splits.
 // reportedValue is the exact SBI screenshot value, not a derived NAV calculation.

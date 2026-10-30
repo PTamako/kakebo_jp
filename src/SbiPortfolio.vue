@@ -474,7 +474,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
                 <div class="sbi-row-end"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">買付月を変更</button></div>
               </div>
               <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
-              <details class="sbi-footnote"><summary>振替の確認について</summary><p>振替の記帳反映は証券口座での着金・買付完了を意味しません。買付月が異なる場合は変更できます。</p></details>
+              <details class="sbi-footnote"><summary>振替の確認について</summary><p>期日反映は証券口座への入金・買付完了を保証しません。買付月が異なる場合は変更できます。</p></details>
             </div>
           </details>
         </div>

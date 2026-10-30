@@ -73,3 +73,45 @@ test('OCR readout and create/edit share the existing time field without a data m
   assert.match(form, /class="transaction-time-summary">時刻 \{\{record\.time\}\}/, 'the automatically filled time can be seen in compact details')
   assert.doesNotMatch(form, /v-if="record.type==='expense'" class="form-field"><span>時刻/, 'income and transfer time remains editable')
 })
+
+test('register receipt layout retains 12:36 even with a second card-payment date', () => {
+  // Representative mock layout; no receipt number, phone or real customer data.
+  const original = `まいばすけっと
+架空の店舗
+領収証
+レジ0107 2026/10/30(金) 12:36
+小計 ¥288
+外税8% ¥23
+合計 ¥311
+QUICPay支払 ¥311
+お取扱日 2026年10月30日
+金額 ¥311`
+  const result = parseReceipt(original)
+  assert.equal(result.date,'2026-10-30')
+  assert.equal(result.time,'12:36')
+  assert.equal(result.amount,311)
+  for (const split of [
+    original.replace('レジ0107 2026/10/30(金) 12:36','2026/10/30(金)\\nレジ0107 12:36'),
+    original.replace('レジ0107 2026/10/30(金) 12:36','2026/10/30(金)\\nレジ0107\\n12:36'),
+    original.replace('レジ0107 2026/10/30(金) 12:36','レジ0107 2026/10/30(金) 12 36'),
+    original.replace('レジ0107 2026/10/30(金) 12:36','レジ0107 2026/10/30(金)\\n12:36')
+  ]) {
+    const parsed=parseReceipt(split)
+    assert.equal(parsed.date,'2026-10-30')
+    assert.equal(parsed.time,'12:36',split)
+    assert.equal(parsed.amount,311)
+  }
+})
+
+test('receipt register IDs, store hours, payment slip IDs and phone numbers cannot fabricate time',()=>{
+  for (const text of [
+    'レジ番号 12:36',
+    '営業時間 12:36-21:00',
+    '電話03-5612-1338',
+    '伝票番号 1236',
+    'カード会員番号 XXXX-1236'
+  ]) {
+    const receipt='テスト店舗\\n2026/10/30(金)\\n'+text+'\\n合計 ¥311'
+    assert.equal(parseReceipt(receipt).time,'',text)
+  }
+})

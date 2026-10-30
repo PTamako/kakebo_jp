@@ -6,18 +6,23 @@ import { validateBackup } from '../../src/finance-tools.js'
 export async function restoreAtomic(db, archive) {
   validateBackup(archive)
   const entries = archive.entries
+  const deferredPrepaidEntries = archive.deferredPrepaidEntries || []
+  if(!Array.isArray(deferredPrepaidEntries))throw Error('atomic_restore_invalid_deferred')
+  const allEntries = [...entries,...deferredPrepaidEntries]
   const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills' ,'dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
-  // A bounded single transaction is preferable to pretending a many-request
-  // restore is atomic. The older resumable path remains for large archives.
-  if (entries.length > 500 || totalSettings > 500) throw Error('atomic_restore_too_large')
-  if (!entries.every(e=>typeof e.clientRequestId === 'string' && /^restore_[a-f0-9]{32}$/.test(e.clientRequestId)))
+  // Each request is atomic. The client sends bounded, idempotent stages
+  // rather than dropping settings from a large archive.
+  if (allEntries.length > 500 || totalSettings > 500) throw Error('atomic_restore_too_large')
+  if (!allEntries.every(e=>typeof e.clientRequestId === 'string' && /^restore_[a-f0-9]{32}$/.test(e.clientRequestId)))
     throw Error('atomic_restore_invalid_ids')
-  if (new Set(entries.map(e=>e.clientRequestId)).size!==entries.length)
+  if (new Set(allEntries.map(e=>e.clientRequestId)).size!==allEntries.length)
     throw Error('atomic_restore_duplicate_ids')
+  if (deferredPrepaidEntries.length && archive.prepaidRestoreInProgress!==true)
+    throw Error('atomic_restore_invalid_deferred')
   const validText = (s,max) => typeof s === 'string' && s.trim().length>0 && s.length<=max
-  if (entries.some(e=>!validText(e.merchant ?? '',500) && e.merchant !== '' && e.merchant != null) ||
-      entries.some(e=>typeof e.note==='string' && e.note.length>2000))
+  if (allEntries.some(e=>!validText(e.merchant ?? '',500) && e.merchant !== '' && e.merchant != null) ||
+      allEntries.some(e=>typeof e.note==='string' && e.note.length>2000))
     throw Error('atomic_restore_invalid_entries')
   const prepaidSources=(archive.paymentSources||[]).filter(x=>x?.source_type==='prepaid')
   const prepaidFinal=archive.prepaidFinalize||[]
@@ -82,8 +87,8 @@ export async function restoreAtomic(db, archive) {
   for(const p of archive.fundPrices||[])
     add('INSERT OR IGNORE INTO fund_prices(fund_code,nav_per_10000,price_date,source,updated_at) VALUES(?1,?2,?3,?4,?5)',
       p.fund_code,p.nav_per_10000,p.price_date,p.source,p.updated_at||new Date().toISOString())
-  const insertStart=statements.length
-  for(const e of entries) {
+  const insertedIndexes=[]
+  const appendEntry=e=>{
     const type=e.type, transfer=type==='transfer'
     const target=transfer && (e.transfer_target==='sbi' || /^prepaid:[^:]{1,80}$/.test(e.transfer_target||'')) ? e.transfer_target : null
     const transferDate=transfer?(e.transfer_date||e.date):null
@@ -92,36 +97,42 @@ export async function restoreAtomic(db, archive) {
     const tokyoToday=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10)
     const transferApplied=target==='sbi' && transferDate<=tokyoToday ? 1 : 0
     if(transfer && transferDate!==null && !/^\d{4}-\d{2}-\d{2}$/.test(transferDate))throw Error('atomic_restore_invalid_transfer_date')
+    insertedIndexes.push(statements.length)
     add('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING',
       e.date,e.time||'',Number(e.amount),transfer?'投資・資産移動':e.category||'其他',e.merchant||'',e.note||'',String(e.raw||'').slice(0,2000),
       type,target,transferApplied,transferDate,e.clientRequestId,e.payment_source||e.paymentSource||'')
   }
-  // Restore dismissal on transaction IDs actually imported (or idempotent retries).
-  const byOldId=new Map(entries.filter(e=>e.type==='transfer'&&e.transfer_target==='sbi').map(e=>[Number(e.id),e]))
-  for(const oldId of archive.dismissedTransfers||[]){
-    const e=byOldId.get(Number(oldId))
-    if(e)add('INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) SELECT id FROM entries WHERE client_request_id=?1',e.clientRequestId)
-  }
-  // Transfer IDs change on restore. Map to a stable restore client request
-  // ID and never guess a match from amount/date alone.
-  const oldTransfers=new Map(entries.filter(e=>e.type==='transfer'&&e.transfer_target==='sbi'&&Number.isSafeInteger(Number(e.id))).map(e=>[Number(e.id),e]))
-  for(const link of archive.transferLinks||[]){
-    const e=oldTransfers.get(Number(link.entry_id))
-    if(e)add("INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) SELECT id,?1 FROM entries WHERE client_request_id=?2 AND type='transfer' AND transfer_target='sbi'",
-      link.purchase_month,e.clientRequestId)
-  }
+  for(const e of entries)appendEntry(e)
   // Only the card inserted by this restore has the temporary marker. Existing
   // records and their manually entered opening balances are never overwritten.
   const restoredAt=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
   for(const card of prepaidFinal)
     add("UPDATE payment_sources SET opening_balance=?1,opening_date=?2,opening_entry_id=(SELECT COALESCE(MAX(id),0) FROM entries) WHERE name=?3 AND source_type='prepaid' AND opening_date='__restore_pending__'",
       card.openingBalance,restoredAt,card.name)
+  // The finalization anchor must be set BEFORE scheduled prepaid movements
+  // are inserted; they get fresh IDs and will count when their dates arrive.
+  for(const e of deferredPrepaidEntries)appendEntry(e)
+  // Restore dismissal on transaction IDs actually imported (or idempotent retries).
+  const byOldId=new Map(allEntries.filter(e=>e.type==='transfer'&&e.transfer_target==='sbi').map(e=>[Number(e.id),e]))
+  for(const oldId of archive.dismissedTransfers||[]){
+    const e=byOldId.get(Number(oldId))
+    if(e)add('INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) SELECT id FROM entries WHERE client_request_id=?1',e.clientRequestId)
+  }
+  // Transfer IDs change on restore. Map to a stable restore client request
+  // ID and never guess a match from amount/date alone.
+  const oldTransfers=new Map(allEntries.filter(e=>e.type==='transfer'&&e.transfer_target==='sbi'&&Number.isSafeInteger(Number(e.id))).map(e=>[Number(e.id),e]))
+  for(const link of archive.transferLinks||[]){
+    const e=oldTransfers.get(Number(link.entry_id))
+    if(e)add("INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) SELECT id,?1 FROM entries WHERE client_request_id=?2 AND type='transfer' AND transfer_target='sbi'",
+      link.purchase_month,e.clientRequestId)
+  }
   for(const plan of archive.plans||[])add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
     plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0)
   if(!statements.length) return {ok:true,created:0,settings:0,skipped:0}
   const result=await db.batch(statements)
   if(!Array.isArray(result)||result.length!==statements.length||result.some(r=>r?.success===false))
     throw Error('atomic_restore_db_failed')
-  const created=result.slice(insertStart,insertStart+entries.length).reduce((n,r)=>n+Number(r.meta?.changes||0),0)
-  return {ok:true,created,settings:result.reduce((n,r,i)=>n+(i<insertStart || i>=insertStart+entries.length?Number(r.meta?.changes||0):0),0),skipped:entries.length-created}
+  const insertedSet=new Set(insertedIndexes)
+  const created=insertedIndexes.reduce((n,i)=>n+Number(result[i]?.meta?.changes||0),0)
+  return {ok:true,created,settings:result.reduce((n,r,i)=>n+(!insertedSet.has(i)?Number(r.meta?.changes||0):0),0),skipped:allEntries.length-created}
 }

@@ -648,20 +648,24 @@ test('actual SQLite: backup restores prepaid current balance once, without repla
   }finally{source.db.close();target.db.close()}
 })
 
-test('rules GET returns migrated D1 rows only and never restores missing default records',async()=>{
+test('rules GET merges existing defaults with user overrides without inserting any records',async()=>{
   const {db,call}=await createClient()
-  try{
+  try {
     db.db.exec('DELETE FROM merchant_rules')
+    db.db.prepare("INSERT INTO rules(keyword,category) VALUES('コンビニ','日用品'),('スーパー','饮食料品')").run()
+    const before=db.db.prepare('SELECT COUNT(*) n FROM rules').get().n
+    const merged=(await call('rules')).body
+    assert.equal(merged.find(row=>row.keyword==='コンビニ').is_custom,false)
+    assert.equal(merged.find(row=>row.keyword==='スーパー').category,'饮食料品')
     assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,0)
-    const first=await call('rules')
-    assert.equal(first.status,200)
-    assert.deepEqual(first.body,[],'empty migrated table must not be repopulated from app defaults')
-    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,0)
-    db.db.prepare('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2)').run('登録済みの店','饮食料品')
-    const second=await call('rules')
-    assert.equal(second.status,200)
-    assert.deepEqual(second.body,[{keyword:'登録済みの店',category:'饮食料品',is_custom:false}])
-    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,1)
+    db.db.prepare("INSERT INTO merchant_rules(keyword,category) VALUES('コンビニ','购物'),('自分の店','宠物')").run()
+    const next=(await call('rules')).body
+    assert.equal(next.find(row=>row.keyword==='コンビニ').category,'购物')
+    assert.equal(next.find(row=>row.keyword==='コンビニ').is_custom,true)
+    assert.equal(next.find(row=>row.keyword==='スーパー').is_custom,false)
+    assert.equal(next.find(row=>row.keyword==='自分の店').is_custom,true)
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM rules').get().n,before,'default table never modified by GET')
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM merchant_rules').get().n,2,'no automatic backfill')
   }finally{db.close()}
 })
 
@@ -718,30 +722,27 @@ test('D1 category_source is authoritative without old markers, fallback categori
   }finally{db.close()}
 })
 
-test('D1 rule priority marks only explicit user edits, preserving them through backups',async()=>{
-  const source=await createClient(),target=await createClient()
-  try{
-    source.db.db.prepare("INSERT INTO merchant_rules(keyword,category) VALUES('まいばすけっと','饮食料品'),('まいばす','购物')").run()
-    let rules=(await source.call('rules')).body
-    assert.ok(rules.every(row=>row.is_custom===false),'old migrated rules have unknown provenance and are not marked automatically')
-    assert.equal(classify('まいばすけっと高砂店',rules).category,'饮食料品')
-    assert.equal((await source.call('rules','POST',{keyword:'まいばす',category:'娱乐'})).status,200)
-    rules=(await source.call('rules')).body
-    assert.equal(rules.find(row=>row.keyword==='まいばす').is_custom,true)
-    assert.equal(rules.find(row=>row.keyword==='まいばすけっと').is_custom,false)
-    assert.equal(classify('まいばすけっと高砂店',rules).category,'娱乐','explicit user rule must override longer migrated rule')
-    assert.equal(source.db.db.prepare("SELECT COUNT(*) AS n FROM merchant_rules WHERE keyword='__user_priority__:まいばす'").get().n,1)
-    assert.ok(!(await source.call('custom-rules')).body.some(row=>row.keyword.startsWith('__user_priority__:')))
-    const backup=(await source.call('backup-snapshot')).body
-    assert.equal(backup.customRules.find(row=>row.keyword==='まいばす').is_custom,true)
-    assert.equal(backup.customRules.some(row=>row.keyword.startsWith('__user_priority__:')),false)
-    const restored=await target.call('restore-atomic','POST',{...backup,prepaidRestoreInProgress:true})
-    assert.equal(restored.status,200,JSON.stringify(restored.body))
-    const after=(await target.call('rules')).body
-    assert.equal(after.find(row=>row.keyword==='まいばす').is_custom,true)
-    assert.equal(classify('まいばすけっと高砂店',after).category,'娱乐')
-    const deleted=await target.call('custom-rules?keyword='+encodeURIComponent('まいばす'),'DELETE')
-    assert.equal(deleted.status,200)
-    assert.equal(target.db.db.prepare("SELECT COUNT(*) AS n FROM merchant_rules WHERE keyword='__user_priority__:まいばす'").get().n,0)
-  }finally{source.db.close();target.db.close()}
+test('user-defined merchant_rules take priority over longer rules defaults; backup includes users only',async()=>{
+ const source=await createClient(),target=await createClient()
+ try{
+   source.db.db.prepare("INSERT INTO rules(keyword,category) VALUES('まいばすけっと','饮食料品')").run()
+   source.db.db.prepare("INSERT INTO merchant_rules(keyword,category) VALUES('まいばす','购物')").run()
+   let current=(await source.call('rules')).body
+   assert.equal(current.find(x=>x.keyword==='まいばす').is_custom,true)
+   assert.equal(current.find(x=>x.keyword==='まいばすけっと').is_custom,false)
+   assert.equal(classify('まいばすけっと高砂店',current).category,'购物')
+   assert.equal((await source.call('rules','POST',{keyword:'まいばす',category:'娱乐'})).status,200)
+   current=(await source.call('rules')).body
+   assert.equal(classify('まいばすけっと高砂店',current).category,'娱乐')
+   assert.equal(source.db.db.prepare("SELECT category FROM rules WHERE keyword='まいばすけっと'").get().category,'饮食料品')
+   assert.equal(source.db.db.prepare("SELECT COUNT(*) n FROM merchant_rules WHERE keyword LIKE '__user_priority__:%'").get().n,0)
+   const archive=(await source.call('backup-snapshot')).body
+   assert.ok(!archive.customRules.some(x=>x.keyword==='まいばすけっと'),'default rows are never copied into backup user rules')
+   assert.equal(archive.customRules.find(x=>x.keyword==='まいばす').category,'娱乐')
+   const restored=await target.call('restore-atomic','POST',{...archive,prepaidRestoreInProgress:true})
+   assert.equal(restored.status,200,JSON.stringify(restored.body))
+   assert.equal((await target.call('rules')).body.find(x=>x.keyword==='まいばす').is_custom,true)
+   assert.equal(target.db.db.prepare("SELECT COUNT(*) n FROM rules").get().n,0,'restore never creates default rules')
+   assert.equal(target.db.db.prepare("SELECT COUNT(*) n FROM merchant_rules WHERE keyword='まいばす'").get().n,1)
+ }finally{source.db.close();target.db.close()}
 })

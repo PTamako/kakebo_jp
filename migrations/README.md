@@ -9,6 +9,11 @@
 **以此节为准，下面保留的旧迁移说明仅作历史记录，不再适用于新版运行流程。**
 
 - 生产 D1 已经完成表与数据迁移。API 只使用现有的 `merchant_rules`、`category_source`、`payment_sources`、`recurring_plans`、`card_bills` 和其他现行表。
+- `/api/rules` 现在只读取 `merchant_rules` 中实际存在的分类关键词，不再把内置旧词典混入读取结果；空表不会自动补写。
+- `schema.sql` 仅保留独立新库所需的 DDL，已删除规则和分类的默认 `INSERT`。该文件不得对已迁移生产 D1 重复执行。
+- 旧关键词示例和历史 SBI 截图数据仅保存在 `scripts/fixtures/`，供内存数据库测试，不参与 Pages Functions 或 Worker 的生产运行；`migrations/0001`～`0007` 是历史资料，不在部署或日常 API 中执行。
+- 业务性写入（用户确认的账本、卡片、备份恢复，以及定时基金官方基准价更新）继续按各自逻辑执行；不能把正常资产价格更新误认为旧数据初始化。
+
 - 已移除 `functions/api/merchant-rules-store.js` 和 `functions/api/category-source-store.js`：不再从 `custom_rules`、`merchant_payment_rules`、`category_sort_order`、`category_icons`、旧 `rules` 向新表复制历史内容，也不在 GET 请求中补插分类、图标、商家关键词、排序或迁移标记。
 - 不再在正常 API 请求中执行旧账本字段的 `ALTER TABLE`、支付结算日列的 `ALTER TABLE` 或旧版本兼容初始化。预期列缺失会报错，**不会自动重建或修改生产历史数据**。
 - `schema.sql` 用于手动初始化全新独立数据库，不是已迁移生产 D1 的启动时脚本，也不应在生产库再次运行其中的初始化插入。

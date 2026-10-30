@@ -72,7 +72,7 @@ test('SBI fund-detail and text import share the single visible AI switch',()=>{
   assert.match(ui,/form\.append\('mode','portfolio-detail'\)/)
   assert.match(ui,/data\.append\('mode','portfolio'\)/)
   assert.match(ui,/if\(useAi\.value\)/)
-  assert.match(ui,/if\(!useAi\.value\)/)
+  assert.match(ui,/recognized = await ocrImage\(file\)/)
   assert.doesNotMatch(ui,/bulkAi = ref|v-model="bulkAi"/)
   assert.match(app,/aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled/)
   assert.match(app,/本日の共通AI残り/)

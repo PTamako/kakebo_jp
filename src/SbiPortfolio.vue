@@ -249,39 +249,6 @@ function clearFundDetailImports() {
   bulkInfo.value = '読み取り結果をクリアしました'
 }
 
-async function readBulkImage(event) {
-  const file = event.target.files?.[0]
-  event.target.value = ''
-  if (!file || bulkBusy.value || saving.value) return
-  bulkBusy.value = true
-  bulkInfo.value = '画像を読み取り中…'
-  bulkWarning.value = ''
-  try {
-    let recognized = ''
-    if(useAi.value){
-      try{
-        await refreshSharedQuota()
-        if(aiExhausted.value)throw Error('本日の共通AI利用枠がありません')
-        const image = file.size <= 4*1024*1024 && ['image/png','image/jpeg','image/webp'].includes(file.type)
-          ? file : await compressReceiptImage(file,1600,1300*1024)
-        const data = new FormData()
-        data.append('image',image,image.type==='image/jpeg'?'portfolio.jpg':'portfolio.webp')
-        data.append('mode','portfolio')
-        const response = await props.api('ai-ocr',{method:'POST',body:data})
-        recognized = response.text || ''
-      }catch(aiError){
-        bulkWarning.value = 'AIを利用できませんでした。端末内OCRに切り替えました：'+aiError.message
-      }finally{await refreshSharedQuota()}
-    }
-    if (!recognized.trim()) recognized = await ocrImage(file)
-    if (!recognized.trim()) throw Error('画像から文字を読み取れませんでした')
-    bulkText.value = recognized
-    applyBulkText()
-    if (bulkWarning.value) bulkWarning.value = [...new Set(bulkWarning.value.split(' / '))].join(' / ')
-  }catch(e){
-    bulkInfo.value = '読み取りに失敗しました：'+e.message
-  }finally{ bulkBusy.value=false }
-}
 async function saveBulk(){
   if (saving.value || bulkBusy.value || !bulkChanged.value.length) return
   const changes = bulkChanged.value
@@ -593,13 +560,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
           <label>保有画面のテキストを貼り付け
             <textarea v-model="bulkText" rows="3" :disabled="saving || bulkBusy" placeholder="銘柄名 / 保有口数 / 取得金額"></textarea>
           </label>
-          <div class="sbi-bulk-tools">
-            <button type="button" class="button-secondary" :disabled="saving || bulkBusy || !bulkText.trim()" @click="applyBulkText">テキストを読み取る</button>
-            <label class="sbi-bulk-upload" :aria-disabled="saving || bulkBusy">
-              画像を読み取る
-              <input type="file" accept="image/*" hidden :disabled="saving || bulkBusy" @change="readBulkImage" />
-            </label>
-          </div>
+          <button type="button" class="button-secondary sbi-text-import-button" :disabled="saving || bulkBusy || !bulkText.trim()" @click="applyBulkText">テキストを読み取る</button>
           </details>
           <p v-if="bulkInfo" class="sbi-bulk-notice" role="status">{{bulkInfo}}</p>
           <p v-if="bulkWarning" class="sbi-bulk-warning" role="alert">{{bulkWarning}}</p>
@@ -930,4 +891,5 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-bulk-fund-preview .sbi-bulk-row-name small{font-size:10px}
 .sbi-bulk-dialog .sbi-actions{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));padding:10px 0 calc(8px + env(safe-area-inset-bottom,0px));background:var(--card);z-index:2}
 .sbi-import-reset{border:0;background:none;color:var(--blue-dark);font-weight:700;min-height:36px;padding:4px;font-size:11px}
+.sbi-text-import-button{min-height:44px;width:100%;font-size:12px}
 </style>

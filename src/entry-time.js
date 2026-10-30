@@ -3,7 +3,7 @@ const pad = number => String(number).padStart(2, '0')
 const FULL_WIDTH = text => String(text || '').normalize('NFKC')
 const DATE_MARKER = /(?:20\d{2}\s*[年/.\-]\s*\d{1,2}\s*[月/.\-]\s*\d{1,2}|(?<!\d)\d{2}[.\/\-]\d{1,2}[.\/\-]\d{1,2}(?!\d)|\d{1,2}\s*月\s*\d{1,2}\s*日?|(?<!\d)\d{1,2}\/\d{1,2}(?!\d))/
 const CLOCK_MARKER = /(?<!\d)(?:(午前|午後|AM|PM)\s*)?([01]?\d|2[0-3])\s*(?:[:：]\s*([0-5]\d)|時\s*([0-5]?\d)\s*分?)(?!\d)/i
-const TIME_LABEL = /^(?:(?:お?買上|お?買い上げ|ご?利用|お?支払|購入|取引|決済|会計|精算|レジ)?\s*(?:時刻|時間|日時)|ご?利用時刻)\s*[:：]?\s*/i
+const TIME_LABEL = /^(?:(?:お?買上|お?買い上げ|ご?利用|お?支払|購入|取引|決済|会計|精算|レジ|お買上げ|売上)?\s*(?:時刻|時間|日時)|ご?利用時刻)\s*[:：]?\s*/i
 
 export function localHHMM(now = new Date()) {
   return pad(now.getHours()) + ':' + pad(now.getMinutes())
@@ -45,7 +45,12 @@ export function findTransactionTime(raw, preferredDateLine = '') {
   if (preferredDateLine) {
     const target = FULL_WIDTH(preferredDateLine).trim()
     const index = lines.indexOf(target)
-    if (index >= 0) return probe(index)
+    if (index >= 0) {
+      const candidate = probe(index)
+      if (candidate) return candidate
+      // The date line can be OCR-separated from the printed transaction
+      // timestamp. Continue searching labelled times instead of returning ''.
+    }
   }
   for (let i = 0; i < lines.length; i++) {
     if (DATE_MARKER.test(lines[i])) {
@@ -55,9 +60,11 @@ export function findTransactionTime(raw, preferredDateLine = '') {
   }
   // An explicitly labelled transaction time can be trusted even if OCR
   // damaged the date. Never use opening hours or bare times elsewhere.
-  for (const line of lines) {
+  for (let i=0;i<lines.length;i++) {
+    const line=lines[i]
     if (TIME_LABEL.test(line)) {
-      const value = standaloneTime(line)
+      const value=standaloneTime(line) ||
+        (TIME_LABEL.test(line) && /^\s*(?:時刻|時間|日時|取引|決済|会計)/.test(line) ? standaloneTime(lines[i+1]||'') : '')
       if (value) return value
     }
   }

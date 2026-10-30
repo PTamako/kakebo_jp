@@ -59,7 +59,7 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
         <div class="asset-wallet-activity" aria-label="電子マネーの最近の記録">
           <div class="asset-wallet-event">
             <div class="asset-wallet-event-top">
-              <span class="asset-wallet-event-kind">↘ 利用</span>
+              <span class="asset-wallet-event-kind">↘ 最近の利用</span>
               <strong v-if="latestUsage" class="asset-wallet-event-amount">{{'−'+yen(latestUsage.amount)}}</strong>
             </div>
             <div v-if="latestUsage" class="asset-wallet-event-detail">
@@ -70,7 +70,7 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
           </div>
           <div class="asset-wallet-event">
             <div class="asset-wallet-event-top">
-              <span class="asset-wallet-event-kind">↗ チャージ</span>
+              <span class="asset-wallet-event-kind">↗ 最近のチャージ</span>
               <strong v-if="latestCharge" class="asset-wallet-event-amount asset-wallet-plus">{{'+'+yen(latestCharge.amount)}}</strong>
             </div>
             <div v-if="latestCharge" class="asset-wallet-event-detail">

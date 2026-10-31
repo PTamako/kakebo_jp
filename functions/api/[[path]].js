@@ -183,7 +183,7 @@ export async function onRequest({ request, env, params }) {
     // Application preferences and unsaved drafts are stored in D1, never browser local storage.
     // These writes cannot modify the ledger, investment holdings or scheduled expenses.
     if (a === 'app-state' && !b) {
-      const allowed = new Set(['theme','remember_device','ai_ocr_enabled','unsaved_draft'])
+      const allowed = new Set(['theme','remember_device','ai_ocr_enabled','fx_currency','unsaved_draft'])
       try {
         if (m === 'GET') {
           const {results} = await db.prepare('SELECT state_key,value_json FROM app_client_state').all()
@@ -200,6 +200,8 @@ export async function onRequest({ request, env, params }) {
           const value = body.value
           if (body.key === 'theme' && !['pink','blue','yellow','green','lavender','peach','latte','slate'].includes(value))
             return json({error:'テーマ設定を確認してください'},400)
+          if (body.key === 'fx_currency' && !['CNY','USD','EUR','KRW','JPY'].includes(value))
+            return json({error:'通貨設定を確認してください'},400)
           if (['remember_device','ai_ocr_enabled'].includes(body.key) && typeof value !== 'boolean')
             return json({error:'設定値を確認してください'},400)
           if (body.key === 'unsaved_draft' &&

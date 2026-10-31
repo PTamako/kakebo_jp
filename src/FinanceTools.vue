@@ -714,6 +714,11 @@ function setDuplicateConfirmation(group, isConfirmed) {
 function refreshDuplicateReview(event) {
   if (event.currentTarget?.open && props.active && managementTab.value === 'tools' && !busy.value) void loadAll()
 }
+function onReviewTrashToggle(event) {
+  if (!event.currentTarget?.open) return
+  void loadTransferTrash()
+  if (props.active && !busy.value) void loadAll()
+}
 async function addPlan(){
   if(!plan.value.name.trim() || !Number.isSafeInteger(Number(plan.value.amount)) || Number(plan.value.amount)<=0 ||
     !Number.isInteger(Number(plan.value.day)) || Number(plan.value.day)<1 || Number(plan.value.day)>31 ||
@@ -1172,7 +1177,7 @@ async function removeCardBill(record) {
 
     <p v-if="duplicateReviewMessage" class="duplicate-review-message" role="status">{{duplicateReviewMessage}}</p>
   </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel" @toggle="refreshDuplicateReview($event); if ($event.target.open) void loadTransferTrash()">
+  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel" @toggle="onReviewTrashToggle">
     <summary>ゴミ箱 <span v-if="trashCount" class="review-trash-count">{{trashCount}}件</span></summary>
     <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>

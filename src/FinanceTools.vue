@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, inject, onMounted, watch } from 'vue'
 import { sortOtherLast } from './category-sort.js'
+import ReviewTrashActions from './ReviewTrashActions.vue'
 import { findLedgerDuplicateGroups, duplicateReviewSignature, readConfirmedDuplicateGroups, saveConfirmedDuplicateGroups } from './duplicate-review.js'
 import { duplicateTrashKey, recurringTrashKey, transferTrashKey, readArchivedTrash, saveArchivedTrash, visibleReviewedTrash } from './review-trash.js'
 import AmountInput from './AmountInput.vue'
@@ -652,6 +653,20 @@ async function loadDeletedPlans() {
     trashMessage.value = '削除した固定費を読み込めませんでした：' + e.message
   } finally { deletedPlanLoading.value = false }
 }
+async function purgeDeletedPlan(item) {
+  if (recurringBusy.value || trashBusy.value || deletedPlanLoading.value) return
+  if (!confirm('固定費「' + item.name + '」を完全に削除しますか？設定・除外履歴は復元できません。記帳済み明細は残ります。')) return
+  recurringBusy.value = true
+  try {
+    const result = await props.api('recurring-plans/' + encodeURIComponent(item.id) + '/purge',
+      {method:'DELETE',headers:{'x-confirm-purge':String(item.id)}})
+    if (!result.ok) throw Error('削除できませんでした')
+    trashedRecurringPlans.value = trashedRecurringPlans.value.filter(row => row.id !== item.id)
+    recurringExclusions.value = recurringExclusions.value.filter(row => row.planId !== item.id)
+    trashMessage.value = '固定費の設定を完全に削除しました（明細は保持）'
+  } catch (e) { trashMessage.value = '固定費の削除に失敗しました：' + e.message }
+  finally { recurringBusy.value = false }
+}
 async function restoreDeletedPlan(item) {
   if (recurringBusy.value || trashBusy.value || deletedPlanLoading.value) return
   recurringBusy.value = true
@@ -712,6 +727,19 @@ const trashCount = computed(() => reviewTrash.value.duplicateGroups.length +
   reviewTrash.value.recurringExclusions.length + reviewTrash.value.transferReminders.length +
   trashedRecurringPlans.value.length)
 const duplicateReviewMessage = ref('')
+function removeReviewedTrashNotice(key) {
+  if (!key || trashBusy.value || recurringBusy.value || transferTrashLoading.value || deletedPlanLoading.value) return
+  // Ordinary reviewed notices are acknowledged, not financial records:
+  // deleting them only archives a short per-device notification key.
+  const next = new Set(archivedTrashKeys.value)
+  next.add(key)
+  if (!saveArchivedTrash(next)) {
+    trashMessage.value = '確認結果をこの端末に保存できませんでした'
+    return
+  }
+  archivedTrashKeys.value = next
+  trashMessage.value = 'ゴミ箱から削除しました（記帳済み明細は保持）'
+}
 async function emptyReviewTrash() {
   if (!trashCount.value || trashBusy.value || recurringBusy.value || transferTrashLoading.value ||
       deletedPlanLoading.value || !transferTrashLoaded.value || !deletedPlanLoaded.value) return
@@ -1241,8 +1269,8 @@ async function removeCardBill(record) {
       <details v-if="reviewTrash.duplicateGroups.length" class="review-trash-category">
         <summary>重複確認 <span>{{reviewTrash.duplicateGroups.length}}件</span></summary>
         <div v-for="(group,i) in reviewTrash.duplicateGroups" :key="duplicateReviewSignature(group) || i" class="review-trash-item">
-          <span>{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件</span>
-          <button type="button" @click="setDuplicateConfirmation(group, false)">元に戻す</button>
+          <span class="review-trash-text" :title="group[0].date+' '+group[0].merchant+' '+yen(group[0].amount)">{{group[0].date}} {{group[0].merchant}} · {{yen(group[0].amount)}} · {{group.length}}件</span>
+          <ReviewTrashActions :label="group[0].date+' '+group[0].merchant" :disabled="trashBusy || recurringBusy" @restore="setDuplicateConfirmation(group, false)" @remove="removeReviewedTrashNotice(duplicateTrashKey(duplicateReviewSignature(group)))" />
         </div>
       </details>
       <details v-if="reviewTrash.recurringExclusions.length || trashedRecurringPlans.length" class="review-trash-category">
@@ -1250,23 +1278,23 @@ async function removeCardBill(record) {
         <template v-if="trashedRecurringPlans.length">
           <div class="review-trash-subheading">削除済み</div>
           <div v-for="item in trashedRecurringPlans" :key="item.id" class="review-trash-item">
-            <span>{{item.name}} · {{yen(item.amount)}} · 毎月{{item.day}}日</span>
-            <button type="button" :disabled="recurringBusy || trashBusy" @click="restoreDeletedPlan(item)">元に戻す</button>
+            <span class="review-trash-text" :title="item.name+' '+yen(item.amount)">{{item.name}} · {{yen(item.amount)}} · 毎月{{item.day}}日</span>
+            <ReviewTrashActions :label="item.name" :disabled="recurringBusy || trashBusy || deletedPlanLoading" @restore="restoreDeletedPlan(item)" @remove="purgeDeletedPlan(item)" />
           </div>
         </template>
         <template v-if="reviewTrash.recurringExclusions.length">
           <div class="review-trash-subheading">除外した候補</div>
           <div v-for="item in reviewTrash.recurringExclusions" :key="recurringTrashKey(item)" class="review-trash-item">
-            <span>{{item.name}} · {{item.month}}</span>
-            <button type="button" :disabled="recurringBusy || trashBusy" @click="restoreRecurringExclusion(item)">元に戻す</button>
+            <span class="review-trash-text" :title="item.name+' '+item.month">{{item.name}} · {{item.month}}</span>
+            <ReviewTrashActions :label="item.name+' '+item.month" :disabled="recurringBusy || trashBusy" @restore="restoreRecurringExclusion(item)" @remove="removeReviewedTrashNotice(recurringTrashKey(item))" />
           </div>
         </template>
       </details>
       <details v-if="reviewTrash.transferReminders.length" class="review-trash-category">
         <summary>振替の確認 <span>{{reviewTrash.transferReminders.length}}件</span></summary>
         <div v-for="item in reviewTrash.transferReminders" :key="transferTrashKey(item)" class="review-trash-item">
-          <span>{{item.merchant || item.note || 'SBI証券への振替'}} · {{item.transfer_date || item.date}} · {{yen(item.amount)}}</span>
-          <button type="button" :disabled="transferTrashLoading || trashBusy" @click="restoreTransferReminder(item)">元に戻す</button>
+          <span class="review-trash-text" :title="(item.merchant || item.note || 'SBI証券への振替')+' '+yen(item.amount)">{{item.merchant || item.note || 'SBI証券への振替'}} · {{item.transfer_date || item.date}} · {{yen(item.amount)}}</span>
+          <ReviewTrashActions :label="item.merchant || item.note || 'SBI証券への振替'" :disabled="transferTrashLoading || trashBusy" @restore="restoreTransferReminder(item)" @remove="removeReviewedTrashNotice(transferTrashKey(item))" />
         </div>
       </details>
       <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy || transferTrashLoading || deletedPlanLoading || !transferTrashLoaded || !deletedPlanLoaded" @click="emptyReviewTrash">ゴミ箱を空にする</button>
@@ -1299,9 +1327,9 @@ async function removeCardBill(record) {
 .review-trash-category>summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .review-trash-subheading{padding-top:9px;font-size:11px;font-weight:700;color:var(--muted)}
 .review-trash-panel .review-trash-count{font-size:12px;color:var(--muted);font-weight:600;margin-left:6px}
-.review-trash-item{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:8px 0;border-bottom:1px solid var(--line);min-width:0}
-.review-trash-item span{min-width:0;overflow-wrap:anywhere;font-size:12px}
-.finance-panel .review-trash-item button{flex:none;min-height:44px;color:var(--blue-dark);background:var(--card);font-size:12px}
+.review-trash-item{display:flex;align-items:center;justify-content:space-between;gap:5px;min-width:0;min-height:44px;padding:1px 0;border-bottom:1px solid var(--line)}
+.review-trash-item .review-trash-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:1.3}
+.review-trash-item:last-child{border-bottom:0}
 .finance-panel .review-trash-empty{background:var(--card);color:var(--blue-dark);min-height:44px}
 .finance-panel .review-trash-note{font-size:11px;color:var(--muted)}.card-controls{grid-template-columns:minmax(0,1fr) auto auto}.card-editor{display:grid;gap:10px}.card-editor label{display:grid;gap:4px}.card-editor input,.card-editor select{width:100%;min-width:0;height:44px;min-height:44px;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:9px;background:var(--card);color:var(--ink)}.recurring-name-amount{grid-template-columns:minmax(0,1fr)}@media(min-width:640px){.recurring-name-amount{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}.recurring-details{grid-template-columns:repeat(3,minmax(0,1fr))}.recurring-name-amount input,.recurring-details select{height:44px;box-sizing:border-box;font:inherit}.recurring-details label{max-width:100%;min-width:0}.card-usage-total{display:flex;align-items:center;height:44px;min-height:44px;box-sizing:border-box;padding:9px 7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}.card-billing-fields{align-items:end}.card-billing-fields>label{display:flex;flex-direction:column;min-width:0;gap:4px}.card-billing-fields select,.card-billing-fields input.card-closing-month,.card-billing-fields .card-usage-total{display:flex;width:100%;height:44px!important;min-height:44px!important;max-height:44px!important;box-sizing:border-box;margin:0;line-height:normal;align-items:center}.card-billing-fields input.card-closing-month{-webkit-appearance:none;appearance:none;display:block;padding:0 4px;font-size:13px;min-width:0}.card-billing-fields input.card-closing-month::-webkit-date-and-time-value{min-height:0;text-align:left}.card-billing-fields input.card-closing-month::-webkit-datetime-edit{padding:0;line-height:42px}.card-billing-fields input.card-closing-month::-webkit-calendar-picker-indicator{margin:0;padding:0;max-width:16px}.finance-tools{min-width:0}.finance-panel{min-width:0}.finance-panel button,.finance-panel input,.finance-panel select,.finance-panel output{font-family:inherit}.finance-panel button{min-height:44px;box-sizing:border-box;font-size:13px;font-weight:650;line-height:1.25;cursor:pointer}.finance-panel button:disabled{opacity:.5;cursor:not-allowed}.finance-panel label{min-width:0;display:flex;flex-direction:column;gap:4px;line-height:1.3}.finance-panel input:not([type=file]),.finance-panel select{height:44px!important;min-height:44px!important;max-height:44px!important;box-sizing:border-box;margin:0;line-height:normal}.finance-panel .card-usage-total{height:44px;min-height:44px;max-height:44px;box-sizing:border-box}.finance-panel input[type=file]{width:100%;box-sizing:border-box;font-size:12px}.finance-panel input[type=file]::file-selector-button{min-height:40px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--tint);color:var(--ink)}.finance-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.finance-actions button{width:100%;min-width:0}.finance-inputs{align-items:end;gap:8px}.card-controls{grid-template-columns:minmax(0,1fr) auto auto}.card-controls button{padding-inline:12px}.card-edit-actions{grid-template-columns:repeat(3,minmax(0,1fr))}.card-editor{gap:8px}.recurring-name-amount,.recurring-details{align-items:end}.finance-row{min-width:0;overflow-wrap:anywhere}.card-billing-fields{grid-template-columns:repeat(3,minmax(0,1fr))}.card-billing-fields>label{min-width:0;justify-content:flex-end}.card-billing-fields .card-closing-month{width:100%;font-size:13px!important;padding:0 4px!important}.card-billing-fields .card-usage-total{min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:13px;padding:0 5px}.finance-panel :focus-visible{outline:2px solid var(--blue);outline-offset:2px}@media(max-width:360px){.finance-panel{padding:10px}.finance-inputs{gap:5px}.card-controls button{padding-inline:8px}.card-billing-fields .card-closing-month{font-size:12px!important}}.finance-section-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.finance-section-heading h2{margin:0}.finance-page-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;}.finance-page-heading .finance-heading{margin:0;min-width:0}.finance-global-load{flex:none;max-width:64%;min-height:40px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--tint);color:var(--ink);font-size:12px;font-weight:600;white-space:normal;text-align:center}.finance-global-load:disabled{opacity:.6}.finance-global-load{display:inline-flex;align-items:center;justify-content:center;gap:5px}.finance-refresh-icon{font-size:19px;line-height:1}.finance-last-loaded{margin:-5px 0 12px;color:var(--muted);font-size:12px}@media(max-width:360px){.finance-global-load{font-size:11px;padding:6px 8px}}.backup-actions{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}.backup-upload{position:relative;display:flex;align-items:center;justify-content:center;min-width:0;min-height:44px;padding:8px 6px;border:1px solid var(--line);border-radius:9px;background:var(--tint);color:var(--ink);font-size:12px;font-weight:600;text-align:center;cursor:pointer;box-sizing:border-box}.backup-upload input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}.backup-upload.is-disabled{opacity:.55;cursor:not-allowed}.backup-upload:focus-within{outline:2px solid var(--blue);outline-offset:2px}.backup-actions button{min-width:0;min-height:44px;font-size:12px;white-space:normal}.card-main-controls{grid-template-columns:minmax(0,1fr) repeat(3,44px)!important;align-items:center;gap:6px}
 .card-main-controls>select{min-width:0;width:100%}

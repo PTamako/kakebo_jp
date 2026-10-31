@@ -834,20 +834,30 @@ async function removeCardBill(record) {
       <span>{{ visibleMerchantRules.length }} / {{ filteredMerchantRules.length }}件</span>
     </div>
   </details>
-  <article v-show="managementTab === 'plans'" class="finance-panel">
+  <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>
     <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定費名"><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
     <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリ<select v-model="plan.category" aria-label="固定費カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定費支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
     <label class="recurring-start-month">適用開始月<input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>
-    <div class="finance-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
+    <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
-    <p class="recurring-window-note">各固定費の適用開始月から未記帳分を確認します。</p>
+    <p class="recurring-window-note">開始月から未記帳分を確認</p>
     <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">10年以上前の設定は、直近10年分まで確認します。</p>
-    <div class="finance-actions"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
+    <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringPreview.length > 0}"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
     <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
     <p v-if="recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
     <div v-if="recurringPreview.length" class="recurring-candidate-list" role="group" aria-label="未登録の固定費候補">
-      <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}}{{candidate.month < new Date().toLocaleDateString('sv-SE').slice(0,7) ? ' · 過去分は推定' : ''}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
+      <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}">
+        <input type="checkbox" class="recurring-candidate-checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" />
+        <span class="recurring-candidate-content">
+          <span class="recurring-candidate-top"><strong class="recurring-candidate-name">{{candidate.name}}</strong><strong class="recurring-candidate-amount">{{yen(candidate.amount)}}</strong></span>
+          <span class="recurring-candidate-date">{{candidate.date}}</span>
+          <span class="recurring-candidate-state">
+            <span v-if="candidate.month < currentRecurringMonth()" class="recurring-candidate-estimated">過去分は推定</span>
+            <span :class="candidate.conflict ? 'recurring-status-conflict' : recurringSelected.has(recurringKey(candidate)) ? 'recurring-status-selected' : ''">{{candidate.conflict ? '既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '登録対象' : '未選択'}}</span>
+          </span>
+        </span>
+      </label>
     </div>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
     <details class="recurring-list-disclosure">
@@ -864,12 +874,15 @@ async function removeCardBill(record) {
         <div v-else class="recurring-plan-scroll" role="list" aria-label="固定費一覧">
           <div v-for="p in filteredRecurringPlans" :key="p.id" class="recurring-plan-item" role="listitem">
             <button type="button" class="recurring-plan-toggle" :aria-expanded="expandedRecurringPlanId===p.id" :aria-controls="'recurring-plan-actions-'+p.id" @click="toggleRecurringPlanDetails(p.id)">
-              <span class="recurring-plan-text">
-                <span class="recurring-plan-name">{{p.name}}</span>
-                <span class="recurring-plan-meta">毎月{{p.day}}日 · {{p.paymentSource || '未設定'}} · 開始 {{p.startMonth?.replace('-', '/') || '未設定'}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true).slice(5).replace('-','/') : '停止中'}}</span>
-              </span>
+              <span class="recurring-plan-name" :title="p.name">{{p.name}}</span>
               <span class="recurring-plan-amount">{{yen(p.amount)}}</span>
               <span class="recurring-plan-chevron" aria-hidden="true">{{expandedRecurringPlanId===p.id ? '⌃' : '⌄'}}</span>
+              <span class="recurring-plan-meta">
+                <span class="recurring-plan-meta-item">毎月{{p.day}}日</span>
+                <span class="recurring-plan-meta-item recurring-payment-source" :title="p.paymentSource || '未設定'">{{p.paymentSource || '未設定'}}</span>
+                <span class="recurring-plan-meta-item">開始 {{p.startMonth?.replace('-', '/') || '未設定'}}</span>
+                <span class="recurring-plan-meta-item">{{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true).slice(5).replace('-','/') : '停止中'}}</span>
+              </span>
             </button>
             <div v-if="expandedRecurringPlanId===p.id" :id="'recurring-plan-actions-'+p.id" class="recurring-plan-more">
               <span class="recurring-plan-category">{{categoryLabel(p.category)}} · {{p.enabled ? '有効' : '停止中'}}</span>
@@ -1055,6 +1068,56 @@ async function removeCardBill(record) {
 .finance-panel p.recurring-list-count{font-size:11px;text-align:right;margin:0;color:var(--muted)}
 .recurring-candidate-list{display:grid;gap:5px;max-height:240px;overflow-y:auto;overscroll-behavior:contain;min-width:0;padding-right:3px}
 @media(max-width:360px){.recurring-list-filters{grid-template-columns:minmax(0,1fr) 92px;gap:5px}.recurring-list-summary{padding:10px}.recurring-plan-meta{font-size:10px}}
+
+/* Fixed expenses: iPhone-first form, review cards and stable disclosure headers. */
+.recurring-manager-panel{min-width:0;max-width:100%;box-sizing:border-box}
+.recurring-manager-panel .recurring-name-amount,
+.recurring-manager-panel .recurring-details{min-width:0;max-width:100%;box-sizing:border-box}
+.recurring-manager-panel .recurring-name-amount > *,
+.recurring-manager-panel .recurring-details > *{min-width:0;max-width:100%;box-sizing:border-box}
+.recurring-manager-panel .recurring-start-month{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;min-width:0;max-width:100%;width:100%;box-sizing:border-box;overflow:hidden}
+.finance-panel .recurring-start-month input[type=month]{display:block;width:100%!important;max-width:100%!important;min-width:0!important;min-inline-size:0!important;box-sizing:border-box!important;overflow:hidden;padding-inline:10px!important;-webkit-appearance:none;appearance:none}
+.finance-panel .recurring-start-month input[type=month]::-webkit-date-and-time-value{min-width:0;text-align:left}
+.finance-panel .recurring-start-month input[type=month]::-webkit-datetime-edit{min-width:0;padding:0}
+.finance-panel .recurring-start-month input[type=month]::-webkit-calendar-picker-indicator{flex:none;max-width:24px}
+.finance-panel .recurring-save-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+.finance-panel .recurring-save-actions button{min-width:0;width:100%}
+.finance-panel .recurring-save-actions button:only-child{grid-column:1/-1}
+.finance-panel p.recurring-window-note{margin:2px 0 0;font-size:11px;line-height:1.45}
+.finance-panel .recurring-review-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.finance-panel .recurring-review-actions.has-preview{grid-template-columns:repeat(2,minmax(0,1fr))}
+.finance-panel .recurring-review-actions button{min-width:0;width:100%;padding-inline:5px;font-size:12px;line-height:1.3}
+.recurring-candidate-list{box-sizing:border-box;max-width:100%}
+.finance-panel label.recurring-candidate{display:grid;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:10px;min-width:0;max-width:100%;margin:0;padding:10px;border:1px solid var(--line);border-radius:11px;background:var(--card);cursor:pointer}
+.finance-panel label.recurring-candidate.recurring-conflict{opacity:.72;background:var(--tint)}
+.finance-panel .recurring-candidate input.recurring-candidate-checkbox[type=checkbox]{display:block;appearance:checkbox;-webkit-appearance:checkbox;width:18px!important;height:18px!important;min-width:18px!important;max-width:18px!important;min-height:18px!important;max-height:18px!important;margin:2px 0 0!important;padding:0!important;box-sizing:border-box!important;flex:none;accent-color:var(--blue);align-self:start}
+.recurring-candidate-content{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;min-width:0}
+.recurring-candidate-top{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:8px;min-width:0}
+.recurring-candidate-name{font-size:13px;line-height:1.35;min-width:0;overflow-wrap:anywhere}
+.recurring-candidate-amount{font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.recurring-candidate-date{font-size:12px;line-height:1.3;color:var(--muted);font-variant-numeric:tabular-nums}
+.recurring-candidate-state{display:flex;flex-wrap:wrap;align-items:center;gap:5px 9px;min-width:0;font-size:11px;line-height:1.3;color:var(--muted)}
+.recurring-candidate-estimated{color:var(--blue-dark)}
+.recurring-status-selected{color:var(--blue-dark);font-weight:700}
+.recurring-status-conflict{color:var(--muted)}
+/* First line reserves a permanent right-side chevron; totals use their own row. */
+.recurring-list-summary{display:grid;grid-template-columns:minmax(0,1fr) 18px;grid-template-rows:auto auto;align-items:center;gap:5px 8px;min-width:0;min-height:60px}
+.recurring-list-summary-title{grid-column:1;grid-row:1;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recurring-list-summary:after{grid-column:2;grid-row:1;justify-self:end;margin:0;line-height:1}
+.recurring-list-summary-total{grid-column:1/-1;grid-row:2;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}
+.finance-panel .recurring-plan-toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;grid-template-rows:auto auto;gap:7px 6px;align-items:center;min-width:0;padding:10px;width:100%}
+.recurring-plan-name{grid-column:1;grid-row:1;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recurring-plan-amount{grid-column:2;grid-row:1;justify-self:end}
+.recurring-plan-chevron{grid-column:3;grid-row:1;justify-self:end}
+.recurring-plan-meta{grid-column:1/-1;grid-row:2;display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px;min-width:0;max-width:100%;line-height:1.4;overflow-wrap:normal}
+.recurring-plan-meta-item{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recurring-plan-meta-item.recurring-payment-source{max-width:min(100%,160px)}
+@media(max-width:380px){
+  .finance-panel .recurring-review-actions.has-preview{gap:5px}
+  .finance-panel .recurring-review-actions button{font-size:11px}
+  .recurring-plan-amount{font-size:13px}
+  .recurring-plan-meta{gap:4px 7px}
+}
 
 /* Adding a card is a form, not the three-icon card toolbar. Never share its grid. */
 .card-add-editor{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0;padding:10px 12px 12px;border:1px solid var(--line);border-radius:14px;background:var(--paper)}

@@ -3,7 +3,7 @@ import { computed, inject, ref } from 'vue'
 import SbiPortfolio from '../SbiPortfolio.vue'
 import PrepaidAssets from '../PrepaidAssets.vue'
 const { tab, openPrepaidHistoryDetails, ledgerRevision, transferLoading, api, openCardSettingsFromWallet } = inject('kakeibo-page-context')
-const activeView = ref('funds')
+const activeView = ref('wallets')
 const selectView = value => { activeView.value = value }
 const portfolioSummary = ref(null)
 const prepaidSummary = ref(null)

@@ -12,6 +12,11 @@ test('electronic money summary appears before investment summary on mobile and d
   assert.match(source, /@media\(min-width:768px\)\{\.asset-overview\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
 })
 
+test('wallets is selected by default on opening the balance page', () => {
+  assert.match(source, /const activeView = ref\('wallets'\)/)
+  assert.doesNotMatch(source, /const activeView = ref\('funds'\)/)
+})
+
 test('wallets tab appears on the left with existing selection and content handlers intact', () => {
   assert.ok(tabs.indexOf("selectView('wallets')") >= 0)
   assert.ok(tabs.indexOf("selectView('funds')") > tabs.indexOf("selectView('wallets')"))

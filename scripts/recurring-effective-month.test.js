@@ -55,7 +55,7 @@ test('UI exposes editable effective month, automatic range and still requires ex
   assert.match(finance,/startMonth:plan.value.startMonth/)
   assert.match(finance,/plan.value = \{\.\.\.item, paymentSource:item.paymentSource \|\| '現金',startMonth:item.startMonth/)
   assert.match(finance,/recurringReviewWindow\(plans.value,currentRecurringMonth\(\)\)/)
-  assert.match(finance,/<button type="button"[^>]*@click="reviewRecurring">未記録分を確認<\/button>/)
+  assert.match(finance, /@click="reviewRecurring">\{\{recurringListOpen \? '候補を閉じる' : '未記帳分を確認'\}\}<\/button>/)
   assert.match(finance,/postApprovedRecurringEntries\(props.api,safe\)/)
   assert.match(finance,/if\(!confirm\(summary\)\)return/)
   assert.doesNotMatch(finance,/未記帳を確認する期間|過去3か月も確認|過去12か月も確認|過去10年分も確認/)
@@ -71,4 +71,28 @@ test('review is separate from posting: preview helper makes zero API writes',asy
   await postApprovedRecurringEntries(async (path,options)=>{calls.push([path,options]);return {created:true}},[got[0]])
   assert.equal(calls.length,1)
   assert.equal(calls[0][0],'recurring-post')
+})
+
+test('excluded recurring months are absent from read-only review, without changing ledger entries',()=>{
+  const plan=schedule('rent','2026-07')
+  const expense={date:'2026-09-27',merchant:'家賃rent',payment_source:'現金',type:'expense',amount:101500}
+  const entries=[expense]
+  const window=recurringReviewWindow([plan],'2026-10')
+  const excluded=[{planId:plan.id,month:'2026-08'}]
+  const preview=previewRecurringEntries([plan],entries,{today:now,historicalMonths:window.historicalMonths,excluded})
+  assert.deepEqual(preview.map(row=>row.month),['2026-07','2026-09','2026-10'])
+  assert.equal(preview.find(row=>row.month==='2026-09').conflict,true)
+  assert.deepEqual(entries,[expense])
+})
+
+test('recurring candidate drawer and swipe-to-dismiss are both reversible',()=>{
+  const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
+  assert.match(finance,/recurringListOpen\.value=false/)
+  assert.match(finance,/:aria-expanded="recurringListOpen"/)
+  assert.match(finance,/@touchstart\.passive="onRecurringTouchStart/)
+  assert.match(finance,/@touchend="onRecurringTouchEnd/)
+  assert.match(finance,/@click="dismissRecurring\(candidate\)"/)
+  assert.match(finance,/@click="restoreRecurringExclusion\(excluded\)"/)
+  assert.match(finance,/recurringPreview\.value=recurringPreview\.value\.filter/)
+  assert.match(finance,/recurringExclusions:recurringExclusionsBackup/)
 })

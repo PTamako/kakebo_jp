@@ -19,14 +19,14 @@ export const transferTrashKey = row => {
   return Number.isSafeInteger(id) && id > 0 ? 't:' + id : ''
 }
 
-export function readArchivedTrash(storage = typeof localStorage === 'undefined' ? null : localStorage) {
+export function readArchivedTrash(storage = null) {
   try {
     const value = JSON.parse(storage?.getItem(KEY) || '[]')
     return new Set(Array.isArray(value) ? value.filter(validKey) : [])
   } catch { return new Set() }
 }
 
-export function saveArchivedTrash(keys, storage = typeof localStorage === 'undefined' ? null : localStorage) {
+export function saveArchivedTrash(keys, storage = null) {
   if (!storage) return false
   try {
     const safe = [...keys]

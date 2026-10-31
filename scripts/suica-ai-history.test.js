@@ -34,7 +34,7 @@ test('station merchants still respect personal card rules and avoid unregistered
   assert.equal(paymentForDraft({merchant:station.merchant,registeredSources:['Suica'],rules:[{keyword:'石川町駅',payment_source:'現金'}]}),'現金')
   const store = parseEntry('不明,不明,石川町駅店,¥880,不明', [])
   assert.equal(store.category,'日用品')
-  assert.equal(paymentForDraft({merchant:store.merchant,registeredSources:['Suica'],defaultSource:'楽天カード'}),'楽天カード')
+  assert.equal(paymentForDraft({merchant:store.merchant,registeredSources:['Suica','楽天カード'],defaultSource:'楽天カード'}),'楽天カード')
 })
 
 test('relative Suica screenshot times become editable JST dates and times', () => {

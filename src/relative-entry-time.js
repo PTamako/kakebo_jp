@@ -12,7 +12,6 @@ const ELAPSED = /^(\d{1,4})(時間|小时|小時|分|分钟|分鐘|日|天|週�
 const HOUR_MS = 3600000
 const DAY_MS = 86400000
 const JST_OFFSET_MS = 9 * HOUR_MS
-const pad = n => String(n).padStart(2, '0')
 
 export const isRelativeDateToken = value => DAY_OFFSETS.has(normalize(value)) || NOW_WORDS.has(normalize(value))
 export const isElapsedTimeToken = value => {
@@ -71,11 +70,9 @@ export function resolveRelativeEntryTime(row, reference = new Date()) {
   const elapsed = elapsedMilliseconds(timeToken)
   if (elapsed !== null) {
     const calculated = tokyoParts(new Date(instant.getTime() - elapsed))
-    if (!date || !dateIsRelative || dateToken === '今日' || dateToken === '今天' || dateToken === '本日') {
-      date = calculated.date
-    } else if (dateToken !== '昨日' && dateToken !== '昨天' && dateToken !== '一昨日' && dateToken !== '前天') {
-      date = calculated.date
-    }
+    // An elapsed duration determines both date and time; only a printed
+    // explicit calendar date overrides the derived day.
+    if (!date || dateIsRelative) date = calculated.date
     time = calculated.time
   } else if (NOW_WORDS.has(timeToken)) {
     // A relative "now" has a real clock value and is today unless a

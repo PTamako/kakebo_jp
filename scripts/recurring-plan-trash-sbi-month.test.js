@@ -56,15 +56,16 @@ test('archived plan is not shown in active fixed-expense list and its original e
   assert.doesNotMatch(finance.match(/async function removePlan\(id\) \{[\s\S]*?\n\}/)?.[0]||'',/recurringExclusions\.value=recurringExclusions\.value\.filter/)
 })
 
-test('three trash categories collapse and fixed-expense archives and excluded months share one group',()=>{
+test('four trash categories collapse and separate deleted recurring settings from month exclusions',()=>{
   const panel=finance.match(/<details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel"[\s\S]*?<\/details>\n<\/section>/)?.[0]||''
   assert.ok(panel)
-  assert.equal((panel.match(/class="review-trash-category"/g)||[]).length,3)
+  assert.equal((panel.match(/class="review-trash-category"/g)||[]).length,4)
   assert.match(panel,/<summary>重複確認/)
-  assert.match(panel,/<summary>固定費/)
+  assert.match(panel,/<summary>削除した固定費/)
+  assert.match(panel,/<summary>記帳から除外した月/)
   assert.match(panel,/<summary>振替の確認/)
-  assert.match(panel,/削除済み/)
-  assert.match(panel,/除外した候補/)
+  assert.match(panel,/固定費の登録を削除した項目です/)
+  assert.match(panel,/指定した月だけ記帳候補から除外した項目です/)
   assert.match(panel,/@restore="restoreDeletedPlan\(item\)"/)
   assert.match(panel,/@restore="restoreRecurringExclusion\(item\)"/)
   assert.match(panel,/@restore="restoreTransferReminder\(item\)"/)

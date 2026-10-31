@@ -28,6 +28,7 @@ function database(migrated = true) {
           if(!migrated)throw Error('D1_ERROR: no such table: app_client_state')
           if(sql.startsWith('INSERT INTO app_client_state'))values.set(this.args[0],this.args[1])
           else if(sql.startsWith('DELETE FROM app_client_state'))values.delete(this.args[0])
+          else if(sql.startsWith('DELETE FROM device_sessions'))db.revocations=(db.revocations||0)+1
           else throw Error('unexpected mutation '+sql)
           return {meta:{changes:1}}
         }
@@ -69,6 +70,22 @@ test('HttpOnly cookie can access D1 without any persistent JavaScript browser to
   const result=await send(db,'PUT',{key:'fx_currency',value:'EUR'},stateUrl,{cookie:'kakeibo_session='+token})
   assert.equal(result.status,200)
   assert.equal((await send(db,'GET',null,stateUrl,{cookie:'kakeibo_session='+token})).body.fx_currency,'EUR')
+})
+test('cookie-only logout revokes the server-side D1 session and clears the cookie',async()=>{
+  const db=database()
+  const response=await onRequest({
+    request:new Request('https://kakeibo-f17.pages.dev/api/auth/logout',{
+      method:'POST',headers:{cookie:'kakeibo_session='+token}
+    }),
+    env:{AUTH_TOKEN:'test',DB:db},params:{path:['auth','logout']}
+  })
+  assert.equal(response.status,200)
+  assert.equal(db.revocations,1)
+  assert.match(response.headers.get('set-cookie')||'',/kakeibo_session=;.*HttpOnly.*Max-Age=0/)
+  const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
+  const logout=app.match(/async function logout\(\) \{([\s\S]*?)\n\}/)?.[1]||''
+  assert.match(logout,/await fetch\('\/api\/auth\/logout'/)
+  assert.doesNotMatch(logout,/if \(oldSession\)/)
 })
 test('missing migration cannot silently fall back to browser state',async()=>{
   const result=await send(database(false))

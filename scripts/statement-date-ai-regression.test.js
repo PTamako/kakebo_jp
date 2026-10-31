@@ -73,3 +73,40 @@ test('AI upload retains fine print while locally saved photos stay compact', () 
   assert.match(app, /const image = await compressReceiptImage\(f, 2000, 1024 \* 1024\)/)
   assert.match(app, /pendingReceiptImage\.value = await compressReceiptImage\(f\)/)
 })
+
+test('Gemma five-column Japanese 時分 clock remains a time, never part of the merchant', () => {
+  // Synthetic amounts: same layout as Japanese payment-history screenshots.
+  const rows = parseEntries([
+    '2026年9月2日,19時48分,リブレ京成,¥300,クレジット VISA',
+    '2026年9月15日,13時16分,メルカリ,¥2,000,PayPay カード VISA',
+    '2026年9月10日,19時50分,リブレ京成,¥400,クレジット VISA',
+    '2026年9月9日,19時11分,リブレ京成,¥500,クレジット VISA',
+    '2026年9月8日,19時10分,リブレ京成,¥900,クレジット VISA',
+    '2026年9月3日,19時10分,リブレ京成,¥600,クレジット VISA'
+  ].join('\n'), [], new Date('2026-10-31T09:00:00Z'))
+  assert.equal(rows.length, 6)
+  assert.deepEqual(rows.map(row => row.merchant), [
+    'リブレ京成', 'メルカリ', 'リブレ京成', 'リブレ京成', 'リブレ京成', 'リブレ京成'
+  ])
+  assert.deepEqual(rows.map(row => row.date), [
+    '2026-09-02', '2026-09-15', '2026-09-10', '2026-09-09', '2026-09-08', '2026-09-03'
+  ])
+  assert.deepEqual(rows.map(row => row.time), ['19:48', '13:16', '19:50', '19:11', '19:10', '19:10'])
+  assert.deepEqual(rows.map(row => row.amount), [300, 2000, 400, 500, 900, 600])
+  assert.deepEqual(rows.map(row => row.paymentSource), [
+    'クレジット VISA', 'PayPay カード VISA', 'クレジット VISA',
+    'クレジット VISA', 'クレジット VISA', 'クレジット VISA'
+  ])
+})
+
+test('Gemma accepts Japanese single-digit, full-width-colon and AM/PM time without accepting arbitrary text', () => {
+  const rows = parseEntries([
+    '2026年9月2日,9時9分,架空書店,¥170,不明',
+    '2026年9月3日,１９：４８,架空文具店,¥2,500,不明',
+    '2026年9月4日,午後8時05分,架空喫茶店,¥420,不明',
+    '2026年9月5日,不明,架空スーパー,¥800,不明'
+  ].join('\n'), [], new Date('2026-10-31T09:00:00Z'))
+  assert.equal(rows.length, 4)
+  assert.deepEqual(rows.map(row => row.time), ['09:09', '19:48', '20:05', ''])
+  assert.deepEqual(rows.map(row => row.merchant), ['架空書店','架空文具店','架空喫茶店','架空スーパー'])
+})

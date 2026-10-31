@@ -30,6 +30,7 @@ async function refreshEverything() {
     // otherwise a due transfer created during refresh could be missed.
     if (appContext?.loadTransfers) await appContext.loadTransfers()
     await loadAll()
+    if(managementTab.value==='tools')await refreshLocalReceiptCount()
     // Refresh the SBI monthly plans/reconciliation after the transfer state.
     investmentRefreshKey.value++
   } catch (e) {
@@ -41,6 +42,7 @@ async function refreshEverything() {
 const localReceiptCount = ref(null)
 const receiptImagesBusy = ref(false)
 const receiptImagePrivacyMessage = ref('')
+const receiptExportMessage = ref('')
 async function refreshLocalReceiptCount() {
   if (receiptImagesBusy.value) return
   receiptImagesBusy.value = true
@@ -57,15 +59,15 @@ async function downloadReceiptImages() {
   receiptImagesBusy.value=true
   try {
     const records=await listReceiptImagesForExport()
-    if(!records.length){receiptImagePrivacyMessage.value='保存対象のレシート画像はありません';return}
+    if(!records.length){receiptExportMessage.value='保存対象のレシート画像はありません';return}
     const blob=await receiptZip(records)
     const url=URL.createObjectURL(blob),a=document.createElement('a')
     a.href=url;a.download='kakeibo-receipts-'+new Date().toISOString().slice(0,10)+'.zip'
     document.body.appendChild(a)
     a.click();a.remove()
     setTimeout(()=>URL.revokeObjectURL(url),60000)
-    receiptImagePrivacyMessage.value=records.length+'件の画像をZIPに保存しました。帳簿JSONとは別に保管してください'
-  }catch(e){receiptImagePrivacyMessage.value='画像の保存に失敗しました：'+e.message}
+    receiptExportMessage.value=records.length+'件の画像をZIPに保存しました。帳簿JSONとは別に保管してください'
+  }catch(e){receiptExportMessage.value='画像の保存に失敗しました：'+e.message}
   finally{receiptImagesBusy.value=false}
 }
 async function clearLocalReceiptImages() {
@@ -95,6 +97,9 @@ async function clearLocalReceiptImages() {
 }
 watch([() => props.active, managementTab], ([active,tab]) => {
   if(active && tab === 'tools') void refreshLocalReceiptCount()
+})
+watch(() => props.rememberDevice, () => {
+  if(props.active && managementTab.value==='tools')void refreshLocalReceiptCount()
 })
 
 const cardMode = ref('')
@@ -894,8 +899,8 @@ async function removeCardBill(record) {
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure device-privacy-panel">
     <summary>端末のプライバシー設定</summary>
     <div class="device-privacy-section">
-      <label class="device-login-field"><span>ログイン状態</span>
-        <select :value="props.rememberDevice ? 'remember' : 'session'" aria-label="ログイン状態の保存方法" @change="emit('change-remember-device', $event.target.value === 'remember')">
+      <label class="device-login-field"><span>ログイン・レシート画像の保存</span>
+        <select :value="props.rememberDevice ? 'remember' : 'session'" aria-label="ログインとレシート画像の保存方法" @change="emit('change-remember-device', $event.target.value === 'remember'); $event.target.value = props.rememberDevice ? 'remember' : 'session'">
           <option value="remember">この端末に保存（最長30日）</option>
           <option value="session">このセッション内のみ保存</option>
         </select>
@@ -907,9 +912,8 @@ async function removeCardBill(record) {
         <strong>保存済みレシート画像</strong>
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
       </div>
-      <p>端末保存・30日（明細は保持）</p>
-      <div class="finance-actions device-receipt-actions">
-        <button type="button" :disabled="receiptImagesBusy" @click="refreshLocalReceiptCount">{{receiptImagesBusy ? '確認中…' : '件数を更新'}}</button>
+      <p>{{props.rememberDevice ? '端末保存・30日' : 'セッション内のみ保存'}}（明細は保持）</p>
+      <div class="device-receipt-actions">
         <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
       </div>
       <p v-if="receiptImagePrivacyMessage" role="status">{{receiptImagePrivacyMessage}}</p>
@@ -920,13 +924,8 @@ async function removeCardBill(record) {
     <p>帳簿・設定をJSON保存（レシート画像は対象外）</p>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
-      <div class="device-privacy-row">
-        <strong>レシート画像（端末内）</strong>
-        <span class="device-privacy-count">{{localReceiptCount === null ? '確認中…' : localReceiptCount + '件'}}</span>
-      </div>
-      <p>30日間保存・帳簿JSONとは別に保存</p>
       <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像をZIP保存</button>
-      <p v-if="receiptImagePrivacyMessage" role="status">{{receiptImagePrivacyMessage}}</p>
+      <p v-if="receiptExportMessage" role="status">{{receiptExportMessage}}</p>
     </div>
     <div v-if="backupPreview" class="restore-preview">
       <p>追加 {{restoreRows.length}}件 · 重複候補 {{restoreConflicts.length}}件（既存データは保持）</p>
@@ -1007,8 +1006,8 @@ async function removeCardBill(record) {
 .device-privacy-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}
 .device-privacy-row strong{font-size:14px}
 .device-privacy-count{font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
-.device-receipt-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
-.device-receipt-actions .device-receipt-clear{grid-column:auto}
+.device-receipt-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.device-receipt-actions .device-receipt-clear{grid-column:1}
 .device-privacy-panel .device-receipt-clear{color:var(--blue-dark);background:var(--card)}
 @media(max-width:360px){.device-privacy-panel .device-receipt-actions button{font-size:12px;padding-inline:5px}}
 

@@ -25,7 +25,7 @@ import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
-import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages } from './receipt-store.js'
+import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, setReceiptStorageMode, clearSessionReceiptImages, countReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
 // Route the wallet's add-card action to the actual Cards subtab, even when
@@ -204,14 +204,28 @@ async function loadCategoryMetadata() {
 localStorage.removeItem('token')
 const rememberDevice = ref(localStorage.getItem('kakeibo-remember-device') !== '0')
 const token = ref(sessionStorage.getItem('kakeibo-device-session') || (rememberDevice.value ? localStorage.getItem('kakeibo-device-session') : '') || '')
-function setRememberDevice(remember) {
-  rememberDevice.value=remember
-  try {
-    localStorage.setItem('kakeibo-remember-device',remember ? '1':'0')
-    if(remember && token.value) localStorage.setItem('kakeibo-device-session',token.value)
+async function setRememberDevice(remember) {
+  if(rememberDevice.value===remember)return
+  // A privacy change affects receipt photos as well as login persistence.
+  // Never discard pre-existing images without an informed opt-in.
+  if(!remember){
+    try{
+      const count=await countReceiptImages()
+      if(count && !confirm('保存済みレシート画像 '+count+
+        '件もこのセッション内のみの保存に切り替えます。セッション終了後は利用できなくなります。必要な画像は先にZIP保存してください。続けますか？'))return
+    }catch(error){flash('保存済み画像を確認できません：'+error.message);return}
+  }
+  try{
+    // Copy images to their new storage first. A quota failure keeps both
+    // the original photos and the previous login preference unchanged.
+    await setReceiptStorageMode(remember)
+    localStorage.setItem('kakeibo-remember-device',remember?'1':'0')
+    rememberDevice.value=remember
+    if(remember && token.value)localStorage.setItem('kakeibo-device-session',token.value)
     else localStorage.removeItem('kakeibo-device-session')
     if(!remember && token.value)sessionStorage.setItem('kakeibo-device-session',token.value)
-  } catch { flash('ログイン状態の保存設定を変更できませんでした') }
+    flash('ログインとレシート画像の保存方法を変更しました')
+  }catch(error){flash('保存方法を変更できませんでした。画像と元の設定は保持しています：'+error.message)}
 }
 const locked = ref(!token.value && localStorage.getItem('kakeibo-logged-out') === '1')
 async function signIn(code) {
@@ -227,12 +241,15 @@ async function signIn(code) {
 }
 async function logout() {
   if (busy.value || editSaving.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
-  if (!confirm('ログアウトしますか？未保存の入力は、この端末に下書きとして残ります。')) return
+  if (!confirm(rememberDevice.value
+    ? 'ログアウトしますか？未保存の入力は、この端末に下書きとして残ります。'
+    : 'ログアウトしますか？このセッション内のレシート画像は消去されます。記帳済みの明細は残ります。')) return
   const oldSession = token.value
   token.value = ''
   localStorage.removeItem('kakeibo-device-session')
   sessionStorage.removeItem('kakeibo-device-session')
   sessionStorage.removeItem('kakeibo-token')
+  if(!rememberDevice.value)clearSessionReceiptImages()
   localStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
   if (oldSession) {

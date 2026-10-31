@@ -132,8 +132,12 @@ export async function restoreAtomic(db, archive) {
   // A deleted schedule is a recoverable archive, not an active recurrence.
   // Never archive a schedule that already exists in the destination database:
   // existing records always win during restore.
+  const incomingActivePlanIds = new Set((archive.plans||[]).map(plan => plan.id))
   for(const plan of archive.archivedPlans||[]){
-    if(await db.prepare('SELECT 1 FROM recurring_plans WHERE id=?1').bind(plan.id).first()) continue
+    // Never let a conflicting archived item disable an active plan within
+    // the same restore batch (or one already present in the destination).
+    if(incomingActivePlanIds.has(plan.id) ||
+       await db.prepare('SELECT 1 FROM recurring_plans WHERE id=?1').bind(plan.id).first()) continue
     add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
       plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0)
     add('INSERT OR IGNORE INTO recurring_plan_trash(plan_id) SELECT ?1 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)',plan.id)

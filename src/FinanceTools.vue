@@ -635,6 +635,36 @@ const confirmedDuplicateKeys = ref(readConfirmedDuplicateGroups())
 const archivedTrashKeys = ref(readArchivedTrash())
 const trashMessage = ref('')
 const trashBusy = ref(false)
+const trashedRecurringPlans = ref([])
+const deletedPlanLoading = ref(false)
+const deletedPlanLoaded = ref(false)
+async function loadDeletedPlans() {
+  if (deletedPlanLoading.value) return
+  deletedPlanLoading.value = true
+  try {
+    const list = await props.api('recurring-plans?trash=1')
+    if (!Array.isArray(list)) throw Error('一覧の形式を確認できません')
+    trashedRecurringPlans.value = list
+    deletedPlanLoaded.value = true
+  } catch (e) {
+    deletedPlanLoaded.value = false
+    trashMessage.value = '削除した固定費を読み込めませんでした：' + e.message
+  } finally { deletedPlanLoading.value = false }
+}
+async function restoreDeletedPlan(item) {
+  if (recurringBusy.value || trashBusy.value || deletedPlanLoading.value) return
+  recurringBusy.value = true
+  try {
+    const result = await props.api('recurring-plans/' + encodeURIComponent(item.id) + '/restore', {method:'POST'})
+    if (!result.ok) throw Error('元に戻せませんでした')
+    trashedRecurringPlans.value = trashedRecurringPlans.value.filter(p => p.id !== item.id)
+    plans.value = await props.api('recurring-plans')
+    recurringPreview.value = []
+    recurringListOpen.value = false
+    trashMessage.value = '固定費を元に戻しました'
+  } catch (e) { trashMessage.value = '固定費を元に戻せませんでした：' + e.message }
+  finally { recurringBusy.value = false }
+}
 const dismissedTransferTrash = ref([])
 const transferTrashLoading = ref(false)
 const transferTrashLoaded = ref(false)
@@ -678,21 +708,39 @@ const reviewTrash = computed(() => visibleReviewedTrash(
   confirmedDuplicates.value, recurringExcludedRows.value, dismissedTransferTrash.value,
   archivedTrashKeys.value, duplicateReviewSignature))
 const trashCount = computed(() => reviewTrash.value.duplicateGroups.length +
-  reviewTrash.value.recurringExclusions.length + reviewTrash.value.transferReminders.length)
+  reviewTrash.value.recurringExclusions.length + reviewTrash.value.transferReminders.length +
+  trashedRecurringPlans.value.length)
 const duplicateReviewMessage = ref('')
-function emptyReviewTrash() {
-  if (!trashCount.value || trashBusy.value || recurringBusy.value || transferTrashLoading.value || !transferTrashLoaded.value) return
-  if (!confirm('ゴミ箱の' + trashCount.value + '件を消去しますか？明細・固定費の除外・振替の通知設定は変更しません。')) return
-  const next = new Set(archivedTrashKeys.value)
-  for (const group of reviewTrash.value.duplicateGroups) next.add(duplicateTrashKey(duplicateReviewSignature(group)))
-  for (const item of reviewTrash.value.recurringExclusions) next.add(recurringTrashKey(item))
-  for (const item of reviewTrash.value.transferReminders) next.add(transferTrashKey(item))
-  if (!saveArchivedTrash(next)) {
-    trashMessage.value = 'ゴミ箱の更新結果を保存できませんでした'
-    return
-  }
-  archivedTrashKeys.value = next
-  trashMessage.value = 'ゴミ箱を空にしました（明細・通知設定は保持）'
+async function emptyReviewTrash() {
+  if (!trashCount.value || trashBusy.value || recurringBusy.value || transferTrashLoading.value ||
+      deletedPlanLoading.value || !transferTrashLoaded.value || !deletedPlanLoaded.value) return
+  const count = trashedRecurringPlans.value.length
+  const warning = count
+    ? 'ゴミ箱の' + trashCount.value + '件を消去しますか？削除済みの固定費' + count + '件は設定と除外履歴を完全に削除します。記帳済み明細・SBI資産は残ります。'
+    : 'ゴミ箱の' + trashCount.value + '件を消去しますか？明細・固定費の除外・振替の通知設定は変更しません。'
+  if (!confirm(warning)) return
+  trashBusy.value = true
+  try {
+    // Clear device-only notices first. If saving fails, leave actual D1
+    // recurring plans untouched. Archived plans require explicit purge.
+    const next = new Set(archivedTrashKeys.value)
+    for (const group of reviewTrash.value.duplicateGroups) next.add(duplicateTrashKey(duplicateReviewSignature(group)))
+    for (const item of reviewTrash.value.recurringExclusions) next.add(recurringTrashKey(item))
+    for (const item of reviewTrash.value.transferReminders) next.add(transferTrashKey(item))
+    if (!saveArchivedTrash(next)) throw Error('確認済みの表示設定を保存できませんでした')
+    archivedTrashKeys.value = next
+    for (const item of [...trashedRecurringPlans.value]) {
+      await props.api('recurring-plans/' + encodeURIComponent(item.id) + '/purge',
+        {method:'DELETE',headers:{'x-confirm-purge':String(item.id)}})
+      trashedRecurringPlans.value = trashedRecurringPlans.value.filter(row => row.id !== item.id)
+    }
+    trashMessage.value = count
+      ? 'ゴミ箱を空にしました（記帳済み明細は保持）'
+      : 'ゴミ箱を空にしました（明細・通知設定は保持）'
+  } catch (e) {
+    trashMessage.value = 'ゴミ箱の消去を完了できませんでした：' + e.message
+    await loadDeletedPlans()
+  } finally { trashBusy.value = false }
 }
 function setDuplicateConfirmation(group, isConfirmed) {
   const key = duplicateReviewSignature(group)
@@ -717,6 +765,7 @@ function refreshDuplicateReview(event) {
 function onReviewTrashToggle(event) {
   if (!event.currentTarget?.open) return
   void loadTransferTrash()
+  void loadDeletedPlans()
   if (props.active && !busy.value) void loadAll()
 }
 async function addPlan(){
@@ -892,15 +941,19 @@ watch(() => props.active, active => {
 async function removePlan(id) {
   if (!settingsReady.value || recurringBusy.value) return
   const target=plans.value.find(p=>p.id===id)
-  if (!confirm('固定費「'+(target?.name||'')+'」を削除しますか？明細は残ります。')) return
+  if (!target || !confirm('固定費「'+target.name+'」をゴミ箱に移動しますか？記帳済み明細は残り、元に戻せます。')) return
+  recurringBusy.value = true
   try {
-    await props.api('recurring-plans/'+encodeURIComponent(id),{method:'DELETE'})
+    const result = await props.api('recurring-plans/'+encodeURIComponent(id),{method:'DELETE'})
+    if (!result.ok) throw Error('削除の確認に失敗しました')
     plans.value = plans.value.filter(x=>x.id!==id)
+    trashedRecurringPlans.value = [target,...trashedRecurringPlans.value.filter(x=>x.id!==id)]
     recurringPreview.value=[]
     recurringListOpen.value=false
-    recurringExclusions.value=recurringExclusions.value.filter(item=>item.planId!==id)
     if(editingPlanId.value===id) cancelPlanEdit()
-  } catch(e) { message.value='固定費の削除に失敗しました：'+e.message }
+    message.value = '固定費をゴミ箱に移動しました'
+  } catch(e) { message.value='ゴミ箱への移動に失敗しました：'+e.message }
+  finally { recurringBusy.value = false }
 }
 const cardTransactions=computed(()=>rows.value.filter(e=>isCardBilledEntry(e,cardPeriod.value,bill.value.name)))
 const cardTotal=computed(()=>cardTransactions.value.reduce((sum,e)=>sum+Number(e.amount||0),0))

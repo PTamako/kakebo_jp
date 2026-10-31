@@ -928,7 +928,7 @@ async function removeCardBill(record) {
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <p class="recurring-window-note">開始月から未記帳分を確認</p>
     <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">10年以上前の設定は、直近10年分まで確認します。</p>
-    <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringListOpen && recurringPreview.length > 0}"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
+    <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringListOpen && recurringPreview.length > 0}"><button type="button" :disabled="recurringBusy || (!recurringListOpen && (!settingsReady || !loaded))" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
     <button v-if="recurringListOpen && recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
     <p v-if="recurringListOpen && recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
     <div v-if="recurringListOpen && recurringPreview.length" id="recurring-candidate-list" class="recurring-candidate-list" role="group" aria-label="未登録の固定費候補">

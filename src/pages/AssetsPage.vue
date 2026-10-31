@@ -31,23 +31,6 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
     </div>
 
     <section class="asset-overview" aria-label="残高の概要">
-      <div class="asset-investment" :class="{'asset-investment-loss':pnl !== null && pnl < 0}">
-        <div class="asset-overview-label">
-          <span class="asset-label-icon asset-label-investment" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9m6 9V5m6 13v-6m4 6V8"/><path d="M3 21h18"/></svg>
-          </span>
-          <span>評価額・損益の内訳<small>SBI証券 · {{fundCount}}銘柄</small></span>
-        </div>
-        <strong class="asset-investment-value">{{yen(investment)}}</strong>
-        <div class="asset-investment-foot">
-          <span>評価損益</span>
-          <strong :class="{'asset-pnl-negative':pnl !== null && pnl < 0}">{{gainYen(pnl)}}<small v-if="pnlRatio!==null"> ({{pnlRatio>=0?'+':''}}{{pnlRatio.toFixed(2)}}%)</small></strong>
-        </div>
-        <div class="asset-cost-line"><span>取得金額</span><strong>{{yen(acquisition)}}</strong></div>
-        <div v-if="allocation.length" class="asset-allocation" role="img" :aria-label="'銘柄別評価額比率：'+allocation.map(a=>a.name+' '+a.ratio.toFixed(1)+'%').join('、')">
-          <span v-for="a in allocation" :key="a.key" :style="{width:a.ratio+'%',background:a.color}" aria-hidden="true"></span>
-        </div>
-      </div>
       <div class="asset-wallet">
         <div class="asset-wallet-head">
           <div class="asset-overview-label">
@@ -89,11 +72,28 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
           </div>
         </div>
       </div>
+      <div class="asset-investment" :class="{'asset-investment-loss':pnl !== null && pnl < 0}">
+        <div class="asset-overview-label">
+          <span class="asset-label-icon asset-label-investment" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9m6 9V5m6 13v-6m4 6V8"/><path d="M3 21h18"/></svg>
+          </span>
+          <span>評価額・損益の内訳<small>SBI証券 · {{fundCount}}銘柄</small></span>
+        </div>
+        <strong class="asset-investment-value">{{yen(investment)}}</strong>
+        <div class="asset-investment-foot">
+          <span>評価損益</span>
+          <strong :class="{'asset-pnl-negative':pnl !== null && pnl < 0}">{{gainYen(pnl)}}<small v-if="pnlRatio!==null"> ({{pnlRatio>=0?'+':''}}{{pnlRatio.toFixed(2)}}%)</small></strong>
+        </div>
+        <div class="asset-cost-line"><span>取得金額</span><strong>{{yen(acquisition)}}</strong></div>
+        <div v-if="allocation.length" class="asset-allocation" role="img" :aria-label="'銘柄別評価額比率：'+allocation.map(a=>a.name+' '+a.ratio.toFixed(1)+'%').join('、')">
+          <span v-for="a in allocation" :key="a.key" :style="{width:a.ratio+'%',background:a.color}" aria-hidden="true"></span>
+        </div>
+      </div>
     </section>
 
     <nav class="balance-view-switch" aria-label="残高の表示切替" role="tablist">
-      <button type="button" role="tab" :aria-selected="activeView==='funds'" :class="{selected:activeView==='funds'}" @click="selectView('funds')">投資信託</button>
       <button type="button" role="tab" :aria-selected="activeView==='wallets'" :class="{selected:activeView==='wallets'}" @click="selectView('wallets')">電子マネー</button>
+      <button type="button" role="tab" :aria-selected="activeView==='funds'" :class="{selected:activeView==='funds'}" @click="selectView('funds')">投資信託</button>
     </nav>
 
     <SbiPortfolio :api="api" :transfer-loading="transferLoading" :active-view="activeView" @summary="onPortfolioSummary">

@@ -8,7 +8,7 @@ const portfolio = read('src/SbiPortfolio.vue')
 test('phone: one-column investment/wallet overview, desktop: side by side',()=>{
   assert.match(page,/\.asset-overview\{display:grid;grid-template-columns:minmax\(0,1fr\)/)
   assert.match(page,/@media\(min-width:768px\)\{\.asset-overview\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
-  assert.ok(page.indexOf('class="asset-investment"') < page.indexOf('class="asset-wallet"'))
+  assert.ok(page.indexOf('class="asset-wallet"') < page.indexOf('class="asset-investment"'))
   assert.match(page,/class="balance-view-switch"/)
   assert.doesNotMatch(page,/資産合計|assetsTotal/)
 })

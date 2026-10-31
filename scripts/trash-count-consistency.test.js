@@ -13,6 +13,9 @@ const calculatedTrash = () => {
     finance.indexOf('const duplicateReviewMessage = ref(')
   )
   const state = {
+    reviewStateReady:{value:true},
+    reviewStateBusy:{value:false},
+    reviewStateError:{value:''},
     settingsReady: {value:true},
     loaded:{value:true},
     busy:{value:false},
@@ -39,6 +42,11 @@ test('trash header never presents partial 2 before all three categories have fin
   assert.equal(values.trashCount.value,null,'deleted plan fetch is still pending')
   state.deletedPlanLoaded.value=true
   assert.equal(values.trashCountReady.value,true)
+  assert.equal(values.trashCount.value,4)
+  state.reviewStateReady.value=false
+  assert.equal(values.trashCountReady.value,false,'D1 review marker load must finish before showing count')
+  assert.equal(values.trashCount.value,null)
+  state.reviewStateReady.value=true
   assert.equal(values.trashCount.value,4)
   state.transferTrashLoading.value=true
   state.transferTrashLoaded.value=false

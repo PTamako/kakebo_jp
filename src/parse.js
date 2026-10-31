@@ -1,4 +1,4 @@
-import { findTransactionTime } from './entry-time.js'
+import { findTransactionTime, readClockTime } from './entry-time.js'
 import { isStationMerchant } from './station-merchant.js'
 import { isRelativeDateToken, isRelativeTimeToken, resolveRelativeEntryTime } from './relative-entry-time.js'
 // テキスト・OCR解析：日付、時刻、金額、店舗、カテゴリー（ブラウザ内で処理）
@@ -81,7 +81,10 @@ function parseAiCsvRow(raw, rules) {
   const dateToken = '(?:20\\d{2}年\\d{1,2}月\\d{1,2}日?|(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日?|\\d{1,2}[/]\\d{1,2})'
   const unknown = /^(?:不明|未記載|記載なし|不詳|[-—ー])$/
   const validDate = value => unknown.test(value) || isRelativeDateToken(value) || new RegExp('^' + dateToken + '$').test(value)
-  const validTime = value => unknown.test(value) || /^(?:[01]?\d|2[0-3])[:：][0-5]\d$/.test(value) || isRelativeTimeToken(value)
+  // Gemma can return the printed Japanese clock (19時48分) instead of HH:mm.
+  // Require a standalone clock token so merchant/payment text cannot become time.
+  const validTime = value => unknown.test(value) || isRelativeTimeToken(value)
+    || (/^(?:(?:午前|午後|AM|PM)\s*)?(?:[01]?\d|2[0-3])\s*(?:[:：]\s*[0-5]\d|時\s*[0-5]?\d\s*分?)$/i.test(value) && !!readClockTime(value))
   const result = fiveColumn && validDate(fiveColumn[1].trim()) && validTime(fiveColumn[2].trim())
     ? { dateText: fiveColumn[1].trim(), timeText: fiveColumn[2].trim(),
         merchant: fiveColumn[3].trim(), amountText: fiveColumn[4], paymentText: fiveColumn[5].trim() }
@@ -93,10 +96,10 @@ function parseAiCsvRow(raw, rules) {
     if (!merchant || unknown.test(merchant)) return null
     const { category, keyword } = classify(merchant, rules)
     const relativeTime = isRelativeTimeToken(result.timeText) ? result.timeText : ''
-    const clock = result.timeText.match(/^([01]?\d|2[0-3])[:：]([0-5]\d)$/)
+    const clock = readClockTime(result.timeText)
     return {
       date: (unknown.test(result.dateText) || isRelativeDateToken(result.dateText)) ? '' : findDate(result.dateText),
-      time: clock ? pad(clock[1]) + ':' + clock[2] : '',
+      time: clock,
       amount, category, merchant: merchant.slice(0, 60),
       paymentSource: unknown.test(result.paymentText) ? '' : result.paymentText,
       note: relativeTime ? '画面表示：' + relativeTime + '（正確な取引時刻は不明）' : '',

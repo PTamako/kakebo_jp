@@ -92,7 +92,7 @@ test('AI OCR remains opt-in and D1 drafts never enter the ledger automatically',
   assert.match(app,/if \(!aiOcrEnabled\.value\)/)
   assert.match(app,/const DRAFT_KEY = 'unsaved_draft'/)
   assert.match(app,/api\('app-state\?key='\+DRAFT_KEY,\{method:'DELETE'\}\)/)
-  assert.match(app,/receiptImage:null, receiptFileName:''/)
+  assert.match(app,/receiptImage:null,\s*receiptFileName:''/)
   assert.doesNotMatch(app,/localStorage\.setItem\(DRAFT_KEY/)
   assert.doesNotMatch(api,/INSERT INTO entries.*app_client_state/)
 })

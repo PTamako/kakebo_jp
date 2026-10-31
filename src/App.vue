@@ -5,6 +5,7 @@ import { parseNamedExpenseBlocks } from './named-expense.js'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
+import { countThroughEditedDay } from './ledger-day-focus.js'
 import { ledgerEntryAmount, ledgerEntriesTotal, formatLedgerTotal } from './ledger-totals.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
 import { classify, parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
@@ -795,6 +796,7 @@ async function saveEdit() {
       prepaid: JSON.stringify(prepaidHistoryFilter.value)
     }
     preserveOperatedDay.value = editedDay
+    lastEditedDay.value = editedDay
     editingEntry.value = null
     if (destinationMonth && destinationMonth !== month.value) {
       pendingEditMonthReturn = { month: destinationMonth, selectedDay: returnDay, calendarExpanded: returnCalendarExpanded }
@@ -980,6 +982,28 @@ const displayEntries = computed(() => {
     : source
   return narrowed.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
 })
+// "すべて" still means the full monthly ledger. Automatically reveal the
+// last-edited day without reapplying the calendar's single-day filter.
+async function focusLastEditedDayInAll() {
+  const day = lastEditedDay.value
+  const current = month.value
+  const stillShowingAll = () => tab.value === 'list' && entryTypeFilter.value === 'all'
+    && !selectedDay.value && !detailFilter.value && !prepaidHistoryFilter.value
+    && month.value === current && lastEditedDay.value === day
+  if (!day || !day.startsWith(current + '-') || !stillShowingAll()) return
+  await nextTick() // let the filter reset and deep displayEntries watcher finish
+  if (!stillShowingAll()) return
+  const needed = countThroughEditedDay(sortedDisplayEntries.value, day, listPageSize)
+  if (!needed) return // edited entry is not present in this month's results
+  visibleEntryCount.value = Math.max(visibleEntryCount.value, needed)
+  await nextTick() // render all intervening groups before targeting the day
+  if (!stillShowingAll()) return
+  expandedEntryDays.value = new Set([day])
+  await nextTick()
+  if (!stillShowingAll()) return
+  document.querySelector(`.day-group-list [data-ledger-day="${day}"]`)
+    ?.scrollIntoView({ behavior: 'auto', block: 'start' })
+}
 function setEntryTypeFilter(value) {
   editListReturn.value = null
   prepaidHistoryFilter.value = null
@@ -990,6 +1014,7 @@ function setEntryTypeFilter(value) {
   detailSourceEntries.value = []
   selectedDay.value = ''
   visibleEntryCount.value = 20
+  if (value === 'all') void focusLastEditedDayInAll()
 }
 const sortedDisplayEntries = computed(() => [...displayEntries.value].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.time || '').localeCompare(String(a.time || ''))))
 const annualDetailMode = computed(() => detailFilter.value?.period === 'year')
@@ -1010,6 +1035,7 @@ function loadMoreEntries() {
 }
 const expandedEntryDays = ref(new Set())
 const preserveOperatedDay = ref('')
+const lastEditedDay = ref('')
 const groupedPagedEntries = computed(() => {
   // Use every matching row for each day's headline, not just the first 20 visible rows.
   const fullDays = new Map()
@@ -1679,6 +1705,7 @@ main .category-swatch,main .pie-legend-dot{border:1px solid rgba(0,0,0,.06)}
 main .entry-day-heading{border-radius:var(--radius-md)}
 .draft-controls,.edit-fields{border:0;margin:0;padding:0;min-width:0}.draft-controls:disabled,.edit-fields:disabled{opacity:.7}button:disabled{cursor:not-allowed;opacity:.55}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .category-dialog{max-height:min(85dvh,720px);overflow-y:auto}.icon-picker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:8px 0 18px}.icon-picker button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:64px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font-size:11px}.icon-picker button.selected{border:2px solid var(--blue);background:var(--tint);color:var(--blue-dark)}.icon-picker svg{width:24px;height:24px}
+main .day-group-list .entry-day-group{scroll-margin-top:72px}
 main .annual-month-list .entry-day-group{border-radius:var(--radius-md);overflow:hidden}
 @media(prefers-reduced-motion:reduce){main *,main *::before,main *::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 

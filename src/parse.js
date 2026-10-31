@@ -73,28 +73,27 @@ export function classify(text, rules = []) {
 
 function parseAiCsvRow(raw, rules) {
   const line = normalize(raw).trim()
-  // AI often describes IC-card history as five CSV columns:
-  // date,time,station/merchant,amount,payment. Date/time can be 「不明」;
-  // never turn that into the current date or a made-up clock time.
+  // Five-column AI IC-card history: date,time,merchant,amount,payment.
+  // Missing dates must remain blank for explicit review, never default to today.
   const yenAmount = '([¥￥]?\\s*(?:\\d{1,3}(?:[,，]\\d{3})+|\\d+))'
   const fiveColumn = line.match(new RegExp('^([^,，]+)\\s*[,，]\\s*([^,，]+)\\s*[,，]\\s*(.+?)\\s*[,，]\\s*' + yenAmount + '\\s*(?:円)?\\s*[,，]\\s*([^,，]+)$'))
   const dateToken = '(?:20\\d{2}年\\d{1,2}月\\d{1,2}日?|(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日?)'
   const unknown = /^(?:不明|未記載|記載なし|不詳|[-—ー])$/
   const validDate = value => unknown.test(value) || new RegExp('^' + dateToken + '$').test(value)
-  const validTime = value => unknown.test(value) || /^(?:[01]?\\d|2[0-3])[:：][0-5]\\d$/.test(value) ||
-    /^(?:約\\s*)?\\d+\\s*(?:時間|分|日)前$/.test(value)
+  const validTime = value => unknown.test(value) || /^(?:[01]?\d|2[0-3])[:：][0-5]\d$/.test(value) ||
+    /^(?:約\s*)?\d+\s*(?:時間|分|日)前$/.test(value)
   const result = fiveColumn && validDate(fiveColumn[1].trim()) && validTime(fiveColumn[2].trim())
     ? { dateText: fiveColumn[1].trim(), timeText: fiveColumn[2].trim(),
         merchant: fiveColumn[3].trim(), amountText: fiveColumn[4], paymentText: fiveColumn[5].trim() }
     : null
   if (result) {
-    const amount = Number(result.amountText.replace(/[^\\d]/g, ''))
+    const amount = Number(result.amountText.replace(/[^\d]/g, ''))
     if (!result.merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
-    const merchant = result.merchant.replace(/^QP\\s*[/／]\\s*/i, '').trim()
+    const merchant = result.merchant.replace(/^QP\s*[/／]\s*/i, '').trim()
     if (!merchant || unknown.test(merchant)) return null
     const { category, keyword } = classify(merchant, rules)
     const relativeTime = /(?:時間|分|日)前$/.test(result.timeText) ? result.timeText : ''
-    const clock = result.timeText.match(/^([01]?\\d|2[0-3])[:：]([0-5]\\d)$/)
+    const clock = result.timeText.match(/^([01]?\d|2[0-3])[:：]([0-5]\d)$/)
     return {
       date: unknown.test(result.dateText) ? '' : findDate(result.dateText),
       time: clock ? pad(clock[1]) + ':' + clock[2] : '',
@@ -104,11 +103,11 @@ function parseAiCsvRow(raw, rules) {
       raw: line, suggested: category, keyword
     }
   }
-  // Older three/four-column statement formats remain supported unchanged.
-  const m = line.match(/^((?:20\\d{2}年\\d{1,2}月\\d{1,2}日|(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日)(?:\\s+(?:[01]?\\d|2[0-3])[:：][0-5]\\d)?)\\s*[,，]\\s*(.+?)\\s*[,，]\\s*([¥￥]?\\s*\\d{1,3}(?:[,，]\\d{3})*|[¥￥]?\\s*\\d+)\\s*(?:円)?\\s*(?:[,，]\\s*(.*))?$/)
+  // Preserve existing dated three/four-column statement imports.
+  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日)(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*(?:円)?\s*(?:[,，]\s*(.*))?$/)
   if (!m) return null
-  const merchant = m[2].replace(/^QP\\s*[/／]\\s*/i, '').trim()
-  const amount = Number(m[3].replace(/[^\\d]/g, ''))
+  const merchant = m[2].replace(/^QP\s*[/／]\s*/i, '').trim()
+  const amount = Number(m[3].replace(/[^\d]/g, ''))
   if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
   const { category, keyword } = classify(merchant, rules)
   return { date: findDate(m[1]), time: findTransactionTime(m[1]), amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }

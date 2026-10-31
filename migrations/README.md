@@ -2,7 +2,7 @@
 
 - 本番 D1 に `migrations/0010_review_notice_states.sql` だけを一度手動適用してください（まずコピー D1 で検証）。旧マイグレーションを再実行しないでください。
 - 新しい `review_notice_states` は重複候補の「重複ではない」、ゴミ箱からの通知削除、固定費の月別除外通知・振替確認通知の表示状態だけを保存します。
-- 同じ 0010 で作成する `app_client_state` はテーマ、AI OCR の同意、ログイン・画像の保存モード、未保存下書き（レシート画像本体を除く）を D1 に保存します。以前の端末限定データを勝手に読み出して移行することはありません。
+- 同じ 0010 で作成する `app_client_state` は AI OCR の同意、為替換算の通貨、ログイン・画像の保存モード、未保存下書き（レシート画像本体を除く）を D1 に保存します。**テーマカラーだけは端末の `localStorage`（`kakeibo-theme`）に保持し、D1 に書き込まず、既存の端末設定を優先します。** 以前の端末限定データを勝手に読み出して移行することはありません。
 - ログインは HttpOnly / Secure / SameSite=Strict の Cookie と D1 の失効可能なセッションを利用します。進行中のタブは sessionStorage のみで短期セッションを保持し、従来の localStorage セッションや入力下書きにはアクセスしません。
 - レシート画像本体は従来どおり端末の IndexedDB／一時セッションに最大30日間保存します。財務明細・確認済み通知・設定・草稿とは別管理です。
 - **entries・investment_*・既存の固定費や取引に INSERT / UPDATE / DELETE を行いません。** 起動時の古いローカルデータの自動投入もしません。
@@ -116,7 +116,7 @@ Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=
 
 - 已保存的账目、分类、商家规则、支付方式、固定支出、账单、SBI 估值等均以 D1 为准；**并非所有数据都只存在 D1**。
 - 小票图片：设备 IndexedDB（现有 30 天 TTL，不随 JSON 账本备份）。
-- 登录会话：localStorage/sessionStorage；未保存草稿：localStorage（最长约 7 天）；主题/AI OCR 开关/上次外币：localStorage；PWA 静态页面资源：Service Worker 缓存。
+- （旧版の参考記録）当時はログイン会話・下書き・テーマ・AI OCR・為替通貨などに `localStorage` を使用していました。現行仕様ではテーマのみ `localStorage`、明細と確認済み通知・下書き・その他設定は D1、認証は HttpOnly Cookie と一時的な `sessionStorage` を使用します。PWA の静的ファイルは Service Worker キャッシュです。
 - 本次不擅自清除浏览器草稿、登录状态或收据，也不将个人设备会话口令与图片上传到 D1。
 
 ## 2026-10-29: category_source へ統合・旧4表の廃止

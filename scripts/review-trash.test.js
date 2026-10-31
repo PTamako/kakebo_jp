@@ -14,10 +14,11 @@ const store = () => {
   return {getItem:key=>m.get(key) ?? null,setItem:(key,value)=>m.set(key,value),snapshot:()=>[...m.values()]}
 }
 
-test('trash shows three categories, previous sections do not show confirmed or excluded rows',()=>{
+test('trash separates four categories and keeps previously confirmed notices out of original sections',()=>{
   assert.ok(finance.includes('<summary>ゴミ箱'))
   assert.ok(finance.includes('<summary>重複確認 <span>'))
-  assert.ok(finance.includes('<summary>固定費 <span>'))
+  assert.ok(finance.includes('<summary>削除した固定費 <span>'))
+  assert.ok(finance.includes('<summary>記帳から除外した月 <span>'))
   assert.ok(finance.includes('<summary>振替の確認 <span>'))
   assert.ok(!finance.includes('<summary>除外済み'))
   assert.ok(!finance.includes('<summary>確認済み'))
@@ -112,12 +113,15 @@ test('invalid trash keys and storage errors fail without deleting anything',()=>
   assert.deepEqual([...readArchivedTrash(good)],['t:1'])
 })
 
-test('category detail groups collapse independently, with archive and excluded months sharing fixed-expense group',()=>{
+test('category detail groups collapse independently with deleted settings separate from excluded months',()=>{
   assert.match(finance,/<details v-if="reviewTrash\.duplicateGroups\.length" class="review-trash-category">/)
-  assert.match(finance,/<details v-if="reviewTrash\.recurringExclusions\.length \|\| trashedRecurringPlans\.length" class="review-trash-category">/)
+  assert.match(finance,/<details v-if="trashedRecurringPlans\.length" class="review-trash-category">/)
+  assert.match(finance,/<details v-if="reviewTrash\.recurringExclusions\.length" class="review-trash-category">/)
   assert.match(finance,/<details v-if="reviewTrash\.transferReminders\.length" class="review-trash-category">/)
-  assert.match(finance,/class="review-trash-subheading">削除済み/)
-  assert.match(finance,/class="review-trash-subheading">除外した候補/)
+  assert.match(finance,/<summary>削除した固定費/)
+  assert.match(finance,/固定費の登録を削除した項目です/)
+  assert.match(finance,/<summary>記帳から除外した月/)
+  assert.match(finance,/指定した月だけ記帳候補から除外した項目です/)
   assert.match(finance,/@restore="restoreDeletedPlan\(item\)"/)
   assert.match(finance,/@restore="restoreRecurringExclusion\(item\)"/)
 })

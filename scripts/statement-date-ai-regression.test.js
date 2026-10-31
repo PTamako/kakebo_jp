@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { recognizeWithGemma } from '../functions/api/gemma-ocr.js'
 import { parseEntries } from '../src/parse.js'
 
+const currentYear = new Date().getFullYear()
 const statement = [
   '9月6日,不明,QP/ベルク,¥2,264,不明',
   '9月5日,不明,QP/ベルク,¥4,744,不明',
@@ -22,8 +23,8 @@ test('seven dated September card rows keep each printed date and amount', async 
   const rows = parseEntries(raw, [], new Date('2026-10-31T09:00:00Z'))
   assert.equal(rows.length, 7)
   assert.deepEqual(rows.map(row => row.date), [
-    '2026-09-06', '2026-09-05', '2026-09-04', '2026-09-04',
-    '2026-09-03', '2026-09-02', '2026-09-01'
+    `${currentYear}-09-06`, `${currentYear}-09-05`, `${currentYear}-09-04`, `${currentYear}-09-04`,
+    `${currentYear}-09-03`, `${currentYear}-09-02`, `${currentYear}-09-01`
   ])
   assert.deepEqual(rows.map(row => row.amount), [2264, 4744, 437, 200, 428, 480, 203])
   assert.deepEqual(rows.map(row => row.merchant), [
@@ -39,7 +40,7 @@ test('statement date parsing accepts different printed date formats per transact
     '2026/09/05,不明,薬局,¥1,200,不明',
     '9月4日,不明,コンビニ,¥320,不明'
   ].join('\n'), [], new Date('2026-10-31T09:00:00Z'))
-  assert.deepEqual(rows.map(row => row.date), ['2026-09-06', '2026-09-05', '2026-09-04'])
+  assert.deepEqual(rows.map(row => row.date), [`${currentYear}-09-06`, `${currentYear}-09-05`, `${currentYear}-09-04`])
   assert.deepEqual(rows.map(row => row.amount), [500, 1200, 320])
 })
 
@@ -49,7 +50,7 @@ test('unknown date does not borrow date from adjacent transaction', () => {
     '不明,不明,スーパー,¥630,不明',
     '9月4日,不明,マイバスケット,¥437,不明'
   ].join('\n'), [], new Date('2026-10-31T09:00:00Z'))
-  assert.deepEqual(rows.map(row => row.date), ['2026-09-06', '', '2026-09-04'])
+  assert.deepEqual(rows.map(row => row.date), [`${currentYear}-09-06`, '', `${currentYear}-09-04`])
 })
 
 test('Gemma does not assume dates occupy any fixed part of the screen', async () => {

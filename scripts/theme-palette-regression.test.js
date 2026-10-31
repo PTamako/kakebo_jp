@@ -52,6 +52,9 @@ test('four new themes style the app, charts, calendar and central add', () => {
 })
 test('original themes and Japanese UI language remain intact', () => {
   for(const id of ['blue','yellow','green']) assert.match(app,new RegExp('main\\.theme-'+id+'\\{--ink:'))
-  assert.match(app, /<strong>家計簿<\/strong>/)
+  // Header was upgraded to an accessible generated horizontal wordmark in PR #186.
+  assert.match(app, /<img class="brand-wordmark" src="\/branding\/kakeibo-wordmark\.png\?v=4"/)
+  assert.match(app, /alt="家計簿"/)
+  assert.doesNotMatch(app, /<strong>家計簿<\/strong>/)
   assert.match(app, /aria-label="テーマカラーを選ぶ"/)
 })

@@ -763,8 +763,23 @@ export async function onRequest({ request, env, params }) {
 
     if (a === 'dismissed-transfer-reminders') {
       if(m==='GET') {
+        if (url.searchParams.get('details') === '1') {
+          const {results}=await db.prepare(`SELECT e.id, e.date, e.amount, e.merchant, e.note, e.transfer_date, e.transfer_applied
+            FROM dismissed_transfer_reminders d
+            JOIN entries e ON e.id = d.entry_id
+            WHERE e.type='transfer' AND e.transfer_target='sbi'
+            ORDER BY e.id DESC LIMIT 1000`).all()
+          return json(results)
+        }
         const {results}=await db.prepare('SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id').all()
         return json(results.map(x=>x.entry_id))
+      }
+      if(m==='DELETE') {
+        const body=await request.json()
+        const id=Number(body?.entryId)
+        if(!Number.isSafeInteger(id)||id<=0)return json({error:'振替記録を確認してください'},400)
+        await db.prepare('DELETE FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id).run()
+        return json({ok:true})
       }
       if(m==='POST') {
         const body=await request.json()

@@ -76,7 +76,7 @@ test('no merchant, card, amount or other transaction data is stored on the devic
   const store = storage()
   const key = duplicateReviewSignature([row(1),row(2)])
   saveConfirmedDuplicateGroups(new Set([key]),store)
-  assert.match(store.snapshot(),/^\\["v1:[0-9a-f]{16}"\\]$/)
+  assert.match(store.snapshot(),/^\["v1:[0-9a-f]{16}"\]$/)
   assert.doesNotMatch(store.snapshot(),/Suica|楽天|1000|2026-10-30/)
 })
 
@@ -90,24 +90,24 @@ test('bad, absent or write-protected storage safely fails without confirming', (
   assert.deepEqual([...readConfirmedDuplicateGroups(malformed)],['v1:0000000000000000'])
 })
 
-test('review screen has explicit dismiss and undo, keeping the original transaction links', () => {
+test('review screen has explicit dismiss and trash undo, keeping the original transaction links', () => {
   const src = readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
-  assert.match(src,/const duplicates=computed\\(\\(\\) => findLedgerDuplicateGroups\\(rows\\.value\\)\\)/)
-  assert.match(src,/const pendingDuplicates = computed\\(\\(\\) => duplicates\\.value\\.filter/)
-  assert.match(src,/const confirmedDuplicates = computed\\(\\(\\) => duplicates\\.value\\.filter/)
-  assert.match(src,/if \\(!saveConfirmedDuplicateGroups\\(next\\)\\)/)
-  assert.match(src,/confirmedDuplicateKeys\\.value = next/)
-  assert.match(src,/@click="emit\\('open-duplicate', group\\[0\\]\\.date\\)"/)
-  assert.match(src,/@click="setDuplicateConfirmation\\(group, true\\)">重複ではない/)
-  assert.match(src,/@click="setDuplicateConfirmation\\(group, false\\)">再確認/)
-  assert.match(src,/確認済み（\\{\\{confirmedDuplicates\\.length\\}\\}件）/)
+  assert.match(src,/const duplicates=computed\(\(\) => findLedgerDuplicateGroups\(rows\.value\)\)/)
+  assert.match(src,/const pendingDuplicates = computed\(\(\) => duplicates\.value\.filter/)
+  assert.match(src,/const confirmedDuplicates = computed\(\(\) => duplicates\.value\.filter/)
+  assert.match(src,/if \(!saveConfirmedDuplicateGroups\(next\)\)/)
+  assert.match(src,/confirmedDuplicateKeys\.value = next/)
+  assert.match(src,/@click="emit\('open-duplicate', group\[0\]\.date\)"/)
+  assert.match(src,/@click="setDuplicateConfirmation\(group, true\)">重複ではない/)
+  assert.match(src,/@click="setDuplicateConfirmation\(group, false\)">元に戻す/)
+  assert.match(src,/<summary>ゴミ箱/)
   assert.match(src,/@toggle="refreshDuplicateReview"/)
-  assert.doesNotMatch(src.match(/function setDuplicateConfirmation\\(group, isConfirmed\\) \\{[\\s\\S]*?\\n\\}/)?.[0] || '',/props\\.api|DELETE FROM|UPDATE entries/)
+  assert.doesNotMatch(src.match(/function setDuplicateConfirmation\(group, isConfirmed\) \{[\s\S]*?\n\}/)?.[0] || '',/props\.api|DELETE FROM|UPDATE entries/)
 })
 
 test('confirmation action modifies only the saved confirmation set on success', () => {
   const src = readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
-  const body = src.match(/function setDuplicateConfirmation\\(group, isConfirmed\\) \\{([\\s\\S]*?)\\n\\}/)?.[1]
+  const body = src.match(/function setDuplicateConfirmation\(group, isConfirmed\) \{([\s\S]*?)\n\}/)?.[1]
   assert.ok(body)
   const one = row(1), two = row(2)
   const group = [one,two]

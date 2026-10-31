@@ -598,10 +598,23 @@ export async function onRequest({ request, env, params }) {
         if (transfer && !validDate(transferDate)) return json({ error: '振替日を確認してください' }, 400)
         const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
         const applied = target==='sbi' && transferDate <= today ? 1 : 0
-        const result = await db.prepare(
-          'UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11, payment_source = ?12 WHERE id = ?13'
-        ).bind(e.date, e.time || '', amount, transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')), e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000), transfer ? 'transfer' : (e.type === 'income' ? 'income' : 'expense'), target, applied ? 1 : 0, transferDate, paymentSource, id).run()
-        return json({ ok: true, changes: result.meta?.changes ?? null })
+        // Compare the original row values before updating; simultaneous edits
+        // from another device must never silently overwrite newer finances.
+        const expectedKeys=['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_date','payment_source']
+        const optimistic=e.expected && typeof e.expected==='object' && !Array.isArray(e.expected)
+        if(optimistic && !expectedKeys.every(k=>Object.hasOwn(e.expected,k)))
+          return json({error:'編集前の記録情報が不足しています'},400)
+        const guard=optimistic ? ' AND '+expectedKeys.map((k,i)=>k+' IS ?'+(i+14)).join(' AND ') : ''
+        const args=[e.date,e.time||'',amount,transfer?'投資・資産移動':(e.category||(e.type==='income'?'工资':'日用品')),
+          e.merchant||'',e.note||'',(e.raw||'').slice(0,2000),
+          transfer?'transfer':(e.type==='income'?'income':'expense'),
+          target,applied?1:0,transferDate,paymentSource,id,
+          ...(optimistic?expectedKeys.map(k=>e.expected[k]):[])]
+        const result=await db.prepare('UPDATE entries SET date=?1,time=?2,amount=?3,category=?4,merchant=?5,note=?6,raw=?7,type=?8,transfer_target=?9,transfer_applied=?10,transfer_date=?11,payment_source=?12 WHERE id=?13'+guard)
+          .bind(...args).run()
+        if(optimistic && !result.meta?.changes)
+          return json({error:'別の端末で明細が変更されました。最新の明細を再読込してください',code:'stale_entry'},409)
+        return json({ok:true,changes:result.meta?.changes??null})
       }
       if (m === 'DELETE' && b) {
         const id = Number(b)

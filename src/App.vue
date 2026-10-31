@@ -19,6 +19,8 @@ import { paymentForDraft } from './payment-rules.js'
 import { detectRegisteredReceiptPayment } from './receipt-payment.js'
 import { prepaidTarget } from './prepaid-card.js'
 import { recognizeAssetTransfer } from './transfer-recognition.js'
+import { detectIcHistoryContext } from './transport-history.js'
+import { monthLedgerMatchesStats } from './month-ledger-consistency.js'
 import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
@@ -308,7 +310,16 @@ async function load() {
   try {
     if (!rules.value.length) rules.value = await api('rules')
     if (!paymentSettingsLoaded) await loadPaymentSettings()
-    const [nextCategories, nextEntries, nextStats] = await Promise.all([api('categories'), fetchMonthEntries(requestedMonth), api('stats?month=' + requestedMonth)])
+    const nextCategories = await api('categories')
+    let nextEntries, nextStats
+    // Entries and totals are different D1 reads; a concurrent write can land
+    // between them. Retry once instead of showing contradictory financial data.
+    for (let attempt=0; attempt<2; attempt++) {
+      [nextEntries, nextStats]=await Promise.all([fetchMonthEntries(requestedMonth),api('stats?month='+requestedMonth)])
+      if (requestId!==loadRequestId || requestedMonth!==month.value) return
+      if (monthLedgerMatchesStats(nextEntries,nextStats)) break
+      if (attempt===1) throw Error('記録と集計の更新時点が一致しません。もう一度読み込んでください')
+    }
     if (requestId !== loadRequestId || requestedMonth !== month.value) return
     categories.value = sortOtherLast(nextCategories)
     try { await loadCategoryMetadata() } catch { /* Keep previously loaded category metadata until the next request. */ }
@@ -418,7 +429,7 @@ watch([forms,input,entryInputMode], () => {
   }, 400)
 }, {deep:true})
 onUnmounted(() => { clearTimeout(draftSaveTimer) })
-function recognize(mode = recognitionMode.value, append = false, referenceTime = new Date()) {
+function recognize(mode = recognitionMode.value, append = false, referenceTime = new Date(), fromImage = false) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
   // Scheduled-looking text expands into *drafts* only. Explicit review/save
@@ -434,6 +445,11 @@ function recognize(mode = recognitionMode.value, append = false, referenceTime =
     return { ...row, category:match.category, suggested:match.category, keyword:match.keyword }
   }) : repeated || (effectiveMode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value, referenceTime))
   if (effectiveMode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
+  // Recognize a *coherent* Suica history image, not isolated station strings
+  // in arbitrary card statements. All guesses remain editable before saving.
+  const icContext=fromImage && effectiveMode==='statement' &&
+    (!importPaymentSource.value || importPaymentSource.value==='Suica')
+    ? detectIcHistoryContext(parsed,paymentSources.value) : null
   const parsedForms = parsed.map(f => {
     // Apply the same rules to pasted text, statements and scanned receipts.
     // An unknown recharge is an editable transfer draft with no guessed target.
@@ -450,10 +466,13 @@ function recognize(mode = recognitionMode.value, append = false, referenceTime =
     // are not standalone cards and can never silently create one.
     const recognizedPayment=effectiveMode==='receipt'
       ? (receiptPayment || (paymentSources.value.includes(f.paymentSource) ? f.paymentSource : ''))
-      : (f.paymentSource || '')
+      : (f.paymentSource || icContext?.source || '')
     const chosenPayment=type==='transfer' ? (imported||'')
       : suggestedPayment(f.merchant,recognizedPayment,type,imported)
-    return { ...f, type, category: type==='transfer' ? '投資・資産移動' : f.category, transferTarget: detectedTransfer.transferTarget || f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && type === 'expense' ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && type === 'expense' && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
+    const icFare=!!icContext?.municipalityFares?.has(f)
+    const chosenCategory=type==='transfer'?'投資・資産移動':icFare?'交通':f.category
+    const extraNote=icFare?'交通系ICの利用履歴から推定した交通費（登録前に確認）':''
+    return { ...f, type, category: chosenCategory, note:[f.note,extraNote].filter(Boolean).join(' / '), transferTarget: detectedTransfer.transferTarget || f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && type === 'expense' ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && type === 'expense' && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   // Preserve the current input tab: pasted text stays in 手入力. Only the
@@ -521,7 +540,7 @@ async function onImage(e, mode = 'statement') {
     // Do not classify a scanned receipt before saved merchant-payment rules
     // and the configured default card are available from existing D1.
     if (!paymentSettingsLoaded) await loadPaymentSettings()
-    recognize(mode, true, recognitionReference)
+    recognize(mode, true, recognitionReference, true)
     entryInputMode.value = 'scan'
   } catch (err) { pendingReceiptImage.value = null; pendingReceiptFileName.value = ''; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''
@@ -586,7 +605,7 @@ async function saveAll() {
   if (uncertain.length) return flash('金額・内容を確認し、要確認の表示を修正してください')
   // Check every month represented by the drafts, not just the currently displayed month.
   // This is an advisory check: two purchases with the same details can both be legitimate.
-  let duplicateConfirmed = false
+  const duplicateConfirmedKeys=new Set()
   busy.value = '重複を確認中'
   try {
     const months = [...new Set(forms.value.map(f => String(f.date || '').slice(0, 7)))]
@@ -610,7 +629,7 @@ async function saveAll() {
         busy.value = ''
         return
       }
-      duplicateConfirmed = true
+      for (const candidate of possibleDuplicates) duplicateConfirmedKeys.add(key(candidate))
     }
   } catch (e) {
     busy.value = ''
@@ -628,7 +647,10 @@ async function saveAll() {
       // Retain one stable ID across retries (including "saved on server, reply lost").
       if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
       const result = await api('entries', { method: 'POST', body: JSON.stringify({
-        ...f, amount: Number(f.amount), duplicatePolicy:'check', allowDuplicate:duplicateConfirmed
+        ...f, amount: Number(f.amount), duplicatePolicy:'check',
+        // Approval applies only to flagged rows, not the whole import batch.
+        allowDuplicate:duplicateConfirmedKeys.has([f.date,Number(f.amount),String(f.merchant||'').trim(),
+          f.paymentSource||'',f.type||'expense'].join('|'))
       }) })
       const receiptBlob = f.type === 'expense' ? f.receiptImage : null
       if (receiptBlob) {
@@ -688,6 +710,9 @@ function startEdit(entry) {
   editReceiptImage.value = null
   editReceiptFileName.value = ''
   editingEntry.value = {
+    // Send an immutable snapshot for optimistic concurrency in D1.
+    expected:Object.fromEntries(['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_date','payment_source']
+      .map(key=>[key,entry[key]??null])),
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
     transferTarget: entry.transfer_target || '', transferDate: entry.transfer_date || entry.date,

@@ -33,7 +33,7 @@ test('confirmed separate purchases disappear from duplicate suggestions and surv
   assert.equal(saveConfirmedDuplicateGroups(confirmed,store),true)
   const restored = readConfirmedDuplicateGroups(store)
   assert.equal(restored.has(key),true)
-  assert.equal(findLedgerDuplicateGroups([row(1),row(2)]).filter(g=>!restored.has(duplicateReviewSignature(g))).length,0)
+  assert.equal(findLedgerDuplicateGroups([row(1),row(2,{time:'19:22'})]).filter(g=>!restored.has(duplicateReviewSignature(g))).length,0)
   // The original ledger entries have never been touched.
   assert.deepEqual(group.map(r=>r.id),[1,2])
 })

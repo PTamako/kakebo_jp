@@ -227,7 +227,7 @@ export async function onRequest({ request, env, params }) {
         }
       } catch(error) {
         if (/no such table: app_client_state/i.test(String(error)))
-          return json({error:'端末設定用のD1移行（0010）が必要です。既存明細は変更されていません',code:'app_state_schema_required'},503)
+          return json({error:'端末設定用のD1移行（0011）が必要です。既存明細は変更されていません',code:'app_state_schema_required'},503)
         throw error
       }
     }

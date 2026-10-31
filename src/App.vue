@@ -49,15 +49,17 @@ const themes = [
   { id: 'latte', label: 'ミルクティー', color: '#b59a81' },
   { id: 'slate', label: 'スモーキーブルー', color: '#86a8bd' },
 ]
-const storedTheme = null
-const theme = ref('pink')
-// Keep the last confirmed D1 value when a save fails.
-async function setTheme(value) {
+// Theme is an intentionally device-only preference. Retain the existing key.
+const storedTheme = (() => {
+  try { return localStorage.getItem('kakeibo-theme') }
+  catch { return null }
+})()
+const theme = ref(themes.some(item => item.id === storedTheme) ? storedTheme : 'pink')
+function setTheme(value) {
   if (!themes.some(item => item.id === value)) return
-  try {
-    await api('app-state', {method:'PUT',body:JSON.stringify({key:'theme',value})})
-    theme.value = value
-  } catch(e) { flash('テーマをD1に保存できませんでした：' + e.message) }
+  theme.value = value
+  try { localStorage.setItem('kakeibo-theme', value) }
+  catch(e) { flash('この端末にテーマを保存できませんでした：' + e.message) }
 }
 const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 const month = ref(currentMonth())
@@ -461,7 +463,6 @@ async function restoreAppState() {
   draftHydrated = false
   try {
     const state = await api('app-state')
-    if (themes.some(item => item.id === state.theme)) theme.value = state.theme
     if (typeof state.ai_ocr_enabled === 'boolean') aiOcrEnabled.value = state.ai_ocr_enabled
     if (typeof state.remember_device === 'boolean') rememberDevice.value = state.remember_device
     configureReceiptStorageMode(rememberDevice.value)

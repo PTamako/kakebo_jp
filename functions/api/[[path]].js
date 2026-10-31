@@ -101,8 +101,15 @@ export async function onRequest({ request, env, params }) {
       try {
         await db.prepare('INSERT INTO device_sessions (token_hash, expires_at) VALUES (?1, ?2)').bind(hash, expires).run()
       } catch { return json({ error: 'ログイン処理に失敗しました' }, 500) }
+      // On a newly installed PWA, use the saved D1 privacy preference
+      // rather than blindly replacing it with the login screen's default.
+      let remember = body.remember !== false
+      try {
+        const savedMode = await db.prepare("SELECT value_json FROM app_client_state WHERE state_key='remember_device'").first()
+        if (savedMode) remember = JSON.parse(savedMode.value_json) === true
+      } catch { /* The pre-0010 login path still works. */ }
       return json({ session, expires_at: expires }, 200,
-        { 'set-cookie': sessionCookie(session, body.remember !== false) })
+        { 'set-cookie': sessionCookie(session, remember) })
     }
     if (b === 'logout' && m === 'POST') {
       const session = request.headers.get('x-session') || cookieSession(request)

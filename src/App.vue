@@ -13,6 +13,8 @@ import { classify, parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATE
 import { localHHMM } from './entry-time.js'
 import { compressReceiptImage } from './receipt-image.js'
 import LedgerPage from './pages/LedgerPage.vue'
+import GlobalToast from './GlobalToast.vue'
+import { notify } from './notifications.js'
 import StatisticsPage from './pages/StatisticsPage.vue'
 import AssetsPage from './pages/AssetsPage.vue'
 import ManagementPage from './pages/ManagementPage.vue'
@@ -300,7 +302,7 @@ async function api(path, opt = {}) {
 
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
 let flashTimer
-const flash = t => { clearTimeout(flashTimer); msg.value = t; flashTimer = setTimeout(() => (msg.value = ''), 3000) }
+const flash = t => { notify(t); msg.value = '' }
 
 const pageLoadError = ref('')
 const annualLoadError = ref('')
@@ -1437,6 +1439,7 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
 </script>
 
 <template>
+  <GlobalToast />
   <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong><p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
   <main v-else :class="`theme-${theme}`">
     <div v-if="receiptSaveError" role="alert" class="receipt-error-banner"><span>{{ receiptSaveError }}</span><button type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button></div>
@@ -1470,7 +1473,6 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
       </div>
     </header>
 
-    <p v-if="msg" class="toast" role="status">{{ msg }}</p>
     <div v-if="(tab === 'list' || (tab === 'stat' && statsPeriod === 'month')) && pageLoadError" class="panel" role="alert"><span>{{pageLoadError}}</span> <button type="button" class="button-secondary" @click="load">再読み込み</button></div>
     <div v-if="tab === 'stat' && statsPeriod === 'year' && annualLoadError" class="panel" role="alert"><span>{{annualLoadError}}</span> <button type="button" class="button-secondary" @click="loadYear">再読み込み</button></div>
 
@@ -1591,7 +1593,6 @@ textarea{resize:vertical;min-height:116px;line-height:1.65;font-size:14px;backgr
 .button-secondary{background:#f1f5ff;color:var(--blue);border-color:#e2eaff}
 .upload-button{display:flex;cursor:pointer}
 .microcopy{font-size:11px;color:#929cab;margin:12px 0 0}.manage-category{min-height:38px;padding:8px 10px;font-size:12px;white-space:nowrap}.bind-rule{display:flex;align-items:flex-start;gap:8px;padding:10px 11px;border:1px solid #dce7ff;background:#f7f9ff;border-radius:11px;color:#315fbd;font-size:12px}.bind-rule input{width:17px;height:17px;flex:none;margin:1px 0 0;accent-color:#315fbd}.bind-rule span{flex:1}.progress-wrap{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--blue);font-size:12px}.spinner{width:14px;height:14px;border:2px solid #dce6ff;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
-.toast{position:sticky;top:calc(8px + env(safe-area-inset-top));z-index:5;margin:0 0 14px;padding:11px 14px;background:#202b37;color:white;border-radius:12px;font-size:13px;box-shadow:0 5px 16px #17253820}
 .draft-heading{display:flex;align-items:center;justify-content:space-between;margin:24px 2px 10px}.draft-heading h2{font-size:17px;margin:0}.draft-heading p{font-size:12px;color:var(--muted);margin:3px 0 0}.count-pill{background:#e7f5f2;color:#11796f;padding:6px 10px;border-radius:99px;font-size:12px;font-weight:800}
 .entry-card{padding:15px;margin-top:11px;display:grid;gap:13px}.entry-card-heading{display:flex;align-items:center;gap:9px;min-width:0}.entry-card-heading strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;font-size:14px}.entry-number{display:grid;place-items:center;flex:none;width:30px;height:30px;background:#eef2ff;color:var(--blue);border-radius:10px;font-size:11px;font-weight:800}
 .icon-button{border:0;background:transparent;color:#9ba5b2;display:grid;place-items:center;width:30px;height:30px;border-radius:9px;font-size:23px;padding:0;flex:none}.icon-button:active{background:#f1f3f6}.form-field{display:grid;gap:6px;min-width:0}.form-field>span{font-size:11px;color:#7c8795;font-weight:650}.form-field input,.form-field select{font-size:13px;padding:10px;border-radius:10px}.amount-warning{margin:-4px 0 2px;color:#b45309;font-size:12px;font-weight:700}.amount-input-wrap{display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid #e0e6ed;border-radius:12px;background:#fbfcff}.amount-input-wrap>span{font-size:18px;color:var(--blue);font-weight:800}.amount-input-wrap input{border:0;box-shadow:none;background:transparent;padding:11px 0;font-size:26px;font-weight:800;letter-spacing:-.04em;color:var(--ink)}.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}

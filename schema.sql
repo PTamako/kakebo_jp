@@ -101,6 +101,12 @@ CREATE TABLE IF NOT EXISTS category_source (
 CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 -- User-reviewed alerts are persisted separately from financial transactions.
 -- No historical notice keys or ledger rows are seeded on startup.
+-- Persist app settings and drafts in D1; no historic content is seeded.
+CREATE TABLE IF NOT EXISTS app_client_state (
+  state_key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS review_notice_states (
   notice_key TEXT PRIMARY KEY,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

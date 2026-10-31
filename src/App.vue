@@ -711,7 +711,7 @@ function startEdit(entry) {
   editReceiptFileName.value = ''
   editingEntry.value = {
     // Send an immutable snapshot for optimistic concurrency in D1.
-    expected:Object.fromEntries(['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_date','payment_source']
+    expected: Object.fromEntries(['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_date','payment_source']
       .map(key=>[key,entry[key]??null])),
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',

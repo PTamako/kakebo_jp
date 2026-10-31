@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { notify } from './notifications.js'
+import { notify, NOTIFICATION_DURATION } from './notifications.js'
 const props=defineProps({ api:{type:Function,required:true}, active:{type:Boolean,default:false}, revision:{type:Number,default:0} })
 const emit=defineEmits(['summary','open-card-settings','open-history'])
 const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false)
@@ -46,7 +46,7 @@ for (const status of [error, notice]) {
     statusTimers.set(status, setTimeout(() => {
       if (status.value === value) status.value = ''
       statusTimers.delete(status)
-    }, 5000))
+    }, NOTIFICATION_DURATION))
   })
 }
 onUnmounted(() => {

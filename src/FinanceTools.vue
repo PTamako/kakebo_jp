@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
-import { notify } from './notifications.js'
+import { notify, NOTIFICATION_DURATION } from './notifications.js'
 import { sortOtherLast } from './category-sort.js'
 import ReviewTrashActions from './ReviewTrashActions.vue'
 import { findLedgerDuplicateGroups, duplicateReviewSignature, readConfirmedDuplicateGroups, saveConfirmedDuplicateGroups } from './duplicate-review.js'
@@ -100,7 +100,13 @@ async function clearLocalReceiptImages() {
   }
 }
 watch([() => props.active, managementTab], ([active,tab]) => {
-  if(active && tab === 'tools') void refreshLocalReceiptCount()
+  if(active && tab === 'tools') {
+    void refreshLocalReceiptCount()
+    // Prefetch all bin sources when entering その他, not only after tapping
+    // ゴミ箱. Otherwise the collapsed header shows a misleading partial count.
+    void loadTransferTrash()
+    void loadDeletedPlans()
+  }
 })
 watch(() => props.rememberDevice, () => {
   if(props.active && managementTab.value==='tools')void refreshLocalReceiptCount()
@@ -644,6 +650,7 @@ const deletedPlanLoaded = ref(false)
 async function loadDeletedPlans() {
   if (deletedPlanLoading.value) return
   deletedPlanLoading.value = true
+  deletedPlanLoaded.value = false
   try {
     const list = await props.api('recurring-plans?trash=1')
     if (!Array.isArray(list)) throw Error('一覧の形式を確認できません')
@@ -688,6 +695,7 @@ const transferTrashLoaded = ref(false)
 async function loadTransferTrash() {
   if (transferTrashLoading.value) return
   transferTrashLoading.value = true
+  transferTrashLoaded.value = false
   try {
     const details = await props.api('dismissed-transfer-reminders?details=1')
     if (!Array.isArray(details)) throw Error('一覧の形式を確認できません')
@@ -724,9 +732,17 @@ const confirmedDuplicates = computed(() => duplicates.value.filter(group =>
 const reviewTrash = computed(() => visibleReviewedTrash(
   confirmedDuplicates.value, recurringExcludedRows.value, dismissedTransferTrash.value,
   archivedTrashKeys.value, duplicateReviewSignature))
-const trashCount = computed(() => reviewTrash.value.duplicateGroups.length +
-  reviewTrash.value.recurringExclusions.length + reviewTrash.value.transferReminders.length +
-  trashedRecurringPlans.value.length)
+// Never report a subtotal while archived plans or transfer notices are still
+// loading. A count becomes authoritative only after every source succeeds.
+const trashCountReady = computed(() => settingsReady.value && loaded.value && !busy.value &&
+  transferTrashLoaded.value && deletedPlanLoaded.value &&
+  !transferTrashLoading.value && !deletedPlanLoading.value)
+const trashCount = computed(() => trashCountReady.value
+  ? reviewTrash.value.duplicateGroups.length + reviewTrash.value.recurringExclusions.length +
+    reviewTrash.value.transferReminders.length + trashedRecurringPlans.value.length
+  : null)
+const trashCountLoading = computed(() => busy.value || transferTrashLoading.value ||
+  deletedPlanLoading.value || !settingsReady.value || !loaded.value)
 const duplicateReviewMessage = ref('')
 function removeReviewedTrashNotice(key) {
   if (!key || trashBusy.value || recurringBusy.value || transferTrashLoading.value || deletedPlanLoading.value) return
@@ -797,7 +813,10 @@ function onReviewTrashToggle(event) {
   if (!event.currentTarget?.open) return
   void loadTransferTrash()
   void loadDeletedPlans()
-  if (props.active && !busy.value) void loadAll()
+  // The main ledger already has a five-minute cache. Avoid reloading it on
+  // every accordion toggle (which causes another mid-animation count change).
+  if (props.active && !busy.value && (ledgerDirty || !loaded.value || !lastLoadedAt.value ||
+      Date.now() - lastLoadedAt.value.getTime() >= MANAGEMENT_LEDGER_TTL_MS)) void loadAll()
 }
 async function addPlan(){
   if(!plan.value.name.trim() || !Number.isSafeInteger(Number(plan.value.amount)) || Number(plan.value.amount)<=0 ||
@@ -965,7 +984,7 @@ for (const field of [cardMessage, recurringMessage, message, trashMessage,
     noticeTimeouts.set(field, setTimeout(() => {
       if (field.value === value) field.value = ''
       noticeTimeouts.delete(field)
-    }, 5000))
+    }, NOTIFICATION_DURATION))
   })
 }
 onUnmounted(() => {
@@ -1282,12 +1301,13 @@ async function removeCardBill(record) {
     
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel" @toggle="onReviewTrashToggle">
-    <summary>ゴミ箱 <span v-if="trashCount" class="review-trash-count">{{trashCount}}件</span></summary>
+    <summary>ゴミ箱 <span class="review-trash-count" aria-live="polite">{{trashCountReady ? trashCount+'件' : trashCountLoading ? '確認中…' : '再読み込みが必要'}}</span></summary>
     <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>
-      <p v-if="transferTrashLoading && !transferTrashLoaded">振替の履歴を読み込み中…</p>
-      <p v-if="deletedPlanLoading && !deletedPlanLoaded">削除した固定費を読み込み中…</p>
-      <p v-if="!trashCount && transferTrashLoaded && deletedPlanLoaded">ゴミ箱は空です。</p>
+      <p v-if="!trashCountReady" class="review-trash-loading" role="status">{{trashCountLoading ? 'ゴミ箱を確認中…' : '件数を取得できませんでした。再読み込みしてください。'}}</p>
+      <button v-if="!trashCountReady && !trashCountLoading" type="button" class="review-trash-retry" @click="onReviewTrashToggle({currentTarget:{open:true}})">再読み込み</button>
+      <template v-if="trashCountReady">
+      <p v-if="trashCount === 0">ゴミ箱は空です。</p>
       <details v-if="reviewTrash.duplicateGroups.length" class="review-trash-category">
         <summary>重複確認 <span>{{reviewTrash.duplicateGroups.length}}件</span></summary>
         <div v-for="(group,i) in reviewTrash.duplicateGroups" :key="duplicateReviewSignature(group) || i" class="review-trash-item">
@@ -1321,6 +1341,7 @@ async function removeCardBill(record) {
       </details>
       <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy || transferTrashLoading || deletedPlanLoading || !transferTrashLoaded || !deletedPlanLoaded" @click="emptyReviewTrash">ゴミ箱を空にする</button>
       <p v-if="trashCount" class="review-trash-note">削除済み固定費は完全削除。それ以外の確認状態と記帳済み明細は残ります。</p>
+      </template>
     </template>
     
   </details>

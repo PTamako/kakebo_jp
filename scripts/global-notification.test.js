@@ -11,8 +11,8 @@ const wallet = read('src/PrepaidAssets.vue')
 const toast = read('src/GlobalToast.vue')
 const source = read('src/notifications.js')
 
-test('global toast lasts exactly 5 seconds; a new operation resets its timer', () => {
-  assert.equal(NOTIFICATION_DURATION, 5000)
+test('global toast lasts exactly 3 seconds; a new operation resets its timer', () => {
+  assert.equal(NOTIFICATION_DURATION, 3000)
   assert.equal(notificationLevel('記録を保存しました'), 'success')
   assert.equal(notificationLevel('保存に失敗しました'), 'error')
   const pending = new Map()
@@ -26,7 +26,7 @@ test('global toast lasts exactly 5 seconds; a new operation resets its timer', (
       (value=>({value}),setTimeoutFake,clearTimeoutFake)
   module.notify('保存しました')
   assert.equal(module.notification.value.text,'保存しました')
-  assert.equal([...pending.values()][0].ms,5000)
+  assert.equal([...pending.values()][0].ms,3000)
   module.notify('削除に失敗しました')
   assert.equal(module.notification.value.level,'error')
   assert.equal(pending.size,1,'old timer was cancelled')
@@ -52,12 +52,12 @@ test('global notification floats above all screens, is non-blocking and accessib
   assert.match(toast,/env\(safe-area-inset-top\)/)
 })
 
-test('management messages are transient and do not stick at the page top',()=>{
+test('management messages are dismissed after 3 seconds and do not stick at the page top',()=>{
   for(const name of ['cardMessage','recurringMessage','message','trashMessage',
       'duplicateReviewMessage','receiptImagePrivacyMessage','receiptExportMessage'])
     assert.match(finance,new RegExp('watch\\(field, value => \\{'),'transient watcher')
   assert.match(finance,/if \(field\.value === value\) field\.value = ''/)
-  assert.match(finance,/}, 5000\)/)
+  assert.match(finance,/}, NOTIFICATION_DURATION\)/)
   assert.match(finance,/onUnmounted\(\(\) => \{/)
   assert.doesNotMatch(finance,/<p v-if="cardMessage" role="status">/)
   assert.doesNotMatch(finance,/<p v-if="recurringMessage" role="status">/)
@@ -66,11 +66,11 @@ test('management messages are transient and do not stick at the page top',()=>{
   assert.match(finance,/!loaded/)
 })
 
-test('SBI and prepaid saving, failure and OCR results use the same five-second toast',()=>{
+test('SBI and prepaid outcomes use the same three-second toast',()=>{
   for(const component of [sbi,wallet]){
-    assert.match(component,/import \{ notify \} from '.\/notifications\.js'/)
+    assert.match(component,/import \{ notify, NOTIFICATION_DURATION \} from '.\/notifications\.js'/)
     assert.match(component,/notify\(value,/)
-    assert.match(component,/}, 5000\)/)
+    assert.match(component,/}, NOTIFICATION_DURATION\)/)
     assert.match(component,/onUnmounted/)
   }
   assert.match(sbi,/for \(const status of \[error, notice, bulkInfo, bulkWarning\]\)/)

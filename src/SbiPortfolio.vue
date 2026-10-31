@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
-import { notify } from './notifications.js'
+import { notify, NOTIFICATION_DURATION } from './notifications.js'
 import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js'
 import { groupFundHoldings } from './sbi-fund-groups.js'
 import { parseSbiHoldingsText } from './sbi-holdings-import.js'
@@ -377,7 +377,7 @@ for (const status of [error, notice, bulkInfo, bulkWarning]) {
     statusTimers.set(status, setTimeout(() => {
       if (status.value === value) status.value = ''
       statusTimers.delete(status)
-    }, 5000))
+    }, NOTIFICATION_DURATION))
   })
 }
 onMounted(() => { window.addEventListener('keydown',onEditorKeydown); void load() })

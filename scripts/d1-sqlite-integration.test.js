@@ -888,3 +888,48 @@ test('D1 credit-card bill includes SBI and Suica transfers without changing expe
     assert.equal(expenses(),2300,'card-bill recalculation must not mutate ledger expenses')
   }finally{db.close()}
 })
+
+test('actual SQLite: dismissing a recurring month survives refresh, blocks posting, and can be undone safely',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const plan={id:'a1b2c3d4-2222-4444-8888-121212121212',name:'家賃',amount:101500,day:27,category:'居住',paymentSource:'現金',startMonth:'2026-07',enabled:true}
+    assert.equal((await call('recurring-plans','POST',plan)).status,200)
+    const key={planId:plan.id,month:'2026-08'}
+    assert.equal((await call('recurring-exclusions','POST',key)).status,200)
+    assert.equal((await call('recurring-exclusions','POST',key)).status,200)
+    assert.deepEqual((await call('recurring-exclusions')).body,[key])
+    const excluded=await call('recurring-post','POST',approvedPost(plan,'2026-08'))
+    assert.equal(excluded.status,409)
+    assert.equal(excluded.body.code,'recurring_excluded')
+    assert.deepEqual((await call('entries?month=2026-08')).body,[])
+    const archive=(await call('backup-snapshot')).body
+    assert.deepEqual(archive.recurringExclusions,[key])
+    assert.equal((await call('recurring-exclusions','DELETE',key)).status,200)
+    assert.deepEqual((await call('recurring-exclusions')).body,[])
+    const posted=await call('recurring-post','POST',approvedPost(plan,'2026-08'))
+    assert.equal(posted.status,200)
+    assert.equal(posted.body.created,true)
+    assert.equal((await call('entries?month=2026-08')).body.length,1)
+    assert.equal((await call('recurring-exclusions','POST',key)).status,200)
+    assert.equal((await call('entries?month=2026-08')).body.length,1)
+    assert.equal((await call('recurring-plans/'+plan.id,'DELETE')).status,200)
+    assert.deepEqual((await call('recurring-exclusions')).body,[])
+    assert.equal((await call('entries?month=2026-08')).body.length,1)
+  }finally{db.close()}
+})
+
+test('actual SQLite: backed-up excluded fixed-expense months restore with their schedules',async()=>{
+  const source=await createClient()
+  const destination=await createClient()
+  try{
+    const plan={id:'a1b2c3d4-3333-4444-8888-232323232323',name:'家賃',amount:101500,day:27,category:'居住',paymentSource:'現金',startMonth:'2026-07',enabled:true}
+    assert.equal((await source.call('recurring-plans','POST',plan)).status,200)
+    const key={planId:plan.id,month:'2026-07'}
+    assert.equal((await source.call('recurring-exclusions','POST',key)).status,200)
+    const archive=(await source.call('backup-snapshot')).body
+    const restored=await destination.call('restore-atomic','POST',archive)
+    assert.equal(restored.status,200)
+    assert.deepEqual((await destination.call('recurring-exclusions')).body,[key])
+    assert.equal((await destination.call('recurring-post','POST',approvedPost(plan,'2026-07'))).status,409)
+  }finally{source.db.close();destination.db.close()}
+})

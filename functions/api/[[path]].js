@@ -153,6 +153,29 @@ export async function onRequest({ request, env, params }) {
     // import legacy records, or write default investment snapshots. User-initiated writes remain available.
     // Normalized recurring plans and bills are the sole persistent stores.
     // Obsolete finance_settings is intentionally neither created nor queried.
+    if (a === 'recurring-exclusions') {
+      if (m === 'GET' && !b) {
+        const {results} = await db.prepare('SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY month DESC,plan_id').all()
+        return json(results.map(x => ({planId:x.plan_id,month:x.month})))
+      }
+      if ((m === 'POST' || m === 'DELETE') && !b) {
+        const body=await request.json().catch(()=>null)
+        const planId=body?.planId, month=body?.month
+        if (typeof planId!=='string' || !/^[a-zA-Z0-9-]{8,80}$/.test(planId) ||
+          typeof month!=='string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+          return json({error:'除外する固定費と月を確認してください'},400)
+        if (m === 'POST') {
+          const plan=await db.prepare('SELECT start_month FROM recurring_plans WHERE id=?1').bind(planId).first()
+          if (!plan || month<plan.start_month || month>tokyoToday().slice(0,7))
+            return json({error:'固定費の対象月を確認してください'},409)
+          await db.prepare('INSERT OR IGNORE INTO recurring_candidate_exclusions(plan_id,month) VALUES(?1,?2)').bind(planId,month).run()
+        } else {
+          await db.prepare('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2').bind(planId,month).run()
+        }
+        return json({ok:true})
+      }
+      return json({error:'未対応の操作です'},405)
+    }
     if (a === 'recurring-plans' || a === 'card-bills') {
       if (m === 'GET' && !b) {
         if (a === 'recurring-plans') {
@@ -191,7 +214,10 @@ export async function onRequest({ request, env, params }) {
           return json({ok:true})
         }
         if (m === 'DELETE' && b && /^[a-zA-Z0-9-]{8,80}$/.test(b)) {
-          await db.prepare('DELETE FROM recurring_plans WHERE id=?1').bind(b).run()
+          await db.batch([
+            db.prepare('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1').bind(b),
+            db.prepare('DELETE FROM recurring_plans WHERE id=?1').bind(b)
+          ])
           return json({ok:true})
         }
       } else {
@@ -268,7 +294,8 @@ export async function onRequest({ request, env, params }) {
           'SELECT fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at FROM investment_holdings ORDER BY fund_code,account_type',
           'SELECT fund_code,nav_per_10000,price_date,source,updated_at FROM fund_prices ORDER BY fund_code',
           'SELECT entry_id,purchase_month FROM sbi_transfer_links ORDER BY entry_id'
-        ] : [])
+        ] : []),
+        'SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY plan_id,month'
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
       const rows=n=>results[n]?.results||[]
@@ -283,6 +310,7 @@ export async function onRequest({ request, env, params }) {
         categoryIcons:Object.fromEntries(rows(7).filter(x=>x.icon).map(x=>[x.category,x.icon])),
         categoryMetadata:rows(7),
         dismissedTransfers:rows(8).map(x=>x.entry_id),
+        recurringExclusions:rows(portfolioReady ? 14 : 9).map(x=>({planId:x.plan_id,month:x.month})),
         ...(portfolioReady ? {investmentPlans:rows(9),investmentPlanHistory:rows(10),
           investmentHoldings:rows(11),fundPrices:rows(12),transferLinks:rows(13)} : {})
       })
@@ -488,6 +516,8 @@ export async function onRequest({ request, env, params }) {
       if(approved.error)return json({error:approved.error,code:approved.code},approved.status)
       const date=approved.date
       if (date > tokyoToday()) return json({error:'予定日前の固定支出は登録できません'},409)
+      if (await db.prepare('SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2').bind(planId,scheduledMonth).first())
+        return json({error:'この月は候補から除外されています。除外を解除してから登録してください',code:'recurring_excluded'},409)
       const clientRequestId = 'recurring_'+plan.id.replace(/-/g,'')+'_'+scheduledMonth.replace('-','')
       if (await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())
         return json({ok:true,created:false,duplicate:true,conflict:false})
@@ -496,8 +526,9 @@ export async function onRequest({ request, env, params }) {
         SELECT ?1,'',?2,?3,?4,'毎月の固定支出（自動記録）','','expense',NULL,0,NULL,?5,?6
         WHERE NOT EXISTS (SELECT 1 FROM entries WHERE substr(date,1,7)=substr(?1,1,7)
           AND type='expense' AND merchant=?4 AND COALESCE(payment_source,'')=?6)
+        AND NOT EXISTS (SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?7 AND month=?8)
         ON CONFLICT(client_request_id) DO NOTHING`)
-        .bind(date,plan.amount,plan.category,plan.name,clientRequestId,plan.payment_source || '').run()
+        .bind(date,plan.amount,plan.category,plan.name,clientRequestId,plan.payment_source || '',planId,scheduledMonth).run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
     }
     if (a === 'entry-years' && m === 'GET') {

@@ -342,6 +342,13 @@ const editingPlanId = ref('')
 const recurringAutoWindow = computed(() => recurringReviewWindow(plans.value,currentRecurringMonth()))
 const recurringPreview = ref([])
 const recurringSelected = ref(new Set())
+const recurringExclusions = ref([])
+const recurringListOpen = ref(false)
+const recurringSwipeOpenKey = ref('')
+let recurringTouchStart = null
+const recurringExcludedRows = computed(() => recurringExclusions.value.map(item => ({
+  ...item,name:plans.value.find(plan => plan.id === item.planId)?.name || '固定費'
+})))
 const recurringKey = row => row.planId + ':' + row.month
 const selectedRecurring = computed(() => recurringPreview.value.filter(row => !row.conflict && recurringSelected.value.has(recurringKey(row))))
 function toggleRecurringSelection(row, checked) {
@@ -356,6 +363,7 @@ function beginEditPlan(item) {
   plan.value = {...item, paymentSource:item.paymentSource || '現金',startMonth:item.startMonth || currentRecurringMonth()}
   recurringPreview.value = []
   recurringSelected.value = new Set()
+  recurringListOpen.value=false
 }
 function cancelPlanEdit() { editingPlanId.value = ''; plan.value = blankPlan() }
 async function togglePlanEnabled(item) {
@@ -365,6 +373,7 @@ async function togglePlanEnabled(item) {
     await props.api('recurring-plans/'+encodeURIComponent(item.id),{method:'PUT',body:JSON.stringify({...item,enabled:!item.enabled})})
     plans.value=await props.api('recurring-plans')
     recurringPreview.value=[]
+    recurringListOpen.value=false
     recurringMessage.value=item.enabled?'固定費を停止しました':'固定費を再開しました。登録前に確認してください'
     if(editingPlanId.value===item.id)cancelPlanEdit()
   }catch(e){recurringMessage.value='固定費の状態を変更できませんでした：'+e.message}
@@ -381,6 +390,15 @@ async function loadFinanceSettings() {
   if (!Array.isArray(loadedPlans) || !Array.isArray(loadedBills)) throw Error('保存データの形式が不正です')
   plans.value = loadedPlans
   bills.value = loadedBills
+  // Keep card settings usable if the additive exclusion table is not yet migrated.
+  try {
+    const excluded=await props.api('recurring-exclusions')
+    if(!Array.isArray(excluded))throw Error('除外設定の形式が不正です')
+    recurringExclusions.value=excluded
+  } catch(e) {
+    recurringExclusions.value=[]
+    recurringMessage.value='除外設定を読み込めません：'+e.message
+  }
   settingsReady.value = true
 }
 const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP')
@@ -461,10 +479,10 @@ async function downloadBackup(){
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
     const snapshot = rows.value.map(row=>({...row}))
     const before = ledgerFingerprint(snapshot)
-    const [nextPlans,nextBills,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio] = await Promise.all([
+    const [nextPlans,nextBills,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio,recurringExclusionsBackup] = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely(),props.api('recurring-exclusions')
     ])
     // Reject mixed-time exports when another device edited the ledger during metadata reads.
     if (!(await loadAll()) || ledgerFingerprint(rows.value)!==before)
@@ -474,16 +492,16 @@ async function downloadBackup(){
     const currentSettings = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely()
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely(),props.api('recurring-exclusions')
     ])
     if (JSON.stringify(currentSettings) !== JSON.stringify([
       nextPlans,nextBills,paymentSources,merchantPaymentRules,
-      customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio
+      customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio,recurringExclusionsBackup
     ])) throw Error('設定がバックアップ中に変更されました。もう一度実行してください')
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
       entries:snapshot,plans:nextPlans,bills:nextBills,
-      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,...portfolio
+      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,recurringExclusions:recurringExclusionsBackup,...portfolio
     })
     const sealed = await sealBackup(data)
     const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
@@ -509,7 +527,7 @@ async function preview(event){
     restoreRows.value=result.newRows
     restoreConflicts.value=result.conflicts
     backupPreview.value=backup
-    const settingsCount=(backup.plans?.length||0)+(backup.bills?.length||0)+(backup.paymentSources?.length||0)+(backup.customRules?.length||0)
+    const settingsCount=(backup.recurringExclusions?.length||0)+(backup.plans?.length||0)+(backup.bills?.length||0)+(backup.paymentSources?.length||0)+(backup.customRules?.length||0)
     message.value=backup.entries.length+'件 · 追加 '+restoreRows.value.length+'件 · 重複 '+restoreConflicts.value.length+'件 · 設定 '+settingsCount+'件'
   }catch(e){backupPreview.value=null;message.value='確認失敗：'+e.message}
 }
@@ -556,7 +574,7 @@ async function restore(){
   }
   const emptySettings={
     paymentSources:[],merchantPaymentRules:[],customRules:[],categories:[],
-    plans:[],bills:[],dismissedTransfers:[],categoryMetadata:[],
+    plans:[],bills:[],recurringExclusions:[],dismissedTransfers:[],categoryMetadata:[],
     investmentPlans:[],investmentPlanHistory:[],investmentHoldings:[],
     fundPrices:[],transferLinks:[],categoryIcons:{}
   }
@@ -632,25 +650,89 @@ async function addPlan(){
     cancelPlanEdit()
     recurringPreview.value=[]
     recurringSelected.value=new Set()
+    recurringListOpen.value=false
     recurringMessage.value=updated?'固定費を更新しました':'固定費を登録しました。記帳前に内容を確認してください'
   }catch(e){message.value='固定費の保存に失敗しました：'+e.message}
   finally {recurringBusy.value=false}
 }
 const recurringBusy=ref(false)
 const recurringMessage=ref('')
-function reviewRecurring() {
-  if(recurringBusy.value || !settingsReady.value || !loaded.value) {recurringMessage.value='先に全明細を更新してください';return}
-  const window=recurringReviewWindow(plans.value,currentRecurringMonth())
-  const preview=previewRecurringEntries(plans.value,rows.value,{historicalMonths:window.historicalMonths})
-  recurringPreview.value=preview
-  const current = new Date().toLocaleDateString('sv-SE').slice(0,7)
-  recurringSelected.value = new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
-  const conflicts=preview.filter(x=>x.conflict).length
-  const historical=preview.filter(row=>row.month<current).length
-  recurringMessage.value=preview.length
-    ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）'+
-      (historical?' · 過去分 '+historical+'件は現行の設定金額による推定です':'')
-    : '未記録の固定費はありません'
+async function reviewRecurring() {
+  if(recurringListOpen.value) {
+    recurringListOpen.value=false
+    recurringSwipeOpenKey.value=''
+    return
+  }
+  if(recurringBusy.value || !settingsReady.value || !loaded.value) {
+    recurringMessage.value='先に全明細を更新してください';return
+  }
+  recurringBusy.value=true
+  try {
+    const excluded=await props.api('recurring-exclusions')
+    if(!Array.isArray(excluded))throw Error('除外設定の形式が不正です')
+    recurringExclusions.value=excluded
+    const window=recurringReviewWindow(plans.value,currentRecurringMonth())
+    const preview=previewRecurringEntries(plans.value,rows.value,{historicalMonths:window.historicalMonths,excluded})
+    recurringPreview.value=preview
+    recurringListOpen.value=true
+    recurringSwipeOpenKey.value=''
+    const current=currentRecurringMonth()
+    recurringSelected.value=new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
+    const conflicts=preview.filter(x=>x.conflict).length
+    const historical=preview.filter(row=>row.month<current).length
+    recurringMessage.value=preview.length
+      ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）'+
+        (historical?' · 過去分 '+historical+'件は現行の設定金額による推定です':'')
+      : '未記帳の固定費はありません'
+  }catch(e){recurringMessage.value='未記帳分を確認できません：'+e.message}
+  finally{recurringBusy.value=false}
+}
+function onRecurringTouchStart(event,row) {
+  if(recurringBusy.value)return
+  const touch=event.touches?.[0]
+  if(touch)recurringTouchStart={key:recurringKey(row),x:touch.clientX,y:touch.clientY}
+}
+function onRecurringTouchEnd(event,row) {
+  const touch=event.changedTouches?.[0],start=recurringTouchStart
+  recurringTouchStart=null
+  if(!start || !touch || start.key!==recurringKey(row))return
+  const dx=touch.clientX-start.x,dy=touch.clientY-start.y
+  if(Math.abs(dx)<38 || Math.abs(dx)<Math.abs(dy)*1.3)return
+  if(event.cancelable)event.preventDefault()
+  recurringSwipeOpenKey.value=dx<0?start.key:''
+}
+function onRecurringTouchCancel(){recurringTouchStart=null}
+async function dismissRecurring(row) {
+  if(recurringBusy.value || !recurringListOpen.value)return
+  recurringBusy.value=true
+  try {
+    const result=await props.api('recurring-exclusions',{method:'POST',body:JSON.stringify({planId:row.planId,month:row.month})})
+    if(!result.ok)throw Error('除外できませんでした')
+    const key=recurringKey(row)
+    recurringExclusions.value=[...recurringExclusions.value.filter(item=>recurringKey(item)!==key),{planId:row.planId,month:row.month}]
+    recurringPreview.value=recurringPreview.value.filter(item=>recurringKey(item)!==key)
+    const next=new Set(recurringSelected.value)
+    next.delete(key)
+    recurringSelected.value=next
+    recurringSwipeOpenKey.value=''
+    recurringMessage.value=row.name+'（'+row.month+'）を候補から除外しました'
+  }catch(e){recurringMessage.value='候補を除外できませんでした：'+e.message}
+  finally{recurringBusy.value=false}
+}
+async function restoreRecurringExclusion(item) {
+  if(recurringBusy.value)return
+  recurringBusy.value=true
+  try {
+    const result=await props.api('recurring-exclusions',{method:'DELETE',body:JSON.stringify({planId:item.planId,month:item.month})})
+    if(!result.ok)throw Error('解除できませんでした')
+    recurringExclusions.value=recurringExclusions.value.filter(row=>recurringKey(row)!==recurringKey(item))
+    if(recurringListOpen.value) {
+      const window=recurringReviewWindow(plans.value,currentRecurringMonth())
+      recurringPreview.value=previewRecurringEntries(plans.value,rows.value,{historicalMonths:window.historicalMonths,excluded:recurringExclusions.value})
+    }
+    recurringMessage.value='除外を解除しました：'+item.month
+  }catch(e){recurringMessage.value='除外を解除できませんでした：'+e.message}
+  finally{recurringBusy.value=false}
 }
 async function applyRecurring(){
   if(recurringBusy.value || !loaded.value || !recurringPreview.value.length)return
@@ -667,6 +749,7 @@ async function applyRecurring(){
     const result=await postApprovedRecurringEntries(props.api,safe)
     recurringMessage.value='登録 '+result.created+'件 · 重複除外 '+result.conflicts+'件'
     recurringPreview.value=[]
+    recurringListOpen.value=false
     if(result.created){emit('ledger-updated');await loadAll()}
   }catch(e){recurringMessage.value='処理中断。明細を更新してください：'+e.message}
   finally{recurringBusy.value=false}
@@ -717,6 +800,8 @@ async function removePlan(id) {
     await props.api('recurring-plans/'+encodeURIComponent(id),{method:'DELETE'})
     plans.value = plans.value.filter(x=>x.id!==id)
     recurringPreview.value=[]
+    recurringListOpen.value=false
+    recurringExclusions.value=recurringExclusions.value.filter(item=>item.planId!==id)
     if(editingPlanId.value===id) cancelPlanEdit()
   } catch(e) { message.value='固定費の削除に失敗しました：'+e.message }
 }
@@ -843,11 +928,14 @@ async function removeCardBill(record) {
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <p class="recurring-window-note">開始月から未記帳分を確認</p>
     <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">10年以上前の設定は、直近10年分まで確認します。</p>
-    <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringPreview.length > 0}"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
-    <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
-    <p v-if="recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
-    <div v-if="recurringPreview.length" class="recurring-candidate-list" role="group" aria-label="未登録の固定費候補">
-      <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}">
+    <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringListOpen && recurringPreview.length > 0}"><button type="button" :disabled="recurringBusy || (!recurringListOpen && (!settingsReady || !loaded))" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
+    <button v-if="recurringListOpen && recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
+    <p v-if="recurringListOpen && recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
+    <div v-if="recurringListOpen && recurringPreview.length" id="recurring-candidate-list" class="recurring-candidate-list" role="group" aria-label="未登録の固定費候補">
+      <div v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="recurring-swipe-row" :class="{'is-open':recurringSwipeOpenKey === recurringKey(candidate)}"
+        @touchstart.passive="onRecurringTouchStart($event,candidate)" @touchend="onRecurringTouchEnd($event,candidate)" @touchcancel="onRecurringTouchCancel">
+        <button type="button" class="recurring-swipe-dismiss" :disabled="recurringBusy || recurringSwipeOpenKey !== recurringKey(candidate)" @click="dismissRecurring(candidate)">除外</button>
+        <label class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}">
         <input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" class="recurring-candidate-checkbox" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" />
         <span class="recurring-candidate-content">
           <span class="recurring-candidate-top"><strong class="recurring-candidate-name">{{candidate.name}}</strong><strong class="recurring-candidate-amount">{{yen(candidate.amount)}}</strong></span>
@@ -857,8 +945,18 @@ async function removeCardBill(record) {
             <span :class="candidate.conflict ? 'recurring-status-conflict' : recurringSelected.has(recurringKey(candidate)) ? 'recurring-status-selected' : ''">{{candidate.conflict ? '既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '登録対象' : '未選択'}}</span>
           </span>
         </span>
-      </label>
+        </label>
+        <button type="button" class="recurring-dismiss-desktop" :disabled="recurringBusy" :aria-label="candidate.name+' '+candidate.month+'を候補から除外'" @click="dismissRecurring(candidate)">除外</button>
+      </div>
     </div>
+    <p v-if="recurringListOpen && recurringPreview.length" class="recurring-swipe-tip">左にスワイプして候補から除外</p>
+    <details v-if="recurringExcludedRows.length" class="recurring-excluded-disclosure">
+      <summary>除外済み <strong>{{recurringExcludedRows.length}}件</strong></summary>
+      <div v-for="excluded in recurringExcludedRows" :key="recurringKey(excluded)" class="recurring-excluded-item">
+        <span><strong>{{excluded.name}}</strong> · {{excluded.month}}</span>
+        <button type="button" :disabled="recurringBusy" @click="restoreRecurringExclusion(excluded)">元に戻す</button>
+      </div>
+    </details>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
     <details class="recurring-list-disclosure">
       <summary class="recurring-list-summary">
@@ -1088,6 +1186,22 @@ async function removeCardBill(record) {
 .finance-panel .recurring-review-actions.has-preview{grid-template-columns:repeat(2,minmax(0,1fr))}
 .finance-panel .recurring-review-actions button{min-width:0;width:100%;padding-inline:5px;font-size:12px;line-height:1.3}
 .recurring-candidate-list{box-sizing:border-box;max-width:100%}
+.recurring-swipe-row{position:relative;overflow:hidden;min-width:0;border-radius:11px;touch-action:pan-y}
+.recurring-swipe-row .recurring-candidate{position:relative;z-index:1;box-sizing:border-box;width:100%;transition:transform .18s ease}
+.recurring-swipe-row.is-open .recurring-candidate{transform:translateX(-96px)}
+.finance-panel .recurring-swipe-dismiss{position:absolute;top:0;right:0;bottom:0;width:96px;min-height:100%;padding:8px;border:0;border-radius:0;background:#b74242;color:white;font-size:13px}
+.finance-panel .recurring-dismiss-desktop{display:none}
+.recurring-swipe-tip{margin:0;text-align:right;color:var(--muted);font-size:11px}
+.recurring-excluded-disclosure{min-width:0;padding:0 10px;border:1px solid var(--line);border-radius:11px}
+.recurring-excluded-disclosure summary{display:flex;align-items:center;gap:6px;min-height:44px;font-size:12px;cursor:pointer}
+.recurring-excluded-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.recurring-excluded-item span{min-width:0;overflow-wrap:anywhere}
+.finance-panel .recurring-excluded-item button{flex:none;min-width:84px;padding:6px;font-size:12px}
+@media(hover:hover) and (pointer:fine){
+  .recurring-swipe-row .recurring-candidate{padding-right:68px!important}
+  .finance-panel .recurring-dismiss-desktop{display:block;position:absolute;z-index:2;top:50%;right:4px;transform:translateY(-50%);padding:5px 6px;min-height:44px;font-size:11px}
+}
+@media(prefers-reduced-motion:reduce){.recurring-swipe-row .recurring-candidate{transition:none}}
 .finance-panel label.recurring-candidate{display:grid;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:10px;min-width:0;max-width:100%;margin:0;padding:10px;border:1px solid var(--line);border-radius:11px;background:var(--card);cursor:pointer}
 .finance-panel label.recurring-candidate.recurring-conflict{opacity:.72;background:var(--tint)}
 .finance-panel .recurring-candidate input.recurring-candidate-checkbox[type=checkbox]{display:block;appearance:checkbox;-webkit-appearance:checkbox;width:18px!important;height:18px!important;min-width:18px!important;max-width:18px!important;min-height:18px!important;max-height:18px!important;margin:2px 0 0!important;padding:0!important;box-sizing:border-box!important;flex:none;accent-color:var(--blue);align-self:start}

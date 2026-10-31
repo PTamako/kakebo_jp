@@ -4,7 +4,7 @@ export const backupVersion = 4
 const RESTORE_SETTING_ORDER = [
   'paymentSources','categoryMetadata','categories','categoryIcons',
   'customRules','merchantPaymentRules','bills',
-  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans'
+  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans','recurringExclusions'
 ]
 // Setting collections are restored in dependency order, with no silent fallback
 // that omits display names, sorting or portfolio data for large archives.
@@ -110,7 +110,7 @@ export function validateBackup(value) {
       throw Error('取引データに不正な値があります')
     }
   }
-  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks']
+  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks', 'recurringExclusions']
   for (const name of arrayNames) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
@@ -127,6 +127,8 @@ export function validateBackup(value) {
     Number.isInteger(x.day) && x.day >= 1 && x.day <= 31 &&
     isText(x.category) && typeof x.paymentSource === 'string' && x.paymentSource.length <= 80 &&
     month(x.startMonth) && typeof x.enabled === 'boolean'
+  const validExclusion = x => x && typeof x.planId==='string' &&
+    /^[a-zA-Z0-9-]{8,80}$/.test(x.planId) && month(x.month)
   const validBill = x => x && isText(x.name,80) && month(x.month) &&
     validDate(x.start) && validDate(x.end) && x.start <= x.end &&
     safeAmount(x.total) && safeAmount(x.count)
@@ -143,7 +145,7 @@ export function validateBackup(value) {
   const validCustom = x => x && isText(x.keyword,120) && isText(x.category,120)
   const validPaymentRule = x => x && isText(x.keyword,120) && isText(x.payment_source,80)
   for (const [name, check] of [
-    ['plans',validPlan],['bills',validBill],['paymentSources',validSource],
+    ['plans',validPlan],['recurringExclusions',validExclusion],['bills',validBill],['paymentSources',validSource],
     ['customRules',validCustom],['merchantPaymentRules',validPaymentRule],
     ['categories',x => isText(x,20)]
   ]) {

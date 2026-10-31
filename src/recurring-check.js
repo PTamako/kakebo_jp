@@ -1,5 +1,6 @@
 // Read-only review of scheduled fixed expenses. Never register a debit on app startup.
-export function previewRecurringEntries(plans, entries, {today = new Date(), historicalMonths = 0} = {}) {
+export function previewRecurringEntries(plans, entries, {today = new Date(), historicalMonths = 0, excluded = []} = {}) {
+  const excludedKeys = new Set(excluded.map(item => item.planId + ':' + item.month))
   const current = new Date(today.getFullYear(), today.getMonth(), today.getDate())
   const earliest = new Date(current.getFullYear(), current.getMonth() - Math.max(0, Math.min(119, historicalMonths)), 1)
   const existing = new Map()
@@ -24,6 +25,7 @@ export function previewRecurringEntries(plans, entries, {today = new Date(), his
       const date = [year,String(month).padStart(2,'0'),String(d).padStart(2,'0')].join('-')
       const m = year+'-'+String(month).padStart(2,'0')
       if(date > [current.getFullYear(),String(current.getMonth()+1).padStart(2,'0'),String(current.getDate()).padStart(2,'0')].join('-')) continue
+      if (excludedKeys.has(plan.id + ':' + m)) continue
       const requestId = 'recurring_'+plan.id.replace(/-/g,'')+'_'+m.replace('-','')
       if (idempotency.has(requestId)) continue
       const key = [m,plan.name,plan.paymentSource || ''].join('|')

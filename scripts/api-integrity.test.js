@@ -12,7 +12,7 @@ const approvedPost = (plan, month = '2026-10') => ({
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.recurringPlans = new Map(); this.cardBills = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
+  constructor() { this.entries = []; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.recurringPlans = new Map(); this.recurringExclusions = new Set(); this.cardBills = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
   async batch(statements) { const results=[]; for (const statement of statements) results.push(await statement.run()); return results }
   prepare(sql) {
     const db = this
@@ -28,6 +28,12 @@ class LedgerDb {
         if (sql.startsWith('SELECT name FROM payment_sources WHERE name=')) return db.paymentSources.has(this.args[0]) ? { name: this.args[0] } : null
         if (sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=')) {
           const p=db.recurringPlans.get(this.args[0]);return p?{...p,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0}:null
+        }
+        if (sql.startsWith('SELECT start_month FROM recurring_plans WHERE id=')) {
+          const p=db.recurringPlans.get(this.args[0]);return p?{start_month:p.startMonth}:null
+        }
+        if (sql.startsWith('SELECT 1 FROM recurring_candidate_exclusions')) {
+          return db.recurringExclusions.has(this.args[0]+':'+this.args[1])?{found:1}:null
         }
         if (sql.startsWith('SELECT id FROM entries WHERE client_request_id=')) return db.entries.find(e=>e.client_request_id===this.args[0])||null
         if (sql.startsWith('SELECT id FROM recurring_plans WHERE payment_source=')) {
@@ -57,6 +63,9 @@ class LedgerDb {
         if (sql.startsWith('PRAGMA table_info(payment_sources)')) return {results:[{name:'closing_day'}]}
         if (sql.startsWith('SELECT name,is_default,closing_day,') && sql.includes('FROM payment_sources')) return {results:[...db.paymentSources].map(name=>({name,is_default:0,closing_day:db.paymentClosingDays.has(name)?db.paymentClosingDays.get(name):null}))}
         if (sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans')) return {results:[...db.recurringPlans.values()].map(p=>({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0}))}
+        if (sql.startsWith('SELECT plan_id,month FROM recurring_candidate_exclusions')) {
+          return {results:[...db.recurringExclusions].map(key=>({plan_id:key.slice(0,key.lastIndexOf(':')),month:key.slice(key.lastIndexOf(':')+1)}))}
+        }
         if (sql.startsWith('SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills')) return {results:[...db.cardBills.values()].map(v=>({payment_source:v.name,bill_month:v.month,period_start:v.start,period_end:v.end,total_amount:v.total,transaction_count:v.count}))}
         if (sql.startsWith('SELECT category, icon FROM category_source')) return { results: db.icons }
         if (sql.startsWith('SELECT keyword, category FROM rules WHERE substr')) return { results: db.rules }
@@ -70,6 +79,18 @@ class LedgerDb {
           const [id,name,amount,day,category,paymentSource,startMonth,enabled]=this.args
           if (!db.recurringPlans.has(id)) {db.recurringPlans.set(id,{id,name,amount,day,category,paymentSource,startMonth,enabled:!!enabled}); return {meta:{changes:1}}}
           return {meta:{changes:0}}
+        }
+        if (sql.startsWith('INSERT OR IGNORE INTO recurring_candidate_exclusions')) {
+          const key=this.args[0]+':'+this.args[1]
+          if(db.recurringExclusions.has(key))return {meta:{changes:0}}
+          db.recurringExclusions.add(key);return {meta:{changes:1}}
+        }
+        if (sql.startsWith('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2')) {
+          db.recurringExclusions.delete(this.args[0]+':'+this.args[1]);return {meta:{changes:1}}
+        }
+        if (sql.startsWith('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1')) {
+          db.recurringExclusions=new Set([...db.recurringExclusions].filter(key=>!key.startsWith(this.args[0]+':')))
+          return {meta:{changes:1}}
         }
         if (sql.startsWith('DELETE FROM recurring_plans')) {
           db.recurringPlans.delete(this.args[0]); return {meta:{changes:1}}

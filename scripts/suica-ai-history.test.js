@@ -22,6 +22,10 @@ test('actual five-column Gemma screenshot produces exactly three separate editab
   const cards = ['楽天カード', 'Suica']
   const pay = row => paymentForDraft({merchant:row.merchant,recognized:row.paymentSource,registeredSources:cards,defaultSource:'楽天カード'})
   assert.deepEqual(rows.map(pay), ['楽天カード','Suica','Suica'])
+  // When the user explicitly selects Suica as the statement import card,
+  // even a non-station municipal transaction is assigned to that source.
+  assert.deepEqual(rows.map(row => paymentForDraft({merchant:row.merchant,
+    importSource:'Suica',registeredSources:cards,defaultSource:'楽天カード'})), ['Suica','Suica','Suica'])
 })
 
 test('station merchants still respect personal card rules and avoid unregistered Suica', () => {

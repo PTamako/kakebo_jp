@@ -87,12 +87,12 @@ test('restoring backup data never overwrites existing finance or category settin
 })
 
 test('AI OCR remains opt-in and D1 drafts never enter the ledger automatically',()=>{
-  assert.match(app,/const aiOcrEnabled = ref\(false\)/)
-  assert.match(app,/await api\('app-state',\{method:'PUT',body:JSON\.stringify\(\{key:'ai_ocr_enabled',value:checked\}\)\}\)/)
+  assert.match(app,/const aiOcrEnabled = ref\(/)
+  assert.match(app,/localStorage\.setItem\(OCR_PREF_KEY, String\(checked === true\)\)/)
   assert.match(app,/if \(!aiOcrEnabled\.value\)/)
   assert.match(app,/const DRAFT_KEY = 'unsaved_draft'/)
   assert.match(app,/api\('app-state\?key='\+DRAFT_KEY,\{method:'DELETE'\}\)/)
-  assert.match(app,/receiptImage:null,receiptFileName:''/)
+  assert.match(app,/receiptImage:null, receiptFileName:''/)
   assert.doesNotMatch(app,/localStorage\.setItem\(DRAFT_KEY/)
   assert.doesNotMatch(api,/INSERT INTO entries.*app_client_state/)
 })

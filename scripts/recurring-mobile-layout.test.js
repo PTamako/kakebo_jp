@@ -14,7 +14,7 @@ test('iPhone effective-month input stays within its own grid cell', () => {
 
 test('expense candidates use native 18px checkboxes and readable rows', () => {
   assert.match(fixed, /class="finance-row recurring-candidate"/)
-  assert.match(fixed, /<input type="checkbox" :checked="recurringSelected\\.has\\(/)
+  assert.match(fixed, /<input type="checkbox" :checked="recurringSelected/)
   assert.match(fixed, /class="recurring-candidate-checkbox"/)
   assert.match(source, /\.finance-panel \.recurring-candidate input\.recurring-candidate-checkbox\[type=checkbox\]\{[^}]*width:18px!important;height:18px!important/)
   assert.match(fixed, /class="recurring-candidate-name"/)

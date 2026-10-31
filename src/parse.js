@@ -78,7 +78,7 @@ function parseAiCsvRow(raw, rules) {
   // Missing dates must remain blank for explicit review, never default to today.
   const yenAmount = '([¥￥]?\\s*(?:\\d{1,3}(?:[,，]\\d{3})+|\\d+))'
   const fiveColumn = line.match(new RegExp('^([^,，]+)\\s*[,，]\\s*([^,，]+)\\s*[,，]\\s*(.+?)\\s*[,，]\\s*' + yenAmount + '\\s*(?:円)?\\s*[,，]\\s*([^,，]+)$'))
-  const dateToken = '(?:20\\d{2}年\\d{1,2}月\\d{1,2}日?|(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日?)'
+  const dateToken = '(?:20\\d{2}年\\d{1,2}月\\d{1,2}日?|(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日?|\\d{1,2}[/]\\d{1,2})'
   const unknown = /^(?:不明|未記載|記載なし|不詳|[-—ー])$/
   const validDate = value => unknown.test(value) || isRelativeDateToken(value) || new RegExp('^' + dateToken + '$').test(value)
   const validTime = value => unknown.test(value) || /^(?:[01]?\d|2[0-3])[:：][0-5]\d$/.test(value) || isRelativeTimeToken(value)
@@ -104,7 +104,7 @@ function parseAiCsvRow(raw, rules) {
     }
   }
   // Preserve existing dated three/four-column statement imports.
-  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日)(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*(?:円)?\s*(?:[,，]\s*(.*))?$/)
+  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日|\d{1,2}\/\d{1,2})(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*(?:円)?\s*(?:[,，]\s*(.*))?$/)
   if (!m) return null
   const merchant = m[2].replace(/^QP\s*[/／]\s*/i, '').trim()
   const amount = Number(m[3].replace(/[^\d]/g, ''))

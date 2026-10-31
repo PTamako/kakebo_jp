@@ -30,6 +30,7 @@ import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, setReceiptStorageMode, configureReceiptStorageMode, clearSessionReceiptImages, countReceiptImages } from './receipt-store.js'
+import { readDeviceDraft, writeDeviceDraft } from './draft-store.js'
 
 const tab = ref('add')
 // Route the wallet's add-card action to the actual Cards subtab, even when
@@ -436,81 +437,180 @@ watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') load
 
 const recognitionMode = ref('statement')
 const entryInputMode = ref('manual')
-const aiOcrEnabled = ref(false)
+// AI OCR requires explicit opt-in on each device. Never auto-enable AI from D1.
+const OCR_PREF_KEY = 'kakeibo-ai-ocr-enabled'
+const aiOcrEnabled = ref((() => {
+  try { return localStorage.getItem(OCR_PREF_KEY) === 'true' }
+  catch { return false }
+})())
 const aiQuota = ref(null)
 async function refreshAiQuota() {
   try { aiQuota.value=await api('ai-ocr/quota') }
   catch { aiQuota.value=null }
 }
-async function setAiOcrEnabled(checked) {
+function setAiOcrEnabled(checked) {
   try {
-    await api('app-state',{method:'PUT',body:JSON.stringify({key:'ai_ocr_enabled',value:checked})})
-    aiOcrEnabled.value = checked
+    localStorage.setItem(OCR_PREF_KEY, String(checked === true))
+    aiOcrEnabled.value = checked === true
     if (checked) void refreshAiQuota()
-  } catch(e) { flash('AI OCR設定をD1に保存できませんでした：'+e.message) }
+  } catch(e) { flash('この端末にAI OCR設定を保存できませんでした：'+e.message) }
 }
-// Entering image-recognition mode always refreshes the shared D1 quota.
 watch(entryInputMode, value => { if (value === 'scan') void refreshAiQuota() })
-// Draft text and editable rows are saved in D1 (never in browser local storage).
-// Receipt image blobs remain in the existing 30-day device-only image store.
+
+// Edits are written to device IndexedDB immediately; D1 is a 30-second backup.
+// Store only serializable form fields, never receipt-image blobs.
 const draftRecoveryInfo = ref('')
 const DRAFT_KEY = 'unsaved_draft'
-let draftSaveTimer = null
+const DRAFT_SYNC_MS = 30000
+const DRAFT_TTL_MS = 7 * 86400000
 let draftHydrated = false
+let draftLocalQueue = Promise.resolve()
 let draftWriteQueue = Promise.resolve()
-function queueDraftSave(payload) {
-  // Sequence writes so a slower older request cannot overwrite a newer draft.
-  draftWriteQueue = draftWriteQueue.catch(() => {}).then(() => payload
-    ? api('app-state',{method:'PUT',body:JSON.stringify({key:DRAFT_KEY,value:payload})})
-    : api('app-state?key='+DRAFT_KEY,{method:'DELETE'}))
+let draftSyncInFlight = null
+let draftSyncInterval = null
+let draftDeviceErrorShown = false
+let draftCloudErrorShown = false
+let draftCurrentSnapshot = null
+let draftCurrentSignature = 'null'
+let draftRemoteSignature = 'null'
+
+function draftSignature(snapshot) {
+  if (!snapshot || snapshot.deleted || !Array.isArray(snapshot.forms) ||
+      !(snapshot.forms.length || String(snapshot.input || '').trim())) return 'null'
+  return JSON.stringify({
+    mode:snapshot.mode === 'scan' ? 'scan' : 'manual',
+    input:String(snapshot.input || '').slice(0,100000),
+    forms:snapshot.forms
+  })
+}
+function validDraft(snapshot) {
+  return snapshot && typeof snapshot === 'object' && Number.isFinite(Number(snapshot.updatedAt)) &&
+    Date.now() - Number(snapshot.updatedAt) < DRAFT_TTL_MS &&
+    (snapshot.deleted === true || (Array.isArray(snapshot.forms) && typeof snapshot.input === 'string'))
+}
+function snapshotDraft() {
+  const formsWithoutImages = forms.value.slice(0,150).map(form => ({
+    ...form, receiptImage:null, receiptFileName:''
+  }))
+  const draftInput = input.value.slice(0,100000)
+  return formsWithoutImages.length || draftInput.trim()
+    ? { updatedAt:Date.now(),mode:entryInputMode.value,input:draftInput,forms:formsWithoutImages }
+    : { updatedAt:Date.now(),deleted:true }
+}
+function queueDeviceDraft(snapshot) {
+  draftLocalQueue = draftLocalQueue.catch(() => {}).then(() => writeDeviceDraft(snapshot))
+  return draftLocalQueue
+}
+function persistDraftLocally() {
+  if (!draftHydrated) return Promise.resolve()
+  const snapshot=snapshotDraft()
+  const signature=draftSignature(snapshot)
+  if (signature === draftCurrentSignature) return draftLocalQueue
+  draftCurrentSnapshot=snapshot
+  draftCurrentSignature=signature
+  return queueDeviceDraft(snapshot).catch(error => {
+    if (!draftDeviceErrorShown) {
+      draftDeviceErrorShown=true
+      flash('端末への下書き保存に失敗しました：'+error.message)
+    }
+  })
+}
+function queueDraftSave(snapshot) {
+  // Ordered cloud writes stop an older response from overriding a newer backup.
+  draftWriteQueue = draftWriteQueue.catch(() => {}).then(() =>
+    snapshot && !snapshot.deleted
+      ? api('app-state',{method:'PUT',body:JSON.stringify({key:DRAFT_KEY,value:snapshot})})
+      : api('app-state?key='+DRAFT_KEY,{method:'DELETE'}))
   return draftWriteQueue
 }
-async function restoreAppState() {
-  draftHydrated = false
-  try {
-    const state = await api('app-state')
-    if (typeof state.ai_ocr_enabled === 'boolean') aiOcrEnabled.value = state.ai_ocr_enabled
-    if (typeof state.remember_device === 'boolean') rememberDevice.value = state.remember_device
-    configureReceiptStorageMode(rememberDevice.value)
-    const saved = state.unsaved_draft
-    if (saved && Date.now() - Number(saved.updatedAt) < 7 * 86400000 && Array.isArray(saved.forms)) {
-      forms.value = saved.forms.filter(f => f && typeof f === 'object' && !Array.isArray(f)).slice(0,150)
-        .map(f => ({...f,receiptImage:null,receiptFileName:''}))
-      input.value = typeof saved.input === 'string' ? saved.input.slice(0,100000) : ''
-      if (forms.value.length || input.value.trim()) {
-        entryInputMode.value = saved.mode === 'scan' ? 'scan' : 'manual'
-        draftRecoveryInfo.value = 'D1の下書きを復元しました（画像は再選択）'
+function syncDraftToD1() {
+  if (!draftHydrated || locked.value || draftCurrentSignature === draftRemoteSignature) return Promise.resolve()
+  if (draftSyncInFlight) return draftSyncInFlight
+  const signature=draftCurrentSignature
+  const snapshot=draftCurrentSnapshot
+  draftSyncInFlight=draftLocalQueue.catch(() => {}).then(() => queueDraftSave(snapshot))
+    .then(() => { draftRemoteSignature=signature; draftCloudErrorShown=false })
+    .catch(error => {
+      if (!draftCloudErrorShown) {
+        draftCloudErrorShown=true
+        flash('下書きのクラウド同期に失敗しました。端末内の下書きは保持されます：'+error.message)
       }
+    })
+    .finally(() => { draftSyncInFlight=null })
+  return draftSyncInFlight
+}
+function onDraftVisibilityChange() {
+  if (document.visibilityState === 'hidden') void syncDraftToD1()
+}
+async function restoreAppState() {
+  draftHydrated=false
+  try {
+    const state=await api('app-state')
+    if (typeof state.remember_device === 'boolean') rememberDevice.value=state.remember_device
+    configureReceiptStorageMode(rememberDevice.value)
+    const cloud=validDraft(state.unsaved_draft) ? state.unsaved_draft : null
+    let device=null
+    try { const saved=await readDeviceDraft(); device=validDraft(saved) ? saved : null }
+    catch(error) { if(!draftDeviceErrorShown){draftDeviceErrorShown=true;flash('端末の下書きを読み込めません：'+error.message)} }
+    // A device-side deletion tombstone also wins over an older cloud draft.
+    const selected=device && (!cloud || Number(device.updatedAt)>=Number(cloud.updatedAt)) ? device : cloud
+    draftCurrentSnapshot=selected
+    draftCurrentSignature=draftSignature(selected)
+    draftRemoteSignature=draftSignature(cloud)
+    if(selected && !selected.deleted && draftCurrentSignature!=='null') {
+      forms.value=selected.forms.filter(f=>f && typeof f==='object' && !Array.isArray(f)).slice(0,150)
+        .map(f=>({...f,receiptImage:null,receiptFileName:''}))
+      input.value=selected.input.slice(0,100000)
+      entryInputMode.value=selected.mode==='scan' ? 'scan':'manual'
+      draftRecoveryInfo.value=device === selected ? '端末の下書きを復元しました（画像は再選択）'
+        : 'クラウドの下書きを復元しました（画像は再選択）'
+    } else {
+      forms.value=[];input.value='';draftRecoveryInfo.value=''
+    }
+    if (selected && selected !== device) {
+      // Copy an older-device backup to local IndexedDB without touching the ledger.
+      try { await queueDeviceDraft(selected) }
+      catch(error) { if(!draftDeviceErrorShown){draftDeviceErrorShown=true;flash('端末への下書き復元に失敗しました：'+error.message)} }
     }
   } catch(error) {
-    flash('D1の設定・下書きを読み込めませんでした：'+error.message)
-    // Fail closed: never overwrite an unread remote draft with an empty default.
+    flash('下書き・保存設定を読み込めませんでした：'+error.message)
+    // Never overwrite an unread cloud draft with the default empty state.
     return
   }
   await nextTick()
-  draftHydrated = true
+  draftHydrated=true
+  if (draftSyncInterval) clearInterval(draftSyncInterval)
+  draftSyncInterval=setInterval(() => void syncDraftToD1(),DRAFT_SYNC_MS)
+  document.removeEventListener('visibilitychange',onDraftVisibilityChange)
+  document.addEventListener('visibilitychange',onDraftVisibilityChange)
 }
 async function clearLocalDraft() {
   if(!confirm('未保存の下書きを削除しますか？保存済み明細やレシート画像は残ります。'))return
-  clearTimeout(draftSaveTimer)
+  const tombstone={updatedAt:Date.now(),deleted:true}
+  try {
+    await queueDeviceDraft(tombstone)
+  } catch(error) {
+    return flash('端末の下書きを削除できませんでした：'+error.message)
+  }
+  draftHydrated=false
+  forms.value=[];input.value='';draftRecoveryInfo.value=''
+  draftCurrentSnapshot=tombstone
+  draftCurrentSignature='null'
+  draftHydrated=true
+  // Explicit deletion synchronizes now so the old D1 backup cannot revive.
   try {
     await queueDraftSave(null)
-    forms.value=[];input.value='';draftRecoveryInfo.value=''
-    flash('D1の下書きを削除しました')
-  } catch(e) { flash('D1の下書きを削除できませんでした：'+e.message) }
+    draftRemoteSignature='null'
+    flash('下書きを削除しました')
+  } catch(error) { flash('端末の下書きを削除しました。クラウド側は次回再試行します：'+error.message) }
 }
 watch([forms,input,entryInputMode], () => {
-  if (!draftHydrated) return
-  clearTimeout(draftSaveTimer)
-  draftSaveTimer = setTimeout(() => {
-    const safeForms = forms.value.slice(0,150).map(f => ({...f,receiptImage:null,receiptFileName:''}))
-    const payload = forms.value.length || input.value.trim()
-      ? {updatedAt:Date.now(),mode:entryInputMode.value,input:input.value.slice(0,100000),forms:safeForms}
-      : null
-    void queueDraftSave(payload).catch(e => flash('D1への下書き保存に失敗しました：'+e.message))
-  }, 1200)
+  if (draftHydrated) void persistDraftLocally()
 }, {deep:true})
-onUnmounted(() => { clearTimeout(draftSaveTimer) })
+onUnmounted(() => {
+  if (draftSyncInterval) clearInterval(draftSyncInterval)
+  document.removeEventListener('visibilitychange',onDraftVisibilityChange)
+})
 function recognize(mode = recognitionMode.value, append = false, referenceTime = new Date(), fromImage = false) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
@@ -743,6 +843,9 @@ async function saveAll() {
       }
       if (forms.value.length === 1) pendingReceiptImage.value = null
       forms.value.shift()
+      // Save each successful row removal locally before another request or app close.
+      await nextTick()
+      await persistDraftLocally()
       saved++
       if (f.bindPaymentRule && f.type === 'expense' && f.merchant?.trim().length >= 2 && f.paymentSource) {
         try { await api('merchant-payment-rules', { method: 'POST', body: JSON.stringify({ keyword: f.merchant.trim(), paymentSource: f.paymentSource }) }) }
@@ -759,7 +862,12 @@ async function saveAll() {
   } catch (e) {
     flash(`${saved}件を保存しました。未保存の${forms.value.length}件は入力欄に残っています：${e.message}`)
   } finally {
-    if (saved > 0) ledgerRevision.value++ // Also invalidate partial-success imports.
+    if (saved > 0) {
+      ledgerRevision.value++ // Also invalidate partial-success imports.
+      await nextTick()
+      await persistDraftLocally()
+      void syncDraftToD1() // Explicit commit may clear obsolete cloud drafts immediately.
+    }
     try { rules.value = await api('rules') } catch { /* Keep existing rules when temporarily offline. */ }
     try { await loadPaymentSettings() } catch {}
     await Promise.allSettled([load(), loadYear(), loadTransfers()])

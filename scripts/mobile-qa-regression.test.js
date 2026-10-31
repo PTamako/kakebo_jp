@@ -28,7 +28,10 @@ test('cross-month duplicate navigation selects date after month watcher resets i
   const selectDay = handler.indexOf('selectedDay.value = date')
   assert.ok(changeMonth >= 0 && flushWatchers > changeMonth)
   assert.ok(selectDay > flushWatchers && expand > flushWatchers)
-  assert.match(app, /watch\(month, async \(\) => \{ selectedDay\.value = ''; calendarExpanded\.value = false/)
+  const watcher = app.match(/watch\\(month, async \\(\\) => \\{([\\s\\S]*?)\\n\\}\\)/)?.[1] || ''
+  assert.match(watcher, /selectedDay\\.value = ''/)
+  assert.match(watcher, /calendarExpanded\\.value = false/)
+  assert.match(watcher, /selectedDay\\.value = returning\\.selectedDay/)
 })
 
 test('finance management starts loading only when tab is active and refreshes on revisit', () => {

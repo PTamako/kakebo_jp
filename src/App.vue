@@ -999,11 +999,15 @@ const annualVisibleCounts = ref({})
 const annualMonthGroups = computed(() => groupAnnualEntries(sortedDisplayEntries.value, annualVisibleCounts.value, listPageSize, entryTypeFilter.value))
 function loadMoreAnnualEntries(group) {
   annualVisibleCounts.value = { ...annualVisibleCounts.value, [group.month]: Math.min(group.count, group.items.length + listPageSize) }
+  if (editedListContextMatches()) editListReturn.value.annualCounts = { ...annualVisibleCounts.value }
 }
 watch(annualMonthGroups, groups => {
   if (annualDetailMode.value && !groups.some(g => g.month === expandedMonth.value)) expandedMonth.value = groups[0]?.month || ''
 })
-function loadMoreEntries() { visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize) }
+function loadMoreEntries() {
+  visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize)
+  if (editedListContextMatches()) editListReturn.value.visibleCount = visibleEntryCount.value
+}
 const expandedEntryDays = ref(new Set())
 const preserveOperatedDay = ref('')
 const groupedPagedEntries = computed(() => {

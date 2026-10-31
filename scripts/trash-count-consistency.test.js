@@ -72,7 +72,7 @@ test('trash heading, collapsed detail groups and empty state all require the com
   assert.match(finance,/<template v-if="trashCountReady">/)
   assert.match(finance,/v-if="trashCount === 0"/)
   assert.match(finance,/v-if="!trashCountReady && !trashCountLoading"/)
-  assert.equal((finance.match(/class="review-trash-category"/g)||[]).length,3)
+  assert.equal((finance.match(/class="review-trash-category"/g)||[]).length,4)
   assert.match(finance,/const trashCount = computed\(\(\) => trashCountReady\.value/)
 })
 

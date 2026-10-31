@@ -1,6 +1,8 @@
 <script setup>
 defineProps({
   label: { type: String, required: true },
+  restoreLabel: { type: String, default: '元に戻す' },
+  removeLabel: { type: String, default: '削除' },
   disabled: { type: Boolean, default: false }
 })
 const emit = defineEmits(['restore', 'remove'])
@@ -8,14 +10,14 @@ const emit = defineEmits(['restore', 'remove'])
 <template>
   <div class="trash-row-actions" role="group" :aria-label="label">
     <button type="button" class="trash-row-restore" :disabled="disabled"
-      :aria-label="'元に戻す：' + label" :title="'元に戻す：' + label" @click="emit('restore')">
+      :aria-label="restoreLabel + '：' + label" :title="restoreLabel + '：' + label" @click="emit('restore')">
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 11v-6m0 6h6"/><path d="M3.6 11a9 9 0 1 1 2 7"/>
       </svg>
     </button>
     <button type="button" class="trash-row-delete" :disabled="disabled"
-      :aria-label="'削除：' + label" :title="'削除：' + label" @click="emit('remove')">
+      :aria-label="removeLabel + '：' + label" :title="removeLabel + '：' + label" @click="emit('remove')">
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 6h18m-2 0-1 14H6L5 6m3 0V4h8v2m-7 4v7m6-7v7"/>

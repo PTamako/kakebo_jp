@@ -1315,22 +1315,25 @@ async function removeCardBill(record) {
           <ReviewTrashActions :label="group[0].date+' '+group[0].merchant" :disabled="trashBusy || recurringBusy" @restore="setDuplicateConfirmation(group, false)" @remove="removeReviewedTrashNotice(duplicateTrashKey(duplicateReviewSignature(group)))" />
         </div>
       </details>
-      <details v-if="reviewTrash.recurringExclusions.length || trashedRecurringPlans.length" class="review-trash-category">
-        <summary>固定費 <span>{{reviewTrash.recurringExclusions.length + trashedRecurringPlans.length}}件</span></summary>
-        <template v-if="trashedRecurringPlans.length">
-          <div class="review-trash-subheading">削除済み</div>
-          <div v-for="item in trashedRecurringPlans" :key="item.id" class="review-trash-item">
-            <span class="review-trash-text" :title="item.name+' '+yen(item.amount)">{{item.name}} · {{yen(item.amount)}} · 毎月{{item.day}}日</span>
-            <ReviewTrashActions :label="item.name" :disabled="recurringBusy || trashBusy || deletedPlanLoading" @restore="restoreDeletedPlan(item)" @remove="purgeDeletedPlan(item)" />
-          </div>
-        </template>
-        <template v-if="reviewTrash.recurringExclusions.length">
-          <div class="review-trash-subheading">除外した候補</div>
-          <div v-for="item in reviewTrash.recurringExclusions" :key="recurringTrashKey(item)" class="review-trash-item">
-            <span class="review-trash-text" :title="item.name+' '+item.month">{{item.name}} · {{item.month}}</span>
-            <ReviewTrashActions :label="item.name+' '+item.month" :disabled="recurringBusy || trashBusy" @restore="restoreRecurringExclusion(item)" @remove="removeReviewedTrashNotice(recurringTrashKey(item))" />
-          </div>
-        </template>
+      <!-- Different effects: one is a deleted whole schedule, the other
+           merely excludes a single month's unposted candidate. -->
+      <details v-if="trashedRecurringPlans.length" class="review-trash-category">
+        <summary>削除した固定費 <span>{{trashedRecurringPlans.length}}件</span></summary>
+        <p class="review-trash-category-note">固定費の登録を削除した項目です。</p>
+        <div v-for="item in trashedRecurringPlans" :key="item.id" class="review-trash-item">
+          <span class="review-trash-text" :title="item.name+' '+yen(item.amount)">{{item.name}} · {{yen(item.amount)}} · 毎月{{item.day}}日</span>
+          <ReviewTrashActions :label="item.name" restore-label="固定費設定を復元" remove-label="固定費設定を完全削除"
+            :disabled="recurringBusy || trashBusy || deletedPlanLoading" @restore="restoreDeletedPlan(item)" @remove="purgeDeletedPlan(item)" />
+        </div>
+      </details>
+      <details v-if="reviewTrash.recurringExclusions.length" class="review-trash-category">
+        <summary>記帳から除外した月 <span>{{reviewTrash.recurringExclusions.length}}件</span></summary>
+        <p class="review-trash-category-note">指定した月だけ記帳候補から除外した項目です。</p>
+        <div v-for="item in reviewTrash.recurringExclusions" :key="recurringTrashKey(item)" class="review-trash-item">
+          <span class="review-trash-text" :title="item.name+' '+item.month">{{item.name}} · {{item.month}}</span>
+          <ReviewTrashActions :label="item.name+' '+item.month" restore-label="その月の記帳候補を再表示" remove-label="確認済み一覧から削除"
+            :disabled="recurringBusy || trashBusy" @restore="restoreRecurringExclusion(item)" @remove="removeReviewedTrashNotice(recurringTrashKey(item))" />
+        </div>
       </details>
       <details v-if="reviewTrash.transferReminders.length" class="review-trash-category">
         <summary>振替の確認 <span>{{reviewTrash.transferReminders.length}}件</span></summary>
@@ -1368,6 +1371,7 @@ async function removeCardBill(record) {
 .review-trash-category[open]>summary::after{transform:rotate(180deg)}
 .review-trash-category>summary>span{margin-left:auto;font-size:12px;color:var(--muted);font-weight:500}
 .review-trash-category>summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.finance-panel .review-trash-category-note{padding:0 0 7px;margin:0;font-size:11px;line-height:1.45;color:var(--muted)}
 .review-trash-subheading{padding-top:9px;font-size:11px;font-weight:700;color:var(--muted)}
 .review-trash-panel .review-trash-count{font-size:12px;color:var(--muted);font-weight:600;margin-left:6px}
 .review-trash-item{display:flex;align-items:center;justify-content:space-between;gap:5px;min-width:0;min-height:44px;padding:1px 0;border-bottom:1px solid var(--line)}

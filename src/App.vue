@@ -390,6 +390,7 @@ let pendingEditMonthReturn = null
 watch(month, async () => {
   const returning = pendingEditMonthReturn?.month === month.value ? pendingEditMonthReturn : null
   pendingEditMonthReturn = null
+  if (!returning) editListReturn.value = null
   selectedDay.value = ''
   calendarExpanded.value = false
   swipedEntryId.value = null
@@ -397,16 +398,16 @@ watch(month, async () => {
   visibleEntryCount.value = 20
   await load()
   if (tab.value === 'list' && detailFilter.value?.period === 'month')
-    await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month', detailFilter.value.paymentMethod || '')
+    await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month', detailFilter.value.paymentMethod || '', !!returning)
   if (returning && tab.value === 'list' && month.value === returning.month) {
     selectedDay.value = returning.selectedDay
     calendarExpanded.value = returning.calendarExpanded
   }
 })
-watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year', detailFilter.value.paymentMethod || '') })
+watch(selectedYear, async () => { editListReturn.value = null; visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year', detailFilter.value.paymentMethod || '') })
 watch(tab, value => {
   if (value === 'stat' && statsPeriod.value === 'year') loadYear()
-  if (value === 'list') visibleEntryCount.value = 20
+  if (value === 'list') { editListReturn.value = null; visibleEntryCount.value = 20 }
   // Reset the vertical position on tab changes like a native app.
   window.scrollTo(0, 0)
 })
@@ -761,6 +762,8 @@ function cancelEdit() { if (!editSaving.value) { editingEntry.value = null; edit
 async function saveEdit() {
   const e = editingEntry.value
   if (!e || editSaving.value) return
+  // Record how many rows the user already loaded before async refresh resets pagination.
+  const beforeEditList = { visibleCount: visibleEntryCount.value, annualCounts: { ...annualVisibleCounts.value } }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !(Number(e.amount) > 0)) {
     flash('日付と金額を確認してください')
     return
@@ -786,6 +789,11 @@ async function saveEdit() {
     // moves, follow that record instead of unexpectedly showing all entries.
     const returnDay = selectedDay.value ? editedDay : ''
     const returnCalendarExpanded = calendarExpanded.value
+    editListReturn.value = {
+      ...beforeEditList, month: destinationMonth || month.value, selectedDay: returnDay,
+      type: entryTypeFilter.value, detail: JSON.stringify(detailFilter.value),
+      prepaid: JSON.stringify(prepaidHistoryFilter.value)
+    }
     preserveOperatedDay.value = editedDay
     editingEntry.value = null
     if (destinationMonth && destinationMonth !== month.value) {
@@ -798,7 +806,11 @@ async function saveEdit() {
     await load()
     await refreshDetailSource()
     await loadYear()
-        await loadTransfers()
+    await loadTransfers()
+    await nextTick()
+    // A later fetch can also trigger the watcher, so both paths restore the
+    // same scoped page count without revealing data from a different filter.
+    restoreEditedListPagination()
   } catch (err) { flash('更新に失敗しました：' + err.message) }
   finally { editSaving.value = false }
 }
@@ -910,6 +922,7 @@ const prepaidHistoryFilter = ref(null)
 const matchesPrepaidHistory = entry => matchesPrepaidHistoryEntry(entry, prepaidHistoryFilter.value)
 async function openPrepaidHistoryDetails(cardName,kind) {
   if (!prepaidSources.value.includes(cardName) || !['charge','usage'].includes(kind)) return
+  editListReturn.value = null
   detailRequestId++
   detailLoading.value = false
   detailFilter.value = null
@@ -939,6 +952,23 @@ const detailLoading = ref(false)
 let detailRequestId = 0
 const visibleEntryCount = ref(20)
 const listPageSize = 20
+// Preserve user-expanded list pages across a successful entry edit, but only
+// in the same month/day/filter. Explicit navigation still resets pagination.
+const editListReturn = ref(null)
+function editedListContextMatches() {
+  const saved = editListReturn.value
+  return !!saved && saved.month === month.value && saved.selectedDay === selectedDay.value
+    && saved.type === entryTypeFilter.value
+    && saved.detail === JSON.stringify(detailFilter.value)
+    && saved.prepaid === JSON.stringify(prepaidHistoryFilter.value)
+}
+function restoreEditedListPagination() {
+  if (!editedListContextMatches()) return false
+  const saved = editListReturn.value
+  visibleEntryCount.value = Math.max(visibleEntryCount.value, saved.visibleCount)
+  annualVisibleCounts.value = { ...saved.annualCounts }
+  return true
+}
 const entryMatchesType = entry => entryTypeFilter.value === 'all' ||
   (entryTypeFilter.value === 'income' && entry.type === 'income') ||
   (entryTypeFilter.value === 'expense' && entry.type !== 'income' && entry.type !== 'transfer') ||
@@ -951,6 +981,7 @@ const displayEntries = computed(() => {
   return narrowed.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
 })
 function setEntryTypeFilter(value) {
+  editListReturn.value = null
   prepaidHistoryFilter.value = null
   detailRequestId++
   detailLoading.value = false
@@ -968,11 +999,15 @@ const annualVisibleCounts = ref({})
 const annualMonthGroups = computed(() => groupAnnualEntries(sortedDisplayEntries.value, annualVisibleCounts.value, listPageSize, entryTypeFilter.value))
 function loadMoreAnnualEntries(group) {
   annualVisibleCounts.value = { ...annualVisibleCounts.value, [group.month]: Math.min(group.count, group.items.length + listPageSize) }
+  if (editedListContextMatches()) editListReturn.value.annualCounts = { ...annualVisibleCounts.value }
 }
 watch(annualMonthGroups, groups => {
   if (annualDetailMode.value && !groups.some(g => g.month === expandedMonth.value)) expandedMonth.value = groups[0]?.month || ''
 })
-function loadMoreEntries() { visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize) }
+function loadMoreEntries() {
+  visibleEntryCount.value = Math.min(sortedDisplayEntries.value.length, visibleEntryCount.value + listPageSize)
+  if (editedListContextMatches()) editListReturn.value.visibleCount = visibleEntryCount.value
+}
 const expandedEntryDays = ref(new Set())
 const preserveOperatedDay = ref('')
 const groupedPagedEntries = computed(() => {
@@ -999,8 +1034,9 @@ function toggleEntryDay(date) {
   expandedEntryDays.value = expandedEntryDays.value.has(date) ? new Set() : new Set([date])
 }
 watch([displayEntries, detailFilter, selectedDay], () => {
-  annualVisibleCounts.value = {}
-  visibleEntryCount.value = 20
+  const restored = editedListContextMatches() ? editListReturn.value : null
+  annualVisibleCounts.value = restored ? { ...restored.annualCounts } : {}
+  visibleEntryCount.value = restored ? Math.max(20, restored.visibleCount) : 20
   const days = [...new Set(displayEntries.value.map(entry => String(entry.date || '').slice(0, 10)).filter(Boolean))].sort((a, b) => b.localeCompare(a))
   const today = new Date().toLocaleDateString('sv-SE')
   const operatedDay = preserveOperatedDay.value
@@ -1008,7 +1044,7 @@ watch([displayEntries, detailFilter, selectedDay], () => {
   expandedEntryDays.value = new Set(defaultDay ? [defaultDay] : [])
   if (operatedDay && days.includes(operatedDay)) {
     const index = sortedDisplayEntries.value.findIndex(entry => String(entry.date || '').slice(0, 10) === operatedDay)
-    visibleEntryCount.value = Math.max(20, index + 1)
+    visibleEntryCount.value = Math.max(visibleEntryCount.value, 20, index + 1)
   }
   if (!operatedDay || days.includes(operatedDay)) preserveOperatedDay.value = ''
 }, { deep: true })
@@ -1034,7 +1070,8 @@ async function fetchPeriodDetailRows(period, requestId = null) {
   }
   return rows
 }
-async function openCategoryDetails(category, type, period, paymentMethod = '') {
+async function openCategoryDetails(category, type, period, paymentMethod = '', preserveEditContext = false) {
+  if (!preserveEditContext) editListReturn.value = null
   prepaidHistoryFilter.value = null
   detailFilter.value = { category, type, period, paymentMethod }
   entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
@@ -1061,6 +1098,7 @@ async function refreshDetailSource() {
   } catch (e) { flash('明細の再読み込みに失敗しました：' + e.message) }
 }
 function clearDetailFilter() {
+  editListReturn.value = null
   if (prepaidHistoryFilter.value) entryTypeFilter.value = 'all'
   prepaidHistoryFilter.value = null
   detailRequestId++
@@ -1116,6 +1154,7 @@ const visibleCalendarDays = computed(() => {
   return calendarDays.value.slice(start, start + 7)
 })
 function openLedgerFromNav() {
+  editListReturn.value = null
   prepaidHistoryFilter.value = null
   detailFilter.value = null
   entryTypeFilter.value = 'all'
@@ -1128,6 +1167,7 @@ function openLedgerFromNav() {
 }
 
 function toggleDay(date) {
+  editListReturn.value = null
   if (selectedDay.value === date) selectedDay.value = ''
   else selectedDay.value = date
   visibleEntryCount.value = 20

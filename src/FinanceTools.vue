@@ -1371,7 +1371,7 @@ async function removeCardBill(record) {
 .review-trash-category[open]>summary::after{transform:rotate(180deg)}
 .review-trash-category>summary>span{margin-left:auto;font-size:12px;color:var(--muted);font-weight:500}
 .review-trash-category>summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
-.review-trash-category-note{padding:0 0 7px;margin:0;font-size:11px;line-height:1.45;color:var(--muted)}
+.finance-panel .review-trash-category-note{padding:0 0 7px;margin:0;font-size:11px;line-height:1.45;color:var(--muted)}
 .review-trash-subheading{padding-top:9px;font-size:11px;font-weight:700;color:var(--muted)}
 .review-trash-panel .review-trash-count{font-size:12px;color:var(--muted);font-weight:600;margin-left:6px}
 .review-trash-item{display:flex;align-items:center;justify-content:space-between;gap:5px;min-width:0;min-height:44px;padding:1px 0;border-bottom:1px solid var(--line)}

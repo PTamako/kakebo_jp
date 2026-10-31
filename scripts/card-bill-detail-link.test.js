@@ -117,3 +117,10 @@ test('billing detail refreshes across both months after editing and manual month
   assert.match(app,/if \(requestId === detailRequestId && filter === detailFilter\.value\)/)
   assert.match(app,/if \(!returning && detailFilter\.value\?\.period === 'card-bill'\)/)
 })
+
+test('editing a charge dated in previous month retains closing-month billing context',()=>{
+  const saveEdit = app.match(/async function saveEdit\(\) \{([\s\S]*?)\n\}\n\nconst pendingTransfers/)?.[1] || ''
+  assert.match(saveEdit, /destinationMonth && destinationMonth !== month\.value && detailFilter\.value\?\.period !== 'card-bill'/)
+  assert.match(saveEdit, /await refreshDetailSource\(\)/)
+  assert.match(saveEdit, /editListReturn\.value = \{/)
+})

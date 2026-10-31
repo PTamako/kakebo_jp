@@ -225,7 +225,7 @@ async function setRememberDevice(remember) {
     // the original photos and the previous login preference unchanged.
     await setReceiptStorageMode(remember)
     try {
-      await api('app-state',{method:'PUT',body:JSON.stringify({key:'remember_device',value:remember})})
+      // The endpoint saves the D1 preference before sending the new HttpOnly cookie.
       await api('auth/remember',{method:'PUT',body:JSON.stringify({remember})})
     } catch(error) {
       // Prefer keeping existing receipts recoverable if a network save failed.

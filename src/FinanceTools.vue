@@ -61,7 +61,9 @@ async function downloadReceiptImages() {
     const blob=await receiptZip(records)
     const url=URL.createObjectURL(blob),a=document.createElement('a')
     a.href=url;a.download='kakeibo-receipts-'+new Date().toISOString().slice(0,10)+'.zip'
-    a.click();setTimeout(()=>URL.revokeObjectURL(url),30000)
+    document.body.appendChild(a)
+    a.click();a.remove()
+    setTimeout(()=>URL.revokeObjectURL(url),60000)
     receiptImagePrivacyMessage.value=records.length+'件の画像をZIPに保存しました。帳簿JSONとは別に保管してください'
   }catch(e){receiptImagePrivacyMessage.value='画像の保存に失敗しました：'+e.message}
   finally{receiptImagesBusy.value=false}
@@ -865,7 +867,7 @@ async function removeCardBill(record) {
       </div>
     </details>
   </article>
-  <article v-show="managementTab === 'cards'" class="finance-panel">
+  <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">
     <h2>カード別利用額</h2>
     <div class="finance-inputs card-billing-fields">
       <label>カード<select v-model="bill.name" aria-label="カード名"><option value="" disabled>カードを選択</option><option v-for="source in creditCardSources" :key="source" :value="source">{{source}}</option></select></label>
@@ -873,13 +875,8 @@ async function removeCardBill(record) {
       <label>利用額<output class="card-usage-total" aria-live="polite">{{loaded && bill.name && cardPeriod ? yen(cardTotal) : "—"}}</output></label>
     </div>
     <p v-if="!loaded">全明細を更新してください。</p>
-    <div v-else-if="bill.name && cardPeriod" class="finance-row">
-      <strong>{{bill.name}} · {{bill.month}}締め</strong><span>{{cardPeriod.start}} ～ {{cardPeriod.end}}</span>
-      <strong>{{yen(cardTotal)}}</strong>
-      <span>{{cardTransactions.length}}件の利用（資産移動を含む）</span>
-    </div>
-    <p v-else>カードと締め月を選択してください。</p>
-    <button type="button" :disabled="!settingsReady || !loaded || !isCreditCard(bill.name) || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
+    <p v-else-if="bill.name && cardPeriod" class="card-billing-period">{{cardPeriod.start}} ～ {{cardPeriod.end}} · {{cardTransactions.length}}件（資産移動を含む）</p>
+    <button v-if="bill.name" type="button" :disabled="!settingsReady || !loaded || !isCreditCard(bill.name) || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
     <div v-if="selectedSavedBill" class="finance-saved-bill">
       <div class="finance-saved-bill-text"><span class="finance-saved-bill-caption">保存済みの請求額 · {{selectedSavedBill.month}}</span><strong>{{yen(selectedSavedBill.total)}}</strong><span v-if="savedBillDifference !== null" role="status">{{savedBillDifference === 0 ? '現在の明細と一致' : '現在の明細との差額：'+yen(savedBillDifference)+'（再保存すると更新）'}}</span></div>
       <button type="button" class="finance-compact-action" @click="removeCardBill(selectedSavedBill)" :aria-label="selectedSavedBill.month+' の保存済み請求額を削除'">削除</button>
@@ -913,16 +910,24 @@ async function removeCardBill(record) {
       <p>端末保存・30日（明細は保持）</p>
       <div class="finance-actions device-receipt-actions">
         <button type="button" :disabled="receiptImagesBusy" @click="refreshLocalReceiptCount">{{receiptImagesBusy ? '確認中…' : '件数を更新'}}</button>
-        <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">画像ZIPを保存</button>
         <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
       </div>
       <p v-if="receiptImagePrivacyMessage" role="status">{{receiptImagePrivacyMessage}}</p>
     </div>
   </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
+  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="$event.target.open && refreshLocalReceiptCount()">
     <summary>バックアップ・復元</summary>
     <p>帳簿・設定をJSON保存（レシート画像は対象外）</p>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
+    <div class="backup-receipt-group">
+      <div class="device-privacy-row">
+        <strong>レシート画像（端末内）</strong>
+        <span class="device-privacy-count">{{localReceiptCount === null ? '確認中…' : localReceiptCount + '件'}}</span>
+      </div>
+      <p>30日間保存・帳簿JSONとは別に保存</p>
+      <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像をZIP保存</button>
+      <p v-if="receiptImagePrivacyMessage" role="status">{{receiptImagePrivacyMessage}}</p>
+    </div>
     <div v-if="backupPreview" class="restore-preview">
       <p>追加 {{restoreRows.length}}件 · 重複候補 {{restoreConflicts.length}}件（既存データは保持）</p>
       <details v-if="restoreConflicts.length"><summary>重複候補を確認（{{restoreConflicts.length}}件）</summary><p v-for="e in restoreConflicts.slice(0,30)" :key="e.backupIndex">{{e.date}} · {{e.merchant || e.category}} · {{yen(e.amount)}} · {{e.payment_source || '未設定'}}</p><p v-if="restoreConflicts.length>30">30件まで表示</p></details>
@@ -1003,7 +1008,7 @@ async function removeCardBill(record) {
 .device-privacy-row strong{font-size:14px}
 .device-privacy-count{font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
 .device-receipt-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
-.device-receipt-actions .device-receipt-clear{grid-column:1/-1}
+.device-receipt-actions .device-receipt-clear{grid-column:auto}
 .device-privacy-panel .device-receipt-clear{color:var(--blue-dark);background:var(--card)}
 @media(max-width:360px){.device-privacy-panel .device-receipt-actions button{font-size:12px;padding-inline:5px}}
 
@@ -1057,10 +1062,23 @@ async function removeCardBill(record) {
 </style>
 
 <style scoped>
-/* Mobile-only: keep card and closing month readable, with the total on its own row. */
+/* Mobile: card selector is full width; closing month and usage share a row. */
 @media (max-width: 520px) {
-  .card-billing-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .card-billing-fields > label:last-child { grid-column: 1 / -1; }
-  .card-billing-fields .card-usage-total { font-size: 15px; padding-inline: 10px; }
+  .card-billing-fields {
+    display:grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap:10px;
+    align-items:end;
+  }
+  .card-billing-fields > label:first-child {grid-column:1 / -1}
+  .card-billing-fields > label:nth-child(2) {grid-column:1}
+  .card-billing-fields > label:nth-child(3) {grid-column:2}
+  .card-billing-fields .card-closing-month {min-width:0;padding-inline:5px!important;font-size:14px!important}
+  .card-billing-fields .card-usage-total {font-size:15px;padding-inline:10px}
 }
+.card-billing-panel .card-billing-period{font-size:12px;color:var(--muted);line-height:1.45}
+.backup-receipt-group{display:grid;gap:8px;min-width:0;padding-top:12px;border-top:1px solid var(--line)}
+.backup-receipt-group .device-privacy-row{align-items:center}
+.backup-receipt-group>button{width:100%;min-height:44px}
+
 </style>

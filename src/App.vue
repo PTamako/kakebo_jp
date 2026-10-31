@@ -222,10 +222,17 @@ async function setRememberDevice(remember) {
     // Copy images to their new storage first. A quota failure keeps both
     // the original photos and the previous login preference unchanged.
     await setReceiptStorageMode(remember)
-    await api('app-state',{method:'PUT',body:JSON.stringify({key:'remember_device',value:remember})})
+    try {
+      await api('app-state',{method:'PUT',body:JSON.stringify({key:'remember_device',value:remember})})
+      await api('auth/remember',{method:'PUT',body:JSON.stringify({remember})})
+    } catch(error) {
+      // Prefer keeping existing receipts recoverable if a network save failed.
+      try { await setReceiptStorageMode(!remember) } catch {}
+      throw error
+    }
     rememberDevice.value=remember
-    flash('レシート画像の保存設定をD1に保存しました')
-  }catch(error){flash('保存方法を変更できませんでした。画像と元の設定は保持しています：'+error.message)}
+    flash('保存設定をD1に保存しました')
+  }catch(error){flash('保存方法を変更できませんでした。画像は確認してください：'+error.message)}
 }
 const locked = ref(sessionStorage.getItem('kakeibo-logged-out') === '1')
 async function signIn(code) {

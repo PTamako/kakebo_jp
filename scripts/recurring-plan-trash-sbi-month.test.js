@@ -87,6 +87,7 @@ test('new backup and staged restore preserve archived plans without overwriting 
   assert.match(finance,/archivedPlans:archivedPlansBackup\.map/)
   assert.match(backup,/['"]archivedPlans['"]/)
   assert.match(restore,/for\(const plan of archive\.archivedPlans\|\|\[\]\)/)
-  assert.match(restore,/if\(await db\.prepare\('SELECT 1 FROM recurring_plans WHERE id=\?1'\)\.bind\(plan\.id\)\.first\(\)\) continue/)
+  assert.match(restore,/incomingActivePlanIds\.has\(plan\.id\)/)
+  assert.match(restore,/await db\.prepare\('SELECT 1 FROM recurring_plans WHERE id=\?1'\)\.bind\(plan\.id\)\.first\(\)/)
   assert.match(restore,/INSERT OR IGNORE INTO recurring_plan_trash\(plan_id\) SELECT \?1/)
 })

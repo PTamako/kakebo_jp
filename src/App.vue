@@ -526,12 +526,15 @@ function queueDraftSave(snapshot) {
   draftWriteQueue = draftWriteQueue.catch(() => {}).then(() =>
     snapshot && !snapshot.deleted
       ? api('app-state',{method:'PUT',body:JSON.stringify({key:DRAFT_KEY,value:snapshot})})
-      : api('app-statasync function syncDraftToD1() {
+      : api('app-state?key='+DRAFT_KEY,{method:'DELETE'}))
+  return draftWriteQueue
+}
+async function syncDraftToD1() {
   if (!draftHydrated || locked.value) return
   if (draftSyncInFlight) return draftSyncInFlight
   draftSyncInFlight=(async()=>{
     try {
-      // Offline startup must not blindly overwrite an unread cloud backup.
+      // Recover connectivity before writing over a cloud state we never read.
       if (!draftRemoteKnown) {
         const state=await api('app-state')
         const cloud=validDraft(state.unsaved_draft) ? state.unsaved_draft : null
@@ -539,10 +542,10 @@ function queueDraftSave(snapshot) {
         draftRemoteKnown=true
         draftCloudConflictTimestamp=Number(cloud?.updatedAt || 0)
       }
-      if(draftCloudConflictTimestamp > Number(draftCurrentSnapshot?.updatedAt || 0)) {
+      if (draftCloudConflictTimestamp > Number(draftCurrentSnapshot?.updatedAt || 0)) {
         if (!draftCloudErrorShown) {
           draftCloudErrorShown=true
-          flash('クラウドに新しい下書きがあります。安全のため同期を停止しました。再ログインして確認してください')
+          flash('クラウドに新しい下書きがあります。再ログインして確認してください')
         }
         return
       }
@@ -563,9 +566,6 @@ function queueDraftSave(snapshot) {
   })()
   try { await draftSyncInFlight } finally { draftSyncInFlight=null }
 }
-y(() => { draftSyncInFlight=null })
-  return draftSyncInFlight
-}
 function onDraftVisibilityChange() {
   if (document.visibilityState === 'hidden') void syncDraftToD1()
 }
@@ -581,8 +581,7 @@ async function restoreAppState() {
     cloud=validDraft(state.unsaved_draft) ? state.unsaved_draft : null
     draftRemoteKnown=true
   } catch(error) {
-    // Offline PWA must still recover IndexedDB. Cloud writes remain blocked
-    // until the existing backup can be read and compared after reconnecting.
+    // Keep IndexedDB usable when the user opens the PWA offline.
     flash('クラウドに接続できません。端末に保存した下書きを復元します：'+error.message)
   }
   let device=null

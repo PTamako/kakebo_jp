@@ -168,18 +168,21 @@ export async function onRequest({ request, env, params }) {
         }
         if (m === 'PUT') {
           const body = await request.json().catch(() => null)
-          const keys = body?.keys
-          if (typeof body?.active !== 'boolean' || !Array.isArray(keys) || !keys.length ||
-              keys.length > 5000 || keys.some(key => !validNoticeKey(key)))
+          const add = body?.add, remove = body?.remove
+          if (!Array.isArray(add) || !Array.isArray(remove) || !add.length && !remove.length ||
+              add.length + remove.length > 5000 || [...add,...remove].some(key => !validNoticeKey(key)))
             return json({error:'確認状態の更新内容を確認してください'},400)
-          const unique = [...new Set(keys)]
-          // Chunk for Cloudflare D1 query limits, without touching entries.
-          for (let i = 0; i < unique.length; i += 100) {
-            await db.batch(unique.slice(i,i+100).map(key => body.active
-              ? db.prepare('INSERT OR IGNORE INTO review_notice_states(notice_key) VALUES(?1)').bind(key)
-              : db.prepare('DELETE FROM review_notice_states WHERE notice_key=?1').bind(key)))
-          }
-          return json({ok:true,count:unique.length})
+          const toAdd = [...new Set(add)], toRemove = [...new Set(remove)]
+          if (toAdd.some(key => toRemove.includes(key)))
+            return json({error:'確認状態の更新内容が競合しています'},400)
+          const operations = [
+            ...toRemove.map(key => db.prepare('DELETE FROM review_notice_states WHERE notice_key=?1').bind(key)),
+            ...toAdd.map(key => db.prepare('INSERT OR IGNORE INTO review_notice_states(notice_key) VALUES(?1)').bind(key))
+          ]
+          // Each D1 batch is transactional. Only user-confirmed notification keys change.
+          for (let i = 0; i < operations.length; i += 100)
+            await db.batch(operations.slice(i,i+100))
+          return json({ok:true,count:operations.length})
         }
       } catch (error) {
         if (/no such table: review_notice_states/i.test(String(error)))

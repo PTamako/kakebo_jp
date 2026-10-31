@@ -186,7 +186,12 @@ export async function onRequest({ request, env, params }) {
       const allowed = new Set(['theme','remember_device','ai_ocr_enabled','fx_currency','unsaved_draft'])
       try {
         if (m === 'GET') {
-          const {results} = await db.prepare('SELECT state_key,value_json FROM app_client_state').all()
+          const selectedKey = url.searchParams.get('key')
+          if (selectedKey && !allowed.has(selectedKey)) return json({error:'取得する設定を確認してください'},400)
+          const query = selectedKey
+            ? db.prepare('SELECT state_key,value_json FROM app_client_state WHERE state_key=?1').bind(selectedKey)
+            : db.prepare('SELECT state_key,value_json FROM app_client_state')
+          const {results} = await query.all()
           const state = {}
           for (const entry of results) {
             if (!allowed.has(entry.state_key)) continue

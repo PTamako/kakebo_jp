@@ -16,9 +16,9 @@ const store = () => {
 
 test('trash shows three categories, previous sections do not show confirmed or excluded rows',()=>{
   assert.ok(finance.includes('<summary>ゴミ箱'))
-  assert.ok(finance.includes('<h3>重複確認</h3>'))
-  assert.ok(finance.includes('<h3>固定費の除外</h3>'))
-  assert.ok(finance.includes('<h3>振替の確認</h3>'))
+  assert.ok(finance.includes('<summary>重複確認 <span>'))
+  assert.ok(finance.includes('<summary>固定費 <span>'))
+  assert.ok(finance.includes('<summary>振替の確認 <span>'))
   assert.ok(!finance.includes('<summary>除外済み'))
   assert.ok(!finance.includes('<summary>確認済み'))
   assert.ok(finance.includes('setDuplicateConfirmation(group, true)'))
@@ -50,7 +50,7 @@ test('trash archiving is per exact group, plan-month and transfer ID',()=>{
   assert.equal(transfers[0].transfer_applied,1)
 })
 
-test('clear keeps the excluded plan-month and transfer dismissed flags intact',()=>{
+test('clear archives reviewed notifications but explicitly purges previously deleted fixed-expense settings',()=>{
   const body=finance.match(/function emptyReviewTrash\(\) \{([\s\S]*?)\n\}/)?.[1]
   assert.ok(body)
   assert.ok(body.includes('saveArchivedTrash(next)'))
@@ -58,9 +58,9 @@ test('clear keeps the excluded plan-month and transfer dismissed flags intact',(
   assert.ok(body.includes('duplicateTrashKey('))
   assert.ok(body.includes('recurringTrashKey('))
   assert.ok(body.includes('transferTrashKey('))
-  assert.ok(!body.includes('props.api('))
-  assert.ok(!body.includes('DELETE'))
-  assert.ok(finance.includes('空にしても明細・固定費の除外・振替の通知設定は残ります。'))
+  assert.ok(body.includes("api('recurring-plans/'"))
+  assert.ok(body.includes("method:'DELETE'"))
+  assert.ok(finance.includes('削除済み固定費は完全削除'))
 })
 
 test('transfer reminder GET details and DELETE restoration use only dismissed-reminder table',()=>{
@@ -110,4 +110,14 @@ test('invalid trash keys and storage errors fail without deleting anything',()=>
   const good=store()
   assert.equal(saveArchivedTrash(new Set(['t:1']),good),true)
   assert.deepEqual([...readArchivedTrash(good)],['t:1'])
+})
+
+test('category detail groups collapse independently, with archive and excluded months sharing fixed-expense group',()=>{
+  assert.match(finance,/<details v-if="reviewTrash\.duplicateGroups\.length" class="review-trash-category">/)
+  assert.match(finance,/<details v-if="reviewTrash\.recurringExclusions\.length \|\| trashedRecurringPlans\.length" class="review-trash-category">/)
+  assert.match(finance,/<details v-if="reviewTrash\.transferReminders\.length" class="review-trash-category">/)
+  assert.match(finance,/class="review-trash-subheading">削除済み/)
+  assert.match(finance,/class="review-trash-subheading">除外した候補/)
+  assert.match(finance,/@click="restoreDeletedPlan\(item\)"/)
+  assert.match(finance,/@click="restoreRecurringExclusion\(item\)"/)
 })

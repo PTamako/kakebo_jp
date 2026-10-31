@@ -259,9 +259,15 @@ async function logout() {
   if(!rememberDevice.value)clearSessionReceiptImages()
   sessionStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
-  if (oldSession) {
-    try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'x-session': oldSession } }) }
-    catch { /* Device is logged out locally even when offline. */ }
+  // Cookie-only sessions must also be revoked, even with no in-tab token.
+  // Do not leave a valid persistent HttpOnly cookie after an explicit logout.
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: oldSession ? { 'x-session': oldSession } : {}
+    })
+  } catch {
+    flash('サーバー側のログアウトを確認できませんでした。接続を確認してください')
   }
 }
 let loginPromise = null

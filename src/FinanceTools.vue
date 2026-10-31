@@ -2,7 +2,7 @@
 import { ref, computed, inject, onMounted, watch } from 'vue'
 import { sortOtherLast } from './category-sort.js'
 import { findLedgerDuplicateGroups, duplicateReviewSignature, readConfirmedDuplicateGroups, saveConfirmedDuplicateGroups } from './duplicate-review.js'
-import { duplicateTrashKey, recurringTrashKey, readArchivedTrash, saveArchivedTrash, visibleReviewedTrash } from './review-trash.js'
+import { duplicateTrashKey, recurringTrashKey, transferTrashKey, readArchivedTrash, saveArchivedTrash, visibleReviewedTrash } from './review-trash.js'
 import AmountInput from './AmountInput.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
@@ -635,26 +635,64 @@ const confirmedDuplicateKeys = ref(readConfirmedDuplicateGroups())
 const archivedTrashKeys = ref(readArchivedTrash())
 const trashMessage = ref('')
 const trashBusy = ref(false)
+const dismissedTransferTrash = ref([])
+const transferTrashLoading = ref(false)
+const transferTrashLoaded = ref(false)
+async function loadTransferTrash() {
+  if (transferTrashLoading.value) return
+  transferTrashLoading.value = true
+  try {
+    const details = await props.api('dismissed-transfer-reminders?details=1')
+    if (!Array.isArray(details)) throw Error('一覧の形式を確認できません')
+    dismissedTransferTrash.value = details
+    transferTrashLoaded.value = true
+  } catch (e) {
+    trashMessage.value = '振替の履歴を読み込めませんでした：' + e.message
+    transferTrashLoaded.value = false
+  } finally { transferTrashLoading.value = false }
+}
+async function restoreTransferReminder(item) {
+  const id = Number(item?.id)
+  if (transferTrashLoading.value || !Number.isSafeInteger(id) || id <= 0) return
+  transferTrashLoading.value = true
+  try {
+    const result = await props.api('dismissed-transfer-reminders', {method:'DELETE',body:JSON.stringify({entryId:id})})
+    if (!result.ok) throw Error('通知を元に戻せませんでした')
+    dismissedTransferTrash.value = dismissedTransferTrash.value.filter(x => Number(x.id) !== id)
+    const key = transferTrashKey(item)
+    if (archivedTrashKeys.value.has(key)) {
+      const next = new Set(archivedTrashKeys.value)
+      next.delete(key)
+      if (saveArchivedTrash(next)) archivedTrashKeys.value = next
+    }
+    if (appContext?.loadTransfers) await appContext.loadTransfers()
+    trashMessage.value = '振替の通知を元に戻しました'
+  } catch(e) { trashMessage.value = '振替の通知を戻せませんでした：' + e.message }
+  finally { transferTrashLoading.value = false }
+}
 const pendingDuplicates = computed(() => duplicates.value.filter(group =>
   !confirmedDuplicateKeys.value.has(duplicateReviewSignature(group))))
 const confirmedDuplicates = computed(() => duplicates.value.filter(group =>
   confirmedDuplicateKeys.value.has(duplicateReviewSignature(group))))
 const reviewTrash = computed(() => visibleReviewedTrash(
-  confirmedDuplicates.value, recurringExcludedRows.value, archivedTrashKeys.value, duplicateReviewSignature))
-const trashCount = computed(() => reviewTrash.value.duplicateGroups.length + reviewTrash.value.recurringExclusions.length)
+  confirmedDuplicates.value, recurringExcludedRows.value, dismissedTransferTrash.value,
+  archivedTrashKeys.value, duplicateReviewSignature))
+const trashCount = computed(() => reviewTrash.value.duplicateGroups.length +
+  reviewTrash.value.recurringExclusions.length + reviewTrash.value.transferReminders.length)
 const duplicateReviewMessage = ref('')
 function emptyReviewTrash() {
   if (!trashCount.value || trashBusy.value || recurringBusy.value) return
-  if (!confirm('ゴミ箱の' + trashCount.value + '件を消去しますか？明細は削除せず、重複確認・固定費の除外設定は維持します。')) return
+  if (!confirm('ゴミ箱の' + trashCount.value + '件を消去しますか？明細・固定費の除外・振替の通知設定は変更しません。')) return
   const next = new Set(archivedTrashKeys.value)
   for (const group of reviewTrash.value.duplicateGroups) next.add(duplicateTrashKey(duplicateReviewSignature(group)))
   for (const item of reviewTrash.value.recurringExclusions) next.add(recurringTrashKey(item))
+  for (const item of reviewTrash.value.transferReminders) next.add(transferTrashKey(item))
   if (!saveArchivedTrash(next)) {
     trashMessage.value = 'ゴミ箱の更新結果を保存できませんでした'
     return
   }
   archivedTrashKeys.value = next
-  trashMessage.value = 'ゴミ箱を空にしました（除外設定・明細は保持）'
+  trashMessage.value = 'ゴミ箱を空にしました（明細・通知設定は保持）'
 }
 function setDuplicateConfirmation(group, isConfirmed) {
   const key = duplicateReviewSignature(group)
@@ -1134,10 +1172,11 @@ async function removeCardBill(record) {
 
     <p v-if="duplicateReviewMessage" class="duplicate-review-message" role="status">{{duplicateReviewMessage}}</p>
   </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel" @toggle="refreshDuplicateReview">
+  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel" @toggle="refreshDuplicateReview($event); if ($event.target.open) void loadTransferTrash()">
     <summary>ゴミ箱 <span v-if="trashCount" class="review-trash-count">{{trashCount}}件</span></summary>
     <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>
+      <p v-if="transferTrashLoading && !transferTrashLoaded">振替の履歴を読み込み中…</p>
       <p v-if="!trashCount">ゴミ箱は空です。</p>
       <template v-if="reviewTrash.duplicateGroups.length">
         <h3>重複確認</h3>
@@ -1153,8 +1192,15 @@ async function removeCardBill(record) {
           <button type="button" :disabled="recurringBusy" @click="restoreRecurringExclusion(item)">元に戻す</button>
         </div>
       </template>
+      <template v-if="reviewTrash.transferReminders.length">
+        <h3>振替の確認</h3>
+        <div v-for="item in reviewTrash.transferReminders" :key="transferTrashKey(item)" class="review-trash-item">
+          <span>{{item.merchant || item.note || 'SBI証券への振替'}} · {{item.transfer_date || item.date}} · {{yen(item.amount)}}</span>
+          <button type="button" :disabled="transferTrashLoading" @click="restoreTransferReminder(item)">元に戻す</button>
+        </div>
+      </template>
       <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy" @click="emptyReviewTrash">ゴミ箱を空にする</button>
-      <p v-if="trashCount" class="review-trash-note">空にしても明細と除外設定は残ります。</p>
+      <p v-if="trashCount" class="review-trash-note">空にしても明細・固定費の除外・振替の通知設定は残ります。</p>
     </template>
     <p v-if="trashMessage" role="status">{{trashMessage}}</p>
   </details>

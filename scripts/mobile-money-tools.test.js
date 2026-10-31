@@ -94,9 +94,9 @@ test('all transaction forms including edit mode use the shared currency field', 
   assert.match(field, /inputmode="decimal"/)
   assert.match(field, /env\(safe-area-inset-bottom/)
   assert.match(field, /document\.activeElement\?\.blur\(\)/)
-  assert.match(field, /appContext\.api\('app-state',\{method:'PUT'/)
-  assert.match(field, /appContext\.api\('app-state\?key=fx_currency'\)/)
-  assert.doesNotMatch(field, /localStorage\./)
+  assert.match(field, /localStorage\.setItem\(CURRENCY_PREF_KEY, selected\)/)
+  assert.match(field, /localStorage\.getItem\(CURRENCY_PREF_KEY\)/)
+  assert.doesNotMatch(field, /appContext\.api\('app-state'/)
 })
 
 test('compact iPhone bottom sheet keeps all controls accessible and touch friendly', () => {

@@ -50,21 +50,14 @@ const copyFeedback = ref('')
 let copyTimer = null
 watch([expression, taxRate, taxRounding], () => { copyFeedback.value = '' })
 const currencies = ['CNY', 'USD', 'EUR', 'KRW', 'JPY']
-const appContext = inject('kakeibo-page-context', null)
-const currency = ref('CNY')
-let currencyLoaded = false
-async function loadCurrencyPreference() {
-  if (currencyLoaded || !appContext?.api) return
+// Currency is a per-device convenience preference; it never touches D1.
+const CURRENCY_PREF_KEY = 'kakeibo-fx-currency'
+const currency = ref((() => {
   try {
-    const state = await appContext.api('app-state?key=fx_currency')
-    if (currencies.includes(state.fx_currency)) currency.value = state.fx_currency
-    // Vue watchers flush asynchronously: the server-loaded value is not a user edit.
-    await nextTick()
-    currencyLoaded = true
-  } catch (error) {
-    fxError.value = '通貨設定をD1から読み込めません：' + error.message
-  }
-}
+    const saved=localStorage.getItem(CURRENCY_PREF_KEY)
+    return currencies.includes(saved) ? saved : 'CNY'
+  } catch { return 'CNY' }
+})())
 const foreignAmount = ref('')
 const info = ref(null)
 const fxLoading = ref(false)
@@ -94,7 +87,6 @@ async function openTools() {
   lockScroll()
   await nextTick()
   closeButton.value?.focus({ preventScroll: true })
-  void loadCurrencyPreference()
 }
 function trapFocus(event) {
   const controls = [...(sheetElement.value?.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled)') || [])]
@@ -151,10 +143,8 @@ async function loadRate() {
   }
 }
 watch(currency, selected => {
-  if (currencyLoaded && appContext?.api) {
-    void appContext.api('app-state',{method:'PUT',body:JSON.stringify({key:'fx_currency',value:selected})})
-      .catch(error => { fxError.value = '通貨設定をD1に保存できません：' + error.message })
-  }
+  try { localStorage.setItem(CURRENCY_PREF_KEY, selected) }
+  catch(error) { fxError.value = 'この端末に通貨設定を保存できません：' + error.message }
   manualRate.value = false
   manualRateText.value = ''
   if (opened.value && activeTab.value === 'fx') void loadRate()

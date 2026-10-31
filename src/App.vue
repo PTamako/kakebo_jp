@@ -29,7 +29,7 @@ import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
-import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, setReceiptStorageMode, clearSessionReceiptImages, countReceiptImages } from './receipt-store.js'
+import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, setReceiptStorageMode, configureReceiptStorageMode, clearSessionReceiptImages, countReceiptImages } from './receipt-store.js'
 
 const tab = ref('add')
 // Route the wallet's add-card action to the actual Cards subtab, even when
@@ -49,16 +49,17 @@ const themes = [
   { id: 'latte', label: 'ミルクティー', color: '#b59a81' },
   { id: 'slate', label: 'スモーキーブルー', color: '#86a8bd' },
 ]
-const storedTheme = localStorage.getItem('kakeibo-theme')
+// Theme is an intentionally device-only preference. Retain the existing key.
+const storedTheme = (() => {
+  try { return localStorage.getItem('kakeibo-theme') }
+  catch { return null }
+})()
 const theme = ref(themes.some(item => item.id === storedTheme) ? storedTheme : 'pink')
 function setTheme(value) {
   if (!themes.some(item => item.id === value)) return
-  // Visual preferences are device-specific. Never update D1 for a theme change.
-  try {
-    localStorage.setItem('kakeibo-theme', value)
-    localStorage.setItem('kakeibo-theme-local-v1', '1')
-    theme.value = value
-  } catch (e) { flash('テーマを保存できませんでした：' + e.message) }
+  theme.value = value
+  try { localStorage.setItem('kakeibo-theme', value) }
+  catch(e) { flash('この端末にテーマを保存できませんでした：' + e.message) }
 }
 const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 const month = ref(currentMonth())
@@ -204,10 +205,10 @@ async function loadCategoryMetadata() {
   categoryDisplayNames.value = Object.fromEntries(rows.filter(row => row.display_name).map(row => [row.category, row.display_name]))
 }
 
-// Store only a revocable, 30-day device session; never persist the access code.
-localStorage.removeItem('token')
-const rememberDevice = ref(localStorage.getItem('kakeibo-remember-device') !== '0')
-const token = ref(sessionStorage.getItem('kakeibo-device-session') || (rememberDevice.value ? localStorage.getItem('kakeibo-device-session') : '') || '')
+// Financial data and preferences live in D1. SessionStorage holds only the
+// current tab's revocable credential; an HttpOnly cookie retains signed-in state.
+const rememberDevice = ref(true)
+const token = ref(sessionStorage.getItem('kakeibo-device-session') || '')
 async function setRememberDevice(remember) {
   if(rememberDevice.value===remember)return
   // A privacy change affects receipt photos as well as login persistence.
@@ -223,38 +224,40 @@ async function setRememberDevice(remember) {
     // Copy images to their new storage first. A quota failure keeps both
     // the original photos and the previous login preference unchanged.
     await setReceiptStorageMode(remember)
-    localStorage.setItem('kakeibo-remember-device',remember?'1':'0')
+    try {
+      await api('app-state',{method:'PUT',body:JSON.stringify({key:'remember_device',value:remember})})
+      await api('auth/remember',{method:'PUT',body:JSON.stringify({remember})})
+    } catch(error) {
+      // Prefer keeping existing receipts recoverable if a network save failed.
+      try { await setReceiptStorageMode(!remember) } catch {}
+      throw error
+    }
     rememberDevice.value=remember
-    if(remember && token.value)localStorage.setItem('kakeibo-device-session',token.value)
-    else localStorage.removeItem('kakeibo-device-session')
-    if(!remember && token.value)sessionStorage.setItem('kakeibo-device-session',token.value)
-    flash('ログインとレシート画像の保存方法を変更しました')
-  }catch(error){flash('保存方法を変更できませんでした。画像と元の設定は保持しています：'+error.message)}
+    flash('保存設定をD1に保存しました')
+  }catch(error){flash('保存方法を変更できませんでした。画像は確認してください：'+error.message)}
 }
-const locked = ref(!token.value && localStorage.getItem('kakeibo-logged-out') === '1')
+const locked = ref(sessionStorage.getItem('kakeibo-logged-out') === '1')
 async function signIn(code) {
-  const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) })
+  const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, remember: rememberDevice.value }) })
   const result = await response.json()
   if (!response.ok) throw new Error(result.error || 'アクセスコードを確認してください')
   token.value = result.session
   sessionStorage.setItem('kakeibo-device-session', result.session)
-  if(rememberDevice.value)localStorage.setItem('kakeibo-device-session', result.session)
-  localStorage.removeItem('kakeibo-logged-out')
+  sessionStorage.removeItem('kakeibo-logged-out')
   sessionStorage.removeItem('kakeibo-token')
   locked.value = false
 }
 async function logout() {
   if (busy.value || editSaving.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
   if (!confirm(rememberDevice.value
-    ? 'ログアウトしますか？未保存の入力は、この端末に下書きとして残ります。'
-    : 'ログアウトしますか？このセッション内のレシート画像は消去されます。記帳済みの明細は残ります。')) return
+    ? 'ログアウトしますか？下書きはD1に保存され、明細は保持されます。'
+    : 'ログアウトしますか？このセッション内のレシート画像は消去されます。記帳済み明細とD1の下書きは残ります。')) return
   const oldSession = token.value
   token.value = ''
-  localStorage.removeItem('kakeibo-device-session')
   sessionStorage.removeItem('kakeibo-device-session')
   sessionStorage.removeItem('kakeibo-token')
   if(!rememberDevice.value)clearSessionReceiptImages()
-  localStorage.setItem('kakeibo-logged-out', '1')
+  sessionStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
   if (oldSession) {
     try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'x-session': oldSession } }) }
@@ -273,12 +276,12 @@ async function ensureLogin() {
   try { await loginPromise } finally { loginPromise = null }
 }
 async function unlock() {
-  try { await ensureLogin(); await Promise.all([load(), loadYear(), loadTransfers()]) }
+  try { await ensureLogin(); await restoreAppState(); await Promise.all([load(), loadYear(), loadTransfers()]) }
   catch (error) { flash(error.message) }
 }
 async function api(path, opt = {}) {
-  // All requests wait for the same login; never display concurrent prompts.
-  if (!token.value) await ensureLogin()
+  // Authenticated API first tries the HttpOnly cookie if the tab session ended.
+  // On 401, ensureLogin requests the access code once for concurrent calls.
   const requestToken = token.value
   const r = await fetch('/api/' + path, {
     ...opt, headers: { ...(opt.body instanceof FormData ? {} : { 'content-type': 'application/json' }), 'x-session': requestToken, ...(opt.headers || {}) }
@@ -289,7 +292,6 @@ async function api(path, opt = {}) {
     if (rejectedSession !== requestToken) {
       rejectedSession = requestToken
       token.value = ''
-      localStorage.removeItem('kakeibo-device-session')
       sessionStorage.removeItem('kakeibo-device-session')
     }
     await ensureLogin()
@@ -380,9 +382,10 @@ async function loadYear() {
   }
 }
 onMounted(async () => {
-  cleanupReceiptImages().catch(() => {}) // Keep the existing A01 thirty-day receipt behavior unchanged.
+  cleanupReceiptImages().catch(() => {}) // Existing 30-day photo retention is unchanged.
   if (!locked.value) {
-    // Never auto-post fixed expenses on app open. User reviews the schedule in management.
+    // Recover D1 preferences and drafts before loading the ledger.
+    await restoreAppState()
     await load()
     await Promise.allSettled([loadYear(), loadTransfers()])
   }
@@ -427,54 +430,79 @@ watch(statsPeriod, value => { if (tab.value === 'stat' && value === 'year') load
 
 const recognitionMode = ref('statement')
 const entryInputMode = ref('manual')
-const aiOcrEnabled = ref(localStorage.getItem('kakeibo-ai-ocr-enabled') === '1')
+const aiOcrEnabled = ref(false)
 const aiQuota = ref(null)
 async function refreshAiQuota() {
   try { aiQuota.value=await api('ai-ocr/quota') }
   catch { aiQuota.value=null }
 }
-function setAiOcrEnabled(checked) {
-  aiOcrEnabled.value = checked
-  if (checked) void refreshAiQuota()
-  try { localStorage.setItem('kakeibo-ai-ocr-enabled', checked ? '1' : '0') }
-  catch { flash('AI OCRの設定を保存できませんでした') }
+async function setAiOcrEnabled(checked) {
+  try {
+    await api('app-state',{method:'PUT',body:JSON.stringify({key:'ai_ocr_enabled',value:checked})})
+    aiOcrEnabled.value = checked
+    if (checked) void refreshAiQuota()
+  } catch(e) { flash('AI OCR設定をD1に保存できませんでした：'+e.message) }
 }
 // Entering image-recognition mode always refreshes the shared D1 quota.
 watch(entryInputMode, value => { if (value === 'scan') void refreshAiQuota() })
-// Device-only recovery: never send unfinished drafts to D1. Receipt image blobs
-// are intentionally excluded from localStorage; the original photo stays on device.
+// Draft text and editable rows are saved in D1 (never in browser local storage).
+// Receipt image blobs remain in the existing 30-day device-only image store.
 const draftRecoveryInfo = ref('')
-const DRAFT_KEY = 'kakeibo-unsaved-draft-v1'
-function clearLocalDraft() {
+const DRAFT_KEY = 'unsaved_draft'
+let draftSaveTimer = null
+let draftHydrated = false
+let draftWriteQueue = Promise.resolve()
+function queueDraftSave(payload) {
+  // Sequence writes so a slower older request cannot overwrite a newer draft.
+  draftWriteQueue = draftWriteQueue.catch(() => {}).then(() => payload
+    ? api('app-state',{method:'PUT',body:JSON.stringify({key:DRAFT_KEY,value:payload})})
+    : api('app-state?key='+DRAFT_KEY,{method:'DELETE'}))
+  return draftWriteQueue
+}
+async function restoreAppState() {
+  draftHydrated = false
+  try {
+    const state = await api('app-state')
+    if (typeof state.ai_ocr_enabled === 'boolean') aiOcrEnabled.value = state.ai_ocr_enabled
+    if (typeof state.remember_device === 'boolean') rememberDevice.value = state.remember_device
+    configureReceiptStorageMode(rememberDevice.value)
+    const saved = state.unsaved_draft
+    if (saved && Date.now() - Number(saved.updatedAt) < 7 * 86400000 && Array.isArray(saved.forms)) {
+      forms.value = saved.forms.filter(f => f && typeof f === 'object' && !Array.isArray(f)).slice(0,150)
+        .map(f => ({...f,receiptImage:null,receiptFileName:''}))
+      input.value = typeof saved.input === 'string' ? saved.input.slice(0,100000) : ''
+      if (forms.value.length || input.value.trim()) {
+        entryInputMode.value = saved.mode === 'scan' ? 'scan' : 'manual'
+        draftRecoveryInfo.value = 'D1の下書きを復元しました（画像は再選択）'
+      }
+    }
+  } catch(error) {
+    flash('D1の設定・下書きを読み込めませんでした：'+error.message)
+    // Fail closed: never overwrite an unread remote draft with an empty default.
+    return
+  }
+  await nextTick()
+  draftHydrated = true
+}
+async function clearLocalDraft() {
   if(!confirm('未保存の下書きを削除しますか？保存済み明細やレシート画像は残ります。'))return
   clearTimeout(draftSaveTimer)
-  forms.value=[];input.value='';draftRecoveryInfo.value=''
-  try{localStorage.removeItem(DRAFT_KEY)}catch{}
-  flash('下書きを削除しました')
+  try {
+    await queueDraftSave(null)
+    forms.value=[];input.value='';draftRecoveryInfo.value=''
+    flash('D1の下書きを削除しました')
+  } catch(e) { flash('D1の下書きを削除できませんでした：'+e.message) }
 }
-try {
-  const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
-  if (saved && Date.now() - Number(saved.updatedAt) < 7 * 86400000 && Array.isArray(saved.forms)) {
-    forms.value = saved.forms.filter(f => f && typeof f === 'object' && !Array.isArray(f)).slice(0,150).map(f => ({...f,receiptImage:null,receiptFileName:''}))
-    if (typeof saved.input === 'string') input.value = saved.input.slice(0,100000)
-    if (forms.value.length || input.value.trim()) {
-      entryInputMode.value = saved.mode === 'scan' ? 'scan' : 'manual'
-      draftRecoveryInfo.value = '前回の下書きを復元しました（画像は再選択）'
-    }
-  }
-} catch { /* Invalid old draft is ignored, not sent to the API. */ }
-let draftSaveTimer = null
 watch([forms,input,entryInputMode], () => {
+  if (!draftHydrated) return
   clearTimeout(draftSaveTimer)
   draftSaveTimer = setTimeout(() => {
-    try {
-      if (!forms.value.length && !input.value.trim()) return localStorage.removeItem(DRAFT_KEY)
-      const safeForms = forms.value.slice(0,150).map(f => ({...f,receiptImage:null,receiptFileName:''}))
-      localStorage.setItem(DRAFT_KEY,JSON.stringify({
-        updatedAt:Date.now(),mode:entryInputMode.value,input:input.value.slice(0,100000),forms:safeForms
-      }))
-    } catch { /* Private browsing can disable storage; keep live draft intact. */ }
-  }, 400)
+    const safeForms = forms.value.slice(0,150).map(f => ({...f,receiptImage:null,receiptFileName:''}))
+    const payload = forms.value.length || input.value.trim()
+      ? {updatedAt:Date.now(),mode:entryInputMode.value,input:input.value.slice(0,100000),forms:safeForms}
+      : null
+    void queueDraftSave(payload).catch(e => flash('D1への下書き保存に失敗しました：'+e.message))
+  }, 1200)
 }, {deep:true})
 onUnmounted(() => { clearTimeout(draftSaveTimer) })
 function recognize(mode = recognitionMode.value, append = false, referenceTime = new Date(), fromImage = false) {

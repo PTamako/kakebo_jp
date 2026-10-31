@@ -159,8 +159,8 @@ export async function onRequest({ request, env, params }) {
       const validNoticeKey = key => typeof key === 'string' && (
         /^c:v1:[0-9a-f]{16}$/.test(key) ||
         /^d:v1:[0-9a-f]{16}$/.test(key) ||
-        /^r:[A-Za-z0-9_-]{1,80}:\\d{4}-(0[1-9]|1[0-2])$/.test(key) ||
-        /^t:[1-9]\\d{0,14}$/.test(key))
+        /^r:[A-Za-z0-9_-]{1,80}:\d{4}-(0[1-9]|1[0-2])$/.test(key) ||
+        /^t:[1-9]\d{0,14}$/.test(key))
       try {
         if (m === 'GET') {
           const {results} = await db.prepare('SELECT notice_key FROM review_notice_states ORDER BY notice_key').all()

@@ -474,6 +474,8 @@ let draftSyncInFlight = null
 let draftSyncInterval = null
 let draftDeviceErrorShown = false
 let draftCloudErrorShown = false
+let draftRemoteKnown = false
+let draftCloudConflictTimestamp = 0
 let draftCurrentSnapshot = null
 let draftCurrentSignature = 'null'
 let draftRemoteSignature = 'null'
@@ -524,23 +526,44 @@ function queueDraftSave(snapshot) {
   draftWriteQueue = draftWriteQueue.catch(() => {}).then(() =>
     snapshot && !snapshot.deleted
       ? api('app-state',{method:'PUT',body:JSON.stringify({key:DRAFT_KEY,value:snapshot})})
-      : api('app-state?key='+DRAFT_KEY,{method:'DELETE'}))
-  return draftWriteQueue
-}
-function syncDraftToD1() {
-  if (!draftHydrated || locked.value || draftCurrentSignature === draftRemoteSignature) return Promise.resolve()
+      : api('app-statasync function syncDraftToD1() {
+  if (!draftHydrated || locked.value) return
   if (draftSyncInFlight) return draftSyncInFlight
-  const signature=draftCurrentSignature
-  const snapshot=draftCurrentSnapshot
-  draftSyncInFlight=draftLocalQueue.catch(() => {}).then(() => queueDraftSave(snapshot))
-    .then(() => { draftRemoteSignature=signature; draftCloudErrorShown=false })
-    .catch(error => {
+  draftSyncInFlight=(async()=>{
+    try {
+      // Offline startup must not blindly overwrite an unread cloud backup.
+      if (!draftRemoteKnown) {
+        const state=await api('app-state')
+        const cloud=validDraft(state.unsaved_draft) ? state.unsaved_draft : null
+        draftRemoteSignature=draftSignature(cloud)
+        draftRemoteKnown=true
+        draftCloudConflictTimestamp=Number(cloud?.updatedAt || 0)
+      }
+      if(draftCloudConflictTimestamp > Number(draftCurrentSnapshot?.updatedAt || 0)) {
+        if (!draftCloudErrorShown) {
+          draftCloudErrorShown=true
+          flash('クラウドに新しい下書きがあります。安全のため同期を停止しました。再ログインして確認してください')
+        }
+        return
+      }
+      if (draftCurrentSignature === draftRemoteSignature) return
+      const signature=draftCurrentSignature
+      const snapshot=draftCurrentSnapshot
+      await draftLocalQueue.catch(() => {})
+      await queueDraftSave(snapshot)
+      draftRemoteSignature=signature
+      draftCloudErrorShown=false
+      draftCloudConflictTimestamp=0
+    } catch(error) {
       if (!draftCloudErrorShown) {
         draftCloudErrorShown=true
         flash('下書きのクラウド同期に失敗しました。端末内の下書きは保持されます：'+error.message)
       }
-    })
-    .finally(() => { draftSyncInFlight=null })
+    }
+  })()
+  try { await draftSyncInFlight } finally { draftSyncInFlight=null }
+}
+y(() => { draftSyncInFlight=null })
   return draftSyncInFlight
 }
 function onDraftVisibilityChange() {
@@ -548,38 +571,43 @@ function onDraftVisibilityChange() {
 }
 async function restoreAppState() {
   draftHydrated=false
+  draftRemoteKnown=false
+  draftCloudConflictTimestamp=0
+  let cloud=null
   try {
     const state=await api('app-state')
     if (typeof state.remember_device === 'boolean') rememberDevice.value=state.remember_device
     configureReceiptStorageMode(rememberDevice.value)
-    const cloud=validDraft(state.unsaved_draft) ? state.unsaved_draft : null
-    let device=null
-    try { const saved=await readDeviceDraft(); device=validDraft(saved) ? saved : null }
-    catch(error) { if(!draftDeviceErrorShown){draftDeviceErrorShown=true;flash('端末の下書きを読み込めません：'+error.message)} }
-    // A device-side deletion tombstone also wins over an older cloud draft.
-    const selected=device && (!cloud || Number(device.updatedAt)>=Number(cloud.updatedAt)) ? device : cloud
-    draftCurrentSnapshot=selected
-    draftCurrentSignature=draftSignature(selected)
-    draftRemoteSignature=draftSignature(cloud)
-    if(selected && !selected.deleted && draftCurrentSignature!=='null') {
-      forms.value=selected.forms.filter(f=>f && typeof f==='object' && !Array.isArray(f)).slice(0,150)
-        .map(f=>({...f,receiptImage:null,receiptFileName:''}))
-      input.value=selected.input.slice(0,100000)
-      entryInputMode.value=selected.mode==='scan' ? 'scan':'manual'
-      draftRecoveryInfo.value=device === selected ? '端末の下書きを復元しました（画像は再選択）'
-        : 'クラウドの下書きを復元しました（画像は再選択）'
-    } else {
-      forms.value=[];input.value='';draftRecoveryInfo.value=''
-    }
-    if (selected && selected !== device) {
-      // Copy an older-device backup to local IndexedDB without touching the ledger.
-      try { await queueDeviceDraft(selected) }
-      catch(error) { if(!draftDeviceErrorShown){draftDeviceErrorShown=true;flash('端末への下書き復元に失敗しました：'+error.message)} }
-    }
+    cloud=validDraft(state.unsaved_draft) ? state.unsaved_draft : null
+    draftRemoteKnown=true
   } catch(error) {
-    flash('下書き・保存設定を読み込めませんでした：'+error.message)
-    // Never overwrite an unread cloud draft with the default empty state.
-    return
+    // Offline PWA must still recover IndexedDB. Cloud writes remain blocked
+    // until the existing backup can be read and compared after reconnecting.
+    flash('クラウドに接続できません。端末に保存した下書きを復元します：'+error.message)
+  }
+  let device=null
+  try { const saved=await readDeviceDraft(); device=validDraft(saved) ? saved : null }
+  catch(error) {
+    if(!draftDeviceErrorShown){draftDeviceErrorShown=true;flash('端末の下書きを読み込めません：'+error.message)}
+  }
+  const selected=draftRemoteKnown && cloud && (!device || Number(cloud.updatedAt)>Number(device.updatedAt))
+    ? cloud : device
+  draftCurrentSnapshot=selected
+  draftCurrentSignature=draftSignature(selected)
+  draftRemoteSignature=draftRemoteKnown ? draftSignature(cloud) : 'null'
+  if(selected && !selected.deleted && draftCurrentSignature!=='null') {
+    forms.value=selected.forms.filter(f=>f && typeof f==='object' && !Array.isArray(f)).slice(0,150)
+      .map(f=>({...f,receiptImage:null,receiptFileName:''}))
+    input.value=selected.input.slice(0,100000)
+    entryInputMode.value=selected.mode==='scan' ? 'scan':'manual'
+    draftRecoveryInfo.value=selected===device ? '端末の下書きを復元しました（画像は再選択）'
+      : 'クラウドの下書きを復元しました（画像は再選択）'
+  } else {
+    forms.value=[];input.value='';draftRecoveryInfo.value=''
+  }
+  if (selected && selected !== device) {
+    try { await queueDeviceDraft(selected) }
+    catch(error) { if(!draftDeviceErrorShown){draftDeviceErrorShown=true;flash('端末への下書き復元に失敗しました：'+error.message)} }
   }
   await nextTick()
   draftHydrated=true

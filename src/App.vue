@@ -251,8 +251,12 @@ async function signIn(code) {
 async function logout() {
   if (busy.value || editSaving.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
   if (!confirm(rememberDevice.value
-    ? 'ログアウトしますか？下書きはD1に保存され、明細は保持されます。'
-    : 'ログアウトしますか？このセッション内のレシート画像は消去されます。記帳済み明細とD1の下書きは残ります。')) return
+    ? 'ログアウトしますか？下書きは端末に保存され、クラウドには定期同期されます。記帳済み明細は残ります。'
+    : 'ログアウトしますか？このセッション内のレシート画像は消去されます。下書きは端末に、記帳済み明細はD1に残ります。')) return
+  // Explicit logout is a useful synchronization boundary; the local draft
+  // remains available even if the cloud copy cannot be updated.
+  await persistDraftLocally()
+  await syncDraftToD1()
   const oldSession = token.value
   token.value = ''
   sessionStorage.removeItem('kakeibo-device-session')

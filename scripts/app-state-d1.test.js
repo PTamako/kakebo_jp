@@ -47,15 +47,15 @@ async function send(db,method='GET',body,url=stateUrl,headers={'x-session':token
   const response=await onRequest({request,env:{AUTH_TOKEN:'test',DB:db},params:{path:['app-state']}})
   return {status:response.status,body:await response.json()}
 }
-test('D1 saves OCR opt-in and drafts across PWA reinstallation',async()=>{
+test('D1 saves cloud drafts and remember-device state, never local-only preferences',async()=>{
   const db=database()
   const draft={updatedAt:Date.now(),mode:'manual',input:'試験',forms:[{date:'2026-10-30',merchant:'Suicaチャージ',amount:1000}]}
-  assert.equal((await send(db,'PUT',{key:'ai_ocr_enabled',value:true})).status,200)
+  assert.equal((await send(db,'PUT',{key:'ai_ocr_enabled',value:true})).status,400)
   assert.equal((await send(db,'PUT',{key:'remember_device',value:false})).status,200)
-  assert.equal((await send(db,'PUT',{key:'fx_currency',value:'CNY'})).status,200)
+  assert.equal((await send(db,'PUT',{key:'fx_currency',value:'CNY'})).status,400)
   assert.equal((await send(db,'PUT',{key:'unsaved_draft',value:draft})).status,200)
   // PWA reinstall has no browser storage but the D1 object remains.
-  assert.deepEqual((await send(db)).body,{ai_ocr_enabled:true,remember_device:false,fx_currency:'CNY',unsaved_draft:draft})
+  assert.deepEqual((await send(db)).body,{remember_device:false,unsaved_draft:draft})
   assert.equal((await send(db,'DELETE',null,stateUrl+'?key=unsaved_draft')).status,200)
   assert.equal('unsaved_draft' in (await send(db)).body,false)
   assert.ok(db.queries.every(q=>!/(INSERT INTO entries|UPDATE entries|DELETE FROM entries)/i.test(q)))
@@ -66,13 +66,13 @@ test('D1 app state prevents invalid and overlarge drafts without mutation',async
   assert.equal((await send(db,'PUT',{key:'unsaved_draft',value:{input:'bad',mode:'manual',forms:[]}})).status,200)
   assert.equal((await send(db,'PUT',{key:'unsaved_draft',value:{input:'x'.repeat(100001),mode:'manual',forms:[]}})).status,400)
   assert.equal((await send(db,'PUT',{key:'unknown',value:'x'})).status,400)
-  assert.equal((await send(db,'PUT',{key:'fx_currency',value:'USD'},stateUrl,{})).status,401)
+  assert.equal((await send(db,'PUT',{key:'unsaved_draft',value:{input:'private',mode:'manual',forms:[]}},stateUrl,{})).status,401)
 })
 test('HttpOnly cookie can access D1 without any persistent JavaScript browser token',async()=>{
   const db=database()
-  const result=await send(db,'PUT',{key:'fx_currency',value:'EUR'},stateUrl,{cookie:'kakeibo_session='+token})
+  const result=await send(db,'PUT',{key:'unsaved_draft',value:{updatedAt:Date.now(),mode:'manual',input:'認証済み',forms:[]}},stateUrl,{cookie:'kakeibo_session='+token})
   assert.equal(result.status,200)
-  assert.equal((await send(db,'GET',null,stateUrl,{cookie:'kakeibo_session='+token})).body.fx_currency,'EUR')
+  assert.equal((await send(db,'GET',null,stateUrl,{cookie:'kakeibo_session='+token})).body.unsaved_draft.input,'認証済み')
 })
 test('image-storage preference and cookie policy are committed together in D1',async()=>{
   const db=database()
@@ -123,18 +123,31 @@ test('missing migration cannot silently fall back to browser state',async()=>{
   assert.equal(result.status,503)
   assert.equal(result.body.code,'app_state_schema_required')
 })
-test('only device theme uses localStorage; all other reviewed modules remain D1-backed',()=>{
-  const paths=['src/FinanceTools.vue','src/AmountInput.vue','src/receipt-store.js','src/duplicate-review.js','src/review-trash.js']
+test('only theme, AI consent and FX currency use localStorage, never D1',()=>{
   const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
+  const amount=readFileSync(new URL('../src/AmountInput.vue',import.meta.url),'utf8')
   const api=readFileSync(new URL('../functions/api/[[path]].js',import.meta.url),'utf8')
   assert.match(app,/localStorage\.getItem\('kakeibo-theme'\)/)
-  assert.match(app,/localStorage\.setItem\('kakeibo-theme', value\)/)
-  assert.equal((app.match(/localStorage\./g)||[]).length,2)
-  assert.doesNotMatch(app,/key:'theme'/)
-  assert.doesNotMatch(app,/state\.theme/)
-  assert.doesNotMatch(api,/body\.key === 'theme'/)
-  for(const file of paths){
+  assert.match(app,/localStorage\.getItem\(OCR_PREF_KEY\)/)
+  assert.match(app,/localStorage\.setItem\(OCR_PREF_KEY, String\(checked === true\)\)/)
+  assert.match(amount,/localStorage\.getItem\(CURRENCY_PREF_KEY\)/)
+  assert.match(amount,/localStorage\.setItem\(CURRENCY_PREF_KEY, selected\)/)
+  assert.doesNotMatch(app,/key:'ai_ocr_enabled'|key:'fx_currency'|localStorage\.setItem\(DRAFT_KEY/)
+  assert.doesNotMatch(amount,/appContext\.api\('app-state'/)
+  assert.match(api,/new Set\(\['remember_device','unsaved_draft'\]\)/)
+  const paths=['src/FinanceTools.vue','src/receipt-store.js','src/duplicate-review.js','src/review-trash.js']
+  for (const file of paths) {
     const source=readFileSync(new URL('../'+file,import.meta.url),'utf8')
     assert.doesNotMatch(source,/\blocalStorage\b/,file)
   }
+})
+
+test('cloud D1 storage ignores legacy OCR and currency rows even if still present',async()=>{
+  const db=database()
+  db.values.set('ai_ocr_enabled','true')
+  db.values.set('fx_currency','"USD"')
+  const state=await send(db)
+  assert.equal(state.status,200)
+  assert.deepEqual(state.body,{})
+  assert.equal(db.values.size,2,'existing settings remain unmodified')
 })

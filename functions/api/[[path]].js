@@ -186,10 +186,11 @@ export async function onRequest({ request, env, params }) {
     // import legacy records, or write default investment snapshots. User-initiated writes remain available.
     // Normalized recurring plans and bills are the sole persistent stores.
     // Obsolete finance_settings is intentionally neither created nor queried.
-    // Application preferences and unsaved drafts are stored in D1, never browser local storage.
+    // D1 stores only the authenticated remember-device preference and cloud draft backup.
+    // OCR consent and FX currency are always device-local.
     // These writes cannot modify the ledger, investment holdings or scheduled expenses.
     if (a === 'app-state' && !b) {
-      const allowed = new Set(['remember_device','ai_ocr_enabled','fx_currency','unsaved_draft'])
+      const allowed = new Set(['remember_device','unsaved_draft'])
       try {
         if (m === 'GET') {
           const selectedKey = url.searchParams.get('key')
@@ -209,9 +210,7 @@ export async function onRequest({ request, env, params }) {
           const body = await request.json().catch(() => null)
           if (!allowed.has(body?.key)) return json({error:'保存項目を確認してください'},400)
           const value = body.value
-          if (body.key === 'fx_currency' && !['CNY','USD','EUR','KRW','JPY'].includes(value))
-            return json({error:'通貨設定を確認してください'},400)
-          if (['remember_device','ai_ocr_enabled'].includes(body.key) && typeof value !== 'boolean')
+          if (body.key === 'remember_device' && typeof value !== 'boolean')
             return json({error:'設定値を確認してください'},400)
           if (body.key === 'unsaved_draft' &&
               (typeof value !== 'object' || !value || Array.isArray(value) ||

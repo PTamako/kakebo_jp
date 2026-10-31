@@ -12,7 +12,7 @@ const json = (d, s = 200, extraHeaders = {}) =>
   new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extraHeaders } })
 const cookieSession = request => {
   const cookie = request.headers.get('cookie') || ''
-  const match = cookie.match(/(?:^|;\\s*)kakeibo_session=([a-f0-9]{64})(?:;|$)/)
+  const match = cookie.match(/(?:^|;\s*)kakeibo_session=([a-f0-9]{64})(?:;|$)/)
   return match?.[1] || ''
 }
 const sessionCookie = (token, remember) =>

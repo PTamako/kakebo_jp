@@ -18,10 +18,13 @@ test('each of four trash row types exposes both restore and delete icons',()=>{
     '@remove="removeReviewedTrashNotice(transferTrashKey(item))"'
   ]) assert.ok(finance.includes(action), 'missing action: '+action)
   assert.match(icons,/defineEmits\(\['restore', 'remove'\]\)/)
-  assert.match(icons,/aria-label="'元に戻す：' \+ label"/)
-  assert.match(icons,/aria-label="'削除：' \+ label"/)
+  assert.match(icons,/restoreLabel \+ '：' \+ label/)
+  assert.match(icons,/removeLabel \+ '：' \+ label/)
   assert.match(icons,/<svg aria-hidden="true"/)
   assert.equal((icons.match(/<svg aria-hidden="true"/g)||[]).length,2)
+  assert.match(finance,/remove-label="固定費設定を完全削除"/)
+  assert.match(finance,/remove-label="確認済み一覧から削除"/)
+  assert.match(finance,/restore-label="その月の記帳候補を再表示"/)
 })
 
 test('one-line compact rows truncate text and preserve accessible 44px tap targets',()=>{

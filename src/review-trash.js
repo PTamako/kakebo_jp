@@ -3,7 +3,8 @@
 const KEY = 'kakeibo-reviewed-trash-v1'
 const validKey = value => typeof value === 'string' &&
   (/^d:v1:[0-9a-f]{16}$/.test(value) ||
-   /^r:[A-Za-z0-9_-]{1,80}:\d{4}-(0[1-9]|1[0-2])$/.test(value))
+   /^r:[A-Za-z0-9_-]{1,80}:\d{4}-(0[1-9]|1[0-2])$/.test(value) ||
+   /^t:[1-9]\d{0,14}$/.test(value))
 
 export const duplicateTrashKey = signature =>
   /^v1:[0-9a-f]{16}$/.test(String(signature || '')) ? 'd:' + signature : ''
@@ -11,6 +12,11 @@ export const duplicateTrashKey = signature =>
 export const recurringTrashKey = row => {
   const id = String(row?.planId || ''), month = String(row?.month || '')
   return validKey('r:' + id + ':' + month) ? 'r:' + id + ':' + month : ''
+}
+
+export const transferTrashKey = row => {
+  const id = Number(row?.id)
+  return Number.isSafeInteger(id) && id > 0 ? 't:' + id : ''
 }
 
 export function readArchivedTrash(storage = typeof localStorage === 'undefined' ? null : localStorage) {
@@ -30,13 +36,17 @@ export function saveArchivedTrash(keys, storage = typeof localStorage === 'undef
   } catch { return false }
 }
 
-export const visibleReviewedTrash = (confirmedGroups, exclusions, archivedKeys, signatureOfGroup) => ({
+export const visibleReviewedTrash = (confirmedGroups, exclusions, transfers, archivedKeys, signatureOfGroup) => ({
   duplicateGroups: (confirmedGroups || []).filter(group => {
     const key = duplicateTrashKey(signatureOfGroup(group))
     return key && !archivedKeys.has(key)
   }),
   recurringExclusions: (exclusions || []).filter(item => {
     const key = recurringTrashKey(item)
+    return key && !archivedKeys.has(key)
+  }),
+  transferReminders: (transfers || []).filter(item => {
+    const key = transferTrashKey(item)
     return key && !archivedKeys.has(key)
   })
 })

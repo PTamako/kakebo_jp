@@ -418,7 +418,7 @@ watch([forms,input,entryInputMode], () => {
   }, 400)
 }, {deep:true})
 onUnmounted(() => { clearTimeout(draftSaveTimer) })
-function recognize(mode = recognitionMode.value, append = false) {
+function recognize(mode = recognitionMode.value, append = false, referenceTime = new Date()) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
   // Scheduled-looking text expands into *drafts* only. Explicit review/save
@@ -432,7 +432,7 @@ function recognize(mode = recognitionMode.value, append = false) {
   const parsed = structured ? structured.rows.map(row => {
     const match = classify(row.merchant, rules.value)
     return { ...row, category:match.category, suggested:match.category, keyword:match.keyword }
-  }) : repeated || (effectiveMode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value))
+  }) : repeated || (effectiveMode === 'receipt' ? [parseReceipt(input.value, rules.value)] : parseEntries(input.value, rules.value, referenceTime))
   if (effectiveMode !== 'receipt') { pendingReceiptImage.value = null; pendingReceiptFileName.value = '' }
   const parsedForms = parsed.map(f => {
     // Apply the same rules to pasted text, statements and scanned receipts.
@@ -461,6 +461,9 @@ function recognize(mode = recognitionMode.value, append = false) {
   flash(structured ? `${parsed.length}件の明細を作成しました。確認してから保存してください` : repeated ? `毎週の支出を${repeated.length}件に展開しました。日付・内容・金額を確認してから保存してください` : forms.value.length > 1 ? `${forms.value.length}件の記録を読み取りました。内容を確認して一括保存してください` : '読み取り結果を確認してください')
 }
 async function onImage(e, mode = 'statement') {
+  // Freeze the reference at the start of upload so OCR network latency does
+  // not change a relative timestamp such as 40分前 or 3時間前.
+  const recognitionReference = new Date()
   const f = e.target.files[0]; e.target.value = ''
   if (!f || busy.value) return
   busy.value = '画像を準備中'
@@ -518,7 +521,7 @@ async function onImage(e, mode = 'statement') {
     // Do not classify a scanned receipt before saved merchant-payment rules
     // and the configured default card are available from existing D1.
     if (!paymentSettingsLoaded) await loadPaymentSettings()
-    recognize(mode, true)
+    recognize(mode, true, recognitionReference)
     entryInputMode.value = 'scan'
   } catch (err) { pendingReceiptImage.value = null; pendingReceiptFileName.value = ''; receiptSaveError.value = '画像の準備または読み取りに失敗しました。元の写真を保管してください。'; flash('画像の読み取りに失敗しました：' + err.message) }
   busy.value = ''

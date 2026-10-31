@@ -1,5 +1,6 @@
 import { findTransactionTime } from './entry-time.js'
 import { isStationMerchant } from './station-merchant.js'
+import { isRelativeDateToken, isRelativeTimeToken, resolveRelativeEntryTime } from './relative-entry-time.js'
 // テキスト・OCR解析：日付、時刻、金額、店舗、カテゴリー（ブラウザ内で処理）
 export const CATEGORIES = ['餐饮', '饮食料品', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
 
@@ -79,9 +80,8 @@ function parseAiCsvRow(raw, rules) {
   const fiveColumn = line.match(new RegExp('^([^,，]+)\\s*[,，]\\s*([^,，]+)\\s*[,，]\\s*(.+?)\\s*[,，]\\s*' + yenAmount + '\\s*(?:円)?\\s*[,，]\\s*([^,，]+)$'))
   const dateToken = '(?:20\\d{2}年\\d{1,2}月\\d{1,2}日?|(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日?)'
   const unknown = /^(?:不明|未記載|記載なし|不詳|[-—ー])$/
-  const validDate = value => unknown.test(value) || new RegExp('^' + dateToken + '$').test(value)
-  const validTime = value => unknown.test(value) || /^(?:[01]?\d|2[0-3])[:：][0-5]\d$/.test(value) ||
-    /^(?:約\s*)?\d+\s*(?:時間|分|日)前$/.test(value)
+  const validDate = value => unknown.test(value) || isRelativeDateToken(value) || new RegExp('^' + dateToken + '$').test(value)
+  const validTime = value => unknown.test(value) || /^(?:[01]?\d|2[0-3])[:：][0-5]\d$/.test(value) || isRelativeTimeToken(value)
   const result = fiveColumn && validDate(fiveColumn[1].trim()) && validTime(fiveColumn[2].trim())
     ? { dateText: fiveColumn[1].trim(), timeText: fiveColumn[2].trim(),
         merchant: fiveColumn[3].trim(), amountText: fiveColumn[4], paymentText: fiveColumn[5].trim() }
@@ -92,10 +92,10 @@ function parseAiCsvRow(raw, rules) {
     const merchant = result.merchant.replace(/^QP\s*[/／]\s*/i, '').trim()
     if (!merchant || unknown.test(merchant)) return null
     const { category, keyword } = classify(merchant, rules)
-    const relativeTime = /(?:時間|分|日)前$/.test(result.timeText) ? result.timeText : ''
+    const relativeTime = isRelativeTimeToken(result.timeText) ? result.timeText : ''
     const clock = result.timeText.match(/^([01]?\d|2[0-3])[:：]([0-5]\d)$/)
     return {
-      date: unknown.test(result.dateText) ? '' : findDate(result.dateText),
+      date: (unknown.test(result.dateText) || isRelativeDateToken(result.dateText)) ? '' : findDate(result.dateText),
       time: clock ? pad(clock[1]) + ':' + clock[2] : '',
       amount, category, merchant: merchant.slice(0, 60),
       paymentSource: unknown.test(result.paymentText) ? '' : result.paymentText,
@@ -663,13 +663,14 @@ function parseEntriesInternal(raw, rules) {
 }
 // Parsed statement rows must carry the printed transaction time when present.
 // Never assign the current time to imported OCR/credit-card records.
-export function parseEntries(raw, rules) {
+export function parseEntries(raw, rules, reference = new Date()) {
   const rows = parseEntriesInternal(raw, rules)
   return rows.map(row => {
-    if (row.time) return row
-    const time = findTransactionTime(row.raw || '') ||
+    const resolved = resolveRelativeEntryTime(row, reference)
+    if (resolved.time) return resolved
+    const time = findTransactionTime(resolved.raw || '') ||
       (rows.length === 1 ? findTransactionTime(raw) : '')
-    return time ? { ...row, time } : row
+    return time ? { ...resolved, time } : resolved
   })
 }
 

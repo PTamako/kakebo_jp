@@ -80,7 +80,7 @@ export function duplicateReviewSignature(group) {
   return 'v1:' + hash.toString(16).padStart(16, '0')
 }
 
-export function readConfirmedDuplicateGroups(storage = typeof localStorage === 'undefined' ? null : localStorage) {
+export function readConfirmedDuplicateGroups(storage = null) {
   try {
     const saved = JSON.parse(storage?.getItem(CONFIRMED_DUPLICATES_STORAGE_KEY) || '[]')
     return new Set(Array.isArray(saved)
@@ -89,7 +89,7 @@ export function readConfirmedDuplicateGroups(storage = typeof localStorage === '
   } catch { return new Set() }
 }
 
-export function saveConfirmedDuplicateGroups(keys, storage = typeof localStorage === 'undefined' ? null : localStorage) {
+export function saveConfirmedDuplicateGroups(keys, storage = null) {
   if (!storage) return false
   try {
     const values = [...keys].filter(key => typeof key === 'string' && validConfirmation(key))

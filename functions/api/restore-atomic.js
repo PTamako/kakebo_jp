@@ -10,7 +10,7 @@ export async function restoreAtomic(db, archive) {
   if(!Array.isArray(deferredPrepaidEntries))throw Error('atomic_restore_invalid_deferred')
   const allEntries = [...entries,...deferredPrepaidEntries]
   if(deferredPrepaidEntries.length)validateBackup({...archive,entries:allEntries})
-  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','recurringExclusions','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks']
+  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','recurringExclusions','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks','archivedPlans']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
   // Each request is atomic. The client sends bounded, idempotent stages
   // rather than dropping settings from a large archive.
@@ -129,6 +129,19 @@ export async function restoreAtomic(db, archive) {
   }
   for(const plan of archive.plans||[])add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
     plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0)
+  // A deleted schedule is a recoverable archive, not an active recurrence.
+  // Never archive a schedule that already exists in the destination database:
+  // existing records always win during restore.
+  const incomingActivePlanIds = new Set((archive.plans||[]).map(plan => plan.id))
+  for(const plan of archive.archivedPlans||[]){
+    // Never let a conflicting archived item disable an active plan within
+    // the same restore batch (or one already present in the destination).
+    if(incomingActivePlanIds.has(plan.id) ||
+       await db.prepare('SELECT 1 FROM recurring_plans WHERE id=?1').bind(plan.id).first()) continue
+    add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
+      plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0)
+    add('INSERT OR IGNORE INTO recurring_plan_trash(plan_id) SELECT ?1 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)',plan.id)
+  }
   // Restore only exclusion links that still point to an existing fixed-expense plan.
   for(const item of archive.recurringExclusions||[])
     add('INSERT OR IGNORE INTO recurring_candidate_exclusions(plan_id,month) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)',

@@ -99,7 +99,7 @@ test('review screen has explicit dismiss and trash undo, keeping the original tr
   assert.match(src,/confirmedDuplicateKeys\.value = next/)
   assert.match(src,/@click="emit\('open-duplicate', group\[0\]\.date\)"/)
   assert.match(src,/@click="setDuplicateConfirmation\(group, true\)">重複ではない/)
-  assert.match(src,/@click="setDuplicateConfirmation\(group, false\)">元に戻す/)
+  assert.match(src,/@restore="setDuplicateConfirmation\(group, false\)"/)
   assert.match(src,/<summary>ゴミ箱/)
   assert.match(src,/@toggle="refreshDuplicateReview"/)
   assert.doesNotMatch(src.match(/function setDuplicateConfirmation\(group, isConfirmed\) \{[\s\S]*?\n\}/)?.[0] || '',/props\.api|DELETE FROM|UPDATE entries/)

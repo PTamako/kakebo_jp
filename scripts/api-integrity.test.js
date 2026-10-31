@@ -12,7 +12,7 @@ const approvedPost = (plan, month = '2026-10') => ({
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.recurringPlans = new Map(); this.recurringExclusions = new Set(); this.cardBills = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
+  constructor() { this.entries = []; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.recurringPlans = new Map(); this.recurringTrash = new Set(); this.recurringExclusions = new Set(); this.cardBills = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
   async batch(statements) { const results=[]; for (const statement of statements) results.push(await statement.run()); return results }
   prepare(sql) {
     const db = this
@@ -26,8 +26,12 @@ class LedgerDb {
         if (sql.startsWith('SELECT 1 AS found FROM card_bills')) return [...db.cardBills.values()].some(v=>v.name===this.args[0] && [...db.cardBills.values()].some(w=>w.name===this.args[1] && w.month===v.month)) ? {found:1} : null
         if (sql.startsWith('SELECT value FROM finance_settings WHERE name=')) return db.financeSettings.has(this.args[0]) ? { value: db.financeSettings.get(this.args[0]) } : null
         if (sql.startsWith('SELECT name FROM payment_sources WHERE name=')) return db.paymentSources.has(this.args[0]) ? { name: this.args[0] } : null
-        if (sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=')) {
-          const p=db.recurringPlans.get(this.args[0]);return p?{...p,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0}:null
+        if (sql.startsWith('SELECT 1 FROM recurring_plan_trash WHERE plan_id=')) return db.recurringTrash.has(this.args[0]) ? {exists:1} : null
+        if (sql.startsWith('SELECT 1 FROM recurring_plans WHERE id=')) return db.recurringPlans.has(this.args[0]) ? {exists:1} : null
+        if (sql.includes('FROM recurring_plans WHERE id=?1') || sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=')) {
+          const p=db.recurringPlans.get(this.args[0])
+          return p && (!sql.includes('NOT EXISTS (SELECT 1 FROM recurring_plan_trash') || !db.recurringTrash.has(this.args[0]))
+            ? {...p,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0} : null
         }
         if (sql.startsWith('SELECT start_month FROM recurring_plans WHERE id=')) {
           const p=db.recurringPlans.get(this.args[0]);return p?{start_month:p.startMonth}:null
@@ -62,7 +66,15 @@ class LedgerDb {
         }
         if (sql.startsWith('PRAGMA table_info(payment_sources)')) return {results:[{name:'closing_day'}]}
         if (sql.startsWith('SELECT name,is_default,closing_day,') && sql.includes('FROM payment_sources')) return {results:[...db.paymentSources].map(name=>({name,is_default:0,closing_day:db.paymentClosingDays.has(name)?db.paymentClosingDays.get(name):null}))}
-        if (sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans')) return {results:[...db.recurringPlans.values()].map(p=>({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0}))}
+        if (sql.includes('FROM recurring_plans') && sql.includes('p.id') ||
+            sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans')) {
+          const archived=sql.includes('JOIN recurring_plan_trash')
+          const activeOnly=sql.includes('NOT EXISTS (SELECT 1 FROM recurring_plan_trash')
+          return {results:[...db.recurringPlans.values()]
+            .filter(p=>archived ? db.recurringTrash.has(p.id) : activeOnly ? !db.recurringTrash.has(p.id) : true)
+            .map(p=>({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,
+              payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0,archived_at:archived?'2026-10-31':undefined}))}
+        }
         if (sql.startsWith('SELECT plan_id,month FROM recurring_candidate_exclusions')) {
           return {results:[...db.recurringExclusions].map(key=>({plan_id:key.slice(0,key.lastIndexOf(':')),month:key.slice(key.lastIndexOf(':')+1)}))}
         }
@@ -75,6 +87,15 @@ class LedgerDb {
       },
       async run() {
         db.sql.push(sql)
+        if (sql.startsWith('INSERT OR IGNORE INTO recurring_plan_trash')) {
+          const id=this.args[0]
+          if (!db.recurringPlans.has(id) || db.recurringTrash.has(id)) return {meta:{changes:0}}
+          db.recurringTrash.add(id);return {meta:{changes:1}}
+        }
+        if (sql.startsWith('DELETE FROM recurring_plan_trash')) {
+          const changed=Number(db.recurringTrash.delete(this.args[0]))
+          return {meta:{changes:changed}}
+        }
         if (sql.startsWith('INSERT OR IGNORE INTO recurring_plans')) {
           const [id,name,amount,day,category,paymentSource,startMonth,enabled]=this.args
           if (!db.recurringPlans.has(id)) {db.recurringPlans.set(id,{id,name,amount,day,category,paymentSource,startMonth,enabled:!!enabled}); return {meta:{changes:1}}}
@@ -93,7 +114,10 @@ class LedgerDb {
           return {meta:{changes:1}}
         }
         if (sql.startsWith('DELETE FROM recurring_plans')) {
-          db.recurringPlans.delete(this.args[0]); return {meta:{changes:1}}
+          if (sql.includes('EXISTS (SELECT 1 FROM recurring_plan_trash') && !db.recurringTrash.has(this.args[0])) return {meta:{changes:0}}
+          const changed=Number(db.recurringPlans.delete(this.args[0]))
+          db.recurringTrash.delete(this.args[0])
+          return {meta:{changes:changed}}
         }
         if (sql.startsWith('INSERT OR IGNORE INTO card_bills') || sql.startsWith('INSERT INTO card_bills')) {
           const [name,month,start,end,total,count]=this.args
@@ -412,6 +436,12 @@ test('normalized D1 plans preserve IDs and allow deleting only a schedule', asyn
   assert.deepEqual(again.body,[p])
   assert.equal((await call(db,'recurring-plans/'+p.id,'DELETE')).status,200)
   assert.deepEqual((await call(db,'recurring-plans')).body,[])
+  assert.equal(db.recurringPlans.has(p.id),true,'plan is archived, not hard-deleted')
+  assert.equal(db.recurringTrash.has(p.id),true)
+  assert.equal((await call(db,'recurring-plans?trash=1')).body.length,1)
+  assert.equal((await call(db,'recurring-plans/'+p.id+'/restore','POST')).status,200)
+  assert.deepEqual((await call(db,'recurring-plans')).body,[p])
+  assert.equal(db.recurringTrash.has(p.id),false)
   assert.equal(db.entries.length,1)
   assert.equal(db.sql.some(sql=>sql.includes('finance_settings')),false)
 })

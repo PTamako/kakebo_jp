@@ -65,9 +65,9 @@ test('three trash categories collapse and fixed-expense archives and excluded mo
   assert.match(panel,/<summary>振替の確認/)
   assert.match(panel,/削除済み/)
   assert.match(panel,/除外した候補/)
-  assert.match(panel,/@click="restoreDeletedPlan\(item\)"/)
-  assert.match(panel,/@click="restoreRecurringExclusion\(item\)"/)
-  assert.match(panel,/@click="restoreTransferReminder\(item\)"/)
+  assert.match(panel,/@restore="restoreDeletedPlan\(item\)"/)
+  assert.match(panel,/@restore="restoreRecurringExclusion\(item\)"/)
+  assert.match(panel,/@restore="restoreTransferReminder\(item\)"/)
 })
 
 test('emptying trash requires confirmation and preserves ledger and SBI data while purging only deleted plans',()=>{

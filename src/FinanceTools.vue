@@ -681,7 +681,7 @@ const trashCount = computed(() => reviewTrash.value.duplicateGroups.length +
   reviewTrash.value.recurringExclusions.length + reviewTrash.value.transferReminders.length)
 const duplicateReviewMessage = ref('')
 function emptyReviewTrash() {
-  if (!trashCount.value || trashBusy.value || recurringBusy.value) return
+  if (!trashCount.value || trashBusy.value || recurringBusy.value || transferTrashLoading.value || !transferTrashLoaded.value) return
   if (!confirm('ゴミ箱の' + trashCount.value + '件を消去しますか？明細・固定費の除外・振替の通知設定は変更しません。')) return
   const next = new Set(archivedTrashKeys.value)
   for (const group of reviewTrash.value.duplicateGroups) next.add(duplicateTrashKey(duplicateReviewSignature(group)))
@@ -1182,7 +1182,7 @@ async function removeCardBill(record) {
     <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>
       <p v-if="transferTrashLoading && !transferTrashLoaded">振替の履歴を読み込み中…</p>
-      <p v-if="!trashCount">ゴミ箱は空です。</p>
+      <p v-if="!trashCount && transferTrashLoaded">ゴミ箱は空です。</p>
       <template v-if="reviewTrash.duplicateGroups.length">
         <h3>重複確認</h3>
         <div v-for="(group,i) in reviewTrash.duplicateGroups" :key="duplicateReviewSignature(group) || i" class="review-trash-item">
@@ -1204,7 +1204,7 @@ async function removeCardBill(record) {
           <button type="button" :disabled="transferTrashLoading" @click="restoreTransferReminder(item)">元に戻す</button>
         </div>
       </template>
-      <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy" @click="emptyReviewTrash">ゴミ箱を空にする</button>
+      <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy || transferTrashLoading || !transferTrashLoaded" @click="emptyReviewTrash">ゴミ箱を空にする</button>
       <p v-if="trashCount" class="review-trash-note">空にしても明細・固定費の除外・振替の通知設定は残ります。</p>
     </template>
     <p v-if="trashMessage" role="status">{{trashMessage}}</p>

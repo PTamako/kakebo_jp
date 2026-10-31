@@ -50,7 +50,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
         </section>
       </div>
       <div v-else-if="!detailLoading && displayEntries.length" class="ledger day-group-list">
-        <section v-for="group in groupedPagedEntries" :key="group.date" class="entry-day-group">
+        <section v-for="group in groupedPagedEntries" :key="group.date" class="entry-day-group" :data-ledger-day="group.date">
           <button type="button" class="entry-day-heading" :aria-expanded="expandedEntryDays.has(group.date)" @click="toggleEntryDay(group.date)">
             <span class="entry-day-chevron">{{ expandedEntryDays.has(group.date) ? '▾' : '▸' }}</span>
             <strong>{{ group.date.replace(/-/g, '/') }}</strong>

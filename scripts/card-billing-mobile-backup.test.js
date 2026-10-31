@@ -16,7 +16,9 @@ test('card billing on iPhone has full-width card, with closing month and total i
 })
 test('blank billing selections do not show redundant instructions or large disabled save action',()=>{
   assert.doesNotMatch(billing,/カードと締め月を選択してください/)
-  assert.match(billing,/v-if="bill\.name" type="button"/)
+  assert.match(billing,/<div v-if="bill\.name" class="card-billing-actions">/)
+  assert.match(billing,/class="card-billing-save"/)
+  assert.match(billing,/class="card-billing-detail"/)
   assert.match(billing,/class="card-billing-period"/)
   assert.doesNotMatch(billing,/<strong>\{\{yen\(cardTotal\)\}\}<\/strong>/)
 })

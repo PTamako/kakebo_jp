@@ -9,6 +9,7 @@ import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, 
 import { isCardBilledEntry } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
+import { recurringReviewWindow, validRecurringMonth } from './recurring-review-window.js'
 import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
 import { receiptZip } from './receipt-export.js'
 const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
@@ -316,7 +317,9 @@ const recurringListQuery = ref('')
 const recurringListFilter = ref('all')
 const expandedRecurringPlanId = ref('')
 const activeRecurringPlans = computed(() => plans.value.filter(item => item.enabled))
-const recurringMonthlyTotal = computed(() => activeRecurringPlans.value.reduce((sum,item) => sum + Number(item.amount || 0),0))
+const currentEligiblePlans = computed(() => activeRecurringPlans.value.filter(item =>
+  validRecurringMonth(item.startMonth) && item.startMonth <= currentRecurringMonth()))
+const recurringMonthlyTotal = computed(() => currentEligiblePlans.value.reduce((sum,item) => sum + Number(item.amount || 0),0))
 const filteredRecurringPlans = computed(() => {
   const query = recurringListQuery.value.trim().toLocaleLowerCase('ja-JP')
   return plans.value.filter(item =>
@@ -330,9 +333,13 @@ function toggleRecurringPlanDetails(id) {
 const bills = ref([])
 const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費','工资':'給与','奖金':'賞与','副业':'副業','老公生活费':'夫からの生活費','父母赠与':'両親からの援助','亲友赠与':'親族・友人からの援助','退款':'返金','其他收入':'その他の収入'}
 const categoryLabel = category => categoryJapaneseLabels[category] || category
-const plan = ref({name:'',amount:'',day:1,category:'',paymentSource:'現金'})
+const currentRecurringMonth = () => new Date().toLocaleDateString('sv-SE').slice(0,7)
+const blankPlan = () => ({name:'',amount:'',day:1,category:'',paymentSource:'現金',startMonth:currentRecurringMonth()})
+const plan = ref(blankPlan())
 const editingPlanId = ref('')
-const recurringHistoricalMonths = ref(0)
+// Default to the earliest effective month among enabled plans, with an
+// explicit 119-month safety limit. Manual lookback options remain available.
+const recurringAutoWindow = computed(() => recurringReviewWindow(plans.value,currentRecurringMonth()))
 const recurringPreview = ref([])
 const recurringSelected = ref(new Set())
 const recurringKey = row => row.planId + ':' + row.month
@@ -346,10 +353,11 @@ function toggleRecurringSelection(row, checked) {
 const recurringPreviewTotal = computed(() => selectedRecurring.value.reduce((sum,row) => sum + row.amount,0))
 function beginEditPlan(item) {
   editingPlanId.value = item.id
-  plan.value = {...item, paymentSource:item.paymentSource || '現金'}
+  plan.value = {...item, paymentSource:item.paymentSource || '現金',startMonth:item.startMonth || currentRecurringMonth()}
   recurringPreview.value = []
+  recurringSelected.value = new Set()
 }
-function cancelPlanEdit() { editingPlanId.value = ''; plan.value = {name:'',amount:'',day:1,category:'',paymentSource:'現金'} }
+function cancelPlanEdit() { editingPlanId.value = ''; plan.value = blankPlan() }
 async function togglePlanEnabled(item) {
   if(recurringBusy.value || !settingsReady.value)return
   recurringBusy.value=true
@@ -606,15 +614,16 @@ function refreshDuplicateReview(event) {
 async function addPlan(){
   if(!plan.value.name.trim() || !Number.isSafeInteger(Number(plan.value.amount)) || Number(plan.value.amount)<=0 ||
     !Number.isInteger(Number(plan.value.day)) || Number(plan.value.day)<1 || Number(plan.value.day)>31 ||
+    !validRecurringMonth(plan.value.startMonth) ||
     !props.categories.includes(plan.value.category) || !props.paymentSources.includes(plan.value.paymentSource)) {
-    message.value='名称・金額・記帳日・カテゴリ・支払方法を確認してください';return
+    message.value='名称・金額・記帳日・開始月・カテゴリ・支払方法を確認してください';return
   }
   if(!settingsReady.value || recurringBusy.value)return
   recurringBusy.value=true
   try {
     const existing=plans.value.find(row=>row.id===editingPlanId.value)
     const item={...plan.value,id:existing?.id || crypto.randomUUID(),amount:Number(plan.value.amount),day:Number(plan.value.day),
-      startMonth:existing?.startMonth || new Date().toLocaleDateString('sv-SE').slice(0,7),enabled:existing ? !!existing.enabled : true}
+      startMonth:plan.value.startMonth,enabled:existing ? !!existing.enabled : true}
     const updated=Boolean(existing)
     const saved=await props.api(updated?'recurring-plans/'+encodeURIComponent(item.id):'recurring-plans',
       {method:updated?'PUT':'POST',body:JSON.stringify(item)})
@@ -622,6 +631,7 @@ async function addPlan(){
     plans.value=await props.api('recurring-plans')
     cancelPlanEdit()
     recurringPreview.value=[]
+    recurringSelected.value=new Set()
     recurringMessage.value=updated?'固定費を更新しました':'固定費を登録しました。記帳前に内容を確認してください'
   }catch(e){message.value='固定費の保存に失敗しました：'+e.message}
   finally {recurringBusy.value=false}
@@ -630,7 +640,8 @@ const recurringBusy=ref(false)
 const recurringMessage=ref('')
 function reviewRecurring() {
   if(recurringBusy.value || !settingsReady.value || !loaded.value) {recurringMessage.value='先に全明細を更新してください';return}
-  const preview=previewRecurringEntries(plans.value,rows.value,{historicalMonths:Number(recurringHistoricalMonths.value)})
+  const window=recurringReviewWindow(plans.value,currentRecurringMonth())
+  const preview=previewRecurringEntries(plans.value,rows.value,{historicalMonths:window.historicalMonths})
   recurringPreview.value=preview
   const current = new Date().toLocaleDateString('sv-SE').slice(0,7)
   recurringSelected.value = new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
@@ -827,9 +838,11 @@ async function removeCardBill(record) {
     <h2>固定費の設定</h2>
     <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定費名"><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
     <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリ<select v-model="plan.category" aria-label="固定費カテゴリ"><option value="" disabled>選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定費支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
+    <label class="recurring-start-month">適用開始月<input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>
     <div class="finance-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
-    <label class="form-field"><span>未記帳を確認する期間</span><select v-model.number="recurringHistoricalMonths" @change="recurringPreview=[]"><option :value="0">今月のみ（初期設定）</option><option :value="3">過去3か月も確認</option><option :value="12">過去12か月も確認</option><option :value="119">過去10年分も確認</option></select></label>
+    <p class="recurring-window-note">各固定費の適用開始月から未記帳分を確認します。</p>
+    <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">10年以上前の設定は、直近10年分まで確認します。</p>
     <div class="finance-actions"><button type="button" :disabled="recurringBusy || !settingsReady || !loaded" @click="reviewRecurring">未記録分を確認</button>
     <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
     <p v-if="recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
@@ -840,7 +853,7 @@ async function removeCardBill(record) {
     <details class="recurring-list-disclosure">
       <summary class="recurring-list-summary">
         <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{plans.length}}件</strong></span>
-        <span class="recurring-list-summary-total">有効 {{activeRecurringPlans.length}}件 · 月額 {{yen(recurringMonthlyTotal)}}</span>
+        <span class="recurring-list-summary-total">今月対象 {{currentEligiblePlans.length}}件 · 月額 {{yen(recurringMonthlyTotal)}}</span>
       </summary>
       <div class="recurring-list-body">
         <div class="recurring-list-filters">
@@ -853,7 +866,7 @@ async function removeCardBill(record) {
             <button type="button" class="recurring-plan-toggle" :aria-expanded="expandedRecurringPlanId===p.id" :aria-controls="'recurring-plan-actions-'+p.id" @click="toggleRecurringPlanDetails(p.id)">
               <span class="recurring-plan-text">
                 <span class="recurring-plan-name">{{p.name}}</span>
-                <span class="recurring-plan-meta">毎月{{p.day}}日 · {{p.paymentSource || '未設定'}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true).slice(5).replace('-','/') : '停止中'}}</span>
+                <span class="recurring-plan-meta">毎月{{p.day}}日 · {{p.paymentSource || '未設定'}} · 開始 {{p.startMonth?.replace('-', '/') || '未設定'}} · {{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true).slice(5).replace('-','/') : '停止中'}}</span>
               </span>
               <span class="recurring-plan-amount">{{yen(p.amount)}}</span>
               <span class="recurring-plan-chevron" aria-hidden="true">{{expandedRecurringPlanId===p.id ? '⌃' : '⌄'}}</span>
@@ -1012,6 +1025,9 @@ async function removeCardBill(record) {
 @media(max-width:360px){.device-privacy-panel .device-receipt-actions button{font-size:12px;padding-inline:5px}}
 
 /* Recurring expense manager: compact, expandable, touch-friendly and height-bounded. */
+.recurring-start-month{display:grid;gap:5px;min-width:0;font-size:12px;color:var(--muted)}
+.finance-panel .recurring-start-month input[type=month]{width:100%;max-width:100%;min-width:0;font-size:16px;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink)}
+.finance-panel .recurring-window-note{font-size:11px;color:var(--muted)}
 .recurring-list-disclosure{min-width:0;border:1px solid var(--line);border-radius:13px;background:var(--card);overflow:hidden}
 .recurring-list-summary{display:flex;flex-wrap:wrap;align-items:center;gap:3px 12px;min-height:54px;padding:11px 13px;cursor:pointer;list-style:none}
 .recurring-list-summary::-webkit-details-marker{display:none}

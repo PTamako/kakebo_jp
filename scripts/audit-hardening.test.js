@@ -86,9 +86,13 @@ test('restoring backup data never overwrites existing finance or category settin
   assert.doesNotMatch(api,/UPDATE rules SET category = \?1 WHERE keyword = \?2 AND category = \?3/)
 })
 
-test('AI OCR requires explicit opt-in; local drafts do not enter remote ledger automatically',()=>{
-  assert.match(app,/aiOcrEnabled = ref\(localStorage\.getItem\('kakeibo-ai-ocr-enabled'\) === '1'\)/)
+test('AI OCR remains opt-in and D1 drafts never enter the ledger automatically',()=>{
+  assert.match(app,/const aiOcrEnabled = ref\(false\)/)
+  assert.match(app,/await api\('app-state',\{method:'PUT',body:JSON\.stringify\(\{key:'ai_ocr_enabled',value:checked\}\)\}\)/)
   assert.match(app,/if \(!aiOcrEnabled\.value\)/)
-  assert.match(app,/const DRAFT_KEY = 'kakeibo-unsaved-draft-v1'/)
+  assert.match(app,/const DRAFT_KEY = 'unsaved_draft'/)
+  assert.match(app,/api\('app-state\?key='\+DRAFT_KEY,\{method:'DELETE'\}\)/)
   assert.match(app,/receiptImage:null,receiptFileName:''/)
+  assert.doesNotMatch(app,/localStorage\.setItem\(DRAFT_KEY/)
+  assert.doesNotMatch(api,/INSERT INTO entries.*app_client_state/)
 })

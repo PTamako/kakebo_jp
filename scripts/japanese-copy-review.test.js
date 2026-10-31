@@ -25,7 +25,9 @@ test('monthly statistics use conventional Japanese category and yearly breakdown
   assert.doesNotMatch(stats,/年度カテゴリ収入|年度カテゴリ支出|月間最高支出|カテゴリ支出/)
 })
 test('short messages use 下書き / 記帳 and state the OCR payment selection plainly',()=>{
-  assert.match(app,/下書きとして残ります/)
+  assert.match(app,/下書きはD1に保存され、明細は保持されます/)
+  assert.match(app,/D1の下書きを復元しました/)
+  assert.doesNotMatch(app,/未保存の入力は、この端末に下書きとして残ります/)
   assert.match(app,/読み取り対象のカード/)
   assert.doesNotMatch(app,/草稿として保存されます|今回の明細のカード/)
   assert.match(finance,/記帳前に内容を確認してください/)

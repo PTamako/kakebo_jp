@@ -90,41 +90,65 @@ test('bad, absent or write-protected storage safely fails without confirming', (
   assert.deepEqual([...readConfirmedDuplicateGroups(malformed)],['v1:0000000000000000'])
 })
 
-test('review screen has explicit dismiss and trash undo, keeping the original transaction links', () => {
+test('review screen persists D1 confirmations and preserves original transaction links',()=>{
   const src = readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
   assert.match(src,/const duplicates=computed\(\(\) => findLedgerDuplicateGroups\(rows\.value\)\)/)
-  assert.match(src,/const pendingDuplicates = computed\(\(\) => duplicates\.value\.filter/)
-  assert.match(src,/const confirmedDuplicates = computed\(\(\) => duplicates\.value\.filter/)
-  assert.match(src,/if \(!saveConfirmedDuplicateGroups\(next\)\)/)
+  assert.match(src,/const pendingDuplicates = computed\(\(\) => reviewStateReady\.value \? duplicates\.value\.filter/)
+  assert.match(src,/const confirmedDuplicates = computed\(\(\) => reviewStateReady\.value \? duplicates\.value\.filter/)
+  assert.match(src,/await writeReviewNotices\(isConfirmed \? \['c:'\+key\] : \[\]/)
   assert.match(src,/confirmedDuplicateKeys\.value = next/)
   assert.match(src,/@click="emit\('open-duplicate', group\[0\]\.date\)"/)
   assert.match(src,/@click="setDuplicateConfirmation\(group, true\)">重複ではない/)
   assert.match(src,/@restore="setDuplicateConfirmation\(group, false\)"/)
   assert.match(src,/<summary>ゴミ箱/)
   assert.match(src,/@toggle="refreshDuplicateReview"/)
-  assert.doesNotMatch(src.match(/function setDuplicateConfirmation\(group, isConfirmed\) \{[\s\S]*?\n\}/)?.[0] || '',/props\.api|DELETE FROM|UPDATE entries/)
+  assert.doesNotMatch(src.match(/async function setDuplicateConfirmation\(group, isConfirmed\) \{[\s\S]*?\n\}/)?.[0] || '',/saveConfirmedDuplicateGroups|DELETE FROM entries|UPDATE entries/)
 })
 
-test('confirmation action modifies only the saved confirmation set on success', () => {
+test('D1 success and failure keep duplicate decisions correct without mutating ledger', async()=>{
   const src = readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
-  const body = src.match(/function setDuplicateConfirmation\(group, isConfirmed\) \{([\s\S]*?)\n\}/)?.[1]
+  const body = src.match(/async function setDuplicateConfirmation\(group, isConfirmed\) \{([\s\S]*?)\n\}/)?.[1]
   assert.ok(body)
-  const one = row(1), two = row(2)
-  const group = [one,two]
-  const before = JSON.stringify(group)
-  const confirmedDuplicateKeys = {value:new Set()}
-  const duplicateReviewMessage = {value:''}
-  const store=storage()
-  const action = new Function('group','isConfirmed','confirmedDuplicateKeys','duplicateReviewMessage','duplicateReviewSignature','saveConfirmedDuplicateGroups',body)
-  const execute = (confirmed,persist) => action(group,confirmed,confirmedDuplicateKeys,duplicateReviewMessage,duplicateReviewSignature,persist)
-  execute(true,keys=>saveConfirmedDuplicateGroups(keys,store))
+  const group = [row(1),row(2)]
+  const original = JSON.stringify(group)
   const key=duplicateReviewSignature(group)
+  const confirmedDuplicateKeys={value:new Set()}
+  const archivedTrashKeys={value:new Set(['d:'+key])}
+  const reviewStateReady={value:true}
+  const reviewStateBusy={value:false}
+  const reviewStateError={value:''}
+  const duplicateReviewMessage={value:''}
+  const remote=new Set()
+  let rejectWrites=false
+  const calls=[]
+  const writeReviewNotices=async(add,remove=[])=>{
+    calls.push({add,remove})
+    if(rejectWrites)throw Error('D1 unavailable')
+    for(const k of remove)remote.delete(k)
+    for(const k of add)remote.add(k)
+  }
+  const duplicateTrashKey=key=>'d:'+key
+  const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor
+  const action=new AsyncFunction('group','isConfirmed','confirmedDuplicateKeys','archivedTrashKeys',
+    'reviewStateReady','reviewStateBusy','reviewStateError','duplicateReviewMessage',
+    'duplicateReviewSignature','duplicateTrashKey','writeReviewNotices',body)
+  const execute=confirmed=>action(group,confirmed,confirmedDuplicateKeys,archivedTrashKeys,
+    reviewStateReady,reviewStateBusy,reviewStateError,duplicateReviewMessage,
+    duplicateReviewSignature,duplicateTrashKey,writeReviewNotices)
+  await execute(true)
   assert.equal(confirmedDuplicateKeys.value.has(key),true)
-  assert.equal(readConfirmedDuplicateGroups(store).has(key),true)
-  execute(false,keys=>saveConfirmedDuplicateGroups(keys,store))
+  assert.equal(remote.has('c:'+key),true)
+  assert.equal(archivedTrashKeys.value.has('d:'+key),false)
+  assert.deepEqual(calls[0],{add:['c:'+key],remove:['d:'+key]})
+  await execute(false)
   assert.equal(confirmedDuplicateKeys.value.has(key),false)
-  execute(true,()=>false)
+  assert.equal(remote.has('c:'+key),false)
+  assert.deepEqual(calls[1],{add:[],remove:['c:'+key,'d:'+key]})
+  rejectWrites=true
+  await execute(true)
   assert.equal(confirmedDuplicateKeys.value.has(key),false)
-  assert.match(duplicateReviewMessage.value,/保存できません/)
-  assert.equal(JSON.stringify(group),before)
+  assert.equal(remote.has('c:'+key),false)
+  assert.match(duplicateReviewMessage.value,/保存に失敗しました/)
+  assert.equal(reviewStateBusy.value,false)
+  assert.equal(JSON.stringify(group),original)
 })

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount, inject } from 'vue'
 import { formatYenInput, normalizeYenInput, calculateYenExpression, convertToYen, calculateJapaneseConsumptionTax } from './amount-tools.js'
 
 const props = defineProps({ modelValue: { type: [Number, String], default: 0 }, inputLabel: { type: String, default: '金額（円）' } })
@@ -50,13 +50,21 @@ const copyFeedback = ref('')
 let copyTimer = null
 watch([expression, taxRate, taxRounding], () => { copyFeedback.value = '' })
 const currencies = ['CNY', 'USD', 'EUR', 'KRW', 'JPY']
-function storedCurrency() {
+const appContext = inject('kakeibo-page-context', null)
+const currency = ref('CNY')
+let currencyLoaded = false
+async function loadCurrencyPreference() {
+  if (currencyLoaded || !appContext?.api) return
   try {
-    const value = localStorage.getItem('kakeibo-fx-currency')
-    return currencies.includes(value) ? value : 'CNY'
-  } catch { return 'CNY' }
+    const state = await appContext.api('app-state?key=fx_currency')
+    if (currencies.includes(state.fx_currency)) currency.value = state.fx_currency
+    // Vue watchers flush asynchronously: the server-loaded value is not a user edit.
+    await nextTick()
+    currencyLoaded = true
+  } catch (error) {
+    fxError.value = '通貨設定をD1から読み込めません：' + error.message
+  }
 }
-const currency = ref(storedCurrency())
 const foreignAmount = ref('')
 const info = ref(null)
 const fxLoading = ref(false)
@@ -86,6 +94,7 @@ async function openTools() {
   lockScroll()
   await nextTick()
   closeButton.value?.focus({ preventScroll: true })
+  void loadCurrencyPreference()
 }
 function trapFocus(event) {
   const controls = [...(sheetElement.value?.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled)') || [])]
@@ -142,7 +151,10 @@ async function loadRate() {
   }
 }
 watch(currency, selected => {
-  try { localStorage.setItem('kakeibo-fx-currency', selected) } catch { /* private browsing */ }
+  if (currencyLoaded && appContext?.api) {
+    void appContext.api('app-state',{method:'PUT',body:JSON.stringify({key:'fx_currency',value:selected})})
+      .catch(error => { fxError.value = '通貨設定をD1に保存できません：' + error.message })
+  }
   manualRate.value = false
   manualRateText.value = ''
   if (opened.value && activeTab.value === 'fx') void loadRate()

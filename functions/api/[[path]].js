@@ -8,8 +8,16 @@ import { restoreAtomic } from './restore-atomic.js'
 // Cloudflare Pages Functions：/api/*
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
-const json = (d, s = 200) =>
-  new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
+const json = (d, s = 200, extraHeaders = {}) =>
+  new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extraHeaders } })
+const cookieSession = request => {
+  const cookie = request.headers.get('cookie') || ''
+  const match = cookie.match(/(?:^|;\s*)kakeibo_session=([a-f0-9]{64})(?:;|$)/)
+  return match?.[1] || ''
+}
+const sessionCookie = (token, remember) =>
+  'kakeibo_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/api'+(remember ? '; Max-Age=2592000' : '')
+const expiredSessionCookie = 'kakeibo_session=; HttpOnly; Secure; SameSite=Strict; Path=/api; Max-Age=0'
 
 // Categorization rules are read exclusively from migrated D1 merchant_rules.
 // SBIの投信積立引落は資産移動として扱い、生活支出から除外する。
@@ -93,18 +101,43 @@ export async function onRequest({ request, env, params }) {
       try {
         await db.prepare('INSERT INTO device_sessions (token_hash, expires_at) VALUES (?1, ?2)').bind(hash, expires).run()
       } catch { return json({ error: 'ログイン処理に失敗しました' }, 500) }
-      return json({ session, expires_at: expires })
+      // On a newly installed PWA, use the saved D1 privacy preference
+      // rather than blindly replacing it with the login screen's default.
+      let remember = body.remember !== false
+      try {
+        const savedMode = await db.prepare("SELECT value_json FROM app_client_state WHERE state_key='remember_device'").first()
+        if (savedMode) remember = JSON.parse(savedMode.value_json) === true
+      } catch { /* The pre-0010 login path still works. */ }
+      return json({ session, expires_at: expires }, 200,
+        { 'set-cookie': sessionCookie(session, remember) })
     }
     if (b === 'logout' && m === 'POST') {
-      const session = request.headers.get('x-session') || ''
+      const session = request.headers.get('x-session') || cookieSession(request)
       if (/^[a-f0-9]{64}$/.test(session)) {
         try { await db.prepare('DELETE FROM device_sessions WHERE token_hash = ?1').bind(await sessionHash(session)).run() } catch {}
       }
-      return json({ ok: true })
+      return json({ ok: true }, 200, { 'set-cookie': expiredSessionCookie })
+    }
+    if (b === 'remember' && m === 'PUT') {
+      const session = request.headers.get('x-session') || cookieSession(request)
+      if (!/^[a-f0-9]{64}$/.test(session))
+        return json({error:'再ログインしてください'},401)
+      const found = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2')
+        .bind(await sessionHash(session),Date.now()).first()
+      if (!found) return json({error:'再ログインしてください'},401)
+      const body = await request.json().catch(() => null)
+      if (typeof body?.remember !== 'boolean') return json({error:'保存方法を確認してください'},400)
+      // Persist the D1 privacy preference before issuing the new cookie.
+      // This single endpoint replaces two competing client-side writes.
+      try {
+        await db.prepare("INSERT INTO app_client_state(state_key,value_json,updated_at) VALUES('remember_device',?1,CURRENT_TIMESTAMP) ON CONFLICT(state_key) DO UPDATE SET value_json=excluded.value_json,updated_at=CURRENT_TIMESTAMP")
+          .bind(JSON.stringify(body.remember)).run()
+      } catch { return json({error:'保存方法をD1に記録できませんでした。設定は変更していません'},503) }
+      return json({ok:true},200,{'set-cookie':sessionCookie(session,body.remember)})
     }
     return json({ error: '対象が見つかりません' }, 404)
   }
-  const session = request.headers.get('x-session') || ''
+  const session = request.headers.get('x-session') || cookieSession(request)
   if (!/^[a-f0-9]{64}$/.test(session)) return json({ error: 'アクセスコードを確認してください' }, 401)
   let validSession
   try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
@@ -153,6 +186,57 @@ export async function onRequest({ request, env, params }) {
     // import legacy records, or write default investment snapshots. User-initiated writes remain available.
     // Normalized recurring plans and bills are the sole persistent stores.
     // Obsolete finance_settings is intentionally neither created nor queried.
+    // Application preferences and unsaved drafts are stored in D1, never browser local storage.
+    // These writes cannot modify the ledger, investment holdings or scheduled expenses.
+    if (a === 'app-state' && !b) {
+      const allowed = new Set(['remember_device','ai_ocr_enabled','fx_currency','unsaved_draft'])
+      try {
+        if (m === 'GET') {
+          const selectedKey = url.searchParams.get('key')
+          if (selectedKey && !allowed.has(selectedKey)) return json({error:'取得する設定を確認してください'},400)
+          const query = selectedKey
+            ? db.prepare('SELECT state_key,value_json FROM app_client_state WHERE state_key=?1').bind(selectedKey)
+            : db.prepare('SELECT state_key,value_json FROM app_client_state')
+          const {results} = await query.all()
+          const state = {}
+          for (const entry of results) {
+            if (!allowed.has(entry.state_key)) continue
+            try { state[entry.state_key] = JSON.parse(entry.value_json) } catch {}
+          }
+          return json(state)
+        }
+        if (m === 'PUT') {
+          const body = await request.json().catch(() => null)
+          if (!allowed.has(body?.key)) return json({error:'保存項目を確認してください'},400)
+          const value = body.value
+          if (body.key === 'fx_currency' && !['CNY','USD','EUR','KRW','JPY'].includes(value))
+            return json({error:'通貨設定を確認してください'},400)
+          if (['remember_device','ai_ocr_enabled'].includes(body.key) && typeof value !== 'boolean')
+            return json({error:'設定値を確認してください'},400)
+          if (body.key === 'unsaved_draft' &&
+              (typeof value !== 'object' || !value || Array.isArray(value) ||
+                !Array.isArray(value.forms) || value.forms.length > 150 ||
+                typeof value.input !== 'string' || value.input.length > 100000 ||
+                !['manual','scan'].includes(value.mode)))
+            return json({error:'下書きデータを確認してください'},400)
+          const encoded = JSON.stringify(value)
+          if (encoded.length > 250000) return json({error:'下書きの保存容量を超えました'},413)
+          await db.prepare('INSERT INTO app_client_state(state_key,value_json,updated_at) VALUES(?1,?2,CURRENT_TIMESTAMP) ON CONFLICT(state_key) DO UPDATE SET value_json=excluded.value_json,updated_at=CURRENT_TIMESTAMP')
+            .bind(body.key,encoded).run()
+          return json({ok:true})
+        }
+        if (m === 'DELETE') {
+          const key = url.searchParams.get('key')
+          if (!allowed.has(key)) return json({error:'削除項目を確認してください'},400)
+          await db.prepare('DELETE FROM app_client_state WHERE state_key=?1').bind(key).run()
+          return json({ok:true})
+        }
+      } catch(error) {
+        if (/no such table: app_client_state/i.test(String(error)))
+          return json({error:'端末設定用のD1移行（0011）が必要です。既存明細は変更されていません',code:'app_state_schema_required'},503)
+        throw error
+      }
+    }
     // Acknowledged review notices belong to D1, not PWA localStorage.
     // This endpoint never inserts or deletes financial entries or legacy data.
     if (a === 'review-notices' && !b) {

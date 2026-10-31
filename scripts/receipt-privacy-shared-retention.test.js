@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {saveReceiptImage,getReceiptImage,countReceiptImages,listReceiptImagesForExport,
-  setReceiptStorageMode,clearSessionReceiptImages,clearAllReceiptImages} from '../src/receipt-store.js'
+  setReceiptStorageMode,configureReceiptStorageMode,clearSessionReceiptImages,clearAllReceiptImages} from '../src/receipt-store.js'
 
 const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
 const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
@@ -63,19 +63,19 @@ function fakeDb(saved){
   }}
 }
 test('session receipts migrate safely from device, export, then disappear on logout',async()=>{
-  const originals={indexedDB:globalThis.indexedDB,localStorage:globalThis.localStorage,sessionStorage:globalThis.sessionStorage}
+  const originals={indexedDB:globalThis.indexedDB,sessionStorage:globalThis.sessionStorage}
   const disk=new Map()
-  const ls=fakeStorage(),ss=fakeStorage()
-  globalThis.indexedDB=fakeDb(disk);globalThis.localStorage=ls;globalThis.sessionStorage=ss
+  const ss=fakeStorage()
+  globalThis.indexedDB=fakeDb(disk);globalThis.sessionStorage=ss
   try{
-    ls.setItem('kakeibo-remember-device','1')
+    configureReceiptStorageMode(true)
     const photo=new Blob([new Uint8Array([1,4,6,8])],{type:'image/jpeg'})
     await saveReceiptImage(7,photo)
     assert.equal(await countReceiptImages(),1)
     assert.equal(disk.size,1)
     await setReceiptStorageMode(false)
     assert.equal(disk.size,0,'migration succeeded before disk removal')
-    ls.setItem('kakeibo-remember-device','0')
+    assert.equal(disk.size,0)
     assert.equal((await getReceiptImage(7)).size,4)
     assert.equal((await listReceiptImagesForExport()).length,1)
     assert.equal(await countReceiptImages(),1)
@@ -85,6 +85,7 @@ test('session receipts migrate safely from device, export, then disappear on log
     assert.equal(await countReceiptImages(),0)
     await clearAllReceiptImages()
   }finally{
+    configureReceiptStorageMode(true)
     for(const [key,value] of Object.entries(originals)){
       if(value===undefined)delete globalThis[key]
       else globalThis[key]=value
@@ -92,23 +93,24 @@ test('session receipts migrate safely from device, export, then disappear on log
   }
 })
 test('session storage quota failure retains all original device images',async()=>{
-  const originals={indexedDB:globalThis.indexedDB,localStorage:globalThis.localStorage,sessionStorage:globalThis.sessionStorage}
+  const originals={indexedDB:globalThis.indexedDB,sessionStorage:globalThis.sessionStorage}
   const disk=new Map()
-  const ls=fakeStorage(),ss=fakeStorage()
+  const ss=fakeStorage()
   const originalSet=ss.setItem.bind(ss)
   ss.setItem=(key,value)=>{
     if(key.startsWith('kakeibo-session-receipt-v1-'))throw Error('QuotaExceededError')
     originalSet(key,value)
   }
-  globalThis.indexedDB=fakeDb(disk);globalThis.localStorage=ls;globalThis.sessionStorage=ss
+  globalThis.indexedDB=fakeDb(disk);globalThis.sessionStorage=ss
   try{
-    ls.setItem('kakeibo-remember-device','1')
+    configureReceiptStorageMode(true)
     await saveReceiptImage(21,new Blob([new Uint8Array([1,2,3])],{type:'image/webp'}))
     await assert.rejects(()=>setReceiptStorageMode(false),/元の画像は残っています/)
     assert.equal(disk.size,1)
     assert.equal((await getReceiptImage(21)).size,3)
-    assert.equal(ls.getItem('kakeibo-remember-device'),'1')
+    assert.equal(disk.size,1)
   }finally{
+    configureReceiptStorageMode(true)
     for(const [key,value] of Object.entries(originals)){
       if(value===undefined)delete globalThis[key]
       else globalThis[key]=value

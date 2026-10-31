@@ -34,7 +34,7 @@ test('station merchants still respect personal card rules and avoid unregistered
   assert.equal(paymentForDraft({merchant:station.merchant,registeredSources:['Suica'],rules:[{keyword:'石川町駅',payment_source:'現金'}]}),'現金')
   const store = parseEntry('不明,不明,石川町駅店,¥880,不明', [])
   assert.equal(store.category,'日用品')
-  assert.equal(paymentForDraft({merchant:store.merchant,registeredSources:['Suica'],defaultSource:'楽天カード'}),'楽天カード')
+  assert.equal(paymentForDraft({merchant:store.merchant,registeredSources:['Suica','楽天カード'],defaultSource:'楽天カード'}),'楽天カード')
 })
 
 test('relative Suica screenshot times become editable JST dates and times', () => {
@@ -110,7 +110,7 @@ test('app routes multiple OCR rows through the same merchant and payment mapping
   const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
   assert.match(app,/parseEntries\(input\.value, rules\.value, referenceTime\)/)
   assert.match(app,/const recognitionReference = new Date\(\)/)
-  assert.match(app,/recognize\(mode, true, recognitionReference\)/)
+  assert.match(app,/recognize\(mode, true, recognitionReference, true\)/)
   assert.match(app,/suggestedPayment\(f\.merchant,recognizedPayment,type,imported\)/)
-  assert.match(app,/recognize\(mode, true, recognitionReference\)/)
+  assert.match(app,/recognize\(mode, true, recognitionReference, true\)/)
 })

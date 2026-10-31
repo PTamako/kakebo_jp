@@ -24,14 +24,14 @@ test('station defaults to registered Suica, without creating an unregistered car
   assert.equal(paymentForDraft({...base,merchant:'京成高砂駅店'}),'楽天カード')
   assert.equal(paymentForDraft({...base,merchant:'東京駅前店'}),'楽天カード')
   assert.equal(paymentForDraft({...base,registeredSources:['楽天カード']}),'楽天カード')
-  assert.equal(paymentForDraft({...base,importSource:'セゾンカード'}),'セゾンカード')
+  assert.equal(paymentForDraft({...base,importSource:'セゾンカード'}),'Suica')
   assert.equal(paymentForDraft({...base,recognized:'現金'}),'現金')
-  assert.equal(paymentForDraft({...base,rules:[{keyword:'京成高砂駅',payment_source:'PayPay'}]}),'PayPay')
+  assert.equal(paymentForDraft({...base,rules:[{keyword:'京成高砂駅',payment_source:'PayPay'}]}),'Suica')
   assert.equal(paymentForDraft({...base,type:'income'}),'')
   assert.equal(paymentForDraft({...base,type:'transfer'}),'')
 })
 test('ordinary store-recognition retains its own explicit rule',()=>{
   const named='新宿駅店'
   assert.equal(classify(named,[{keyword:named,category:'餐饮',is_custom:true}]).category,'餐饮')
-  assert.equal(paymentForDraft({merchant:named,registeredSources:['Suica'],rules:[{keyword:named,payment_source:'セゾンカード'}],defaultSource:'Suica'}),'セゾンカード')
+  assert.equal(paymentForDraft({merchant:named,registeredSources:['Suica','セゾンカード'],rules:[{keyword:named,payment_source:'セゾンカード'}],defaultSource:'Suica'}),'セゾンカード')
 })

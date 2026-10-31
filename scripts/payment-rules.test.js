@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { paymentForDraft } from '../src/payment-rules.js'
 const rules = [{keyword:'まいばすけっと',payment_source:'PayPay'},{keyword:'まいばすけっと南小岩',payment_source:'三井住友カード'}]
-const base = {merchant:'まいばすけっと南小岩8丁目店', rules, defaultSource:'楽天カード', type:'expense'}
+const base = {merchant:'まいばすけっと南小岩8丁目店', rules, registeredSources:['楽天カード','三井住友カード','PayPay','セゾンカード','Suica'], defaultSource:'楽天カード', type:'expense'}
 test('explicit import card overrides merchant and OCR', () => {
   assert.equal(paymentForDraft({...base, recognized:'現金',importSource:'セゾンカード'}), 'セゾンカード')
 })

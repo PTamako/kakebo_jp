@@ -73,7 +73,9 @@ export function resolveRelativeEntryTime(row, reference = new Date()) {
     // An elapsed duration determines both date and time; only a printed
     // explicit calendar date overrides the derived day.
     if (!date || dateIsRelative) date = calculated.date
-    time = calculated.time
+    // "2日前" and "1週間前" indicate a date only, never an exact clock.
+    const dateOnly = /(?:日|天|週間|周)前$/.test(normalize(timeToken))
+    time = dateOnly ? '' : calculated.time
   } else if (NOW_WORDS.has(timeToken)) {
     // A relative "now" has a real clock value and is today unless a
     // separate explicit date says otherwise.

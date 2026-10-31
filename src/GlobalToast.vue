@@ -23,7 +23,7 @@ import { notification } from './notifications.js'
 <style scoped>
 /* The toast is outside <main>; size against the viewport, not any page tab. */
 .global-toast-layer{
-  position:fixed;inset:0;z-index:9999;display:grid;place-items:center;
+  position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
   min-width:0;box-sizing:border-box;
   padding:calc(18px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right))
     calc(18px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
@@ -44,6 +44,7 @@ import { notification } from './notifications.js'
   display:block;flex:1 1 auto;min-width:0;max-width:100%;
   white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word
 }
+@media(max-width:400px){.global-toast-message{max-width:100%;padding:13px 14px;font-size:13px}}
 .global-toast-message svg{flex:none;width:21px;height:21px;margin-top:1px;color:#9fe7cc}
 .global-toast-error{background:rgba(104,44,59,.97)}
 .global-toast-error svg{color:#ffd4d8}

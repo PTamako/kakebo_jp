@@ -6,7 +6,10 @@ const STORE='receipts'
 const TTL = 30 * 24 * 60 * 60 * 1000
 const SESSION_PREFIX='kakeibo-session-receipt-v1-'
 const storeSession=()=>typeof sessionStorage==='undefined'?null:sessionStorage
-const isDeviceMode=()=>typeof localStorage==='undefined' || localStorage.getItem('kakeibo-remember-device')!=='0'
+let deviceMode = true
+// The preference comes from authenticated D1 settings, not browser storage.
+export function configureReceiptStorageMode(remember) { deviceMode = !!remember }
+const isDeviceMode=()=>deviceMode
 const sessionKey=id=>SESSION_PREFIX+id
 const sessionKeys=()=>{
   const storage=storeSession()
@@ -82,11 +85,13 @@ export async function setReceiptStorageMode(remember){
     const rows=readSessionRows()
     for(const row of rows)await operate('readwrite',store=>store.put(row))
     for(const key of sessionKeys())storeSession()?.removeItem(key)
+    deviceMode = true
     return
   }
   const rows=await readDeviceRows()
   if(!rows.length){
     if(!storeSession())throw Error('この端末ではセッション保存を利用できません')
+    deviceMode = false
     return
   }
   const storage=storeSession()
@@ -103,6 +108,7 @@ export async function setReceiptStorageMode(remember){
   }
   // All new copies are now present; clearing happens only after explicit UI confirmation.
   await operate('readwrite',store=>store.clear())
+  deviceMode = false
 }
 export function clearSessionReceiptImages(){
   const storage=storeSession()

@@ -49,9 +49,10 @@ test('D1 saves theme, OCR opt-in and draft on a new PWA installation',async()=>{
   assert.equal((await send(db,'PUT',{key:'theme',value:'blue'})).status,200)
   assert.equal((await send(db,'PUT',{key:'ai_ocr_enabled',value:true})).status,200)
   assert.equal((await send(db,'PUT',{key:'remember_device',value:false})).status,200)
+  assert.equal((await send(db,'PUT',{key:'fx_currency',value:'CNY'})).status,200)
   assert.equal((await send(db,'PUT',{key:'unsaved_draft',value:draft})).status,200)
   // PWA reinstall has no browser storage but the D1 object remains.
-  assert.deepEqual((await send(db)).body,{theme:'blue',ai_ocr_enabled:true,remember_device:false,unsaved_draft:draft})
+  assert.deepEqual((await send(db)).body,{theme:'blue',ai_ocr_enabled:true,remember_device:false,fx_currency:'CNY',unsaved_draft:draft})
   assert.equal((await send(db,'DELETE',null,stateUrl+'?key=unsaved_draft')).status,200)
   assert.equal('unsaved_draft' in (await send(db)).body,false)
   assert.ok(db.queries.every(q=>!/(INSERT INTO entries|UPDATE entries|DELETE FROM entries)/i.test(q)))
@@ -76,7 +77,7 @@ test('missing migration cannot silently fall back to browser state',async()=>{
   assert.equal(result.body.code,'app_state_schema_required')
 })
 test('no production module reads or writes localStorage',()=>{
-  const paths=['src/App.vue','src/FinanceTools.vue','src/receipt-store.js','src/duplicate-review.js','src/review-trash.js']
+  const paths=['src/App.vue','src/FinanceTools.vue','src/AmountInput.vue','src/receipt-store.js','src/duplicate-review.js','src/review-trash.js']
   for(const file of paths){
     const source=readFileSync(new URL('../'+file,import.meta.url),'utf8')
     assert.doesNotMatch(source,/\blocalStorage\b/,file)

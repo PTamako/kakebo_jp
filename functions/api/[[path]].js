@@ -153,6 +153,40 @@ export async function onRequest({ request, env, params }) {
     // import legacy records, or write default investment snapshots. User-initiated writes remain available.
     // Normalized recurring plans and bills are the sole persistent stores.
     // Obsolete finance_settings is intentionally neither created nor queried.
+    // Acknowledged review notices belong to D1, not PWA localStorage.
+    // This endpoint never inserts or deletes financial entries or legacy data.
+    if (a === 'review-notices' && !b) {
+      const validNoticeKey = key => typeof key === 'string' && (
+        /^c:v1:[0-9a-f]{16}$/.test(key) ||
+        /^d:v1:[0-9a-f]{16}$/.test(key) ||
+        /^r:[A-Za-z0-9_-]{1,80}:\\d{4}-(0[1-9]|1[0-2])$/.test(key) ||
+        /^t:[1-9]\\d{0,14}$/.test(key))
+      try {
+        if (m === 'GET') {
+          const {results} = await db.prepare('SELECT notice_key FROM review_notice_states ORDER BY notice_key').all()
+          return json({keys:results.map(item => item.notice_key)})
+        }
+        if (m === 'PUT') {
+          const body = await request.json().catch(() => null)
+          const keys = body?.keys
+          if (typeof body?.active !== 'boolean' || !Array.isArray(keys) || !keys.length ||
+              keys.length > 5000 || keys.some(key => !validNoticeKey(key)))
+            return json({error:'確認状態の更新内容を確認してください'},400)
+          const unique = [...new Set(keys)]
+          // Chunk for Cloudflare D1 query limits, without touching entries.
+          for (let i = 0; i < unique.length; i += 100) {
+            await db.batch(unique.slice(i,i+100).map(key => body.active
+              ? db.prepare('INSERT OR IGNORE INTO review_notice_states(notice_key) VALUES(?1)').bind(key)
+              : db.prepare('DELETE FROM review_notice_states WHERE notice_key=?1').bind(key)))
+          }
+          return json({ok:true,count:unique.length})
+        }
+      } catch (error) {
+        if (/no such table: review_notice_states/i.test(String(error)))
+          return json({error:'確認履歴用のD1移行（0010）が必要です。明細は変更されていません',code:'review_schema_required'},503)
+        throw error
+      }
+    }
     if (a === 'recurring-exclusions') {
       if (m === 'GET' && !b) {
         const {results} = await db.prepare('SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY month DESC,plan_id').all()

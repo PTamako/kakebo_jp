@@ -31,7 +31,9 @@ test('global toast lasts exactly 5 seconds; a new operation resets its timer', (
   assert.equal(module.notification.value.level,'error')
   assert.equal(pending.size,1,'old timer was cancelled')
   const id=[...pending.keys()][0]
-  pending.get(id).fn()
+  const fired = pending.get(id).fn
+  pending.delete(id) // A real timer leaves the scheduler when it fires.
+  fired()
   assert.equal(module.notification.value,null)
   module.notify('もう一度成功')
   module.clearNotification()

@@ -26,9 +26,21 @@ test('SBI backend computes applied status from edited type, target and date', ()
   assert.match(api, /UPDATE entries SET date = .*transfer_applied = \?10/)
 })
 
-test('edited records clear stale type/category/day filters before month navigation', () => {
-  assert.match(app, /entryTypeFilter\.value = 'all'\s+selectedDay\.value = ''\s+editingEntry\.value = null/)
-  assert.match(app, /detailFilter\.value = null\s+detailSourceEntries\.value = \[\]/)
-  assert.match(app, /if \(destinationMonth && destinationMonth !== month\.value\) month\.value = destinationMonth/)
+test('editing an SBI transfer preserves calendar context and updates the destination month safely', () => {
+  const saveEdit = app.match(/async function saveEdit\(\) \{([\s\S]*?)\n\}\n\nconst pendingTransfers/)?.[1]
+  assert.ok(saveEdit, 'entry edit handler exists')
+  // The old test required every save to clear the user's selected day and
+  // filters. That would regress the deliberate calendar/ledger UX fix.
+  assert.doesNotMatch(saveEdit, /entryTypeFilter\.value\s*=\s*'all'/)
+  assert.doesNotMatch(saveEdit, /detailFilter\.value\s*=\s*null/)
+  assert.doesNotMatch(saveEdit, /selectedDay\.value\s*=\s*''/)
+  assert.match(saveEdit, /const destinationMonth = editedEntryMonth\(e\.date\)/)
+  assert.match(saveEdit, /const returnDay = selectedDay\.value \? editedDay : ''/)
+  assert.match(saveEdit, /preserveOperatedDay\.value = editedDay/)
+  assert.match(saveEdit, /pendingEditMonthReturn = \{ month: destinationMonth, selectedDay: returnDay, calendarExpanded: returnCalendarExpanded \}/)
+  assert.match(saveEdit, /month\.value = destinationMonth/)
+  assert.match(saveEdit, /await loadTransfers\(\)/, 'SBI transfer status is still refreshed after save')
+  // The list may be automatically expanded, but only after the edit succeeds.
+  assert.ok(saveEdit.indexOf("await api('entries/' + e.id") < saveEdit.indexOf('editingEntry.value = null'))
   assert.match(app, /if \(!operatedDay \|\| days\.includes\(operatedDay\)\) preserveOperatedDay\.value = ''/)
 })

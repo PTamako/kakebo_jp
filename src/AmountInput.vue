@@ -56,7 +56,7 @@ let currencyLoaded = false
 async function loadCurrencyPreference() {
   if (currencyLoaded || !appContext?.api) return
   try {
-    const state = await appContext.api('app-state')
+    const state = await appContext.api('app-state?key=fx_currency')
     if (currencies.includes(state.fx_currency)) currency.value = state.fx_currency
     // Vue watchers flush asynchronously: the server-loaded value is not a user edit.
     await nextTick()

@@ -8,8 +8,16 @@ import { restoreAtomic } from './restore-atomic.js'
 // Cloudflare Pages Functions：/api/*
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
-const json = (d, s = 200) =>
-  new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
+const json = (d, s = 200, extraHeaders = {}) =>
+  new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extraHeaders } })
+const cookieSession = request => {
+  const cookie = request.headers.get('cookie') || ''
+  const match = cookie.match(/(?:^|;\\s*)kakeibo_session=([a-f0-9]{64})(?:;|$)/)
+  return match?.[1] || ''
+}
+const sessionCookie = (token, remember) =>
+  'kakeibo_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/api'+(remember ? '; Max-Age=2592000' : '')
+const expiredSessionCookie = 'kakeibo_session=; HttpOnly; Secure; SameSite=Strict; Path=/api; Max-Age=0'
 
 // Categorization rules are read exclusively from migrated D1 merchant_rules.
 // SBIの投信積立引落は資産移動として扱い、生活支出から除外する。
@@ -93,18 +101,30 @@ export async function onRequest({ request, env, params }) {
       try {
         await db.prepare('INSERT INTO device_sessions (token_hash, expires_at) VALUES (?1, ?2)').bind(hash, expires).run()
       } catch { return json({ error: 'ログイン処理に失敗しました' }, 500) }
-      return json({ session, expires_at: expires })
+      return json({ session, expires_at: expires }, 200,
+        { 'set-cookie': sessionCookie(session, body.remember !== false) })
     }
     if (b === 'logout' && m === 'POST') {
-      const session = request.headers.get('x-session') || ''
+      const session = request.headers.get('x-session') || cookieSession(request)
       if (/^[a-f0-9]{64}$/.test(session)) {
         try { await db.prepare('DELETE FROM device_sessions WHERE token_hash = ?1').bind(await sessionHash(session)).run() } catch {}
       }
-      return json({ ok: true })
+      return json({ ok: true }, 200, { 'set-cookie': expiredSessionCookie })
+    }
+    if (b === 'remember' && m === 'PUT') {
+      const session = request.headers.get('x-session') || cookieSession(request)
+      if (!/^[a-f0-9]{64}$/.test(session))
+        return json({error:'再ログインしてください'},401)
+      const found = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2')
+        .bind(await sessionHash(session),Date.now()).first()
+      if (!found) return json({error:'再ログインしてください'},401)
+      const body = await request.json().catch(() => null)
+      if (typeof body?.remember !== 'boolean') return json({error:'保存方法を確認してください'},400)
+      return json({ok:true},200,{'set-cookie':sessionCookie(session,body.remember)})
     }
     return json({ error: '対象が見つかりません' }, 404)
   }
-  const session = request.headers.get('x-session') || ''
+  const session = request.headers.get('x-session') || cookieSession(request)
   if (!/^[a-f0-9]{64}$/.test(session)) return json({ error: 'アクセスコードを確認してください' }, 401)
   let validSession
   try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }

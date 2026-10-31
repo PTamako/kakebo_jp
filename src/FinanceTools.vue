@@ -1235,30 +1235,41 @@ async function removeCardBill(record) {
     <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>
       <p v-if="transferTrashLoading && !transferTrashLoaded">振替の履歴を読み込み中…</p>
-      <p v-if="!trashCount && transferTrashLoaded">ゴミ箱は空です。</p>
-      <template v-if="reviewTrash.duplicateGroups.length">
-        <h3>重複確認</h3>
+      <p v-if="deletedPlanLoading && !deletedPlanLoaded">削除した固定費を読み込み中…</p>
+      <p v-if="!trashCount && transferTrashLoaded && deletedPlanLoaded">ゴミ箱は空です。</p>
+      <details v-if="reviewTrash.duplicateGroups.length" class="review-trash-category">
+        <summary>重複確認 <span>{{reviewTrash.duplicateGroups.length}}件</span></summary>
         <div v-for="(group,i) in reviewTrash.duplicateGroups" :key="duplicateReviewSignature(group) || i" class="review-trash-item">
           <span>{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件</span>
           <button type="button" @click="setDuplicateConfirmation(group, false)">元に戻す</button>
         </div>
-      </template>
-      <template v-if="reviewTrash.recurringExclusions.length">
-        <h3>固定費の除外</h3>
-        <div v-for="item in reviewTrash.recurringExclusions" :key="recurringTrashKey(item)" class="review-trash-item">
-          <span>{{item.name}} · {{item.month}}</span>
-          <button type="button" :disabled="recurringBusy" @click="restoreRecurringExclusion(item)">元に戻す</button>
-        </div>
-      </template>
-      <template v-if="reviewTrash.transferReminders.length">
-        <h3>振替の確認</h3>
+      </details>
+      <details v-if="reviewTrash.recurringExclusions.length || trashedRecurringPlans.length" class="review-trash-category">
+        <summary>固定費 <span>{{reviewTrash.recurringExclusions.length + trashedRecurringPlans.length}}件</span></summary>
+        <template v-if="trashedRecurringPlans.length">
+          <div class="review-trash-subheading">削除済み</div>
+          <div v-for="item in trashedRecurringPlans" :key="item.id" class="review-trash-item">
+            <span>{{item.name}} · {{yen(item.amount)}} · 毎月{{item.day}}日</span>
+            <button type="button" :disabled="recurringBusy || trashBusy" @click="restoreDeletedPlan(item)">元に戻す</button>
+          </div>
+        </template>
+        <template v-if="reviewTrash.recurringExclusions.length">
+          <div class="review-trash-subheading">除外した候補</div>
+          <div v-for="item in reviewTrash.recurringExclusions" :key="recurringTrashKey(item)" class="review-trash-item">
+            <span>{{item.name}} · {{item.month}}</span>
+            <button type="button" :disabled="recurringBusy || trashBusy" @click="restoreRecurringExclusion(item)">元に戻す</button>
+          </div>
+        </template>
+      </details>
+      <details v-if="reviewTrash.transferReminders.length" class="review-trash-category">
+        <summary>振替の確認 <span>{{reviewTrash.transferReminders.length}}件</span></summary>
         <div v-for="item in reviewTrash.transferReminders" :key="transferTrashKey(item)" class="review-trash-item">
           <span>{{item.merchant || item.note || 'SBI証券への振替'}} · {{item.transfer_date || item.date}} · {{yen(item.amount)}}</span>
-          <button type="button" :disabled="transferTrashLoading" @click="restoreTransferReminder(item)">元に戻す</button>
+          <button type="button" :disabled="transferTrashLoading || trashBusy" @click="restoreTransferReminder(item)">元に戻す</button>
         </div>
-      </template>
-      <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy || transferTrashLoading || !transferTrashLoaded" @click="emptyReviewTrash">ゴミ箱を空にする</button>
-      <p v-if="trashCount" class="review-trash-note">空にしても明細・固定費の除外・振替の通知設定は残ります。</p>
+      </details>
+      <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy || transferTrashLoading || deletedPlanLoading || !transferTrashLoaded || !deletedPlanLoaded" @click="emptyReviewTrash">ゴミ箱を空にする</button>
+      <p v-if="trashCount" class="review-trash-note">削除済み固定費は完全削除。それ以外の確認状態と記帳済み明細は残ります。</p>
     </template>
     <p v-if="trashMessage" role="status">{{trashMessage}}</p>
   </details>
@@ -1278,7 +1289,14 @@ async function removeCardBill(record) {
 .duplicate-confirmed-row span{min-width:0;overflow-wrap:anywhere}
 .finance-panel .duplicate-confirmed-row button{flex:none;min-height:44px;color:var(--blue-dark);background:var(--card)}
 .finance-panel .duplicate-review-message{font-size:12px;color:var(--muted)}
-.review-trash-panel h3{margin:2px 0 0;font-size:12px;font-weight:700;color:var(--muted)}
+.review-trash-category{min-width:0;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:var(--card)}
+.review-trash-category>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;cursor:pointer;font-size:13px;font-weight:700;list-style:none}
+.review-trash-category>summary::-webkit-details-marker{display:none}
+.review-trash-category>summary::after{content:'⌄';font-size:18px;color:var(--muted);transition:transform .15s}
+.review-trash-category[open]>summary::after{transform:rotate(180deg)}
+.review-trash-category>summary>span{margin-left:auto;font-size:12px;color:var(--muted);font-weight:500}
+.review-trash-category>summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.review-trash-subheading{padding-top:9px;font-size:11px;font-weight:700;color:var(--muted)}
 .review-trash-panel .review-trash-count{font-size:12px;color:var(--muted);font-weight:600;margin-left:6px}
 .review-trash-item{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:8px 0;border-bottom:1px solid var(--line);min-width:0}
 .review-trash-item span{min-width:0;overflow-wrap:anywhere;font-size:12px}

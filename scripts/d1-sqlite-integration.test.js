@@ -913,7 +913,16 @@ test('actual SQLite: dismissing a recurring month survives refresh, blocks posti
     assert.equal((await call('recurring-exclusions','POST',key)).status,200)
     assert.equal((await call('entries?month=2026-08')).body.length,1)
     assert.equal((await call('recurring-plans/'+plan.id,'DELETE')).status,200)
-    assert.deepEqual((await call('recurring-exclusions')).body,[])
+    assert.deepEqual((await call('recurring-plans')).body,[])
+    assert.equal((await call('recurring-plans?trash=1')).body.length,1)
+    // Archiving must preserve excluded periods, otherwise restoring the plan
+    // would silently re-offer an excluded candidate and risk duplicate posting.
+    assert.deepEqual((await call('recurring-exclusions')).body,[key])
+    assert.equal((await call('entries?month=2026-08')).body.length,1)
+    assert.equal((await call('recurring-plans/'+plan.id+'/restore','POST')).status,200)
+    assert.equal((await call('recurring-plans')).body.length,1)
+    assert.deepEqual((await call('recurring-exclusions')).body,[key])
+    assert.equal((await call('recurring-post','POST',approvedPost(plan,'2026-08'))).status,409)
     assert.equal((await call('entries?month=2026-08')).body.length,1)
   }finally{db.close()}
 })

@@ -243,7 +243,11 @@ export async function onRequest({ request, env, params }) {
             return json({error:'削除対象の再確認が必要です'},428)
           const archived=await db.prepare('SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1').bind(b).first()
           if (!archived) return json({error:'ゴミ箱に固定費が見つかりません'},404)
-          await db.prepare('DELETE FROM recurring_plans WHERE id=?1 AND EXISTS (SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1)').bind(b).run()
+          await db.batch([
+            db.prepare('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND EXISTS (SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1)').bind(b),
+            db.prepare('DELETE FROM recurring_plans WHERE id=?1 AND EXISTS (SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1)').bind(b),
+            db.prepare('DELETE FROM recurring_plan_trash WHERE plan_id=?1').bind(b)
+          ])
           return json({ok:true})
         }
         if (m === 'DELETE' && b && /^[a-zA-Z0-9-]{8,80}$/.test(b) && !params.path?.[2]) {

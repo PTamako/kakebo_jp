@@ -83,7 +83,7 @@ test('Gemma five-column Japanese 時分 clock remains a time, never part of the 
     '2026年9月9日,19時11分,リブレ京成,¥500,クレジット VISA',
     '2026年9月8日,19時10分,リブレ京成,¥900,クレジット VISA',
     '2026年9月3日,19時10分,リブレ京成,¥600,クレジット VISA'
-  ].join('\\n'), [], new Date('2026-10-31T09:00:00Z'))
+  ].join('\n'), [], new Date('2026-10-31T09:00:00Z'))
   assert.equal(rows.length, 6)
   assert.deepEqual(rows.map(row => row.merchant), [
     'リブレ京成', 'メルカリ', 'リブレ京成', 'リブレ京成', 'リブレ京成', 'リブレ京成'
@@ -105,7 +105,7 @@ test('Gemma accepts Japanese single-digit, full-width-colon and AM/PM time witho
     '2026年9月3日,１９：４８,架空文具店,¥2,500,不明',
     '2026年9月4日,午後8時05分,架空喫茶店,¥420,不明',
     '2026年9月5日,不明,架空スーパー,¥800,不明'
-  ].join('\\n'), [], new Date('2026-10-31T09:00:00Z'))
+  ].join('\n'), [], new Date('2026-10-31T09:00:00Z'))
   assert.equal(rows.length, 4)
   assert.deepEqual(rows.map(row => row.time), ['09:09', '19:48', '20:05', ''])
   assert.deepEqual(rows.map(row => row.merchant), ['架空書店','架空文具店','架空喫茶店','架空スーパー'])

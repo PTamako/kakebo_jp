@@ -762,6 +762,7 @@ async function emptyReviewTrash() {
       await props.api('recurring-plans/' + encodeURIComponent(item.id) + '/purge',
         {method:'DELETE',headers:{'x-confirm-purge':String(item.id)}})
       trashedRecurringPlans.value = trashedRecurringPlans.value.filter(row => row.id !== item.id)
+      recurringExclusions.value = recurringExclusions.value.filter(row => row.planId !== item.id)
     }
     trashMessage.value = count
       ? 'ゴミ箱を空にしました（記帳済み明細は保持）'

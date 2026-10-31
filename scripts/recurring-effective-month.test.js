@@ -92,7 +92,7 @@ test('recurring candidate drawer and swipe-to-dismiss are both reversible',()=>{
   assert.match(finance,/@touchstart\.passive="onRecurringTouchStart/)
   assert.match(finance,/@touchend="onRecurringTouchEnd/)
   assert.match(finance,/@click="dismissRecurring\(candidate\)"/)
-  assert.match(finance,/@click="restoreRecurringExclusion\(item\)"/)
+  assert.match(finance,/@restore="restoreRecurringExclusion\(item\)"/)
   assert.match(finance,/<summary>ゴミ箱/)
   assert.doesNotMatch(finance,/<summary>除外済み/)
   assert.match(finance,/recurringPreview\.value=recurringPreview\.value\.filter/)

@@ -4,7 +4,7 @@ export const backupVersion = 4
 const RESTORE_SETTING_ORDER = [
   'paymentSources','categoryMetadata','categories','categoryIcons',
   'customRules','merchantPaymentRules','bills',
-  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans','recurringExclusions'
+  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans','archivedPlans','recurringExclusions'
 ]
 // Setting collections are restored in dependency order, with no silent fallback
 // that omits display names, sorting or portfolio data for large archives.
@@ -110,7 +110,7 @@ export function validateBackup(value) {
       throw Error('取引データに不正な値があります')
     }
   }
-  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks', 'recurringExclusions']
+  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks', 'recurringExclusions', 'archivedPlans']
   for (const name of arrayNames) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
@@ -145,7 +145,7 @@ export function validateBackup(value) {
   const validCustom = x => x && isText(x.keyword,120) && isText(x.category,120)
   const validPaymentRule = x => x && isText(x.keyword,120) && isText(x.payment_source,80)
   for (const [name, check] of [
-    ['plans',validPlan],['recurringExclusions',validExclusion],['bills',validBill],['paymentSources',validSource],
+    ['plans',validPlan],['archivedPlans',validPlan],['recurringExclusions',validExclusion],['bills',validBill],['paymentSources',validSource],
     ['customRules',validCustom],['merchantPaymentRules',validPaymentRule],
     ['categories',x => isText(x,20)]
   ]) {

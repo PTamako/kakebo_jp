@@ -3,8 +3,8 @@ import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
 import { sortOtherLast } from './category-sort.js'
 import ReviewTrashActions from './ReviewTrashActions.vue'
-import { findLedgerDuplicateGroups, duplicateReviewSignature, readConfirmedDuplicateGroups, saveConfirmedDuplicateGroups } from './duplicate-review.js'
-import { duplicateTrashKey, recurringTrashKey, transferTrashKey, readArchivedTrash, saveArchivedTrash, visibleReviewedTrash } from './review-trash.js'
+import { findLedgerDuplicateGroups, duplicateReviewSignature } from './duplicate-review.js'
+import { duplicateTrashKey, recurringTrashKey, transferTrashKey, visibleReviewedTrash } from './review-trash.js'
 import AmountInput from './AmountInput.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
@@ -446,6 +446,7 @@ async function loadAll() {
     }
     const latestYears=await props.api('entry-years')
     if(JSON.stringify(years)!==JSON.stringify(latestYears))throw Error('明細の件数が読み込み中に変わりました。再度実行してください')
+    await loadReviewState()
     rows.value=all;loaded.value=true;lastLoadedAt.value=new Date()
     // A save completed during this download: do not call stale data fresh.
     ledgerDirty = props.ledgerRevision !== startingRevision
@@ -640,8 +641,33 @@ async function restore(){
 }
 // Use a read-only, tolerant comparison for review; backup keys stay strict.
 const duplicates=computed(() => findLedgerDuplicateGroups(rows.value))
-const confirmedDuplicateKeys = ref(readConfirmedDuplicateGroups())
-const archivedTrashKeys = ref(readArchivedTrash())
+// Persist notification decisions in D1, never rely on per-installation cache.
+const confirmedDuplicateKeys = ref(new Set())
+const archivedTrashKeys = ref(new Set())
+const reviewStateReady = ref(false)
+const reviewStateError = ref('')
+const reviewStateBusy = ref(false)
+async function loadReviewState() {
+  reviewStateReady.value = false
+  try {
+    const state = await props.api('review-notices')
+    if (!Array.isArray(state?.keys) || state.keys.some(key => typeof key !== 'string'))
+      throw Error('確認履歴の形式が不正です')
+    confirmedDuplicateKeys.value = new Set(state.keys.filter(key => /^c:v1:[0-9a-f]{16}$/.test(key)).map(key => key.slice(2)))
+    archivedTrashKeys.value = new Set(state.keys.filter(key => /^(?:d:v1:|r:|t:)/.test(key)))
+    reviewStateError.value = ''
+    reviewStateReady.value = true
+  } catch (error) {
+    confirmedDuplicateKeys.value = new Set()
+    archivedTrashKeys.value = new Set()
+    reviewStateError.value = '確認履歴を読み込めません：' + error.message
+  }
+}
+async function writeReviewNotices(add = [], remove = []) {
+  if (!reviewStateReady.value) throw Error(reviewStateError.value || '確認履歴を更新できません')
+  const result = await props.api('review-notices', {method:'PUT',body:JSON.stringify({add,remove})})
+  if (!result?.ok) throw Error('確認履歴をD1に保存できませんでした')
+}
 const trashMessage = ref('')
 const trashBusy = ref(false)
 const trashedRecurringPlans = ref([])
@@ -716,49 +742,49 @@ async function restoreTransferReminder(item) {
     dismissedTransferTrash.value = dismissedTransferTrash.value.filter(x => Number(x.id) !== id)
     const key = transferTrashKey(item)
     if (archivedTrashKeys.value.has(key)) {
+      await writeReviewNotices([], [key])
       const next = new Set(archivedTrashKeys.value)
       next.delete(key)
-      if (saveArchivedTrash(next)) archivedTrashKeys.value = next
+      archivedTrashKeys.value = next
     }
     if (appContext?.loadTransfers) await appContext.loadTransfers()
     trashMessage.value = '振替の通知を元に戻しました'
   } catch(e) { trashMessage.value = '振替の通知を戻せませんでした：' + e.message }
   finally { transferTrashLoading.value = false }
 }
-const pendingDuplicates = computed(() => duplicates.value.filter(group =>
-  !confirmedDuplicateKeys.value.has(duplicateReviewSignature(group))))
-const confirmedDuplicates = computed(() => duplicates.value.filter(group =>
-  confirmedDuplicateKeys.value.has(duplicateReviewSignature(group))))
+const pendingDuplicates = computed(() => reviewStateReady.value ? duplicates.value.filter(group =>
+  !confirmedDuplicateKeys.value.has(duplicateReviewSignature(group))) : [])
+const confirmedDuplicates = computed(() => reviewStateReady.value ? duplicates.value.filter(group =>
+  confirmedDuplicateKeys.value.has(duplicateReviewSignature(group))) : [])
 const reviewTrash = computed(() => visibleReviewedTrash(
   confirmedDuplicates.value, recurringExcludedRows.value, dismissedTransferTrash.value,
   archivedTrashKeys.value, duplicateReviewSignature))
 // Never report a subtotal while archived plans or transfer notices are still
 // loading. A count becomes authoritative only after every source succeeds.
-const trashCountReady = computed(() => settingsReady.value && loaded.value && !busy.value &&
+const trashCountReady = computed(() => reviewStateReady.value && settingsReady.value && loaded.value && !busy.value &&
   transferTrashLoaded.value && deletedPlanLoaded.value &&
   !transferTrashLoading.value && !deletedPlanLoading.value)
 const trashCount = computed(() => trashCountReady.value
   ? reviewTrash.value.duplicateGroups.length + reviewTrash.value.recurringExclusions.length +
     reviewTrash.value.transferReminders.length + trashedRecurringPlans.value.length
   : null)
-const trashCountLoading = computed(() => busy.value || transferTrashLoading.value ||
+const trashCountLoading = computed(() => (reviewStateBusy.value || (!reviewStateReady.value && !reviewStateError.value)) || busy.value || transferTrashLoading.value ||
   deletedPlanLoading.value || !settingsReady.value || !loaded.value)
 const duplicateReviewMessage = ref('')
-function removeReviewedTrashNotice(key) {
-  if (!key || trashBusy.value || recurringBusy.value || transferTrashLoading.value || deletedPlanLoading.value) return
-  // Ordinary reviewed notices are acknowledged, not financial records:
-  // deleting them only archives a short per-device notification key.
-  const next = new Set(archivedTrashKeys.value)
-  next.add(key)
-  if (!saveArchivedTrash(next)) {
-    trashMessage.value = '確認結果をこの端末に保存できませんでした'
-    return
-  }
-  archivedTrashKeys.value = next
-  trashMessage.value = 'ゴミ箱から削除しました（記帳済み明細は保持）'
+async function removeReviewedTrashNotice(key) {
+  if (!key || !reviewStateReady.value || trashBusy.value || recurringBusy.value ||
+      transferTrashLoading.value || deletedPlanLoading.value) return
+  trashBusy.value = true
+  try {
+    await writeReviewNotices([key])
+    archivedTrashKeys.value = new Set([...archivedTrashKeys.value,key])
+    trashMessage.value = 'ゴミ箱から削除しました（記帳済み明細は保持）'
+  } catch (e) {
+    trashMessage.value = '確認履歴の削除に失敗しました：' + e.message
+  } finally { trashBusy.value = false }
 }
 async function emptyReviewTrash() {
-  if (!trashCount.value || trashBusy.value || recurringBusy.value || transferTrashLoading.value ||
+  if (!reviewStateReady.value || !trashCount.value || trashBusy.value || recurringBusy.value || transferTrashLoading.value ||
       deletedPlanLoading.value || !transferTrashLoaded.value || !deletedPlanLoaded.value) return
   const count = trashedRecurringPlans.value.length
   const warning = count
@@ -767,14 +793,16 @@ async function emptyReviewTrash() {
   if (!confirm(warning)) return
   trashBusy.value = true
   try {
-    // Clear device-only notices first. If saving fails, leave actual D1
-    // recurring plans untouched. Archived plans require explicit purge.
-    const next = new Set(archivedTrashKeys.value)
-    for (const group of reviewTrash.value.duplicateGroups) next.add(duplicateTrashKey(duplicateReviewSignature(group)))
-    for (const item of reviewTrash.value.recurringExclusions) next.add(recurringTrashKey(item))
-    for (const item of reviewTrash.value.transferReminders) next.add(transferTrashKey(item))
-    if (!saveArchivedTrash(next)) throw Error('確認済みの表示設定を保存できませんでした')
-    archivedTrashKeys.value = next
+    // Archive notices in D1 before purging deleted recurring settings.
+    const keys = [
+      ...reviewTrash.value.duplicateGroups.map(group => duplicateTrashKey(duplicateReviewSignature(group))),
+      ...reviewTrash.value.recurringExclusions.map(recurringTrashKey),
+      ...reviewTrash.value.transferReminders.map(transferTrashKey)
+    ].filter(Boolean)
+    if (keys.length) {
+      await writeReviewNotices(keys)
+      archivedTrashKeys.value = new Set([...archivedTrashKeys.value,...keys])
+    }
     for (const item of [...trashedRecurringPlans.value]) {
       await props.api('recurring-plans/' + encodeURIComponent(item.id) + '/purge',
         {method:'DELETE',headers:{'x-confirm-purge':String(item.id)}})
@@ -789,22 +817,27 @@ async function emptyReviewTrash() {
     await loadDeletedPlans()
   } finally { trashBusy.value = false }
 }
-function setDuplicateConfirmation(group, isConfirmed) {
+async function setDuplicateConfirmation(group, isConfirmed) {
   const key = duplicateReviewSignature(group)
-  if (!key) {
-    duplicateReviewMessage.value = '明細を更新してから再度お試しください'
+  if (!key || !reviewStateReady.value || reviewStateBusy.value) {
+    duplicateReviewMessage.value = reviewStateError.value || '明細を更新してから再度お試しください'
     return
   }
-  const next = new Set(confirmedDuplicateKeys.value)
-  if (isConfirmed) next.add(key)
-  else next.delete(key)
-  // Only hide a candidate once its confirmation has actually been saved.
-  if (!saveConfirmedDuplicateGroups(next)) {
-    duplicateReviewMessage.value = '確認結果をこの端末に保存できませんでした'
-    return
-  }
-  confirmedDuplicateKeys.value = next
-  duplicateReviewMessage.value = isConfirmed ? 'ゴミ箱へ移動しました' : '重複候補に戻しました'
+  reviewStateBusy.value = true
+  try {
+    const archived = duplicateTrashKey(key)
+    await writeReviewNotices(isConfirmed ? ['c:'+key] : [], isConfirmed ? [archived] : ['c:'+key,archived])
+    const next = new Set(confirmedDuplicateKeys.value)
+    if (isConfirmed) next.add(key)
+    else next.delete(key)
+    confirmedDuplicateKeys.value = next
+    const nextArchived = new Set(archivedTrashKeys.value)
+    nextArchived.delete(archived)
+    archivedTrashKeys.value = nextArchived
+    duplicateReviewMessage.value = isConfirmed ? 'ゴミ箱へ移動しました' : '重複候補に戻しました'
+  } catch (e) {
+    duplicateReviewMessage.value = '確認履歴の保存に失敗しました：' + e.message
+  } finally { reviewStateBusy.value = false }
 }
 function refreshDuplicateReview(event) {
   if (event.currentTarget?.open && props.active && managementTab.value === 'tools' && !busy.value) void loadAll()
@@ -899,12 +932,13 @@ async function dismissRecurring(row) {
     if(!result.ok)throw Error('除外できませんでした')
     const key=recurringKey(row)
     recurringExclusions.value=[...recurringExclusions.value.filter(item=>recurringKey(item)!==key),{planId:row.planId,month:row.month}]
-    // A newly excluded candidate is a new review item, even after older trash was cleared.
+    // A new exclusion is reviewable even if an older notice was cleared.
     const archivedKey = recurringTrashKey(row)
     if (archivedTrashKeys.value.has(archivedKey)) {
+      await writeReviewNotices([], [archivedKey])
       const next = new Set(archivedTrashKeys.value)
       next.delete(archivedKey)
-      if (saveArchivedTrash(next)) archivedTrashKeys.value = next
+      archivedTrashKeys.value = next
     }
     recurringPreview.value=recurringPreview.value.filter(item=>recurringKey(item)!==key)
     const next=new Set(recurringSelected.value)
@@ -1288,13 +1322,14 @@ async function removeCardBill(record) {
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="refreshDuplicateReview">
     <summary>重複の可能性</summary>
     <p v-if="busy">重複候補を確認中…</p>
+    <p v-else-if="!reviewStateReady" role="status">{{ reviewStateError || '確認履歴を読み込み中…' }}</p>
     <p v-else-if="!loaded">{{ loadError || '全明細を更新してください。' }}</p>
-    <p v-else-if="!pendingDuplicates.length">重複候補はありません。</p>
+    <p v-else-if="!pendingDuplicates.length && reviewStateReady">重複候補はありません。</p>
     <div v-for="(group,i) in pendingDuplicates.slice(0,30)" :key="duplicateReviewSignature(group) || i" class="duplicate-review-row">
       <span class="duplicate-review-label">{{group[0].date}} {{group[0].merchant}} {{yen(group[0].amount)}} · {{group.length}}件</span>
       <div class="duplicate-review-actions">
         <button type="button" class="duplicate-review-view" @click="emit('open-duplicate', group[0].date)">明細を見る</button>
-        <button type="button" class="duplicate-review-ignore" :disabled="!duplicateReviewSignature(group)" @click="setDuplicateConfirmation(group, true)">重複ではない</button>
+        <button type="button" class="duplicate-review-ignore" :disabled="reviewStateBusy || !reviewStateReady || !duplicateReviewSignature(group)" @click="setDuplicateConfirmation(group, true)">重複ではない</button>
       </div>
     </div>
 
@@ -1304,7 +1339,7 @@ async function removeCardBill(record) {
     <summary>ゴミ箱 <span class="review-trash-count" aria-live="polite">{{trashCountReady ? trashCount+'件' : trashCountLoading ? '確認中…' : '再読み込みが必要'}}</span></summary>
     <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>
-      <p v-if="!trashCountReady" class="review-trash-loading" role="status">{{trashCountLoading ? 'ゴミ箱を確認中…' : '件数を取得できませんでした。再読み込みしてください。'}}</p>
+      <p v-if="!trashCountReady" class="review-trash-loading" role="status">{{reviewStateError || (trashCountLoading ? 'ゴミ箱を確認中…' : '件数を取得できませんでした。再読み込みしてください。')}}</p>
       <button v-if="!trashCountReady && !trashCountLoading" type="button" class="review-trash-retry" @click="onReviewTrashToggle({currentTarget:{open:true}})">再読み込み</button>
       <template v-if="trashCountReady">
       <p v-if="trashCount === 0">ゴミ箱は空です。</p>
@@ -1312,7 +1347,7 @@ async function removeCardBill(record) {
         <summary>重複確認 <span>{{reviewTrash.duplicateGroups.length}}件</span></summary>
         <div v-for="(group,i) in reviewTrash.duplicateGroups" :key="duplicateReviewSignature(group) || i" class="review-trash-item">
           <span class="review-trash-text" :title="group[0].date+' '+group[0].merchant+' '+yen(group[0].amount)">{{group[0].date}} {{group[0].merchant}} · {{yen(group[0].amount)}} · {{group.length}}件</span>
-          <ReviewTrashActions :label="group[0].date+' '+group[0].merchant" :disabled="trashBusy || recurringBusy" @restore="setDuplicateConfirmation(group, false)" @remove="removeReviewedTrashNotice(duplicateTrashKey(duplicateReviewSignature(group)))" />
+          <ReviewTrashActions :label="group[0].date+' '+group[0].merchant" :disabled="trashBusy || recurringBusy || reviewStateBusy" @restore="setDuplicateConfirmation(group, false)" @remove="removeReviewedTrashNotice(duplicateTrashKey(duplicateReviewSignature(group)))" />
         </div>
       </details>
       <!-- Different effects: one is a deleted whole schedule, the other

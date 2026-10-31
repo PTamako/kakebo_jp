@@ -9,7 +9,8 @@ import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, 
 import { isCardBilledEntry } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
-import { countReceiptImages, clearAllReceiptImages } from './receipt-store.js'
+import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
+import { receiptZip } from './receipt-export.js'
 const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
@@ -50,6 +51,20 @@ async function refreshLocalReceiptCount() {
     localReceiptCount.value = null
     receiptImagePrivacyMessage.value = '画像の件数を確認できません：' + e.message
   } finally { receiptImagesBusy.value = false }
+}
+async function downloadReceiptImages() {
+  if(receiptImagesBusy.value)return
+  receiptImagesBusy.value=true
+  try {
+    const records=await listReceiptImagesForExport()
+    if(!records.length){receiptImagePrivacyMessage.value='保存対象のレシート画像はありません';return}
+    const blob=await receiptZip(records)
+    const url=URL.createObjectURL(blob),a=document.createElement('a')
+    a.href=url;a.download='kakeibo-receipts-'+new Date().toISOString().slice(0,10)+'.zip'
+    a.click();setTimeout(()=>URL.revokeObjectURL(url),30000)
+    receiptImagePrivacyMessage.value=records.length+'件の画像をZIPに保存しました。帳簿JSONとは別に保管してください'
+  }catch(e){receiptImagePrivacyMessage.value='画像の保存に失敗しました：'+e.message}
+  finally{receiptImagesBusy.value=false}
 }
 async function clearLocalReceiptImages() {
   if (receiptImagesBusy.value || !localReceiptCount.value) return
@@ -613,7 +628,11 @@ function reviewRecurring() {
   const current = new Date().toLocaleDateString('sv-SE').slice(0,7)
   recurringSelected.value = new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
   const conflicts=preview.filter(x=>x.conflict).length
-  recurringMessage.value=preview.length ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）' : '未記録の固定費はありません'
+  const historical=preview.filter(row=>row.month<current).length
+  recurringMessage.value=preview.length
+    ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）'+
+      (historical?' · 過去分 '+historical+'件は現行の設定金額による推定です':'')
+    : '未記録の固定費はありません'
 }
 async function applyRecurring(){
   if(recurringBusy.value || !loaded.value || !recurringPreview.value.length)return
@@ -622,6 +641,9 @@ async function applyRecurring(){
   const summary=safe.length+'件、合計 '+yen(safe.reduce((sum,row)=>sum+row.amount,0))+
     ' の固定費を登録します。日付と金額を確認しましたか？'
   if(!confirm(summary))return
+  const thisMonth=new Date().toLocaleDateString('sv-SE').slice(0,7)
+  const historical=safe.filter(row=>row.month<thisMonth)
+  if(historical.length && !confirm('過去の固定費'+historical.length+'件は現在の設定金額を使用します。過去に金額が変わっている場合は実際と異なります。個別の金額を確認しましたか？'))return
   recurringBusy.value=true
   try{
     const result=await postApprovedRecurringEntries(props.api,safe)
@@ -805,7 +827,7 @@ async function removeCardBill(record) {
     <button v-if="recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
     <p v-if="recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
     <div v-if="recurringPreview.length" class="recurring-candidate-list" role="group" aria-label="未登録の固定費候補">
-      <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
+      <label v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}"><input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" /><span>{{candidate.date}} {{candidate.name}} {{yen(candidate.amount)}}{{candidate.month < new Date().toLocaleDateString('sv-SE').slice(0,7) ? ' · 過去分は推定' : ''}} {{candidate.conflict ? '· 既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '· 登録対象' : '· 未選択'}}</span></label>
     </div>
     <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
     <details class="recurring-list-disclosure">
@@ -891,6 +913,7 @@ async function removeCardBill(record) {
       <p>端末保存・30日（明細は保持）</p>
       <div class="finance-actions device-receipt-actions">
         <button type="button" :disabled="receiptImagesBusy" @click="refreshLocalReceiptCount">{{receiptImagesBusy ? '確認中…' : '件数を更新'}}</button>
+        <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">画像ZIPを保存</button>
         <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
       </div>
       <p v-if="receiptImagePrivacyMessage" role="status">{{receiptImagePrivacyMessage}}</p>
@@ -980,6 +1003,7 @@ async function removeCardBill(record) {
 .device-privacy-row strong{font-size:14px}
 .device-privacy-count{font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
 .device-receipt-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+.device-receipt-actions .device-receipt-clear{grid-column:1/-1}
 .device-privacy-panel .device-receipt-clear{color:var(--blue-dark);background:var(--card)}
 @media(max-width:360px){.device-privacy-panel .device-receipt-actions button{font-size:12px;padding-inline:5px}}
 

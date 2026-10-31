@@ -39,6 +39,13 @@ export async function deleteReceiptImage(entryId) {
 export async function countReceiptImages() {
   return operate('readonly', store => store.count())
 }
+// Read-only snapshot, excluding images already past their 30-day retention.
+export async function listReceiptImagesForExport() {
+  const rows=await operate('readonly',store=>store.getAll())
+  return (rows||[]).filter(row=>row.expiresAt>Date.now() &&
+    Number.isSafeInteger(row.entryId) && row.entryId>0 &&
+    ['image/webp','image/jpeg'].includes(row.blob?.type))
+}
 export async function clearAllReceiptImages() {
   await operate('readwrite', store => store.clear())
 }

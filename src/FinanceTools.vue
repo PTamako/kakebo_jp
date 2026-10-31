@@ -1327,7 +1327,7 @@ async function removeCardBill(record) {
         </div>
       </details>
       <details v-if="reviewTrash.recurringExclusions.length" class="review-trash-category">
-        <summary>記帳から除外した月 <span>{{reviewTrash.recurringExclusions.length}}件</span></summary>
+        <summary>固定費の月別除外 <span>{{reviewTrash.recurringExclusions.length}}件</span></summary>
         <p class="review-trash-category-note">指定した月だけ記帳候補から除外した項目です。</p>
         <div v-for="item in reviewTrash.recurringExclusions" :key="recurringTrashKey(item)" class="review-trash-item">
           <span class="review-trash-text" :title="item.name+' '+item.month">{{item.name}} · {{item.month}}</span>

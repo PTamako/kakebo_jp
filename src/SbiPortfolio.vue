@@ -687,6 +687,14 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
 .sbi-dialog{box-sizing:border-box;display:grid;gap:12px;width:100%;max-width:520px;max-height:calc(92dvh - env(safe-area-inset-bottom, 0px));overflow:auto;overscroll-behavior:contain;padding:18px 18px calc(18px + env(safe-area-inset-bottom, 0px));border-radius:22px 22px 0 0;background:var(--card);color:var(--ink);box-shadow:0 -12px 35px #00000018}
 .sbi-dialog label{display:grid;gap:5px;font-size:12px;font-weight:700}
 .sbi-dialog label input,.sbi-dialog label select{box-sizing:border-box;width:100%;min-height:44px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px;font-size:16px;color:var(--ink)}
+/* iOS Safari month picker keeps an intrinsic minimum size unless both its
+   grid label and the internal date-edit box are allowed to shrink. */
+.sbi-dialog{min-width:0;max-width:min(100vw,520px);overflow-x:hidden}
+.sbi-dialog>label{min-width:0;max-width:100%;width:100%;box-sizing:border-box;overflow:hidden}
+.sbi-dialog label input[type=month]{-webkit-appearance:none;appearance:none;display:block;width:100%!important;min-width:0!important;max-width:100%!important;inline-size:100%;min-inline-size:0;max-inline-size:100%;box-sizing:border-box;overflow:hidden;padding-inline:8px!important;text-align:center}
+.sbi-dialog label input[type=month]::-webkit-date-and-time-value{display:block;width:100%;min-width:0;text-align:center}
+.sbi-dialog label input[type=month]::-webkit-datetime-edit{min-width:0;max-width:100%;padding:0}
+.sbi-dialog label input[type=month]::-webkit-calendar-picker-indicator{flex:none;max-width:24px;margin:0;padding:0}
 .sbi-dialog .sbi-checkbox{display:flex;align-items:center;gap:10px}.sbi-dialog .sbi-checkbox input{width:auto;min-height:auto}
 .sbi-dialog .sbi-line-heading h3{font-size:17px}
 .sbi-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}

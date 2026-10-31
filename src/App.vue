@@ -517,7 +517,9 @@ async function onImage(e, mode = 'statement') {
         await refreshAiQuota()
         if(aiQuota.value && aiQuota.value.remaining<=0)throw Error('本日のAI上限に達しました')
         const data = new FormData()
-        const image = await compressReceiptImage(f)
+        // Send small or lightly colored statement dates at readable resolution.
+        // This does not change the compact, device-only saved receipt copy.
+        const image = await compressReceiptImage(f, 2000, 1024 * 1024)
         data.append('image', image, image.type === 'image/jpeg' ? 'receipt.jpg' : 'receipt.webp')
         data.append('mode', mode)
         const response = await fetch('/api/ai-ocr', { method: 'POST', headers: { 'x-session': token.value }, body: data })

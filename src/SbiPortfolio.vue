@@ -119,7 +119,7 @@ watch(holdingsData,holdings=>{
 })
 
 const fundGroups = computed(() => groupFundHoldings(holdingsData.value))
-const visibleHoldings = computed(() => showAllHoldings.value ? fundGroups.value : fundGroups.value.slice(0,4))
+const visibleHoldings = computed(() => showAllHoldings.value ? fundGroups.value : fundGroups.value.slice(0,2))
 const accountSummary = fund => {
   const accounts = fund.accounts.map(h=>h.account_type)
   if (accounts.includes('growth') && accounts.includes('tsumitate')) return '成長・つみたて'
@@ -452,8 +452,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
               </div>
             </article>
           </div>
-          <button v-if="fundGroups.length>4" type="button" class="sbi-show-more" :aria-expanded="showAllHoldings"
-            @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(fundGroups.length-4)+'銘柄を表示'}}</button>
+          <button v-if="fundGroups.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllHoldings"
+            @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(fundGroups.length-2)+'銘柄を表示'}}</button>
         </div>
       </details>
     </template>

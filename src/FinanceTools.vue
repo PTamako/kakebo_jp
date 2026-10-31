@@ -352,7 +352,8 @@ const recurringListOpen = ref(false)
 const recurringSwipeOpenKey = ref('')
 let recurringTouchStart = null
 const recurringExcludedRows = computed(() => recurringExclusions.value.map(item => ({
-  ...item,name:plans.value.find(plan => plan.id === item.planId)?.name || '固定費'
+  ...item,name:plans.value.find(plan => plan.id === item.planId)?.name ||
+    trashedRecurringPlans.value.find(plan => plan.id === item.planId)?.name || '固定費'
 })))
 const recurringKey = row => row.planId + ':' + row.month
 const selectedRecurring = computed(() => recurringPreview.value.filter(row => !row.conflict && recurringSelected.value.has(recurringKey(row))))

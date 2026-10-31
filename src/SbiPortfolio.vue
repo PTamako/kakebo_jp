@@ -1,5 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
+import { notify } from './notifications.js'
 import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js'
 import { groupFundHoldings } from './sbi-fund-groups.js'
 import { parseSbiHoldingsText } from './sbi-holdings-import.js'
@@ -367,8 +368,20 @@ async function submitTransfer() {
 // reconciliation cannot be stale if it raced the automatic due-date update.
 watch(() => props.transferLoading, (busy, previous) => { if (previous && !busy) void load() })
 watch(() => props.refreshKey, (value,previous) => { if (value !== previous) void load() })
+const statusTimers = new Map()
+for (const status of [error, notice, bulkInfo, bulkWarning]) {
+  watch(status, value => {
+    if (!value) return
+    if (statusTimers.has(status)) clearTimeout(statusTimers.get(status))
+    notify(value, status === error || status === bulkWarning ? 'error' : undefined)
+    statusTimers.set(status, setTimeout(() => {
+      if (status.value === value) status.value = ''
+      statusTimers.delete(status)
+    }, 5000))
+  })
+}
 onMounted(() => { window.addEventListener('keydown',onEditorKeydown); void load() })
-onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.removeEventListener('keydown',onEditorKeydown) })
+onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const timer of statusTimers.values()) clearTimeout(timer); statusTimers.clear(); window.removeEventListener('keydown',onEditorKeydown) })
 </script>
 
 <template>
@@ -383,9 +396,9 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
       </div>
     </div>
     <p v-if="loading && !data" class="sbi-loading" role="status">残高・積立を読み込み中…</p>
-    <p v-if="error" class="sbi-error" role="alert">{{error}}</p>
+    
     <p v-if="error && /投資テーブルの移行が未実施/.test(error)" class="sbi-hint">投資データを確認してください。既存の家計簿は変更されません。</p>
-    <p v-if="notice" class="sbi-success" role="status">{{notice}}</p>
+    
 
     <div v-show="activeView==='funds'" class="sbi-view-panel">
     <template v-if="data">
@@ -562,8 +575,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); window.remove
           </label>
           <button type="button" class="button-secondary sbi-text-import-button" :disabled="saving || bulkBusy || !bulkText.trim()" @click="applyBulkText">テキストを読み取る</button>
           </details>
-          <p v-if="bulkInfo" class="sbi-bulk-notice" role="status">{{bulkInfo}}</p>
-          <p v-if="bulkWarning" class="sbi-bulk-warning" role="alert">{{bulkWarning}}</p>
+          
+          
         </div>
         <div class="sbi-bulk-heading"><strong>変更内容を確認</strong><span>{{bulkChanged.length}}口座変更</span></div>
         <p v-if="!bulkChanged.length" class="sbi-bulk-idle">変更候補はありません</p>

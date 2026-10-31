@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { notify } from './notifications.js'
 const props=defineProps({ api:{type:Function,required:true}, active:{type:Boolean,default:false}, revision:{type:Number,default:0} })
 const emit=defineEmits(['summary','open-card-settings','open-history'])
 const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false)
@@ -36,6 +37,22 @@ async function refresh(){
   }finally{if(id===requestId)loading.value=false}
 }
 watch(()=>[props.active,props.revision],()=>{if(props.active)void refresh()})
+const statusTimers = new Map()
+for (const status of [error, notice]) {
+  watch(status, value => {
+    if (!value) return
+    if (statusTimers.has(status)) clearTimeout(statusTimers.get(status))
+    notify(value, status === error ? 'error' : 'success')
+    statusTimers.set(status, setTimeout(() => {
+      if (status.value === value) status.value = ''
+      statusTimers.delete(status)
+    }, 5000))
+  })
+}
+onUnmounted(() => {
+  for (const timer of statusTimers.values()) clearTimeout(timer)
+  statusTimers.clear()
+})
 onMounted(()=>{if(props.active)void refresh()})
 </script>
 <template>
@@ -50,8 +67,8 @@ onMounted(()=>{if(props.active)void refresh()})
         <button type="button" class="wallet-add" @click="emit('open-card-settings')">＋ カードを追加</button>
       </div>
       <p v-if="loading && !data" class="wallet-hint" role="status">残高を読み込み中…</p>
-      <p v-if="error" class="wallet-error" role="alert">{{error}}</p>
-      <p v-if="notice" class="wallet-success" role="status">{{notice}}</p>
+      
+      
       <template v-if="data">
         <p v-if="!data.cards.length" class="wallet-hint">管理のカード設定からプリペイドカードを追加できます。</p>
         <div class="wallet-list">

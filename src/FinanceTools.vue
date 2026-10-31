@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, inject, onMounted, watch } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
+import { notify } from './notifications.js'
 import { sortOtherLast } from './category-sort.js'
 import ReviewTrashActions from './ReviewTrashActions.vue'
 import { findLedgerDuplicateGroups, duplicateReviewSignature, readConfirmedDuplicateGroups, saveConfirmedDuplicateGroups } from './duplicate-review.js'
@@ -951,6 +952,26 @@ async function initializeFinance() {
   try { return await financeInitPromise }
   finally { financeInitPromise = null }
 }
+// Keep operation outcomes in one centered toast instead of scattered
+// permanent status lines at the top/bottom of each management panel.
+const noticeTimeouts = new Map()
+for (const field of [cardMessage, recurringMessage, message, trashMessage,
+  duplicateReviewMessage, receiptImagePrivacyMessage, receiptExportMessage]) {
+  watch(field, value => {
+    if (!value) return
+    if (noticeTimeouts.has(field)) clearTimeout(noticeTimeouts.get(field))
+    // Background data fetches and backup progress are not action outcomes.
+    if (!/^復元中\s/.test(value) && !/^\d+件の明細を読み込みました$/.test(value)) notify(value)
+    noticeTimeouts.set(field, setTimeout(() => {
+      if (field.value === value) field.value = ''
+      noticeTimeouts.delete(field)
+    }, 5000))
+  })
+}
+onUnmounted(() => {
+  for (const timer of noticeTimeouts.values()) clearTimeout(timer)
+  noticeTimeouts.clear()
+})
 onMounted(() => { if (props.active) void initializeFinance() })
 watch(() => props.ledgerRevision, () => {
   ledgerDirty = true
@@ -1074,7 +1095,7 @@ async function removeCardBill(record) {
         <button v-if="selectedCard !== '現金'" type="button" :disabled="busy" @click="removePaymentSource(selectedCard)">削除</button>
       </div>
     </div>
-    <p v-if="cardMessage" role="status">{{cardMessage}}</p>
+    
   </article>
   <details v-show="managementTab === 'tools'" class="finance-panel merchant-rules-panel">
     <summary class="merchant-rules-summary"><span>店舗ルール管理</span><span class="merchant-rules-count">{{ merchantRulesCombined.length }}件</span></summary>
@@ -1140,7 +1161,7 @@ async function removeCardBill(record) {
     </div>
     <p v-if="recurringListOpen && recurringPreview.length" class="recurring-swipe-tip">左にスワイプして候補から除外</p>
 
-    <p v-if="recurringMessage" role="status">{{recurringMessage}}</p>
+    
     <details class="recurring-list-disclosure">
       <summary class="recurring-list-summary">
         <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{plans.length}}件</strong></span>
@@ -1226,7 +1247,7 @@ async function removeCardBill(record) {
       <div class="device-receipt-actions">
         <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
       </div>
-      <p v-if="receiptImagePrivacyMessage" role="status">{{receiptImagePrivacyMessage}}</p>
+      
     </div>
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="$event.target.open && refreshLocalReceiptCount()">
@@ -1235,7 +1256,7 @@ async function removeCardBill(record) {
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
       <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像をZIP保存</button>
-      <p v-if="receiptExportMessage" role="status">{{receiptExportMessage}}</p>
+      
     </div>
     <div v-if="backupPreview" class="restore-preview">
       <p>追加 {{restoreRows.length}}件 · 重複候補 {{restoreConflicts.length}}件（既存データは保持）</p>
@@ -1243,7 +1264,7 @@ async function removeCardBill(record) {
       <label v-if="restoreConflicts.length" class="restore-confirm-duplicates"><input type="checkbox" v-model="restoreIncludeConflicts" />重複候補も別取引として追加する（再確認あり）</label>
       <button type="button" :disabled="busy||backupBusy" @click="restore">未登録の設定と明細を確認して復元</button>
     </div>
-    <p v-if="message" role="status">{{message}}</p>
+    <p v-if="message && message.startsWith('復元中 ')" role="status">{{message}}</p>
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="refreshDuplicateReview">
     <summary>重複の可能性</summary>
@@ -1258,7 +1279,7 @@ async function removeCardBill(record) {
       </div>
     </div>
 
-    <p v-if="duplicateReviewMessage" class="duplicate-review-message" role="status">{{duplicateReviewMessage}}</p>
+    
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel" @toggle="onReviewTrashToggle">
     <summary>ゴミ箱 <span v-if="trashCount" class="review-trash-count">{{trashCount}}件</span></summary>
@@ -1301,7 +1322,7 @@ async function removeCardBill(record) {
       <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy || transferTrashLoading || deletedPlanLoading || !transferTrashLoaded || !deletedPlanLoaded" @click="emptyReviewTrash">ゴミ箱を空にする</button>
       <p v-if="trashCount" class="review-trash-note">削除済み固定費は完全削除。それ以外の確認状態と記帳済み明細は残ります。</p>
     </template>
-    <p v-if="trashMessage" role="status">{{trashMessage}}</p>
+    
   </details>
 </section>
 </template>

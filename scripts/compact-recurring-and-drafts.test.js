@@ -26,6 +26,7 @@ test('unsaved draft actions are compact, low emphasis and cannot touch saved ent
   const fn=app.match(/function clearLocalDraft\(\) \{([\s\S]*?)\n\}/)?.[1]
   assert.ok(fn)
   assert.match(fn,/forms\.value=\[\];input\.value=''/)
+  assert.match(fn,/await queueDeviceDraft\(tombstone\)/)
   assert.match(fn,/await queueDraftSave\(null\)/)
   assert.match(app,/api\('app-state\?key='\+DRAFT_KEY,\{method:'DELETE'\}\)/)
   assert.doesNotMatch(fn,/localStorage|deleteReceiptImage|clearAllReceiptImages|saveAll\(/)

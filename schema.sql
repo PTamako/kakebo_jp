@@ -61,6 +61,15 @@ CREATE TABLE IF NOT EXISTS recurring_plans (
   enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1))
 );
 
+-- A user can exclude one generated fixed-expense month without deleting the plan
+-- or any genuine ledger transaction. No automatic backfill or data seed.
+CREATE TABLE IF NOT EXISTS recurring_candidate_exclusions (
+  plan_id TEXT NOT NULL REFERENCES recurring_plans(id) ON DELETE CASCADE,
+  month TEXT NOT NULL CHECK(length(month)=7 AND substr(month,5,1)='-'),
+  excluded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(plan_id, month)
+);
+
 -- Saved statement totals are snapshots; deleting a bill must not touch entries.
 CREATE TABLE IF NOT EXISTS card_bills (
   payment_source TEXT NOT NULL,

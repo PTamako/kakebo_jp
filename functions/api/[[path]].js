@@ -311,9 +311,13 @@ export async function onRequest({ request, env, params }) {
       // additive portfolio migration has been applied. Never auto-create tables.
       const schema=await db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('investment_plans','investment_plan_history','investment_holdings','fund_prices','sbi_transfer_links')").first()
       const portfolioReady=Number(schema?.n)===5
+      const archiveSchema=await db.prepare("SELECT 1 AS ready FROM sqlite_master WHERE type='table' AND name='recurring_plan_trash'").first()
+      const recurringArchiveReady=!!archiveSchema?.ready
       const statements=[
         'SELECT * FROM entries ORDER BY id',
-        'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
+        recurringArchiveReady
+          ? 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM recurring_plan_trash t WHERE t.plan_id=p.id) ORDER BY id'
+          : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         
         "SELECT " + (await prepaidSchemaReady(db)
@@ -332,7 +336,9 @@ export async function onRequest({ request, env, params }) {
           'SELECT fund_code,nav_per_10000,price_date,source,updated_at FROM fund_prices ORDER BY fund_code',
           'SELECT entry_id,purchase_month FROM sbi_transfer_links ORDER BY entry_id'
         ] : []),
-        'SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY plan_id,month'
+        'SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY plan_id,month',
+        ...(recurringArchiveReady ? [`SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled
+          FROM recurring_plans p JOIN recurring_plan_trash t ON t.plan_id=p.id ORDER BY p.id`] : [])
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
       const rows=n=>results[n]?.results||[]
@@ -348,6 +354,9 @@ export async function onRequest({ request, env, params }) {
         categoryMetadata:rows(7),
         dismissedTransfers:rows(8).map(x=>x.entry_id),
         recurringExclusions:rows(portfolioReady ? 14 : 9).map(x=>({planId:x.plan_id,month:x.month})),
+        archivedPlans:recurringArchiveReady ? rows(portfolioReady ? 15 : 10).map(p=>({
+          id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled
+        })) : [],
         ...(portfolioReady ? {investmentPlans:rows(9),investmentPlanHistory:rows(10),
           investmentHoldings:rows(11),fundPrices:rows(12),transferLinks:rows(13)} : {})
       })

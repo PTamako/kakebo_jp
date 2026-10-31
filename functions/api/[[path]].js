@@ -127,6 +127,12 @@ export async function onRequest({ request, env, params }) {
       if (!found) return json({error:'再ログインしてください'},401)
       const body = await request.json().catch(() => null)
       if (typeof body?.remember !== 'boolean') return json({error:'保存方法を確認してください'},400)
+      // Persist the D1 privacy preference before issuing the new cookie.
+      // This single endpoint replaces two competing client-side writes.
+      try {
+        await db.prepare("INSERT INTO app_client_state(state_key,value_json,updated_at) VALUES('remember_device',?1,CURRENT_TIMESTAMP) ON CONFLICT(state_key) DO UPDATE SET value_json=excluded.value_json,updated_at=CURRENT_TIMESTAMP")
+          .bind(JSON.stringify(body.remember)).run()
+      } catch { return json({error:'保存方法をD1に記録できませんでした。設定は変更していません'},503) }
       return json({ok:true},200,{'set-cookie':sessionCookie(session,body.remember)})
     }
     return json({ error: '対象が見つかりません' }, 404)

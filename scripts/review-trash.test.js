@@ -22,8 +22,8 @@ test('trash shows three categories, previous sections do not show confirmed or e
   assert.ok(!finance.includes('<summary>除外済み'))
   assert.ok(!finance.includes('<summary>確認済み'))
   assert.ok(finance.includes('setDuplicateConfirmation(group, true)'))
-  assert.ok(finance.includes('restoreRecurringExclusion(item)'))
-  assert.ok(finance.includes('restoreTransferReminder(item)'))
+  assert.ok(finance.includes('@restore="restoreRecurringExclusion(item)"'))
+  assert.ok(finance.includes('@restore="restoreTransferReminder(item)"'))
   assert.ok(finance.includes('emptyReviewTrash'))
   assert.ok(finance.includes('onReviewTrashToggle'))
 })
@@ -51,7 +51,7 @@ test('trash archiving is per exact group, plan-month and transfer ID',()=>{
 })
 
 test('clear archives reviewed notifications but explicitly purges previously deleted fixed-expense settings',()=>{
-  const body=finance.match(/function emptyReviewTrash\(\) \{([\s\S]*?)\n\}/)?.[1]
+  const body=finance.match(/async function emptyReviewTrash\(\) \{([\s\S]*?)\n\}/)?.[1]
   assert.ok(body)
   assert.ok(body.includes('saveArchivedTrash(next)'))
   assert.ok(body.includes('new Set(archivedTrashKeys.value)'))
@@ -118,6 +118,6 @@ test('category detail groups collapse independently, with archive and excluded m
   assert.match(finance,/<details v-if="reviewTrash\.transferReminders\.length" class="review-trash-category">/)
   assert.match(finance,/class="review-trash-subheading">削除済み/)
   assert.match(finance,/class="review-trash-subheading">除外した候補/)
-  assert.match(finance,/@click="restoreDeletedPlan\(item\)"/)
-  assert.match(finance,/@click="restoreRecurringExclusion\(item\)"/)
+  assert.match(finance,/@restore="restoreDeletedPlan\(item\)"/)
+  assert.match(finance,/@restore="restoreRecurringExclusion\(item\)"/)
 })

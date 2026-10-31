@@ -55,3 +55,46 @@ export function findLedgerDuplicateGroups(rows) {
   }
   return duplicates.sort((a,b) => b[0].date.localeCompare(a[0].date))
 }
+
+const CONFIRMED_DUPLICATES_STORAGE_KEY = 'kakeibo-confirmed-not-duplicates-v1'
+const MAX_CONFIRMED_DUPLICATE_GROUPS = 500
+const validConfirmation = key => /^v1:[0-9a-f]{16}$/.test(key)
+
+// Bind each confirmation to these exact database entries AND their current
+// review-relevant fields. A later edit or a third matching purchase changes
+// the signature and surfaces the group for review again.
+// Persist a short 64-bit fingerprint instead of merchant names or transaction data.
+export function duplicateReviewSignature(group) {
+  if (!Array.isArray(group) || group.length < 2 ||
+      group.some(row => !Number.isSafeInteger(Number(row?.id)) || Number(row.id) <= 0)) return ''
+  const rows = group.map(row => [
+    Number(row.id), String(row.date || ''), String(row.time || ''),
+    row.type || 'expense', Number(row.amount), duplicateMerchantName(row.merchant),
+    String(row.payment_source || ''), String(row.transfer_target || '')
+  ]).sort((a, b) => a[0] - b[0])
+  const data = JSON.stringify(rows)
+  let hash = 0xcbf29ce484222325n
+  for (let i = 0; i < data.length; i++) {
+    hash = BigInt.asUintN(64, (hash ^ BigInt(data.charCodeAt(i))) * 0x100000001b3n)
+  }
+  return 'v1:' + hash.toString(16).padStart(16, '0')
+}
+
+export function readConfirmedDuplicateGroups(storage = typeof localStorage === 'undefined' ? null : localStorage) {
+  try {
+    const saved = JSON.parse(storage?.getItem(CONFIRMED_DUPLICATES_STORAGE_KEY) || '[]')
+    return new Set(Array.isArray(saved)
+      ? saved.filter(key => typeof key === 'string' && validConfirmation(key)).slice(-MAX_CONFIRMED_DUPLICATE_GROUPS)
+      : [])
+  } catch { return new Set() }
+}
+
+export function saveConfirmedDuplicateGroups(keys, storage = typeof localStorage === 'undefined' ? null : localStorage) {
+  if (!storage) return false
+  try {
+    const values = [...keys].filter(key => typeof key === 'string' && validConfirmation(key))
+      .slice(-MAX_CONFIRMED_DUPLICATE_GROUPS)
+    storage.setItem(CONFIRMED_DUPLICATES_STORAGE_KEY, JSON.stringify(values))
+    return true
+  } catch { return false }
+}

@@ -21,8 +21,29 @@ import { notification } from './notifications.js'
   </div>
 </template>
 <style scoped>
-.global-toast-layer{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:calc(18px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));box-sizing:border-box;pointer-events:none}
-.global-toast-message{display:flex;align-items:flex-start;gap:10px;max-width:min(380px,100%);width:max-content;padding:16px 18px;box-sizing:border-box;border:1px solid rgba(255,255,255,.2);border-radius:16px;background:rgba(34,42,55,.96);box-shadow:0 12px 36px rgba(22,25,35,.25);color:#fff;font-size:14px;font-weight:650;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+/* The toast is outside <main>; size against the viewport, not any page tab. */
+.global-toast-layer{
+  position:fixed;inset:0;z-index:9999;display:grid;place-items:center;
+  min-width:0;box-sizing:border-box;
+  padding:calc(18px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right))
+    calc(18px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
+  pointer-events:none
+}
+.global-toast-message{
+  display:flex;align-items:flex-start;gap:10px;
+  width:fit-content;max-width:min(380px,100%);min-width:0;
+  max-height:100%;box-sizing:border-box;
+  padding:16px 18px;border:1px solid rgba(255,255,255,.2);border-radius:16px;
+  background:rgba(34,42,55,.96);box-shadow:0 12px 36px rgba(22,25,35,.25);
+  color:#fff;font-size:14px;font-weight:650;line-height:1.6;
+  overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;pointer-events:auto
+}
+/* A flex child has min-width:auto by default; that prevented unbroken
+   Japanese/error URLs from wrapping despite overflow-wrap on its parent. */
+.global-toast-message span{
+  display:block;flex:1 1 auto;min-width:0;max-width:100%;
+  white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word
+}
 .global-toast-message svg{flex:none;width:21px;height:21px;margin-top:1px;color:#9fe7cc}
 .global-toast-error{background:rgba(104,44,59,.97)}
 .global-toast-error svg{color:#ffd4d8}

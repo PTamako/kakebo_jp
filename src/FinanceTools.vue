@@ -960,7 +960,8 @@ for (const field of [cardMessage, recurringMessage, message, trashMessage,
   watch(field, value => {
     if (!value) return
     if (noticeTimeouts.has(field)) clearTimeout(noticeTimeouts.get(field))
-    if (!/^復元中\s/.test(value)) notify(value)
+    // Background data fetches and backup progress are not action outcomes.
+    if (!/^復元中\s/.test(value) && !/^\d+件の明細を読み込みました$/.test(value)) notify(value)
     noticeTimeouts.set(field, setTimeout(() => {
       if (field.value === value) field.value = ''
       noticeTimeouts.delete(field)

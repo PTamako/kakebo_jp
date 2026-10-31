@@ -59,7 +59,7 @@ test('Gemma 4 mock Seven-Eleven yields one purchase at 20:00, 239 yen and regist
   assert.equal(record.amount,239)
   assert.equal(record.category,'饮食料品')
   assert.equal(detectRegisteredReceiptPayment(raw,['Suica','nanaco']),'Suica')
-  assert.equal(paymentForDraft({merchant:record.merchant,recognized:detectRegisteredReceiptPayment(raw,['Suica'])}),'Suica')
+  assert.equal(paymentForDraft({merchant:record.merchant,recognized:detectRegisteredReceiptPayment(raw,['Suica']),registeredSources:['Suica']}),'Suica')
   assert.equal(detectRegisteredReceiptPayment(raw,['nanaco']), '', 'unregistered cards must not be inserted or inferred')
 })
 
@@ -78,8 +78,8 @@ test('Gemma 4 mock MyBasket uses till purchase time, not duplicate payment-slip 
   assert.equal(detectRegisteredReceiptPayment(raw,sources,meta),'','QUICPay is a network, not a credit card')
   assert.equal(detectRegisteredReceiptPayment(raw,['QUICPay']), '', 'QUICPay is not a standalone card')
   assert.equal(detectRegisteredReceiptPayment(raw,['Suica']), '', 'receipt is not a Suica expense')
-  assert.equal(paymentForDraft({merchant:record.merchant,recognized:'',rules:[{keyword:'まいばすけっと',payment_source:'セゾンローズゴールドAMEX'}],defaultSource:'楽天カード'}),'セゾンローズゴールドAMEX','user merchant rule selects actual card')
-  assert.equal(paymentForDraft({merchant:record.merchant,recognized:'',rules:[],defaultSource:'楽天カード'}),'楽天カード','without saved rule use configured default')
+  assert.equal(paymentForDraft({merchant:record.merchant,recognized:'',rules:[{keyword:'まいばすけっと',payment_source:'セゾンローズゴールドAMEX'}],registeredSources:['セゾンローズゴールドAMEX','楽天カード'],defaultSource:'楽天カード'}),'セゾンローズゴールドAMEX','user merchant rule selects actual card')
+  assert.equal(paymentForDraft({merchant:record.merchant,recognized:'',rules:[],registeredSources:['楽天カード'],defaultSource:'楽天カード'}),'楽天カード','without saved rule use configured default')
 })
 
 test('Gemma unreadable purchase date or time must not fall through to coupon period',()=>{
@@ -108,7 +108,7 @@ test('QUICPay payment uses configured merchant rule then default; never guesses 
   const meta={'セゾンカード':{source_type:'standard'},'Suica':{source_type:'prepaid'}}
   assert.equal(detectRegisteredReceiptPayment(source,cards,meta),'')
   assert.equal(isQuicPayReceipt(source),true)
-  assert.equal(paymentForDraft({merchant:'まいばすけっと 架空店',recognized:'',rules:[{keyword:'まいばすけっと',payment_source:'セゾンカード'}],defaultSource:'現金'}),'セゾンカード')
+  assert.equal(paymentForDraft({merchant:'まいばすけっと 架空店',recognized:'',rules:[{keyword:'まいばすけっと',payment_source:'セゾンカード'}],registeredSources:['セゾンカード','現金'],defaultSource:'現金'}),'セゾンカード')
   assert.equal(paymentForDraft({merchant:'まいばすけっと 架空店',recognized:'',rules:[],defaultSource:'現金'}),'現金')
   assert.equal(detectRegisteredReceiptPayment(source,['現金','QUICPay'],{}),'')
   assert.equal(isQuicPayReceipt('支払方法: Suica'),false)

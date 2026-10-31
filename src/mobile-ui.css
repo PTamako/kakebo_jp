@@ -15,9 +15,7 @@ main .topbar {
   gap: 8px;
 }
 main .brand { flex: 1 1 auto; min-width: 0; }
-main .brand-mark { flex: none; }
-main .brand > div { min-width: 0; }
-main .brand small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+main .brand-wordmark { display: block; width: clamp(120px, 35vw, 170px); max-width: 100%; height: auto; object-fit: contain; }
 main .header-actions { display: flex; align-items: center; gap: 7px; flex: none; }
 main .header-logout {
   display: inline-flex;

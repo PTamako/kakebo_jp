@@ -97,7 +97,7 @@ test('Gemma statement prompt preserves original relative-time display and uses f
     return {response:example}
   }},new Uint8Array([1]).buffer,'image/png','statement')
   assert.match(prompt,/日付,時刻,店舗名または駅名,金額,支払方法/)
-  assert.match(prompt,/2時間前/)
+  assert.match(prompt,/3時間前/)
   assert.match(prompt,/画像の撮影日を推測しない/)
   assert.match(prompt,/40分前/)
   assert.match(prompt,/今日/)
@@ -112,5 +112,5 @@ test('app routes multiple OCR rows through the same merchant and payment mapping
   assert.match(app,/const recognitionReference = new Date\(\)/)
   assert.match(app,/recognize\(mode, true, recognitionReference\)/)
   assert.match(app,/suggestedPayment\(f\.merchant,recognizedPayment,type,imported\)/)
-  assert.match(app,/recognize\(mode, true\)/)
+  assert.match(app,/recognize\(mode, true, recognitionReference\)/)
 })

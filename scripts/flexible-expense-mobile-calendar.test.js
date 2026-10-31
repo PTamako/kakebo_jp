@@ -71,7 +71,8 @@ test('image upload recognizes in append mode then stays in 画像から読み取
   const manual=app.match(/function recognize\([\s\S]*?\n\}(?=\nasync function onImage)/)?.[0]
   assert.ok(image)
   assert.ok(manual)
-  assert.match(image,/recognize\(mode, true\)\s*entryInputMode\.value = 'scan'/)
+  assert.match(image,/const recognitionReference = new Date\(\)/)
+  assert.match(image,/recognize\(mode, true, recognitionReference\)\s*entryInputMode\.value = 'scan'/)
   assert.doesNotMatch(image,/entryInputMode\.value\s*=\s*'manual'/)
   assert.doesNotMatch(manual,/entryInputMode\.value\s*=\s*'manual'/)
   assert.doesNotMatch(manual,/entryInputMode\.value\s*=\s*'scan'/)

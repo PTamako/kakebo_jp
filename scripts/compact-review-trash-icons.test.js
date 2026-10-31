@@ -35,13 +35,14 @@ test('one-line compact rows truncate text and preserve accessible 44px tap targe
   assert.match(finance,/class="review-trash-category"/)
 })
 
-test('removing ordinary notices only archives a per-device key without changing financial records',()=>{
-  const body=finance.match(/function removeReviewedTrashNotice\(key\) \{([\s\S]*?)\n\}/)?.[1]||''
+test('removing ordinary notices persists their archive keys in D1 without editing ledger entries',()=>{
+  const body=finance.match(/async function removeReviewedTrashNotice\(key\) \{([\s\S]*?)\n\}/)?.[1]||''
   assert.ok(body)
-  assert.match(body,/next\.add\(key\)/)
-  assert.match(body,/saveArchivedTrash\(next\)/)
-  assert.match(body,/archivedTrashKeys\.value = next/)
-  assert.doesNotMatch(body,/props\.api|DELETE FROM|UPDATE entries|recurringExclusions\.value\.filter/)
+  assert.match(body,/!reviewStateReady\.value/)
+  assert.match(body,/await writeReviewNotices\(\[key\]\)/)
+  assert.match(body,/archivedTrashKeys\.value = new Set\(\[\.\.\.archivedTrashKeys\.value,key\]\)/)
+  assert.match(body,/catch \(e\)/)
+  assert.doesNotMatch(body,/saveArchivedTrash|props\.api|DELETE FROM|UPDATE entries|recurringExclusions\.value\.filter/)
 })
 
 test('final purge of one deleted fixed expense requires explicit confirmation and never deletes ledger rows',()=>{
@@ -59,6 +60,6 @@ test('bulk purge also refreshes fixed-expense exclusion display after deleting a
   const body=finance.match(/async function emptyReviewTrash\(\) \{([\s\S]*?)\n\}/)?.[1]||''
   assert.ok(body)
   assert.match(body,/recurringExclusions\.value = recurringExclusions\.value\.filter\(row => row\.planId !== item\.id\)/)
-  assert.match(body,/saveArchivedTrash\(next\)/)
+  assert.match(body,/await writeReviewNotices\(keys\)/)
   assert.match(body,/if \(!confirm\(warning\)\) return/)
 })

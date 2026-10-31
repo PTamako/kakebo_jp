@@ -153,6 +153,52 @@ export async function onRequest({ request, env, params }) {
     // import legacy records, or write default investment snapshots. User-initiated writes remain available.
     // Normalized recurring plans and bills are the sole persistent stores.
     // Obsolete finance_settings is intentionally neither created nor queried.
+    // Application preferences and unsaved drafts are stored in D1, never browser local storage.
+    // These writes cannot modify the ledger, investment holdings or scheduled expenses.
+    if (a === 'app-state' && !b) {
+      const allowed = new Set(['theme','remember_device','ai_ocr_enabled','unsaved_draft'])
+      try {
+        if (m === 'GET') {
+          const {results} = await db.prepare('SELECT state_key,value_json FROM app_client_state').all()
+          const state = {}
+          for (const entry of results) {
+            if (!allowed.has(entry.state_key)) continue
+            try { state[entry.state_key] = JSON.parse(entry.value_json) } catch {}
+          }
+          return json(state)
+        }
+        if (m === 'PUT') {
+          const body = await request.json().catch(() => null)
+          if (!allowed.has(body?.key)) return json({error:'保存項目を確認してください'},400)
+          const value = body.value
+          if (body.key === 'theme' && !['pink','blue','yellow','green','lavender','peach','latte','slate'].includes(value))
+            return json({error:'テーマ設定を確認してください'},400)
+          if (['remember_device','ai_ocr_enabled'].includes(body.key) && typeof value !== 'boolean')
+            return json({error:'設定値を確認してください'},400)
+          if (body.key === 'unsaved_draft' &&
+              (typeof value !== 'object' || !value || Array.isArray(value) ||
+                !Array.isArray(value.forms) || value.forms.length > 150 ||
+                typeof value.input !== 'string' || value.input.length > 100000 ||
+                !['manual','scan'].includes(value.mode)))
+            return json({error:'下書きデータを確認してください'},400)
+          const encoded = JSON.stringify(value)
+          if (encoded.length > 250000) return json({error:'下書きの保存容量を超えました'},413)
+          await db.prepare('INSERT INTO app_client_state(state_key,value_json,updated_at) VALUES(?1,?2,CURRENT_TIMESTAMP) ON CONFLICT(state_key) DO UPDATE SET value_json=excluded.value_json,updated_at=CURRENT_TIMESTAMP')
+            .bind(body.key,encoded).run()
+          return json({ok:true})
+        }
+        if (m === 'DELETE') {
+          const key = url.searchParams.get('key')
+          if (!allowed.has(key)) return json({error:'削除項目を確認してください'},400)
+          await db.prepare('DELETE FROM app_client_state WHERE state_key=?1').bind(key).run()
+          return json({ok:true})
+        }
+      } catch(error) {
+        if (/no such table: app_client_state/i.test(String(error)))
+          return json({error:'端末設定用のD1移行（0010）が必要です。既存明細は変更されていません',code:'app_state_schema_required'},503)
+        throw error
+      }
+    }
     // Acknowledged review notices belong to D1, not PWA localStorage.
     // This endpoint never inserts or deletes financial entries or legacy data.
     if (a === 'review-notices' && !b) {

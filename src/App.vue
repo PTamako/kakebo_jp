@@ -808,7 +808,7 @@ async function saveEdit() {
     lastEditedDay.value = editedDay
     lastEditedEntryId.value = e.id
     editingEntry.value = null
-    if (destinationMonth && destinationMonth !== month.value) {
+    if (destinationMonth && destinationMonth !== month.value && detailFilter.value?.period !== 'card-bill') {
       pendingEditMonthReturn = { month: destinationMonth, selectedDay: returnDay, calendarExpanded: returnCalendarExpanded }
       month.value = destinationMonth
     } else if (returnDay) {

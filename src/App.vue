@@ -1065,7 +1065,11 @@ const groupedPagedEntries = computed(() => {
   }
   const totalsByDay = new Map()
   for (const [day, all] of fullDays) {
-    totalsByDay.set(day, { count: all.length, total: ledgerEntriesTotal(all, entryTypeFilter.value) })
+    // Billing usage sums charges and card-funded transfers as positive amounts.
+    const total = detailFilter.value?.period === 'card-bill'
+      ? all.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
+      : ledgerEntriesTotal(all, entryTypeFilter.value)
+    totalsByDay.set(day, { count: all.length, total })
   }
   const groups = new Map()
   for (const entry of pagedEntries.value) {

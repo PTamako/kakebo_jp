@@ -13,7 +13,7 @@ import { recurringReviewWindow, validRecurringMonth } from './recurring-review-w
 import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
 import { receiptZip } from './receipt-export.js'
 const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
-const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
+const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
 const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
@@ -811,6 +811,15 @@ const selectedSavedBill = computed(() => isCreditCard(bill.value.name) ? bills.v
 const savedBillDifference = computed(() => selectedSavedBill.value && loaded.value ? cardTotal.value - Number(selectedSavedBill.value.total) : null)
 const cardBillHistory = computed(() => isCreditCard(bill.value.name) ? bills.value.filter(record => record.name === bill.value.name && record.month !== bill.value.month).slice().sort((a,b) => b.month.localeCompare(a.month)) : [])
 
+function viewCardBillDetails() {
+  const period = cardPeriod.value
+  if (!isCreditCard(bill.value.name) || !period || !/^\d{4}-(0[1-9]|1[0-2])$/.test(bill.value.month)) return
+  // Send exact billing dates. The ledger must apply the same inclusion rules
+  // as cardTotal (card purchases plus card-funded asset transfers).
+  emit('open-card-bill-details', {
+    name: bill.value.name, month: bill.value.month, start: period.start, end: period.end
+  })
+}
 async function saveCardBill() {
   if (!settingsReady.value || !loaded.value || !isCreditCard(bill.value.name) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(bill.value.month) || !cardPeriod.value) {
     message.value='カード・締め月・明細を確認してください'; return
@@ -1005,7 +1014,10 @@ async function removeCardBill(record) {
     </div>
     <p v-if="!loaded">全明細を更新してください。</p>
     <p v-else-if="bill.name && cardPeriod" class="card-billing-period">{{cardPeriod.start}} ～ {{cardPeriod.end}} · {{cardTransactions.length}}件（資産移動を含む）</p>
-    <button v-if="bill.name" type="button" :disabled="!settingsReady || !loaded || !isCreditCard(bill.name) || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
+    <div v-if="bill.name" class="card-billing-actions">
+      <button type="button" class="card-billing-save" :disabled="!settingsReady || !loaded || !isCreditCard(bill.name) || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
+      <button type="button" class="card-billing-detail" :disabled="!settingsReady || !isCreditCard(bill.name) || !cardPeriod" @click="viewCardBillDetails">明細を見る</button>
+    </div>
     <div v-if="selectedSavedBill" class="finance-saved-bill">
       <div class="finance-saved-bill-text"><span class="finance-saved-bill-caption">保存済みの請求額 · {{selectedSavedBill.month}}</span><strong>{{yen(selectedSavedBill.total)}}</strong><span v-if="savedBillDifference !== null" role="status">{{savedBillDifference === 0 ? '現在の明細と一致' : '現在の明細との差額：'+yen(savedBillDifference)+'（再保存すると更新）'}}</span></div>
       <button type="button" class="finance-compact-action" @click="removeCardBill(selectedSavedBill)" :aria-label="selectedSavedBill.month+' の保存済み請求額を削除'">削除</button>
@@ -1269,6 +1281,10 @@ async function removeCardBill(record) {
   .card-billing-fields .card-usage-total {font-size:15px;padding-inline:10px}
 }
 .card-billing-panel .card-billing-period{font-size:12px;color:var(--muted);line-height:1.45}
+.card-billing-panel .card-billing-actions{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:8px;width:100%;min-width:0}
+.card-billing-panel .card-billing-actions button{min-width:0;width:100%;min-height:44px;padding:10px 6px;font-size:clamp(11px,3.3vw,13px);font-weight:700;white-space:nowrap;border-radius:10px}
+.card-billing-panel .card-billing-actions .card-billing-detail{background:var(--card);color:var(--blue-dark);border:1px solid var(--line)}
+.card-billing-panel .card-billing-actions .card-billing-save{background:var(--blue);color:white;border:1px solid transparent}
 .backup-receipt-group{display:grid;gap:8px;min-width:0;padding-top:12px;border-top:1px solid var(--line)}
 .backup-receipt-group .device-privacy-row{align-items:center}
 .backup-receipt-group>button{width:100%;min-height:44px}

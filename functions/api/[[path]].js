@@ -610,7 +610,7 @@ export async function onRequest({ request, env, params }) {
           transfer?'transfer':(e.type==='income'?'income':'expense'),
           target,applied?1:0,transferDate,paymentSource,id,
           ...(optimistic?expectedKeys.map(k=>e.expected[k]):[])]
-        const result=await db.prepare('UPDATE entries SET date=?1,time=?2,amount=?3,category=?4,merchant=?5,note=?6,raw=?7,type=?8,transfer_target=?9,transfer_applied=?10,transfer_date=?11,payment_source=?12 WHERE id=?13'+guard)
+        const result=await db.prepare('UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11, payment_source = ?12 WHERE id = ?13'+guard)
           .bind(...args).run()
         if(optimistic && !result.meta?.changes)
           return json({error:'別の端末で明細が変更されました。最新の明細を再読込してください',code:'stale_entry'},409)

@@ -11,7 +11,7 @@ const wallet = read('src/PrepaidAssets.vue')
 const toast = read('src/GlobalToast.vue')
 const source = read('src/notifications.js')
 
-test('global toast lasts exactly 5 seconds; a new operation resets its timer', () => {
+test('global toast lasts exactly 3 seconds; a new operation resets its timer', () => {
   assert.equal(NOTIFICATION_DURATION, 3000)
   assert.equal(notificationLevel('記録を保存しました'), 'success')
   assert.equal(notificationLevel('保存に失敗しました'), 'error')
@@ -52,7 +52,7 @@ test('global notification floats above all screens, is non-blocking and accessib
   assert.match(toast,/env\(safe-area-inset-top\)/)
 })
 
-test('management messages are transient and do not stick at the page top',()=>{
+test('management messages are dismissed after 3 seconds and do not stick at the page top',()=>{
   for(const name of ['cardMessage','recurringMessage','message','trashMessage',
       'duplicateReviewMessage','receiptImagePrivacyMessage','receiptExportMessage'])
     assert.match(finance,new RegExp('watch\\(field, value => \\{'),'transient watcher')
@@ -66,9 +66,9 @@ test('management messages are transient and do not stick at the page top',()=>{
   assert.match(finance,/!loaded/)
 })
 
-test('SBI and prepaid saving, failure and OCR results use the same five-second toast',()=>{
+test('SBI and prepaid outcomes use the same three-second toast',()=>{
   for(const component of [sbi,wallet]){
-    assert.match(component,/import \{ notify \} from '.\/notifications\.js'/)
+    assert.match(component,/import \{ notify, NOTIFICATION_DURATION \} from '.\/notifications\.js'/)
     assert.match(component,/notify\(value,/)
     assert.match(component,/}, NOTIFICATION_DURATION\)/)
     assert.match(component,/onUnmounted/)

@@ -19,7 +19,7 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
   <div class="form-field amount-field"><span>金額（円）</span><AmountInput v-model="record.amount" /></div>
   <div v-if="!(Number(record.amount)>0)" class="amount-warning" role="alert">金額を確認してください。</div>
   <div class="field-grid">
-    <label class="form-field"><span>日付</span><input v-model="record.date" type="date" required /></label>
+    <label class="form-field"><span>日付</span><input v-model="record.date" type="date" required /><small v-if="!record.date" class="amount-warning">日付を確認してください</small></label>
     <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><select v-model="record.category"><option v-for="c in (record.type==='income'?orderedIncomeCategories:record.type==='transfer'?['投資・資産移動']:orderedCategories)" :key="c" :value="c">{{categoryLabel(c)}}</option></select></label>
     <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
     <label v-if="record.type==='expense'" class="form-field"><span>支払方法・カード</span><select :value="record.paymentSource" @change="emit('payment-change', $event.target.value)"><option value="">未設定</option><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="record.paymentSource && !paymentSources.includes(record.paymentSource)" :value="record.paymentSource">{{record.paymentSource}}（既存の設定）</option></select></label>
@@ -34,7 +34,7 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
     <label class="bind-rule transaction-bind-rule"><input v-model="record.bindRule" type="checkbox" :disabled="!record.merchant || record.merchant.trim().length<2" /><span>カテゴリを記憶</span></label>
     <label class="bind-rule transaction-bind-rule"><input v-model="record.bindPaymentRule" type="checkbox" :disabled="!record.merchant || record.merchant.trim().length<2 || !record.paymentSource" /><span>支払方法を記憶</span></label>
   </div>
-  <details class="transaction-details" :open="detailsOpen" @toggle="detailsOpen=$event.target.open"><summary>詳細項目 <span v-if="record.time" class="transaction-time-summary">時刻 {{record.time}}</span></summary><div class="field-grid"><label class="form-field"><span>時刻</span><input v-model="record.time" type="time" /></label><label class="form-field"><span>メモ</span><input v-model="record.note" placeholder="任意" /></label></div></details>
+  <details class="transaction-details" :open="detailsOpen" @toggle="detailsOpen=$event.target.open"><summary>詳細項目 <span v-if="record.time" class="transaction-time-summary">時刻 {{record.time}}</span><span v-else-if="record.note?.startsWith('画面表示：')" class="transaction-time-summary">{{ record.note.slice(5).split('（')[0] }}（目安）</span></summary><div class="field-grid"><label class="form-field"><span>時刻</span><input v-model="record.time" type="time" /></label><label class="form-field"><span>メモ</span><input v-model="record.note" placeholder="任意" /></label></div></details>
 </div>
 </template>
 <style scoped>

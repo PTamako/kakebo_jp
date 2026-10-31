@@ -40,7 +40,7 @@ test('statement date parsing accepts different printed date formats per transact
     '2026/09/05,不明,薬局,¥1,200,不明',
     '9月4日,不明,コンビニ,¥320,不明'
   ].join('\n'), [], new Date('2026-10-31T09:00:00Z'))
-  assert.deepEqual(rows.map(row => row.date), [`${currentYear}-09-06`, `${currentYear}-09-05`, `${currentYear}-09-04`])
+  assert.deepEqual(rows.map(row => row.date), [`${currentYear}-09-06`, '2026-09-05', `${currentYear}-09-04`])
   assert.deepEqual(rows.map(row => row.amount), [500, 1200, 320])
 })
 

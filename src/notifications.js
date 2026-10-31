@@ -3,7 +3,7 @@ import { shallowRef } from 'vue'
 // One global transient notification, regardless of which management tab or
 // nested asset component initiated the action.
 export const notification = shallowRef(null)
-export const NOTIFICATION_DURATION = 5000
+export const NOTIFICATION_DURATION = 3000
 let timeoutId
 let sequence = 0
 

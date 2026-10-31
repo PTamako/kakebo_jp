@@ -119,5 +119,6 @@ test('手入力 text reading keeps the manual tab and review/save controls; only
   assert.match(manual,/forms\.value = append \? \[\.\.\.forms\.value, \.\.\.parsedForms\] : parsedForms/)
   assert.doesNotMatch(manual,/entryInputMode\.value\s*=\s*'scan'/)
   assert.doesNotMatch(manual,/api\('entries'/)
-  assert.match(image,/recognize\(mode, true\)[\s\S]*entryInputMode\.value = 'scan'/)
+  assert.match(image,/const recognitionReference = new Date\(\)/, 'image capture freezes a reference before OCR')
+  assert.match(image,/recognize\(mode, true, recognitionReference\)[\s\S]*entryInputMode\.value = 'scan'/)
 })

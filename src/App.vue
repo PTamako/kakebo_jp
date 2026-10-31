@@ -398,7 +398,7 @@ watch(month, async () => {
   visibleEntryCount.value = 20
   await load()
   if (tab.value === 'list' && detailFilter.value?.period === 'month')
-    await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month', detailFilter.value.paymentMethod || '')
+    await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month', detailFilter.value.paymentMethod || '', !!returning)
   if (returning && tab.value === 'list' && month.value === returning.month) {
     selectedDay.value = returning.selectedDay
     calendarExpanded.value = returning.calendarExpanded
@@ -1066,8 +1066,8 @@ async function fetchPeriodDetailRows(period, requestId = null) {
   }
   return rows
 }
-async function openCategoryDetails(category, type, period, paymentMethod = '') {
-  if (!editSaving.value) editListReturn.value = null
+async function openCategoryDetails(category, type, period, paymentMethod = '', preserveEditContext = false) {
+  if (!preserveEditContext) editListReturn.value = null
   prepaidHistoryFilter.value = null
   detailFilter.value = { category, type, period, paymentMethod }
   entryTypeFilter.value = type === 'transfer' ? 'transfer' : type

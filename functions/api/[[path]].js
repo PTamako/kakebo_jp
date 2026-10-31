@@ -542,8 +542,16 @@ export async function onRequest({ request, env, params }) {
       const scheduledMonth = typeof body?.month === 'string' ? body.month : ''
       if (!/^[a-zA-Z0-9-]{8,80}$/.test(planId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(scheduledMonth))
         return json({error:'固定支出の対象を確認してください'},400)
-      const plan = await db.prepare(`SELECT id,name,amount,day,category,payment_source,start_month,enabled
-        FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM recurring_plan_trash t WHERE t.plan_id=recurring_plans.id)`).bind(planId).first()
+      let plan
+      try {
+        plan = await db.prepare(`SELECT id,name,amount,day,category,payment_source,start_month,enabled
+          FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM recurring_plan_trash t WHERE t.plan_id=recurring_plans.id)`).bind(planId).first()
+      } catch(e) {
+        if (!/no such table: recurring_plan_trash/i.test(String(e))) throw e
+        // Existing users can continue posting legitimate fixed expenses until
+        // the explicitly applied archive migration is available.
+        plan = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=?1').bind(planId).first()
+      }
       if (!plan || !plan.enabled || !Number.isSafeInteger(Number(plan.amount)) || Number(plan.amount)<=0)
         return json({error:'有効な固定支出が見つかりません'},404)
       const approved = resolveRecurringApproval(body,plan)

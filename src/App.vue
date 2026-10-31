@@ -384,7 +384,25 @@ onMounted(async () => {
   }
 })
 
-watch(month, async () => { selectedDay.value = ''; calendarExpanded.value = false; swipedEntryId.value = null; swipedReceiptId.value = null; visibleEntryCount.value = 20; await load(); if (tab.value === 'list' && detailFilter.value?.period === 'month') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month', detailFilter.value.paymentMethod || '') })
+// Only a successful cross-month edit may restore its date after the month
+// watcher and any category-details reload complete. Normal month changes reset.
+let pendingEditMonthReturn = null
+watch(month, async () => {
+  const returning = pendingEditMonthReturn?.month === month.value ? pendingEditMonthReturn : null
+  pendingEditMonthReturn = null
+  selectedDay.value = ''
+  calendarExpanded.value = false
+  swipedEntryId.value = null
+  swipedReceiptId.value = null
+  visibleEntryCount.value = 20
+  await load()
+  if (tab.value === 'list' && detailFilter.value?.period === 'month')
+    await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'month', detailFilter.value.paymentMethod || '')
+  if (returning && tab.value === 'list' && month.value === returning.month) {
+    selectedDay.value = returning.selectedDay
+    calendarExpanded.value = returning.calendarExpanded
+  }
+})
 watch(selectedYear, async () => { visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year', detailFilter.value.paymentMethod || '') })
 watch(tab, value => {
   if (value === 'stat' && statsPeriod.value === 'year') loadYear()
@@ -764,15 +782,18 @@ async function saveEdit() {
     }
     const editedDay = e.date.slice(0, 10)
     const destinationMonth = editedEntryMonth(e.date)
+    // Keep the user's active calendar day and filters. If the edited date
+    // moves, follow that record instead of unexpectedly showing all entries.
+    const returnDay = selectedDay.value ? editedDay : ''
+    const returnCalendarExpanded = calendarExpanded.value
     preserveOperatedDay.value = editedDay
-    // An edited type/category can no longer match the previous detail filters.
-    detailRequestId++
-    detailFilter.value = null
-    detailSourceEntries.value = []
-    entryTypeFilter.value = 'all'
-    selectedDay.value = ''
     editingEntry.value = null
-    if (destinationMonth && destinationMonth !== month.value) month.value = destinationMonth
+    if (destinationMonth && destinationMonth !== month.value) {
+      pendingEditMonthReturn = { month: destinationMonth, selectedDay: returnDay, calendarExpanded: returnCalendarExpanded }
+      month.value = destinationMonth
+    } else if (returnDay) {
+      selectedDay.value = returnDay
+    }
     flash(receiptSaveError.value || '記録を更新しました')
     await load()
     await refreshDetailSource()

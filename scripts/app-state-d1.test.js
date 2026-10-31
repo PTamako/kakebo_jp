@@ -79,6 +79,6 @@ test('no production module reads or writes localStorage',()=>{
   const paths=['src/App.vue','src/FinanceTools.vue','src/receipt-store.js','src/duplicate-review.js','src/review-trash.js']
   for(const file of paths){
     const source=readFileSync(new URL('../'+file,import.meta.url),'utf8')
-    assert.doesNotMatch(source,/\\blocalStorage\\b/,file)
+    assert.doesNotMatch(source,/\blocalStorage\b/,file)
   }
 })

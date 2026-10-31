@@ -797,6 +797,7 @@ async function saveEdit() {
     }
     preserveOperatedDay.value = editedDay
     lastEditedDay.value = editedDay
+    lastEditedEntryId.value = e.id
     editingEntry.value = null
     if (destinationMonth && destinationMonth !== month.value) {
       pendingEditMonthReturn = { month: destinationMonth, selectedDay: returnDay, calendarExpanded: returnCalendarExpanded }
@@ -813,6 +814,9 @@ async function saveEdit() {
     // A later fetch can also trigger the watcher, so both paths restore the
     // same scoped page count without revealing data from a different filter.
     restoreEditedListPagination()
+    // The editor can also be opened directly from the monthly full list.
+    // Scroll to the edited transaction after refresh, without requiring a day click.
+    if (!returnDay && entryTypeFilter.value === 'all') await focusLastEditedDayInAll()
   } catch (err) { flash('更新に失敗しました：' + err.message) }
   finally { editSaving.value = false }
 }
@@ -1001,8 +1005,11 @@ async function focusLastEditedDayInAll() {
   expandedEntryDays.value = new Set([day])
   await nextTick()
   if (!stillShowingAll()) return
-  document.querySelector(`.day-group-list [data-ledger-day="${day}"]`)
-    ?.scrollIntoView({ behavior: 'auto', block: 'start' })
+  const editedEntry = Number(lastEditedEntryId.value)
+  const target = (Number.isSafeInteger(editedEntry) && editedEntry > 0
+    ? document.querySelector(`.day-group-list [data-ledger-entry-id="${editedEntry}"]`) : null)
+    || document.querySelector(`.day-group-list [data-ledger-day="${day}"]`)
+  target?.scrollIntoView({ behavior: 'auto', block: 'center' })
 }
 function setEntryTypeFilter(value) {
   editListReturn.value = null
@@ -1036,6 +1043,7 @@ function loadMoreEntries() {
 const expandedEntryDays = ref(new Set())
 const preserveOperatedDay = ref('')
 const lastEditedDay = ref('')
+const lastEditedEntryId = ref(null)
 const groupedPagedEntries = computed(() => {
   // Use every matching row for each day's headline, not just the first 20 visible rows.
   const fullDays = new Map()

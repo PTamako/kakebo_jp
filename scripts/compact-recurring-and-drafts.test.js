@@ -26,8 +26,9 @@ test('unsaved draft actions are compact, low emphasis and cannot touch saved ent
   const fn=app.match(/function clearLocalDraft\(\) \{([\s\S]*?)\n\}/)?.[1]
   assert.ok(fn)
   assert.match(fn,/forms\.value=\[\];input\.value=''/)
-  assert.match(fn,/localStorage\.removeItem\(DRAFT_KEY\)/)
-  assert.doesNotMatch(fn,/api\(|deleteReceiptImage|clearAllReceiptImages|saveAll\(/)
+  assert.match(fn,/await queueDraftSave\(null\)/)
+  assert.match(app,/api\('app-state\?key='\+DRAFT_KEY,\{method:'DELETE'\}\)/)
+  assert.doesNotMatch(fn,/localStorage|deleteReceiptImage|clearAllReceiptImages|saveAll\(/)
 })
 
 test('fixed-expense list stays collapsed and height-bounded with actionable compact entries',()=>{

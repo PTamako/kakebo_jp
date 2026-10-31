@@ -26,7 +26,10 @@ function database(migrated = true) {
         async run(){
           queries.push(sql)
           if(!migrated)throw Error('D1_ERROR: no such table: app_client_state')
-          if(sql.startsWith('INSERT INTO app_client_state'))values.set(this.args[0],this.args[1])
+          if(sql.startsWith('INSERT INTO app_client_state')) {
+            if(sql.includes("'remember_device'"))values.set('remember_device',this.args[0])
+            else values.set(this.args[0],this.args[1])
+          }
           else if(sql.startsWith('DELETE FROM app_client_state'))values.delete(this.args[0])
           else if(sql.startsWith('DELETE FROM device_sessions'))db.revocations=(db.revocations||0)+1
           else throw Error('unexpected mutation '+sql)
@@ -70,6 +73,34 @@ test('HttpOnly cookie can access D1 without any persistent JavaScript browser to
   const result=await send(db,'PUT',{key:'fx_currency',value:'EUR'},stateUrl,{cookie:'kakeibo_session='+token})
   assert.equal(result.status,200)
   assert.equal((await send(db,'GET',null,stateUrl,{cookie:'kakeibo_session='+token})).body.fx_currency,'EUR')
+})
+test('image-storage preference and cookie policy are committed together in D1',async()=>{
+  const db=database()
+  const response=await onRequest({
+    request:new Request('https://kakeibo-f17.pages.dev/api/auth/remember',{
+      method:'PUT',headers:{cookie:'kakeibo_session='+token,'content-type':'application/json'},
+      body:JSON.stringify({remember:false})
+    }),
+    env:{AUTH_TOKEN:'test',DB:db},params:{path:['auth','remember']}
+  })
+  assert.equal(response.status,200)
+  assert.equal(JSON.parse(db.values.get('remember_device')),false)
+  assert.match(response.headers.get('set-cookie')||'',/kakeibo_session=.*HttpOnly/)
+  assert.doesNotMatch(response.headers.get('set-cookie')||'',/Max-Age=/)
+  // A missing D1 table must not issue a new cookie or silently store the preference locally.
+  const failed=await onRequest({
+    request:new Request('https://kakeibo-f17.pages.dev/api/auth/remember',{
+      method:'PUT',headers:{'x-session':token,'content-type':'application/json'},
+      body:JSON.stringify({remember:false})
+    }),
+    env:{AUTH_TOKEN:'test',DB:database(false)},params:{path:['auth','remember']}
+  })
+  assert.equal(failed.status,503)
+  assert.equal(failed.headers.get('set-cookie'),null)
+  const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
+  const handler=app.match(/async function setRememberDevice\(remember\) \{([\s\S]*?)\n\}/)?.[1]||''
+  assert.match(handler,/api\('auth\/remember'/)
+  assert.doesNotMatch(handler,/api\('app-state'/)
 })
 test('cookie-only logout revokes the server-side D1 session and clears the cookie',async()=>{
   const db=database()

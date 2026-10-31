@@ -77,3 +77,16 @@ test('hybrid autosave is local-first, with a dirty-only 30s cloud backup',()=>{
   assert.match(api,/new Set\(\['remember_device','unsaved_draft'\]\)/)
   assert.doesNotMatch(app,/key:'ai_ocr_enabled'|key:'fx_currency'/)
 })
+
+test('offline draft recovery cannot overwrite an unread or newer cloud backup',()=>{
+  const app=read('src/App.vue')
+  assert.match(app,/let draftRemoteKnown = false/)
+  assert.match(app,/if \(!draftRemoteKnown\) \{[\s\S]*?await api\('app-state'\)/)
+  assert.match(app,/draftCloudConflictTimestamp > Number\(draftCurrentSnapshot\?\.updatedAt \|\| 0\)/)
+  assert.match(app,/const saved=await readDeviceDraft\(\)/)
+  assert.match(app,/クラウドに接続できません。端末に保存した下書きを復元します/)
+  assert.doesNotMatch(app,/DROP TABLE|DELETE FROM entries/)
+  const script=app.match(/<script setup>([\s\S]*?)<\/script>/)?.[1]
+  assert.ok(script)
+  assert.doesNotThrow(()=>new Function(script.replace(/^import .*$/gm,'')), 'Vue setup JavaScript syntax must remain valid')
+})

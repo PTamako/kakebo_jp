@@ -98,7 +98,11 @@ test('Gemma statement prompt preserves original relative-time display and uses f
   }},new Uint8Array([1]).buffer,'image/png','statement')
   assert.match(prompt,/日付,時刻,店舗名または駅名,金額,支払方法/)
   assert.match(prompt,/2時間前/)
-  assert.match(prompt,/撮影日を取引日として推測しない/)
+  assert.match(prompt,/画像の撮影日を推測しない/)
+  assert.match(prompt,/40分前/)
+  assert.match(prompt,/今日/)
+  assert.match(prompt,/昨日/)
+  assert.match(prompt,/「今」/)
   assert.match(prompt,/駅店/)
 })
 

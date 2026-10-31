@@ -99,6 +99,12 @@ CREATE TABLE IF NOT EXISTS category_source (
 );
 -- New installs only use merchant_rules; legacy tables are not created.
 CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+-- User-reviewed alerts are persisted separately from financial transactions.
+-- No historical notice keys or ledger rows are seeded on startup.
+CREATE TABLE IF NOT EXISTS review_notice_states (
+  notice_key TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS ai_ocr_daily_usage (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0);
 -- Migration history may be inspected manually; normal API reads never insert markers.
 CREATE TABLE IF NOT EXISTS schema_migrations (

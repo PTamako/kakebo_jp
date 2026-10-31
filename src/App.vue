@@ -1044,7 +1044,7 @@ watch([displayEntries, detailFilter, selectedDay], () => {
   expandedEntryDays.value = new Set(defaultDay ? [defaultDay] : [])
   if (operatedDay && days.includes(operatedDay)) {
     const index = sortedDisplayEntries.value.findIndex(entry => String(entry.date || '').slice(0, 10) === operatedDay)
-    visibleEntryCount.value = Math.max(20, index + 1)
+    visibleEntryCount.value = Math.max(visibleEntryCount.value, 20, index + 1)
   }
   if (!operatedDay || days.includes(operatedDay)) preserveOperatedDay.value = ''
 }, { deep: true })

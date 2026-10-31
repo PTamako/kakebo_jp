@@ -50,7 +50,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
         </section>
       </div>
       <div v-else-if="!detailLoading && displayEntries.length" class="ledger day-group-list">
-        <section v-for="group in groupedPagedEntries" :key="group.date" class="entry-day-group">
+        <section v-for="group in groupedPagedEntries" :key="group.date" class="entry-day-group" :data-ledger-day="group.date">
           <button type="button" class="entry-day-heading" :aria-expanded="expandedEntryDays.has(group.date)" @click="toggleEntryDay(group.date)">
             <span class="entry-day-chevron">{{ expandedEntryDays.has(group.date) ? '▾' : '▸' }}</span>
             <strong>{{ group.date.replace(/-/g, '/') }}</strong>
@@ -58,7 +58,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
             <span class="entry-day-total">{{ formatLedgerTotal(group.total, entryTypeFilter) }}</span>
           </button>
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+            <li v-for="e in group.items" :key="e.id" :data-ledger-entry-id="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
               <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
                 <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
                 <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}</b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="prepaidHistoryFilter?.kind === 'usage' && e.payment_source"> · {{e.payment_source}}</template><template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : e.transfer_target.startsWith('prepaid:') ? '→ '+e.transfer_target.slice(8) : e.transfer_target }}</template></small></div>

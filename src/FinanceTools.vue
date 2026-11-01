@@ -1439,7 +1439,7 @@ async function removeCardBill(record) {
           <ReviewTrashActions :label="item.merchant || item.note || 'SBI証券への振替'" :disabled="transferTrashLoading || trashBusy" @restore="restoreTransferReminder(item)" @remove="removeReviewedTrashNotice(transferTrashKey(item))" />
         </div>
       </details>
-      <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy || transferTrashLoading || deletedPlanLoading || !transferTrashLoaded || !deletedPlanLoaded" @click="emptyReviewTrash">ゴミ箱を空にする</button>
+      <button v-if="trashCount" type="button" class="review-trash-empty" :disabled="recurringBusy || trashBusy || transferTrashLoading || deletedPlanLoading || deletedEntryLoading || !transferTrashLoaded || !deletedPlanLoaded || !deletedEntryLoaded" @click="emptyReviewTrash">ゴミ箱を空にする</button>
       <p v-if="trashCount" class="review-trash-note">削除済み固定費は完全削除。それ以外の確認状態と記帳済み明細は残ります。</p>
       </template>
     </template>

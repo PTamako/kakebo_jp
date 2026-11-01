@@ -38,7 +38,7 @@ test('registered-plan disclosure reserves right-hand chevron and keeps amount an
   assert.match(fixed, /class="recurring-plan-name"/)
   assert.match(fixed, /class="recurring-plan-amount"/)
   assert.match(fixed, /class="recurring-plan-chevron"/)
-  assert.match(fixed, /class="recurring-plan-meta-item">毎月\{\{p.day\}\}日/)
+  assert.match(fixed, /class="recurring-plan-meta-item">\{\{recurringFrequencyLabel\(p\)\}\}/)
   assert.match(fixed, /class="recurring-plan-meta-item">開始 \{\{p.startMonth/)
   assert.match(source, /\.recurring-plan-meta\{grid-column:1\/-1;grid-row:2;display:flex;flex-wrap:wrap/)
   assert.match(source, /\.recurring-plan-meta-item\{[^}]*white-space:nowrap/)

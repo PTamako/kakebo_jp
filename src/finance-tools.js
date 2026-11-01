@@ -166,7 +166,7 @@ export function validateBackup(value) {
   const validCustom = x => x && isText(x.keyword,120) && isText(x.category,120)
   const validPaymentRule = x => x && isText(x.keyword,120) && isText(x.payment_source,80)
   for (const [name, check] of [
-    ['plans',validPlan],['archivedPlans',validPlan],['recurringExclusions',validExclusion],['bills',validBill],['paymentSources',validSource],
+    ['plans',validPlan],['archivedPlans',validPlan],['recurringExclusions',validExclusion],['recurringDateExclusions',validDateExclusion],['bills',validBill],['paymentSources',validSource],
     ['customRules',validCustom],['merchantPaymentRules',validPaymentRule],
     ['categories',x => isText(x,20)]
   ]) {

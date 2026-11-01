@@ -151,3 +151,61 @@ test('now-minute drafts retain standard HH:mm input and validation',()=>{
   assert.ok(!api.includes('(?::[0-5]\\d)?'), 'API remains HH:mm only')
   assert.ok(!backup.includes('(?::[0-5]\\d)?'), 'backup remains HH:mm only')
 })
+
+
+test('Japanese and Chinese relative-day words resolve correctly at JST New Year',()=>{
+  const reference=new Date('2026-12-31T15:05:11.000Z') // JST: 2027-01-01 00:05
+  const cases=[
+    [['今日','きょう','キョウ','本日','ほんじつ','ホンジツ','今天'], '2027-01-01'],
+    [['明日','あした','アシタ','あす','アス','みょうにち','ミョウニチ','明天'], '2027-01-02'],
+    [['明後日','あさって','アサッテ','みょうごにち','ミョウゴニチ','后天','後天'], '2027-01-03'],
+    [['明々後日','明明後日','しあさって','シアサッテ','大后天','大後天'], '2027-01-04'],
+    [['昨日','きのう','キノウ','さくじつ','サクジツ','昨天'], '2026-12-31'],
+    [['一昨日','おととい','オトトイ','いっさくじつ','イッサクジツ','前天'], '2026-12-30']
+  ]
+  for(const [words,expectedDate] of cases)for(const word of words){
+    for(const input of [
+      word+'　テスト　1000円',
+      'テスト '+word+' 1000円',
+      'テスト\n'+word+'\n1000円',
+      word+'\nテスト\n1000円'
+    ]){
+      const result=parseNamedExpenseBlocks(input,reference)
+      assert.ok(result?.rows?.length===1 && !result.error, input)
+      const [row]=result.rows
+      assert.equal(row.merchant,'テスト',input)
+      assert.equal(row.date,expectedDate,input)
+      assert.equal(row.time,'',input)
+      assert.equal(row.amount,1000,input)
+      assert.equal(row.type,'expense',input)
+    }
+  }
+})
+
+test('now expressions in hiragana and katakana preserve JST HH:mm while day words have no clock',()=>{
+  const reference=new Date('2026-10-31T15:03:23.000Z') // JST: 2026-11-01 00:03
+  for(const word of ['今','いま','イマ','現在','げんざい','ゲンザイ','ただ今','ただいま','タダイマ','たった今','たったいま','タッタイマ']){
+    const result=parseNamedExpenseBlocks(word+' テスト 1000円',reference)
+    assert.ok(result?.rows?.length===1,word)
+    assert.equal(result.rows[0].date,'2026-11-01',word)
+    assert.equal(result.rows[0].time,'00:03',word)
+    assert.equal(result.rows[0].merchant,'テスト',word)
+  }
+})
+
+test('names containing relative-date strings are not mistaken for standalone date tokens',()=>{
+  const reference=new Date('2026-11-01T00:00:00.000Z')
+  for(const name of ['明日用品','明日香','アシタノート','あしたの予定','昨日の記録','イマドキ','今月のテスト']){
+    assert.equal(parseNamedExpenseBlocks(name+' 1000円',reference),null,name)
+  }
+  const result=parseNamedExpenseBlocks('明日用品 明日 1000円',reference)
+  assert.equal(result.rows[0].merchant,'明日用品')
+  assert.equal(result.rows[0].date,'2026-11-02')
+  assert.equal(result.rows[0].time,'')
+})
+
+test('manual relative-date recognition does not save to D1 and uses one captured time',()=>{
+  const app=source('src/App.vue')
+  assert.match(app,/parseNamedExpenseBlocks\(input\.value, referenceTime\)/)
+  assert.doesNotMatch(app.match(/function recognize\([\s\S]*?\n\}(?=\nasync function onImage)/)?.[0]||'',/api\('entries'/)
+})

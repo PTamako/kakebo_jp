@@ -65,7 +65,7 @@ function splitInlineNamedExpense(line) {
   const name = match[1].trim()
   // A bare month must not be split into a numeric "name" and date.
   if (!name || !/[^\d\s¥￥,./-]/.test(name)) return null
-  if (!/[¥￥円]/.test(match[3])) return null
+  // A trailing clock may look like the amount to this regex when the actual\n  // yen amount precedes the date. Re-scan all fields instead of treating the\n  // whole line as the merchant name.\n  if (!/[¥￥円]/.test(match[3])) return splitFlexibleInlineNamedExpense(line)
   return [name, match[2].trim(), match[3].trim()]
 }
 // Detect a dated expense in one line without requiring field order.
@@ -105,7 +105,7 @@ export function parseNamedExpenseBlocks(raw, now = new Date()) {
   // written until the user reviews and saves the resulting drafts.
   lines=lines.flatMap(line=>splitInlineNamedExpense(line)||[line])
   if(lines.length<2)return null
-  const dateHint = new RegExp(String.raw`(?:毎週|每周|每週|[0-9一二三四五六七八九十]月|^\d{1,4}[\/.-]|^${relativeDayPattern}$)`)
+  const dateHint = new RegExp(String.raw`(?:毎週|每周|每週|[0-9一二三四五六七八九十]月|^\d{1,4}[\/.-]|^${relativeDayPattern}(?:\s+(?:(?:午前|午後|AM|PM)\s*)?(?:[01]?\d|2[0-3])\s*(?::\s*[0-5]\d|時\s*[0-5]?\d\s*分?))?$)`)
   if(!lines.some(line=>dateHint.test(line)))return null
   if(lines.length%3!==0)return {error:'名称・日付・金額を3行ずつ入力してください'}
   if(lines.length/3>30)return {error:'一度に読み取れる記録は30組までです'}

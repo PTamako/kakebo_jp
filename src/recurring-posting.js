@@ -45,3 +45,17 @@ export function recurringFrequencyLabel(plan) {
     ? '毎週'+WEEKDAYS_JA[Number(plan.weekday)]+'曜日'
     : '毎月'+plan.day+'日'
 }
+
+export function nextRecurringDate(plan, today) {
+  if (!plan.enabled) return null
+  const start=plan.startMonth||plan.start_month
+  const current=String(today).slice(0,7)
+  let [year,month]=(current>start?current:start).split('-').map(Number)
+  for(let i=0;i<14;i++){
+    const m=year+'-'+String(month).padStart(2,'0')
+    const next=recurringDatesInMonth(m,{scheduleType:plan.scheduleType||plan.schedule_type||'monthly',day:plan.day,weekday:plan.weekday}).find(x=>x>=today)
+    if(next)return next
+    if(++month===13){month=1;year++}
+  }
+  return null
+}

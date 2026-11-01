@@ -37,16 +37,26 @@ const summarize = group => ({
 })
 
 // Calendar-day average: include zero-spend weekdays/holidays in the denominator.
-// A current month/year stops at today; a completed past period includes all days.
-export function spendingAveragesByDayType(byDay, start, end, today = japanTodayKey()) {
+// Current periods stop at today; annual views can omit entirely unrecorded months.
+export function spendingAveragesByDayType(byDay, start, end, today = japanTodayKey(), { recordedMonthsOnly = false } = {}) {
   const totals = { weekday: { total: 0, days: 0 }, holiday: { total: 0, days: 0 } }
   const range = elapsedDateRange(start, end, today)
   if (!range) return { weekday: summarize(totals.weekday), holiday: summarize(totals.holiday) }
   const expenseByDate = expenseTotalsForRange(byDay, range)
+  // A whole unrecorded month is unknown, NOT a month of confirmed zero spending.
+  // Monthly views include every elapsed calendar day if the month has expenses.
+  // Annual views include calendar days only inside months with actual expenses.
+  const recordedMonths = new Set([...expenseByDate]
+    .filter(([, amount]) => amount > 0)
+    .map(([date]) => date.slice(0, 7)))
+  if (recordedMonths.size === 0) {
+    return { weekday: summarize(totals.weekday), holiday: summarize(totals.holiday) }
+  }
   const [year, month, day] = start.split('-').map(Number)
   const endTimestamp = Date.parse(range.limit + 'T00:00:00Z')
   for (let timestamp = Date.UTC(year, month - 1, day); timestamp <= endTimestamp; timestamp += 86400000) {
     const date = new Date(timestamp).toISOString().slice(0, 10)
+    if (recordedMonthsOnly && !recordedMonths.has(date.slice(0, 7))) continue
     const group = isJapanHoliday(date) ? totals.holiday : totals.weekday
     group.days += 1
     group.total += expenseByDate.get(date) || 0

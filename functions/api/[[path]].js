@@ -347,8 +347,13 @@ export async function onRequest({ request, env, params }) {
               typeof item.paymentSource !== 'string' ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
               typeof item.enabled !== 'boolean' || (item.postingMode != null && !['auto','manual'].includes(item.postingMode))) return json({error:'固定支出の入力を確認してください'},400)
-          const updated = await db.prepare("UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7 WHERE id=?8 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?8)")
-            .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,b).run()
+          const prior = await db.prepare("SELECT name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b).first()
+          if (!prior) return json({error:'固定支出が見つかりません'},404)
+          const mode=item.postingMode ?? prior.posting_mode
+          const sameSchedule=prior.name===item.name.trim() && Number(prior.amount)===item.amount && Number(prior.day)===item.day && prior.category===item.category && prior.payment_source===item.paymentSource && prior.start_month===item.startMonth && !!prior.enabled===item.enabled
+          const autoFrom=mode==='auto' ? (prior.posting_mode==='auto' && sameSchedule && prior.auto_from_month ? prior.auto_from_month : nextAutomaticStartMonth(tokyoToday(),item.day,item.startMonth)) : ''
+          const updated = await db.prepare("UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7,posting_mode=?8,auto_from_month=?9 WHERE id=?10 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?10)")
+            .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,mode,autoFrom,b).run()
           if(!updated.meta?.changes)return json({error:'固定支出が見つかりません'},404)
           // Stable plan IDs preserve the monthly idempotency key. Existing ledger entries are untouched.
           return json({ok:true})

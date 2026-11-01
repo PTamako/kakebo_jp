@@ -110,7 +110,7 @@ function comparisonTone(comparison) {
             <div class="day-average-row"><span>休日</span><strong>{{ annualDayTypeAverages.holiday.average === null ? '—' : yen(annualDayTypeAverages.holiday.average) }}</strong></div>
           </div>
         </div>
-        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>月平均支出（{{ annualAverageSummary.monthCount }}か月で計算）</small><strong>{{ annualAverageSummary.average === null ? '—' : yen(annualAverageSummary.average) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>月平均支出（{{ annualAverageSummary.monthCount }}か月）</small><strong>{{ annualAverageSummary.average === null ? '—' : yen(annualAverageSummary.average) }}</strong></div>
       </div>
       <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>

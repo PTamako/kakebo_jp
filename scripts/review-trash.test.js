@@ -51,7 +51,7 @@ test('trash archiving is per exact group, plan-month and transfer ID',()=>{
   assert.equal(transfers[0].transfer_applied,1)
 })
 
-test('clear archives reviewed notifications but explicitly purges previously deleted fixed-expense settings',()=>{
+test('clear archives reviewed notifications and explicitly purges deleted fixed expenses and entries',()=>{
   const body=finance.match(/async function emptyReviewTrash\(\) \{([\s\S]*?)\n\}/)?.[1]
   assert.ok(body)
   assert.ok(body.includes('writeReviewNotices(keys)'))
@@ -61,7 +61,8 @@ test('clear archives reviewed notifications but explicitly purges previously del
   assert.ok(body.includes('.map(transferTrashKey)'))
   assert.ok(body.includes("api('recurring-plans/'"))
   assert.ok(body.includes("method:'DELETE'"))
-  assert.ok(finance.includes('削除済み固定費は完全削除'))
+  assert.ok(body.includes("api('trash-items/'"))
+  assert.ok(finance.includes('削除済みの明細・固定費は完全削除されます'))
 })
 
 test('transfer reminder GET details and DELETE restoration use only dismissed-reminder table',()=>{

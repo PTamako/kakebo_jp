@@ -12,7 +12,7 @@ export function nextAutomaticStartMonth(today, day, startMonth) {
     const [y, m] = currentMonth.split('-').map(Number)
     return m === 12 ? (y+1)+'-01' : y+'-'+String(m+1).padStart(2,'0')
   }
-  const base = scheduledRecurringDate(currentMonth, day) >= today ? currentMonth : nextMonth()
+  const base = scheduledRecurringDate(currentMonth, day) > today ? currentMonth : nextMonth()
   return startMonth > base ? startMonth : base
 }
 export function recurringRequestId(planId, month) {

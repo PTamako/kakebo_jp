@@ -231,24 +231,7 @@ function comparisonTone(comparison) {
   gap: 4px;
 }
 
-/* Annual only: keep the peak month readable in the third summary cell. */
-.annual-peak-month { justify-content: center; }
-.annual-peak-month small { line-height: 1.3; overflow-wrap: anywhere; }
-.income-expense-strip .annual-peak-month strong {
-  font-size: clamp(14px, 3.6vw, 18px);
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-.annual-peak-month-amount {
-  display: block;
-  color: var(--muted);
-  font-size: clamp(10px, 2.65vw, 12px);
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
-/* Only monthly statistics: transfer totals use two cells; daily averages replace the old expense-count metric. */
+/* Monthly transfer summary: 3 cards including comparison; lower metric grid remains 2 cards. */
 .monthly-transfer-summary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

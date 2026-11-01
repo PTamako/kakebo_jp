@@ -1252,7 +1252,7 @@ async function removeCardBill(record) {
       <label :class="{selected:plan.postingMode==='auto'}"><input v-model="plan.postingMode" type="radio" value="auto" name="recurring-posting-mode" /><span>自動記帳</span></label>
       <label :class="{selected:plan.postingMode==='manual'}"><input v-model="plan.postingMode" type="radio" value="manual" name="recurring-posting-mode" /><span>確認して記帳</span></label>
     </fieldset>
-    <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? ''+recurringFrequencyLabel(plan)+'になると、自動で支出明細に登録します。' : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
+    <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? recurringFrequencyLabel(plan)+'になると、自動で支出明細に登録します。' : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <p class="recurring-window-note">開始月から未記帳分を確認</p>
@@ -1439,10 +1439,10 @@ async function removeCardBill(record) {
       </details>
       <details v-if="reviewTrash.recurringExclusions.length" class="review-trash-category">
         <summary>固定費の月別除外 <span>{{reviewTrash.recurringExclusions.length}}件</span></summary>
-        <p class="review-trash-category-note">指定した月だけ記帳候補から除外した項目です。</p>
+        <p class="review-trash-category-note">指定した月・日だけ記帳候補から除外した項目です。</p>
         <div v-for="item in reviewTrash.recurringExclusions" :key="recurringTrashKey(item)" class="review-trash-item">
-          <span class="review-trash-text" :title="item.name+' '+item.month">{{item.name}} · {{item.month}}</span>
-          <ReviewTrashActions :label="item.name+' '+item.month" restore-label="その月の記帳候補を再表示" remove-label="確認済み一覧から削除"
+          <span class="review-trash-text" :title="item.name+' '+(item.date||item.month)">{{item.name}} · {{item.date||item.month}}</span>
+          <ReviewTrashActions :label="item.name+' '+(item.date||item.month)" restore-label="対象の記帳候補を再表示" remove-label="確認済み一覧から削除"
             :disabled="recurringBusy || trashBusy" @restore="restoreRecurringExclusion(item)" @remove="removeReviewedTrashNotice(recurringTrashKey(item))" />
         </div>
       </details>

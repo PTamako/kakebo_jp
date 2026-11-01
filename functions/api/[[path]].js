@@ -436,7 +436,7 @@ export async function onRequest({ request, env, params }) {
       const statements=[
         'SELECT * FROM entries ORDER BY id',
         recurringArchiveReady
-          ? 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id'
+          ? `SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id`
           : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         

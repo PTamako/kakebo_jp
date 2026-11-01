@@ -4,7 +4,7 @@ export const backupVersion = 4
 const RESTORE_SETTING_ORDER = [
   'paymentSources','categoryMetadata','categories','categoryIcons',
   'customRules','merchantPaymentRules','bills',
-  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans','archivedPlans','recurringExclusions','trashedEntries'
+  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans','archivedPlans','recurringExclusions','recurringDateExclusions','trashedEntries'
 ]
 // Setting collections are restored in dependency order, with no silent fallback
 // that omits display names, sorting or portfolio data for large archives.
@@ -110,7 +110,7 @@ export function validateBackup(value) {
       throw Error('取引データに不正な値があります')
     }
   }
-  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks', 'recurringExclusions', 'archivedPlans', 'trashedEntries']
+  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks', 'recurringExclusions', 'recurringDateExclusions', 'archivedPlans', 'trashedEntries']
   for (const name of arrayNames) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
@@ -144,9 +144,12 @@ export function validateBackup(value) {
     month(x.startMonth) && typeof x.enabled === 'boolean' &&
     (x.postingMode == null || ['manual','auto'].includes(x.postingMode)) &&
     (x.autoFromMonth == null || x.autoFromMonth === '' || month(x.autoFromMonth)) &&
-    (x.postingMode !== 'auto' || month(x.autoFromMonth))
+    (x.postingMode !== 'auto' || month(x.autoFromMonth)) &&
+    (x.scheduleType == null || ['monthly','weekly'].includes(x.scheduleType)) &&
+    (x.weekday == null || (Number.isInteger(x.weekday) && x.weekday>=0 && x.weekday<=6))
   const validExclusion = x => x && typeof x.planId==='string' &&
     /^[a-zA-Z0-9-]{8,80}$/.test(x.planId) && month(x.month)
+  const validDateExclusion = x => x && typeof x.planId==='string' && /^[a-zA-Z0-9-]{8,80}$/.test(x.planId) && validDate(x.date)
   const validBill = x => x && isText(x.name,80) && month(x.month) &&
     validDate(x.start) && validDate(x.end) && x.start <= x.end &&
     safeAmount(x.total) && safeAmount(x.count)

@@ -983,10 +983,10 @@ async function dismissRecurring(row) {
   if(recurringBusy.value || !recurringListOpen.value)return
   recurringBusy.value=true
   try {
-    const result=await props.api('recurring-exclusions',{method:'POST',body:JSON.stringify({planId:row.planId,month:row.month})})
+    const result=await props.api('recurring-exclusions',{method:'POST',body:JSON.stringify({planId:row.planId,month:row.month,...(row.scheduleType==='weekly'?{date:row.date}:{})})})
     if(!result.ok)throw Error('除外できませんでした')
     const key=recurringKey(row)
-    recurringExclusions.value=[...recurringExclusions.value.filter(item=>recurringKey(item)!==key),{planId:row.planId,month:row.month}]
+    recurringExclusions.value=[...recurringExclusions.value.filter(item=>recurringKey(item)!==key),{planId:row.planId,month:row.month,...(row.scheduleType==='weekly'?{date:row.date}:{})}]
     // A new exclusion is reviewable even if an older notice was cleared.
     const archivedKey = recurringTrashKey(row)
     if (archivedTrashKeys.value.has(archivedKey)) {
@@ -1000,7 +1000,7 @@ async function dismissRecurring(row) {
     next.delete(key)
     recurringSelected.value=next
     recurringSwipeOpenKey.value=''
-    recurringMessage.value=row.name+'（'+row.month+'）を候補から除外しました'
+    recurringMessage.value=row.name+'（'+row.date+'）を候補から除外しました'
   }catch(e){recurringMessage.value='候補を除外できませんでした：'+e.message}
   finally{recurringBusy.value=false}
 }
@@ -1008,14 +1008,14 @@ async function restoreRecurringExclusion(item) {
   if(recurringBusy.value)return
   recurringBusy.value=true
   try {
-    const result=await props.api('recurring-exclusions',{method:'DELETE',body:JSON.stringify({planId:item.planId,month:item.month})})
+    const result=await props.api('recurring-exclusions',{method:'DELETE',body:JSON.stringify({planId:item.planId,month:item.month,...(item.date?{date:item.date}:{})})})
     if(!result.ok)throw Error('解除できませんでした')
     recurringExclusions.value=recurringExclusions.value.filter(row=>recurringKey(row)!==recurringKey(item))
     if(recurringListOpen.value) {
       const window=recurringReviewWindow(plans.value,currentRecurringMonth())
       recurringPreview.value=previewRecurringEntries(plans.value,rows.value,{historicalMonths:window.historicalMonths,excluded:recurringExclusions.value})
     }
-    recurringMessage.value='除外を解除しました：'+item.month
+    recurringMessage.value='除外を解除しました：'+(item.date||item.month)
   }catch(e){recurringMessage.value='除外を解除できませんでした：'+e.message}
   finally{recurringBusy.value=false}
 }

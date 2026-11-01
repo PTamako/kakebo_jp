@@ -32,16 +32,16 @@ test('transfer reminder has a full-width safe title, no duplicate rule, and pres
   assert.match(transfers,/@media\(max-width:370px\)/)
 })
 
-test('prepaid cards show a clear current balance and compact charge/usage totals',()=>{
+test('prepaid cards show current balance and compact monthly charge/usage totals',()=>{
   assert.match(prepaid,/class="wallet-list"/)
   assert.match(prepaid,/class="wallet-card-identity"/)
   assert.match(prepaid,/class="wallet-card-icon"/)
   assert.match(prepaid,/class="wallet-card-flow"/)
-  assert.match(prepaid,/チャージ累計/)
-  assert.match(prepaid,/利用累計/)
+  assert.match(prepaid,/今月のチャージ/)
+  assert.match(prepaid,/今月の利用/)
   assert.match(prepaid,/現在残高/)
-  assert.match(prepaid,/money\(card.charged\)/)
-  assert.match(prepaid,/money\(card.spent\)/)
+  assert.match(prepaid,/money\(card.charged_month\)/)
+  assert.match(prepaid,/money\(card.spent_month\)/)
   assert.match(prepaid,/wallet-negative/)
   assert.match(prepaid,/\.wallet-name strong\{[^}]*overflow-wrap:anywhere/)
   assert.match(prepaid,/\.wallet-card-flow\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)

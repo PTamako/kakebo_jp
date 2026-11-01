@@ -38,6 +38,7 @@ test('wallet shows month-to-date activity, but calculates balance from full post
         const stmt=sqlite.prepare(sql)
         return {
           all:async()=>({results:stmt.all()}),
+          first:async()=>stmt.get(),
           bind(...values){
             return {
               all:async()=>({results:stmt.all(...values)}),

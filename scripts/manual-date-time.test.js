@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { parseNamedExpenseBlocks } from '../src/named-expense.js'
+import { recognizeAssetTransfer } from '../src/transfer-recognition.js'
 
 const reference = new Date('2026-11-01T08:54:00.000Z') // 17:54 JST
 
@@ -36,6 +37,28 @@ test('single-line text supports name/date/time/amount in either order', () => {
     assert.equal(parsed.rows[0].date, '2026-11-01', line)
     assert.equal(parsed.rows[0].time, '17:49', line)
     assert.equal(parsed.rows[0].amount, 1000, line)
+  }
+})
+
+test('Suica recharge recognizes field order in a single line or three lines', () => {
+  const samples = [
+    'Suicaチャージ　1000円　2026/11/01 17:49',
+    ['Suicaチャージ', '1000円', '2026/11/01 17:49'].join('\n'),
+    ['Suicaチャージ', '2026/11/01 17:49', '1000円'].join('\n')
+  ]
+  for (const input of samples) {
+    const parsed = parseNamedExpenseBlocks(input, reference)
+    assert.ok(parsed?.rows, input + ': ' + JSON.stringify(parsed))
+    assert.equal(parsed.rows.length, 1, input)
+    const row = parsed.rows[0]
+    assert.equal(row.merchant, 'Suicaチャージ', input)
+    assert.equal(row.amount, 1000, input)
+    assert.equal(row.date, '2026-11-01', input)
+    assert.equal(row.time, '17:49', input)
+    assert.deepEqual(
+      recognizeAssetTransfer({merchant:row.merchant,note:row.note,raw:row.raw,prepaidNames:['Suica','PASMO']}),
+      {isTransfer:true,transferTarget:'prepaid:Suica',kind:'recharge'}
+    )
   }
 })
 

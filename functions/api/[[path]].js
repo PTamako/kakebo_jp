@@ -303,15 +303,15 @@ export async function onRequest({ request, env, params }) {
           let results
           try {
             const query = trash
-              ? `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,t.archived_at
-                 FROM recurring_plans p JOIN recurring_plan_trash t ON t.plan_id=p.id ORDER BY t.archived_at DESC`
+              ? `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,t.deleted_at AS archived_at
+                 FROM recurring_plans p JOIN trash_items t ON t.item_type='recurring_plan' AND t.item_id=p.id ORDER BY t.deleted_at DESC`
               : `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled
-                 FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM recurring_plan_trash t WHERE t.plan_id=p.id)
+                 FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)
                  ORDER BY p.name,p.id`
             ;({results} = await db.prepare(query).all())
           } catch(e) {
-            if (!/no such table: recurring_plan_trash/i.test(String(e))) throw e
-            // Migration 0009 is manual. Normal reads must remain available
+            if (!/no such table: trash_items/i.test(String(e))) throw e
+            // Migration 0012 is manual. Normal reads must remain available
             // before it is applied; do not silently permit archiving.
             if (trash) return json([])
             ;({results} = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY name,id').all())
@@ -343,7 +343,7 @@ export async function onRequest({ request, env, params }) {
               typeof item.paymentSource !== 'string' ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
               typeof item.enabled !== 'boolean') return json({error:'固定支出の入力を確認してください'},400)
-          const updated = await db.prepare('UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7 WHERE id=?8')
+          const updated = await db.prepare("UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7 WHERE id=?8 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?8)")
             .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,b).run()
           if(!updated.meta?.changes)return json({error:'固定支出が見つかりません'},404)
           // Stable plan IDs preserve the monthly idempotency key. Existing ledger entries are untouched.
@@ -351,7 +351,7 @@ export async function onRequest({ request, env, params }) {
         }
         if (b && /^[a-zA-Z0-9-]{8,80}$/.test(b) &&
             params.path?.[2] === 'restore' && m === 'POST') {
-          const result=await db.prepare('DELETE FROM recurring_plan_trash WHERE plan_id=?1').bind(b).run()
+          const result=await db.prepare('DELETE FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1').bind(b).run()
           if (!result.meta?.changes) return json({error:'ゴミ箱に固定費が見つかりません'},404)
           return json({ok:true})
         }
@@ -361,12 +361,12 @@ export async function onRequest({ request, env, params }) {
           // archived schedule. Never delete previously saved ledger rows.
           if (request.headers.get('x-confirm-purge') !== b)
             return json({error:'削除対象の再確認が必要です'},428)
-          const archived=await db.prepare('SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1').bind(b).first()
+          const archived=await db.prepare('SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1').bind(b).first()
           if (!archived) return json({error:'ゴミ箱に固定費が見つかりません'},404)
           await db.batch([
-            db.prepare('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND EXISTS (SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1)').bind(b),
-            db.prepare('DELETE FROM recurring_plans WHERE id=?1 AND EXISTS (SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1)').bind(b),
-            db.prepare('DELETE FROM recurring_plan_trash WHERE plan_id=?1').bind(b)
+            db.prepare('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)').bind(b),
+            db.prepare('DELETE FROM recurring_plans WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)').bind(b),
+            db.prepare('DELETE FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1').bind(b)
           ])
           return json({ok:true})
         }
@@ -374,7 +374,7 @@ export async function onRequest({ request, env, params }) {
           // Soft delete: preserve IDs, schedule, exclusions and ledger data.
           const existing=await db.prepare('SELECT 1 FROM recurring_plans WHERE id=?1').bind(b).first()
           if (!existing) return json({error:'固定費が見つかりません'},404)
-          await db.prepare('INSERT OR IGNORE INTO recurring_plan_trash(plan_id) VALUES(?1)').bind(b).run()
+          await db.prepare('INSERT OR IGNORE INTO trash_items(item_type,item_id) VALUES('recurring_plan',?1)').bind(b).run()
           return json({ok:true})
         }
       } else {
@@ -431,12 +431,12 @@ export async function onRequest({ request, env, params }) {
       // additive portfolio migration has been applied. Never auto-create tables.
       const schema=await db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('investment_plans','investment_plan_history','investment_holdings','fund_prices','sbi_transfer_links')").first()
       const portfolioReady=Number(schema?.n)===5
-      const archiveSchema=await db.prepare("SELECT 1 AS ready FROM sqlite_master WHERE type='table' AND name='recurring_plan_trash'").first()
+      const archiveSchema=await db.prepare("SELECT 1 AS ready FROM sqlite_master WHERE type='table' AND name='trash_items'").first()
       const recurringArchiveReady=!!archiveSchema?.ready
       const statements=[
         'SELECT * FROM entries ORDER BY id',
         recurringArchiveReady
-          ? 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM recurring_plan_trash t WHERE t.plan_id=p.id) ORDER BY id'
+          ? 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id'
           : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         
@@ -458,7 +458,7 @@ export async function onRequest({ request, env, params }) {
         ] : []),
         'SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY plan_id,month',
         ...(recurringArchiveReady ? [`SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled
-          FROM recurring_plans p JOIN recurring_plan_trash t ON t.plan_id=p.id ORDER BY p.id`] : [])
+          FROM recurring_plans p JOIN trash_items t ON t.item_type='recurring_plan' AND t.item_id=p.id ORDER BY p.id`] : [])
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
       const rows=n=>results[n]?.results||[]
@@ -678,11 +678,11 @@ export async function onRequest({ request, env, params }) {
       let plan
       try {
         plan = await db.prepare(`SELECT id,name,amount,day,category,payment_source,start_month,enabled
-          FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM recurring_plan_trash t WHERE t.plan_id=recurring_plans.id)`).bind(planId).first()
+          FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=recurring_plans.id)`).bind(planId).first()
       } catch(e) {
-        if (!/no such table: recurring_plan_trash/i.test(String(e))) throw e
+        if (!/no such table: trash_items/i.test(String(e))) throw e
         // Existing users can continue posting legitimate fixed expenses until
-        // the explicitly applied archive migration is available.
+        // the explicitly applied unified-trash migration is available.
         plan = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=?1').bind(planId).first()
       }
       if (!plan || !plan.enabled || !Number.isSafeInteger(Number(plan.amount)) || Number(plan.amount)<=0)

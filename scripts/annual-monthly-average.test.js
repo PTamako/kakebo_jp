@@ -37,6 +37,8 @@ test('no valid months returns null rather than division by zero', () => {
 test('UI shows effective month count and empty averages correctly', () => {
   const ui = readFileSync(new URL('../src/pages/StatisticsPage.vue', import.meta.url), 'utf8')
   assert.match(ui, /annualAverageSummary\.monthCount/)
+  assert.match(ui, /月平均支出（\{\{ annualAverageSummary\.monthCount \}\}か月）/)
+  assert.doesNotMatch(ui, /か月で計算/)
   assert.match(ui, /annualAverageSummary\.average === null/)
   assert.doesNotMatch(ui, /12か月で計算/)
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')

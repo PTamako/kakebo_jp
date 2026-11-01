@@ -162,6 +162,23 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
 </template>
 
 <style scoped>
+/* Compact the two lower metric cards in both monthly and annual statistics.
+   Keep the card width, labels and amount font sizes unchanged. */
+.stats-page .metric-grid .metric-card {
+  padding-top: 10px;
+  padding-bottom: 11px;
+}
+.stats-page .metric-grid .metric-icon {
+  margin-bottom: 5px;
+}
+.stats-page .metric-grid .metric-card small {
+  min-height: 0;
+}
+.stats-page .metric-grid .day-average-metric .metric-day-average-list {
+  margin-top: 3px;
+  gap: 4px;
+}
+
 /* Annual only: keep the peak month readable in the third summary cell. */
 .annual-peak-month { justify-content: center; }
 .annual-peak-month small { line-height: 1.3; overflow-wrap: anywhere; }

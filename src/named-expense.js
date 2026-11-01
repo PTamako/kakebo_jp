@@ -1,4 +1,5 @@
 import { parseRepeatedExpense } from './natural-repeat.js'
+import { readClockTime } from './entry-time.js'
 import { relativeDateInTokyo, relativeDayTokens, relativeNowTokens, isRelativeNowToken } from './relative-entry-time.js'
 
 // 手入力: 名称 / 日付 / 金額の3行（複数組も可）。
@@ -6,6 +7,9 @@ import { relativeDateInTokyo, relativeDayTokens, relativeNowTokens, isRelativeNo
 const kanjiMonths = { 一:1, 二:2, 三:3, 四:4, 五:5, 六:6, 七:7, 八:8, 九:9, 十:10, 十一:11, 十二:12 }
 const monthValue = text => kanjiMonths[text] ?? Number(text)
 const monthToken = '(?:1[0-2]|0?[1-9]|十[一二]?|[一二三四五六七八九])'
+// A printed clock belongs to the date field, not to the merchant name.
+// Keep strict hour/minute bounds and support NFKC-normalized full-width input.
+const inlineClockSuffix = String.raw`(?:(?:\s+|(?<=日))(?:(?:午前|午後|AM|PM)\s*)?(?:[01]?\d|2[0-3])\s*(?::\s*[0-5]\d|時\s*[0-5]?\d\s*分?))?`
 const pad = n => String(n).padStart(2, '0')
 // 「今」 is an explicit timestamp, resolved once against the recognition instant in JST.
 const nowInTokyo = instant => {
@@ -34,6 +38,15 @@ function singleDate(text, now) {
   const date=new Date(year,month-1,day)
   return date.getFullYear()===year && date.getMonth()+1===month && date.getDate()===day ? dateString(date) : null
 }
+function datedEntry(text, now) {
+  const normalized = String(text).normalize('NFKC').trim()
+  const clock = normalized.match(/^(.+?)(?:\s+|(?<=日))((?:(?:午前|午後|AM|PM)\s*)?(?:[01]?\d|2[0-3])\s*(?::\s*[0-5]\d|時\s*[0-5]?\d\s*分?))$/i)
+  const dateText = (clock ? clock[1] : normalized).trim()
+  const date = singleDate(dateText, now)
+  if (!date) return null
+  const time = clock ? readClockTime(clock[2]) : isRelativeNowToken(dateText) ? nowInTokyo(now).time : ''
+  return clock && !time ? null : { date, time }
+}
 function amountFromLine(text) {
   const match=text.match(/^(?:[¥￥]\s*)?((?:\d{1,3}(?:,\d{3})+)|\d{1,8})\s*(?:円)?$/)
   if(!match)return null
@@ -46,13 +59,16 @@ function amountFromLine(text) {
 function splitInlineNamedExpense(line) {
   const month = String.raw`(?:(?:20\d{2})\s*年\s*)?${monthToken}\s*月`
   const weekday = String.raw`(?:毎週|每周|每週)\s*(?:の)?\s*(?:星期|礼拜|週)?\s*[月火水木金土日一二三四五六天]\s*(?:曜日)?`
-  const when = String.raw`(?:${month}\s*(?:の\s*)?${weekday}|${month}\s*\d{1,2}\s*日?|20\d{2}[-/.]\d{1,2}[-/.]\d{1,2})`
+  const when = String.raw`(?:${month}\s*(?:の\s*)?${weekday}|${month}\s*\d{1,2}\s*日?|20\d{2}[-/.]\d{1,2}[-/.]\d{1,2})${inlineClockSuffix}`
   const match = line.match(new RegExp(String.raw`^(.{1,60}?)\s*(${when})\s+(\S{1,25})$`))
   if (!match) return splitFlexibleInlineNamedExpense(line)
   const name = match[1].trim()
   // A bare month must not be split into a numeric "name" and date.
   if (!name || !/[^\d\s¥￥,./-]/.test(name)) return null
-  if (!/[¥￥円]/.test(match[3])) return null
+  // A trailing clock may look like the amount to this regex when the actual
+  // yen amount precedes the date. Re-scan all fields instead of treating the
+  // whole line as the merchant name.
+  if (!/[¥￥円]/.test(match[3])) return splitFlexibleInlineNamedExpense(line)
   return [name, match[2].trim(), match[3].trim()]
 }
 // Detect a dated expense in one line without requiring field order.
@@ -62,10 +78,10 @@ function splitFlexibleInlineNamedExpense(line) {
   const weekday = String.raw`(?:毎週|每周|每週)\s*(?:の)?\s*(?:星期|礼拜|週)?\s*[月火水木金土日一二三四五六天]\s*(?:曜日)?`
   const dates = [
     String.raw`${month}\s*(?:の\s*)?${weekday}`,
-    String.raw`${month}\s*\d{1,2}\s*日?`,
-    String.raw`20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}`,
-    String.raw`\d{1,2}/\d{1,2}`,
-    String.raw`(?<!\S)${relativeDayPattern}(?!\S)`
+    String.raw`${month}\s*\d{1,2}\s*日?${inlineClockSuffix}`,
+    String.raw`20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}${inlineClockSuffix}`,
+    String.raw`\d{1,2}/\d{1,2}${inlineClockSuffix}`,
+    String.raw`(?<!\S)${relativeDayPattern}${inlineClockSuffix}(?!\S)`
   ]
   const datePattern = new RegExp(String.raw`(?<![\d一二三四五六七八九十])(?:${dates.join('|')})`,'g')
   const dateHits=[...line.matchAll(datePattern)]
@@ -92,7 +108,7 @@ export function parseNamedExpenseBlocks(raw, now = new Date()) {
   // written until the user reviews and saves the resulting drafts.
   lines=lines.flatMap(line=>splitInlineNamedExpense(line)||[line])
   if(lines.length<2)return null
-  const dateHint = new RegExp(String.raw`(?:毎週|每周|每週|[0-9一二三四五六七八九十]月|^\d{1,4}[\/.-]|^${relativeDayPattern}$)`)
+  const dateHint = new RegExp(String.raw`(?:毎週|每周|每週|[0-9一二三四五六七八九十]月|^\d{1,4}[\/.-]|^${relativeDayPattern}(?:\s+(?:(?:午前|午後|AM|PM)\s*)?(?:[01]?\d|2[0-3])\s*(?::\s*[0-5]\d|時\s*[0-5]?\d\s*分?))?$)`)
   if(!lines.some(line=>dateHint.test(line)))return null
   if(lines.length%3!==0)return {error:'名称・日付・金額を3行ずつ入力してください'}
   if(lines.length/3>30)return {error:'一度に読み取れる記録は30組までです'}
@@ -110,12 +126,13 @@ export function parseNamedExpenseBlocks(raw, now = new Date()) {
     const amount=amountFromLine(price)
     if(amount===null)return {error:`${i/3+1}組目の金額を確認してください（円で入力）`}
     const expanded=parseRepeatedExpense(when+' '+price,now)
-    const dates=expanded?.map(row=>row.date) ?? (singleDate(when,now) ? [singleDate(when,now)] : null)
+    const printed = datedEntry(when, now)
+    const dates=expanded?.map(row=>row.date) ?? (printed ? [printed.date] : null)
     if(!dates)return {error:`${i/3+1}組目の日付を確認してください`}
-    const nowClock = isRelativeNowToken(when) ? nowInTokyo(now).time : ''
+    const entryTime = expanded ? '' : printed?.time || ''
     for(const date of dates){
       rows.push({
-        date,time:nowClock,amount,type:'expense',merchant:name,category:'日用品',
+        date,time:entryTime,amount,type:'expense',merchant:name,category:'日用品',
         note:expanded ? expanded[0].note : '',raw:[name,when,price].join('\n'),
         suggested:'日用品',keyword:''
       })

@@ -2,7 +2,7 @@
 import { inject } from 'vue'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
-const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, input, categoryIconPath, categoryLabel, yen, categoryRows, expensePalette, donutSelected, donutPercent, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openPaymentMethodDetails, openCategoryDetails, weekRows, maxWeek, averageDaily, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestSpendMonth, annualAverage, annualIncomeCategories, maxAnnualIncomeCategory, monthlyDayTypeAverages, annualDayTypeAverages, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthLabel, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel } = inject('kakeibo-page-context')
+const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, input, categoryIconPath, categoryLabel, yen, categoryRows, expensePalette, donutSelected, donutPercent, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openPaymentMethodDetails, openCategoryDetails, weekRows, maxWeek, averageDaily, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, monthlyDayTypeAverages, annualDayTypeAverages, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthLabel, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel } = inject('kakeibo-page-context')
 
 function comparisonRate(comparison) {
   const percent = comparison?.percent
@@ -53,7 +53,7 @@ function comparisonTone(comparison) {
             <div class="day-average-row"><span>休日</span><strong>{{ monthlyDayTypeAverages.holiday.average === null ? '—' : yen(monthlyDayTypeAverages.holiday.average) }}</strong></div>
           </div>
         </div>
-        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span><small>1日平均支出（支出があった日）</small><strong>{{ yen(averageDaily) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span><small>1日平均支出（支出があった日）</small><strong>{{ averageDaily === null ? '—' : yen(averageDaily) }}</strong></div>
       </div>
       <div v-if="!stats?.count" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>集計データがありません</strong><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
@@ -110,7 +110,7 @@ function comparisonTone(comparison) {
             <div class="day-average-row"><span>休日</span><strong>{{ annualDayTypeAverages.holiday.average === null ? '—' : yen(annualDayTypeAverages.holiday.average) }}</strong></div>
           </div>
         </div>
-        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>月平均支出（12か月で計算）</small><strong>{{ yen(annualAverage) }}</strong></div>
+        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>月平均支出（{{ annualAverageSummary.monthCount }}か月で計算）</small><strong>{{ annualAverageSummary.average === null ? '—' : yen(annualAverageSummary.average) }}</strong></div>
       </div>
       <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>

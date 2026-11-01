@@ -41,9 +41,9 @@ test('archiving is non-destructive and does not remove recurring-plan exclusions
 
 test('after 0013, existing trash-table fallback and recurring approval remain usable',()=>{
   assert.match(api,/no such table: trash_items/i)
-  assert.match(api,/SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month FROM recurring_plans ORDER BY name,id/)
-  assert.match(api,/plan = await db\.prepare\('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=\?1'\)/)
-  assert.match(api,/SELECT id,name,amount,day,category,payment_source,start_month,enabled[\s\S]*NOT EXISTS \(SELECT 1 FROM trash_items t/)
+  assert.match(api,/SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday FROM recurring_plans ORDER BY name,id/)
+  assert.match(api,/const plan=await db\.prepare\(/)
+  assert.match(api,/SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday[\s\S]*NOT EXISTS \(SELECT 1 FROM trash_items t/)
 })
 
 test('archived plan is not shown in active fixed-expense list and its original enabled flag survives restore',()=>{
@@ -66,7 +66,7 @@ test('four trash categories collapse and separate deleted recurring settings fro
   assert.match(panel,/<summary>固定費の月別除外/)
   assert.match(panel,/<summary>振替の確認/)
   assert.match(panel,/固定費の登録を削除した項目です/)
-  assert.match(panel,/指定した月だけ記帳候補から除外した項目です/)
+  assert.match(panel,/指定した月・日だけ記帳候補から除外した項目です/)
   assert.match(panel,/@restore="restoreDeletedPlan\(item\)"/)
   assert.match(panel,/@restore="restoreRecurringExclusion\(item\)"/)
   assert.match(panel,/@restore="restoreTransferReminder\(item\)"/)

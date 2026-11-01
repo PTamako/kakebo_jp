@@ -65,7 +65,10 @@ function splitInlineNamedExpense(line) {
   const name = match[1].trim()
   // A bare month must not be split into a numeric "name" and date.
   if (!name || !/[^\d\s¥￥,./-]/.test(name)) return null
-  // A trailing clock may look like the amount to this regex when the actual\n  // yen amount precedes the date. Re-scan all fields instead of treating the\n  // whole line as the merchant name.\n  if (!/[¥￥円]/.test(match[3])) return splitFlexibleInlineNamedExpense(line)
+  // A trailing clock may look like the amount to this regex when the actual
+  // yen amount precedes the date. Re-scan all fields instead of treating the
+  // whole line as the merchant name.
+  if (!/[¥￥円]/.test(match[3])) return splitFlexibleInlineNamedExpense(line)
   return [name, match[2].trim(), match[3].trim()]
 }
 // Detect a dated expense in one line without requiring field order.

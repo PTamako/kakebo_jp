@@ -1529,6 +1529,7 @@ const annualDayTypeAverages = computed(() => spendingAveragesByDayType(
   selectedYear.value + '-01-01',
   selectedYear.value + '-12-31',
   japanToday.value,
+  { recordedMonthsOnly: true },
 ))
 let clockTimer = null
 const todayLabel = computed(() => {

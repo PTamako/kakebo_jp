@@ -122,7 +122,7 @@ test('category detail groups collapse independently with deleted settings separa
   assert.match(finance,/<summary>削除した固定費/)
   assert.match(finance,/固定費の登録を削除した項目です/)
   assert.match(finance,/<summary>固定費の月別除外/)
-  assert.match(finance,/指定した月だけ記帳候補から除外した項目です/)
+  assert.match(finance,/指定した月・日だけ記帳候補から除外した項目です/)
   assert.match(finance,/@restore="restoreDeletedPlan\(item\)"/)
   assert.match(finance,/@restore="restoreRecurringExclusion\(item\)"/)
 })

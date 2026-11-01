@@ -10,7 +10,7 @@ export async function restoreAtomic(db, archive) {
   if(!Array.isArray(deferredPrepaidEntries))throw Error('atomic_restore_invalid_deferred')
   const allEntries = [...entries,...deferredPrepaidEntries]
   if(deferredPrepaidEntries.length)validateBackup({...archive,entries:allEntries})
-  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','recurringExclusions','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks','archivedPlans']
+  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','recurringExclusions','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks','archivedPlans','trashedEntries']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
   // Each request is atomic. The client sends bounded, idempotent stages
   // rather than dropping settings from a large archive.
@@ -140,7 +140,22 @@ export async function restoreAtomic(db, archive) {
        await db.prepare('SELECT 1 FROM recurring_plans WHERE id=?1').bind(plan.id).first()) continue
     add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)',
       plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0)
-    add('INSERT OR IGNORE INTO recurring_plan_trash(plan_id) SELECT ?1 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)',plan.id)
+    add("INSERT OR IGNORE INTO trash_items(item_type,item_id) SELECT 'recurring_plan',?1 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)",plan.id)
+  }
+  // Restore archived entries only as trash snapshots. Never make a deleted
+  // purchase silently reappear in the active ledger when importing a backup.
+  for(const item of archive.trashedEntries||[]){
+    const id=Number(item.item_id)
+    const saved=JSON.parse(item.payload_json)
+    if(!Number.isSafeInteger(id)||id<=0||saved.entry.id!==id)
+      throw Error('atomic_restore_invalid_trashed_entry')
+    // An active entry in the target always wins (also when this same batch
+    // imported it earlier). Never archive that active entry's ID.
+    add(`INSERT INTO trash_items(item_type,item_id,payload_json,deleted_at)
+      SELECT 'entry',?1,?2,?3
+      WHERE NOT EXISTS (SELECT 1 FROM entries WHERE id=?4)
+      ON CONFLICT(item_type,item_id) DO NOTHING`,
+      String(id),item.payload_json,item.deleted_at,id)
   }
   // Restore only exclusion links that still point to an existing fixed-expense plan.
   for(const item of archive.recurringExclusions||[])

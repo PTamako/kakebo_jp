@@ -2,7 +2,7 @@
 import { inject } from 'vue'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
-const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, input, categoryIconPath, categoryLabel, yen, categoryRows, expensePalette, donutSelected, donutPercent, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openPaymentMethodDetails, openCategoryDetails, weekRows, maxWeek, averageDaily, averageDailySummary, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, monthlyDayTypeAverages, annualDayTypeAverages, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthLabel, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel } = inject('kakeibo-page-context')
+const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, input, categoryIconPath, categoryLabel, yen, categoryRows, expensePalette, donutSelected, donutPercent, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openPaymentMethodDetails, openCategoryDetails, weekRows, maxWeek, averageDaily, averageDailySummary, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, monthlyDayTypeAverages, annualDayTypeAverages, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthLabel, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel } = inject('kakeibo-page-context')
 
 function comparisonRate(comparison) {
   const percent = comparison?.percent
@@ -139,7 +139,7 @@ function comparisonTone(comparison) {
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>支出割合の推移</h2><p>支出 ÷ 収入 · 破線：80% / 100%</p></div></div>
-          <div class="trend-summary"><strong>{{ ratioTrendMax ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>支出割合が最も高い月</span></div>
+          <div class="trend-summary"><strong>{{ highestRatioMonth ? Math.round(ratioTrendMax * 100) + '%' : 'データなし' }}</strong><span>支出割合が最も高い月 · {{ highestRatioMonth?.label || 'データなし' }}</span></div>
           <p v-if="ratioTrendMax > 1.5" class="trend-note">150%超は上端に表示</p>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年支出割合の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />

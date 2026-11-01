@@ -58,7 +58,9 @@ CREATE TABLE IF NOT EXISTS recurring_plans (
   category TEXT NOT NULL,
   payment_source TEXT NOT NULL,
   start_month TEXT NOT NULL,
-  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1))
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+  posting_mode TEXT NOT NULL DEFAULT 'manual' CHECK(posting_mode IN ('manual','auto')),
+  auto_from_month TEXT NOT NULL DEFAULT '' CHECK(auto_from_month='' OR (length(auto_from_month)=7 AND substr(auto_from_month,5,1)='-'))
 );
 
 -- One logical trash table for recoverable recurring plans and deleted ledger entries.

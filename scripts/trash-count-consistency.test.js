@@ -21,10 +21,13 @@ const calculatedTrash = () => {
     busy:{value:false},
     transferTrashLoaded:{value:false},
     deletedPlanLoaded:{value:false},
+    deletedEntryLoaded:{value:false},
     transferTrashLoading:{value:false},
     deletedPlanLoading:{value:false},
+    deletedEntryLoading:{value:false},
     reviewTrash:{value:{duplicateGroups:[],recurringExclusions:[{},{}],transferReminders:[]}},
-    trashedRecurringPlans:{value:[]}
+    trashedRecurringPlans:{value:[]},
+    deletedEntries:{value:[]}
   }
   const computed = fn => ({get value(){return fn()}})
   const values = new Function('computed',...Object.keys(state),
@@ -41,6 +44,8 @@ test('trash header never presents partial 2 before all three categories have fin
   state.reviewTrash.value.transferReminders=[{},{}]
   assert.equal(values.trashCount.value,null,'deleted plan fetch is still pending')
   state.deletedPlanLoaded.value=true
+  assert.equal(values.trashCountReady.value,false,'deleted ledger list must load first')
+  state.deletedEntryLoaded.value=true
   assert.equal(values.trashCountReady.value,true)
   assert.equal(values.trashCount.value,4)
   state.reviewStateReady.value=false
@@ -58,6 +63,8 @@ test('trash header never presents partial 2 before all three categories have fin
   assert.equal(values.trashCount.value,3,'legitimate deletion must update total immediately')
   state.trashedRecurringPlans.value.push({id:'plan1'})
   assert.equal(values.trashCount.value,4,'newly removed recurring plan enters the count')
+  state.deletedEntries.value.push({id:42})
+  assert.equal(values.trashCount.value,5,'deleted transaction enters the count')
   state.settingsReady.value=false
   assert.equal(values.trashCount.value,null)
 })
@@ -68,6 +75,7 @@ test('entering その他 prefetches transfer notices and deleted fixed expenses 
   assert.match(handler,/if\(active && tab === 'tools'\)/)
   assert.match(handler,/void loadTransferTrash\(\)/)
   assert.match(handler,/void loadDeletedPlans\(\)/)
+  assert.match(handler,/void loadDeletedEntries\(\)/)
   assert.match(finance,/function onReviewTrashToggle\(event\)/)
   assert.match(finance,/if \(!event\.currentTarget\?\.open\) return/)
   assert.match(finance,/ledgerDirty \|\| !loaded\.value/)
@@ -80,15 +88,15 @@ test('trash heading, collapsed detail groups and empty state all require the com
   assert.match(finance,/<template v-if="trashCountReady">/)
   assert.match(finance,/v-if="trashCount === 0"/)
   assert.match(finance,/v-if="!trashCountReady && !trashCountLoading"/)
-  assert.equal((finance.match(/class="review-trash-category"/g)||[]).length,4)
+  assert.equal((finance.match(/class="review-trash-category"/g)||[]).length,5)
   assert.match(finance,/const trashCount = computed\(\(\) => trashCountReady\.value/)
 })
 
 test('a failed category load cannot show stale totals or permit emptying the trash',()=>{
   assert.match(finance,/deletedPlanLoaded\.value = false\s+try \{/)
   assert.match(finance,/transferTrashLoaded\.value = false\s+try \{/)
-  assert.match(finance,/!transferTrashLoaded\.value \|\| !deletedPlanLoaded\.value/)
-  assert.match(finance,/:disabled="recurringBusy \|\| trashBusy \|\| transferTrashLoading \|\| deletedPlanLoading \|\| !transferTrashLoaded \|\| !deletedPlanLoaded"/)
+  assert.match(finance,/!transferTrashLoaded\.value \|\| !deletedPlanLoaded\.value \|\| !deletedEntryLoaded\.value/)
+  assert.match(finance,/:disabled="recurringBusy \|\| trashBusy \|\| transferTrashLoading \|\| deletedPlanLoading \|\| deletedEntryLoading \|\| !transferTrashLoaded \|\| !deletedPlanLoaded \|\| !deletedEntryLoaded"/)
 })
 
 test('all global and component notification timers share exactly 3000 ms',()=>{

@@ -649,7 +649,7 @@ function recognize(mode = recognitionMode.value, append = false, referenceTime =
   // and ordinary duplicate protections remain mandatory.
   // Natural-language expense drafts must work in 手入力 even after the user
   // previously selected レシート in the separate image-recognition tab.
-  const structured = !append && entryInputMode.value === 'manual' ? parseNamedExpenseBlocks(input.value) : null
+  const structured = !append && entryInputMode.value === 'manual' ? parseNamedExpenseBlocks(input.value, referenceTime) : null
   if (structured?.error) return flash(structured.error)
   const repeated = parseRepeatedExpense(input.value)
   const effectiveMode = structured || repeated ? 'statement' : mode

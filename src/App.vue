@@ -32,6 +32,7 @@ import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
+import { peakTransferDates } from './calendar-transfer-peaks.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, setReceiptStorageMode, configureReceiptStorageMode, clearSessionReceiptImages, countReceiptImages } from './receipt-store.js'
 import { readDeviceDraft, writeDeviceDraft } from './draft-store.js'
 
@@ -1409,13 +1410,15 @@ const calendarDays = computed(() => {
     if (entry.type === 'income') incomes.set(key, (incomes.get(key) || 0) + amount)
   }
   const maxExpense=Math.max(0,...expenses.values()),maxIncome=Math.max(0,...incomes.values())
+  const topTransferDates = peakTransferDates(calendarEntries.value)
   const today=liveNow.value.toLocaleDateString('sv-SE')
   const days = Array.from({ length: firstDayOffset }, (_, i) => ({ key: `blank-${i}`, blank: true }))
   for (let day = 1; day <= daysInMonth; day++) {
     const date = `${year}-${String(monthNumber).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     days.push({ key: date, date, day, amount: amounts.get(date) || 0, hasEntries: entryCounts.has(date),
       isToday:date===today, topExpense:maxExpense>0 && expenses.get(date)===maxExpense,
-      topIncome:maxIncome>0 && incomes.get(date)===maxIncome, blank:false })
+      topIncome:maxIncome>0 && incomes.get(date)===maxIncome,
+      topTransfer:topTransferDates.has(date), blank:false })
   }
   while (days.length % 7) days.push({ key: `blank-end-${days.length}`, blank: true })
   return days

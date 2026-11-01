@@ -90,3 +90,22 @@ test('offline draft recovery cannot overwrite an unread or newer cloud backup',(
   assert.ok(script)
   assert.doesNotThrow(()=>new Function(script.replace(/^import .*$/gm,'')), 'Vue setup JavaScript syntax must remain valid')
 })
+
+test('PWA bootstrap never provides an undeclared setup variable',()=>{
+  const script=read('src/App.vue').match(/<script setup>([\s\S]*?)<\/script>/)?.[1]
+  assert.ok(script,'Vue setup script exists')
+  const provided=script.match(/provide\('kakeibo-page-context', \{ ([^\n]+) \}\)/)
+  assert.ok(provided,'shared page-context registration exists')
+  const before=script.slice(0,provided.index)
+  const names=provided[1].split(/,\s*/).map(name=>name.trim())
+  assert.ok(names.length>100,'page context remains comprehensive')
+  const missing=names.filter(name=>{
+    assert.match(name,/^[a-zA-Z_$][\w$]*$/,'only shorthand variables are registered')
+    const declaration=new RegExp('\\b(?:const|let|var|function|class)\\s+'+name+
+      '\\b|\\b'+name+'\\s*[:=]|\\bimport[^\\n]*\\b'+name+
+      '\\b|\\b'+name+'\\b\\s*[,}]\\s*=|\\b'+name+'\\s*,\\s*\\w+\\s*\\}', 'm')
+    return !declaration.test(before)
+  })
+  assert.deepEqual(missing,[],'undeclared shorthand variables crash Vue before PWA mounts')
+  assert.doesNotMatch(script,/\bdraftSaveTimer\b/,'retired debounce variable must not return')
+})

@@ -61,12 +61,18 @@ CREATE TABLE IF NOT EXISTS recurring_plans (
   enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1))
 );
 
--- Registered recurring plans are archived on user deletion; their schedules
--- and historical transaction IDs remain available for safe restore.
-CREATE TABLE IF NOT EXISTS recurring_plan_trash (
-  plan_id TEXT PRIMARY KEY REFERENCES recurring_plans(id) ON DELETE CASCADE,
-  archived_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- One logical trash table for recoverable recurring plans and deleted ledger entries.
+-- Existing D1 installations apply migration 0012 explicitly (never by API).
+-- Recurring plans keep their original rows; deleted ledger rows retain complete
+-- JSON snapshots and linked SBI metadata for restoration with original IDs.
+CREATE TABLE IF NOT EXISTS trash_items (
+  item_type TEXT NOT NULL CHECK(item_type IN ('recurring_plan','entry')),
+  item_id TEXT NOT NULL,
+  payload_json TEXT,
+  deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(item_type,item_id)
 );
+CREATE INDEX IF NOT EXISTS idx_trash_items_deleted_at ON trash_items(deleted_at DESC);
 
 -- A user can exclude one generated fixed-expense month without deleting the plan
 -- or any genuine ledger transaction. No automatic backfill or data seed.

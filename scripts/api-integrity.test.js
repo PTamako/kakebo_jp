@@ -26,11 +26,11 @@ class LedgerDb {
         if (sql.startsWith('SELECT 1 AS found FROM card_bills')) return [...db.cardBills.values()].some(v=>v.name===this.args[0] && [...db.cardBills.values()].some(w=>w.name===this.args[1] && w.month===v.month)) ? {found:1} : null
         if (sql.startsWith('SELECT value FROM finance_settings WHERE name=')) return db.financeSettings.has(this.args[0]) ? { value: db.financeSettings.get(this.args[0]) } : null
         if (sql.startsWith('SELECT name FROM payment_sources WHERE name=')) return db.paymentSources.has(this.args[0]) ? { name: this.args[0] } : null
-        if (sql.startsWith('SELECT 1 FROM recurring_plan_trash WHERE plan_id=')) return db.recurringTrash.has(this.args[0]) ? {exists:1} : null
+        if (sql.startsWith("SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=")) return db.recurringTrash.has(this.args[0]) ? {exists:1} : null
         if (sql.startsWith('SELECT 1 FROM recurring_plans WHERE id=')) return db.recurringPlans.has(this.args[0]) ? {exists:1} : null
         if (sql.includes('FROM recurring_plans WHERE id=?1') || sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=')) {
           const p=db.recurringPlans.get(this.args[0])
-          return p && (!sql.includes('NOT EXISTS (SELECT 1 FROM recurring_plan_trash') || !db.recurringTrash.has(this.args[0]))
+          return p && (!sql.includes('NOT EXISTS (SELECT 1 FROM trash_items') || !db.recurringTrash.has(this.args[0]))
             ? {...p,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0} : null
         }
         if (sql.startsWith('SELECT start_month FROM recurring_plans WHERE id=')) {
@@ -68,8 +68,8 @@ class LedgerDb {
         if (sql.startsWith('SELECT name,is_default,closing_day,') && sql.includes('FROM payment_sources')) return {results:[...db.paymentSources].map(name=>({name,is_default:0,closing_day:db.paymentClosingDays.has(name)?db.paymentClosingDays.get(name):null}))}
         if (sql.includes('FROM recurring_plans') && sql.includes('p.id') ||
             sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans')) {
-          const archived=sql.includes('JOIN recurring_plan_trash')
-          const activeOnly=sql.includes('NOT EXISTS (SELECT 1 FROM recurring_plan_trash')
+          const archived=sql.includes('JOIN trash_items')
+          const activeOnly=sql.includes('NOT EXISTS (SELECT 1 FROM trash_items')
           return {results:[...db.recurringPlans.values()]
             .filter(p=>archived ? db.recurringTrash.has(p.id) : activeOnly ? !db.recurringTrash.has(p.id) : true)
             .map(p=>({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,
@@ -87,12 +87,12 @@ class LedgerDb {
       },
       async run() {
         db.sql.push(sql)
-        if (sql.startsWith('INSERT OR IGNORE INTO recurring_plan_trash')) {
+        if (sql.startsWith('INSERT OR IGNORE INTO trash_items')) {
           const id=this.args[0]
           if (!db.recurringPlans.has(id) || db.recurringTrash.has(id)) return {meta:{changes:0}}
           db.recurringTrash.add(id);return {meta:{changes:1}}
         }
-        if (sql.startsWith('DELETE FROM recurring_plan_trash')) {
+        if (sql.startsWith('DELETE FROM trash_items')) {
           const changed=Number(db.recurringTrash.delete(this.args[0]))
           return {meta:{changes:changed}}
         }
@@ -114,7 +114,7 @@ class LedgerDb {
           return {meta:{changes:1}}
         }
         if (sql.startsWith('DELETE FROM recurring_plans')) {
-          if (sql.includes('EXISTS (SELECT 1 FROM recurring_plan_trash') && !db.recurringTrash.has(this.args[0])) return {meta:{changes:0}}
+          if (sql.includes('EXISTS (SELECT 1 FROM trash_items') && !db.recurringTrash.has(this.args[0])) return {meta:{changes:0}}
           const changed=Number(db.recurringPlans.delete(this.args[0]))
           db.recurringTrash.delete(this.args[0])
           return {meta:{changes:changed}}

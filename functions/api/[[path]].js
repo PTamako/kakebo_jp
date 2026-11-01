@@ -303,15 +303,15 @@ export async function onRequest({ request, env, params }) {
           let results
           try {
             const query = trash
-              ? `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,t.archived_at
-                 FROM recurring_plans p JOIN recurring_plan_trash t ON t.plan_id=p.id ORDER BY t.archived_at DESC`
+              ? `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,t.deleted_at AS archived_at
+                 FROM recurring_plans p JOIN trash_items t ON t.item_type='recurring_plan' AND t.item_id=p.id ORDER BY t.deleted_at DESC`
               : `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled
-                 FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM recurring_plan_trash t WHERE t.plan_id=p.id)
+                 FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)
                  ORDER BY p.name,p.id`
             ;({results} = await db.prepare(query).all())
           } catch(e) {
-            if (!/no such table: recurring_plan_trash/i.test(String(e))) throw e
-            // Migration 0009 is manual. Normal reads must remain available
+            if (!/no such table: trash_items/i.test(String(e))) throw e
+            // Migration 0012 is manual. Normal reads must remain available
             // before it is applied; do not silently permit archiving.
             if (trash) return json([])
             ;({results} = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY name,id').all())
@@ -343,7 +343,7 @@ export async function onRequest({ request, env, params }) {
               typeof item.paymentSource !== 'string' ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
               typeof item.enabled !== 'boolean') return json({error:'固定支出の入力を確認してください'},400)
-          const updated = await db.prepare('UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7 WHERE id=?8')
+          const updated = await db.prepare("UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7 WHERE id=?8 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?8)")
             .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,b).run()
           if(!updated.meta?.changes)return json({error:'固定支出が見つかりません'},404)
           // Stable plan IDs preserve the monthly idempotency key. Existing ledger entries are untouched.
@@ -351,7 +351,7 @@ export async function onRequest({ request, env, params }) {
         }
         if (b && /^[a-zA-Z0-9-]{8,80}$/.test(b) &&
             params.path?.[2] === 'restore' && m === 'POST') {
-          const result=await db.prepare('DELETE FROM recurring_plan_trash WHERE plan_id=?1').bind(b).run()
+          const result=await db.prepare("DELETE FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1").bind(b).run()
           if (!result.meta?.changes) return json({error:'ゴミ箱に固定費が見つかりません'},404)
           return json({ok:true})
         }
@@ -361,12 +361,12 @@ export async function onRequest({ request, env, params }) {
           // archived schedule. Never delete previously saved ledger rows.
           if (request.headers.get('x-confirm-purge') !== b)
             return json({error:'削除対象の再確認が必要です'},428)
-          const archived=await db.prepare('SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1').bind(b).first()
+          const archived=await db.prepare("SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1").bind(b).first()
           if (!archived) return json({error:'ゴミ箱に固定費が見つかりません'},404)
           await db.batch([
-            db.prepare('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND EXISTS (SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1)').bind(b),
-            db.prepare('DELETE FROM recurring_plans WHERE id=?1 AND EXISTS (SELECT 1 FROM recurring_plan_trash WHERE plan_id=?1)').bind(b),
-            db.prepare('DELETE FROM recurring_plan_trash WHERE plan_id=?1').bind(b)
+            db.prepare("DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b),
+            db.prepare("DELETE FROM recurring_plans WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b),
+            db.prepare("DELETE FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1").bind(b)
           ])
           return json({ok:true})
         }
@@ -374,7 +374,7 @@ export async function onRequest({ request, env, params }) {
           // Soft delete: preserve IDs, schedule, exclusions and ledger data.
           const existing=await db.prepare('SELECT 1 FROM recurring_plans WHERE id=?1').bind(b).first()
           if (!existing) return json({error:'固定費が見つかりません'},404)
-          await db.prepare('INSERT OR IGNORE INTO recurring_plan_trash(plan_id) VALUES(?1)').bind(b).run()
+          await db.prepare("INSERT OR IGNORE INTO trash_items(item_type,item_id) VALUES('recurring_plan',?1)").bind(b).run()
           return json({ok:true})
         }
       } else {
@@ -431,12 +431,12 @@ export async function onRequest({ request, env, params }) {
       // additive portfolio migration has been applied. Never auto-create tables.
       const schema=await db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('investment_plans','investment_plan_history','investment_holdings','fund_prices','sbi_transfer_links')").first()
       const portfolioReady=Number(schema?.n)===5
-      const archiveSchema=await db.prepare("SELECT 1 AS ready FROM sqlite_master WHERE type='table' AND name='recurring_plan_trash'").first()
+      const archiveSchema=await db.prepare("SELECT 1 AS ready FROM sqlite_master WHERE type='table' AND name='trash_items'").first()
       const recurringArchiveReady=!!archiveSchema?.ready
       const statements=[
         'SELECT * FROM entries ORDER BY id',
         recurringArchiveReady
-          ? 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM recurring_plan_trash t WHERE t.plan_id=p.id) ORDER BY id'
+          ? `SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id`
           : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         
@@ -458,7 +458,8 @@ export async function onRequest({ request, env, params }) {
         ] : []),
         'SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY plan_id,month',
         ...(recurringArchiveReady ? [`SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled
-          FROM recurring_plans p JOIN recurring_plan_trash t ON t.plan_id=p.id ORDER BY p.id`] : [])
+          FROM recurring_plans p JOIN trash_items t ON t.item_type='recurring_plan' AND t.item_id=p.id ORDER BY p.id`,
+          "SELECT item_id,payload_json,deleted_at FROM trash_items WHERE item_type='entry' ORDER BY item_id"] : [])
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
       const rows=n=>results[n]?.results||[]
@@ -477,6 +478,7 @@ export async function onRequest({ request, env, params }) {
         archivedPlans:recurringArchiveReady ? rows(portfolioReady ? 15 : 10).map(p=>({
           id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled
         })) : [],
+        trashedEntries:recurringArchiveReady ? rows(portfolioReady ? 16 : 11) : [],
         ...(portfolioReady ? {investmentPlans:rows(9),investmentPlanHistory:rows(10),
           investmentHoldings:rows(11),fundPrices:rows(12),transferLinks:rows(13)} : {})
       })
@@ -678,11 +680,11 @@ export async function onRequest({ request, env, params }) {
       let plan
       try {
         plan = await db.prepare(`SELECT id,name,amount,day,category,payment_source,start_month,enabled
-          FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM recurring_plan_trash t WHERE t.plan_id=recurring_plans.id)`).bind(planId).first()
+          FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=recurring_plans.id)`).bind(planId).first()
       } catch(e) {
-        if (!/no such table: recurring_plan_trash/i.test(String(e))) throw e
+        if (!/no such table: trash_items/i.test(String(e))) throw e
         // Existing users can continue posting legitimate fixed expenses until
-        // the explicitly applied archive migration is available.
+        // the explicitly applied unified-trash migration is available.
         plan = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=?1').bind(planId).first()
       }
       if (!plan || !plan.enabled || !Number.isSafeInteger(Number(plan.amount)) || Number(plan.amount)<=0)
@@ -705,6 +707,68 @@ export async function onRequest({ request, env, params }) {
         ON CONFLICT(client_request_id) DO NOTHING`)
         .bind(date,plan.amount,plan.category,plan.name,clientRequestId,plan.payment_source || '',planId,scheduledMonth).run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
+    }
+    // Genuine deletions share one trash table; reviews/exclusions remain states.
+    if (a === 'trash-items') {
+      if (m === 'GET' && !b) {
+        const {results}=await db.prepare(
+          "SELECT item_id,payload_json,deleted_at FROM trash_items WHERE item_type='entry' ORDER BY deleted_at DESC,item_id DESC LIMIT "+(url.searchParams.get('full') === '1' ? '10000' : '500')
+        ).all()
+        if (url.searchParams.get('full') === '1') return json(results)
+        return json(results.flatMap(item=>{
+          try {
+            const entry=JSON.parse(item.payload_json)?.entry
+            if(!entry || String(entry.id)!==item.item_id)return []
+            return [{id:entry.id,date:entry.date,amount:entry.amount,type:entry.type,
+              merchant:entry.merchant,category:entry.category,deletedAt:item.deleted_at}]
+          } catch { return [] }
+        }))
+      }
+      if (!/^\d+$/.test(b||'') || !Number.isSafeInteger(Number(b)) || Number(b)<=0)
+        return json({error:'対象の明細IDが正しくありません'},400)
+      const id=Number(b)
+      if (params.path?.[2]==='restore' && m==='POST') {
+        const item=await db.prepare(
+          "SELECT payload_json FROM trash_items WHERE item_type='entry' AND item_id=?1"
+        ).bind(String(id)).first()
+        if(!item)return json({error:'ゴミ箱に明細が見つかりません'},404)
+        let saved
+        try { saved=JSON.parse(item.payload_json) } catch {return json({error:'保管データを復元できません'},409)}
+        const e=saved?.entry
+        if(!e || e.id!==id || !validDate(e.date) || !Number.isSafeInteger(e.amount) || e.amount<=0 ||
+          !['expense','income','transfer'].includes(e.type)) return json({error:'保管した明細が正しくありません'},409)
+        // Stable IDs preserve on-device receipts and SBI transfer links.
+        const collision=await db.prepare('SELECT id FROM entries WHERE id=?1 OR (client_request_id IS NOT NULL AND client_request_id=?2) LIMIT 1')
+          .bind(id,e.client_request_id??null).first()
+        if(collision)return json({error:'別の明細とIDが重複しています。復元を中止しました'},409)
+        const statements=[
+          db.prepare(`INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,
+            transfer_date,client_request_id,payment_source,created_at)
+            VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`)
+            .bind(id,e.date,e.time||'',e.amount,e.category,e.merchant,e.note,e.raw,e.type,
+              e.transfer_target??null,e.transfer_applied??0,e.transfer_date??null,e.client_request_id??null,
+              e.payment_source||'',e.created_at||new Date().toISOString())
+        ]
+        if(saved.purchaseMonth)statements.push(db.prepare(
+          'INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) VALUES(?1,?2)'
+        ).bind(id,saved.purchaseMonth))
+        if(saved.dismissed)statements.push(db.prepare(
+          'INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) VALUES(?1)'
+        ).bind(id))
+        statements.push(db.prepare("DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(id)))
+        await db.batch(statements)
+        return json({ok:true,restored:true,id})
+      }
+      if (params.path?.[2]==='purge' && m==='DELETE') {
+        if(request.headers.get('x-confirm-purge')!==String(id))
+          return json({error:'削除対象の再確認が必要です'},428)
+        const result=await db.prepare(
+          "DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1"
+        ).bind(String(id)).run()
+        if(!result.meta?.changes)return json({error:'ゴミ箱に明細が見つかりません'},404)
+        return json({ok:true})
+      }
+      return json({error:'未対応の操作です'},405)
     }
     if (a === 'entry-years' && m === 'GET') {
       // Query actual ledger years instead of silently omitting records before 2018 or in future years.
@@ -829,8 +893,23 @@ export async function onRequest({ request, env, params }) {
         if (!Number.isSafeInteger(id) || id <= 0 ||
             request.headers.get('x-confirm-delete') !== String(id))
           return json({ error: '削除する記録の確認が必要です' }, 428)
-        const result = await db.prepare('DELETE FROM entries WHERE id = ?1').bind(id).run()
-        return json({ ok: true, changes: result.meta?.changes ?? 0 })
+        // D1 batch() makes the recoverable snapshot+deletion atomic.
+        const entry=await db.prepare('SELECT * FROM entries WHERE id=?1').bind(id).first()
+        if (!entry) return json({error:'明細が見つかりません'},404)
+        const [link,dismissal]=await Promise.all([
+          db.prepare('SELECT purchase_month FROM sbi_transfer_links WHERE entry_id=?1').bind(id).first(),
+          db.prepare('SELECT 1 AS found FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id).first()
+        ])
+        const snapshot=JSON.stringify({entry,purchaseMonth:link?.purchase_month||null,dismissed:!!dismissal})
+        const result=await db.batch([
+          db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING").bind(String(id),snapshot),
+          db.prepare('DELETE FROM sbi_transfer_links WHERE entry_id=?1').bind(id),
+          db.prepare('DELETE FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id),
+          db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2)").bind(id,String(id))
+        ])
+        if(!result[0]?.meta?.changes || !result[3]?.meta?.changes)
+          return json({error:'明細をゴミ箱に移動できませんでした'},409)
+        return json({ok:true,changes:1,trashed:true})
       }
     }
     if (a === 'category-source' && m === 'GET') {

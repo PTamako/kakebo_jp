@@ -55,10 +55,10 @@ class SqliteD1 {
 async function createClient() {
   const db=new SqliteD1()
   const env={DB:db,AUTH_TOKEN:'local-test-only'}
-  const request=async(path,method='GET',body,session='')=>{
+  const request=async(path,method='GET',body,session='',extraHeaders={})=>{
     const response=await onRequest({
       request:new Request('https://local.test/api/'+path,{method,headers:{
-        'content-type':'application/json','x-session':session
+        'content-type':'application/json','x-session':session,...extraHeaders
       },body:body===undefined?undefined:JSON.stringify(body)}),
       env,params:{path:path.split('?')[0].split('/')}
     })
@@ -67,7 +67,7 @@ async function createClient() {
   const login=await request('auth/login','POST',{code:'local-test-only'})
   assert.equal(login.status,200)
   const session=login.body.session
-  return {db,call:(path,method='GET',body)=>request(path,method,body,session)}
+  return {db,call:(path,method='GET',body,extraHeaders={})=>request(path,method,body,session,extraHeaders)}
 }
 
 test('actual SQLite: ledger years include dates outside hard-coded range',async()=>{
@@ -941,4 +941,61 @@ test('actual SQLite: backed-up excluded fixed-expense months restore with their 
     assert.deepEqual((await destination.call('recurring-exclusions')).body,[key])
     assert.equal((await destination.call('recurring-post','POST',approvedPost(plan,'2026-07'))).status,409)
   }finally{source.db.close();destination.db.close()}
+})
+
+test('actual SQLite: recycle bin restores expenses with the original IDs',async()=>{
+  const {db,call}=await createClient()
+  try {
+    const created=await call('entries','POST',{date:'2026-10-28',amount:1250,type:'expense',merchant:'テスト店舗',paymentSource:'Suica',clientRequestId:'trash-test-0001'})
+    assert.equal(created.status,200)
+    const id=created.body.id
+    assert.equal((await call('entries/'+id,'DELETE',undefined,{'x-confirm-delete':String(id)})).status,200)
+    assert.equal((await call('entries?month=2026-10')).body.length,0)
+    assert.equal((await call('trash-items')).body.length,1)
+    assert.equal((await call('trash-items/'+id+'/restore','POST')).status,200)
+    const restored=(await call('entries?month=2026-10')).body
+    assert.equal(restored.length,1)
+    assert.equal(restored[0].id,id)
+    assert.equal(restored[0].amount,1250)
+    assert.equal(restored[0].payment_source,'Suica')
+    assert.equal((await call('trash-items')).body.length,0)
+    assert.equal((await call('entries/'+id,'DELETE',undefined,{'x-confirm-delete':String(id)})).status,200)
+    assert.equal((await call('trash-items/'+id+'/purge','DELETE',undefined,{'x-confirm-purge':String(id)})).status,200)
+    assert.equal((await call('trash-items/'+id+'/restore','POST')).status,404)
+  } finally {db.close()}
+})
+
+test('actual SQLite: removed SBI transfers recover their purchase-month and dismissed reminder',async()=>{
+  const {db,call}=await createClient()
+  try {
+    const created=await call('entries','POST',{date:'2026-10-12',amount:15000,type:'transfer',transferTarget:'sbi',transferDate:'2026-10-12',clientRequestId:'trash-sbi-0001'})
+    assert.equal(created.status,200)
+    const id=created.body.id
+    db.db.prepare('INSERT INTO sbi_transfer_links(entry_id,purchase_month) VALUES(?1,?2)').run(id,'2026-10')
+    db.db.prepare('INSERT INTO dismissed_transfer_reminders(entry_id) VALUES(?1)').run(id)
+    assert.equal((await call('entries/'+id,'DELETE',undefined,{'x-confirm-delete':String(id)})).status,200)
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM sbi_transfer_links').get().n,0)
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM dismissed_transfer_reminders').get().n,0)
+    assert.equal((await call('trash-items/'+id+'/restore','POST')).status,200)
+    assert.equal(db.db.prepare('SELECT purchase_month FROM sbi_transfer_links WHERE entry_id=?').get(id).purchase_month,'2026-10')
+    assert.equal(db.db.prepare('SELECT entry_id FROM dismissed_transfer_reminders WHERE entry_id=?').get(id).entry_id,id)
+  } finally {db.close()}
+})
+
+test('migration 0012 is repeatable and never deletes existing legacy recurring trash markers',()=>{
+  const db=new SqliteD1()
+  try {
+    const id='11111111-aaaa-bbbb-cccc-123456789abc'
+    db.db.prepare("INSERT INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled) VALUES(?1,'家賃',101500,27,'居住','現金','2026-10',1)").run(id)
+    db.db.exec('CREATE TABLE recurring_plan_trash(plan_id TEXT PRIMARY KEY,archived_at TEXT NOT NULL)')
+    db.db.prepare('INSERT INTO recurring_plan_trash(plan_id,archived_at) VALUES(?1,?2)').run(id,'2026-10-31 10:00:00')
+    const migration=readFileSync(new URL('../migrations/0012_unified_trash_items.sql',import.meta.url),'utf8')
+    db.db.exec(migration)
+    db.db.exec(migration)
+    const row=db.db.prepare("SELECT item_id,deleted_at FROM trash_items WHERE item_type='recurring_plan'").get()
+    assert.equal(row.item_id,id)
+    assert.equal(row.deleted_at,'2026-10-31 10:00:00')
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM recurring_plan_trash').get().n,1)
+    assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM recurring_plans').get().n,1)
+  } finally {db.close()}
 })

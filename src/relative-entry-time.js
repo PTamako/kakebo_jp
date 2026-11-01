@@ -12,10 +12,10 @@ const bothKanaSpellings = words => Object.freeze([...new Set(
 const DAY_OFFSETS = new Map([
   ['今日',0],['本日',0],['きょう',0],['ほんじつ',0],['今天',0],['今日中',0],
   ['明日',-1],['あした',-1],['あす',-1],['みょうにち',-1],['明天',-1],
-  ['明後日',-2],['あさって',-2],['后天',-2],['後天',-2],
+  ['明後日',-2],['あさって',-2],['みょうごにち',-2],['后天',-2],['後天',-2],
   ['明々後日',-3],['明明後日',-3],['しあさって',-3],['大后天',-3],['大後天',-3],
   ['昨日',1],['きのう',1],['さくじつ',1],['昨天',1],
-  ['一昨日',2],['おととい',2],['前天',2]
+  ['一昨日',2],['おととい',2],['いっさくじつ',2],['前天',2]
 ])
 // Shared with manual text parsing so tomorrow/yesterday have one definition.
 export const relativeDayTokens = bothKanaSpellings(DAY_OFFSETS.keys())

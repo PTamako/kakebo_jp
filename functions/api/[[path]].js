@@ -5,6 +5,7 @@ import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
+import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
 // Cloudflare Pages Functions：/api/*
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
@@ -1082,6 +1083,16 @@ export async function onRequest({ request, env, params }) {
 
     if (a === 'investments') return json({error:'旧版の資産評価APIは廃止されました',code:'deprecated_investments'},410)
     if (a === 'stats' && m === 'GET') {
+      // Only one additional, read-only aggregate query per visible statistics period.
+      // Existing byDay data supplies the current period, avoiding a duplicate D1 scan.
+      const periodComparison = async (rows, options) => {
+        const window = comparisonWindow({ ...options, today: tokyoToday() })
+        if (!window) return null
+        const previous = await db.prepare(
+          "SELECT COALESCE(SUM(amount), 0) total FROM entries WHERE type = 'expense' AND date >= ?1 AND date < ?2"
+        ).bind(window.previousStart, nextCivilDay(window.previousEnd)).first()
+        return calculateSpendingComparison(rows, previous?.total ?? 0, window)
+      }
       const year = url.searchParams.get('year') || ''
       if (year) {
         if (!/^\d{4}$/.test(year)) return json({ error: '対象年の形式が正しくありません' }, 400)
@@ -1094,7 +1105,8 @@ export async function onRequest({ request, env, params }) {
         const incomeCategoryRows = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
         const incomeMonthCategoryRows = await db.prepare("SELECT substr(date,1,7) month, category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY substr(date,1,7), category ORDER BY month, amount DESC").bind(like).all()
         const paymentRows = await db.prepare("SELECT CASE WHEN TRIM(COALESCE(payment_source,'')) = '' OR payment_source = '現金' THEN '現金' ELSE 'カード・電子決済' END method, COUNT(*) count, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY method ORDER BY amount DESC").bind(like).all()
-        return json({ paymentMethods: paymentRows.results, year: Number(year), total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, byCategory: cat.results, byDay: day.results, byMonth: monthRows.results, incomeByMonth: incomeMonthRows.results, incomeByCategory: incomeCategoryRows.results, incomeByMonthCategory: incomeMonthCategoryRows.results })
+        const comparison = await periodComparison(day.results, { year })
+        return json({ periodComparison: comparison, paymentMethods: paymentRows.results, year: Number(year), total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, byCategory: cat.results, byDay: day.results, byMonth: monthRows.results, incomeByMonth: incomeMonthRows.results, incomeByCategory: incomeCategoryRows.results, incomeByMonthCategory: incomeMonthCategoryRows.results })
       }
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({error:'集計月を確認してください'},400)
       const like = month + '%'
@@ -1102,7 +1114,8 @@ export async function onRequest({ request, env, params }) {
       const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()
       const day = await db.prepare("SELECT substr(date,1,10) date, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY substr(date,1,10) ORDER BY date").bind(like).all()
       const paymentRows = await db.prepare("SELECT CASE WHEN TRIM(COALESCE(payment_source,'')) = '' OR payment_source = '現金' THEN '現金' ELSE 'カード・電子決済' END method, COUNT(*) count, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY method ORDER BY amount DESC").bind(like).all()
-      return json({ paymentMethods: paymentRows.results, total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, byCategory: cat.results, byDay: day.results })
+      const comparison = await periodComparison(day.results, { month })
+      return json({ periodComparison: comparison, paymentMethods: paymentRows.results, total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, byCategory: cat.results, byDay: day.results })
     }
     return json({ error: '対象が見つかりません' }, 404)
   } catch (err) {

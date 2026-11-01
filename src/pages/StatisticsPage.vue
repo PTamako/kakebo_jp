@@ -71,15 +71,22 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
         <div class="piggy-content"><div class="piggy-title">年間の収支バランス</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip annual-income-strip"><div><small>年間収入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>年間支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>年間収支</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
-      <div class="income-expense-strip transfer-summary"><div><small>年間の資産移動</small><strong>{{ yen(annualStats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'year')" aria-label="年間の資産移動明細を表示">{{ annualStats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div><div class="day-type-summary" role="group" title="休日は土曜・日曜・国民の祝日・振替休日・国民の休日を含みます">
-  <small>日平均支出</small>
-  <div class="day-average-row"><span>平日</span><strong>{{ annualDayTypeAverages.weekday.average === null ? '—' : yen(annualDayTypeAverages.weekday.average) }}</strong></div>
-  <div class="day-average-row"><span>休日</span><strong>{{ annualDayTypeAverages.holiday.average === null ? '—' : yen(annualDayTypeAverages.holiday.average) }}</strong></div>
-</div></div>
+      <div class="income-expense-strip transfer-summary"><div><small>年間の資産移動</small><strong>{{ yen(annualStats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'year')" aria-label="年間の資産移動明細を表示">{{ annualStats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div><div class="annual-peak-month">
+          <small>支出が最も多い月</small>
+          <strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</strong>
+          <span v-if="highestSpendMonth.amount" class="annual-peak-month-amount">{{ yen(highestSpendMonth.amount) }}</span>
+        </div></div>
       <div class="payment-method-stats"><h2>支払方法別</h2><div class="payment-method-stats-grid"><button v-for="method in ['カード・電子決済','現金']" :key="method" type="button" :disabled="!(annualStats?.paymentMethods || []).some(item => item.method === method && Number(item.count) > 0)" @click="openPaymentMethodDetails(method,'year')"><span>{{method}}</span><strong>{{(annualStats?.paymentMethods || []).find(item => item.method === method) ? yen((annualStats?.paymentMethods || []).find(item => item.method === method).amount) : '—'}}</strong><small>{{(annualStats?.paymentMethods || []).find(item => item.method === method) ? ((annualStats?.paymentMethods || []).find(item => item.method === method).count + '件 · 明細を見る ›') : '—'}}</small></button></div></div>
       <div class="metric-grid">
+        <div class="metric-card day-average-metric annual-day-average-metric" title="休日は土曜・日曜・国民の祝日・振替休日・国民の休日を含みます">
+          <span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M7.5 3v4M16.5 3v4M3.5 10h17M7.5 14h3M13.5 14h3M7.5 18h3"/></svg></span>
+          <small>日平均支出</small>
+          <div class="metric-day-average-list">
+            <div class="day-average-row"><span>平日</span><strong>{{ annualDayTypeAverages.weekday.average === null ? '—' : yen(annualDayTypeAverages.weekday.average) }}</strong></div>
+            <div class="day-average-row"><span>休日</span><strong>{{ annualDayTypeAverages.holiday.average === null ? '—' : yen(annualDayTypeAverages.holiday.average) }}</strong></div>
+          </div>
+        </div>
         <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><small>月平均支出（12か月で計算）</small><strong>{{ yen(annualAverage) }}</strong></div>
-        <div class="metric-card"><span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg></span><small>支出が最も多い月</small><strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</strong><em v-if="highestSpendMonth.amount">{{ yen(highestSpendMonth.amount) }}</em></div>
       </div>
       <div v-if="!annualStats?.count && !Number(annualStats?.income || 0)" class="empty-state stats-empty"><span class="empty-icon">◷</span><strong>この年の記録はありません</strong><button class="button-primary" @click="tab = 'add'">入力</button></div>
       <template v-else>
@@ -155,6 +162,23 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
 </template>
 
 <style scoped>
+/* Annual only: keep the peak month readable in the third summary cell. */
+.annual-peak-month { justify-content: center; }
+.annual-peak-month small { line-height: 1.3; overflow-wrap: anywhere; }
+.income-expense-strip .annual-peak-month strong {
+  font-size: clamp(14px, 3.6vw, 18px);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.annual-peak-month-amount {
+  display: block;
+  color: var(--muted);
+  font-size: clamp(10px, 2.65vw, 12px);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 /* Only monthly statistics: transfer totals use two cells; daily averages replace the old expense-count metric. */
 .monthly-transfer-summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));

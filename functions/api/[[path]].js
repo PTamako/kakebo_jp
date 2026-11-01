@@ -277,22 +277,30 @@ export async function onRequest({ request, env, params }) {
     }
     if (a === 'recurring-exclusions') {
       if (m === 'GET' && !b) {
-        const {results} = await db.prepare('SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY month DESC,plan_id').all()
-        return json(results.map(x => ({planId:x.plan_id,month:x.month})))
+        const [months,dates]=await Promise.all([
+          db.prepare('SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY month DESC,plan_id').all(),
+          db.prepare('SELECT plan_id,date FROM recurring_date_exclusions ORDER BY date DESC,plan_id').all()
+        ])
+        return json([...months.results.map(x=>({planId:x.plan_id,month:x.month})),
+          ...dates.results.map(x=>({planId:x.plan_id,date:x.date,month:x.date.slice(0,7)}))])
       }
       if ((m === 'POST' || m === 'DELETE') && !b) {
         const body=await request.json().catch(()=>null)
-        const planId=body?.planId, month=body?.month
+        const planId=body?.planId,month=body?.month,date=body?.date
         if (typeof planId!=='string' || !/^[a-zA-Z0-9-]{8,80}$/.test(planId) ||
-          typeof month!=='string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
-          return json({error:'除外する固定費と月を確認してください'},400)
-        if (m === 'POST') {
-          const plan=await db.prepare('SELECT start_month FROM recurring_plans WHERE id=?1').bind(planId).first()
-          if (!plan || month<plan.start_month || month>tokyoToday().slice(0,7))
-            return json({error:'固定費の対象月を確認してください'},409)
-          await db.prepare('INSERT OR IGNORE INTO recurring_candidate_exclusions(plan_id,month) VALUES(?1,?2)').bind(planId,month).run()
-        } else {
-          await db.prepare('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2').bind(planId,month).run()
+          typeof month!=='string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month) ||
+          (date!=null && (typeof date!=='string' || !validDate(date) || !date.startsWith(month+'-'))))
+          return json({error:'除外する固定費と日付を確認してください'},400)
+        const plan=await db.prepare('SELECT start_month,schedule_type,weekday,day FROM recurring_plans WHERE id=?1').bind(planId).first()
+        if(!plan || month<plan.start_month || month>tokyoToday().slice(0,7) ||
+          (!!date && (plan.schedule_type!=='weekly' || !scheduledRecurringOnDate(plan,date) || date>tokyoToday())))
+          return json({error:'固定費の対象日を確認してください'},409)
+        if(m==='POST'){
+          if(date)await db.prepare('INSERT OR IGNORE INTO recurring_date_exclusions(plan_id,date) VALUES(?1,?2)').bind(planId,date).run()
+          else await db.prepare('INSERT OR IGNORE INTO recurring_candidate_exclusions(plan_id,month) VALUES(?1,?2)').bind(planId,month).run()
+        }else{
+          if(date)await db.prepare('DELETE FROM recurring_date_exclusions WHERE plan_id=?1 AND date=?2').bind(planId,date).run()
+          else await db.prepare('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2').bind(planId,month).run()
         }
         return json({ok:true})
       }

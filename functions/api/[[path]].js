@@ -458,7 +458,8 @@ export async function onRequest({ request, env, params }) {
         ] : []),
         'SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY plan_id,month',
         ...(recurringArchiveReady ? [`SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled
-          FROM recurring_plans p JOIN trash_items t ON t.item_type='recurring_plan' AND t.item_id=p.id ORDER BY p.id`] : [])
+          FROM recurring_plans p JOIN trash_items t ON t.item_type='recurring_plan' AND t.item_id=p.id ORDER BY p.id`,
+          "SELECT item_id,payload_json,deleted_at FROM trash_items WHERE item_type='entry' ORDER BY item_id"] : [])
       ].map(sql=>db.prepare(sql))
       const results=await db.batch(statements)
       const rows=n=>results[n]?.results||[]
@@ -477,6 +478,7 @@ export async function onRequest({ request, env, params }) {
         archivedPlans:recurringArchiveReady ? rows(portfolioReady ? 15 : 10).map(p=>({
           id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled
         })) : [],
+        trashedEntries:recurringArchiveReady ? rows(portfolioReady ? 16 : 11) : [],
         ...(portfolioReady ? {investmentPlans:rows(9),investmentPlanHistory:rows(10),
           investmentHoldings:rows(11),fundPrices:rows(12),transferLinks:rows(13)} : {})
       })
@@ -712,6 +714,7 @@ export async function onRequest({ request, env, params }) {
         const {results}=await db.prepare(
           "SELECT item_id,payload_json,deleted_at FROM trash_items WHERE item_type='entry' ORDER BY deleted_at DESC,item_id DESC LIMIT 500"
         ).all()
+        if (url.searchParams.get('full') === '1') return json(results)
         return json(results.flatMap(item=>{
           try {
             const entry=JSON.parse(item.payload_json)?.entry

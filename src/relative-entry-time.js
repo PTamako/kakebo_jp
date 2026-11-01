@@ -4,9 +4,15 @@
 const normalize = value => String(value ?? '').normalize('NFKC').replace(/[\s\u3000]+/g, '').trim()
 const DAY_OFFSETS = new Map([
   ['今日',0],['本日',0],['きょう',0],['今天',0],['今日中',0],
+  ['明日',-1],['あした',-1],['あす',-1],['明天',-1],
+  ['明後日',-2],['あさって',-2],['后天',-2],['後天',-2],
+  ['明々後日',-3],['明明後日',-3],['しあさって',-3],['大后天',-3],['大後天',-3],
   ['昨日',1],['きのう',1],['昨天',1],
   ['一昨日',2],['おととい',2],['前天',2]
 ])
+// Shared with manual text parsing so tomorrow/yesterday have one definition.
+export const relativeDayTokens = Object.freeze([...DAY_OFFSETS.keys()].sort((a,b) => b.length-a.length))
+export const relativeDayOffset = value => DAY_OFFSETS.get(normalize(value)) ?? null
 const NOW_WORDS = new Set(['今','いま','現在','ただ今','たった今','今現在','现在','現在時間','刚刚','剛剛','刚才'])
 const ELAPSED = /^(\d{1,4})(時間|小时|小時|分|分钟|分鐘|日|天|週間|周)前$/
 const HOUR_MS = 3600000
@@ -31,6 +37,15 @@ const tokyoParts = instant => {
   }
 }
 const minusDays = (instant, count) => tokyoParts(new Date(instant.getTime() - count * DAY_MS)).date
+
+// Calculate the calendar day in Tokyo, even if the device's system timezone differs.
+export function relativeDateInTokyo(token, reference = new Date()) {
+  const offset = relativeDayOffset(token)
+  if (offset === null) return null
+  const instant = reference instanceof Date ? reference : new Date(reference)
+  if (!Number.isFinite(instant.getTime())) return null
+  return minusDays(instant, offset)
+}
 
 function elapsedMilliseconds(token) {
   const match = normalize(token).replace(/^約/, '').match(ELAPSED)

@@ -1,13 +1,14 @@
 # Separate scheduled Worker; this does not replace Pages wrangler.toml.
 # Workers Builds production deploy: npx wrangler deploy --config wrangler.nav.toml
 # Keep the repository root wrangler.toml for Pages; never rename it to this Worker.
-# Daily 21:00 JST plus conditional 23:15 JST retry for funds missing today's official NAV.
+# One existing Worker handles independent tasks: recurring expenses at 00:30/09:30 JST,
+# fund NAV at 21:00 JST plus conditional 23:15 retry.
 name = "kakeibo-nav-sync"
 main = "workers/fund-nav-cron.js"
 compatibility_date = "2026-10-01"
 
 [triggers]
-crons = ["0 12 * * *", "15 14 * * *"]
+crons = ["30 15 * * *", "30 0 * * *", "0 12 * * *", "15 14 * * *"]
 
 # Daiwa official website currently rejects automated access (HTTP 403).
 # Disable the experimental CSV fetch until an authorized public feed becomes available.

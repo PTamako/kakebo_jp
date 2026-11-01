@@ -183,3 +183,26 @@ Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=
   ```
 - `investment_snapshots` は新規DBの `schema.sql` で作成せず、実行時の API・自動取得・バックアップ・復元から完全に切り離した。旧エンドポイント `/api/investments` は 410。古い v1–v3 バックアップの `investments` データは検証可能だが、書き戻しはしない。**本番の旧テーブルとデータは削除しない**。
 - `migrations/0006_sbi_portfolio_linkage.sql` に関する上記の「移行未実施」「旧画面に表示」「自動NAV未実装」の記述は当時の履歴であり、2026-10-30の現行構成・進捗の説明ではない。SBI保有管理・NAVの更新用Workerは独立して維持する。
+
+## 2026-11-01: 0012 — 共通の復元可能なゴミ箱（手動移行）
+
+**PR #193 は本番D1の移行0012を確認するまでマージ禁止。**
+
+- `trash_items(item_type,item_id,payload_json,deleted_at)` は削除した固定費と明細の復元情報を保存する。月別除外と通知確認は独立のまま。
+- 固定費の実体は `recurring_plans` に残す。明細はD1トランザクション内でID、内容、SBIリンク、確認状態を保存してから削除し、元のIDで復元する。
+- レシート画像は元の端末に残るが、現行の保管期間（最大30日）は変わらない。JSONバックアップに画像ファイルは含まれない。
+- 既存の `recurring_plan_trash` は0012で読み取り・コピーするだけ。**旧表をDROPしない。** アプリ起動やCIでの自動移行・旧データ再投入は禁止。
+
+### 安全な本番適用順
+
+1. 本番D1を完全バックアップし、テスト用D1で復元を確認。移行前の明細件数、SBI保有、固定費件数を控える。
+2. `SELECT COUNT(*) FROM recurring_plan_trash;`、`SELECT COUNT(*) FROM recurring_plans;`、`SELECT COUNT(*) FROM entries;` で件数を確認する。
+3. 独立したテスト用D1で移行0012を実行し、明細削除・復元、SBIリンク復元、固定費削除・復元、バックアップ復元のテストを実施。
+4. PR #193のPagesとWorkersビルド、全テストが合格したら、**マージ前に**本番で次のSQLを一度だけ明示適用する（旧版は旧表を引き続き参照するため利用可能）。
+
+   npx wrangler d1 execute kakeibo --remote --file=./migrations/0012_unified_trash_items.sql
+
+5. `SELECT item_type, COUNT(*) AS n FROM trash_items GROUP BY item_type;` で旧アーカイブ件数と新しいrecurring_plan件数を比較。明細件数とSBI保有が不変であることを確認してからPRをマージ。
+6. 新版の本番動作とバックアップ、ロールバック手順が確認できるまで旧 `recurring_plan_trash` は保留。後日削除する場合も**別途明示的な手動操作**とし、自動DROPは行わない。
+
+マイグレーション0012を適用する前にPRをマージすると、`trash_items` が存在せず削除機能が失敗するため順番を守る。

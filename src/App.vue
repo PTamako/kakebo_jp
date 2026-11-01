@@ -5,7 +5,7 @@ import { parseNamedExpenseBlocks } from './named-expense.js'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
 import { groupAnnualEntries } from './detail-pagination.js'
-import { japanTodayKey, spendingAveragesByDayType } from './spending-day-type.js'
+import { japanTodayKey, spendingAveragesByDayType, spendingAverageOnExpenseDays } from './spending-day-type.js'
 import { annualExpenseAverageByRecordedMonth } from './annual-monthly-average.js'
 import { countThroughEditedDay } from './ledger-day-focus.js'
 import { isCardBilledEntry } from './card-billing.js'
@@ -1515,11 +1515,14 @@ const monthlyDayTypeAverages = computed(() => {
   const lastDay = String(new Date(year, monthNumber, 0).getDate()).padStart(2, '0')
   return spendingAveragesByDayType(stats.value?.byDay, month.value + '-01', month.value + '-' + lastDay, japanToday.value)
 })
-// Match the weekday/holiday "支出があった日" denominator, rather than all calendar days.
+// The right-hand monthly metric counts only actual spending days, independently
+// from the weekday/holiday averages that include all elapsed calendar days.
 const averageDaily = computed(() => {
-  const { weekday, holiday } = monthlyDayTypeAverages.value
-  const days = weekday.days + holiday.days
-  return days ? Math.round((weekday.total + holiday.total) / days) : null
+  const [year, monthNumber] = month.value.split('-').map(Number)
+  const lastDay = String(new Date(year, monthNumber, 0).getDate()).padStart(2, '0')
+  return spendingAverageOnExpenseDays(
+    stats.value?.byDay, month.value + '-01', month.value + '-' + lastDay, japanToday.value,
+  ).average
 })
 const annualDayTypeAverages = computed(() => spendingAveragesByDayType(
   annualStats.value?.byDay,

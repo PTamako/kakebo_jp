@@ -1508,13 +1508,18 @@ const weekRows = computed(() => {
   return weeks
 })
 const maxWeek = computed(() => Math.max(1, ...weekRows.value.map(w => w.amount)))
-const averageDaily = computed(() => dayRows.value.length ? Math.round(Number(stats.value?.total || 0) / dayRows.value.length) : 0)
 const liveNow = ref(new Date())
 const japanToday = computed(() => japanTodayKey(liveNow.value))
 const monthlyDayTypeAverages = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number)
   const lastDay = String(new Date(year, monthNumber, 0).getDate()).padStart(2, '0')
   return spendingAveragesByDayType(stats.value?.byDay, month.value + '-01', month.value + '-' + lastDay, japanToday.value)
+})
+// Match the weekday/holiday "支出があった日" denominator, rather than all calendar days.
+const averageDaily = computed(() => {
+  const { weekday, holiday } = monthlyDayTypeAverages.value
+  const days = weekday.days + holiday.days
+  return days ? Math.round((weekday.total + holiday.total) / days) : null
 })
 const annualDayTypeAverages = computed(() => spendingAveragesByDayType(
   annualStats.value?.byDay,

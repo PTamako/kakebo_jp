@@ -39,7 +39,9 @@ export function comparisonWindow({ month = '', year = '', today }) {
     currentStart: start,
     currentEnd,
     previousStart: `${y - 1}-01-01`,
-    previousEnd: `${y - 1}-${currentEnd.slice(5)}`,
+    // A leap day has no counterpart in a non-leap prior year.
+    previousEnd: dateKey(y - 1, Number(currentEnd.slice(5, 7)),
+      Math.min(Number(currentEnd.slice(8, 10)), lastDay(y - 1, Number(currentEnd.slice(5, 7))))),
   }
 }
 

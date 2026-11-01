@@ -11,8 +11,7 @@
     "security:audit": "npm audit --audit-level=high",
     "security:audit:prod": "npm audit --omit=dev --audit-level=high",
     "verify:release": "npm run build",
-    "deploy:nav": "wrangler deploy --config wrangler.nav.toml",
-    "deploy:recurring": "wrangler deploy --config wrangler.recurring.toml"
+    "deploy:nav": "wrangler deploy --config wrangler.nav.toml"
   },
   "dependencies": {
     "tesseract.js": "^5.1.0",

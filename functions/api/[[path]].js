@@ -680,41 +680,39 @@ export async function onRequest({ request, env, params }) {
       return json({ ok: true, changes: result[1]?.meta?.changes ?? 0 })
     }
     if (a === 'recurring-post' && m === 'POST') {
-      // Atomic, non-destructive fixed-expense insertion; conflicting manual records win.
       const body = await request.json()
       const planId = typeof body?.planId === 'string' ? body.planId : ''
       const scheduledMonth = typeof body?.month === 'string' ? body.month : ''
       if (!/^[a-zA-Z0-9-]{8,80}$/.test(planId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(scheduledMonth))
         return json({error:'固定支出の対象を確認してください'},400)
-      let plan
-      try {
-        plan = await db.prepare(`SELECT id,name,amount,day,category,payment_source,start_month,enabled
-          FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=recurring_plans.id)`).bind(planId).first()
-      } catch(e) {
-        if (!/no such table: trash_items/i.test(String(e))) throw e
-        // Existing users can continue posting legitimate fixed expenses until
-        // the explicitly applied unified-trash migration is available.
-        plan = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=?1').bind(planId).first()
-      }
+      const plan=await db.prepare(`SELECT id,name,amount,day,weekday,schedule_type,category,payment_source,start_month,enabled
+        FROM recurring_plans WHERE id=?1
+        AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=recurring_plans.id)`).bind(planId).first()
       if (!plan || !plan.enabled || !Number.isSafeInteger(Number(plan.amount)) || Number(plan.amount)<=0)
         return json({error:'有効な固定支出が見つかりません'},404)
-      const approved = resolveRecurringApproval(body,plan)
+      const approved=resolveRecurringApproval(body,plan)
       if(approved.error)return json({error:approved.error,code:approved.code},approved.status)
       const date=approved.date
-      if (date > tokyoToday()) return json({error:'予定日前の固定支出は登録できません'},409)
-      if (await db.prepare('SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2').bind(planId,scheduledMonth).first())
-        return json({error:'この月は候補から除外されています。除外を解除してから登録してください',code:'recurring_excluded'},409)
-      const clientRequestId = recurringRequestId(plan.id,scheduledMonth)
-      if (await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())
+      if(date>tokyoToday())return json({error:'予定日前の固定支出は登録できません'},409)
+      const weekly=plan.schedule_type==='weekly'
+      const period=weekly?date:scheduledMonth
+      const clientRequestId=recurringRequestId(plan.id,period)
+      if(await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())
         return json({ok:true,created:false,duplicate:true,conflict:false})
-      const result = await db.prepare(`INSERT INTO entries
+      const samePeriod=weekly?'e.date=?1':'substr(e.date,1,7)=?8'
+      const result=await db.prepare(`INSERT INTO entries
         (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
-        SELECT ?1,'',?2,?3,?4,'毎月の固定支出（確認記帳）','','expense',NULL,0,NULL,?5,?6
-        WHERE NOT EXISTS (SELECT 1 FROM entries WHERE substr(date,1,7)=substr(?1,1,7)
-          AND type='expense' AND merchant=?4 AND COALESCE(payment_source,'')=?6)
-        AND NOT EXISTS (SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?7 AND month=?8)
+        SELECT ?1,'',p.amount,p.category,p.name,'定期固定費（確認記帳）','','expense',NULL,0,NULL,?2,p.payment_source
+        FROM recurring_plans p WHERE p.id=?3 AND p.enabled=1
+          AND p.name=?4 AND p.amount=?5 AND p.day=?6 AND p.weekday=?7
+          AND p.schedule_type=?9 AND p.category=?10 AND p.payment_source=?11
+          AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)
+          AND NOT EXISTS(SELECT 1 FROM recurring_candidate_exclusions x WHERE x.plan_id=p.id AND x.month=?8)
+          AND NOT EXISTS(SELECT 1 FROM recurring_date_exclusions x WHERE x.plan_id=p.id AND x.date=?1)
+          AND NOT EXISTS(SELECT 1 FROM entries e WHERE ${samePeriod} AND e.type='expense'
+            AND e.merchant=p.name AND COALESCE(e.payment_source,'')=p.payment_source)
         ON CONFLICT(client_request_id) DO NOTHING`)
-        .bind(date,plan.amount,plan.category,plan.name,clientRequestId,plan.payment_source || '',planId,scheduledMonth).run()
+        .bind(date,clientRequestId,plan.id,plan.name,plan.amount,plan.day,plan.weekday,scheduledMonth,plan.schedule_type,plan.category,plan.payment_source).run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
     }
     // Genuine deletions share one trash table; reviews/exclusions remain states.

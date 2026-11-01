@@ -27,12 +27,17 @@ function memoryDb() {
   const db={
     prepare(sql) {
       let args=[]
-      const statement=sqlite.prepare(sql)
+      // D1 accepts indexed ?1/?2 placeholders; node:sqlite's experimental
+      // binding API treats those differently. Expand positional values in
+      // lexical SQL placeholder order without changing the production query.
+      const order=[...sql.matchAll(/\\?(\\d+)/g)].map(match=>Number(match[1])-1)
+      const statement=sqlite.prepare(sql.replace(/\\?\\d+/g,'?'))
+      const bindArgs=()=>order.length ? order.map(index=>args[index]) : args
       return {
         bind(...values){args=values;return this},
-        async all(){return {results:statement.all(...args)}},
-        async first(){return statement.get(...args)},
-        async run(){const result=statement.run(...args);return {meta:{changes:Number(result.changes)}}},
+        async all(){return {results:statement.all(...bindArgs())}},
+        async first(){return statement.get(...bindArgs())},
+        async run(){const result=statement.run(...bindArgs());return {meta:{changes:Number(result.changes)}}},
       }
     }
   }

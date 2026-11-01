@@ -706,6 +706,67 @@ export async function onRequest({ request, env, params }) {
         .bind(date,plan.amount,plan.category,plan.name,clientRequestId,plan.payment_source || '',planId,scheduledMonth).run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
     }
+    // Genuine deletions share one trash table; reviews/exclusions remain states.
+    if (a === 'trash-items') {
+      if (m === 'GET' && !b) {
+        const {results}=await db.prepare(
+          "SELECT item_id,payload_json,deleted_at FROM trash_items WHERE item_type='entry' ORDER BY deleted_at DESC,item_id DESC LIMIT 500"
+        ).all()
+        return json(results.flatMap(item=>{
+          try {
+            const entry=JSON.parse(item.payload_json)?.entry
+            if(!entry || String(entry.id)!==item.item_id)return []
+            return [{id:entry.id,date:entry.date,amount:entry.amount,type:entry.type,
+              merchant:entry.merchant,category:entry.category,deletedAt:item.deleted_at}]
+          } catch { return [] }
+        }))
+      }
+      if (!/^\\d+$/.test(b||'') || !Number.isSafeInteger(Number(b)) || Number(b)<=0)
+        return json({error:'対象の明細IDが正しくありません'},400)
+      const id=Number(b)
+      if (params.path?.[2]==='restore' && m==='POST') {
+        const item=await db.prepare(
+          "SELECT payload_json FROM trash_items WHERE item_type='entry' AND item_id=?1"
+        ).bind(String(id)).first()
+        if(!item)return json({error:'ゴミ箱に明細が見つかりません'},404)
+        let saved
+        try { saved=JSON.parse(item.payload_json) } catch {return json({error:'保管データを復元できません'},409)}
+        const e=saved?.entry
+        if(!e || e.id!==id || !validDate(e.date) || !Number.isSafeInteger(e.amount) || e.amount<=0 ||
+          !['expense','income','transfer'].includes(e.type)) return json({error:'保管した明細が正しくありません'},409)
+        // Stable IDs preserve on-device receipts and SBI transfer links.
+        const collision=await db.prepare('SELECT id FROM entries WHERE id=?1 OR (client_request_id IS NOT NULL AND client_request_id=?2) LIMIT 1')
+          .bind(id,e.client_request_id??null).first()
+        if(collision)return json({error:'別の明細とIDが重複しています。復元を中止しました'},409)
+        const statements=[
+          db.prepare(`INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,
+            transfer_date,client_request_id,payment_source,created_at)
+            VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`)
+            .bind(id,e.date,e.time||'',e.amount,e.category,e.merchant,e.note,e.raw,e.type,
+              e.transfer_target??null,e.transfer_applied??0,e.transfer_date??null,e.client_request_id??null,
+              e.payment_source||'',e.created_at||new Date().toISOString())
+        ]
+        if(saved.purchaseMonth)statements.push(db.prepare(
+          'INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) VALUES(?1,?2)'
+        ).bind(id,saved.purchaseMonth))
+        if(saved.dismissed)statements.push(db.prepare(
+          'INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) VALUES(?1)'
+        ).bind(id))
+        statements.push(db.prepare("DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(id)))
+        await db.batch(statements)
+        return json({ok:true,restored:true,id})
+      }
+      if (params.path?.[2]==='purge' && m==='DELETE') {
+        if(request.headers.get('x-confirm-purge')!==String(id))
+          return json({error:'削除対象の再確認が必要です'},428)
+        const result=await db.prepare(
+          "DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1"
+        ).bind(String(id)).run()
+        if(!result.meta?.changes)return json({error:'ゴミ箱に明細が見つかりません'},404)
+        return json({ok:true})
+      }
+      return json({error:'未対応の操作です'},405)
+    }
     if (a === 'entry-years' && m === 'GET') {
       // Query actual ledger years instead of silently omitting records before 2018 or in future years.
       const { results } = await db.prepare("SELECT substr(date,1,4) AS year, COUNT(*) AS count FROM entries GROUP BY substr(date,1,4) ORDER BY year").all()
@@ -829,8 +890,23 @@ export async function onRequest({ request, env, params }) {
         if (!Number.isSafeInteger(id) || id <= 0 ||
             request.headers.get('x-confirm-delete') !== String(id))
           return json({ error: '削除する記録の確認が必要です' }, 428)
-        const result = await db.prepare('DELETE FROM entries WHERE id = ?1').bind(id).run()
-        return json({ ok: true, changes: result.meta?.changes ?? 0 })
+        // D1 batch() makes the recoverable snapshot+deletion atomic.
+        const entry=await db.prepare('SELECT * FROM entries WHERE id=?1').bind(id).first()
+        if (!entry) return json({error:'明細が見つかりません'},404)
+        const [link,dismissal]=await Promise.all([
+          db.prepare('SELECT purchase_month FROM sbi_transfer_links WHERE entry_id=?1').bind(id).first(),
+          db.prepare('SELECT 1 AS found FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id).first()
+        ])
+        const snapshot=JSON.stringify({entry,purchaseMonth:link?.purchase_month||null,dismissed:!!dismissal})
+        const result=await db.batch([
+          db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING").bind(String(id),snapshot),
+          db.prepare('DELETE FROM sbi_transfer_links WHERE entry_id=?1').bind(id),
+          db.prepare('DELETE FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id),
+          db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2)").bind(id,String(id))
+        ])
+        if(!result[0]?.meta?.changes || !result[3]?.meta?.changes)
+          return json({error:'明細をゴミ箱に移動できませんでした'},409)
+        return json({ok:true,changes:1,trashed:true})
       }
     }
     if (a === 'category-source' && m === 'GET') {

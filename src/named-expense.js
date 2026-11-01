@@ -1,4 +1,5 @@
 import { parseRepeatedExpense } from './natural-repeat.js'
+import { relativeDateInTokyo, relativeDayTokens } from './relative-entry-time.js'
 
 // 手入力: 名称 / 日付 / 金額の3行（複数組も可）。
 // No API writes here: return reviewable drafts only.
@@ -11,9 +12,12 @@ const nowInTokyo = instant => {
   const iso = new Date(instant.getTime() + 9 * 60 * 60 * 1000).toISOString()
   return {date:iso.slice(0,10),time:iso.slice(11,16)}
 }
+const relativeDayPattern = `(?:${relativeDayTokens.join('|')}|今)`
 const dateString = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
 
 function singleDate(text, now) {
+  const relative = relativeDateInTokyo(text, now)
+  if (relative) return relative
   if (text === '今') return nowInTokyo(now).date
   let match, year, month, day
   const monthDay = new RegExp(`^(?:(20\\d{2})\\s*年\\s*)?(${monthToken})\\s*月\\s*(\\d{1,2})\\s*日?$`)
@@ -24,10 +28,6 @@ function singleDate(text, now) {
     year=Number(match[1]);month=Number(match[2]);day=Number(match[3])
   } else if ((match=text.match(/^(\d{1,2})\s*\/\s*(\d{1,2})$/))) {
     year=now.getFullYear();month=Number(match[1]);day=Number(match[2])
-  } else if (/^(今日|昨日|一昨日)$/.test(text)) {
-    const date = new Date(now.getFullYear(),now.getMonth(),now.getDate())
-    date.setDate(date.getDate() - ({今日:0,昨日:1,一昨日:2}[text]))
-    return dateString(date)
   } else return null
 
   if(year<2000 || year>2100 || month<1 || month>12 || day<1 || day>31)return null
@@ -65,7 +65,7 @@ function splitFlexibleInlineNamedExpense(line) {
     String.raw`${month}\s*\d{1,2}\s*日?`,
     String.raw`20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}`,
     String.raw`\d{1,2}/\d{1,2}`,
-    String.raw`今日|昨日|一昨日|(?<!\S)今(?!\S)`
+    String.raw`(?<!\S)${relativeDayPattern}(?!\S)`
   ]
   const datePattern = new RegExp(String.raw`(?<![\d一二三四五六七八九十])(?:${dates.join('|')})`,'g')
   const dateHits=[...line.matchAll(datePattern)]
@@ -92,7 +92,7 @@ export function parseNamedExpenseBlocks(raw, now = new Date()) {
   // written until the user reviews and saves the resulting drafts.
   lines=lines.flatMap(line=>splitInlineNamedExpense(line)||[line])
   if(lines.length<2)return null
-  const dateHint=/(?:毎週|每周|每週|[0-9一二三四五六七八九十]月|^\d{1,4}[\/.-]|^(?:今日|昨日|一昨日|今)$)/
+  const dateHint = new RegExp(String.raw`(?:毎週|每周|每週|[0-9一二三四五六七八九十]月|^\d{1,4}[\/.-]|^${relativeDayPattern}$)`)
   if(!lines.some(line=>dateHint.test(line)))return null
   if(lines.length%3!==0)return {error:'名称・日付・金額を3行ずつ入力してください'}
   if(lines.length/3>30)return {error:'一度に読み取れる記録は30組までです'}

@@ -58,7 +58,7 @@ test('manual text runs structured parsing before fallback without switching to i
   const app=source('src/App.vue')
   const fn=app.match(/function recognize\([\s\S]*?\n\}(?=\nasync function onImage)/)?.[0]
   assert.ok(fn)
-  assert.match(fn,/const structured = !append && entryInputMode\.value === 'manual' \? parseNamedExpenseBlocks\(input\.value\) : null/)
+  assert.match(fn,/const structured = !append && entryInputMode\.value === 'manual' \? parseNamedExpenseBlocks\(input\.value, referenceTime\) : null/)
   assert.match(fn,/if \(structured\?\.error\) return flash\(structured\.error\)/)
   assert.match(fn,/classify\(row\.merchant, rules\.value\)/)
   assert.match(fn,/const effectiveMode = structured \|\| repeated \? 'statement' : mode/)
@@ -111,4 +111,42 @@ test('single-line names and dates support a single date and multiple independent
   assert.equal(parseNamedExpenseBlocks('2026年10月25日,ベルク,8323円,クレジットカード',now),null)
   assert.equal(parseNamedExpenseBlocks('勉強会\n10月毎週の金曜日\n100円',now).rows.length,5)
   assert.equal(parseRepeatedExpense('11月毎週の金曜日 100円',now).length,4)
+})
+
+test('standalone 今 before a name means recognition instant in JST down to seconds',()=>{
+  const reference = new Date('2026-10-31T15:00:02.000Z') // JST: 2026-11-01 00:00:02
+  for(const text of [
+    '今　テスト　1000円',
+    '今 テスト 1000円',
+    'テスト 今 1000円',
+    '今\nテスト\n1000円',
+    'テスト\n今\n1000円'
+  ]){
+    const result=parseNamedExpenseBlocks(text,reference)
+    assert.ok(result?.rows && !result.error,text)
+    assert.equal(result.rows.length,1,text)
+    assert.equal(result.rows[0].merchant,'テスト',text)
+    assert.equal(result.rows[0].date,'2026-11-01',text)
+    assert.equal(result.rows[0].time,'00:00:02',text)
+    assert.equal(result.rows[0].amount,1000,text)
+    assert.equal(result.rows[0].type,'expense',text)
+  }
+})
+
+test('今 means now only as a standalone date token and never inside a merchant name',()=>{
+  const ref=new Date('2026-11-01T03:09:08.000Z')
+  assert.equal(parseNamedExpenseBlocks('今月のテスト 1000円',ref),null)
+  const today=parseNamedExpenseBlocks('今日 テスト 1000円',ref)
+  assert.equal(today.rows[0].merchant,'テスト')
+  assert.equal(today.rows[0].time,'')
+  assert.equal(parseNamedExpenseBlocks('テスト 今 0円',ref).rows,undefined)
+})
+
+test('now-second drafts are supported by form controls, API validation and backup restoration',()=>{
+  const form=source('src/TransactionForm.vue')
+  const api=source('functions/api/[[path]].js')
+  const backup=source('src/finance-tools.js')
+  assert.match(form,/v-model="record.time" type="time" step="1"/)
+  assert.match(api,/\[0-5\]\\d\(\?::\[0-5\]\\d\)\?/,'the API accepts optional seconds')
+  assert.match(backup,/\[0-5\]\\d\(\?::\[0-5\]\\d\)\?/,'backup accepts optional seconds')
 })

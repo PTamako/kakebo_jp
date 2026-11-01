@@ -101,6 +101,7 @@ test('recurring exclusion and duplicate confirmation remain active after trash i
   assert.deepEqual(hidden.transferReminders,[])
   assert.ok(finance.includes('recurringExclusions.value='))
   assert.ok(api.includes("SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2"))
+  assert.ok(api.includes("SELECT 1 FROM recurring_date_exclusions WHERE plan_id=?1 AND date=?2"))
   assert.ok(api.includes("NOT EXISTS (SELECT 1 FROM dismissed_transfer_reminders d WHERE d.entry_id = entries.id)"))
 })
 

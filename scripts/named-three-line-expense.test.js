@@ -113,7 +113,7 @@ test('single-line names and dates support a single date and multiple independent
   assert.equal(parseRepeatedExpense('11月毎週の金曜日 100円',now).length,4)
 })
 
-test('standalone 今 before a name means recognition instant in JST down to seconds',()=>{
+test('standalone 今 before a name means recognition instant in JST to the minute',()=>{
   const reference = new Date('2026-10-31T15:00:02.000Z') // JST: 2026-11-01 00:00:02
   for(const text of [
     '今　テスト　1000円',
@@ -127,7 +127,7 @@ test('standalone 今 before a name means recognition instant in JST down to seco
     assert.equal(result.rows.length,1,text)
     assert.equal(result.rows[0].merchant,'テスト',text)
     assert.equal(result.rows[0].date,'2026-11-01',text)
-    assert.equal(result.rows[0].time,'00:00:02',text)
+    assert.equal(result.rows[0].time,'00:00',text)
     assert.equal(result.rows[0].amount,1000,text)
     assert.equal(result.rows[0].type,'expense',text)
   }
@@ -142,11 +142,12 @@ test('今 means now only as a standalone date token and never inside a merchant 
   assert.equal(parseNamedExpenseBlocks('テスト 今 0円',ref).rows,undefined)
 })
 
-test('now-second drafts are supported by form controls, API validation and backup restoration',()=>{
+test('now-minute drafts retain standard HH:mm input and validation',()=>{
   const form=source('src/TransactionForm.vue')
   const api=source('functions/api/[[path]].js')
   const backup=source('src/finance-tools.js')
-  assert.match(form,/v-model="record.time" type="time" step="1"/)
-  assert.match(api,/\[0-5\]\\d\(\?::\[0-5\]\\d\)\?/,'the API accepts optional seconds')
-  assert.match(backup,/\[0-5\]\\d\(\?::\[0-5\]\\d\)\?/,'backup accepts optional seconds')
+  assert.match(form,/v-model="record.time" type="time"/)
+  assert.match(api,/validTime = value =>/)
+  assert.ok(!api.includes('(?::[0-5]\\d)?'), 'API remains HH:mm only')
+  assert.ok(!backup.includes('(?::[0-5]\\d)?'), 'backup remains HH:mm only')
 })

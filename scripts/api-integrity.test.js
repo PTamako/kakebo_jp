@@ -26,7 +26,7 @@ class LedgerDb {
         if (sql.startsWith('SELECT 1 AS found FROM card_bills')) return [...db.cardBills.values()].some(v=>v.name===this.args[0] && [...db.cardBills.values()].some(w=>w.name===this.args[1] && w.month===v.month)) ? {found:1} : null
         if (sql.startsWith('SELECT value FROM finance_settings WHERE name=')) return db.financeSettings.has(this.args[0]) ? { value: db.financeSettings.get(this.args[0]) } : null
         if (sql.startsWith('SELECT name FROM payment_sources WHERE name=')) return db.paymentSources.has(this.args[0]) ? { name: this.args[0] } : null
-        if (sql.startsWith('SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=')) return db.recurringTrash.has(this.args[0]) ? {exists:1} : null
+        if (sql.startsWith("SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=")) return db.recurringTrash.has(this.args[0]) ? {exists:1} : null
         if (sql.startsWith('SELECT 1 FROM recurring_plans WHERE id=')) return db.recurringPlans.has(this.args[0]) ? {exists:1} : null
         if (sql.includes('FROM recurring_plans WHERE id=?1') || sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=')) {
           const p=db.recurringPlans.get(this.args[0])
@@ -106,10 +106,10 @@ class LedgerDb {
           if(db.recurringExclusions.has(key))return {meta:{changes:0}}
           db.recurringExclusions.add(key);return {meta:{changes:1}}
         }
-        if (sql.startsWith('DELETE FROM recurring_candidate_exclusions WHERE item_type='recurring_plan' AND item_id=?1 AND month=?2')) {
+        if (sql.startsWith('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2')) {
           db.recurringExclusions.delete(this.args[0]+':'+this.args[1]);return {meta:{changes:1}}
         }
-        if (sql.startsWith('DELETE FROM recurring_candidate_exclusions WHERE item_type='recurring_plan' AND item_id=?1')) {
+        if (sql.startsWith('DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1')) {
           db.recurringExclusions=new Set([...db.recurringExclusions].filter(key=>!key.startsWith(this.args[0]+':')))
           return {meta:{changes:1}}
         }

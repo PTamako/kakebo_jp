@@ -120,7 +120,7 @@ export function validateBackup(value) {
   // Archived entries are not active ledger rows; preserve exact snapshots and
   // reject malformed or mismatched IDs before any restore write.
   for(const item of value.trashedEntries||[]) {
-    if(!item || !/^[1-9]\\d*$/.test(String(item.item_id)) ||
+    if(!item || !/^[1-9]\d*$/.test(String(item.item_id)) ||
         typeof item.payload_json!=='string' || item.payload_json.length>250000 ||
         typeof item.deleted_at!=='string' || !item.deleted_at ||
         item.deleted_at.length>40) throw Error('ゴミ箱の明細データが不正です')

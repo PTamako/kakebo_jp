@@ -1,5 +1,5 @@
 import { parseRepeatedExpense } from './natural-repeat.js'
-import { relativeDateInTokyo, relativeDayTokens } from './relative-entry-time.js'
+import { relativeDateInTokyo, relativeDayTokens, relativeNowTokens, isRelativeNowToken } from './relative-entry-time.js'
 
 // 手入力: 名称 / 日付 / 金額の3行（複数組も可）。
 // No API writes here: return reviewable drafts only.
@@ -12,13 +12,13 @@ const nowInTokyo = instant => {
   const iso = new Date(instant.getTime() + 9 * 60 * 60 * 1000).toISOString()
   return {date:iso.slice(0,10),time:iso.slice(11,16)}
 }
-const relativeDayPattern = `(?:${relativeDayTokens.join('|')}|今)`
+const relativeDayPattern = `(?:${[...new Set([...relativeDayTokens, ...relativeNowTokens])].sort((a,b)=>b.length-a.length).join('|')})`
 const dateString = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
 
 function singleDate(text, now) {
   const relative = relativeDateInTokyo(text, now)
   if (relative) return relative
-  if (text === '今') return nowInTokyo(now).date
+  if (isRelativeNowToken(text)) return nowInTokyo(now).date
   let match, year, month, day
   const monthDay = new RegExp(`^(?:(20\\d{2})\\s*年\\s*)?(${monthToken})\\s*月\\s*(\\d{1,2})\\s*日?$`)
   if ((match = text.match(monthDay))) {
@@ -112,7 +112,7 @@ export function parseNamedExpenseBlocks(raw, now = new Date()) {
     const expanded=parseRepeatedExpense(when+' '+price,now)
     const dates=expanded?.map(row=>row.date) ?? (singleDate(when,now) ? [singleDate(when,now)] : null)
     if(!dates)return {error:`${i/3+1}組目の日付を確認してください`}
-    const nowClock = when === '今' ? nowInTokyo(now).time : ''
+    const nowClock = isRelativeNowToken(when) ? nowInTokyo(now).time : ''
     for(const date of dates){
       rows.push({
         date,time:nowClock,amount,type:'expense',merchant:name,category:'日用品',

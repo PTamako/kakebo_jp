@@ -12,6 +12,7 @@ import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, 
 import { isCardBilledEntry } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
+import { recurringDatesInMonth, recurringFrequencyLabel, nextRecurringDate, WEEKDAYS_JA } from './recurring-posting.js'
 import { recurringReviewWindow, validRecurringMonth } from './recurring-review-window.js'
 import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
 import { receiptZip } from './receipt-export.js'
@@ -333,7 +334,7 @@ const expandedRecurringPlanId = ref('')
 const activeRecurringPlans = computed(() => plans.value.filter(item => item.enabled))
 const currentEligiblePlans = computed(() => activeRecurringPlans.value.filter(item =>
   validRecurringMonth(item.startMonth) && item.startMonth <= currentRecurringMonth()))
-const recurringMonthlyTotal = computed(() => currentEligiblePlans.value.reduce((sum,item) => sum + Number(item.amount || 0),0))
+const recurringMonthlyTotal = computed(() => currentEligiblePlans.value.reduce((sum,item) => sum + Number(item.amount||0)*recurringDatesInMonth(currentRecurringMonth(),{scheduleType:item.scheduleType||'monthly',day:item.day,weekday:item.weekday}).length,0))
 const filteredRecurringPlans = computed(() => {
   const query = recurringListQuery.value.trim().toLocaleLowerCase('ja-JP')
   return plans.value.filter(item =>
@@ -348,7 +349,7 @@ const bills = ref([])
 const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費','工资':'給与','奖金':'賞与','副业':'副業','老公生活费':'夫からの生活費','父母赠与':'両親からの援助','亲友赠与':'親族・友人からの援助','退款':'返金','其他收入':'その他の収入'}
 const categoryLabel = category => categoryJapaneseLabels[category] || category
 const currentRecurringMonth = () => new Date().toLocaleDateString('sv-SE').slice(0,7)
-const blankPlan = () => ({name:'',amount:'',day:1,category:'',paymentSource:'現金',startMonth:currentRecurringMonth(),postingMode:'manual'})
+const blankPlan = () => ({name:'',amount:'',day:1,weekday:1,scheduleType:'monthly',category:'',paymentSource:'現金',startMonth:currentRecurringMonth(),postingMode:'manual'})
 const plan = ref(blankPlan())
 const editingPlanId = ref('')
 // Default to the earliest effective month among enabled plans, with an
@@ -364,7 +365,7 @@ const recurringExcludedRows = computed(() => recurringExclusions.value.map(item 
   ...item,name:plans.value.find(plan => plan.id === item.planId)?.name ||
     trashedRecurringPlans.value.find(plan => plan.id === item.planId)?.name || '固定費'
 })))
-const recurringKey = row => row.planId + ':' + row.month
+const recurringKey = row => row.planId + ':' + (row.date && (row.scheduleType==='weekly'||!('scheduleType' in row)) ? row.date : row.month)
 const selectedRecurring = computed(() => recurringPreview.value.filter(row => !row.conflict && recurringSelected.value.has(recurringKey(row))))
 function toggleRecurringSelection(row, checked) {
   const next = new Set(recurringSelected.value)
@@ -375,7 +376,7 @@ function toggleRecurringSelection(row, checked) {
 const recurringPreviewTotal = computed(() => selectedRecurring.value.reduce((sum,row) => sum + row.amount,0))
 function beginEditPlan(item) {
   editingPlanId.value = item.id
-  plan.value = {...item, paymentSource:item.paymentSource || '現金',startMonth:item.startMonth || currentRecurringMonth(),postingMode:item.postingMode || 'manual'}
+  plan.value = {...item, paymentSource:item.paymentSource || '現金',startMonth:item.startMonth || currentRecurringMonth(),postingMode:item.postingMode || 'manual',scheduleType:item.scheduleType||'monthly',weekday:Number(item.weekday??1)}
   recurringPreview.value = []
   recurringSelected.value = new Set()
   recurringListOpen.value=false
@@ -907,6 +908,7 @@ function onReviewTrashToggle(event) {
 async function addPlan(){
   if(!plan.value.name.trim() || !Number.isSafeInteger(Number(plan.value.amount)) || Number(plan.value.amount)<=0 ||
     !Number.isInteger(Number(plan.value.day)) || Number(plan.value.day)<1 || Number(plan.value.day)>31 ||
+    !['monthly','weekly'].includes(plan.value.scheduleType) || !Number.isInteger(plan.value.weekday) || plan.value.weekday<0 || plan.value.weekday>6 ||
     !validRecurringMonth(plan.value.startMonth) ||
     !props.categories.includes(plan.value.category) || !props.paymentSources.includes(plan.value.paymentSource)) {
     message.value='名称・金額・記帳日・開始月・カテゴリ・支払方法を確認してください';return
@@ -916,7 +918,7 @@ async function addPlan(){
   try {
     const existing=plans.value.find(row=>row.id===editingPlanId.value)
     const item={...plan.value,id:existing?.id || crypto.randomUUID(),amount:Number(plan.value.amount),day:Number(plan.value.day),
-      startMonth:plan.value.startMonth,enabled:existing ? !!existing.enabled : true,postingMode:plan.value.postingMode}
+      startMonth:plan.value.startMonth,enabled:existing ? !!existing.enabled : true,postingMode:plan.value.postingMode,scheduleType:plan.value.scheduleType,weekday:plan.value.weekday}
     const updated=Boolean(existing)
     const saved=await props.api(updated?'recurring-plans/'+encodeURIComponent(item.id):'recurring-plans',
       {method:updated?'PUT':'POST',body:JSON.stringify(item)})
@@ -1240,7 +1242,7 @@ async function removeCardBill(record) {
     <div class="recurring-form-layout">
       <label class="recurring-form-field recurring-form-name"><span>名称</span><input v-model="plan.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120" /></label>
       <div class="recurring-form-field recurring-form-amount"><span>金額</span><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
-      <label class="recurring-form-field"><span>周期</span><span class="recurring-day-picker"><span>毎月</span><select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></span></label>
+      <label class="recurring-form-field"><span>周期</span><span class="recurring-day-picker"><select v-model="plan.scheduleType" aria-label="記帳周期"><option value="monthly">毎月</option><option value="weekly">毎週</option></select><select v-if="plan.scheduleType==='monthly'" v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select><select v-else v-model.number="plan.weekday" aria-label="毎週の曜日"><option v-for="(label,index) in WEEKDAYS_JA" :key="index" :value="index">{{label}}曜日</option></select></span></label>
       <label class="recurring-form-field"><span>カテゴリ</span><select v-model="plan.category" aria-label="固定費カテゴリ"><option value="">選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label>
       <label class="recurring-form-field"><span>支払方法</span><select v-model="plan.paymentSource" aria-label="固定費支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label>
       <label class="recurring-form-field recurring-start-month"><span>開始月</span><input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>
@@ -1250,7 +1252,7 @@ async function removeCardBill(record) {
       <label :class="{selected:plan.postingMode==='auto'}"><input v-model="plan.postingMode" type="radio" value="auto" name="recurring-posting-mode" /><span>自動記帳</span></label>
       <label :class="{selected:plan.postingMode==='manual'}"><input v-model="plan.postingMode" type="radio" value="manual" name="recurring-posting-mode" /><span>確認して記帳</span></label>
     </fieldset>
-    <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? '毎月'+plan.day+'日になると、自動で支出明細に登録します。' : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
+    <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? ''+recurringFrequencyLabel(plan)+'になると、自動で支出明細に登録します。' : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <p class="recurring-window-note">開始月から未記帳分を確認</p>
@@ -1282,7 +1284,7 @@ async function removeCardBill(record) {
     <details class="recurring-list-disclosure">
       <summary class="recurring-list-summary">
         <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{plans.length}}件</strong></span>
-        <span class="recurring-list-summary-total">今月対象 {{currentEligiblePlans.length}}件 · 月額 {{yen(recurringMonthlyTotal)}}</span>
+        <span class="recurring-list-summary-total">今月対象 {{currentEligiblePlans.length}}件 · 今月予定額 {{yen(recurringMonthlyTotal)}}</span>
       </summary>
       <div class="recurring-list-body">
         <div class="recurring-list-filters">
@@ -1297,11 +1299,11 @@ async function removeCardBill(record) {
               <span class="recurring-plan-amount">{{yen(p.amount)}}</span>
               <span class="recurring-plan-chevron" aria-hidden="true">{{expandedRecurringPlanId===p.id ? '⌃' : '⌄'}}</span>
               <span class="recurring-plan-meta">
-                <span class="recurring-plan-meta-item">毎月{{p.day}}日</span>
+                <span class="recurring-plan-meta-item">{{recurringFrequencyLabel(p)}}</span>
                 <span class="recurring-plan-meta-item recurring-payment-source" :title="p.paymentSource || '未設定'">{{p.paymentSource || '未設定'}}</span>
                 <span class="recurring-plan-meta-item">開始 {{p.startMonth?.replace('-', '/') || '未設定'}}</span>
                 <span class="recurring-plan-meta-item">{{p.postingMode==='auto' ? '自動記帳' : '確認して記帳'}}</span>
-                <span class="recurring-plan-meta-item">{{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true).slice(5).replace('-','/') : '停止中'}}</span>
+                <span class="recurring-plan-meta-item">{{p.enabled ? '次回 '+(nextRecurringDate(p,new Date().toLocaleDateString('sv-SE'))||'—').slice(5).replace('-','/') : '停止中'}}</span>
               </span>
             </button>
             <div v-if="expandedRecurringPlanId===p.id" :id="'recurring-plan-actions-'+p.id" class="recurring-plan-more">

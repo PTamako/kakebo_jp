@@ -9,7 +9,7 @@ const pad = n => String(n).padStart(2, '0')
 // 「今」 is an explicit timestamp, resolved once against the recognition instant in JST.
 const nowInTokyo = instant => {
   const iso = new Date(instant.getTime() + 9 * 60 * 60 * 1000).toISOString()
-  return {date:iso.slice(0,10),time:iso.slice(11,19)}
+  return {date:iso.slice(0,10),time:iso.slice(11,16)}
 }
 const dateString = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
 

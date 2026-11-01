@@ -2,7 +2,27 @@
 import { inject } from 'vue'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
-const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, input, categoryIconPath, categoryLabel, yen, categoryRows, expensePalette, donutSelected, donutPercent, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openPaymentMethodDetails, openCategoryDetails, weekRows, maxWeek, averageDaily, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, ratioTrendMax, highestSpendMonth, annualAverage, annualIncomeCategories, maxAnnualIncomeCategory, monthlyDayTypeAverages, annualDayTypeAverages, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthLabel, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel } = inject('kakeibo-page-context')
+const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, input, categoryIconPath, categoryLabel, yen, categoryRows, expensePalette, donutSelected, donutPercent, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openPaymentMethodDetails, openCategoryDetails, weekRows, maxWeek, averageDaily, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestSpendMonth, annualAverage, annualIncomeCategories, maxAnnualIncomeCategory, monthlyDayTypeAverages, annualDayTypeAverages, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthLabel, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel } = inject('kakeibo-page-context')
+
+function comparisonRate(comparison) {
+  const percent = comparison?.percent
+  if (percent === null || percent === undefined || !Number.isFinite(percent)) return '—'
+  const rounded = Math.abs(Math.round(percent * 10) / 10)
+  if (rounded === 0) return '±0.0%'
+  return (percent < 0 ? '−' : '+') + rounded.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'
+}
+function comparisonNote(comparison) {
+  const percent = comparison?.percent
+  if (!comparison) return '対象期間外'
+  if (percent === null || percent === undefined) return '前期の支出なし'
+  if (Math.abs(percent) < 0.05) return 'ほぼ同額'
+  return percent < 0 ? '支出が減少' : '支出が増加'
+}
+function comparisonTone(comparison) {
+  const percent = comparison?.percent
+  if (!Number.isFinite(percent) || Math.abs(percent) < 0.05) return ''
+  return percent < 0 ? 'income-text' : 'expense-text'
+}
 </script>
 <template>
 <section v-if="statsPeriod === 'month'" class="page-section stats-page">
@@ -18,7 +38,11 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
         <div class="piggy-content"><div class="piggy-title">月間の収支バランス</div><div class="piggy-status">{{ pigLabel(monthlyRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (monthlyRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(monthlyRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip"><div><small>月間収入</small><strong class="income-text">＋{{ yen(stats?.income) }}</strong></div><div><small>月間支出</small><strong>−{{ yen(stats?.total) }}</strong></div><div><small>収支差額</small><strong :class="Number(stats?.income || 0) - Number(stats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(stats?.income || 0) - Number(stats?.total || 0)) }}</strong></div></div>
-      <div class="income-expense-strip transfer-summary monthly-transfer-summary"><div><small>月間の資産移動</small><strong>{{ yen(stats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'month')" aria-label="選択月の資産移動明細を表示">{{ stats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div></div>
+      <div class="income-expense-strip transfer-summary monthly-transfer-summary"><div><small>月間の資産移動</small><strong>{{ yen(stats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'month')" aria-label="選択月の資産移動明細を表示">{{ stats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div><div class="period-comparison" :title="'比較期間：' + (stats?.periodComparison?.previousStart || '—') + ' ～ ' + (stats?.periodComparison?.previousEnd || '—')">
+          <small>前月同期間比</small>
+          <strong :class="comparisonTone(stats?.periodComparison)">{{ comparisonRate(stats?.periodComparison) }}</strong>
+          <span class="comparison-note">{{ comparisonNote(stats?.periodComparison) }}</span>
+        </div></div>
       <div class="payment-method-stats"><h2>支払方法別</h2><div class="payment-method-stats-grid"><button v-for="method in ['カード・電子決済','現金']" :key="method" type="button" :disabled="!(stats?.paymentMethods || []).some(item => item.method === method && Number(item.count) > 0)" @click="openPaymentMethodDetails(method,'month')"><span>{{method}}</span><strong>{{(stats?.paymentMethods || []).find(item => item.method === method) ? yen((stats?.paymentMethods || []).find(item => item.method === method).amount) : '—'}}</strong><small>{{(stats?.paymentMethods || []).find(item => item.method === method) ? ((stats?.paymentMethods || []).find(item => item.method === method).count + '件 · 明細を見る ›') : '—'}}</small></button></div></div>
       <div class="metric-grid">
         <div class="metric-card day-average-metric" title="休日は土曜・日曜・国民の祝日・振替休日・国民の休日を含みます">
@@ -71,10 +95,10 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
         <div class="piggy-content"><div class="piggy-title">年間の収支バランス</div><div class="piggy-status">{{ pigLabel(annualRatio) }}</div><div class="piggy-track"><span :style="{ width: Math.min(100, (annualRatio || 0) * 100) + '%' }"></span></div><div class="piggy-numbers"><span>支出／収入</span><strong>{{ ratioLabel(annualRatio) }}</strong></div></div>
       </div>
       <div class="income-expense-strip annual-income-strip"><div><small>年間収入</small><strong class="income-text">＋{{ yen(annualStats?.income) }}</strong></div><div><small>年間支出</small><strong>−{{ yen(annualStats?.total) }}</strong></div><div><small>年間収支</small><strong :class="Number(annualStats?.income || 0) - Number(annualStats?.total || 0) < 0 ? 'expense-text' : 'income-text'">{{ yen(Number(annualStats?.income || 0) - Number(annualStats?.total || 0)) }}</strong></div></div>
-      <div class="income-expense-strip transfer-summary"><div><small>年間の資産移動</small><strong>{{ yen(annualStats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'year')" aria-label="年間の資産移動明細を表示">{{ annualStats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div><div class="annual-peak-month">
-          <small>支出が最も多い月</small>
-          <strong>{{ highestSpendMonth.amount ? highestSpendMonth.label : 'データなし' }}</strong>
-          <span v-if="highestSpendMonth.amount" class="annual-peak-month-amount">{{ yen(highestSpendMonth.amount) }}</span>
+      <div class="income-expense-strip transfer-summary"><div><small>年間の資産移動</small><strong>{{ yen(annualStats?.transferTotal) }}</strong></div><div><small>件数</small><button type="button" class="transfer-count-link" @click="openCategoryDetails('投資・資産移動', 'transfer', 'year')" aria-label="年間の資産移動明細を表示">{{ annualStats?.transferCount || 0 }}件 <span aria-hidden="true">›</span></button></div><div class="period-comparison" :title="'比較期間：' + (annualStats?.periodComparison?.previousStart || '—') + ' ～ ' + (annualStats?.periodComparison?.previousEnd || '—')">
+          <small>前年同期間比</small>
+          <strong :class="comparisonTone(annualStats?.periodComparison)">{{ comparisonRate(annualStats?.periodComparison) }}</strong>
+          <span class="comparison-note">{{ comparisonNote(annualStats?.periodComparison) }}</span>
         </div></div>
       <div class="payment-method-stats"><h2>支払方法別</h2><div class="payment-method-stats-grid"><button v-for="method in ['カード・電子決済','現金']" :key="method" type="button" :disabled="!(annualStats?.paymentMethods || []).some(item => item.method === method && Number(item.count) > 0)" @click="openPaymentMethodDetails(method,'year')"><span>{{method}}</span><strong>{{(annualStats?.paymentMethods || []).find(item => item.method === method) ? yen((annualStats?.paymentMethods || []).find(item => item.method === method).amount) : '—'}}</strong><small>{{(annualStats?.paymentMethods || []).find(item => item.method === method) ? ((annualStats?.paymentMethods || []).find(item => item.method === method).count + '件 · 明細を見る ›') : '—'}}</small></button></div></div>
       <div class="metric-grid">
@@ -104,7 +128,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
         </div>
         <div class="stats-card trend-card">
           <div class="section-title"><div><h2>収入の推移</h2></div></div>
-          <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>収入が最も多い月</span></div>
+          <div class="trend-summary"><strong>{{ yen(incomeTrendMax) }}</strong><span>収入が最も多い月 · {{ highestIncomeMonth.income ? highestIncomeMonth.label : 'データなし' }}</span></div>
           <svg class="trend-chart" viewBox="0 0 320 132" role="img" :aria-label="selectedYear + '年収入の推移'">
             <line v-for="y in [26, 67, 108]" :key="y" x1="16" :y1="y" x2="304" :y2="y" class="chart-grid-line" />
             <polyline :points="incomeTrendLine" class="chart-line income-chart-line" />
@@ -162,6 +186,34 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
 </template>
 
 <style scoped>
+/* Same-card period comparisons: no new rows and no changes to the other metric grids. */
+.income-expense-strip > .period-comparison {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 7px;
+  min-width: 0;
+}
+.period-comparison small {
+  font-size: clamp(10px, 2.65vw, 12px);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.income-expense-strip .period-comparison strong {
+  font-size: clamp(13px, 3.5vw, 18px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.period-comparison .comparison-note {
+  color: var(--muted);
+  font-size: clamp(9px, 2.35vw, 11px);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
 /* Compact the two lower metric cards in both monthly and annual statistics.
    Keep the card width, labels and amount font sizes unchanged. */
 .stats-page .metric-grid .metric-card {
@@ -198,7 +250,7 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
 
 /* Only monthly statistics: transfer totals use two cells; daily averages replace the old expense-count metric. */
 .monthly-transfer-summary {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .day-average-metric .metric-day-average-list {
   display: grid;

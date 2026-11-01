@@ -351,7 +351,7 @@ export async function onRequest({ request, env, params }) {
         }
         if (b && /^[a-zA-Z0-9-]{8,80}$/.test(b) &&
             params.path?.[2] === 'restore' && m === 'POST') {
-          const result=await db.prepare"'DELETE FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1").bind(b).run()
+          const result=await db.prepare("DELETE FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1").bind(b).run()
           if (!result.meta?.changes) return json({error:'ゴミ箱に固定費が見つかりません'},404)
           return json({ok:true})
         }
@@ -361,12 +361,12 @@ export async function onRequest({ request, env, params }) {
           // archived schedule. Never delete previously saved ledger rows.
           if (request.headers.get('x-confirm-purge') !== b)
             return json({error:'削除対象の再確認が必要です'},428)
-          const archived=await db.prepare"'SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1").bind(b).first()
+          const archived=await db.prepare("SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1").bind(b).first()
           if (!archived) return json({error:'ゴミ箱に固定費が見つかりません'},404)
           await db.batch([
-            db.prepare"'DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b),
-            db.prepare"'DELETE FROM recurring_plans WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b),
-            db.prepare"'DELETE FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1").bind(b)
+            db.prepare("DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b),
+            db.prepare("DELETE FROM recurring_plans WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b),
+            db.prepare("DELETE FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1").bind(b)
           ])
           return json({ok:true})
         }

@@ -24,6 +24,7 @@ export async function handlePrepaid({db,request,method,sub}) {
   }
   if(method!=='GET'||sub)return json({error:'未対応の操作です'},405)
   const today=todayJST()
+  const monthStart=today.slice(0,7)+'-01'
   const {results:cards}=await db.prepare(`SELECT p.name,p.opening_balance,p.opening_entry_id,p.opening_date,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name
@@ -31,15 +32,29 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND COALESCE(e.transfer_date,e.date)<=?1
         AND COALESCE(e.payment_source,'')<>p.name),0) charged,
     COALESCE((SELECT SUM(e.amount) FROM entries e
+      WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name
+        AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
+        AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
+        AND COALESCE(e.payment_source,'')<>p.name),0) charged_month,
+    COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='expense' AND e.payment_source=p.name
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) spent,
+    COALESCE((SELECT SUM(e.amount) FROM entries e
+      WHERE e.type='expense' AND e.payment_source=p.name
+        AND e.id>p.opening_entry_id AND e.date>=p.opening_date
+        AND e.date BETWEEN ?2 AND ?1),0) spent_month,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.payment_source=p.name
         AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
         AND COALESCE(e.transfer_date,e.date)<=?1
-        AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out
+        AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out,
+    COALESCE((SELECT SUM(e.amount) FROM entries e
+      WHERE e.type='transfer' AND e.payment_source=p.name
+        AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
+        AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
+        AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out_month
     FROM payment_sources p WHERE p.source_type='prepaid'
-    ORDER BY p.sort_order,p.name`).bind(today).all()
+    ORDER BY p.sort_order,p.name`).bind(today,monthStart).all()
   // Latest activity is read-only and uses exactly the same opening anchor/date
   // predicates as the balance and card-history filters. No extra ledger table.
   const [latestUsage,latestCharge] = await Promise.all([

@@ -86,15 +86,15 @@ onMounted(()=>{if(props.active)void refresh()})
                 <small v-if="card.balance<0">要確認</small>
               </div>
             </div>
-            <div class="wallet-card-flow" aria-label="チャージと利用の累計">
+            <div class="wallet-card-flow" aria-label="今月のチャージと利用">
               <div class="wallet-flow-value">
-                <span>チャージ累計</span><strong class="wallet-charge-value">＋{{money(card.charged)}}</strong>
+                <span>今月のチャージ</span><strong class="wallet-charge-value">＋{{money(card.charged_month)}}</strong>
               </div>
               <div class="wallet-flow-value">
-                <span>利用累計</span><strong>−{{money(card.spent)}}</strong>
+                <span>今月の利用</span><strong>−{{money(card.spent_month)}}</strong>
               </div>
             </div>
-            <p v-if="card.transferred_out > 0" class="wallet-outgoing">振替出金 <strong>−{{money(card.transferred_out)}}</strong></p>
+            <p v-if="card.transferred_out_month > 0" class="wallet-outgoing">今月の振替出金 <strong>−{{money(card.transferred_out_month)}}</strong></p>
             <div class="wallet-row-actions">
               <nav class="wallet-history-links" :aria-label="card.name+'の履歴'">
                 <button type="button" :aria-label="card.name+'の利用・振替履歴'" @click="emit('open-history',card.name,'usage')">利用・振替履歴</button>

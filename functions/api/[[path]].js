@@ -335,7 +335,7 @@ export async function onRequest({ request, env, params }) {
             return json({error:'固定支出の入力を確認してください'},400)
           const mode=item.postingMode||'manual'
           const autoFrom=mode==='auto' ? nextAutomaticStartMonth(tokyoToday(),item.day,item.startMonth,item.scheduleType||'monthly',item.weekday||0) : ''
-          const result = await db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)').bind(item.id,item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled ? 1 : 0,mode,autoFrom).run()
+          const result = await db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)').bind(item.id,item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled ? 1 : 0,mode,autoFrom,item.scheduleType||'monthly',item.weekday||0).run()
           return json({ok:true,created:!!result.meta?.changes})
         }
         if (m === 'PUT' && b && /^[a-zA-Z0-9-]{8,80}$/.test(b)) {
@@ -352,8 +352,8 @@ export async function onRequest({ request, env, params }) {
           const mode=item.postingMode ?? prior.posting_mode
           const sameSchedule=prior.name===item.name.trim() && Number(prior.amount)===item.amount && Number(prior.day)===item.day && prior.category===item.category && prior.payment_source===item.paymentSource && prior.start_month===item.startMonth && !!prior.enabled===item.enabled && prior.schedule_type===(item.scheduleType||'monthly') && Number(prior.weekday)===Number(item.weekday||0)
           const autoFrom=mode==='auto' ? (prior.posting_mode==='auto' && sameSchedule && prior.auto_from_month ? prior.auto_from_month : nextAutomaticStartMonth(tokyoToday(),item.day,item.startMonth,item.scheduleType||'monthly',item.weekday||0)) : ''
-          const updated = await db.prepare("UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7,posting_mode=?8,auto_from_month=?9 WHERE id=?10 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?10)")
-            .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,mode,autoFrom,b).run()
+          const updated = await db.prepare("UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7,posting_mode=?8,auto_from_month=?9,schedule_type=?10,weekday=?11 WHERE id=?12 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?12)")
+            .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,mode,autoFrom,item.scheduleType||'monthly',item.weekday||0,b).run()
           if(!updated.meta?.changes)return json({error:'固定支出が見つかりません'},404)
           // Stable plan IDs preserve the monthly idempotency key. Existing ledger entries are untouched.
           return json({ok:true})

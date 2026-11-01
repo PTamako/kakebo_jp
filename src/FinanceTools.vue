@@ -348,7 +348,7 @@ const bills = ref([])
 const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費','工资':'給与','奖金':'賞与','副业':'副業','老公生活费':'夫からの生活費','父母赠与':'両親からの援助','亲友赠与':'親族・友人からの援助','退款':'返金','其他收入':'その他の収入'}
 const categoryLabel = category => categoryJapaneseLabels[category] || category
 const currentRecurringMonth = () => new Date().toLocaleDateString('sv-SE').slice(0,7)
-const blankPlan = () => ({name:'',amount:'',day:1,category:'',paymentSource:'現金',startMonth:currentRecurringMonth()})
+const blankPlan = () => ({name:'',amount:'',day:1,category:'',paymentSource:'現金',startMonth:currentRecurringMonth(),postingMode:'manual'})
 const plan = ref(blankPlan())
 const editingPlanId = ref('')
 // Default to the earliest effective month among enabled plans, with an
@@ -375,7 +375,7 @@ function toggleRecurringSelection(row, checked) {
 const recurringPreviewTotal = computed(() => selectedRecurring.value.reduce((sum,row) => sum + row.amount,0))
 function beginEditPlan(item) {
   editingPlanId.value = item.id
-  plan.value = {...item, paymentSource:item.paymentSource || '現金',startMonth:item.startMonth || currentRecurringMonth()}
+  plan.value = {...item, paymentSource:item.paymentSource || '現金',startMonth:item.startMonth || currentRecurringMonth(),postingMode:item.postingMode || 'manual'}
   recurringPreview.value = []
   recurringSelected.value = new Set()
   recurringListOpen.value=false
@@ -916,7 +916,7 @@ async function addPlan(){
   try {
     const existing=plans.value.find(row=>row.id===editingPlanId.value)
     const item={...plan.value,id:existing?.id || crypto.randomUUID(),amount:Number(plan.value.amount),day:Number(plan.value.day),
-      startMonth:plan.value.startMonth,enabled:existing ? !!existing.enabled : true}
+      startMonth:plan.value.startMonth,enabled:existing ? !!existing.enabled : true,postingMode:plan.value.postingMode}
     const updated=Boolean(existing)
     const saved=await props.api(updated?'recurring-plans/'+encodeURIComponent(item.id):'recurring-plans',
       {method:updated?'PUT':'POST',body:JSON.stringify(item)})
@@ -926,7 +926,7 @@ async function addPlan(){
     recurringPreview.value=[]
     recurringSelected.value=new Set()
     recurringListOpen.value=false
-    recurringMessage.value=updated?'固定費を更新しました':'固定費を登録しました。記帳前に内容を確認してください'
+    recurringMessage.value=updated?'固定費を更新しました':item.postingMode==='auto'?'固定費を登録しました。次回予定日から自動記帳します':'固定費を登録しました。記帳前に内容を確認してください'
   }catch(e){message.value='固定費の保存に失敗しました：'+e.message}
   finally {recurringBusy.value=false}
 }

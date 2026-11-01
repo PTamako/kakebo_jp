@@ -4,7 +4,7 @@ export const backupVersion = 4
 const RESTORE_SETTING_ORDER = [
   'paymentSources','categoryMetadata','categories','categoryIcons',
   'customRules','merchantPaymentRules','bills',
-  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans','archivedPlans','recurringExclusions'
+  'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans','archivedPlans','recurringExclusions','trashedEntries'
 ]
 // Setting collections are restored in dependency order, with no silent fallback
 // that omits display names, sorting or portfolio data for large archives.
@@ -110,13 +110,28 @@ export function validateBackup(value) {
       throw Error('取引データに不正な値があります')
     }
   }
-  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks', 'recurringExclusions', 'archivedPlans']
+  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks', 'recurringExclusions', 'archivedPlans', 'trashedEntries']
   for (const name of arrayNames) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
     }
   }
 
+  // Archived entries are not active ledger rows; preserve exact snapshots and
+  // reject malformed or mismatched IDs before any restore write.
+  for(const item of value.trashedEntries||[]) {
+    if(!item || !/^[1-9]\\d*$/.test(String(item.item_id)) ||
+        typeof item.payload_json!=='string' || item.payload_json.length>250000 ||
+        typeof item.deleted_at!=='string' || !item.deleted_at ||
+        item.deleted_at.length>40) throw Error('ゴミ箱の明細データが不正です')
+    let data
+    try {data=JSON.parse(item.payload_json)}catch{throw Error('ゴミ箱の明細データが不正です')}
+    const e=data?.entry
+    if(!e || String(e.id)!==String(item.item_id) || !validDate(e.date) ||
+      !Number.isSafeInteger(e.amount) || e.amount<=0 ||
+      !['income','expense','transfer'].includes(e.type))
+      throw Error('ゴミ箱の明細内容を確認してください')
+  }
   // Validate every writeable setting before the first restore API call.
   // Older v1/v2 archives may omit a whole collection; present collections must be sound.
   const isText = (value, max = 120) => typeof value === 'string' && value.trim().length > 0 && value.length <= max

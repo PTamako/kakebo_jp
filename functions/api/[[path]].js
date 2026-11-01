@@ -707,6 +707,12 @@ export async function onRequest({ request, env, params }) {
       const weekly=plan.schedule_type==='weekly'
       const period=weekly?date:scheduledMonth
       const clientRequestId=recurringRequestId(plan.id,period)
+      // A previously excluded occurrence must be rejected explicitly.
+      // Keep this server-side even when the preview list is stale on another device.
+      const excludedMonth=await db.prepare('SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2').bind(planId,scheduledMonth).first()
+      const excludedDate=weekly ? await db.prepare('SELECT 1 FROM recurring_date_exclusions WHERE plan_id=?1 AND date=?2').bind(planId,date).first() : null
+      if(excludedMonth || excludedDate)
+        return json({error:'この予定日は候補から除外されています。除外を解除してから登録してください',code:'recurring_excluded'},409)
       if(await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())
         return json({ok:true,created:false,duplicate:true,conflict:false})
       const samePeriod=weekly?'e.date=?1':'substr(e.date,1,7)=?8'

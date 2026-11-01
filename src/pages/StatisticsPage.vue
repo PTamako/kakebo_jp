@@ -31,7 +31,7 @@ function comparisonTone(comparison) {
       <div class="hero-total">
         <span>{{ monthLabel }}の支出合計</span>
         <strong>{{ yen(stats?.total) }}</strong>
-        <div class="hero-footer"><span class="hero-dot"></span>{{ stats?.count || 0 }}件の支出記録</div>
+        <div class="hero-footer"><span class="hero-dot"></span>{{ stats?.count || 0 }}件の支出記録 · 全{{ stats?.recordCount ?? 0 }}件</div>
       </div>
       <div class="piggy-card" :class="'piggy-' + pigState(monthlyRatio)">
         <div class="puppy-pair" :class="'puppy-' + pigState(monthlyRatio)" aria-label="収支バランスの表情"><img v-if="monthlyRatio !== null && monthlyRatio >= .8" :key="pigState(monthlyRatio)" class="puppy-expression" :src="puppyExpression(monthlyRatio)" :alt="monthlyRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-default-gif" src="/IMG_0986.gif" alt="収支バランスのアニメーション" loading="lazy" /></template></div>
@@ -88,7 +88,7 @@ function comparisonTone(comparison) {
       <div class="stats-period-tabs" role="tablist" aria-label="集計期間"><button type="button" role="tab" :aria-selected="statsPeriod === 'month'" :class="{ selected: statsPeriod === 'month' }" @click="statsPeriod = 'month'">月次</button><button type="button" role="tab" :aria-selected="statsPeriod === 'year'" :class="{ selected: statsPeriod === 'year' }" @click="statsPeriod = 'year'">年次</button></div>
       <div class="hero-total annual-hero">
         <span>{{ selectedYear }}年の支出合計</span><strong>{{ yen(annualStats?.total) }}</strong>
-        <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件の支出記録</div>
+        <div class="hero-footer"><span class="hero-dot"></span>{{ annualStats?.count || 0 }}件の支出記録 · 全{{ annualStats?.recordCount ?? 0 }}件</div>
       </div>
       <div class="piggy-card" :class="'piggy-' + pigState(annualRatio)">
         <div class="puppy-pair" :class="'puppy-' + pigState(annualRatio)" aria-label="収支バランスの表情"><img v-if="annualRatio !== null && annualRatio >= .8" :key="pigState(annualRatio)" class="puppy-expression" :src="puppyExpression(annualRatio)" :alt="annualRatio >= 1 ? '泣いているしろちゃん' : '汗をかくちび毛'" @error="puppyFallback" loading="lazy" /><template v-else><img class="puppy-default-gif" src="/IMG_0986.gif" alt="収支バランスのアニメーション" loading="lazy" /></template></div>

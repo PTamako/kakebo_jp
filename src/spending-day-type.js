@@ -9,8 +9,9 @@ export function japanTodayKey(now = new Date()) {
   return `${value('year')}-${value('month')}-${value('day')}`
 }
 
-// Include zero-spend days, but do not include dates after today in current periods.
-// Input is aggregated expense-only daily amounts from the existing stats API.
+// Count only days with a real, positive expense total. Neither zero-spend
+// calendar days nor future-dated entries belong in the denominator.
+// Both monthly and annual statistics use the same expense-only D1 byDay data.
 export function spendingAveragesByDayType(byDay, start, end, today = japanTodayKey()) {
   const totals = { weekday: { total: 0, days: 0 }, holiday: { total: 0, days: 0 } }
   const limit = end < today ? end : today
@@ -24,12 +25,11 @@ export function spendingAveragesByDayType(byDay, start, end, today = japanTodayK
     const amount = Number(row.amount)
     if (Number.isFinite(amount)) expenseByDate.set(date, (expenseByDate.get(date) || 0) + amount)
   }
-  const [year, month, day] = start.split('-').map(Number)
-  for (let timestamp = Date.UTC(year, month - 1, day); timestamp <= Date.parse(limit + 'T00:00:00Z'); timestamp += 86400000) {
-    const date = new Date(timestamp).toISOString().slice(0, 10)
+  for (const [date, amount] of expenseByDate) {
+    if (amount <= 0) continue
     const group = isJapanHoliday(date) ? totals.holiday : totals.weekday
     group.days += 1
-    group.total += expenseByDate.get(date) || 0
+    group.total += amount
   }
   return {
     weekday: { ...totals.weekday, average: totals.weekday.days ? Math.round(totals.weekday.total / totals.weekday.days) : null },

@@ -14,13 +14,13 @@ export function japanTodayKey(now = new Date()) {
 export function spendingAveragesByDayType(byDay, start, end, today = japanTodayKey()) {
   const totals = { weekday: { total: 0, days: 0 }, holiday: { total: 0, days: 0 } }
   const limit = end < today ? end : today
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(start) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(limit) || start > limit) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(limit) || start > limit) {
     return { weekday: { ...totals.weekday, average: null }, holiday: { ...totals.holiday, average: null } }
   }
   const expenseByDate = new Map()
   for (const row of byDay || []) {
     const date = String(row.date || '').slice(0, 10)
-    if (date < start || date > limit || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) continue
+    if (date < start || date > limit || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
     const amount = Number(row.amount)
     if (Number.isFinite(amount)) expenseByDate.set(date, (expenseByDate.get(date) || 0) + amount)
   }

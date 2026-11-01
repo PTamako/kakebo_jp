@@ -39,7 +39,7 @@ export default {
             enableDaiwaCsv: env?.DAIWA_CSV_EXPERIMENT === 'true',
             retryPendingNav: cron === '15 14 * * *'
           })
-          console.log('NAV sync', JSON.stringify(result))
+          console.log('NAV sync',JSON.stringify(result))
           if (result.failed.length) throw Error('some fund quotes could not be refreshed')
         } catch (error) {
           console.error('NAV sync failed', String(error?.message || error))

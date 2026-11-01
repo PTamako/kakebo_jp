@@ -106,6 +106,7 @@ watch([() => props.active, managementTab], ([active,tab]) => {
     // ゴミ箱. Otherwise the collapsed header shows a misleading partial count.
     void loadTransferTrash()
     void loadDeletedPlans()
+    void loadDeletedEntries()
   }
 })
 watch(() => props.rememberDevice, () => {
@@ -670,6 +671,49 @@ async function writeReviewNotices(add = [], remove = []) {
 }
 const trashMessage = ref('')
 const trashBusy = ref(false)
+const deletedEntries = ref([])
+const deletedEntryLoading = ref(false)
+const deletedEntryLoaded = ref(false)
+async function loadDeletedEntries() {
+  if (deletedEntryLoading.value) return
+  deletedEntryLoading.value = true
+  deletedEntryLoaded.value = false
+  try {
+    const rows=await props.api('trash-items')
+    if(!Array.isArray(rows))throw Error('一覧の形式を確認できません')
+    deletedEntries.value=rows
+    deletedEntryLoaded.value=true
+  } catch(e) {
+    trashMessage.value='削除した明細を読み込めませんでした：'+e.message
+  } finally {deletedEntryLoading.value=false}
+}
+async function restoreDeletedEntry(item) {
+  if (deletedEntryLoading.value || trashBusy.value) return
+  deletedEntryLoading.value=true
+  try {
+    await props.api('trash-items/'+encodeURIComponent(item.id)+'/restore',{method:'POST'})
+    deletedEntries.value=deletedEntries.value.filter(row=>row.id!==item.id)
+    emit('ledger-updated')
+    if(appContext?.load) await appContext.load()
+    if(appContext?.loadYear) await appContext.loadYear()
+    if(appContext?.loadTransfers) await appContext.loadTransfers()
+    await loadAll()
+    trashMessage.value='明細を元に戻しました（元のIDを保持）'
+  } catch(e) {trashMessage.value='明細の復元に失敗しました：'+e.message}
+  finally {deletedEntryLoading.value=false}
+}
+async function purgeDeletedEntry(item) {
+  if (deletedEntryLoading.value || trashBusy.value) return
+  if (!confirm('明細「'+(item.merchant||item.category)+'」'+yen(item.amount)+'を完全に削除しますか？元に戻せません。')) return
+  deletedEntryLoading.value=true
+  try {
+    await props.api('trash-items/'+encodeURIComponent(item.id)+'/purge',
+      {method:'DELETE',headers:{'x-confirm-purge':String(item.id)}})
+    deletedEntries.value=deletedEntries.value.filter(row=>row.id!==item.id)
+    trashMessage.value='明細を完全に削除しました'
+  } catch(e) {trashMessage.value='明細の完全削除に失敗しました：'+e.message}
+  finally {deletedEntryLoading.value=false}
+}
 const trashedRecurringPlans = ref([])
 const deletedPlanLoading = ref(false)
 const deletedPlanLoaded = ref(false)
@@ -762,14 +806,14 @@ const reviewTrash = computed(() => visibleReviewedTrash(
 // Never report a subtotal while archived plans or transfer notices are still
 // loading. A count becomes authoritative only after every source succeeds.
 const trashCountReady = computed(() => reviewStateReady.value && settingsReady.value && loaded.value && !busy.value &&
-  transferTrashLoaded.value && deletedPlanLoaded.value &&
-  !transferTrashLoading.value && !deletedPlanLoading.value)
+  transferTrashLoaded.value && deletedPlanLoaded.value && deletedEntryLoaded.value &&
+  !transferTrashLoading.value && !deletedPlanLoading.value && !deletedEntryLoading.value)
 const trashCount = computed(() => trashCountReady.value
   ? reviewTrash.value.duplicateGroups.length + reviewTrash.value.recurringExclusions.length +
-    reviewTrash.value.transferReminders.length + trashedRecurringPlans.value.length
+    reviewTrash.value.transferReminders.length + trashedRecurringPlans.value.length + deletedEntries.value.length
   : null)
 const trashCountLoading = computed(() => (reviewStateBusy.value || (!reviewStateReady.value && !reviewStateError.value)) || busy.value || transferTrashLoading.value ||
-  deletedPlanLoading.value || !settingsReady.value || !loaded.value)
+  deletedPlanLoading.value || deletedEntryLoading.value || !settingsReady.value || !loaded.value)
 const duplicateReviewMessage = ref('')
 async function removeReviewedTrashNotice(key) {
   if (!key || !reviewStateReady.value || trashBusy.value || recurringBusy.value ||
@@ -785,11 +829,14 @@ async function removeReviewedTrashNotice(key) {
 }
 async function emptyReviewTrash() {
   if (!reviewStateReady.value || !trashCount.value || trashBusy.value || recurringBusy.value || transferTrashLoading.value ||
-      deletedPlanLoading.value || !transferTrashLoaded.value || !deletedPlanLoaded.value) return
+      deletedPlanLoading.value || deletedEntryLoading.value || !transferTrashLoaded.value || !deletedPlanLoaded.value || !deletedEntryLoaded.value) return
   const count = trashedRecurringPlans.value.length
-  const warning = count
-    ? 'ゴミ箱の' + trashCount.value + '件を消去しますか？削除済みの固定費' + count + '件は設定と除外履歴を完全に削除します。記帳済み明細・SBI資産は残ります。'
-    : 'ゴミ箱の' + trashCount.value + '件を消去しますか？明細・固定費の除外・振替の通知設定は変更しません。'
+  const entryCount=deletedEntries.value.length
+  const warning = entryCount
+    ? 'ゴミ箱の'+trashCount.value+'件を消去しますか？削除済み明細'+entryCount+'件は完全に削除され、復元できません。削除済み固定費'+count+'件も完全削除します。'
+    : count
+      ? 'ゴミ箱の' + trashCount.value + '件を消去しますか？削除済みの固定費' + count + '件は設定と除外履歴を完全に削除します。記帳済み明細・SBI資産は残ります。'
+      : 'ゴミ箱の' + trashCount.value + '件を消去しますか？明細・固定費の除外・振替の通知設定は変更しません。'
   if (!confirm(warning)) return
   trashBusy.value = true
   try {
@@ -809,12 +856,17 @@ async function emptyReviewTrash() {
       trashedRecurringPlans.value = trashedRecurringPlans.value.filter(row => row.id !== item.id)
       recurringExclusions.value = recurringExclusions.value.filter(row => row.planId !== item.id)
     }
-    trashMessage.value = count
-      ? 'ゴミ箱を空にしました（記帳済み明細は保持）'
+    for (const item of [...deletedEntries.value]) {
+      await props.api('trash-items/'+encodeURIComponent(item.id)+'/purge',
+        {method:'DELETE',headers:{'x-confirm-purge':String(item.id)}})
+      deletedEntries.value=deletedEntries.value.filter(row=>row.id!==item.id)
+    }
+    trashMessage.value = (count || entryCount)
+      ? 'ゴミ箱を空にしました（通常の明細は保持）'
       : 'ゴミ箱を空にしました（明細・通知設定は保持）'
   } catch (e) {
     trashMessage.value = 'ゴミ箱の消去を完了できませんでした：' + e.message
-    await loadDeletedPlans()
+    await Promise.allSettled([loadDeletedPlans(),loadDeletedEntries()])
   } finally { trashBusy.value = false }
 }
 async function setDuplicateConfirmation(group, isConfirmed) {
@@ -846,6 +898,7 @@ function onReviewTrashToggle(event) {
   if (!event.currentTarget?.open) return
   void loadTransferTrash()
   void loadDeletedPlans()
+  void loadDeletedEntries()
   // The main ledger already has a five-minute cache. Avoid reloading it on
   // every accordion toggle (which causes another mid-animation count change).
   if (props.active && !busy.value && (ledgerDirty || !loaded.value || !lastLoadedAt.value ||
@@ -1348,6 +1401,15 @@ async function removeCardBill(record) {
         <div v-for="(group,i) in reviewTrash.duplicateGroups" :key="duplicateReviewSignature(group) || i" class="review-trash-item">
           <span class="review-trash-text" :title="group[0].date+' '+group[0].merchant+' '+yen(group[0].amount)">{{group[0].date}} {{group[0].merchant}} · {{yen(group[0].amount)}} · {{group.length}}件</span>
           <ReviewTrashActions :label="group[0].date+' '+group[0].merchant" :disabled="trashBusy || recurringBusy || reviewStateBusy" @restore="setDuplicateConfirmation(group, false)" @remove="removeReviewedTrashNotice(duplicateTrashKey(duplicateReviewSignature(group)))" />
+        </div>
+      </details>
+      <details v-if="deletedEntries.length" class="review-trash-category">
+        <summary>削除した明細 <span>{{deletedEntries.length}}件</span></summary>
+        <p class="review-trash-category-note">元のIDで復元できます。レシート画像は元の端末に残ります。</p>
+        <div v-for="item in deletedEntries" :key="item.id" class="review-trash-item">
+          <span class="review-trash-text" :title="item.date+' '+(item.merchant||item.category)">{{item.date}} · {{item.merchant||item.category}} · {{yen(item.amount)}}</span>
+          <ReviewTrashActions :label="item.merchant||item.category" restore-label="明細を復元" remove-label="明細を完全削除"
+            :disabled="deletedEntryLoading || trashBusy" @restore="restoreDeletedEntry(item)" @remove="purgeDeletedEntry(item)" />
         </div>
       </details>
       <!-- Different effects: one is a deleted whole schedule, the other

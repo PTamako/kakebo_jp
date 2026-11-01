@@ -6,7 +6,7 @@ export function annualExpenseAverageByRecordedMonth(stats, year) {
   const prefix = String(year) + '-'
   for (const row of stats?.byMonth || []) {
     const month = String(row?.month || '')
-    if (month.startsWith(prefix) && /^\d{4}-(0[1-9]|1[0-2])$/.test(month)) monthKeys.add(month)
+    if (month.startsWith(prefix) && /^\d{4}-(0[1-9]|1[0-2])$/.test(month) && Number(row.amount) > 0) monthKeys.add(month)
   }
   const monthCount = monthKeys.size
   // No expense entries: the average has no valid denominator.

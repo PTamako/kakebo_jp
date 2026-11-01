@@ -5,15 +5,17 @@ const read = path => readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const finance = read('src/FinanceTools.vue')
 const icons = read('src/ReviewTrashActions.vue')
 
-test('each of four trash row types exposes both restore and delete icons',()=>{
-  assert.equal((finance.match(/<ReviewTrashActions /g)||[]).length,4)
+test('each of five trash row types exposes both restore and delete icons',()=>{
+  assert.equal((finance.match(/<ReviewTrashActions /g)||[]).length,5)
   for(const action of [
     '@restore="setDuplicateConfirmation(group, false)"',
     '@restore="restoreDeletedPlan(item)"',
+    '@restore="restoreDeletedEntry(item)"',
     '@restore="restoreRecurringExclusion(item)"',
     '@restore="restoreTransferReminder(item)"',
     '@remove="removeReviewedTrashNotice(duplicateTrashKey(duplicateReviewSignature(group)))"',
     '@remove="purgeDeletedPlan(item)"',
+    '@remove="purgeDeletedEntry(item)"',
     '@remove="removeReviewedTrashNotice(recurringTrashKey(item))"',
     '@remove="removeReviewedTrashNotice(transferTrashKey(item))"'
   ]) assert.ok(finance.includes(action), 'missing action: '+action)

@@ -712,7 +712,7 @@ export async function onRequest({ request, env, params }) {
     if (a === 'trash-items') {
       if (m === 'GET' && !b) {
         const {results}=await db.prepare(
-          "SELECT item_id,payload_json,deleted_at FROM trash_items WHERE item_type='entry' ORDER BY deleted_at DESC,item_id DESC LIMIT 500"
+          "SELECT item_id,payload_json,deleted_at FROM trash_items WHERE item_type='entry' ORDER BY deleted_at DESC,item_id DESC LIMIT "+(url.searchParams.get('full') === '1' ? '10000' : '500')
         ).all()
         if (url.searchParams.get('full') === '1') return json(results)
         return json(results.flatMap(item=>{

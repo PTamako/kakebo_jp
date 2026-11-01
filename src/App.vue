@@ -911,21 +911,17 @@ const editSaving = ref(false)
 async function remove(id) {
   const operatedDate = entries.value.find(entry => Number(entry.id) === Number(id))?.date?.slice(0, 10)
   if (pendingEntryIds.value.has(id)) return
-  if (!confirm('この記録を削除しますか？')) return
+  if (!confirm('この記録をゴミ箱に移動しますか？後から復元できます。')) return
   pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
   try {
     await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
     ledgerRevision.value++
-    // Only remove the local receipt after the server confirms deletion.
-    let receiptDeleteWarning = ''
-    try {
-      await deleteReceiptImage(id)
-      receiptImageIds.value = new Set([...receiptImageIds.value].filter(imageId => Number(imageId) !== Number(id)))
-      if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
-    } catch { receiptDeleteWarning = ' 端末内のレシート画像は削除できませんでした。'; receiptSaveError.value = '記録は削除されましたが、端末内のレシート画像を削除できませんでした。' }
+    // Keep the original local receipt image under the same ledger entry ID.
+    // Restoring from trash reuses that ID, so the photo remains retrievable.
+    if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
     preserveOperatedDay.value = operatedDate || ''
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadTransfers()])
-    flash('記録を削除しました' + receiptDeleteWarning)
+    flash('記録をゴミ箱に移動しました（レシート画像も保持）')
   } catch (error) { flash('削除に失敗しました：' + error.message) }
   finally { const next = new Set(pendingEntryIds.value); next.delete(id); pendingEntryIds.value = next }
 }

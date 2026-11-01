@@ -31,7 +31,7 @@ class LedgerDb {
         if (sql.includes('FROM recurring_plans WHERE id=?1') || sql.startsWith('SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans WHERE id=')) {
           const p=db.recurringPlans.get(this.args[0])
           return p && (!sql.includes('NOT EXISTS (SELECT 1 FROM trash_items') || !db.recurringTrash.has(this.args[0]))
-            ? {...p,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0} : null
+            ? {...p,payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0,posting_mode:p.postingMode||'manual',auto_from_month:p.autoFromMonth||'',schedule_type:p.scheduleType||'monthly',weekday:p.weekday??0} : null
         }
         if (sql.startsWith('SELECT start_month FROM recurring_plans WHERE id=')) {
           const p=db.recurringPlans.get(this.args[0]);return p?{start_month:p.startMonth}:null
@@ -73,7 +73,7 @@ class LedgerDb {
           return {results:[...db.recurringPlans.values()]
             .filter(p=>archived ? db.recurringTrash.has(p.id) : activeOnly ? !db.recurringTrash.has(p.id) : true)
             .map(p=>({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,
-              payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0,archived_at:archived?'2026-10-31':undefined}))}
+              payment_source:p.paymentSource,start_month:p.startMonth,enabled:p.enabled?1:0,posting_mode:p.postingMode||'manual',auto_from_month:p.autoFromMonth||'',schedule_type:p.scheduleType||'monthly',weekday:p.weekday??0,archived_at:archived?'2026-10-31':undefined}))}
         }
         if (sql.startsWith('SELECT plan_id,month FROM recurring_candidate_exclusions')) {
           return {results:[...db.recurringExclusions].map(key=>({plan_id:key.slice(0,key.lastIndexOf(':')),month:key.slice(key.lastIndexOf(':')+1)}))}
@@ -97,8 +97,8 @@ class LedgerDb {
           return {meta:{changes:changed}}
         }
         if (sql.startsWith('INSERT OR IGNORE INTO recurring_plans')) {
-          const [id,name,amount,day,category,paymentSource,startMonth,enabled]=this.args
-          if (!db.recurringPlans.has(id)) {db.recurringPlans.set(id,{id,name,amount,day,category,paymentSource,startMonth,enabled:!!enabled}); return {meta:{changes:1}}}
+          const [id,name,amount,day,category,paymentSource,startMonth,enabled,postingMode,autoFromMonth,scheduleType,weekday]=this.args
+          if (!db.recurringPlans.has(id)) {db.recurringPlans.set(id,{id,name,amount,day,category,paymentSource,startMonth,enabled:!!enabled,postingMode:postingMode||'manual',autoFromMonth:autoFromMonth||'',scheduleType:scheduleType||'monthly',weekday:weekday??0}); return {meta:{changes:1}}}
           return {meta:{changes:0}}
         }
         if (sql.startsWith('INSERT OR IGNORE INTO recurring_candidate_exclusions')) {
@@ -127,6 +127,13 @@ class LedgerDb {
         }
         if (sql.startsWith('DELETE FROM card_bills')) {
           db.cardBills.delete(this.args[0]+'|'+this.args[1]); return {meta:{changes:1}}
+        }
+        if (sql.startsWith('UPDATE recurring_plans SET name=')) {
+          const [name,amount,day,category,paymentSource,startMonth,enabled,postingMode,autoFromMonth,scheduleType,weekday,id]=this.args
+          const plan=db.recurringPlans.get(id)
+          if (!plan || db.recurringTrash.has(id)) return {meta:{changes:0}}
+          db.recurringPlans.set(id,{id,name,amount,day,category,paymentSource,startMonth,enabled:!!enabled,postingMode,autoFromMonth,scheduleType,weekday})
+          return {meta:{changes:1}}
         }
         if (sql.startsWith('UPDATE recurring_plans SET payment_source=')) {
           for (const plan of db.recurringPlans.values()) if(plan.paymentSource===this.args[1]) plan.paymentSource=this.args[0]
@@ -161,8 +168,9 @@ class LedgerDb {
           db.attempts.set(this.args[0], prior && prior.reset_at > this.args[2] ? { attempts: prior.attempts + 1, reset_at: prior.reset_at } : { attempts: 1, reset_at: this.args[1] })
         }
         if (sql.startsWith('INSERT INTO entries') && sql.includes('WHERE NOT EXISTS')) {
-          const [date,amount,category,merchant,requestId,paymentSource]=this.args
-          const existing=db.entries.some(e=>String(e.date).slice(0,7)===String(date).slice(0,7) && e.merchant===merchant &&
+          const weekly=sql.includes('e.date=?1')
+          const [date,requestId,planId,merchant,amount,day,weekday,month,scheduleType,category,paymentSource]=this.args
+          const existing=db.entries.some(e=>(weekly?String(e.date)===String(date):String(e.date).slice(0,7)===String(date).slice(0,7)) && e.merchant===merchant &&
             (e.payment_source||'')===paymentSource && e.type==='expense')
           if(existing||db.entries.some(e=>e.client_request_id===requestId))return {meta:{changes:0}}
           db.entries.push({id:db.nextId++,date,amount,category,merchant,type:'expense',payment_source:paymentSource,client_request_id:requestId})

@@ -60,6 +60,7 @@ test('migration preserves every existing plan and defaults old plans to manual',
 
 test('automatic start month prevents retroactive posting for old plans',()=>{
   assert.equal(nextAutomaticStartMonth('2026-11-02',27,'2026-07'),'2026-11')
+  assert.equal(nextAutomaticStartMonth('2026-11-27',27,'2026-07'),'2026-12')
   assert.equal(nextAutomaticStartMonth('2026-11-28',27,'2026-07'),'2026-12')
   assert.equal(nextAutomaticStartMonth('2026-12-30',27,'2026-07'),'2027-01')
   assert.equal(nextAutomaticStartMonth('2026-11-02',27,'2027-02'),'2027-02')

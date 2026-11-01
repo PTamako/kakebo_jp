@@ -12,7 +12,7 @@ const approvedPost = (plan, month = '2026-10') => ({
 // A minimal D1-compatible double. These tests exercise HTTP handlers, retries,
 // scheduled transfers, and the separation of valuation and deposited principal.
 class LedgerDb {
-  constructor() { this.entries = []; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.recurringPlans = new Map(); this.recurringTrash = new Set(); this.recurringExclusions = new Set(); this.cardBills = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
+  constructor() { this.entries = []; this.nextId = 1; this.sql = []; this.seeded = true; this.rules = []; this.customRules = []; this.paymentSources = new Set(); this.paymentClosingDays = new Map(); this.recurringPlans = new Map(); this.recurringTrash = new Set(); this.recurringExclusions = new Set(); this.recurringDateExclusions = new Set(); this.cardBills = new Map(); this.financeSettings = new Map(); this.icons = []; this.sessions = new Map(); this.attempts = new Map() }
   async batch(statements) { const results=[]; for (const statement of statements) results.push(await statement.run()); return results }
   prepare(sql) {
     const db = this
@@ -38,6 +38,9 @@ class LedgerDb {
         }
         if (sql.startsWith('SELECT 1 FROM recurring_candidate_exclusions')) {
           return db.recurringExclusions.has(this.args[0]+':'+this.args[1])?{found:1}:null
+        }
+        if (sql.startsWith('SELECT 1 FROM recurring_date_exclusions')) {
+          return db.recurringDateExclusions.has(this.args[0]+':'+this.args[1])?{found:1}:null
         }
         if (sql.startsWith('SELECT id FROM entries WHERE client_request_id=')) return db.entries.find(e=>e.client_request_id===this.args[0])||null
         if (sql.startsWith('SELECT id FROM recurring_plans WHERE payment_source=')) {
@@ -167,12 +170,12 @@ class LedgerDb {
           const prior = db.attempts.get(this.args[0])
           db.attempts.set(this.args[0], prior && prior.reset_at > this.args[2] ? { attempts: prior.attempts + 1, reset_at: prior.reset_at } : { attempts: 1, reset_at: this.args[1] })
         }
-        if (sql.startsWith('INSERT INTO entries') && sql.includes('WHERE NOT EXISTS')) {
+        if (sql.startsWith('INSERT INTO entries') && sql.includes('FROM recurring_plans p')) {
           const weekly=sql.includes('e.date=?1')
           const [date,requestId,planId,merchant,amount,day,weekday,month,scheduleType,category,paymentSource]=this.args
           const existing=db.entries.some(e=>(weekly?String(e.date)===String(date):String(e.date).slice(0,7)===String(date).slice(0,7)) && e.merchant===merchant &&
             (e.payment_source||'')===paymentSource && e.type==='expense')
-          if(existing||db.entries.some(e=>e.client_request_id===requestId))return {meta:{changes:0}}
+          if(existing||db.recurringExclusions.has(planId+':'+month)||db.recurringDateExclusions.has(planId+':'+date)||db.recurringTrash.has(planId)||db.entries.some(e=>e.client_request_id===requestId))return {meta:{changes:0}}
           db.entries.push({id:db.nextId++,date,amount,category,merchant,type:'expense',payment_source:paymentSource,client_request_id:requestId})
           return {meta:{changes:1}}
         }
@@ -439,16 +442,16 @@ test('normalized D1 plans preserve IDs and allow deleting only a schedule', asyn
   db.entries.push({id:1,amount:101500,client_request_id:'recurring_2a23e8e5d6214e2bb858460b52407ca2_202610'})
   const first=await call(db,'recurring-plans')
   assert.equal(first.status,200)
-  assert.deepEqual(first.body,[p])
+  assert.deepEqual(first.body,[{...p,postingMode:'manual',autoFromMonth:'',scheduleType:'monthly',weekday:0}])
   const again=await call(db,'recurring-plans')
-  assert.deepEqual(again.body,[p])
+  assert.deepEqual(again.body,[{...p,postingMode:'manual',autoFromMonth:'',scheduleType:'monthly',weekday:0}])
   assert.equal((await call(db,'recurring-plans/'+p.id,'DELETE')).status,200)
   assert.deepEqual((await call(db,'recurring-plans')).body,[])
   assert.equal(db.recurringPlans.has(p.id),true,'plan is archived, not hard-deleted')
   assert.equal(db.recurringTrash.has(p.id),true)
   assert.equal((await call(db,'recurring-plans?trash=1')).body.length,1)
   assert.equal((await call(db,'recurring-plans/'+p.id+'/restore','POST')).status,200)
-  assert.deepEqual((await call(db,'recurring-plans')).body,[p])
+  assert.deepEqual((await call(db,'recurring-plans')).body,[{...p,postingMode:'manual',autoFromMonth:'',scheduleType:'monthly',weekday:0}])
   assert.equal(db.recurringTrash.has(p.id),false)
   assert.equal(db.entries.length,1)
   assert.equal(db.sql.some(sql=>sql.includes('finance_settings')),false)

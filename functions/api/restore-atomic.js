@@ -127,8 +127,8 @@ export async function restoreAtomic(db, archive) {
     if(e)add("INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) SELECT id,?1 FROM entries WHERE client_request_id=?2 AND type='transfer' AND transfer_target='sbi'",
       link.purchase_month,e.clientRequestId)
   }
-  for(const plan of archive.plans||[])add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)',
-    plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0,plan.postingMode||'manual',plan.postingMode==='auto'?(plan.autoFromMonth||''):'')
+  for(const plan of archive.plans||[])add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)',
+    plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0,plan.postingMode||'manual',plan.postingMode==='auto'?(plan.autoFromMonth||''):'',plan.scheduleType||'monthly',plan.weekday??0)
   // A deleted schedule is a recoverable archive, not an active recurrence.
   // Never archive a schedule that already exists in the destination database:
   // existing records always win during restore.
@@ -138,8 +138,8 @@ export async function restoreAtomic(db, archive) {
     // the same restore batch (or one already present in the destination).
     if(incomingActivePlanIds.has(plan.id) ||
        await db.prepare('SELECT 1 FROM recurring_plans WHERE id=?1').bind(plan.id).first()) continue
-    add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)',
-      plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0,plan.postingMode||'manual',plan.postingMode==='auto'?(plan.autoFromMonth||''):'')
+    add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)',
+      plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0,plan.postingMode||'manual',plan.postingMode==='auto'?(plan.autoFromMonth||''):'',plan.scheduleType||'monthly',plan.weekday??0)
     add("INSERT OR IGNORE INTO trash_items(item_type,item_id) SELECT 'recurring_plan',?1 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)",plan.id)
   }
   // Restore archived entries only as trash snapshots. Never make a deleted
@@ -161,6 +161,9 @@ export async function restoreAtomic(db, archive) {
   for(const item of archive.recurringExclusions||[])
     add('INSERT OR IGNORE INTO recurring_candidate_exclusions(plan_id,month) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)',
       item.planId,item.month)
+  for(const item of archive.recurringDateExclusions||[])
+    add('INSERT OR IGNORE INTO recurring_date_exclusions(plan_id,date) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)',
+      item.planId,item.date)
   if(!statements.length) return {ok:true,created:0,settings:0,skipped:0}
   const result=await db.batch(statements)
   if(!Array.isArray(result)||result.length!==statements.length||result.some(r=>r?.success===false))

@@ -6,9 +6,15 @@ const kanjiMonths = { 一:1, 二:2, 三:3, 四:4, 五:5, 六:6, 七:7, 八:8, �
 const monthValue = text => kanjiMonths[text] ?? Number(text)
 const monthToken = '(?:1[0-2]|0?[1-9]|十[一二]?|[一二三四五六七八九])'
 const pad = n => String(n).padStart(2, '0')
+// 「今」 is an explicit timestamp, resolved once against the recognition instant in JST.
+const nowInTokyo = instant => {
+  const iso = new Date(instant.getTime() + 9 * 60 * 60 * 1000).toISOString()
+  return {date:iso.slice(0,10),time:iso.slice(11,19)}
+}
 const dateString = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
 
 function singleDate(text, now) {
+  if (text === '今') return nowInTokyo(now).date
   let match, year, month, day
   const monthDay = new RegExp(`^(?:(20\\d{2})\\s*年\\s*)?(${monthToken})\\s*月\\s*(\\d{1,2})\\s*日?$`)
   if ((match = text.match(monthDay))) {
@@ -59,7 +65,7 @@ function splitFlexibleInlineNamedExpense(line) {
     String.raw`${month}\s*\d{1,2}\s*日?`,
     String.raw`20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}`,
     String.raw`\d{1,2}/\d{1,2}`,
-    String.raw`今日|昨日|一昨日`
+    String.raw`今日|昨日|一昨日|(?<!\S)今(?!\S)`
   ]
   const datePattern = new RegExp(String.raw`(?<![\d一二三四五六七八九十])(?:${dates.join('|')})`,'g')
   const dateHits=[...line.matchAll(datePattern)]
@@ -86,7 +92,7 @@ export function parseNamedExpenseBlocks(raw, now = new Date()) {
   // written until the user reviews and saves the resulting drafts.
   lines=lines.flatMap(line=>splitInlineNamedExpense(line)||[line])
   if(lines.length<2)return null
-  const dateHint=/(?:毎週|每周|每週|[0-9一二三四五六七八九十]月|^\d{1,4}[\/.-]|^(?:今日|昨日|一昨日)$)/
+  const dateHint=/(?:毎週|每周|每週|[0-9一二三四五六七八九十]月|^\d{1,4}[\/.-]|^(?:今日|昨日|一昨日|今)$)/
   if(!lines.some(line=>dateHint.test(line)))return null
   if(lines.length%3!==0)return {error:'名称・日付・金額を3行ずつ入力してください'}
   if(lines.length/3>30)return {error:'一度に読み取れる記録は30組までです'}
@@ -106,9 +112,10 @@ export function parseNamedExpenseBlocks(raw, now = new Date()) {
     const expanded=parseRepeatedExpense(when+' '+price,now)
     const dates=expanded?.map(row=>row.date) ?? (singleDate(when,now) ? [singleDate(when,now)] : null)
     if(!dates)return {error:`${i/3+1}組目の日付を確認してください`}
+    const nowClock = when === '今' ? nowInTokyo(now).time : ''
     for(const date of dates){
       rows.push({
-        date,time:'',amount,type:'expense',merchant:name,category:'日用品',
+        date,time:nowClock,amount,type:'expense',merchant:name,category:'日用品',
         note:expanded ? expanded[0].note : '',raw:[name,when,price].join('\n'),
         suggested:'日用品',keyword:''
       })

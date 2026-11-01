@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { isJapanHoliday } from '../src/japan-holidays.js'
-import { japanTodayKey, spendingAveragesByDayType } from '../src/spending-day-type.js'
+import { japanTodayKey, spendingAveragesByDayType, spendingAverageOnExpenseDays } from '../src/spending-day-type.js'
 
 test('2026 Cabinet Office dates include weekends, substitute holidays and citizens\' holidays', () => {
   for (const date of ['2026-11-01', '2026-11-03', '2026-11-23', '2026-05-06', '2026-09-22']) {
@@ -32,51 +32,74 @@ test('Tokyo date conversion is independent of the UTC day', () => {
   assert.equal(japanTodayKey(new Date('2026-11-01T14:59:00Z')), '2026-11-01')
 })
 
-test('monthly average counts only days with recorded positive expenses, not zero-spend days or future dates', () => {
-  const result = spendingAveragesByDayType(
-    [{ date: '2026-11-01', amount: 3000 }, { date: '2026-11-02', amount: 1000 },
-      { date: '2026-11-03', amount: 500 }, { date: '2026-11-08', amount: 9999 }],
-    '2026-11-01', '2026-11-30', '2026-11-04',
-  )
-  assert.deepEqual(result.weekday, { total: 1000, days: 1, average: 1000 })
+test('month: weekday/holiday average includes elapsed zero-spend days but excludes future ones', () => {
+  const rows = [{ date: '2026-11-01', amount: 3000 }, { date: '2026-11-02', amount: 1000 },
+    { date: '2026-11-03', amount: 500 }, { date: '2026-11-08', amount: 9999 }]
+  const result = spendingAveragesByDayType(rows, '2026-11-01', '2026-11-30', '2026-11-04')
+  assert.deepEqual(result.weekday, { total: 1000, days: 2, average: 500 })
   assert.deepEqual(result.holiday, { total: 3500, days: 2, average: 1750 })
+  assert.deepEqual(spendingAverageOnExpenseDays(rows, '2026-11-01', '2026-11-30', '2026-11-04'),
+    { total: 4500, days: 3, average: 1500 })
 })
 
-test('days with no expense records do not count; no valid days displays no average', () => {
-  const onlySunday = spendingAveragesByDayType([], '2026-11-01', '2026-11-30', '2026-11-01')
-  assert.deepEqual(onlySunday.weekday, { total: 0, days: 0, average: null })
-  assert.deepEqual(onlySunday.holiday, { total: 0, days: 0, average: null })
-  const future = spendingAveragesByDayType([], '2026-12-01', '2026-12-31', '2026-11-01')
+test('month with no expense history shows no misleading average', () => {
+  const month = spendingAveragesByDayType([], '2026-11-01', '2026-11-30', '2026-11-10')
+  assert.deepEqual(month.weekday, { total: 0, days: 0, average: null })
+  assert.deepEqual(month.holiday, { total: 0, days: 0, average: null })
+  assert.deepEqual(spendingAverageOnExpenseDays([], '2026-11-01', '2026-11-30', '2026-11-10'),
+    { total: 0, days: 0, average: null })
+  const future = spendingAveragesByDayType([{ date: '2026-12-03', amount: 400 }],
+    '2026-12-01', '2026-12-31', '2026-11-10')
   assert.equal(future.weekday.average, null)
   assert.equal(future.holiday.average, null)
 })
 
-test('annual average counts spending days only, keeping holiday classification and excluding future transfers', () => {
-  // The stats API supplies expense-only byDay rows; prepaid top-ups are transfers.
-  const result = spendingAveragesByDayType(
-    [{ date: '2026-01-02', amount: 100 }, { date: '2026-11-01', amount: 500 },
-      { date: '2026-11-25', amount: 100000 }],
-    '2026-01-01', '2026-12-31', '2026-11-01',
-  )
-  assert.deepEqual(result.weekday, { total: 100, days: 1, average: 100 })
-  assert.deepEqual(result.holiday, { total: 500, days: 1, average: 500 })
+test('year: entirely unrecorded months excluded, recorded months include zero-spend days', () => {
+  const rows = [{ date: '2026-01-02', amount: 100 }, { date: '2026-05-04', amount: 500 },
+    { date: '2026-11-25', amount: 9999 }]
+  const result = spendingAveragesByDayType(rows,
+    '2026-01-01', '2026-12-31', '2026-05-31', { recordedMonthsOnly: true })
+  assert.equal(result.weekday.days + result.holiday.days, 62) // January and May
+  assert.equal(result.weekday.total + result.holiday.total, 600)
 })
 
-test('multiple purchases on the same date count as one valid day; non-positive totals are excluded', () => {
-  const result = spendingAveragesByDayType([
-    { date: '2026-11-02', amount: 250 },
-    { date: '2026-11-02', amount: 750 },
-    { date: '2026-11-04', amount: 0 },
-    { date: '2026-11-05', amount: -80 },
-  ], '2026-11-01', '2026-11-30', '2026-11-10')
-  assert.deepEqual(result.weekday, { total: 1000, days: 1, average: 1000 })
-  assert.deepEqual(result.holiday, { total: 0, days: 0, average: null })
+test('year through May includes 151 days when every January-May month has spending', () => {
+  const rows = ['2026-01-05','2026-02-05','2026-03-05','2026-04-05','2026-05-05']
+    .map(date => ({ date, amount: 100 }))
+  const result = spendingAveragesByDayType(rows,
+    '2026-01-01', '2026-12-31', '2026-05-31', { recordedMonthsOnly: true })
+  assert.equal(result.weekday.days + result.holiday.days, 151)
+  assert.equal(result.weekday.total + result.holiday.total, 500)
 })
 
-test('February 29 is a valid day when it has spending', () => {
-  const result = spendingAveragesByDayType([
-    { date: '2024-02-29', amount: 2200 },
-  ], '2024-02-01', '2024-02-29', '2026-11-01')
-  assert.deepEqual(result.weekday, { total: 2200, days: 1, average: 2200 })
-  assert.equal(isJapanHoliday('2024-02-12'), true)
+test('year through May 10 counts May 1-10, not full May or full year', () => {
+  const rows = [{ date:'2026-01-05',amount:300 },{ date:'2026-05-10',amount:600 }]
+  const r = spendingAveragesByDayType(rows,
+    '2026-01-01', '2026-12-31', '2026-05-10', { recordedMonthsOnly: true })
+  assert.equal(r.weekday.days + r.holiday.days, 41)
+  assert.equal(r.weekday.total + r.holiday.total, 900)
+})
+
+test('year: an unrecorded current month contributes no days', () => {
+  const r = spendingAveragesByDayType([{ date:'2026-01-05',amount:300 }],
+    '2026-01-01', '2026-12-31', '2026-05-10', { recordedMonthsOnly:true })
+  assert.equal(r.weekday.days + r.holiday.days, 31)
+})
+
+test('spend-day average deduplicates multiple expenses on the same day and ignores zero/negative totals', () => {
+  const rows = [{ date:'2026-11-02',amount:250 },{ date:'2026-11-02',amount:750 },
+    { date:'2026-11-04',amount:0 },{ date:'2026-11-05',amount:-80 }]
+  const r = spendingAverageOnExpenseDays(rows,'2026-11-01','2026-11-30','2026-11-10')
+  assert.deepEqual(r,{total:1000,days:1,average:1000})
+  const calendar = spendingAveragesByDayType(rows,'2026-11-01','2026-11-30','2026-11-10')
+  assert.equal(calendar.weekday.days + calendar.holiday.days,10)
+  assert.equal(calendar.weekday.total + calendar.holiday.total,920)
+})
+
+test('leap year includes February 29 in the monthly calendar denominator', () => {
+  const rows = [{date:'2024-02-29',amount:2200}]
+  const r = spendingAveragesByDayType(rows,'2024-02-01','2024-02-29','2026-11-01')
+  assert.equal(r.weekday.days+r.holiday.days,29)
+  assert.equal(r.weekday.total+r.holiday.total,2200)
+  assert.equal(isJapanHoliday('2024-02-12'),true)
 })

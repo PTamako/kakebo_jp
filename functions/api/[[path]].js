@@ -445,8 +445,8 @@ export async function onRequest({ request, env, params }) {
       const statements=[
         'SELECT * FROM entries ORDER BY id',
         recurringArchiveReady
-          ? `SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id`
-          : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled FROM recurring_plans ORDER BY id',
+          ? `SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id`
+          : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         
         "SELECT " + (await prepaidSchemaReady(db)
@@ -466,7 +466,7 @@ export async function onRequest({ request, env, params }) {
           'SELECT entry_id,purchase_month FROM sbi_transfer_links ORDER BY entry_id'
         ] : []),
         'SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY plan_id,month',
-        ...(recurringArchiveReady ? [`SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled
+        ...(recurringArchiveReady ? [`SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,p.posting_mode,p.auto_from_month
           FROM recurring_plans p JOIN trash_items t ON t.item_type='recurring_plan' AND t.item_id=p.id ORDER BY p.id`,
           "SELECT item_id,payload_json,deleted_at FROM trash_items WHERE item_type='entry' ORDER BY item_id"] : [])
       ].map(sql=>db.prepare(sql))
@@ -475,7 +475,7 @@ export async function onRequest({ request, env, params }) {
       return json({
         format:'kakeibo-ledger-backup',version:portfolioReady ? 4 : 3,exportedAt:new Date().toISOString(),
         entries:rows(0),
-        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled})),
+        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled,postingMode:x.posting_mode||'manual',autoFromMonth:x.auto_from_month||''})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
         paymentSources:rows(3),merchantPaymentRules:rows(4),
         customRules:rows(5).map(rule=>({...rule,is_custom:true})),
@@ -485,7 +485,7 @@ export async function onRequest({ request, env, params }) {
         dismissedTransfers:rows(8).map(x=>x.entry_id),
         recurringExclusions:rows(portfolioReady ? 14 : 9).map(x=>({planId:x.plan_id,month:x.month})),
         archivedPlans:recurringArchiveReady ? rows(portfolioReady ? 15 : 10).map(p=>({
-          id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled
+          id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled,postingMode:p.posting_mode||'manual',autoFromMonth:p.auto_from_month||''
         })) : [],
         trashedEntries:recurringArchiveReady ? rows(portfolioReady ? 16 : 11) : [],
         ...(portfolioReady ? {investmentPlans:rows(9),investmentPlanHistory:rows(10),

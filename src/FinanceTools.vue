@@ -518,7 +518,7 @@ async function downloadBackup(){
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
       entries:snapshot,plans:nextPlans,bills:nextBills,
-      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,recurringExclusions:recurringExclusionsBackup,archivedPlans:archivedPlansBackup.map(({archivedAt,...p})=>p),trashedEntries:trashedEntriesBackup,...portfolio
+      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,recurringExclusions:recurringExclusionsBackup.filter(row=>!row.date),recurringDateExclusions:recurringExclusionsBackup.filter(row=>!!row.date).map(row=>({planId:row.planId,date:row.date})),archivedPlans:archivedPlansBackup.map(({archivedAt,...p})=>p),trashedEntries:trashedEntriesBackup,...portfolio
     })
     const sealed = await sealBackup(data)
     const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))

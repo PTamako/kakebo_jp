@@ -3,15 +3,15 @@
 const KEY = 'kakeibo-reviewed-trash-v1'
 const validKey = value => typeof value === 'string' &&
   (/^d:v1:[0-9a-f]{16}$/.test(value) ||
-   /^r:[A-Za-z0-9_-]{1,80}:\d{4}-(0[1-9]|1[0-2])$/.test(value) ||
+   /^r:[A-Za-z0-9_-]{1,80}:\d{4}-(0[1-9]|1[0-2])(?:-(0[1-9]|[12]\d|3[01]))?$/.test(value) ||
    /^t:[1-9]\d{0,14}$/.test(value))
 
 export const duplicateTrashKey = signature =>
   /^v1:[0-9a-f]{16}$/.test(String(signature || '')) ? 'd:' + signature : ''
 
 export const recurringTrashKey = row => {
-  const id = String(row?.planId || ''), month = String(row?.month || '')
-  return validKey('r:' + id + ':' + month) ? 'r:' + id + ':' + month : ''
+  const id=String(row?.planId||''),period=String(row?.date||row?.month||'')
+  return validKey('r:'+id+':'+period) ? 'r:'+id+':'+period : ''
 }
 
 export const transferTrashKey = row => {

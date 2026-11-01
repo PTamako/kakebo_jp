@@ -1584,6 +1584,24 @@ async function removeCardBill(record) {
 .recurring-candidate-list{display:grid;gap:5px;max-height:240px;overflow-y:auto;overscroll-behavior:contain;min-width:0;padding-right:3px}
 @media(max-width:360px){.recurring-list-filters{grid-template-columns:minmax(0,1fr) 92px;gap:5px}.recurring-list-summary{padding:10px}.recurring-plan-meta{font-size:10px}}
 
+/* Fixed expense form: the same readable hierarchy on iPhone and iPad. */
+.recurring-manager-panel .recurring-form-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin:12px 0 16px}
+.recurring-manager-panel .recurring-form-field{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:100%;font-size:12px;font-weight:700;color:var(--muted);box-sizing:border-box}
+.recurring-manager-panel .recurring-form-field>span:first-child{font-size:12px;font-weight:700;color:var(--muted)}
+.recurring-manager-panel .recurring-form-field input,.recurring-manager-panel .recurring-form-field select{max-width:100%;min-width:0;box-sizing:border-box;font-size:16px;min-height:44px}
+.recurring-manager-panel .recurring-day-picker{display:flex;align-items:center;gap:12px;min-height:44px;color:var(--ink)}
+.recurring-manager-panel .recurring-day-picker select{flex:1;max-width:100%;min-width:0}
+.recurring-manager-panel .recurring-start-month{width:100%}
+.recurring-manager-panel .recurring-start-month input[type=month]{width:100%;max-width:100%;min-width:0;box-sizing:border-box;min-height:44px}
+.recurring-manager-panel .recurring-posting-mode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:6px 0 0;padding:0;border:0;min-width:0}
+.recurring-manager-panel .recurring-posting-mode legend{font-size:12px;font-weight:700;margin-bottom:8px;color:var(--muted)}
+.recurring-manager-panel .recurring-posting-mode label{display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:12px;min-height:48px;padding:8px;box-sizing:border-box;min-width:0;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;overflow-wrap:anywhere}
+.recurring-manager-panel .recurring-posting-mode label.selected{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 9%,var(--card))}
+.recurring-manager-panel .recurring-posting-mode input[type=radio]{appearance:auto;flex:none;accent-color:var(--blue);width:17px;height:17px;margin:0}
+.recurring-manager-panel .recurring-posting-hint{margin:9px 0 14px;font-size:12px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}
+@media(min-width:680px){.recurring-manager-panel .recurring-form-layout{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px;row-gap:14px}.recurring-manager-panel .recurring-posting-mode{max-width:500px}}
+@media(max-width:355px){.recurring-manager-panel .recurring-posting-mode{grid-template-columns:1fr}.recurring-manager-panel .recurring-posting-mode label{min-height:40px}}
+
 /* Fixed expenses: iPhone-first form, review cards and stable disclosure headers. */
 .recurring-manager-panel{min-width:0;max-width:100%;box-sizing:border-box}
 .recurring-manager-panel .recurring-name-amount,

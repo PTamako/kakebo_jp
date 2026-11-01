@@ -1237,9 +1237,20 @@ async function removeCardBill(record) {
   </details>
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>
-    <div class="finance-inputs recurring-name-amount"><input v-model="plan.name" placeholder="名称" aria-label="固定費名"><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
-    <div class="finance-inputs recurring-details"><label>毎月の記帳日<select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></label><label>カテゴリ<select v-model="plan.category" aria-label="固定費カテゴリ"><option value="">選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label><label>支払方法・カード<select v-model="plan.paymentSource" aria-label="固定費支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label></div>
-    <label class="recurring-start-month">適用開始月<input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>
+    <div class="recurring-form-layout">
+      <label class="recurring-form-field recurring-form-name"><span>名称</span><input v-model="plan.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120" /></label>
+      <div class="recurring-form-field recurring-form-amount"><span>金額</span><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
+      <label class="recurring-form-field"><span>周期</span><span class="recurring-day-picker"><span>毎月</span><select v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select></span></label>
+      <label class="recurring-form-field"><span>カテゴリ</span><select v-model="plan.category" aria-label="固定費カテゴリ"><option value="">選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label>
+      <label class="recurring-form-field"><span>支払方法</span><select v-model="plan.paymentSource" aria-label="固定費支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label>
+      <label class="recurring-form-field recurring-start-month"><span>開始月</span><input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>
+    </div>
+    <fieldset class="recurring-posting-mode">
+      <legend>記帳方法</legend>
+      <label :class="{selected:plan.postingMode==='auto'}"><input v-model="plan.postingMode" type="radio" value="auto" name="recurring-posting-mode" /><span>自動記帳</span></label>
+      <label :class="{selected:plan.postingMode==='manual'}"><input v-model="plan.postingMode" type="radio" value="manual" name="recurring-posting-mode" /><span>確認して記帳</span></label>
+    </fieldset>
+    <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? '毎月'+plan.day+'日になると、自動で支出明細に登録します。' : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <p class="recurring-window-note">開始月から未記帳分を確認</p>
@@ -1289,6 +1300,7 @@ async function removeCardBill(record) {
                 <span class="recurring-plan-meta-item">毎月{{p.day}}日</span>
                 <span class="recurring-plan-meta-item recurring-payment-source" :title="p.paymentSource || '未設定'">{{p.paymentSource || '未設定'}}</span>
                 <span class="recurring-plan-meta-item">開始 {{p.startMonth?.replace('-', '/') || '未設定'}}</span>
+                <span class="recurring-plan-meta-item">{{p.postingMode==='auto' ? '自動記帳' : '確認して記帳'}}</span>
                 <span class="recurring-plan-meta-item">{{p.enabled ? '次回 '+nextScheduledDate(p.day,new Date(),p.startMonth,true).slice(5).replace('-','/') : '停止中'}}</span>
               </span>
             </button>

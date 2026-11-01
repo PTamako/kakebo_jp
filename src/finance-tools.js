@@ -143,7 +143,8 @@ export function validateBackup(value) {
     isText(x.category) && typeof x.paymentSource === 'string' && x.paymentSource.length <= 80 &&
     month(x.startMonth) && typeof x.enabled === 'boolean' &&
     (x.postingMode == null || ['manual','auto'].includes(x.postingMode)) &&
-    (x.autoFromMonth == null || x.autoFromMonth === '' || month(x.autoFromMonth))
+    (x.autoFromMonth == null || x.autoFromMonth === '' || month(x.autoFromMonth)) &&
+    (x.postingMode !== 'auto' || month(x.autoFromMonth))
   const validExclusion = x => x && typeof x.planId==='string' &&
     /^[a-zA-Z0-9-]{8,80}$/.test(x.planId) && month(x.month)
   const validBill = x => x && isText(x.name,80) && month(x.month) &&

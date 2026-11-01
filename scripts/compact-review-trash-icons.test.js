@@ -26,7 +26,7 @@ test('each of five trash row types exposes both restore and delete icons',()=>{
   assert.equal((icons.match(/<svg aria-hidden="true"/g)||[]).length,2)
   assert.match(finance,/remove-label="固定費設定を完全削除"/)
   assert.match(finance,/remove-label="確認済み一覧から削除"/)
-  assert.match(finance,/restore-label="その月の記帳候補を再表示"/)
+  assert.match(finance,/restore-label="対象の記帳候補を再表示"/)
 })
 
 test('one-line compact rows truncate text and preserve accessible 44px tap targets',()=>{

@@ -6,7 +6,10 @@ const source = readFileSync(new URL('../src/FinanceTools.vue', import.meta.url),
 const fixed = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">([\s\S]*?)\n  <\/article>/)?.[1] || ''
 
 test('iPhone effective-month input stays within its own grid cell', () => {
-  assert.match(fixed, /<label class="recurring-start-month">適用開始月<input v-model="plan.startMonth" type="month"/)
+  assert.match(fixed, /class="recurring-form-field recurring-start-month"><span>開始月<\/span><input v-model="plan.startMonth" type="month"/)
+  assert.match(source, /\.recurring-manager-panel \.recurring-form-layout\{display:grid;grid-template-columns:minmax\(0,1fr\)/)
+  assert.match(fixed, /v-model="plan.postingMode" type="radio" value="auto"/)
+  assert.match(fixed, /v-model="plan.postingMode" type="radio" value="manual"/)
   assert.match(source, /\.recurring-manager-panel \.recurring-start-month\{[^}]*grid-template-columns:minmax\(0,1fr\)[^}]*overflow:hidden/)
   assert.match(source, /\.finance-panel \.recurring-start-month input\[type=month\]\{[^}]*width:100%!important;max-width:100%!important;min-width:0!important;min-inline-size:0!important;box-sizing:border-box!important/)
   assert.match(source, /::-webkit-date-and-time-value\{min-width:0/)
@@ -35,7 +38,7 @@ test('registered-plan disclosure reserves right-hand chevron and keeps amount an
   assert.match(fixed, /class="recurring-plan-name"/)
   assert.match(fixed, /class="recurring-plan-amount"/)
   assert.match(fixed, /class="recurring-plan-chevron"/)
-  assert.match(fixed, /class="recurring-plan-meta-item">毎月\{\{p.day\}\}日/)
+  assert.match(fixed, /class="recurring-plan-meta-item">\{\{recurringFrequencyLabel\(p\)\}\}/)
   assert.match(fixed, /class="recurring-plan-meta-item">開始 \{\{p.startMonth/)
   assert.match(source, /\.recurring-plan-meta\{grid-column:1\/-1;grid-row:2;display:flex;flex-wrap:wrap/)
   assert.match(source, /\.recurring-plan-meta-item\{[^}]*white-space:nowrap/)

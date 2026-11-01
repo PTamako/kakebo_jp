@@ -35,7 +35,7 @@ test('unsaved draft actions are compact, low emphasis and cannot touch saved ent
 test('fixed-expense list stays collapsed and height-bounded with actionable compact entries',()=>{
   assert.match(finance,/<details class="recurring-list-disclosure">/)
   assert.match(finance, /登録済みの固定費 <strong>\{\{plans\.length\}\}件<\/strong>/)
-  assert.match(finance, /月額 \{\{yen\(recurringMonthlyTotal\)\}\}/)
+  assert.match(finance, /今月予定額 \{\{yen\(recurringMonthlyTotal\)\}\}/)
   assert.match(finance, /v-model="recurringListQuery"/)
   assert.match(finance, /v-model="recurringListFilter"/)
   assert.match(finance, /v-for="p in filteredRecurringPlans"/)

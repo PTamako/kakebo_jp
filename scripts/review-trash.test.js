@@ -101,6 +101,7 @@ test('recurring exclusion and duplicate confirmation remain active after trash i
   assert.deepEqual(hidden.transferReminders,[])
   assert.ok(finance.includes('recurringExclusions.value='))
   assert.ok(api.includes("SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2"))
+  assert.ok(api.includes("SELECT 1 FROM recurring_date_exclusions WHERE plan_id=?1 AND date=?2"))
   assert.ok(api.includes("NOT EXISTS (SELECT 1 FROM dismissed_transfer_reminders d WHERE d.entry_id = entries.id)"))
 })
 
@@ -122,7 +123,7 @@ test('category detail groups collapse independently with deleted settings separa
   assert.match(finance,/<summary>削除した固定費/)
   assert.match(finance,/固定費の登録を削除した項目です/)
   assert.match(finance,/<summary>固定費の月別除外/)
-  assert.match(finance,/指定した月だけ記帳候補から除外した項目です/)
+  assert.match(finance,/指定した月・日だけ記帳候補から除外した項目です/)
   assert.match(finance,/@restore="restoreDeletedPlan\(item\)"/)
   assert.match(finance,/@restore="restoreRecurringExclusion\(item\)"/)
 })

@@ -1,0 +1,15 @@
+# Deploy separately from Cloudflare Pages and NAV Worker, AFTER migration 0013.
+# npx wrangler deploy --config wrangler.recurring.toml
+name = "kakeibo-recurring-post"
+main = "workers/recurring-post-cron.js"
+compatibility_date = "2026-10-01"
+# Japan 00:30 and 09:30 retry on the same date (unique entry key prevents double posting).
+[triggers]
+crons = ["30 15 * * *", "30 0 * * *"]
+[observability]
+enabled = true
+head_sampling_rate = 1
+[[d1_databases]]
+binding = "DB"
+database_name = "kakeibo"
+database_id = "4d790915-fc06-4073-b660-bbb51dc74463"

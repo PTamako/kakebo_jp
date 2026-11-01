@@ -709,7 +709,7 @@ export async function onRequest({ request, env, params }) {
         return json({ok:true,created:false,duplicate:true,conflict:false})
       const result = await db.prepare(`INSERT INTO entries
         (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
-        SELECT ?1,'',?2,?3,?4,'毎月の固定支出（自動記録）','','expense',NULL,0,NULL,?5,?6
+        SELECT ?1,'',?2,?3,?4,'毎月の固定支出（確認記帳）','','expense',NULL,0,NULL,?5,?6
         WHERE NOT EXISTS (SELECT 1 FROM entries WHERE substr(date,1,7)=substr(?1,1,7)
           AND type='expense' AND merchant=?4 AND COALESCE(payment_source,'')=?6)
         AND NOT EXISTS (SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?7 AND month=?8)

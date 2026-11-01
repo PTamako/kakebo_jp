@@ -29,7 +29,7 @@ npm run verify:release
 ## Cloudflare の構成
 
 - `wrangler.toml`：Pages 用設定。D1 の `DB` バインディングと、必要に応じた `AI` バインディング
-- `wrangler.nav.toml`：別 Worker `kakeibo-nav-sync`。日本時間 21:00 に更新、平日 23:15 に未取得の公式価額を条件付きで再確認
+- `wrangler.nav.toml`：**既存の1つの Worker** `kakeibo-nav-sync`。固定費を日本時間 00:30 と 09:30 に D1 へ自動記帳し、基準価額を 21:00 と 23:15 に同期。NAV と固定費の処理は Cron ごとに独立。新規 Worker は不要
 - NAV 同期の操作・取得可能な基金については [scripts/deploy-nav-worker.md](scripts/deploy-nav-worker.md) を参照
 
 新規環境では D1 のスキーマ移行手順を [migrations/README.md](migrations/README.md) で確認してください。**運用中の D1 に `schema.sql` を再実行して初期化しないでください。** マイグレーションは明示的なレビュー後に適用し、通常の API 呼び出しで旧テーブルやテストデータを再作成しません。

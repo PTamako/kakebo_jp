@@ -1641,9 +1641,9 @@ async function removeCardBill(record) {
 .recurring-manager-panel .recurring-start-month input[type=month]{width:100%;max-width:100%;min-width:0;box-sizing:border-box;min-height:44px}
 .recurring-manager-panel .recurring-posting-mode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:2px 0 0;padding:0;border:0;min-width:0}
 .recurring-manager-panel .recurring-posting-mode legend{font-size:12px;font-weight:700;margin-bottom:8px;color:var(--muted)}
-.recurring-manager-panel .recurring-posting-mode label{display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:12px;min-height:48px;padding:8px;box-sizing:border-box;min-width:0;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;overflow-wrap:anywhere}
+.recurring-manager-panel .recurring-posting-mode label{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:10px;min-height:44px;padding:6px 8px;box-sizing:border-box;min-width:0;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;white-space:nowrap}
 .recurring-manager-panel .recurring-posting-mode label.selected{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 9%,var(--card))}
-.recurring-manager-panel .recurring-posting-mode input[type=radio]{appearance:auto;flex:none;accent-color:var(--blue);width:17px;height:17px;margin:0}
+.recurring-manager-panel .recurring-posting-mode input[type=radio]{appearance:auto;flex:none;accent-color:var(--blue);width:16px!important;min-width:16px!important;max-width:16px!important;height:16px!important;min-height:16px!important;max-height:16px!important;margin:0;padding:0!important}
 .recurring-manager-panel .recurring-posting-hint{margin:5px 0 7px;font-size:12px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}
 @media(min-width:680px){.recurring-manager-panel .recurring-form-layout{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px;row-gap:14px}.recurring-manager-panel .recurring-posting-mode{max-width:500px}}
 @media(max-width:355px){.recurring-manager-panel .recurring-posting-mode{grid-template-columns:1fr}.recurring-manager-panel .recurring-posting-mode label{min-height:40px}}

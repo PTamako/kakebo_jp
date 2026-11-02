@@ -960,8 +960,9 @@ async function reviewRecurring() {
     recurringSwipeOpenKey.value=''
     const current=currentRecurringMonth()
     const today=new Date().toLocaleDateString('sv-SE')
+    const tomorrow=nextCivilDay(today)
     const due=preview.filter(row=>!row.upcoming)
-    const upcoming=preview.filter(row=>row.upcoming)
+    const upcoming=preview.filter(row=>row.date===tomorrow)
     recurringSelected.value=new Set(due.filter(row=>!row.conflict && row.month===current && row.date<=today).map(recurringKey))
     const conflicts=due.filter(x=>x.conflict).length
     const historical=due.filter(row=>row.month<current).length
@@ -1249,6 +1250,7 @@ async function removeCardBill(record) {
   </details>
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>
+    <p class="recurring-form-caption">周期・開始月・記帳方法を設定します。</p>
     <div class="recurring-form-layout">
       <label class="recurring-form-field recurring-form-name"><span>名称</span><input v-model="plan.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120" /></label>
       <div class="recurring-form-field recurring-form-amount"><span>金額</span><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
@@ -1265,32 +1267,65 @@ async function removeCardBill(record) {
     <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? recurringFrequencyLabel(plan)+'になると、自動で支出明細に登録します。' : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
-    <p class="recurring-window-note">開始月から未記帳分を確認</p>
-    <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">10年以上前の設定は、直近10年分まで確認します。</p>
-    <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringListOpen && recurringPreview.length > 0}"><button type="button" :disabled="recurringBusy || (!recurringListOpen && (!settingsReady || !loaded))" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
-    <button v-if="recurringListOpen && recurringPreview.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button></div>
-    <p v-if="recurringListOpen && recurringPreview.length" class="microcopy" role="status">候補 {{recurringPreview.length}}件 · 選択額 {{yen(recurringPreviewTotal)}}</p>
-    <div v-if="recurringListOpen && recurringPreview.length" id="recurring-candidate-list" class="recurring-candidate-list" role="group" aria-label="未登録の固定費候補">
-      <div v-for="candidate in recurringPreview" :key="recurringKey(candidate)" class="recurring-swipe-row" :class="{'is-open':recurringSwipeOpenKey === recurringKey(candidate)}"
-        @touchstart.passive="onRecurringTouchStart($event,candidate)" @touchend="onRecurringTouchEnd($event,candidate)" @touchcancel="onRecurringTouchCancel">
-        <button type="button" class="recurring-swipe-dismiss" :disabled="recurringBusy || recurringSwipeOpenKey !== recurringKey(candidate)" @click="dismissRecurring(candidate)">除外</button>
-        <label class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}">
-        <input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" class="recurring-candidate-checkbox" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" />
-        <span class="recurring-candidate-content">
-          <span class="recurring-candidate-top"><strong class="recurring-candidate-name">{{candidate.name}}</strong><strong class="recurring-candidate-amount">{{yen(candidate.amount)}}</strong></span>
-          <span class="recurring-candidate-date">{{candidate.date}}</span>
-          <span class="recurring-candidate-state">
-            <span v-if="candidate.month < currentRecurringMonth()" class="recurring-candidate-estimated">過去分は推定</span>
-            <span :class="candidate.conflict ? 'recurring-status-conflict' : recurringSelected.has(recurringKey(candidate)) ? 'recurring-status-selected' : ''">{{candidate.conflict ? '既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '登録対象' : '未選択'}}</span>
-          </span>
-        </span>
-        </label>
-        <button type="button" class="recurring-dismiss-desktop" :disabled="recurringBusy" :aria-label="candidate.name+' '+candidate.month+'を候補から除外'" @click="dismissRecurring(candidate)">除外</button>
+    <section class="recurring-review-panel" aria-label="固定費の記帳確認">
+      <div class="recurring-review-heading">
+        <div>
+          <h3>記帳の確認</h3>
+          <p>過去の未記帳分と、明日の予定を確認できます。</p>
+        </div>
       </div>
-    </div>
-    <p v-if="recurringListOpen && recurringPreview.length" class="recurring-swipe-tip">左にスワイプして候補から除外</p>
+      <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">過去分は直近10年まで確認します。</p>
+      <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringListOpen && recurringDueEntries.length > 0}">
+        <button type="button" :disabled="recurringBusy || (!recurringListOpen && (!settingsReady || !loaded))" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
+        <button v-if="recurringListOpen && recurringDueEntries.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button>
+      </div>
+      <div v-if="recurringListOpen" id="recurring-candidate-list" class="recurring-review-results">
+        <section v-if="recurringTomorrowEntries.length" class="recurring-review-group recurring-review-upcoming" aria-label="明日の記帳予定">
+          <div class="recurring-review-group-heading">
+            <div><h4>明日の記帳予定</h4><p>前日から除外できます。記帳は予定日以降。</p></div>
+            <span class="recurring-review-count">{{recurringTomorrowEntries.length}}件</span>
+          </div>
+          <div class="recurring-upcoming-list">
+            <div v-for="candidate in recurringTomorrowEntries" :key="recurringKey(candidate)" class="recurring-upcoming-item">
+              <div class="recurring-upcoming-details">
+                <strong class="recurring-candidate-name">{{candidate.name}}</strong>
+                <span class="recurring-candidate-date">{{candidate.date}} · {{plans.find(p=>p.id===candidate.planId)?.postingMode==='auto' ? '自動記帳' : '確認して記帳'}}</span>
+              </div>
+              <strong class="recurring-candidate-amount">{{yen(candidate.amount)}}</strong>
+              <button type="button" class="recurring-upcoming-skip" :disabled="recurringBusy" :aria-label="candidate.name+' '+candidate.date+'の記帳を除外'" @click="dismissRecurring(candidate)">この回を除外</button>
+            </div>
+          </div>
+        </section>
+        <section v-if="recurringDueEntries.length" class="recurring-review-group" aria-label="未記帳分">
+          <div class="recurring-review-group-heading">
+            <div><h4>未記帳分</h4><p>記帳する項目を選択してください。</p></div>
+            <span class="recurring-review-count">{{recurringDueEntries.length}}件</span>
+          </div>
+          <p class="recurring-review-selection" role="status">選択額 {{yen(recurringPreviewTotal)}}</p>
+          <div class="recurring-candidate-list" role="group" aria-label="未登録の固定費候補">
+            <div v-for="candidate in recurringDueEntries" :key="recurringKey(candidate)" class="recurring-swipe-row" :class="{'is-open':recurringSwipeOpenKey === recurringKey(candidate)}"
+              @touchstart.passive="onRecurringTouchStart($event,candidate)" @touchend="onRecurringTouchEnd($event,candidate)" @touchcancel="onRecurringTouchCancel">
+              <button type="button" class="recurring-swipe-dismiss" :disabled="recurringBusy || recurringSwipeOpenKey !== recurringKey(candidate)" @click="dismissRecurring(candidate)">除外</button>
+              <label class="finance-row recurring-candidate" :class="{'recurring-conflict':candidate.conflict}">
+                <input type="checkbox" :checked="recurringSelected.has(recurringKey(candidate))" class="recurring-candidate-checkbox" :disabled="recurringBusy || candidate.conflict" @change="toggleRecurringSelection(candidate,$event.target.checked)" />
+                <span class="recurring-candidate-content">
+                  <span class="recurring-candidate-top"><strong class="recurring-candidate-name">{{candidate.name}}</strong><strong class="recurring-candidate-amount">{{yen(candidate.amount)}}</strong></span>
+                  <span class="recurring-candidate-date">{{candidate.date}}</span>
+                  <span class="recurring-candidate-state">
+                    <span v-if="candidate.month < currentRecurringMonth()" class="recurring-candidate-estimated">過去分は推定</span>
+                    <span :class="candidate.conflict ? 'recurring-status-conflict' : recurringSelected.has(recurringKey(candidate)) ? 'recurring-status-selected' : ''">{{candidate.conflict ? '既存の明細を優先（対象外）' : recurringSelected.has(recurringKey(candidate)) ? '登録対象' : '未選択'}}</span>
+                  </span>
+                </span>
+              </label>
+              <button type="button" class="recurring-dismiss-desktop" :disabled="recurringBusy" :aria-label="candidate.name+' '+candidate.month+'を候補から除外'" @click="dismissRecurring(candidate)">除外</button>
+            </div>
+          </div>
+          <p class="recurring-swipe-tip">左にスワイプして候補から除外</p>
+        </section>
+        <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
+      </div>
+    </section>
 
-    
     <details class="recurring-list-disclosure">
       <summary class="recurring-list-summary">
         <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{plans.length}}件</strong></span>
@@ -1613,6 +1648,36 @@ async function removeCardBill(record) {
 .recurring-manager-panel .recurring-posting-hint{margin:9px 0 14px;font-size:12px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}
 @media(min-width:680px){.recurring-manager-panel .recurring-form-layout{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px;row-gap:14px}.recurring-manager-panel .recurring-posting-mode{max-width:500px}}
 @media(max-width:355px){.recurring-manager-panel .recurring-posting-mode{grid-template-columns:1fr}.recurring-manager-panel .recurring-posting-mode label{min-height:40px}}
+
+/* Fixed-expense review: distinct upcoming and due groups, readable on touch and desktop. */
+.recurring-manager-panel .recurring-form-caption{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.5}
+.recurring-review-panel{display:grid;gap:11px;min-width:0;padding:13px;border:1px solid var(--line);border-radius:15px;background:var(--tint);margin:12px 0}
+.recurring-review-heading h3{margin:0;font-size:15px;line-height:1.3;color:var(--ink)}
+.recurring-review-heading p{margin:5px 0 0;font-size:12px;line-height:1.5;color:var(--muted)}
+.recurring-review-results{display:grid;gap:12px;min-width:0;max-width:100%}
+.recurring-review-group{display:grid;gap:8px;min-width:0;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+.recurring-review-upcoming{border-color:color-mix(in srgb,var(--blue) 28%,var(--line));background:color-mix(in srgb,var(--blue) 5%,var(--card))}
+.recurring-review-group-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0}
+.recurring-review-group-heading h4{margin:0;font-size:13px;font-weight:750;color:var(--ink)}
+.recurring-review-group-heading p{margin:3px 0 0;color:var(--muted);font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.recurring-review-count{display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:3px 7px;border-radius:99px;background:var(--tint);color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.recurring-upcoming-list{display:grid;gap:7px;min-width:0;max-height:260px;overflow-y:auto;overscroll-behavior:contain}
+.recurring-upcoming-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;align-items:center;min-width:0;box-sizing:border-box;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+.recurring-upcoming-details{display:grid;gap:4px;min-width:0}
+.recurring-upcoming-details .recurring-candidate-name{font-size:14px}
+.recurring-upcoming-item>.recurring-candidate-amount{justify-self:end}
+.finance-panel .recurring-upcoming-skip{grid-column:1/-1;justify-self:end;min-height:44px;min-width:124px;padding:8px 14px;font-size:12px;font-weight:700;color:var(--ink);background:var(--tint);border:1px solid var(--line);border-radius:9px}
+.recurring-review-selection{margin:0;text-align:right;font-size:12px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.recurring-review-empty{margin:0;padding:16px 10px;text-align:center;font-size:12px;line-height:1.6;color:var(--muted);border:1px dashed var(--line);border-radius:11px}
+.recurring-review-panel .recurring-candidate-list{max-height:260px}
+.recurring-review-panel .recurring-swipe-tip{font-size:11px}
+@media(min-width:680px){
+  .recurring-manager-panel .recurring-review-panel{padding:16px}
+  .recurring-review-results{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+  .recurring-review-results>.recurring-review-group:only-child,.recurring-review-results>.recurring-review-empty:only-child{grid-column:1/-1}
+  .recurring-upcoming-item{grid-template-columns:minmax(0,1fr) auto}
+}
+@media(max-width:380px){.recurring-manager-panel .recurring-review-panel{padding:10px}.recurring-review-group{padding:9px}.recurring-upcoming-item{padding:10px}.recurring-upcoming-item>.recurring-candidate-amount{font-size:13px}}
 
 /* Fixed expenses: iPhone-first form, review cards and stable disclosure headers. */
 .recurring-manager-panel{min-width:0;max-width:100%;box-sizing:border-box}

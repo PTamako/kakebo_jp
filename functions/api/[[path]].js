@@ -495,7 +495,7 @@ export async function onRequest({ request, env, params }) {
       return json({
         format:'kakeibo-ledger-backup',version:portfolioReady ? 4 : 3,exportedAt:new Date().toISOString(),
         entries:rows(0),
-        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled,postingMode:x.posting_mode||'manual',autoFromMonth:x.auto_from_month||'',scheduleType:x.schedule_type||'monthly',weekday:Number(x.weekday||0)})),
+        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled,postingMode:x.posting_mode||'manual',autoFromMonth:x.auto_from_month||'',scheduleType:x.workday_only?'workday':(x.schedule_type||'monthly'),weekday:Number(x.weekday||0)})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
         paymentSources:rows(3),merchantPaymentRules:rows(4),
         customRules:rows(5).map(rule=>({...rule,is_custom:true})),

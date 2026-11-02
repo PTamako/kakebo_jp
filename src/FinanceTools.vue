@@ -1250,11 +1250,10 @@ async function removeCardBill(record) {
   </details>
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>
-    <p class="recurring-form-caption">周期・開始月・記帳方法を設定します。</p>
     <div class="recurring-form-layout">
       <label class="recurring-form-field recurring-form-name"><span>名称</span><input v-model="plan.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120" /></label>
       <div class="recurring-form-field recurring-form-amount"><span>金額</span><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
-      <label class="recurring-form-field"><span>周期</span><span class="recurring-day-picker"><select v-model="plan.scheduleType" aria-label="記帳周期"><option value="monthly">毎月</option><option value="weekly">毎週</option></select><select v-if="plan.scheduleType==='monthly'" v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select><select v-else v-model.number="plan.weekday" aria-label="毎週の曜日"><option v-for="(label,index) in WEEKDAYS_JA" :key="index" :value="index">{{label}}曜日</option></select></span></label>
+      <label class="recurring-form-field recurring-form-schedule"><span>周期</span><span class="recurring-day-picker"><select v-model="plan.scheduleType" aria-label="記帳周期"><option value="monthly">毎月</option><option value="weekly">毎週</option></select><select v-if="plan.scheduleType==='monthly'" v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select><select v-else v-model.number="plan.weekday" aria-label="毎週の曜日"><option v-for="(label,index) in WEEKDAYS_JA" :key="index" :value="index">{{label}}曜日</option></select></span></label>
       <label class="recurring-form-field"><span>カテゴリ</span><select v-model="plan.category" aria-label="固定費カテゴリ"><option value="">選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label>
       <label class="recurring-form-field"><span>支払方法</span><select v-model="plan.paymentSource" aria-label="固定費支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label>
       <label class="recurring-form-field recurring-start-month"><span>開始月</span><input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>
@@ -1632,26 +1631,42 @@ async function removeCardBill(record) {
 @media(max-width:360px){.recurring-list-filters{grid-template-columns:minmax(0,1fr) 92px;gap:5px}.recurring-list-summary{padding:10px}.recurring-plan-meta{font-size:10px}}
 
 /* Fixed expense form: the same readable hierarchy on iPhone and iPad. */
-.recurring-manager-panel .recurring-form-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin:12px 0 16px}
-.recurring-manager-panel .recurring-form-field{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:100%;font-size:12px;font-weight:700;color:var(--muted);box-sizing:border-box}
+.recurring-manager-panel .recurring-form-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:9px;margin:0 0 6px;align-items:start}
+.recurring-manager-panel .recurring-form-field{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%;font-size:12px;font-weight:700;color:var(--muted);box-sizing:border-box}
 .recurring-manager-panel .recurring-form-field>span:first-child{font-size:12px;font-weight:700;color:var(--muted)}
 .recurring-manager-panel .recurring-form-field input,.recurring-manager-panel .recurring-form-field select{max-width:100%;min-width:0;box-sizing:border-box;font-size:16px;min-height:44px}
-.recurring-manager-panel .recurring-day-picker{display:flex;align-items:center;gap:12px;min-height:44px;color:var(--ink)}
+.recurring-manager-panel .recurring-day-picker{display:flex;align-items:center;gap:7px;min-height:44px;color:var(--ink)}
 .recurring-manager-panel .recurring-day-picker select{flex:1;max-width:100%;min-width:0}
 .recurring-manager-panel .recurring-start-month{width:100%}
 .recurring-manager-panel .recurring-start-month input[type=month]{width:100%;max-width:100%;min-width:0;box-sizing:border-box;min-height:44px}
-.recurring-manager-panel .recurring-posting-mode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:6px 0 0;padding:0;border:0;min-width:0}
+.recurring-manager-panel .recurring-posting-mode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:2px 0 0;padding:0;border:0;min-width:0}
 .recurring-manager-panel .recurring-posting-mode legend{font-size:12px;font-weight:700;margin-bottom:8px;color:var(--muted)}
 .recurring-manager-panel .recurring-posting-mode label{display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:12px;min-height:48px;padding:8px;box-sizing:border-box;min-width:0;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;overflow-wrap:anywhere}
 .recurring-manager-panel .recurring-posting-mode label.selected{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 9%,var(--card))}
 .recurring-manager-panel .recurring-posting-mode input[type=radio]{appearance:auto;flex:none;accent-color:var(--blue);width:17px;height:17px;margin:0}
-.recurring-manager-panel .recurring-posting-hint{margin:9px 0 14px;font-size:12px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}
+.recurring-manager-panel .recurring-posting-hint{margin:5px 0 7px;font-size:12px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}
 @media(min-width:680px){.recurring-manager-panel .recurring-form-layout{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px;row-gap:14px}.recurring-manager-panel .recurring-posting-mode{max-width:500px}}
 @media(max-width:355px){.recurring-manager-panel .recurring-posting-mode{grid-template-columns:1fr}.recurring-manager-panel .recurring-posting-mode label{min-height:40px}}
 
+/* Phone-only density: reduce scrolling, keep every tappable control >=44px. */
+.recurring-manager-panel{row-gap:6px}
+@media(min-width:360px) and (max-width:679px){
+  .recurring-manager-panel .recurring-form-layout{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:9px;row-gap:10px}
+  .recurring-manager-panel .recurring-form-name,
+  .recurring-manager-panel .recurring-form-amount,
+  .recurring-manager-panel .recurring-form-schedule,
+  .recurring-manager-panel .recurring-start-month{grid-column:1/-1}
+}
+@media(max-width:679px){
+  main .finance-tools .recurring-manager-panel{padding:12px;row-gap:6px}
+  .recurring-manager-panel .recurring-form-layout{margin-top:0;margin-bottom:5px}
+  .recurring-manager-panel .recurring-posting-mode legend{margin-bottom:5px}
+  .recurring-manager-panel .recurring-posting-mode label{min-height:44px;padding:7px}
+  .recurring-manager-panel .recurring-review-panel{margin-block:5px;padding:10px}
+}
+
 /* Fixed-expense review: distinct upcoming and due groups, readable on touch and desktop. */
-.recurring-manager-panel .recurring-form-caption{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.5}
-.recurring-review-panel{display:grid;gap:11px;min-width:0;padding:13px;border:1px solid var(--line);border-radius:15px;background:var(--tint);margin:12px 0}
+.recurring-review-panel{display:grid;gap:8px;min-width:0;padding:11px;border:1px solid var(--line);border-radius:15px;background:var(--tint);margin:7px 0}
 .recurring-review-heading h3{margin:0;font-size:15px;line-height:1.3;color:var(--ink)}
 .recurring-review-heading p{margin:5px 0 0;font-size:12px;line-height:1.5;color:var(--muted)}
 .recurring-review-results{display:grid;gap:12px;min-width:0;max-width:100%}

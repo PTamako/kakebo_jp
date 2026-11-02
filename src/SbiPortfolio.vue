@@ -1,7 +1,7 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
-import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js'
+import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS, MANUAL_NAV_REFERENCE_URLS } from './fund-nav-coverage.js'
 import { groupFundHoldings } from './sbi-fund-groups.js'
 import { parseSbiHoldingsText } from './sbi-holdings-import.js'
 import { parseSbiFundDetailText, applySbiFundDetailUpdates } from './sbi-fund-detail-import.js'
@@ -66,6 +66,7 @@ const shortFundName = item => ({
   '0331A172': '先進国債券（除く日本）',
   '04317188': 'NASDAQ100'
 })[item.fund_code] || item.fund_name
+const manualNavReference = code => MANUAL_NAV_REFERENCE_URLS[String(code||'').trim().toUpperCase()] || ''
 const sourceLabel = source => ['official_mufg','official_daiwa'].includes(source) ? '公式取得済' : source === 'manual' ? '手入力' : source === 'sbi_screenshot' ? '初期記録' : '価格未取得'
 // Never claim that an unknown fund is manual-only without trying the
 // official read-only provider lookup. A network failure remains "確認不可".
@@ -461,6 +462,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
                     <span v-if="fund.price_date">{{fund.source==='sbi_screenshot'?'確認日':'基準日'}} {{fund.price_date}}</span>
                   </div>
                   <button type="button" class="sbi-row-edit" @click="editPrice(fund)">基準価額を変更</button>
+                  <a v-if="navMode(fund.fund_code)==='manual' && manualNavReference(fund.fund_code)" :href="manualNavReference(fund.fund_code)" target="_blank" rel="noopener noreferrer" class="sbi-row-edit">公式参考 ↗</a>
                 </div>
               </div>
             </article>
@@ -617,6 +619,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
       <form v-else-if="editing==='price'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="基準価額の編集" @submit.prevent="submit('price',{...price,navPer10000:Number(price.navPer10000)},'基準価額を更新しました')">
         <div class="sbi-line-heading"><h3>基準価額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
         <p>銘柄コード：{{price.fundCode}}</p>
+        <p v-if="manualNavReference(price.fundCode)"><a :href="manualNavReference(price.fundCode)" target="_blank" rel="noopener noreferrer">運用会社の公式基準価額を確認 ↗</a></p>
         <label>基準価額（1万口当たり円）<input v-model.number="price.navPer10000" type="number" min="1" step="1" required /></label>
         <label>基準日<input v-model="price.priceDate" type="date" required /></label>
         <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>

@@ -137,7 +137,7 @@ test('UI displays saved mode and dynamic explanation with responsive layout',()=
   assert.match(page,/recurringFrequencyLabel\(plan\).*?自動で支出明細に登録します。/)
   assert.match(page,/p.postingMode==='auto' \? '自動記帳' : '確認して記帳'/)
   assert.match(page,/v-model="plan.scheduleType"/)
-  assert.match(api,/posting_mode=\?8,auto_from_month=\?9,schedule_type=\?10,weekday=\?11/)
+  assert.match(api,/posting_mode=\?8,auto_from_month=\?9,schedule_type=\?10,weekday=\?11,workday_only=\?13/)
   assert.match(api,/nextAutomaticStartMonth\(tokyoToday\(\),item.day,item.startMonth,item.scheduleType\|\|'monthly',item.weekday\|\|0\)/)
   assert.match(api,/postingMode:p.posting_mode\|\|'manual'/)
 })

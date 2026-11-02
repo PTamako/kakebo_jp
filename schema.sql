@@ -197,3 +197,9 @@ CREATE TABLE IF NOT EXISTS sbi_transfer_links (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_sbi_transfer_links_month ON sbi_transfer_links(purchase_month);
+
+-- Portable dictionary recovery: schema.sql defines the rules table but does
+-- not fabricate a default dictionary. Export a v4 JSON backup from the source
+-- ledger, including defaultRules, then restore it into the new D1. The restore
+-- API uses INSERT OR IGNORE and never overwrites existing rules.
+-- Do NOT execute schema.sql on an already deployed production database.

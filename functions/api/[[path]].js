@@ -291,7 +291,7 @@ export async function onRequest({ request, env, params }) {
           typeof month!=='string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month) ||
           (date!=null && (typeof date!=='string' || !validDate(date) || !date.startsWith(month+'-'))))
           return json({error:'除外する固定費と日付を確認してください'},400)
-        const plan=await db.prepare('SELECT start_month,schedule_type,weekday,day FROM recurring_plans WHERE id=?1').bind(planId).first()
+        const plan=await db.prepare('SELECT start_month,schedule_type,weekday,day,workday_only FROM recurring_plans WHERE id=?1').bind(planId).first()
         const today=tokyoToday(), tomorrow=nextCivilDay(today)
         // A scheduled occurrence can be excluded at most one day early.
         // Monthly rules exclude the matching month, weekly rules the exact date.
@@ -320,9 +320,9 @@ export async function onRequest({ request, env, params }) {
           let results
           try {
             const query = trash
-              ? `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,p.posting_mode,p.auto_from_month,p.schedule_type,p.weekday,t.deleted_at AS archived_at
+              ? `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,p.posting_mode,p.auto_from_month,p.schedule_type,p.weekday,p.workday_only,t.deleted_at AS archived_at
                  FROM recurring_plans p JOIN trash_items t ON t.item_type='recurring_plan' AND t.item_id=p.id ORDER BY t.deleted_at DESC`
-              : `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,p.posting_mode,p.auto_from_month,p.schedule_type,p.weekday
+              : `SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,p.posting_mode,p.auto_from_month,p.schedule_type,p.weekday,p.workday_only
                  FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)
                  ORDER BY p.name,p.id`
             ;({results} = await db.prepare(query).all())
@@ -331,9 +331,9 @@ export async function onRequest({ request, env, params }) {
             // Migration 0012 is manual. Normal reads must remain available
             // before it is applied; do not silently permit archiving.
             if (trash) return json([])
-            ;({results} = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday FROM recurring_plans ORDER BY name,id').all())
+            ;({results} = await db.prepare('SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only FROM recurring_plans ORDER BY name,id').all())
           }
-          return json(results.map(p => ({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled,postingMode:p.posting_mode||'manual',autoFromMonth:p.auto_from_month||'',scheduleType:p.schedule_type||'monthly',weekday:Number(p.weekday||0), ...(trash ? {archivedAt:p.archived_at} : {})})))
+          return json(results.map(p => ({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled,postingMode:p.posting_mode||'manual',autoFromMonth:p.auto_from_month||'',scheduleType:p.workday_only?'workday':(p.schedule_type||'monthly'),weekday:Number(p.weekday||0), ...(trash ? {archivedAt:p.archived_at} : {})})))
         }
         const {results} = await db.prepare('SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY bill_month DESC,payment_source').all()
         return json(results.map(x => ({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})))
@@ -346,11 +346,13 @@ export async function onRequest({ request, env, params }) {
               !Number.isSafeInteger(item.amount) || item.amount <= 0 ||
               !Number.isInteger(item.day) || item.day < 1 || item.day > 31 ||
               typeof item.category !== 'string' || !item.category || typeof item.paymentSource !== 'string' ||
-              !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') || typeof item.enabled !== 'boolean' || !['auto','manual'].includes(item.postingMode ?? 'manual') || !['monthly','weekly'].includes(item.scheduleType ?? 'monthly') || !Number.isInteger(item.weekday ?? 0) || (item.weekday ?? 0)<0 || (item.weekday ?? 0)>6)
+              !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') || typeof item.enabled !== 'boolean' || !['auto','manual'].includes(item.postingMode ?? 'manual') || !['monthly','weekly','workday'].includes(item.scheduleType ?? 'monthly') || !Number.isInteger(item.weekday ?? 0) || (item.weekday ?? 0)<0 || (item.weekday ?? 0)>6)
             return json({error:'固定支出の入力を確認してください'},400)
           const mode=item.postingMode||'manual'
+          const workdayOnly=item.scheduleType==='workday'?1:0
+          const storedSchedule=workdayOnly?'weekly':(item.scheduleType||'monthly')
           const autoFrom=mode==='auto' ? nextAutomaticStartMonth(tokyoToday(),item.day,item.startMonth,item.scheduleType||'monthly',item.weekday||0) : ''
-          const result = await db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)').bind(item.id,item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled ? 1 : 0,mode,autoFrom,item.scheduleType||'monthly',item.weekday||0).run()
+          const result = await db.prepare('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)').bind(item.id,item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled ? 1 : 0,mode,autoFrom,storedSchedule,item.weekday||0,workdayOnly).run()
           return json({ok:true,created:!!result.meta?.changes})
         }
         if (m === 'PUT' && b && /^[a-zA-Z0-9-]{8,80}$/.test(b)) {
@@ -361,14 +363,16 @@ export async function onRequest({ request, env, params }) {
               typeof item.category !== 'string' || !item.category.trim() ||
               typeof item.paymentSource !== 'string' ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
-              typeof item.enabled !== 'boolean' || (item.postingMode != null && !['auto','manual'].includes(item.postingMode)) || (item.scheduleType != null && !['monthly','weekly'].includes(item.scheduleType)) || !Number.isInteger(item.weekday ?? 0) || (item.weekday ?? 0)<0 || (item.weekday ?? 0)>6) return json({error:'固定支出の入力を確認してください'},400)
-          const prior = await db.prepare("SELECT name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b).first()
+              typeof item.enabled !== 'boolean' || (item.postingMode != null && !['auto','manual'].includes(item.postingMode)) || (item.scheduleType != null && !['monthly','weekly','workday'].includes(item.scheduleType)) || !Number.isInteger(item.weekday ?? 0) || (item.weekday ?? 0)<0 || (item.weekday ?? 0)>6) return json({error:'固定支出の入力を確認してください'},400)
+          const prior = await db.prepare("SELECT name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b).first()
           if (!prior) return json({error:'固定支出が見つかりません'},404)
           const mode=item.postingMode ?? prior.posting_mode
-          const sameSchedule=prior.name===item.name.trim() && Number(prior.amount)===item.amount && Number(prior.day)===item.day && prior.category===item.category && prior.payment_source===item.paymentSource && prior.start_month===item.startMonth && !!prior.enabled===item.enabled && prior.schedule_type===(item.scheduleType||'monthly') && Number(prior.weekday)===Number(item.weekday||0)
+          const workdayOnly=item.scheduleType==='workday'?1:0
+          const storedSchedule=workdayOnly?'weekly':(item.scheduleType||'monthly')
+          const sameSchedule=prior.name===item.name.trim() && Number(prior.amount)===item.amount && Number(prior.day)===item.day && prior.category===item.category && prior.payment_source===item.paymentSource && prior.start_month===item.startMonth && !!prior.enabled===item.enabled && prior.schedule_type===storedSchedule && Number(prior.workday_only||0)===workdayOnly && Number(prior.weekday)===Number(item.weekday||0)
           const autoFrom=mode==='auto' ? (prior.posting_mode==='auto' && sameSchedule && prior.auto_from_month ? prior.auto_from_month : nextAutomaticStartMonth(tokyoToday(),item.day,item.startMonth,item.scheduleType||'monthly',item.weekday||0)) : ''
-          const updated = await db.prepare("UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7,posting_mode=?8,auto_from_month=?9,schedule_type=?10,weekday=?11 WHERE id=?12 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?12)")
-            .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,mode,autoFrom,item.scheduleType||'monthly',item.weekday||0,b).run()
+          const updated = await db.prepare("UPDATE recurring_plans SET name=?1,amount=?2,day=?3,category=?4,payment_source=?5,start_month=?6,enabled=?7,posting_mode=?8,auto_from_month=?9,schedule_type=?10,weekday=?11,workday_only=?13 WHERE id=?12 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?12)")
+            .bind(item.name.trim(),item.amount,item.day,item.category,item.paymentSource,item.startMonth,item.enabled?1:0,mode,autoFrom,storedSchedule,item.weekday||0,b,workdayOnly).run()
           if(!updated.meta?.changes)return json({error:'固定支出が見つかりません'},404)
           // Stable plan IDs preserve the monthly idempotency key. Existing ledger entries are untouched.
           return json({ok:true})
@@ -460,8 +464,8 @@ export async function onRequest({ request, env, params }) {
       const statements=[
         'SELECT * FROM entries ORDER BY id',
         recurringArchiveReady
-          ? `SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id`
-          : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday FROM recurring_plans ORDER BY id',
+          ? `SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id`
+          : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         
         "SELECT " + (await prepaidSchemaReady(db)
@@ -481,7 +485,7 @@ export async function onRequest({ request, env, params }) {
           'SELECT entry_id,purchase_month FROM sbi_transfer_links ORDER BY entry_id'
         ] : []),
         'SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY plan_id,month',
-        ...(recurringArchiveReady ? [`SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,p.posting_mode,p.auto_from_month,p.schedule_type,p.weekday
+        ...(recurringArchiveReady ? [`SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,p.posting_mode,p.auto_from_month,p.schedule_type,p.weekday,p.workday_only
           FROM recurring_plans p JOIN trash_items t ON t.item_type='recurring_plan' AND t.item_id=p.id ORDER BY p.id`,
           "SELECT item_id,payload_json,deleted_at FROM trash_items WHERE item_type='entry' ORDER BY item_id"] : []),
         'SELECT plan_id,date FROM recurring_date_exclusions ORDER BY plan_id,date'
@@ -491,7 +495,7 @@ export async function onRequest({ request, env, params }) {
       return json({
         format:'kakeibo-ledger-backup',version:portfolioReady ? 4 : 3,exportedAt:new Date().toISOString(),
         entries:rows(0),
-        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled,postingMode:x.posting_mode||'manual',autoFromMonth:x.auto_from_month||'',scheduleType:x.schedule_type||'monthly',weekday:Number(x.weekday||0)})),
+        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled,postingMode:x.posting_mode||'manual',autoFromMonth:x.auto_from_month||'',scheduleType:x.workday_only?'workday':(x.schedule_type||'monthly'),weekday:Number(x.weekday||0)})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
         paymentSources:rows(3),merchantPaymentRules:rows(4),
         customRules:rows(5).map(rule=>({...rule,is_custom:true})),
@@ -502,7 +506,7 @@ export async function onRequest({ request, env, params }) {
         recurringExclusions:rows(portfolioReady ? 14 : 9).map(x=>({planId:x.plan_id,month:x.month})),
         recurringDateExclusions:rows(portfolioReady ? (recurringArchiveReady?17:15) : (recurringArchiveReady?12:10)).map(x=>({planId:x.plan_id,date:x.date})),
         archivedPlans:recurringArchiveReady ? rows(portfolioReady ? 15 : 10).map(p=>({
-          id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled,postingMode:p.posting_mode||'manual',autoFromMonth:p.auto_from_month||'',scheduleType:p.schedule_type||'monthly',weekday:Number(p.weekday||0)
+          id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled,postingMode:p.posting_mode||'manual',autoFromMonth:p.auto_from_month||'',scheduleType:p.workday_only?'workday':(p.schedule_type||'monthly'),weekday:Number(p.weekday||0)
         })) : [],
         trashedEntries:recurringArchiveReady ? rows(portfolioReady ? 16 : 11) : [],
         ...(portfolioReady ? {investmentPlans:rows(9),investmentPlanHistory:rows(10),
@@ -702,7 +706,7 @@ export async function onRequest({ request, env, params }) {
       const scheduledMonth = typeof body?.month === 'string' ? body.month : ''
       if (!/^[a-zA-Z0-9-]{8,80}$/.test(planId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(scheduledMonth))
         return json({error:'固定支出の対象を確認してください'},400)
-      const plan=await db.prepare(`SELECT id,name,amount,day,weekday,schedule_type,category,payment_source,start_month,enabled
+      const plan=await db.prepare(`SELECT id,name,amount,day,weekday,schedule_type,workday_only,category,payment_source,start_month,enabled
         FROM recurring_plans WHERE id=?1
         AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=recurring_plans.id)`).bind(planId).first()
       if (!plan || !plan.enabled || !Number.isSafeInteger(Number(plan.amount)) || Number(plan.amount)<=0)
@@ -711,31 +715,31 @@ export async function onRequest({ request, env, params }) {
       if(approved.error)return json({error:approved.error,code:approved.code},approved.status)
       const date=approved.date
       if(date>tokyoToday())return json({error:'予定日前の固定支出は登録できません'},409)
-      const weekly=plan.schedule_type==='weekly'
-      const period=weekly?date:scheduledMonth
+      const perDate=plan.schedule_type!=='monthly'
+      const period=perDate?date:scheduledMonth
       const clientRequestId=recurringRequestId(plan.id,period)
       // A previously excluded occurrence must be rejected explicitly.
       // Keep this server-side even when the preview list is stale on another device.
       const excludedMonth=await db.prepare('SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2').bind(planId,scheduledMonth).first()
-      const excludedDate=weekly ? await db.prepare('SELECT 1 FROM recurring_date_exclusions WHERE plan_id=?1 AND date=?2').bind(planId,date).first() : null
+      const excludedDate=perDate ? await db.prepare('SELECT 1 FROM recurring_date_exclusions WHERE plan_id=?1 AND date=?2').bind(planId,date).first() : null
       if(excludedMonth || excludedDate)
         return json({error:'この予定日は候補から除外されています。除外を解除してから登録してください',code:'recurring_excluded'},409)
       if(await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())
         return json({ok:true,created:false,duplicate:true,conflict:false})
-      const samePeriod=weekly?'e.date=?1':'substr(e.date,1,7)=?8'
+      const samePeriod=perDate?'e.date=?1':'substr(e.date,1,7)=?8'
       const result=await db.prepare(`INSERT INTO entries
         (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
         SELECT ?1,'',p.amount,p.category,p.name,'定期固定費（確認記帳）','','expense',NULL,0,NULL,?2,p.payment_source
         FROM recurring_plans p WHERE p.id=?3 AND p.enabled=1
           AND p.name=?4 AND p.amount=?5 AND p.day=?6 AND p.weekday=?7
-          AND p.schedule_type=?9 AND p.category=?10 AND p.payment_source=?11
+          AND p.schedule_type=?9 AND p.category=?10 AND p.payment_source=?11 AND p.workday_only=?12
           AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)
           AND NOT EXISTS(SELECT 1 FROM recurring_candidate_exclusions x WHERE x.plan_id=p.id AND x.month=?8)
           AND NOT EXISTS(SELECT 1 FROM recurring_date_exclusions x WHERE x.plan_id=p.id AND x.date=?1)
           AND NOT EXISTS(SELECT 1 FROM entries e WHERE ${samePeriod} AND e.type='expense'
             AND e.merchant=p.name AND COALESCE(e.payment_source,'')=p.payment_source)
         ON CONFLICT(client_request_id) DO NOTHING`)
-        .bind(date,clientRequestId,plan.id,plan.name,plan.amount,plan.day,plan.weekday,scheduledMonth,plan.schedule_type,plan.category,plan.payment_source).run()
+        .bind(date,clientRequestId,plan.id,plan.name,plan.amount,plan.day,plan.weekday,scheduledMonth,plan.schedule_type,plan.category,plan.payment_source,plan.workday_only).run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
     }
     // Genuine deletions share one trash table; reviews/exclusions remain states.

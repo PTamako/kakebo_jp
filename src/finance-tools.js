@@ -145,7 +145,7 @@ export function validateBackup(value) {
     (x.postingMode == null || ['manual','auto'].includes(x.postingMode)) &&
     (x.autoFromMonth == null || x.autoFromMonth === '' || month(x.autoFromMonth)) &&
     (x.postingMode !== 'auto' || month(x.autoFromMonth)) &&
-    (x.scheduleType == null || ['monthly','weekly'].includes(x.scheduleType)) &&
+    (x.scheduleType == null || ['monthly','weekly','workday'].includes(x.scheduleType)) &&
     (x.weekday == null || (Number.isInteger(x.weekday) && x.weekday>=0 && x.weekday<=6))
   const validExclusion = x => x && typeof x.planId==='string' &&
     /^[a-zA-Z0-9-]{8,80}$/.test(x.planId) && month(x.month)

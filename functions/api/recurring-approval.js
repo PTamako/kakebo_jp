@@ -9,7 +9,7 @@ export function resolveRecurringApproval(body,plan) {
     paymentSource:plan.payment_source||'',startMonth:plan.start_month}
   if(Object.keys(fields).some(key=>expected[key]!==fields[key]))
     return {error:'固定支出が確認後に変更されました。再確認してから登録してください',code:'plan_changed',status:409}
-  const scheduleType=plan.schedule_type||'monthly',weekday=Number(plan.weekday||0)
+  const scheduleType=plan.workday_only?'workday':(plan.schedule_type||'monthly'),weekday=Number(plan.weekday||0)
   if ((expected.scheduleType||'monthly')!==scheduleType ||
       Number(expected.weekday||0)!==weekday)
     return {error:'周期が変更されました。再確認してください',code:'plan_changed',status:409}

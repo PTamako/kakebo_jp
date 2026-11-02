@@ -368,7 +368,7 @@ const recurringExcludedRows = computed(() => recurringExclusions.value.map(item 
   ...item,name:plans.value.find(plan => plan.id === item.planId)?.name ||
     trashedRecurringPlans.value.find(plan => plan.id === item.planId)?.name || '固定費'
 })))
-const recurringKey = row => row.planId + ':' + (row.date && (row.scheduleType==='weekly'||!('scheduleType' in row)) ? row.date : row.month)
+const recurringKey = row => row.planId + ':' + (row.date && (row.scheduleType!=='monthly'||!('scheduleType' in row)) ? row.date : row.month)
 const selectedRecurring = computed(() => recurringDueEntries.value.filter(row => !row.conflict && recurringSelected.value.has(recurringKey(row))))
 function toggleRecurringSelection(row, checked) {
   const next = new Set(recurringSelected.value)
@@ -911,7 +911,7 @@ function onReviewTrashToggle(event) {
 async function addPlan(){
   if(!plan.value.name.trim() || !Number.isSafeInteger(Number(plan.value.amount)) || Number(plan.value.amount)<=0 ||
     !Number.isInteger(Number(plan.value.day)) || Number(plan.value.day)<1 || Number(plan.value.day)>31 ||
-    !['monthly','weekly'].includes(plan.value.scheduleType) || !Number.isInteger(plan.value.weekday) || plan.value.weekday<0 || plan.value.weekday>6 ||
+    !['monthly','weekly','workday'].includes(plan.value.scheduleType) || !Number.isInteger(plan.value.weekday) || plan.value.weekday<0 || plan.value.weekday>6 ||
     !validRecurringMonth(plan.value.startMonth) ||
     !props.categories.includes(plan.value.category) || !props.paymentSources.includes(plan.value.paymentSource)) {
     message.value='名称・金額・記帳日・開始月・カテゴリ・支払方法を確認してください';return
@@ -993,10 +993,10 @@ async function dismissRecurring(row) {
   if(recurringBusy.value || !recurringListOpen.value)return
   recurringBusy.value=true
   try {
-    const result=await props.api('recurring-exclusions',{method:'POST',body:JSON.stringify({planId:row.planId,month:row.month,...(row.scheduleType==='weekly'?{date:row.date}:{})})})
+    const result=await props.api('recurring-exclusions',{method:'POST',body:JSON.stringify({planId:row.planId,month:row.month,...(row.scheduleType!=='monthly'?{date:row.date}:{})})})
     if(!result.ok)throw Error('除外できませんでした')
     const key=recurringKey(row)
-    recurringExclusions.value=[...recurringExclusions.value.filter(item=>recurringKey(item)!==key),{planId:row.planId,month:row.month,...(row.scheduleType==='weekly'?{date:row.date}:{})}]
+    recurringExclusions.value=[...recurringExclusions.value.filter(item=>recurringKey(item)!==key),{planId:row.planId,month:row.month,...(row.scheduleType!=='monthly'?{date:row.date}:{})}]
     // A new exclusion is reviewable even if an older notice was cleared.
     const archivedKey = recurringTrashKey(row)
     if (archivedTrashKeys.value.has(archivedKey)) {
@@ -1253,7 +1253,7 @@ async function removeCardBill(record) {
     <div class="recurring-form-layout">
       <label class="recurring-form-field recurring-form-name"><span>名称</span><input v-model="plan.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120" /></label>
       <div class="recurring-form-field recurring-form-amount"><span>金額</span><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
-      <label class="recurring-form-field recurring-form-schedule"><span>周期</span><span class="recurring-day-picker"><select v-model="plan.scheduleType" aria-label="記帳周期"><option value="monthly">毎月</option><option value="weekly">毎週</option></select><select v-if="plan.scheduleType==='monthly'" v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select><select v-else v-model.number="plan.weekday" aria-label="毎週の曜日"><option v-for="(label,index) in WEEKDAYS_JA" :key="index" :value="index">{{label}}曜日</option></select></span></label>
+      <label class="recurring-form-field recurring-form-schedule"><span>周期</span><span class="recurring-day-picker"><select v-model="plan.scheduleType" aria-label="記帳周期"><option value="monthly">毎月</option><option value="weekly">毎週</option><option value="workday">平日（土日祝を除く）</option></select><select v-if="plan.scheduleType==='monthly'" v-model.number="plan.day" aria-label="毎月の記帳日"><option v-for="day in 31" :key="day" :value="day">{{day}}日</option></select><select v-else-if="plan.scheduleType==='weekly'" v-model.number="plan.weekday" aria-label="毎週の曜日"><option v-for="(label,index) in WEEKDAYS_JA" :key="index" :value="index">{{label}}曜日</option></select></span></label>
       <label class="recurring-form-field"><span>カテゴリ</span><select v-model="plan.category" aria-label="固定費カテゴリ"><option value="">選択してください</option><option v-for="category in orderedCategories" :key="category" :value="category">{{categoryLabel(category)}}</option></select></label>
       <label class="recurring-form-field"><span>支払方法</span><select v-model="plan.paymentSource" aria-label="固定費支払方法"><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)" :value="plan.paymentSource">{{plan.paymentSource}}（既存の設定）</option></select></label>
       <label class="recurring-form-field recurring-start-month"><span>開始月</span><input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>
@@ -1263,7 +1263,7 @@ async function removeCardBill(record) {
       <label :class="{selected:plan.postingMode==='auto'}"><input v-model="plan.postingMode" type="radio" value="auto" name="recurring-posting-mode" /><span>自動記帳</span></label>
       <label :class="{selected:plan.postingMode==='manual'}"><input v-model="plan.postingMode" type="radio" value="manual" name="recurring-posting-mode" /><span>確認して記帳</span></label>
     </fieldset>
-    <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? recurringFrequencyLabel(plan)+'になると、自動で支出明細に登録します。' : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
+    <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? (plan.scheduleType==='workday'?'土日・祝日を除く日に、自動で支出明細に登録します。':recurringFrequencyLabel(plan)+'になると、自動で支出明細に登録します。') : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
     <section class="recurring-review-panel" aria-label="固定費の記帳確認">

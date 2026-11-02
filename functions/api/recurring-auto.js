@@ -6,7 +6,7 @@ export async function postScheduledRecurring(db,{today=tokyoDateAt()}={}) {
   if(!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(today))throw Error('invalid_tokyo_date')
   const month=today.slice(0,7)
   const {results=[]}=await db.prepare(`SELECT p.id,p.name,p.amount,p.day,p.weekday,p.schedule_type,p.category,p.payment_source,p.start_month,
-      p.posting_mode,p.auto_from_month
+      p.posting_mode,p.auto_from_month,p.workday_only
     FROM recurring_plans p WHERE p.enabled=1 AND p.posting_mode='auto'
       AND p.start_month<=?1 AND p.auto_from_month<>'' AND p.auto_from_month<=?1
       AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)`).bind(month).all()
@@ -14,9 +14,9 @@ export async function postScheduledRecurring(db,{today=tokyoDateAt()}={}) {
   for(const p of results) {
     if(!scheduledRecurringOnDate(p,today) || !Number.isSafeInteger(Number(p.amount))||Number(p.amount)<=0) continue
     out.checked++
-    const period=p.schedule_type==='weekly'?today:month
+    const period=p.schedule_type==='monthly'?month:today
     const requestId=recurringRequestId(p.id,period)
-    const samePeriod=p.schedule_type==='weekly'?'e.date=?4':'substr(e.date,1,7)=?5'
+    const samePeriod=p.schedule_type==='monthly'?'substr(e.date,1,7)=?5':'e.date=?4'
     const result=await db.prepare(`INSERT INTO entries
       (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
       SELECT ?1,'',p.amount,p.category,p.name,'定期固定費（自動記帳）','','expense',NULL,0,NULL,?3,p.payment_source
@@ -24,14 +24,14 @@ export async function postScheduledRecurring(db,{today=tokyoDateAt()}={}) {
       WHERE p.id=?2 AND p.enabled=1 AND p.posting_mode='auto'
         AND p.start_month<=?5 AND p.auto_from_month<>'' AND p.auto_from_month<=?5
         AND p.name=?6 AND p.amount=?7 AND p.day=?8 AND p.weekday=?9
-        AND p.schedule_type=?10 AND p.category=?11 AND p.payment_source=?12
+        AND p.schedule_type=?10 AND p.category=?11 AND p.payment_source=?12 AND p.workday_only=?13
         AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)
         AND NOT EXISTS(SELECT 1 FROM recurring_candidate_exclusions x WHERE x.plan_id=p.id AND x.month=?5)
         AND NOT EXISTS(SELECT 1 FROM recurring_date_exclusions x WHERE x.plan_id=p.id AND x.date=?4)
         AND NOT EXISTS(SELECT 1 FROM entries e WHERE ${samePeriod}
           AND e.type='expense' AND e.merchant=p.name AND COALESCE(e.payment_source,'')=p.payment_source)
       ON CONFLICT(client_request_id) DO NOTHING`)
-      .bind(today,p.id,requestId,today,month,p.name,p.amount,p.day,p.weekday,p.schedule_type,p.category,p.payment_source).run()
+      .bind(today,p.id,requestId,today,month,p.name,p.amount,p.day,p.weekday,p.schedule_type,p.category,p.payment_source,p.workday_only).run()
     if(result.meta?.changes)out.created++
     else out.skipped++
   }

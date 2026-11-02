@@ -22,7 +22,7 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
   for(const plan of plans||[]){
     if(!plan.enabled || !/^\d{4}-(0[1-9]|1[0-2])$/.test(plan.startMonth||''))continue
     const scheduleType=plan.scheduleType||'monthly'
-    if(!['monthly','weekly'].includes(scheduleType))continue
+    if(!['monthly','weekly','workday'].includes(scheduleType))continue
     const [sy,sm]=plan.startMonth.split('-').map(Number)
     const start=new Date(Math.max(new Date(sy,sm-1,1).getTime(),earliest.getTime()))
     for(let year=start.getFullYear(),month=start.getMonth()+1,i=0;
@@ -32,10 +32,10 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
       const m=year+'-'+String(month).padStart(2,'0')
       for(const date of recurringDatesInMonth(m,{scheduleType,day:Number(plan.day),weekday:Number(plan.weekday||0)})){
         if(date>endKey || excludedKeys.has(plan.id+':'+m) || excludedKeys.has(plan.id+':'+date))continue
-        const requestId=recurringRequestId(plan.id,scheduleType==='weekly'?date:m)
+        const requestId=recurringRequestId(plan.id,scheduleType==='monthly'?m:date)
         if(idempotency.has(requestId))continue
         const base=[plan.name,plan.paymentSource||''].join('|')
-        const conflictKey=(scheduleType==='weekly'?date:m)+'|'+base
+        const conflictKey=(scheduleType==='monthly'?m:date)+'|'+base
         candidates.push({planId:plan.id,month:m,date,name:plan.name,amount:Number(plan.amount),
           paymentSource:plan.paymentSource,day:Number(plan.day),scheduleType,weekday:Number(plan.weekday||0),
           category:plan.category,startMonth:plan.startMonth,conflict:existing.has(conflictKey),upcoming:date>currentKey})

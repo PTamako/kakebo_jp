@@ -33,8 +33,8 @@ async function refreshEverything() {
   if (busy.value || refreshingEverything.value) return
   refreshingEverything.value = true
   try {
-    // Update scheduled transfer bookkeeping before taking the ledger snapshot,
-    // otherwise a due transfer created during refresh could be missed.
+    // Fetch the Worker-maintained transfer status before the ledger snapshot.
+    // This refresh is read-only and never books a transfer on page entry.
     if (appContext?.loadTransfers) await appContext.loadTransfers()
     await loadAll()
     if(managementTab.value==='tools')await refreshLocalReceiptCount()

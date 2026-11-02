@@ -1,9 +1,10 @@
 import { syncFundNav } from '../functions/api/fund-nav-sync.js'
 import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
+import { applyDueSbiTransfers } from '../functions/api/investment-transfer.js'
 import { tokyoDateAt } from '../src/recurring-posting.js'
 import { isJapanHoliday } from '../src/japan-holidays.js'
 
-// One D1-bound scheduled Worker, with independent NAV and fixed-expense jobs.
+// One D1-bound scheduled Worker: independent NAV, recurring-expense and SBI transfer jobs.
 // Production redeploy refresh: route each scheduled trigger independently; no D1 migration.
 // Keep the original NAV cron behavior and trigger a D1 write only on the
 // dedicated fixed-expense times. A NAV provider failure never blocks entries.
@@ -26,6 +27,17 @@ export default {
           console.log('Recurring fixed-expense sync', JSON.stringify(result))
         } catch (error) {
           console.error('Recurring fixed-expense sync failed', String(error?.message || error))
+          throw error
+        }
+      })())
+      // Independent task: even if fixed-expense posting fails, due SBI transfers
+      // are still processed, and a retry never books them twice.
+      ctx.waitUntil((async () => {
+        try {
+          const result = await applyDueSbiTransfers(env.DB, today)
+          console.log('SBI due-transfer sync', JSON.stringify(result))
+        } catch (error) {
+          console.error('SBI due-transfer sync failed', String(error?.message || error))
           throw error
         }
       })())

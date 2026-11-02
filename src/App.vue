@@ -1017,12 +1017,8 @@ const transferDue = item => String(item.transfer_date || item.date) <= new Date(
 async function loadTransfers() {
   transferLoading.value = true
   try {
-    // Explicitly apply due transfers; this must not happen on unrelated GET requests.
-    if (!/^[^.]+\.kakeibo-f17\.pages\.dev$/.test(window.location.hostname))
-      await api('transfers/process-due',{method:'POST'})
-    let rows = await api('transfers')
-    // The backend marks due transfers once; no extra per-row writes needed here.
-    pendingTransfers.value = rows
+    // Page visits are read-only; the scheduled Worker applies due transfers.
+    pendingTransfers.value = await api('transfers')
   } catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
   finally { transferLoading.value = false }
 }

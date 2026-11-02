@@ -59,3 +59,14 @@ test('existing create, edit, preview, selection and explicit posting confirmatio
   assert.match(source, /await props.api\(updated\?'recurring-plans\/'/)
   assert.doesNotMatch(fixed, /:style="\{.*width:100vw/)
 })
+
+test('mobile fixed expense form removes redundant text and avoids a tall blank gap', () => {
+  assert.doesNotMatch(fixed, /recurring-form-caption|周期・開始月・記帳方法を設定します/)
+  assert.match(fixed, /class="recurring-form-field recurring-form-schedule"/)
+  assert.match(source, /\.recurring-manager-panel \.recurring-form-layout\{display:grid;grid-template-columns:minmax\(0,1fr\);gap:9px;margin:0 0 6px/)
+  assert.match(source, /@media\(min-width:360px\) and \(max-width:679px\)\{/)
+  assert.match(source, /\.recurring-manager-panel \.recurring-form-name,\s*\.recurring-manager-panel \.recurring-form-amount,\s*\.recurring-manager-panel \.recurring-form-schedule,/)
+  assert.match(source, /main \.finance-tools \.recurring-manager-panel\{padding:12px;row-gap:6px\}/)
+  assert.match(source, /\.recurring-manager-panel \.recurring-review-panel\{margin-block:5px;padding:10px\}/)
+  assert.match(source, /\.recurring-manager-panel \.recurring-posting-mode label\{min-height:44px;padding:7px\}/)
+})

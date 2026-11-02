@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { onRequest } from '../functions/api/_middleware.js'
 import cronWorker from '../workers/fund-nav-cron.js'
+import { validateBackup, chunkRestoreSettings } from '../src/finance-tools.js'
 
 const backup=()=>({format:'kakeibo-ledger-backup',version:4,entries:[],plans:[],customRules:[]})
 test('authenticated D1 snapshot contains exact default matching rules, not internal markers',async()=>{
@@ -55,4 +56,16 @@ test('NAV Cron does not call D1 on weekend but does on trading day',async()=>{
   assert.equal(called,false)
   await cronWorker.scheduled({cron:'0 12 * * *',scheduledTime:Date.parse('2026-11-04T12:00:00Z')},{DB:db},ctx)
   assert.equal(called,true)
+})
+
+test('full 775-keyword dictionary remains intact across bounded restore stages',()=>{
+  const defaults=Array.from({length:775},(_,i)=>({keyword:'fallback-'+i,category:'日用品'}))
+  const archive=validateBackup({...backup(),defaultRules:defaults})
+  const chunks=chunkRestoreSettings(archive,80)
+  assert.ok(chunks.every(c=>(c.defaultRules||[]).length<=80))
+  assert.equal(chunks.flatMap(c=>c.defaultRules||[]).length,775)
+  assert.deepEqual(chunks.flatMap(c=>c.defaultRules||[]),defaults)
+})
+test('backup rejects internal migration marker masquerading as a matching rule',()=>{
+  assert.throws(()=>validateBackup({...backup(),defaultRules:[{keyword:'__category__:通信',category:'通信'}]}))
 })

@@ -11,7 +11,14 @@ export const KNOWN_MANUAL_NAV_FUNDS = Object.freeze({
   '04317188': 'iFreeNEXT NASDAQ100インデックス'
 })
 
-// Official manager reference for the fund requiring manual NAV input.
+// A confirmed independent quote source while Daiwa Asset Management's
+// website is temporarily closed (2026-10-30 onward). This is a securities
+// broker's published NAV history, NOT the investment manager's website.
 export const MANUAL_NAV_REFERENCE_URLS = Object.freeze({
-  '04317188': 'https://www.daiwa-am.co.jp/funds/comparison/result/index.html?fc=3373'
+  '04317188': 'https://site0.sbisec.co.jp/marble/fund/history/standardprice.do?fund_sec_code=04317188'
+})
+
+// Verified second independent reference for the same fund.
+export const MANUAL_NAV_ALTERNATE_URLS = Object.freeze({
+  '04317188': 'https://finance.yahoo.co.jp/quote/04317188/history'
 })

@@ -4,11 +4,25 @@ import { readFileSync } from 'node:fs'
 import { fundNavReferences } from '../src/fund-nav-reference.js'
 import { probeFundNavSupport } from '../functions/api/fund-nav-sync.js'
 
-test('verified Daiwa fund has exact official product URL before SBI reference', () => {
+test('Daiwa NASDAQ100 uses confirmed SBI NAV history plus independent Yahoo fallback', () => {
   const links = fundNavReferences('04317188','iFreeNEXT NASDAQ100インデックス')
-  assert.equal(links[0].kind,'verified')
-  assert.match(links[0].url,/^https:\/\/www\.daiwa-am\.co\.jp\//)
-  assert.equal(links[1].kind,'broker')
+  assert.equal(links.length,2)
+  assert.equal(links[0].kind,'broker')
+  assert.equal(links[0].url,'https://site0.sbisec.co.jp/marble/fund/history/standardprice.do?fund_sec_code=04317188')
+  assert.equal(links[1].kind,'quotes')
+  assert.equal(links[1].url,'https://finance.yahoo.co.jp/quote/04317188/history')
+  assert.ok(links.every(link => !link.url.includes('daiwa-am.co.jp')))
+})
+test('other Daiwa fund codes never link to the temporarily closed manager website', () => {
+  const links=fundNavReferences('12345678','iFreeNEXT 先進国株式')
+  assert.equal(links.length,2)
+  assert.equal(links[0].kind,'broker')
+  assert.equal(links[1].kind,'search')
+  assert.ok(links.every(link => !link.url.includes('daiwa-am.co.jp')))
+})
+test('unaffected managers retain original official catalogue links', () => {
+  const links=fundNavReferences('12345678','ニッセイ外国株式インデックス')
+  assert.equal(links[0].kind,'catalogue')
 })
 test('unlisted Nissay fund is directed to official manager NAV list, not fabricated detail', () => {
   const links = fundNavReferences('12345678','ニッセイ外国株式インデックスファンド')

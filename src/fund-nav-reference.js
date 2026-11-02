@@ -33,17 +33,14 @@ export function fundNavReferences(code,name='') {
     references.push({label:'運用会社の公式ページ',url:known,kind:'verified'})
   } else if(manager){
     references.push({label:'運用会社の基準価額一覧',url:manager.site,kind:'catalogue'})
+  } else {
+    // The company is not identified: provide a search, NOT an unverified
+    // company detail link, and never mistake a search hit for official data.
+    const query=(fundName ? fundName+' ' : '')+normalized+' 運用会社 公式 基準価額'
+    references.push({label:'運用会社の公式ページを検索',url:searchUrl(query),kind:'search'})
   }
-  // This is an official securities-broker quote-history lookup. A link may
-  // return "not found" if the fund is not offered by this particular broker.
+  // SBI is the user's securities broker; this read-only quote-history path is
+  // confirmed for some codes, but funds not sold by SBI may show "not found".
   references.push({label:'SBI証券で照会',url:'https://site0.sbisec.co.jp/marble/fund/history/standardprice.do?fund_sec_code='+normalized,kind:'broker'})
-  if(!known) {
-    const q=manager
-      ? 'site:'+manager.domain+' '+(fundName||normalized)+' '+normalized+' 基準価額'
-      : (fundName ? fundName+' ' : '')+normalized+' 運用会社 公式 基準価額'
-    // The search is clearly labeled as search, never passed off as an
-    // automatically verified official manager page.
-    if(!manager) references.push({label:'運用会社の公式ページを検索',url:searchUrl(q),kind:'search'})
-  }
   return references.slice(0,2)
 }

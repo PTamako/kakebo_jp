@@ -58,6 +58,6 @@ test('UI clearly separates tomorrow-only exclusion from due entries and keeps mo
   assert.match(ui, /v-for="candidate in recurringDueEntries"/)
   assert.match(ui, /selectedRecurring = computed\(\(\) => recurringDueEntries.value.filter/)
   assert.match(ui, /const safe=selectedRecurring.value.filter\(row=>row.date<=today\)/)
-  assert.match(ui, /@media\(min-width:680px\)\{\s*\.recurring-manager-panel \.recurring-review-panel/)
+  assert.match(ui, /@media\(min-width:680px\)\{\s*\.finance-tools \.recurring-review-panel/)
   assert.match(ui, /\.recurring-upcoming-item\{display:grid;grid-template-columns:minmax\(0,1fr\) auto/)
 })

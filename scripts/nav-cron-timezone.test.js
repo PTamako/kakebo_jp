@@ -82,20 +82,26 @@ test('existing NAV Worker handles scheduled fixed-expense dates without running 
       ['30 15 * * *','2026-11-01T15:30:00Z','2026-11-02'],
       ['30 0 * * *','2026-11-02T00:30:00Z','2026-11-02']
     ]) {
-      let job
+      const jobs=[]
       const db={prepare(sql){
         calls.push(sql)
-        if(!sql.includes('FROM recurring_plans p')) throw Error('unexpected NAV query during recurring job')
-        return {bind(...args){assert.equal(args[0], '2026-11');return this},all:async()=>({results:[]})}
+        if(sql.includes('FROM recurring_plans p')) {
+          return {bind(...args){assert.equal(args[0], '2026-11');return this},all:async()=>({results:[]})}
+        }
+        if(sql.includes('UPDATE entries SET transfer_applied = 1')) {
+          return {bind(day){assert.equal(day,date);return this},run:async()=>({meta:{changes:0}})}
+        }
+        throw Error('unexpected NAV query during recurring job')
       }}
       await navWorker.scheduled({cron,scheduledTime:Date.parse(time)},{DB:db},
-        {waitUntil(p){job=p}})
-      assert.ok(job)
-      await job
+        {waitUntil(p){jobs.push(p)}})
+      assert.equal(jobs.length,2, 'scheduled fixed expenses and SBI transfers are independent')
+      await Promise.all(jobs)
       const summary=output.filter(x=>x[0]==='Recurring fixed-expense sync').at(-1)
       assert.equal(JSON.parse(summary[1]).date,date)
+      assert.ok(output.some(x=>x[0]==='SBI due-transfer sync'))
     }
-    assert.equal(calls.length,2)
+    assert.equal(calls.length,4)
     assert.equal(output.filter(x=>x[0]==='NAV sync').length,0)
   } finally { console.log=originalLog }
 })
@@ -118,11 +124,14 @@ test('fixed-expense job failure is logged independently of the NAV job', async (
   console.log=(...args)=>events.push(args)
   console.error=(...args)=>events.push(args)
   try {
-    let job
+    const jobs=[]
     await navWorker.scheduled({cron:'30 15 * * *',scheduledTime:Date.parse('2026-11-01T15:30:00Z')},
-      {DB:null},{waitUntil(p){job=p}})
-    await assert.rejects(job)
+      {DB:null},{waitUntil(p){jobs.push(p)}})
+    assert.equal(jobs.length,2)
+    const outcomes=await Promise.allSettled(jobs)
+    assert.ok(outcomes.every(x=>x.status==='rejected'))
     assert.ok(events.some(args=>args[0]==='Recurring fixed-expense sync failed'))
+    assert.ok(events.some(args=>args[0]==='SBI due-transfer sync failed'))
     assert.ok(!events.some(args=>args[0]==='NAV sync started'))
   }finally{console.log=originalLog;console.error=originalError}
 })

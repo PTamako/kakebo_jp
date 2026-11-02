@@ -1,7 +1,8 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
-import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS, MANUAL_NAV_REFERENCE_URLS } from './fund-nav-coverage.js'
+import { autoNavSupported, KNOWN_MANUAL_NAV_FUNDS } from './fund-nav-coverage.js'
+import { fundNavReferences } from './fund-nav-reference.js'
 import { groupFundHoldings } from './sbi-fund-groups.js'
 import { parseSbiHoldingsText } from './sbi-holdings-import.js'
 import { parseSbiFundDetailText, applySbiFundDetailUpdates } from './sbi-fund-detail-import.js'
@@ -55,6 +56,7 @@ const emptyPrice = () => ({fundCode:'',navPer10000:0,priceDate:today()})
 const plan = ref(emptyPlan())
 const holding = ref(emptyHolding())
 const price = ref(emptyPrice())
+const priceFundName = ref('')
 const editingTransfer = ref(null)
 const newPurchaseMonth = ref('')
 const yen = value => '¥' + Number(value || 0).toLocaleString('ja-JP')
@@ -66,7 +68,8 @@ const shortFundName = item => ({
   '0331A172': '先進国債券（除く日本）',
   '04317188': 'NASDAQ100'
 })[item.fund_code] || item.fund_name
-const manualNavReference = code => MANUAL_NAV_REFERENCE_URLS[String(code||'').trim().toUpperCase()] || ''
+const navReferences = (code,name) => fundNavReferences(code,name)
+const shouldShowNavReferences = code => ['manual','unknown'].includes(navMode(code))
 const sourceLabel = source => ['official_mufg','official_daiwa'].includes(source) ? '公式取得済' : source === 'manual' ? '手入力' : source === 'sbi_screenshot' ? '初期記録' : '価格未取得'
 // Never claim that an unknown fund is manual-only without trying the
 // official read-only provider lookup. A network failure remains "確認不可".
@@ -111,6 +114,11 @@ let checkTimer=null
 watch(() => holding.value.fundCode,code=>{
   if(checkTimer!==null)clearTimeout(checkTimer)
   if(editing.value==='holding'&&/^[A-Z0-9]{8}$/.test(String(code||'').trim().toUpperCase()))
+    checkTimer=setTimeout(()=>{void checkNavSupport(code)},450)
+})
+watch(() => plan.value.fundCode, code => {
+  if(checkTimer!==null)clearTimeout(checkTimer)
+  if(editing.value==='plan'&&/^[A-Z0-9]{8}$/.test(String(code||'').trim().toUpperCase()))
     checkTimer=setTimeout(()=>{void checkNavSupport(code)},450)
 })
 
@@ -344,6 +352,7 @@ function editHolding(h) {
 function editPrice(h) {
   error.value = ''
   editing.value = 'price'
+  priceFundName.value = String(h.fund_name || '')
   price.value = {
     fundCode:h.fund_code,
     navPer10000:Number(h.nav_per_10000||0),
@@ -462,7 +471,9 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
                     <span v-if="fund.price_date">{{fund.source==='sbi_screenshot'?'確認日':'基準日'}} {{fund.price_date}}</span>
                   </div>
                   <button type="button" class="sbi-row-edit" @click="editPrice(fund)">基準価額を変更</button>
-                  <a v-if="navMode(fund.fund_code)==='manual' && manualNavReference(fund.fund_code)" :href="manualNavReference(fund.fund_code)" target="_blank" rel="noopener noreferrer" class="sbi-row-edit">公式参考 ↗</a>
+                  <div v-if="shouldShowNavReferences(fund.fund_code)" class="sbi-nav-links">
+                    <a v-for="refLink in navReferences(fund.fund_code,fund.fund_name)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer">{{refLink.label}} ↗</a>
+                  </div>
                 </div>
               </div>
             </article>
@@ -536,6 +547,14 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <div class="sbi-line-heading"><h3>積立設定</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
         <label>銘柄コード<input v-model.trim="plan.fundCode" maxlength="8" required :disabled="existingIdentity" placeholder="03311187" @input="plan.fundCode=plan.fundCode.toUpperCase();fillFund(plan)"/></label>
         <label>銘柄名<input v-model.trim="plan.fundName" maxlength="120" required /></label>
+        <div class="sbi-nav-guidance" role="status">
+          <span class="sbi-nav-status" :class="'sbi-nav-'+navMode(plan.fundCode)">{{navModeLabel(plan.fundCode)}}</span>
+          <span>{{navModeHelp(plan.fundCode)}}</span>
+          <button v-if="navMode(plan.fundCode)==='unknown'" type="button" class="sbi-nav-retry" @click="checkNavSupport(plan.fundCode,true)">再確認</button>
+        </div>
+        <div v-if="shouldShowNavReferences(plan.fundCode)" class="sbi-nav-links">
+          <a v-for="refLink in navReferences(plan.fundCode,plan.fundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer">{{refLink.label}} ↗</a>
+        </div>
         <label>口座区分<select v-model="plan.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option></select></label>
         <label>毎月の積立額（円）<input v-model.number="plan.monthlyAmount" type="number" min="0" step="1" required /></label>
         <label>注文希望日<input v-model.number="plan.orderDay" type="number" min="1" max="28" required /></label>
@@ -611,6 +630,9 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           <button v-if="navMode(holding.fundCode)==='unknown'" type="button" class="sbi-nav-retry" @click="checkNavSupport(holding.fundCode,true)">再確認</button>
         </div>
         <label>銘柄名<input v-model.trim="holding.fundName" maxlength="120" required /></label>
+        <div v-if="shouldShowNavReferences(holding.fundCode)" class="sbi-nav-links">
+          <a v-for="refLink in navReferences(holding.fundCode,holding.fundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer">{{refLink.label}} ↗</a>
+        </div>
         <label>口座区分<select v-model="holding.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option><option value="combined">NISA（成長＋つみたて 合算）</option></select></label>
         <label>保有口数<input v-model.number="holding.units" type="number" min="0" step="1" required /></label>
         <label>取得金額（円）<input v-model.number="holding.acquisitionCost" type="number" min="0" step="1" required /></label>
@@ -619,7 +641,9 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
       <form v-else-if="editing==='price'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="基準価額の編集" @submit.prevent="submit('price',{...price,navPer10000:Number(price.navPer10000)},'基準価額を更新しました')">
         <div class="sbi-line-heading"><h3>基準価額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
         <p>銘柄コード：{{price.fundCode}}</p>
-        <p v-if="manualNavReference(price.fundCode)"><a :href="manualNavReference(price.fundCode)" target="_blank" rel="noopener noreferrer">運用会社の公式基準価額を確認 ↗</a></p>
+        <div v-if="shouldShowNavReferences(price.fundCode)" class="sbi-nav-links">
+          <a v-for="refLink in navReferences(price.fundCode,priceFundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer">{{refLink.label}} ↗</a>
+        </div>
         <label>基準価額（1万口当たり円）<input v-model.number="price.navPer10000" type="number" min="1" step="1" required /></label>
         <label>基準日<input v-model="price.priceDate" type="date" required /></label>
         <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
@@ -918,4 +942,4 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-bulk-dialog .sbi-actions{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));padding:10px 0 calc(8px + env(safe-area-inset-bottom,0px));background:var(--card);z-index:2}
 .sbi-import-reset{border:0;background:none;color:var(--blue-dark);font-weight:700;min-height:36px;padding:4px;font-size:11px}
 .sbi-text-import-button{min-height:44px;width:100%;font-size:12px}
-</style>
+\n.sbi-nav-links{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;font-size:12px;line-height:1.5;min-width:0}\n.sbi-nav-links a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}\n</style>

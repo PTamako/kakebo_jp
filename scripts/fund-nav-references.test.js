@@ -56,3 +56,16 @@ test('UI checks API eligibility and shows references in both new fund forms and 
   assert.match(ui,/shouldShowNavReferences\(price\.fundCode\)/)
   assert.match(ui,/navReferences\(fund\.fund_code,fund\.fund_name\)/)
 })
+
+test('all four fund reference areas use concise labels without losing full accessible destination',()=>{
+  const ui=readFileSync(new URL('../src/SbiPortfolio.vue',import.meta.url),'utf8')
+  assert.match(ui,/link\.kind === 'broker' \? 'SBI'/)
+  assert.match(ui,/link\.kind === 'quotes' \? 'Yahoo!'/)
+  assert.match(ui,/link\.kind === 'search' \? '検索'/)
+  assert.equal((ui.match(/navLinkLabel\(refLink\)/g)||[]).length,4)
+  assert.equal((ui.match(/:aria-label="refLink\.label\+'を開く'"/g)||[]).length,4)
+  assert.doesNotMatch(ui,/\{\{refLink\.label\}\} ↗/)
+  assert.match(ui,/class="sbi-fund-price-top"/)
+  assert.match(ui,/\.sbi-fund-price-line\{display:grid/)
+  assert.match(ui,/\.sbi-fund-price-meta span\{[^}]*white-space:nowrap/)
+})

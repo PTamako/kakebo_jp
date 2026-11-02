@@ -69,6 +69,8 @@ const shortFundName = item => ({
   '04317188': 'NASDAQ100'
 })[item.fund_code] || item.fund_name
 const navReferences = (code,name) => fundNavReferences(code,name)
+// Short, consistent labels in all mobile forms; complete destination name stays accessible.
+const navLinkLabel = link => link.kind === 'broker' ? 'SBI' : link.kind === 'quotes' ? 'Yahoo!' : link.kind === 'search' ? '検索' : '公式'
 const shouldShowNavReferences = code => ['manual','unknown'].includes(navMode(code))
 const sourceLabel = source => ['official_mufg','official_daiwa'].includes(source) ? '公式取得済' : source === 'manual' ? '手入力' : source === 'sbi_screenshot' ? '初期記録' : '価格未取得'
 // Never claim that an unknown fund is manual-only without trying the
@@ -466,13 +468,15 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
                   </div>
                 </div>
                 <div class="sbi-fund-price-line">
-                  <div class="sbi-fund-price-meta">
-                    <span>基準価額 {{fund.nav_per_10000 ? yen(fund.nav_per_10000) : '未設定'}} · {{sourceLabel(fund.source)}}</span>
-                    <span v-if="fund.price_date">{{fund.source==='sbi_screenshot'?'確認日':'基準日'}} {{fund.price_date}}</span>
+                  <div class="sbi-fund-price-top">
+                    <div class="sbi-fund-price-meta">
+                      <span>基準価額 {{fund.nav_per_10000 ? yen(fund.nav_per_10000) : '未設定'}} · {{sourceLabel(fund.source)}}</span>
+                      <span v-if="fund.price_date">{{fund.source==='sbi_screenshot'?'確認日':'基準日'}} {{fund.price_date}}</span>
+                    </div>
+                    <button type="button" class="sbi-row-edit" @click="editPrice(fund)">基準価額を変更</button>
                   </div>
-                  <button type="button" class="sbi-row-edit" @click="editPrice(fund)">基準価額を変更</button>
-                  <div v-if="shouldShowNavReferences(fund.fund_code)" class="sbi-nav-links">
-                    <a v-for="refLink in navReferences(fund.fund_code,fund.fund_name)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer">{{refLink.label}} ↗</a>
+                  <div v-if="shouldShowNavReferences(fund.fund_code)" class="sbi-nav-links" aria-label="基準価額の参照先">
+                    <a v-for="refLink in navReferences(fund.fund_code,fund.fund_name)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer" :title="refLink.label" :aria-label="refLink.label+'を開く'">{{navLinkLabel(refLink)}} <span aria-hidden="true">↗</span></a>
                   </div>
                 </div>
               </div>
@@ -553,7 +557,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           <button v-if="navMode(plan.fundCode)==='unknown'" type="button" class="sbi-nav-retry" @click="checkNavSupport(plan.fundCode,true)">再確認</button>
         </div>
         <div v-if="shouldShowNavReferences(plan.fundCode)" class="sbi-nav-links">
-          <a v-for="refLink in navReferences(plan.fundCode,plan.fundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer">{{refLink.label}} ↗</a>
+          <a v-for="refLink in navReferences(plan.fundCode,plan.fundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer" :title="refLink.label" :aria-label="refLink.label+'を開く'">{{navLinkLabel(refLink)}} <span aria-hidden="true">↗</span></a>
         </div>
         <label>口座区分<select v-model="plan.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option></select></label>
         <label>毎月の積立額（円）<input v-model.number="plan.monthlyAmount" type="number" min="0" step="1" required /></label>
@@ -631,7 +635,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         </div>
         <label>銘柄名<input v-model.trim="holding.fundName" maxlength="120" required /></label>
         <div v-if="shouldShowNavReferences(holding.fundCode)" class="sbi-nav-links">
-          <a v-for="refLink in navReferences(holding.fundCode,holding.fundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer">{{refLink.label}} ↗</a>
+          <a v-for="refLink in navReferences(holding.fundCode,holding.fundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer" :title="refLink.label" :aria-label="refLink.label+'を開く'">{{navLinkLabel(refLink)}} <span aria-hidden="true">↗</span></a>
         </div>
         <label>口座区分<select v-model="holding.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option><option value="combined">NISA（成長＋つみたて 合算）</option></select></label>
         <label>保有口数<input v-model.number="holding.units" type="number" min="0" step="1" required /></label>
@@ -642,7 +646,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <div class="sbi-line-heading"><h3>基準価額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
         <p>銘柄コード：{{price.fundCode}}</p>
         <div v-if="shouldShowNavReferences(price.fundCode)" class="sbi-nav-links">
-          <a v-for="refLink in navReferences(price.fundCode,priceFundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer">{{refLink.label}} ↗</a>
+          <a v-for="refLink in navReferences(price.fundCode,priceFundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer" :title="refLink.label" :aria-label="refLink.label+'を開く'">{{navLinkLabel(refLink)}} <span aria-hidden="true">↗</span></a>
         </div>
         <label>基準価額（1万口当たり円）<input v-model.number="price.navPer10000" type="number" min="1" step="1" required /></label>
         <label>基準日<input v-model="price.priceDate" type="date" required /></label>
@@ -875,11 +879,13 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-account-foot{font-size:10px;line-height:1.45}
 .sbi-account-foot>span{min-width:0;overflow-wrap:anywhere}
 .sbi-account-edit{flex:none;min-width:48px;min-height:40px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--blue-dark);font-size:11px;font-weight:750}
-.sbi-fund-price-line{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
-.sbi-fund-price-meta{display:grid;gap:3px;min-width:0;overflow-wrap:anywhere}
-.sbi-fund-price-line .sbi-row-edit{flex:none;white-space:normal;text-align:center;font-size:10px;max-width:124px}
+.sbi-fund-price-line{display:grid;gap:7px;min-width:0}
+.sbi-fund-price-top{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0}
+.sbi-fund-price-meta{display:grid;gap:2px;min-width:0;font-size:11px;line-height:1.5}
+.sbi-fund-price-meta span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sbi-fund-price-line .sbi-row-edit{white-space:nowrap;text-align:center;font-size:11px;min-height:36px;max-width:none}
 .sbi-account-edit:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
-@media(max-width:370px){.sbi-account-head{align-items:flex-start}.sbi-account-value{display:grid;gap:2px;text-align:right}.sbi-fund-price-line{align-items:flex-start}}
+@media(max-width:370px){.sbi-account-head{align-items:flex-start}.sbi-account-value{display:grid;gap:2px;text-align:right}.sbi-fund-price-top{gap:5px}.sbi-fund-price-line .sbi-row-edit{font-size:10px;padding-inline:5px}}
 
 /* Management rows: concise two-line mobile layout, with accessible edit targets. */
 .sbi-management-body .sbi-plan-row,.sbi-management-body .sbi-transfer-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:7px;min-height:48px;padding:5px 0}
@@ -943,6 +949,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-import-reset{border:0;background:none;color:var(--blue-dark);font-weight:700;min-height:36px;padding:4px;font-size:11px}
 .sbi-text-import-button{min-height:44px;width:100%;font-size:12px}
 
-.sbi-nav-links{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;font-size:12px;line-height:1.5;min-width:0}
-.sbi-nav-links a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.sbi-nav-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11px;line-height:1.4;min-width:0}
+.sbi-nav-links a{display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:5px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--blue-dark);font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap}
+.sbi-nav-links a:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.sbi-nav-links a span{font-size:10px;opacity:.75}
 </style>

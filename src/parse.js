@@ -41,7 +41,18 @@ function findAmount(t) {
   if (yen.length) return Math.max(...yen)
   const unit = [...t.matchAll(/([\d,]{1,9})\s*(?:円|日元|元|块|塊)/g)].map(x => num(x[1]))
   if (unit.length) return Math.max(...unit)
-  const cleaned = t.replace(/\d{4}[年\/.\-]\d{1,2}[月\/.\-]\d{1,2}日?/g, '').replace(/\d{1,2}[:：]\d{2}/g, '')
+  // Payment notifications often show a price beside the shop without ¥/円,
+  // and OCR can corrupt the currency glyph into a bracket (e.g. "3,808[").
+  // A grouped number is stronger evidence than any year elsewhere on screen.
+  const grouped = [...t.matchAll(/(?<![\d,，])(\d{1,3}(?:[,，]\d{3})+)(?![\d,，])/g)]
+    .map(x => num(x[1])).filter(x => Number.isSafeInteger(x) && x > 0 && x <= 9999999)
+  if (grouped.length) return Math.max(...grouped)
+  // Remove printed dates (including OCR-inserted spaces) and clock times
+  // before the numeric fallback: 2026 must never become the expense amount.
+  const cleaned = t
+    .replace(/(?<!\d)20\d{2}\s*(?:年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?|[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*\d{1,2})/g, '')
+    .replace(/(?<!\d)\d{1,2}\s*月\s*\d{1,2}\s*日?/g, '')
+    .replace(/(?<!\d)(?:[01]?\d|2[0-3])\s*(?:[:：]\s*[0-5]\d|時\s*[0-5]?\d\s*分?)/g, '')
   const all = [...cleaned.matchAll(/(?<![\d.])(\d{2,7})(?![\d.])/g)].map(x => Number(x[1]))
   return all.length ? Math.max(...all) : 0
 }
@@ -129,7 +140,12 @@ export function parseEntry(raw, rules) {
   const structuredMerchant = csvParts.length >= 3 && csvDate.test(csvParts[0])
     && csvParts.slice(2).some(part => csvAmount.test(part))
     ? csvParts[1] : ''
-  const merchant = (structuredMerchant || firstLine.slice(0, 40) || keyword).slice(0, 60)
+  // Do not save a notification's right-aligned price as part of its shop name.
+  // Keep ordinary merchant numbers (such as セブン-イレブン) intact.
+  const merchant = (structuredMerchant || firstLine.slice(0, 60) || keyword)
+    .replace(/\s+[¥￥]?\s*\d{1,3}(?:[,，]\d{3})+\s*(?:円)?\s*[\[［\]］|]?\s*$/u, '')
+    .replace(/\s+[¥￥]\s*\d[\d,，]*\s*(?:円)?\s*$/u, '')
+    .trim().slice(0, 60)
   return {
     date: findDate(text), time: findTime(text), amount: findAmount(text),
     category, merchant, note: text.length <= 40 ? text.replace(/\s+/g, ' ') : '',

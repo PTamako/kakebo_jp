@@ -18,7 +18,16 @@ export function paymentForDraft({ merchant = '', recognized = '', importSource =
   // merchant rules and an explicitly recognized payment keep precedence.
   const suica=registeredSources.find(name=>String(name).normalize('NFKC').trim().toLowerCase()==='suica')
   const savedRule = rule?.payment_source && allowed(rule.payment_source) ? rule.payment_source : ''
-  const ocrCard = recognized && allowed(recognized) ? recognized : ''
+  // PayPay credit is a payment label, not necessarily the exact D1 card name.
+  // Resolve it only when there is exactly one registered PayPay credit card.
+  // VISA alone is never sufficient: other Visa cards may be registered.
+  const paypayCredit = /^(?:paypayクレジット|paypaycredit)$/i.test(
+    String(recognized || '').normalize('NFKC').replace(/[\s　・]/g, ''))
+  const paypayCards = registeredSources.filter(name =>
+    /^paypay/i.test(String(name).normalize('NFKC').replace(/[\s　・]/g, '')) &&
+    /(?:カード|card|visa|クレジット|credit)/i.test(String(name).normalize('NFKC')))
+  const ocrCard = recognized && allowed(recognized) ? recognized :
+    paypayCredit && paypayCards.length === 1 ? paypayCards[0] : ''
   return savedRule || ocrCard || (suica && isStationMerchant(merchant) ? suica : '') ||
     (allowed(defaultSource) ? defaultSource : '')
 }

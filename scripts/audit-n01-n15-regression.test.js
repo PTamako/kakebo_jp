@@ -32,7 +32,7 @@ test('manual entry for a month overrides the fixed expense regardless of modifie
 test('N06/N08: historical recurring rows require individual approval and deletion confirmation',()=>{
   const ui=text('src/FinanceTools.vue')
   assert.match(ui,/const recurringSelected = ref\(new Set\(\)\)/)
-  assert.match(ui,/preview\.filter\(row=>!row\.conflict && row\.month===current\)/)
+  assert.match(ui,/due\.filter\(row=>!row\.conflict && row\.month===current && row\.date<=today\)/)
   assert.match(ui,/<input type="checkbox" :checked="recurringSelected\.has\(/)
   assert.match(ui,/if \(!confirm\('固定費「'/)
 })

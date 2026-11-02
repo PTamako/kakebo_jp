@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
 import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
+import { nextCivilDay } from '../src/stats-period-comparison.js'
 import { prepaidRestoreBalances } from '../src/finance-tools.js'
 import { classify } from '../src/parse.js'
 const approvedPost = (plan, month = '2026-10') => ({
@@ -1053,5 +1054,43 @@ test('actual SQLite: deleting ordinary ledger entry never creates recurring excl
     assert.equal(deleted.status,200)
     assert.equal(deleted.body.skippedRecurring,false)
     assert.deepEqual((await call('recurring-exclusions')).body,[])
+  }finally{db.close()}
+})
+
+test('actual SQLite: tomorrow scheduled monthly and weekly exclusions stop Worker without early manual posting',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    const tomorrow=nextCivilDay(today)
+    const afterTomorrow=nextCivilDay(tomorrow)
+    const month=tomorrow.slice(0,7)
+    const monthId='10101010-1111-4444-8888-202611260001'
+    const day=Number(tomorrow.slice(-2))
+    const monthly={id:monthId,name:'先行除外の家賃',amount:80000,day,category:'居住',
+      paymentSource:'現金',startMonth:month,enabled:true,postingMode:'auto',scheduleType:'monthly',weekday:0}
+    assert.equal((await call('recurring-plans','POST',monthly)).status,200)
+    const premature=await call('recurring-post','POST',{
+      planId:monthId,month,expected:{name:monthly.name,amount:monthly.amount,day:monthly.day,
+        category:monthly.category,paymentSource:'現金',startMonth:month,date:tomorrow,
+        scheduleType:'monthly',weekday:0}
+    })
+    assert.equal(premature.status,409,'the manual post endpoint must still refuse tomorrow')
+    assert.equal((await call('recurring-exclusions','POST',{planId:monthId,month})).status,200)
+    assert.deepEqual((await call('recurring-exclusions')).body,[{planId:monthId,month}])
+    assert.equal((await postScheduledRecurring(db,{today:tomorrow})).created,0)
+    assert.equal((await call('recurring-exclusions','DELETE',{planId:monthId,month})).status,200)
+    assert.equal((await postScheduledRecurring(db,{today:tomorrow})).created,1)
+
+    const weekId='10101010-1111-4444-8888-202611260002'
+    const weekday=new Date(tomorrow+'T00:00:00Z').getUTCDay()
+    const weekly={id:weekId,name:'週払い',amount:500,day:1,weekday,category:'居住',
+      paymentSource:'現金',startMonth:month,enabled:true,postingMode:'auto',scheduleType:'weekly'}
+    assert.equal((await call('recurring-plans','POST',weekly)).status,200)
+    assert.equal((await call('recurring-exclusions','POST',{planId:weekId,month,date:tomorrow})).status,200)
+    assert.equal((await postScheduledRecurring(db,{today:tomorrow})).created,0)
+    assert.equal((await call('recurring-exclusions','POST',{planId:weekId,month:afterTomorrow.slice(0,7),date:afterTomorrow})).status,409,
+      'weekly exclusion cannot be set for any future date beyond tomorrow')
+    const weekLater=new Date(Date.parse(tomorrow+'T00:00:00Z')+7*86400000).toISOString().slice(0,10)
+    assert.equal((await call('recurring-exclusions','POST',{planId:weekId,month:weekLater.slice(0,7),date:weekLater})).status,409)
   }finally{db.close()}
 })

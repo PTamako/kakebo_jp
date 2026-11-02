@@ -1,8 +1,8 @@
 # Separate scheduled Worker; this does not replace Pages wrangler.toml.
 # Workers Builds production deploy: npx wrangler deploy --config wrangler.nav.toml
 # Keep the repository root wrangler.toml for Pages; never rename it to this Worker.
-# One existing Worker handles independent tasks: recurring expenses at 00:30/09:30 JST,
-# fund NAV at 19:30 JST plus conditional 23:15 retry.
+# One existing Worker handles independent tasks: recurring expenses and SBI due transfers
+# at 00:30/09:30 JST, fund NAV at 19:30 JST plus conditional 23:15 retry.
 name = "kakeibo-nav-sync"
 main = "workers/fund-nav-cron.js"
 compatibility_date = "2026-10-01"

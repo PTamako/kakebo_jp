@@ -63,6 +63,7 @@ test('A05/A09/A10/A11/A12: filters, privacy, quota, local imagery and due transf
   assert.match(read('functions/api/ai-quota.js'),/ai_ocr_daily_usage/)
   assert.match(app,/本日のAI残り回数：\{\{aiQuota\.remaining\}\}\/\{\{aiQuota\.limit\}\}回/)
   assert.doesNotMatch(app,/cdn2\.cdnstep\.com/)
-  assert.match(app,/api\('transfers\/process-due',\{method:'POST'\}\)/)
+  assert.doesNotMatch(app,/api\('transfers\/process-due',\{method:'POST'\}\)/)
+  assert.match(read('workers/fund-nav-cron.js'),/applyDueSbiTransfers\(env\.DB, today\)/)
   assert.match(api,/if \(a === 'transfers' && b === 'process-due' && m === 'POST'\)/)
 })

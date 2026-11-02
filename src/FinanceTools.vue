@@ -33,8 +33,8 @@ async function refreshEverything() {
   if (busy.value || refreshingEverything.value) return
   refreshingEverything.value = true
   try {
-    // Update scheduled transfer bookkeeping before taking the ledger snapshot,
-    // otherwise a due transfer created during refresh could be missed.
+    // Fetch the Worker-maintained transfer status before the ledger snapshot.
+    // This refresh is read-only and never books a transfer on page entry.
     if (appContext?.loadTransfers) await appContext.loadTransfers()
     await loadAll()
     if(managementTab.value==='tools')await refreshLocalReceiptCount()
@@ -1327,7 +1327,8 @@ async function removeCardBill(record) {
     <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? (plan.scheduleType==='workday'?'土日・祝日を除く日に、自動で支出明細に登録します。':recurringFrequencyLabel(plan)+'になると、自動で支出明細に登録します。') : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
-    <section class="recurring-review-panel" aria-label="固定費の記帳確認">
+  </article>
+  <article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel" aria-label="固定費の記帳確認">
       <div class="recurring-review-heading">
         <div>
           <h3>記帳の確認</h3>
@@ -1384,8 +1385,8 @@ async function removeCardBill(record) {
         </section>
         <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
       </div>
-    </section>
-
+  </article>
+  <article v-show="managementTab === 'plans'" class="finance-panel recurring-plans-panel">
     <details class="recurring-list-disclosure">
       <summary class="recurring-list-summary">
         <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{plans.length}}件</strong></span>
@@ -1724,11 +1725,11 @@ async function removeCardBill(record) {
   .recurring-manager-panel .recurring-form-layout{margin-top:0;margin-bottom:5px}
   .recurring-manager-panel .recurring-posting-mode legend{margin-bottom:5px}
   .recurring-manager-panel .recurring-posting-mode label{min-height:44px;padding:7px}
-  .recurring-manager-panel .recurring-review-panel{margin-block:5px;padding:10px}
+  .finance-tools .recurring-review-panel{padding:12px}
 }
 
 /* Fixed-expense review: distinct upcoming and due groups, readable on touch and desktop. */
-.recurring-review-panel{display:grid;gap:8px;min-width:0;padding:11px;border:1px solid var(--line);border-radius:15px;background:var(--tint);margin:7px 0}
+.recurring-review-panel{display:grid;gap:8px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--tint);margin:0}
 .recurring-review-heading h3{margin:0;font-size:15px;line-height:1.3;color:var(--ink)}
 .recurring-review-heading p{margin:5px 0 0;font-size:12px;line-height:1.5;color:var(--muted)}
 .recurring-review-results{display:grid;gap:12px;min-width:0;max-width:100%}
@@ -1749,12 +1750,26 @@ async function removeCardBill(record) {
 .recurring-review-panel .recurring-candidate-list{max-height:260px}
 .recurring-review-panel .recurring-swipe-tip{font-size:11px}
 @media(min-width:680px){
-  .recurring-manager-panel .recurring-review-panel{padding:16px}
+  .finance-tools .recurring-review-panel{padding:16px}
   .recurring-review-results{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
   .recurring-review-results>.recurring-review-group:only-child,.recurring-review-results>.recurring-review-empty:only-child{grid-column:1/-1}
   .recurring-upcoming-item{grid-template-columns:minmax(0,1fr) auto}
 }
-@media(max-width:380px){.recurring-manager-panel .recurring-review-panel{padding:10px}.recurring-review-group{padding:9px}.recurring-upcoming-item{padding:10px}.recurring-upcoming-item>.recurring-candidate-amount{font-size:13px}}
+@media(max-width:380px){.finance-tools .recurring-review-panel{padding:10px}.recurring-review-group{padding:9px}.recurring-upcoming-item{padding:10px}.recurring-upcoming-item>.recurring-candidate-amount{font-size:13px}}
+
+/* Saved plans and reviews are siblings of registration, not form fields. */
+.recurring-plans-panel{padding:6px 10px}
+.recurring-plans-panel .recurring-list-disclosure{border:0;background:transparent;overflow:visible}
+.recurring-plans-panel .recurring-list-summary{display:grid;grid-template-columns:minmax(0,1fr) 20px;align-items:center;gap:3px 8px;padding:8px 4px}
+.recurring-plans-panel .recurring-list-summary-title{grid-column:1;grid-row:1;flex-wrap:wrap}
+.recurring-plans-panel .recurring-list-summary-total{grid-column:1;grid-row:2;min-width:0;overflow-wrap:anywhere}
+.recurring-plans-panel .recurring-list-summary:after{grid-column:2;grid-row:1 / span 2;justify-self:center;margin:0}
+.recurring-plans-panel .recurring-list-body{padding:0 4px 6px}
+@media(max-width:679px){
+  .finance-tools>.recurring-review-panel{padding:12px}
+  .finance-tools>.recurring-plans-panel{padding:5px 10px}
+}
+@media(max-width:380px){.finance-tools>.recurring-review-panel{padding:10px}}
 
 /* Fixed expenses: iPhone-first form, review cards and stable disclosure headers. */
 .recurring-manager-panel{min-width:0;max-width:100%;box-sizing:border-box}

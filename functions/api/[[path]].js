@@ -1,4 +1,4 @@
-import { isAppliedSbiTransfer } from './investment-transfer.js'
+import { isAppliedSbiTransfer, applyDueSbiTransfers } from './investment-transfer.js'
 import { handlePrepaid, validPrepaidTarget, prepaidSchemaReady } from './prepaid-assets.js'
 import { handlePortfolio } from './investment-portfolio.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
@@ -181,10 +181,7 @@ export async function onRequest({ request, env, params }) {
 
   try {
     const tokyoToday = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    const applyDueTransfers = async () => {
-      await db.prepare("UPDATE entries SET transfer_applied = 1 WHERE type = 'transfer' AND transfer_target = 'sbi' AND COALESCE(transfer_applied, 0) = 0 AND COALESCE(transfer_date, date) <= ?1")
-        .bind(tokyoToday()).run()
-    }
+    const applyDueTransfers = () => applyDueSbiTransfers(db, tokyoToday())
     // D1 migrations have been completed. Requests never create schema,
     // import legacy records, or write default investment snapshots. User-initiated writes remain available.
     // Normalized recurring plans and bills are the sole persistent stores.

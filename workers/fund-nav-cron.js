@@ -3,6 +3,7 @@ import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
 import { tokyoDateAt } from '../src/recurring-posting.js'
 
 // One D1-bound scheduled Worker, with independent NAV and fixed-expense jobs.
+// Production redeploy refresh: route each scheduled trigger independently; no D1 migration.
 // Keep the original NAV cron behavior and trigger a D1 write only on the
 // dedicated fixed-expense times. A NAV provider failure never blocks entries.
 const NAV_CRONS = new Set(['0 12 * * *', '15 14 * * *'])

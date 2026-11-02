@@ -1328,11 +1328,11 @@ async function removeCardBill(record) {
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
   </article>
-  <article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel" aria-label="固定費の記帳確認">
+  <article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringListOpen }" aria-label="固定費の記帳確認">
       <div class="recurring-review-heading">
         <div>
           <h3>記帳の確認</h3>
-          <p>過去の未記帳分と、明日の予定を確認できます。</p>
+          <p>過去分・明日の予定</p>
         </div>
       </div>
       <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">過去分は直近10年まで確認します。</p>
@@ -1794,6 +1794,54 @@ async function removeCardBill(record) {
 .finance-panel .recurring-review-actions.has-preview button:first-child{background:var(--card);border-color:var(--line);color:var(--ink)}
 .finance-panel .recurring-review-actions.has-preview button:last-child{background:var(--recurring-review-primary);border-color:var(--recurring-review-primary);color:#fff;font-weight:750}
 .finance-panel .recurring-review-actions button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+
+/* Keep the review shortcut distinct from the page background in all four themes.
+   When collapsed, keep its action beside the heading on iPhones. */
+.finance-tools>.recurring-review-panel{
+  background:#fff;
+  border:1px solid color-mix(in srgb,var(--blue) 46%,#c9d8ce);
+  border-left:3px solid var(--blue);
+  box-shadow:0 4px 14px rgba(29,55,42,.11);
+}
+.finance-panel .recurring-review-heading p{
+  margin:3px 0 0;
+  color:color-mix(in srgb,var(--ink) 72%,var(--muted));
+  font-size:11px;
+  line-height:1.4;
+}
+.finance-tools>.recurring-review-panel .recurring-review-heading{min-width:0}
+.finance-tools>.recurring-review-panel .recurring-window-note{grid-column:1/-1}
+.finance-tools>.recurring-review-panel .recurring-review-results{grid-column:1/-1}
+.finance-panel .recurring-review-actions button:disabled{
+  opacity:1;
+  color:color-mix(in srgb,var(--ink) 65%,var(--muted));
+  background:color-mix(in srgb,var(--blue) 11%,#fff);
+  border-color:color-mix(in srgb,var(--blue) 28%,var(--line));
+}
+@media(max-width:679px){
+  .finance-tools>.recurring-review-panel:not(.is-expanded){
+    grid-template-columns:minmax(0,1fr) minmax(120px,auto);
+    align-items:center;
+    gap:7px 10px;
+    padding:10px 12px;
+  }
+  .finance-tools>.recurring-review-panel:not(.is-expanded) .recurring-review-heading{
+    grid-column:1;
+    grid-row:1;
+  }
+  .finance-tools>.recurring-review-panel:not(.is-expanded) .recurring-review-actions{
+    grid-column:2;
+    grid-row:1;
+    min-width:0;
+  }
+  .finance-tools>.recurring-review-panel:not(.is-expanded) .recurring-review-actions button{
+    min-height:44px;
+    padding:8px;
+    font-size:12px;
+    white-space:nowrap;
+  }
+}
+
 .recurring-candidate-list{box-sizing:border-box;max-width:100%}
 .recurring-swipe-row{position:relative;overflow:hidden;min-width:0;border-radius:11px;touch-action:pan-y}
 .recurring-swipe-row .recurring-candidate{position:relative;z-index:1;box-sizing:border-box;width:100%;transition:transform .18s ease}

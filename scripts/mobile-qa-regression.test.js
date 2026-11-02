@@ -89,7 +89,7 @@ test('native select, calendar and time pickers never hide the bottom tab bar on 
 
 test('Pages production build runs API and OCR regression suite before Vite', () => {
   assert.equal(pkg.scripts.build, 'npm run test:parse && npm run security:audit:prod && vite build')
-  assert.equal(pkg.scripts['test:parse'], 'node --test scripts/*.test.js')
+  assert.match(pkg.scripts['test:parse'], /^node --test(?: --test-reporter=spec)? scripts\/\*\.test\.js$/)
 })
 
 test('OCR engine uses a compact, accessible two-option selector without changing free default', () => {

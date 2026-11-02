@@ -3,7 +3,7 @@ import { handlePrepaid, validPrepaidTarget, prepaidSchemaReady } from './prepaid
 import { handlePortfolio } from './investment-portfolio.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
-import { nextAutomaticStartMonth, recurringRequestId, scheduledRecurringOnDate } from '../../src/recurring-posting.js'
+import { nextAutomaticStartMonth, recurringRequestId, scheduledRecurringOnDate, scheduledRecurringDate } from '../../src/recurring-posting.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
 import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
@@ -292,9 +292,16 @@ export async function onRequest({ request, env, params }) {
           (date!=null && (typeof date!=='string' || !validDate(date) || !date.startsWith(month+'-'))))
           return json({error:'除外する固定費と日付を確認してください'},400)
         const plan=await db.prepare('SELECT start_month,schedule_type,weekday,day FROM recurring_plans WHERE id=?1').bind(planId).first()
-        if(!plan || month<plan.start_month || month>tokyoToday().slice(0,7) ||
-          (!!date && (plan.schedule_type!=='weekly' || !scheduledRecurringOnDate(plan,date) || date>tokyoToday())))
-          return json({error:'固定費の対象日を確認してください'},409)
+        const today=tokyoToday(), tomorrow=nextCivilDay(today)
+        // A scheduled occurrence can be excluded at most one day early.
+        // Monthly rules exclude the matching month, weekly rules the exact date.
+        // Existing historic exclusions can still be removed; no early entry writes.
+        const targetDate=date || (plan?.schedule_type==='monthly' ? scheduledRecurringDate(month,Number(plan.day)) : null)
+        if(!plan || month<plan.start_month || month>tomorrow.slice(0,7) ||
+          (date && (plan.schedule_type!=='weekly' || !scheduledRecurringOnDate(plan,date))) ||
+          (targetDate && targetDate>tomorrow) ||
+          (month>today.slice(0,7) && targetDate!==tomorrow))
+          return json({error:'固定費の対象日は明日まで指定できます'},409)
         if(m==='POST'){
           if(date)await db.prepare('INSERT OR IGNORE INTO recurring_date_exclusions(plan_id,date) VALUES(?1,?2)').bind(planId,date).run()
           else await db.prepare('INSERT OR IGNORE INTO recurring_candidate_exclusions(plan_id,month) VALUES(?1,?2)').bind(planId,month).run()

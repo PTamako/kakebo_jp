@@ -1766,10 +1766,10 @@ async function removeCardBill(record) {
 .recurring-plans-panel .recurring-list-summary:after{grid-column:2;grid-row:1 / span 2;justify-self:center;margin:0}
 .recurring-plans-panel .recurring-list-body{padding:0 4px 6px}
 @media(max-width:679px){
-  main .finance-tools>.recurring-review-panel{padding:12px}
+  .finance-tools>.recurring-review-panel{padding:12px}
   .finance-tools>.recurring-plans-panel{padding:5px 10px}
 }
-@media(max-width:380px){main .finance-tools>.recurring-review-panel{padding:10px}}
+@media(max-width:380px){.finance-tools>.recurring-review-panel{padding:10px}}
 
 /* Fixed expenses: iPhone-first form, review cards and stable disclosure headers. */
 .recurring-manager-panel{min-width:0;max-width:100%;box-sizing:border-box}
@@ -1789,7 +1789,7 @@ async function removeCardBill(record) {
 .finance-panel .recurring-review-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 .finance-panel .recurring-review-actions.has-preview{grid-template-columns:repeat(2,minmax(0,1fr))}
 .finance-panel .recurring-review-actions button{min-width:0;width:100%;padding-inline:5px;font-size:12px;line-height:1.3}
- /* One clear primary action: reveal candidates first, then register selection. */
+/* One clear primary action: reveal candidates first, then register selection. */
 .finance-panel .recurring-review-actions button:first-child{background:var(--recurring-review-primary);border-color:var(--recurring-review-primary);color:#fff;font-weight:750}
 .finance-panel .recurring-review-actions.has-preview button:first-child{background:var(--card);border-color:var(--line);color:var(--ink)}
 .finance-panel .recurring-review-actions.has-preview button:last-child{background:var(--recurring-review-primary);border-color:var(--recurring-review-primary);color:#fff;font-weight:750}

@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS recurring_plans (
   posting_mode TEXT NOT NULL DEFAULT 'manual' CHECK(posting_mode IN ('manual','auto')),
   auto_from_month TEXT NOT NULL DEFAULT '' CHECK(auto_from_month='' OR (length(auto_from_month)=7 AND substr(auto_from_month,5,1)='-')),
   schedule_type TEXT NOT NULL DEFAULT 'monthly' CHECK(schedule_type IN ('monthly','weekly')),
-  weekday INTEGER NOT NULL DEFAULT 0 CHECK(weekday BETWEEN 0 AND 6)
+  weekday INTEGER NOT NULL DEFAULT 0 CHECK(weekday BETWEEN 0 AND 6),
+  workday_only INTEGER NOT NULL DEFAULT 0 CHECK(workday_only IN (0,1))
 );
 
 -- One logical trash table for recoverable recurring plans and deleted ledger entries.

@@ -7,7 +7,7 @@ import { isJapanHoliday } from '../src/japan-holidays.js'
 // Production redeploy refresh: route each scheduled trigger independently; no D1 migration.
 // Keep the original NAV cron behavior and trigger a D1 write only on the
 // dedicated fixed-expense times. A NAV provider failure never blocks entries.
-const NAV_CRONS = new Set(['0 12 * * *', '15 14 * * *'])
+const NAV_CRONS = new Set(['30 10 * * *', '15 14 * * *'])
 const RECURRING_CRONS = new Set(['30 15 * * *', '30 0 * * *'])
 
 export default {

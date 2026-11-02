@@ -26,7 +26,7 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
     const [sy,sm]=plan.startMonth.split('-').map(Number)
     const start=new Date(Math.max(new Date(sy,sm-1,1).getTime(),earliest.getTime()))
     for(let year=start.getFullYear(),month=start.getMonth()+1,i=0;
-      i<120 && (year<end.getFullYear() || (year===end.getFullYear()&&month<=end.getMonth()+1));
+      i<121 && (year<end.getFullYear() || (year===end.getFullYear()&&month<=end.getMonth()+1));
       i++,month++){
       if(month===13){month=1;year++}
       const m=year+'-'+String(month).padStart(2,'0')

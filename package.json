@@ -15,7 +15,7 @@
     "security:audit:summary": "node scripts/dependency-audit-summary.mjs"
   },
   "dependencies": {
-    "tesseract.js": "^5.1.0",
+    "tesseract.js": "^7.0.0",
     "vue": "^3.4.38"
   },
   "devDependencies": {

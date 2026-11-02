@@ -1760,12 +1760,16 @@ async function removeCardBill(record) {
 /* Saved plans and reviews are siblings of registration, not form fields. */
 .recurring-plans-panel{padding:6px 10px}
 .recurring-plans-panel .recurring-list-disclosure{border:0;background:transparent;overflow:visible}
-.recurring-plans-panel .recurring-list-summary{padding:8px 4px}
+.recurring-plans-panel .recurring-list-summary{display:grid;grid-template-columns:minmax(0,1fr) 20px;align-items:center;gap:3px 8px;padding:8px 4px}
+.recurring-plans-panel .recurring-list-summary-title{grid-column:1;grid-row:1;flex-wrap:wrap}
+.recurring-plans-panel .recurring-list-summary-total{grid-column:1;grid-row:2;min-width:0;overflow-wrap:anywhere}
+.recurring-plans-panel .recurring-list-summary:after{grid-column:2;grid-row:1 / span 2;justify-self:center;margin:0}
 .recurring-plans-panel .recurring-list-body{padding:0 4px 6px}
 @media(max-width:679px){
   .finance-tools>.recurring-review-panel{padding:12px}
   .finance-tools>.recurring-plans-panel{padding:5px 10px}
 }
+@media(max-width:380px){.finance-tools>.recurring-review-panel{padding:10px}}
 
 /* Fixed expenses: iPhone-first form, review cards and stable disclosure headers. */
 .recurring-manager-panel{min-width:0;max-width:100%;box-sizing:border-box}

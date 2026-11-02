@@ -942,4 +942,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-bulk-dialog .sbi-actions{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));padding:10px 0 calc(8px + env(safe-area-inset-bottom,0px));background:var(--card);z-index:2}
 .sbi-import-reset{border:0;background:none;color:var(--blue-dark);font-weight:700;min-height:36px;padding:4px;font-size:11px}
 .sbi-text-import-button{min-height:44px;width:100%;font-size:12px}
-\n.sbi-nav-links{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;font-size:12px;line-height:1.5;min-width:0}\n.sbi-nav-links a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}\n</style>
+
+.sbi-nav-links{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;font-size:12px;line-height:1.5;min-width:0}
+.sbi-nav-links a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+</style>

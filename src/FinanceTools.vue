@@ -12,7 +12,8 @@ import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, 
 import { isCardBilledEntry } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
-import { recurringDatesInMonth, recurringFrequencyLabel, nextRecurringDate, WEEKDAYS_JA } from './recurring-posting.js'
+import { recurringDatesInMonth, recurringFrequencyLabel, tokyoDateAt, WEEKDAYS_JA } from './recurring-posting.js'
+import { recurringPlanNextStatus, recurringPlanNextLabel } from './recurring-next-status.js'
 import { recurringReviewWindow, validRecurringMonth } from './recurring-review-window.js'
 import { nextCivilDay } from './stats-period-comparison.js'
 import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
@@ -361,6 +362,22 @@ const recurringDueEntries = computed(() => recurringPreview.value.filter(row => 
 const recurringTomorrowEntries = computed(() => recurringPreview.value.filter(row => row.upcoming && !row.conflict))
 const recurringSelected = ref(new Set())
 const recurringExclusions = ref([])
+const recurringExclusionsReady = ref(false)
+const recurringClock = ref(Date.now())
+// Reference the authoritative loaded D1 ledger, NOT the Cron registration time.
+// The standalone historical review continues to handle earlier months.
+const recurringStatusById = computed(() => {
+  const clock=new Date(recurringClock.value + 9*60*60*1000)
+  const afterAutoWindow=clock.getUTCHours()*60+clock.getUTCMinutes()>=9*60+30
+  const today=tokyoDateAt(recurringClock.value)
+  return new Map(plans.value.map(item=>[item.id, !item.enabled
+    ? {state:'stopped',date:null}
+    : loaded.value && settingsReady.value && recurringExclusionsReady.value
+      ? recurringPlanNextStatus(item,rows.value,recurringExclusions.value,{today,afterAutoWindow})
+      : {state:'unknown',date:null}
+  ]))
+})
+const recurringStatusFor = item => recurringStatusById.value.get(item.id)||{state:'unknown',date:null}
 const recurringListOpen = ref(false)
 const recurringSwipeOpenKey = ref('')
 let recurringTouchStart = null
@@ -414,7 +431,9 @@ async function loadFinanceSettings() {
     const excluded=await props.api('recurring-exclusions')
     if(!Array.isArray(excluded))throw Error('除外設定の形式が不正です')
     recurringExclusions.value=excluded
+    recurringExclusionsReady.value=true
   } catch(e) {
+    recurringExclusionsReady.value=false
     recurringExclusions.value=[]
     recurringMessage.value='除外設定を読み込めません：'+e.message
   }
@@ -1091,7 +1110,46 @@ onUnmounted(() => {
   for (const timer of noticeTimeouts.values()) clearTimeout(timer)
   noticeTimeouts.clear()
 })
+// A foreground visit gets a fresh D1 status after the existing five-minute
+// cache expires; the minute tick changes labels without repeatedly reading D1.
+let recurringClockTimer=null
+let recurringStatusRefresh=null
+function refreshRecurringStatus(force=false) {
+  const previous=recurringClock.value
+  const now=Date.now()
+  recurringClock.value=now
+  if(!props.active || managementTab.value!=='plans')return
+  if(!financeInitialized || !loaded.value)return void initializeFinance()
+  const dateChanged=tokyoDateAt(previous)!==tokyoDateAt(now)
+  const wasAfter=new Date(previous+9*3600000).getUTCHours()*60+
+    new Date(previous+9*3600000).getUTCMinutes()>=570
+  const isAfter=new Date(now+9*3600000).getUTCHours()*60+
+    new Date(now+9*3600000).getUTCMinutes()>=570
+  const stale=ledgerDirty || !lastLoadedAt.value ||
+    now-lastLoadedAt.value.getTime()>=MANAGEMENT_LEDGER_TTL_MS
+  if(!dateChanged && !(wasAfter!==isAfter) && !(force&&stale))return
+  if(recurringStatusRefresh || busy.value)return
+  recurringStatusRefresh=(async()=>{
+    if(dateChanged || (force&&stale))await loadFinanceSettings()
+    await loadAll()
+  })().catch(e=>{loadError.value='固定費の状態を更新できませんでした：'+e.message})
+    .finally(()=>{recurringStatusRefresh=null})
+}
+function onRecurringVisibilityChange() {
+  if(document.visibilityState==='visible')refreshRecurringStatus(true)
+}
 onMounted(() => { if (props.active) void initializeFinance() })
+onMounted(() => {
+  recurringClockTimer=setInterval(()=>refreshRecurringStatus(),60*1000)
+  document.addEventListener('visibilitychange',onRecurringVisibilityChange)
+})
+onUnmounted(() => {
+  if(recurringClockTimer!==null)clearInterval(recurringClockTimer)
+  document.removeEventListener('visibilitychange',onRecurringVisibilityChange)
+})
+watch([()=>props.active,managementTab],([active,tab])=>{
+  if(active && tab==='plans')refreshRecurringStatus(true)
+})
 watch(() => props.ledgerRevision, () => {
   ledgerDirty = true
   // Avoid fetching during a restore or duplicate check; the next visit or
@@ -1347,7 +1405,7 @@ async function removeCardBill(record) {
                 <span class="recurring-plan-meta-item recurring-payment-source" :title="p.paymentSource || '未設定'">{{p.paymentSource || '未設定'}}</span>
                 <span class="recurring-plan-meta-item">開始 {{p.startMonth?.replace('-', '/') || '未設定'}}</span>
                 <span class="recurring-plan-meta-item">{{p.postingMode==='auto' ? '自動記帳' : '確認して記帳'}}</span>
-                <span class="recurring-plan-meta-item">{{p.enabled ? '次回 '+(nextRecurringDate(p,new Date().toLocaleDateString('sv-SE'))||'—').slice(5).replace('-','/') : '停止中'}}</span>
+                <span class="recurring-plan-meta-item" :class="{'recurring-plan-overdue':recurringStatusFor(p).state==='missing'}">{{recurringPlanNextLabel(recurringStatusFor(p))}}</span>
               </span>
             </button>
             <div v-if="expandedRecurringPlanId===p.id" :id="'recurring-plan-actions-'+p.id" class="recurring-plan-more">
@@ -1778,6 +1836,7 @@ async function removeCardBill(record) {
 .finance-section-tabs>button.selected{color:var(--blue-dark);background:var(--card);border-color:color-mix(in srgb,var(--blue) 16%,var(--line));box-shadow:0 1px 5px #0000000b}
 .finance-section-tabs>button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 @media(max-width:360px){.finance-tools > .finance-section-tabs{gap:2px}.finance-tools > .finance-section-tabs>button{font-size:11px;padding-inline:1px}}
+.recurring-plan-overdue{color:var(--danger,#c4445d);font-weight:750}
 </style>
 
 <style scoped>

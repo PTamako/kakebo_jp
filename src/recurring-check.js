@@ -1,10 +1,13 @@
 import { recurringDatesInMonth, recurringRequestId } from './recurring-posting.js'
 
 // Read-only schedule preview. All writes require explicit confirmation.
-export function previewRecurringEntries(plans,entries,{today=new Date(),historicalMonths=0,excluded=[]}={}) {
+export function previewRecurringEntries(plans,entries,{today=new Date(),historicalMonths=0,excluded=[],previewDaysAhead=0}={}) {
   const excludedKeys=new Set(excluded.flatMap(x=>[x.planId+':'+(x.date||x.month)]))
   const current=new Date(today.getFullYear(),today.getMonth(),today.getDate())
   const currentKey=[current.getFullYear(),String(current.getMonth()+1).padStart(2,'0'),String(current.getDate()).padStart(2,'0')].join('-')
+  // Only the very next calendar day may be previewed (never auto-registered).
+  const end=new Date(current.getFullYear(),current.getMonth(),current.getDate()+(previewDaysAhead===1?1:0))
+  const endKey=[end.getFullYear(),String(end.getMonth()+1).padStart(2,'0'),String(end.getDate()).padStart(2,'0')].join('-')
   const earliest=new Date(current.getFullYear(),current.getMonth()-Math.max(0,Math.min(119,historicalMonths)),1)
   const existing=new Set(),idempotency=new Set()
   for(const entry of entries||[]){
@@ -23,19 +26,19 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
     const [sy,sm]=plan.startMonth.split('-').map(Number)
     const start=new Date(Math.max(new Date(sy,sm-1,1).getTime(),earliest.getTime()))
     for(let year=start.getFullYear(),month=start.getMonth()+1,i=0;
-      i<120 && (year<current.getFullYear() || (year===current.getFullYear()&&month<=current.getMonth()+1));
+      i<120 && (year<end.getFullYear() || (year===end.getFullYear()&&month<=end.getMonth()+1));
       i++,month++){
       if(month===13){month=1;year++}
       const m=year+'-'+String(month).padStart(2,'0')
       for(const date of recurringDatesInMonth(m,{scheduleType,day:Number(plan.day),weekday:Number(plan.weekday||0)})){
-        if(date>currentKey || excludedKeys.has(plan.id+':'+m) || excludedKeys.has(plan.id+':'+date))continue
+        if(date>endKey || excludedKeys.has(plan.id+':'+m) || excludedKeys.has(plan.id+':'+date))continue
         const requestId=recurringRequestId(plan.id,scheduleType==='weekly'?date:m)
         if(idempotency.has(requestId))continue
         const base=[plan.name,plan.paymentSource||''].join('|')
         const conflictKey=(scheduleType==='weekly'?date:m)+'|'+base
         candidates.push({planId:plan.id,month:m,date,name:plan.name,amount:Number(plan.amount),
           paymentSource:plan.paymentSource,day:Number(plan.day),scheduleType,weekday:Number(plan.weekday||0),
-          category:plan.category,startMonth:plan.startMonth,conflict:existing.has(conflictKey)})
+          category:plan.category,startMonth:plan.startMonth,conflict:existing.has(conflictKey),upcoming:date>currentKey})
       }
     }
   }

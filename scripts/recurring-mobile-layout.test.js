@@ -70,3 +70,13 @@ test('mobile fixed expense form removes redundant text and avoids a tall blank g
   assert.match(source, /\.recurring-manager-panel \.recurring-review-panel\{margin-block:5px;padding:10px\}/)
   assert.match(source, /\.recurring-manager-panel \.recurring-posting-mode label\{min-height:44px;padding:7px\}/)
 })
+
+test('posting method options are compact horizontal touch targets with native-size radio inputs', () => {
+  assert.match(fixed, /<fieldset class="recurring-posting-mode">/)
+  assert.match(fixed, /value="auto" name="recurring-posting-mode"/)
+  assert.match(fixed, /value="manual" name="recurring-posting-mode"/)
+  assert.match(source, /\.recurring-manager-panel \.recurring-posting-mode label\{[^}]*flex-direction:row;[^}]*min-height:44px;[^}]*white-space:nowrap/)
+  assert.match(source, /\.recurring-manager-panel \.recurring-posting-mode input\[type=radio\]\{[^}]*width:16px!important;[^}]*height:16px!important;min-height:16px!important;max-height:16px!important;[^}]*padding:0!important/)
+  // Keep the shared 44px rule on normal inputs; only the radio circle is 16px.
+  assert.match(source, /\.finance-panel input:not\(\[type=file\]\),\.finance-panel select\{height:44px!important;/)
+})

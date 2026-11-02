@@ -18,7 +18,7 @@
 Production `schema_migrations` now has additional idempotent, **post-facto schema verification** records for 0007, 0008, 0010, 0011, 0012, 0013 and 0014. These are not assertions that the old migration scripts were rerun. The legacy 0009 table has been retired in favor of unified `trash_items`.
 
 ## NAV Worker
-The existing worker schedules remain 00:30 and 09:30 JST for fixed expenses; 21:00 and 23:15 JST for NAV. The NAV code bypasses provider fetches on Japanese weekends and statutory holidays, while recurring-expense workday exclusion is unchanged. NASDAQ100 remains manual with a link to the fund manager's verified official site.
+The existing worker schedules remain 00:30 and 09:30 JST for fixed expenses; 19:30 and 23:15 JST for NAV. The NAV code bypasses provider fetches on Japanese weekends and statutory holidays, while recurring-expense workday exclusion is unchanged. NASDAQ100 remains manual with a link to the fund manager's verified official site.
 
 ## Dependency risks
 Cloudflare `npm ci` reported two low and eight moderate advisories on 2026-11-02. The production high-severity gate passed. Do not blindly edit package-lock or suppress audit; identify affected packages with a current complete `npm audit --json` and use a reproducible `npm ci && npm run build` check before upgrading.

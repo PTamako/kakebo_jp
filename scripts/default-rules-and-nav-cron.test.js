@@ -43,7 +43,7 @@ test('unrelated API routes bypass dictionary backup work',async()=>{
 })
 test('NAV Cron does not call D1 on a Japanese public holiday',async()=>{
   let called=false
-  await cronWorker.scheduled({cron:'0 12 * * *',scheduledTime:Date.parse('2026-11-03T12:00:00Z')},
+  await cronWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-11-03T10:30:00Z')},
     {DB:{prepare(){called=true;throw Error('no D1 on holiday')}}},
     {waitUntil(){called=true}})
   assert.equal(called,false)
@@ -54,7 +54,7 @@ test('NAV Cron does not call D1 on weekend but does on trading day',async()=>{
   const db={prepare(){return {all:async()=>({results:[]})}}}
   await cronWorker.scheduled({cron:'15 14 * * *',scheduledTime:Date.parse('2026-11-07T14:15:00Z')},{DB:db},ctx)
   assert.equal(called,false)
-  await cronWorker.scheduled({cron:'0 12 * * *',scheduledTime:Date.parse('2026-11-04T12:00:00Z')},{DB:db},ctx)
+  await cronWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-11-04T10:30:00Z')},{DB:db},ctx)
   assert.equal(called,true)
 })
 

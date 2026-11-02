@@ -5,12 +5,12 @@ import navWorker from '../workers/fund-nav-cron.js'
 
 const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
 
-test('NAV Cron runs at 21:00 and retries missing MUFG NAV at 23:15 JST', () => {
+test('NAV Cron runs at 19:30 and retries missing MUFG NAV at 23:15 JST', () => {
   const config=read('wrangler.nav.toml')
   const docs=read('scripts/deploy-nav-worker.md')
-  assert.match(config,/crons = \["30 15 \* \* \*", "30 0 \* \* \*", "0 12 \* \* \*", "15 14 \* \* \*"\]/)
+  assert.match(config,/crons = \["30 15 \* \* \*", "30 0 \* \* \*", "30 10 \* \* \*", "15 14 \* \* \*"\]/)
   assert.match(config,/DAIWA_CSV_EXPERIMENT = "false"/)
-  assert.match(docs,/日本時間21:00（UTC12:00）/)
+  assert.match(docs,/日本時間19:30（UTC10:30）/)
   assert.match(docs,/23:15（UTC14:15）/)
   assert.doesNotMatch(config,/30 11 \* \* \*/)
 })
@@ -43,14 +43,14 @@ test('scheduled event prints start and successful summary even when there are no
     let job
     const ctx={waitUntil(promise){job=promise}}
     const db={prepare(){return{all:async()=>({results:[]})}}}
-    await navWorker.scheduled({cron:'0 12 * * *',scheduledTime:Date.parse('2026-10-30T12:00:00Z')},{DB:db},ctx)
+    await navWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-10-30T10:30:00Z')},{DB:db},ctx)
     assert.ok(job,'Worker must keep async sync task alive via waitUntil')
     await job
     const started=output.find(([name])=>name==='NAV sync started')
     const complete=output.find(([name])=>name==='NAV sync')
     assert.ok(started)
-    assert.equal(JSON.parse(started[1]).cron,'0 12 * * *')
-    assert.equal(JSON.parse(started[1]).scheduledAt,'2026-10-30T12:00:00.000Z')
+    assert.equal(JSON.parse(started[1]).cron,'30 10 * * *')
+    assert.equal(JSON.parse(started[1]).scheduledAt,'2026-10-30T10:30:00.000Z')
     assert.ok(complete)
     assert.deepEqual(JSON.parse(complete[1]),{checked:0,updated:[],unchanged:[],failed:[],unsupported:[]})
   }finally{console.log=original}
@@ -64,7 +64,7 @@ test('scheduled failures log an explicit error and remain observable as failed i
   console.error=(...args)=>events.push(args)
   try{
     let job
-    await navWorker.scheduled({cron:'0 12 * * *',scheduledTime:Date.parse('2026-10-30T12:00:00Z')},{DB:null},{waitUntil(p){job=p}})
+    await navWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-10-30T10:30:00Z')},{DB:null},{waitUntil(p){job=p}})
     assert.ok(job)
     await assert.rejects(job,/missing_d1_binding/)
     assert.ok(events.some(args=>args[0]==='NAV sync started'))

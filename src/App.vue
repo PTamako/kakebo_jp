@@ -913,19 +913,25 @@ const ledgerRevision = ref(0)
 const pendingEntryIds = ref(new Set())
 const editSaving = ref(false)
 async function remove(id) {
-  const operatedDate = entries.value.find(entry => Number(entry.id) === Number(id))?.date?.slice(0, 10)
+  const targetEntry = entries.value.find(entry => Number(entry.id) === Number(id))
+  const operatedDate = targetEntry?.date?.slice(0, 10)
   if (pendingEntryIds.value.has(id)) return
-  if (!confirm('この記録をゴミ箱に移動しますか？後から復元できます。')) return
+  const recurringEntry = targetEntry?.type === 'expense' &&
+    /^recurring_[a-zA-Z0-9]+_\d{6}(?:\d{2})?$/.test(targetEntry?.client_request_id || '')
+  const deletePrompt = recurringEntry
+    ? 'この固定費の明細をゴミ箱に移動し、今回の記帳を対象外にしますか？次回以降の予定には影響しません。'
+    : 'この記録をゴミ箱に移動しますか？後から復元できます。'
+  if (!confirm(deletePrompt)) return
   pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
   try {
-    await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
+    const removal = await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
     ledgerRevision.value++
     // Keep the original local receipt image under the same ledger entry ID.
     // Restoring from trash reuses that ID, so the photo remains retrievable.
     if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
     preserveOperatedDay.value = operatedDate || ''
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadTransfers()])
-    flash('記録をゴミ箱に移動しました（レシート画像も保持）')
+    flash(removal.skippedRecurring ? '固定費を削除し、今回の記帳を対象外にしました' : '記録をゴミ箱に移動しました（レシート画像も保持）')
   } catch (error) { flash('削除に失敗しました：' + error.message) }
   finally { const next = new Set(pendingEntryIds.value); next.delete(id); pendingEntryIds.value = next }
 }

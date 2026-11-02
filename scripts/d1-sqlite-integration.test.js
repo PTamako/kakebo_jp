@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
+import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
 import { prepaidRestoreBalances } from '../src/finance-tools.js'
 import { classify } from '../src/parse.js'
 const approvedPost = (plan, month = '2026-10') => ({
@@ -998,4 +999,59 @@ test('migration 0012 is repeatable and never deletes existing legacy recurring t
     assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM recurring_plan_trash').get().n,1)
     assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM recurring_plans').get().n,1)
   } finally {db.close()}
+})
+
+test('actual SQLite: deleting an auto monthly entry skips that month on the second Cron run, not next month',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const id='a1b2c3d4-1111-4444-8888-121212121212'
+    db.db.prepare(`INSERT INTO recurring_plans
+      (id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday)
+      VALUES(?1,'家賃',101500,27,'居住','現金','2026-10',1,'auto','2026-10','monthly',0)`).run(id)
+    assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,1)
+    const rows=(await call('entries?month=2026-11')).body
+    assert.equal(rows.length,1)
+    const deleted=await call('entries/'+rows[0].id,'DELETE',undefined,{'x-confirm-delete':String(rows[0].id)})
+    assert.equal(deleted.status,200)
+    assert.equal(deleted.body.skippedRecurring,true)
+    assert.deepEqual((await call('recurring-exclusions')).body,[{planId:id,month:'2026-11'}])
+    assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,0)
+    assert.equal((await call('entries?month=2026-11')).body.length,0)
+    assert.equal((await postScheduledRecurring(db,{today:'2026-12-27'})).created,1)
+    assert.equal((await call('entries?month=2026-12')).body.length,1)
+  }finally{db.close()}
+})
+
+test('actual SQLite: weekly deletion skips only the removed occurrence and trash restore undoes its skip',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const id='a1b2c3d4-1111-4444-8888-343434343434'
+    db.db.prepare(`INSERT INTO recurring_plans
+      (id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday)
+      VALUES(?1,'週の会費',500,1,'現金','現金','2026-10',1,'auto','2026-10','weekly',5)`).run(id)
+    assert.equal((await postScheduledRecurring(db,{today:'2026-11-06'})).created,1)
+    const row=(await call('entries?month=2026-11')).body[0]
+    const deleted=await call('entries/'+row.id,'DELETE',undefined,{'x-confirm-delete':String(row.id)})
+    assert.equal(deleted.body.skippedRecurring,true)
+    assert.deepEqual((await call('recurring-exclusions')).body,[{planId:id,month:'2026-11',date:'2026-11-06'}])
+    assert.equal((await postScheduledRecurring(db,{today:'2026-11-06'})).created,0)
+    assert.equal((await postScheduledRecurring(db,{today:'2026-11-13'})).created,1)
+    assert.equal((await call('entries?month=2026-11')).body.length,1)
+    assert.equal((await call('trash-items/'+row.id+'/restore','POST')).status,200)
+    assert.deepEqual((await call('recurring-exclusions')).body,[])
+    assert.equal((await call('entries?month=2026-11')).body.length,2)
+    assert.equal((await postScheduledRecurring(db,{today:'2026-11-06'})).created,0)
+  }finally{db.close()}
+})
+
+test('actual SQLite: deleting ordinary ledger entry never creates recurring exclusions',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const row=await call('entries','POST',{date:'2026-11-02',amount:300,type:'expense',merchant:'食事',paymentSource:'現金'})
+    assert.equal(row.status,200)
+    const deleted=await call('entries/'+row.body.id,'DELETE',undefined,{'x-confirm-delete':String(row.body.id)})
+    assert.equal(deleted.status,200)
+    assert.equal(deleted.body.skippedRecurring,false)
+    assert.deepEqual((await call('recurring-exclusions')).body,[])
+  }finally{db.close()}
 })

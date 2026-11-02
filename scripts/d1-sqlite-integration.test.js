@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { onRequest } from '../functions/api/[[path]].js'
 import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
 import { nextCivilDay } from '../src/stats-period-comparison.js'
+import { isJapanHoliday } from '../src/japan-holidays.js'
 import { prepaidRestoreBalances } from '../src/finance-tools.js'
 import { classify } from '../src/parse.js'
 const approvedPost = (plan, month = '2026-10') => ({
@@ -1092,5 +1093,61 @@ test('actual SQLite: tomorrow scheduled monthly and weekly exclusions stop Worke
       'weekly exclusion cannot be set for any future date beyond tomorrow')
     const weekLater=new Date(Date.parse(tomorrow+'T00:00:00Z')+7*86400000).toISOString().slice(0,10)
     assert.equal((await call('recurring-exclusions','POST',{planId:weekId,month:weekLater.slice(0,7),date:weekLater})).status,409)
+  }finally{db.close()}
+})
+
+test('actual SQLite: Japan workday commuter expense debits Suica once per date and skips holidays',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    const previous=[]
+    for(let n=0;n<21&&previous.length<3;n++){
+      const date=new Date(Date.parse(today+'T00:00:00Z')-n*86400000).toISOString().slice(0,10)
+      if(!isJapanHoliday(date))previous.unshift(date)
+    }
+    assert.equal(previous.length,3)
+    const month=previous[0].slice(0,7)
+    const planId='fedcba98-0000-4000-8000-123456789abc'
+    db.db.prepare("INSERT INTO payment_sources(name,source_type,opening_balance,opening_date,opening_entry_id) VALUES('Suica','prepaid',2000,'2026-01-01',0)").run()
+    db.db.prepare(`INSERT INTO recurring_plans(
+      id,name,amount,day,weekday,schedule_type,workday_only,category,payment_source,start_month,enabled,posting_mode,auto_from_month
+    )VALUES(?1,'通勤費',240,1,1,'weekly',1,'交通','Suica',?2,1,'auto',?2)`).run(planId,month)
+    const fetched=(await call('recurring-plans')).body.find(p=>p.id===planId)
+    assert.equal(fetched.scheduleType,'workday')
+    assert.equal(fetched.paymentSource,'Suica')
+    for(const date of previous){
+      assert.equal((await postScheduledRecurring(db,{today:date})).created,1)
+      assert.equal((await postScheduledRecurring(db,{today:date})).created,0)
+    }
+    const holiday=new Date(Date.parse(previous.at(-1)+'T00:00:00Z')+86400000).toISOString().slice(0,10)
+    if(isJapanHoliday(holiday))assert.equal((await postScheduledRecurring(db,{today:holiday})).created,0)
+    const entries=db.db.prepare("SELECT date,amount,category,payment_source FROM entries WHERE merchant='通勤費' ORDER BY date").all()
+    assert.deepEqual(entries.map(e=>e.date),previous)
+    assert.ok(entries.every(e=>e.amount===240&&e.category==='交通'&&e.payment_source==='Suica'))
+    const prepaid=await call('prepaid-assets')
+    assert.equal(prepaid.status,200)
+    assert.equal(prepaid.body.cards.find(c=>c.name==='Suica').balance,1280)
+    assert.equal(prepaid.body.cards.find(c=>c.name==='Suica').spent,720)
+  }finally{db.close()}
+})
+
+test('actual SQLite: a workday exclusion blocks automatic commuting but not the next day',async()=>{
+  const {db,call}=await createClient()
+  try{
+    const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    const previous=[]
+    for(let n=0;n<14&&previous.length<2;n++){
+      const date=new Date(Date.parse(today+'T00:00:00Z')-n*86400000).toISOString().slice(0,10)
+      if(!isJapanHoliday(date))previous.unshift(date)
+    }
+    const id='fedcba98-0000-4000-8000-123456789abd'
+    db.db.prepare(`INSERT INTO recurring_plans(
+      id,name,amount,day,weekday,schedule_type,workday_only,category,payment_source,start_month,enabled,posting_mode,auto_from_month
+    )VALUES(?1,'通勤費',240,1,1,'weekly',1,'交通','Suica',?2,1,'auto',?2)`).run(id,previous[0].slice(0,7))
+    const date=previous[0],month=date.slice(0,7)
+    assert.equal((await call('recurring-exclusions','POST',{planId:id,month,date})).status,200)
+    assert.equal((await postScheduledRecurring(db,{today:date})).created,0)
+    assert.equal((await postScheduledRecurring(db,{today:previous[1]})).created,1)
+    assert.equal((await call('recurring-exclusions')).body.some(e=>e.planId===id&&e.date===date),true)
   }finally{db.close()}
 })

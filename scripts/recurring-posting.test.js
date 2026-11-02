@@ -24,6 +24,7 @@ function memoryDb() {
   `)
   const migration=readFileSync(new URL('../migrations/0013_recurring_posting_mode.sql',import.meta.url),'utf8')
   sqlite.exec(migration)
+  sqlite.exec(readFileSync(new URL('../migrations/0014_recurring_business_days.sql',import.meta.url),'utf8'))
   const db={
     prepare(sql) {
       let args=[]

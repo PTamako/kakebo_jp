@@ -593,7 +593,7 @@ async function restore(){
     for(const deferred of futureBatches)jobs.push({settings:{},rows:[],deferred})
   }
   const emptySettings={
-    paymentSources:[],merchantPaymentRules:[],customRules:[],categories:[],
+    paymentSources:[],merchantPaymentRules:[],customRules:[],defaultRules:[],categories:[],
     plans:[],archivedPlans:[],trashedEntries:[],bills:[],recurringExclusions:[],dismissedTransfers:[],categoryMetadata:[],
     investmentPlans:[],investmentPlanHistory:[],investmentHoldings:[],
     fundPrices:[],transferLinks:[],categoryIcons:{}

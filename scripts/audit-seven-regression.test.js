@@ -60,8 +60,12 @@ test('preview remains closed until verified and release audit fails on productio
   assert.match(api,/env\.PREVIEW_D1_ISOLATED === 'true'/)
   assert.match(api,/preview_read_only/)
   const wrangler=source('wrangler.toml')
-  assert.doesNotMatch(wrangler,/^\s*\[env\.preview(?:\.[^\]]*)?\]/m,
-    'Partial preview env config must not drop non-inherited D1/AI bindings')
+  // Preview overrides are safe only when D1 AND AI bindings are explicit.
+  assert.match(wrangler,/\[\[env\.preview\.d1_databases\]\]/)
+  assert.match(wrangler,/\[env\.preview\.ai\]/)
+  assert.match(wrangler,/\[env\.preview\.vars\]/)
+  assert.match(wrangler,/PREVIEW_D1_ISOLATED = "true"/)
+  assert.match(wrangler,/database_name = "kakebo_preview"/)
   const pkg=JSON.parse(source('package.json'))
   assert.equal(pkg.scripts['verify:release'],'npm run build')
   assert.match(pkg.scripts.build,/npm run security:audit:prod/)

@@ -3,7 +3,7 @@ export const backupVersion = 4
 
 const RESTORE_SETTING_ORDER = [
   'paymentSources','categoryMetadata','categories','categoryIcons',
-  'customRules','merchantPaymentRules','bills',
+  'defaultRules','customRules','merchantPaymentRules','bills',
   'investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','plans','archivedPlans','recurringExclusions','recurringDateExclusions','trashedEntries'
 ]
 // Setting collections are restored in dependency order, with no silent fallback
@@ -110,7 +110,7 @@ export function validateBackup(value) {
       throw Error('取引データに不正な値があります')
     }
   }
-  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks', 'recurringExclusions', 'recurringDateExclusions', 'archivedPlans', 'trashedEntries']
+  const arrayNames = ['plans', 'bills', 'investments', 'paymentSources', 'merchantPaymentRules', 'customRules', 'defaultRules', 'categories', 'categoryMetadata', 'investmentPlans', 'investmentPlanHistory', 'investmentHoldings', 'fundPrices', 'transferLinks', 'recurringExclusions', 'recurringDateExclusions', 'archivedPlans', 'trashedEntries']
   for (const name of arrayNames) {
     if (value[name] != null && (!Array.isArray(value[name]) || value[name].length > 10000)) {
       throw Error('バックアップの' + name + 'が不正です')
@@ -164,10 +164,11 @@ export function validateBackup(value) {
     (x.closing_day == null || (Number.isInteger(x.closing_day) && x.closing_day >= 0 && x.closing_day <= 31)) &&
     (x.is_default == null || x.is_default === 0 || x.is_default === 1 || typeof x.is_default === 'boolean')
   const validCustom = x => x && isText(x.keyword,120) && isText(x.category,120)
+  const validDefaultRule = x => validCustom(x) && !x.keyword.startsWith('__')
   const validPaymentRule = x => x && isText(x.keyword,120) && isText(x.payment_source,80)
   for (const [name, check] of [
     ['plans',validPlan],['archivedPlans',validPlan],['recurringExclusions',validExclusion],['recurringDateExclusions',validDateExclusion],['bills',validBill],['paymentSources',validSource],
-    ['customRules',validCustom],['merchantPaymentRules',validPaymentRule],
+    ['customRules',validCustom],['defaultRules',validDefaultRule],['merchantPaymentRules',validPaymentRule],
     ['categories',x => isText(x,20)]
   ]) {
     if (Array.isArray(value[name]) && value[name].some(x => !check(x)))

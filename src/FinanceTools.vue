@@ -14,6 +14,7 @@ import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { recurringDatesInMonth, recurringFrequencyLabel, nextRecurringDate, WEEKDAYS_JA } from './recurring-posting.js'
 import { recurringReviewWindow, validRecurringMonth } from './recurring-review-window.js'
+import { nextCivilDay } from './stats-period-comparison.js'
 import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
 import { receiptZip } from './receipt-export.js'
 const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
@@ -356,6 +357,8 @@ const editingPlanId = ref('')
 // explicit 119-month safety limit. Manual lookback options remain available.
 const recurringAutoWindow = computed(() => recurringReviewWindow(plans.value,currentRecurringMonth()))
 const recurringPreview = ref([])
+const recurringDueEntries = computed(() => recurringPreview.value.filter(row => !row.upcoming))
+const recurringTomorrowEntries = computed(() => recurringPreview.value.filter(row => row.upcoming && !row.conflict))
 const recurringSelected = ref(new Set())
 const recurringExclusions = ref([])
 const recurringListOpen = ref(false)
@@ -366,10 +369,10 @@ const recurringExcludedRows = computed(() => recurringExclusions.value.map(item 
     trashedRecurringPlans.value.find(plan => plan.id === item.planId)?.name || '固定費'
 })))
 const recurringKey = row => row.planId + ':' + (row.date && (row.scheduleType==='weekly'||!('scheduleType' in row)) ? row.date : row.month)
-const selectedRecurring = computed(() => recurringPreview.value.filter(row => !row.conflict && recurringSelected.value.has(recurringKey(row))))
+const selectedRecurring = computed(() => recurringDueEntries.value.filter(row => !row.conflict && recurringSelected.value.has(recurringKey(row))))
 function toggleRecurringSelection(row, checked) {
   const next = new Set(recurringSelected.value)
-  if (checked && !row.conflict) next.add(recurringKey(row))
+  if (checked && !row.conflict && !row.upcoming) next.add(recurringKey(row))
   else next.delete(recurringKey(row))
   recurringSelected.value = next
 }
@@ -949,18 +952,24 @@ async function reviewRecurring() {
     if(!Array.isArray(excluded))throw Error('除外設定の形式が不正です')
     recurringExclusions.value=excluded
     const window=recurringReviewWindow(plans.value,currentRecurringMonth())
-    const preview=previewRecurringEntries(plans.value,rows.value,{historicalMonths:window.historicalMonths,excluded})
+    const preview=previewRecurringEntries(plans.value,rows.value,{
+      historicalMonths:window.historicalMonths,excluded,previewDaysAhead:1
+    }).filter(row=>!row.upcoming || !row.conflict)
     recurringPreview.value=preview
     recurringListOpen.value=true
     recurringSwipeOpenKey.value=''
     const current=currentRecurringMonth()
-    recurringSelected.value=new Set(preview.filter(row=>!row.conflict && row.month===current).map(recurringKey))
-    const conflicts=preview.filter(x=>x.conflict).length
-    const historical=preview.filter(row=>row.month<current).length
+    const today=new Date().toLocaleDateString('sv-SE')
+    const due=preview.filter(row=>!row.upcoming)
+    const upcoming=preview.filter(row=>row.upcoming)
+    recurringSelected.value=new Set(due.filter(row=>!row.conflict && row.month===current && row.date<=today).map(recurringKey))
+    const conflicts=due.filter(x=>x.conflict).length
+    const historical=due.filter(row=>row.month<current).length
     recurringMessage.value=preview.length
-      ? '候補 '+preview.length+'件 · 重複 '+conflicts+'件（未登録）'+
-        (historical?' · 過去分 '+historical+'件は現行の設定金額による推定です':'')
-      : '未記帳の固定費はありません'
+      ? '未記帳 '+due.length+'件 · 明日 '+upcoming.length+'件'+
+        (conflicts?' · 重複 '+conflicts+'件':'')+
+        (historical?' · 過去分は現在の設定金額による推定です':'')
+      : '未記帳・明日の記帳予定はありません'
   }catch(e){recurringMessage.value='未記帳分を確認できません：'+e.message}
   finally{recurringBusy.value=false}
 }
@@ -1013,15 +1022,16 @@ async function restoreRecurringExclusion(item) {
     recurringExclusions.value=recurringExclusions.value.filter(row=>recurringKey(row)!==recurringKey(item))
     if(recurringListOpen.value) {
       const window=recurringReviewWindow(plans.value,currentRecurringMonth())
-      recurringPreview.value=previewRecurringEntries(plans.value,rows.value,{historicalMonths:window.historicalMonths,excluded:recurringExclusions.value})
+      recurringPreview.value=previewRecurringEntries(plans.value,rows.value,{historicalMonths:window.historicalMonths,excluded:recurringExclusions.value,previewDaysAhead:1}).filter(row=>!row.upcoming || !row.conflict)
     }
     recurringMessage.value='除外を解除しました：'+(item.date||item.month)
   }catch(e){recurringMessage.value='除外を解除できませんでした：'+e.message}
   finally{recurringBusy.value=false}
 }
 async function applyRecurring(){
-  if(recurringBusy.value || !loaded.value || !recurringPreview.value.length)return
-  const safe=selectedRecurring.value
+  if(recurringBusy.value || !loaded.value || !recurringDueEntries.value.length)return
+  const today=new Date().toLocaleDateString('sv-SE')
+  const safe=selectedRecurring.value.filter(row=>row.date<=today)
   if(!safe.length){recurringMessage.value='重複候補は登録できません。明細を確認してください';return}
   const summary=safe.length+'件、合計 '+yen(safe.reduce((sum,row)=>sum+row.amount,0))+
     ' の固定費を登録します。日付と金額を確認しましたか？'

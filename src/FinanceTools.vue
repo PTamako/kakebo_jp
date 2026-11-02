@@ -1138,8 +1138,8 @@ function refreshRecurringStatus(force=false) {
 function onRecurringVisibilityChange() {
   if(document.visibilityState==='visible')refreshRecurringStatus(true)
 }
+onMounted(() => { if (props.active) void initializeFinance() })
 onMounted(() => {
-  if(props.active)void initializeFinance()
   recurringClockTimer=setInterval(()=>refreshRecurringStatus(),60*1000)
   document.addEventListener('visibilitychange',onRecurringVisibilityChange)
 })

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('../src/FinanceTools.vue', import.meta.url), 'utf8')
 const fixed = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">([\s\S]*?)\n  <\/article>/)?.[1] || ''
-const review = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel" aria-label="固定費の記帳確認">([\s\S]*?)\n  <\/article>/)?.[1] || ''
+const review = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel"[^>]*aria-label="固定費の記帳確認">([\s\S]*?)\n  <\/article>/)?.[1] || ''
 const registered = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-plans-panel">([\s\S]*?)\n  <\/article>/)?.[1] || ''
 
 test('iPhone effective-month input stays within its own grid cell', () => {
@@ -70,8 +70,20 @@ test('mobile fixed expense form removes redundant text and avoids a tall blank g
   assert.match(source, /\.recurring-manager-panel \.recurring-form-name,\s*\.recurring-manager-panel \.recurring-form-amount,\s*\.recurring-manager-panel \.recurring-form-schedule,/)
   assert.match(source, /main \.finance-tools \.recurring-manager-panel\{padding:12px;row-gap:6px\}/)
   assert.match(source, /\.finance-tools \.recurring-review-panel\{padding:12px\}/)
-  assert.match(source, /\.recurring-review-panel\{display:grid;[^}]*margin:0\}/)
+  assert.match(source, /\.recurring-review-panel\{[^}]*display:grid;[^}]*margin:0\}/)
   assert.match(source, /\.recurring-manager-panel \.recurring-posting-mode label\{min-height:44px;padding:7px\}/)
+})
+
+test('review card stays distinct from the background and collapses into a compact iPhone row', () => {
+  assert.match(review, /class="recurring-review-heading"/)
+  assert.match(review, /過去分・明日の予定/)
+  assert.match(review, /aria-controls="recurring-candidate-list"/)
+  assert.match(review, /未記帳分を確認/)
+  assert.match(source, /\.finance-tools>\.recurring-review-panel\{\s*background:#fff;[^}]*border-left:3px solid var\(--blue\)/)
+  assert.match(source, /\.finance-tools>\.recurring-review-panel:not\(\.is-expanded\)\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(120px,auto\)/)
+  assert.match(source, /\.finance-tools>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions\{[^}]*grid-column:2/)
+  assert.match(source, /\.finance-tools>\.recurring-review-panel \.recurring-review-results\{grid-column:1\/-1\}/)
+  assert.match(source, /\.finance-tools>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions button\{[^}]*min-height:44px/)
 })
 
 test('posting method options are compact horizontal touch targets with native-size radio inputs', () => {

@@ -10,7 +10,7 @@ export async function restoreAtomic(db, archive) {
   if(!Array.isArray(deferredPrepaidEntries))throw Error('atomic_restore_invalid_deferred')
   const allEntries = [...entries,...deferredPrepaidEntries]
   if(deferredPrepaidEntries.length)validateBackup({...archive,entries:allEntries})
-  const collections = ['paymentSources','merchantPaymentRules','customRules','categories','plans','bills','recurringExclusions','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks','archivedPlans','trashedEntries']
+  const collections = ['paymentSources','merchantPaymentRules','customRules','defaultRules','categories','plans','bills','recurringExclusions','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks','archivedPlans','trashedEntries']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
   // Each request is atomic. The client sends bounded, idempotent stages
   // rather than dropping settings from a large archive.
@@ -65,7 +65,10 @@ export async function restoreAtomic(db, archive) {
     if(!/^[a-z][a-z-]{1,40}$/.test(icon))throw Error('atomic_restore_invalid_icon')
     add('INSERT INTO category_source(category,icon) VALUES(?1,?2) ON CONFLICT(category) DO UPDATE SET icon=excluded.icon WHERE category_source.icon IS NULL',category,icon)
   }
-  // Backup user rules go into merchant_rules only. Never seed the defaults.
+  // When a v4 archive includes default rules, restore only missing keywords.
+  for(const rule of archive.defaultRules||[])
+    add('INSERT OR IGNORE INTO rules(keyword,category) VALUES(?1,?2)',rule.keyword,rule.category)
+  // User overrides remain separate in merchant_rules.
   for(const rule of archive.customRules||[])
     add('INSERT INTO merchant_rules(keyword,category) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET category=COALESCE(merchant_rules.category,excluded.category)',rule.keyword,rule.category)
   for(const rule of archive.merchantPaymentRules||[]) {

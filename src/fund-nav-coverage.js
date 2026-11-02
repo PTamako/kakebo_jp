@@ -10,3 +10,8 @@ export const autoNavSupported = code => Object.hasOwn(MUFG_FUNDS,String(code||''
 export const KNOWN_MANUAL_NAV_FUNDS = Object.freeze({
   '04317188': 'iFreeNEXT NASDAQ100インデックス'
 })
+
+// Official manager reference for the fund requiring manual NAV input.
+export const MANUAL_NAV_REFERENCE_URLS = Object.freeze({
+  '04317188': 'https://www.daiwa-am.co.jp/funds/comparison/result/index.html?fc=3373'
+})

@@ -1,6 +1,7 @@
 import { syncFundNav } from '../functions/api/fund-nav-sync.js'
 import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
 import { tokyoDateAt } from '../src/recurring-posting.js'
+import { isJapanHoliday } from '../src/japan-holidays.js'
 
 // One D1-bound scheduled Worker, with independent NAV and fixed-expense jobs.
 // Production redeploy refresh: route each scheduled trigger independently; no D1 migration.
@@ -32,7 +33,14 @@ export default {
     }
 
     if (NAV_CRONS.has(cron)) {
-      // Original 21:00 and 23:15 JST NAV logic is retained unchanged.
+      // Japan weekends and statutory holidays do not publish new fund NAVs.
+      // Avoid redundant HTTP requests; preserve last known D1 quotes unchanged.
+      const today = tokyoDateAt(scheduledTime)
+      if (isJapanHoliday(today)) {
+        console.log('NAV sync skipped: Japan non-trading day', JSON.stringify({cron,today}))
+        return
+      }
+      // Both official NAV cron paths remain unchanged on Japanese trading days.
       console.log('NAV sync started', JSON.stringify({cron, scheduledAt}))
       ctx.waitUntil((async () => {
         try {

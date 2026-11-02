@@ -21,7 +21,8 @@ const sessionCookie = (token, remember) =>
   'kakeibo_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/api'+(remember ? '; Max-Age=2592000' : '')
 const expiredSessionCookie = 'kakeibo_session=; HttpOnly; Secure; SameSite=Strict; Path=/api; Max-Age=0'
 
-// Categorization rules are read exclusively from migrated D1 merchant_rules.
+// GET /api/rules merges D1 rules (default fallback) and merchant_rules (user overrides).
+// Never delete rules as a legacy table; explicit user overrides take precedence.
 // SBIの投信積立引落は資産移動として扱い、生活支出から除外する。
 const isInvestmentTransfer = e => {
   const text = [e.merchant, e.note, e.raw].filter(Boolean).join(' ').toLowerCase()

@@ -499,10 +499,10 @@ async function downloadBackup(){
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
     const snapshot = rows.value.map(row=>({...row}))
     const before = ledgerFingerprint(snapshot)
-    const [nextPlans,nextBills,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio,recurringExclusionsBackup,archivedPlansBackup,trashedEntriesBackup] = await Promise.all([
+    const [nextPlans,nextBills,paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio,recurringExclusionsBackup,archivedPlansBackup,trashedEntriesBackup,mergedRules] = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely(),props.api('recurring-exclusions'),props.api('recurring-plans?trash=1'),props.api('trash-items?full=1')
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely(),props.api('recurring-exclusions'),props.api('recurring-plans?trash=1'),props.api('trash-items?full=1'),props.api('rules')
     ])
     // Reject mixed-time exports when another device edited the ledger during metadata reads.
     if (!(await loadAll()) || ledgerFingerprint(rows.value)!==before)
@@ -512,16 +512,16 @@ async function downloadBackup(){
     const currentSettings = await Promise.all([
       props.api('recurring-plans'),props.api('card-bills'),
       props.api('payment-sources'),props.api('merchant-payment-rules'),props.api('custom-rules'),
-      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely(),props.api('recurring-exclusions'),props.api('recurring-plans?trash=1'),props.api('trash-items?full=1')
+      props.api('categories'),props.api('category-icons'),props.api('dismissed-transfer-reminders'),props.api('category-source'),exportPortfolioSafely(),props.api('recurring-exclusions'),props.api('recurring-plans?trash=1'),props.api('trash-items?full=1'),props.api('rules')
     ])
     if (JSON.stringify(currentSettings) !== JSON.stringify([
       nextPlans,nextBills,paymentSources,merchantPaymentRules,
-      customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio,recurringExclusionsBackup,archivedPlansBackup,trashedEntriesBackup
+      customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,portfolio,recurringExclusionsBackup,archivedPlansBackup,trashedEntriesBackup,mergedRules
     ])) throw Error('設定がバックアップ中に変更されました。もう一度実行してください')
     const data = validateBackup({
       format:'kakeibo-ledger-backup',version:backupVersion,exportedAt:new Date().toISOString(),
       entries:snapshot,plans:nextPlans,bills:nextBills,
-      paymentSources,merchantPaymentRules,customRules,categories,categoryIcons,dismissedTransfers,categoryMetadata,recurringExclusions:recurringExclusionsBackup.filter(row=>!row.date),recurringDateExclusions:recurringExclusionsBackup.filter(row=>!!row.date).map(row=>({planId:row.planId,date:row.date})),archivedPlans:archivedPlansBackup.map(({archivedAt,...p})=>p),trashedEntries:trashedEntriesBackup,...portfolio
+      paymentSources,merchantPaymentRules,customRules,defaultRules:mergedRules.filter(rule=>rule.is_custom===false).map(({keyword,category})=>({keyword,category})),categories,categoryIcons,dismissedTransfers,categoryMetadata,recurringExclusions:recurringExclusionsBackup.filter(row=>!row.date),recurringDateExclusions:recurringExclusionsBackup.filter(row=>!!row.date).map(row=>({planId:row.planId,date:row.date})),archivedPlans:archivedPlansBackup.map(({archivedAt,...p})=>p),trashedEntries:trashedEntriesBackup,...portfolio
     })
     const sealed = await sealBackup(data)
     const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
@@ -593,7 +593,7 @@ async function restore(){
     for(const deferred of futureBatches)jobs.push({settings:{},rows:[],deferred})
   }
   const emptySettings={
-    paymentSources:[],merchantPaymentRules:[],customRules:[],categories:[],
+    paymentSources:[],merchantPaymentRules:[],customRules:[],defaultRules:[],categories:[],
     plans:[],archivedPlans:[],trashedEntries:[],bills:[],recurringExclusions:[],dismissedTransfers:[],categoryMetadata:[],
     investmentPlans:[],investmentPlanHistory:[],investmentHoldings:[],
     fundPrices:[],transferLinks:[],categoryIcons:{}

@@ -778,6 +778,17 @@ export async function onRequest({ request, env, params }) {
         if(saved.dismissed)statements.push(db.prepare(
           'INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) VALUES(?1)'
         ).bind(id))
+        // Restoring an entry undoes only the exclusion created by its deletion.
+        // Never remove exclusions which the user had already set manually.
+        const skip=saved.recurringSkip
+        if(skip && typeof skip.planId==='string' && validDate(e.date) &&
+            skip.month===e.date.slice(0,7) &&
+            (!skip.date || skip.date===e.date)) {
+          statements.push(db.prepare(skip.date
+            ? 'DELETE FROM recurring_date_exclusions WHERE plan_id=?1 AND date=?2'
+            : 'DELETE FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2')
+            .bind(skip.planId,skip.date||skip.month))
+        }
         statements.push(db.prepare("DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(id)))
         await db.batch(statements)
         return json({ok:true,restored:true,id})
@@ -923,16 +934,54 @@ export async function onRequest({ request, env, params }) {
           db.prepare('SELECT purchase_month FROM sbi_transfer_links WHERE entry_id=?1').bind(id).first(),
           db.prepare('SELECT 1 AS found FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id).first()
         ])
-        const snapshot=JSON.stringify({entry,purchaseMonth:link?.purchase_month||null,dismissed:!!dismissal})
-        const result=await db.batch([
-          db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING").bind(String(id),snapshot),
+        // An explicitly deleted recurring entry must NOT be re-created by the
+        // second Cron run later the same day, nor offered as a missed entry.
+        // Identify the original occurrence by its server-generated request ID.
+        // Unrelated manual entries and ordinary expenses are unaffected.
+        const recurring=entry.type==='expense' && validDate(entry.date) &&
+          typeof entry.client_request_id==='string' && entry.client_request_id.startsWith('recurring_')
+          ? await db.prepare(`SELECT id, CASE
+              WHEN ?2='recurring_'||REPLACE(id,'-','')||'_'||REPLACE(?1,'-','') THEN 'weekly'
+              ELSE 'monthly' END AS occurrence_type
+            FROM recurring_plans
+            WHERE ?2 IN (
+              'recurring_'||REPLACE(id,'-','')||'_'||REPLACE(?1,'-',''),
+              'recurring_'||REPLACE(id,'-','')||'_'||REPLACE(substr(?1,1,7),'-','')
+            ) LIMIT 1`).bind(entry.date,entry.client_request_id).first()
+          : null
+        const recurringSkip=recurring
+          ? {planId:recurring.id,month:entry.date.slice(0,7),
+              ...(recurring.occurrence_type==='weekly'?{date:entry.date}:{})}
+          : null
+        const skipSql=recurringSkip
+          ? recurringSkip.date
+            ? 'INSERT OR IGNORE INTO recurring_date_exclusions(plan_id,date) VALUES(?1,?2)'
+            : 'INSERT OR IGNORE INTO recurring_candidate_exclusions(plan_id,month) VALUES(?1,?2)'
+          : null
+        // Preserve an existing user-added exclusion when restoring the entry.
+        const alreadySkipped=recurringSkip ? await db.prepare(
+          recurringSkip.date
+            ? 'SELECT 1 FROM recurring_date_exclusions WHERE plan_id=?1 AND date=?2'
+            : 'SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2'
+        ).bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month).first() : null
+        const snapshot=JSON.stringify({entry,purchaseMonth:link?.purchase_month||null,dismissed:!!dismissal,
+          recurringSkip:alreadySkipped?null:recurringSkip})
+        // All changes happen in one D1 transaction; a partial deletion cannot
+        // leave a scheduled expense marked as skipped without its trash record.
+        const statements=[
+          db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING").bind(String(id),snapshot)
+        ]
+        if(recurringSkip)statements.push(db.prepare(skipSql)
+          .bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month))
+        statements.push(
           db.prepare('DELETE FROM sbi_transfer_links WHERE entry_id=?1').bind(id),
           db.prepare('DELETE FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id),
           db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2)").bind(id,String(id))
-        ])
-        if(!result[0]?.meta?.changes || !result[3]?.meta?.changes)
+        )
+        const result=await db.batch(statements)
+        if(!result[0]?.meta?.changes || !result[result.length-1]?.meta?.changes)
           return json({error:'明細をゴミ箱に移動できませんでした'},409)
-        return json({ok:true,changes:1,trashed:true})
+        return json({ok:true,changes:1,trashed:true,skippedRecurring:!!recurringSkip})
       }
     }
     if (a === 'category-source' && m === 'GET') {

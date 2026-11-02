@@ -332,6 +332,7 @@ const backupBusy = ref(false)
 const plans = ref([])
 const recurringListQuery = ref('')
 const recurringListFilter = ref('all')
+const recurringListShowAll = ref(false)
 const expandedRecurringPlanId = ref('')
 const activeRecurringPlans = computed(() => plans.value.filter(item => item.enabled))
 const currentEligiblePlans = computed(() => activeRecurringPlans.value.filter(item =>
@@ -344,6 +345,8 @@ const filteredRecurringPlans = computed(() => {
     (!query || String(item.name || '').toLocaleLowerCase('ja-JP').includes(query))
   )
 })
+const visibleRecurringPlans = computed(() => recurringListShowAll.value ? filteredRecurringPlans.value : filteredRecurringPlans.value.slice(0, 2))
+watch([recurringListQuery, recurringListFilter], () => { recurringListShowAll.value = false })
 function toggleRecurringPlanDetails(id) {
   expandedRecurringPlanId.value = expandedRecurringPlanId.value === id ? '' : id
 }
@@ -1394,8 +1397,8 @@ async function removeCardBill(record) {
           <select v-model="recurringListFilter" aria-label="固定費の状態"><option value="all">すべて</option><option value="active">有効</option><option value="stopped">停止中</option></select>
         </div>
         <div v-if="!filteredRecurringPlans.length" class="recurring-list-empty">{{plans.length ? '該当する固定費はありません' : '固定費はまだありません'}}</div>
-        <div v-else class="recurring-plan-scroll" role="list" aria-label="固定費一覧">
-          <div v-for="p in filteredRecurringPlans" :key="p.id" class="recurring-plan-item" role="listitem">
+        <div v-else id="recurring-plan-list" class="recurring-plan-scroll" :class="{'is-expanded': recurringListShowAll}" role="list" aria-label="固定費一覧">
+          <div v-for="p in visibleRecurringPlans" :key="p.id" class="recurring-plan-item" role="listitem">
             <button type="button" class="recurring-plan-toggle" :aria-expanded="expandedRecurringPlanId===p.id" :aria-controls="'recurring-plan-actions-'+p.id" @click="toggleRecurringPlanDetails(p.id)">
               <span class="recurring-plan-name" :title="p.name">{{p.name}}</span>
               <span class="recurring-plan-amount">{{yen(p.amount)}}</span>
@@ -1418,7 +1421,7 @@ async function removeCardBill(record) {
             </div>
           </div>
         </div>
-        <p class="recurring-list-count">{{filteredRecurringPlans.length}} / {{plans.length}}件</p>
+        <button v-if="filteredRecurringPlans.length > 2" type="button" class="recurring-list-more" :aria-expanded="recurringListShowAll" aria-controls="recurring-plan-list" @click="recurringListShowAll = !recurringListShowAll">{{recurringListShowAll ? '折りたたむ' : 'もっと見る'}}</button>
       </div>
     </details>
   </article>
@@ -1672,6 +1675,7 @@ async function removeCardBill(record) {
 .recurring-list-filters{display:grid;grid-template-columns:minmax(0,1fr) 102px;gap:8px}
 .finance-panel .recurring-list-filters input,.finance-panel .recurring-list-filters select{width:100%;min-width:0;max-width:100%;height:44px;min-height:44px;padding:0 9px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;font-size:16px}
 .recurring-plan-scroll{display:grid;gap:6px;max-height:320px;overflow-y:auto;overscroll-behavior:contain;padding:1px 3px 3px 1px}
+.recurring-plan-scroll.is-expanded{max-height:none;overflow:visible}
 .recurring-plan-item{min-width:0;border:1px solid var(--line);border-radius:11px;background:var(--tint);overflow:hidden}
 .finance-panel .recurring-plan-toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;align-items:center;gap:7px;width:100%;min-width:0;min-height:57px;text-align:left;padding:9px 10px;border:0;border-radius:0;background:transparent;box-shadow:none;color:var(--ink)}
 .recurring-plan-text{display:grid;gap:3px;min-width:0}
@@ -1684,7 +1688,7 @@ async function removeCardBill(record) {
 .recurring-plan-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 .finance-panel .recurring-plan-actions button{padding:8px 4px;min-height:44px;font-size:12px}
 .recurring-list-empty{padding:12px 6px;text-align:center;color:var(--muted);font-size:13px}
-.finance-panel p.recurring-list-count{font-size:11px;text-align:right;margin:0;color:var(--muted)}
+.finance-panel .recurring-list-more{width:100%;min-height:44px;background:var(--card);color:var(--blue-dark)}
 .recurring-candidate-list{display:grid;gap:5px;max-height:240px;overflow-y:auto;overscroll-behavior:contain;min-width:0;padding-right:3px}
 @media(max-width:360px){.recurring-list-filters{grid-template-columns:minmax(0,1fr) 92px;gap:5px}.recurring-list-summary{padding:10px}.recurring-plan-meta{font-size:10px}}
 

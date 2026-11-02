@@ -30,21 +30,21 @@ function findDate(t, today = new Date()) {
 
 function findTime(t) {
   const m = t.match(/(?<!\d)([01]?\d|2[0-3])[:：时時]([0-5]\d)(?!\d)/)
-  return m ? `${pad(m[1])}:${pad(m[2])}` : ''
+  return m ? `${pad(m[1])}:${pad(m[2])}` : readClockTime(t)
 }
 
 function findAmount(t) {
-  const num = s => Number(s.replace(/[,，\s]/g, ''))
+  const num = s => Number(s.replace(/[,，.．\s]/g, ''))
   let m
-  if ((m = t.match(/(?:合\s*計|合计|お?買上(?:げ)?(?:金額)?|総\s*額|total|請求額)[^\d¥]{0,8}¥?\s*([\d,]{2,9})/i))) return num(m[1])
-  const yen = [...t.matchAll(/[¥￥]\s*([\d,]{1,9})/g)].map(x => num(x[1]))
+  if ((m = t.match(/(?:合\s*計|合计|お?買上(?:げ)?(?:金額)?|総\s*額|total|請求額)[^\d¥]{0,8}¥?\s*(\d{1,3}(?:[,，.．]\d{3})+|\d{2,9})/i))) return num(m[1])
+  const yen = [...t.matchAll(/[¥￥]\s*(\d{1,3}(?:[,，.．]\d{3})+|\d{1,9})/g)].map(x => num(x[1]))
   if (yen.length) return Math.max(...yen)
-  const unit = [...t.matchAll(/([\d,]{1,9})\s*(?:円|日元|元|块|塊)/g)].map(x => num(x[1]))
+  const unit = [...t.matchAll(/(\d{1,3}(?:[,，.．]\d{3})+|\d{1,9})\s*(?:円|日元|元|块|塊)/g)].map(x => num(x[1]))
   if (unit.length) return Math.max(...unit)
   // Payment notifications often show a price beside the shop without ¥/円,
   // and OCR can corrupt the currency glyph into a bracket (e.g. "3,808[").
   // A grouped number is stronger evidence than any year elsewhere on screen.
-  const grouped = [...t.matchAll(/(?<![\d,，])(\d{1,3}(?:[,，]\d{3})+)(?![\d,，])/g)]
+  const grouped = [...t.matchAll(/(?<![\d,，.．])(\d{1,3}(?:[,，.．]\d{3})+)(?![\d,，.．])/g)]
     .map(x => num(x[1])).filter(x => Number.isSafeInteger(x) && x > 0 && x <= 9999999)
   if (grouped.length) return Math.max(...grouped)
   // Remove printed dates (including OCR-inserted spaces) and clock times
@@ -143,8 +143,10 @@ export function parseEntry(raw, rules) {
   // Do not save a notification's right-aligned price as part of its shop name.
   // Keep ordinary merchant numbers (such as セブン-イレブン) intact.
   const merchant = (structuredMerchant || firstLine.slice(0, 60) || keyword)
-    .replace(/\s+[¥￥]?\s*\d{1,3}(?:[,，]\d{3})+\s*(?:円)?\s*[\[［\]］|]?\s*$/u, '')
-    .replace(/\s+[¥￥]\s*\d[\d,，]*\s*(?:円)?\s*$/u, '')
+    .replace(/\s+[¥￥]?\s*\d{1,3}(?:[,，.．]\d{3})+\s*(?:円)?\s*[\[［\]］|]?\s*$/u, '')
+    .replace(/\s+[¥￥]\s*\d[\d,，.．]*\s*(?:円)?\s*$/u, '')
+    // In low-resolution screenshots, ¥ or 円 can look like an opening bracket.
+    .replace(/\s+\d{2,7}\s*[\[［|]\s*$/u, '')
     .trim().slice(0, 60)
   return {
     date: findDate(text), time: findTime(text), amount: findAmount(text),

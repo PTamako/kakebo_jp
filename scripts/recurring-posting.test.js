@@ -191,12 +191,12 @@ test('confirmed recurring plan does not block a separate same-name auto plan',as
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,2)
 })
 
-test('different amount or category does not accidentally block valid auto posting',async()=>{
+test('direct manual expense with an edited amount still blocks its fixed-expense slot',async()=>{
   const {sqlite,db}=memoryDb()
   insertPlan(sqlite)
   sqlite.prepare(`INSERT INTO entries(date,amount,category,merchant,type,payment_source)
       VALUES('2026-11-25',500,'住居','家賃','expense','現金')`).run()
-  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,1)
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,0)
 })
 
 test('candidate preview claims a direct expense only once, not all same-name plans',()=>{

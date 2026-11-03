@@ -726,7 +726,8 @@ export async function onRequest({ request, env, params }) {
       if(await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())
         return json({ok:true,created:false,duplicate:true,conflict:false})
       const manualSlot=await recurringManualSlot(db,plan,date)
-      const samePeriod=perDate?'e.date=?1':'substr(e.date,1,7)=?8'
+      // Indexed date range avoids full-ledger scans on monthly confirmations.
+      const samePeriod=perDate?'e.date=?1':"e.date >= (?8 || '-01') AND e.date < date(?8 || '-01', '+1 month')"
       const result=await db.prepare(`INSERT INTO entries
         (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
         SELECT ?1,'',p.amount,p.category,p.name,'定期固定費（確認記帳）','','expense',NULL,0,NULL,?2,p.payment_source

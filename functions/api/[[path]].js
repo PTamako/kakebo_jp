@@ -4,6 +4,7 @@ import { handlePortfolio } from './investment-portfolio.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
 import { nextAutomaticStartMonth, recurringRequestId, scheduledRecurringOnDate, scheduledRecurringDate } from '../../src/recurring-posting.js'
+import { recurringManualSlot } from './recurring-collision.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
 import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
@@ -724,6 +725,7 @@ export async function onRequest({ request, env, params }) {
         return json({error:'この予定日は候補から除外されています。除外を解除してから登録してください',code:'recurring_excluded'},409)
       if(await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first())
         return json({ok:true,created:false,duplicate:true,conflict:false})
+      const manualSlot=await recurringManualSlot(db,plan,date)
       const samePeriod=perDate?'e.date=?1':'substr(e.date,1,7)=?8'
       const result=await db.prepare(`INSERT INTO entries
         (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
@@ -734,10 +736,12 @@ export async function onRequest({ request, env, params }) {
           AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)
           AND NOT EXISTS(SELECT 1 FROM recurring_candidate_exclusions x WHERE x.plan_id=p.id AND x.month=?8)
           AND NOT EXISTS(SELECT 1 FROM recurring_date_exclusions x WHERE x.plan_id=p.id AND x.date=?1)
-          AND NOT EXISTS(SELECT 1 FROM entries e WHERE ${samePeriod} AND e.type='expense'
-            AND e.merchant=p.name AND COALESCE(e.payment_source,'')=p.payment_source)
+          AND (SELECT COUNT(*) FROM entries e WHERE ${samePeriod} AND e.type='expense'
+            AND e.merchant=p.name AND COALESCE(e.payment_source,'')=p.payment_source
+            AND e.amount=p.amount AND e.category=p.category
+            AND (e.client_request_id IS NULL OR e.client_request_id NOT LIKE 'recurring_%')) < ?13
         ON CONFLICT(client_request_id) DO NOTHING`)
-        .bind(date,clientRequestId,plan.id,plan.name,plan.amount,plan.day,plan.weekday,scheduledMonth,plan.schedule_type,plan.category,plan.payment_source,plan.workday_only).run()
+        .bind(date,clientRequestId,plan.id,plan.name,plan.amount,plan.day,plan.weekday,scheduledMonth,plan.schedule_type,plan.category,plan.payment_source,plan.workday_only,manualSlot).run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
     }
     // Genuine deletions share one trash table; reviews/exclusions remain states.

@@ -16,7 +16,13 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
     if(entry.client_request_id)idempotency.add(entry.client_request_id)
     // A confirmed occurrence belongs to its own plan, not every other plan
     // with the same merchant name. Direct manual entries can claim one slot.
-    if(String(entry.client_request_id||'').startsWith('recurring_'))continue
+    if(String(entry.client_request_id||'').startsWith('recurring_')){
+      const ownedByActivePlan=(plans||[]).some(plan => plan.enabled &&
+        recurringRequestId(plan.id,(plan.scheduleType||'monthly')==='monthly'?date.slice(0,7):date)===entry.client_request_id)
+      if(ownedByActivePlan)continue
+      // Legacy/orphaned recurring references have no active plan owner; retain
+      // their manual-priority conflict instead of silently booking again.
+    }
     const base=[entry.merchant,entry.payment_source||''].join('|')
     for(const period of [date,date.slice(0,7)]){
       const key=period+'|'+base

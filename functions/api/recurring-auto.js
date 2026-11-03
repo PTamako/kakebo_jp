@@ -18,7 +18,10 @@ export async function postScheduledRecurring(db,{today=tokyoDateAt()}={}) {
     const period=p.schedule_type==='monthly'?month:today
     const requestId=recurringRequestId(p.id,period)
     const manualSlot=await recurringManualSlot(db,p,today,results)
-    const samePeriod=p.schedule_type==='monthly'?'substr(e.date,1,7)=?5':'e.date=?4'
+    // The monthly range can use idx_entries_date; substr(e.date,1,7) cannot.
+    const samePeriod=p.schedule_type==='monthly'
+      ? "e.date >= (?5 || '-01') AND e.date < date(?5 || '-01', '+1 month')"
+      : 'e.date=?4'
     const result=await db.prepare(`INSERT INTO entries
       (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
       SELECT ?1,'',p.amount,p.category,p.name,'定期固定費（自動記帳）','','expense',NULL,0,NULL,?3,p.payment_source

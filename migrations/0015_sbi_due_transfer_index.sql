@@ -4,7 +4,7 @@
 -- The partial index matches applyDueSbiTransfers() exactly.
 CREATE INDEX IF NOT EXISTS idx_entries_sbi_due_unapplied
   ON entries(COALESCE(transfer_date,date))
-  WHERE type='transfer' AND transfer_target='sbi' AND transfer_applied=0;
+  WHERE type='transfer' AND transfer_target='sbi' AND COALESCE(transfer_applied,0)=0;
 
 -- Record this explicitly applied schema change; never infer that every
 -- historical migration was applied solely from this version marker.

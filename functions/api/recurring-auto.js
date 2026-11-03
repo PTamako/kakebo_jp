@@ -32,7 +32,6 @@ export async function postScheduledRecurring(db,{today=tokyoDateAt()}={}) {
         AND NOT EXISTS(SELECT 1 FROM recurring_date_exclusions x WHERE x.plan_id=p.id AND x.date=?4)
         AND (SELECT COUNT(*) FROM entries e WHERE ${samePeriod}
           AND e.type='expense' AND e.merchant=p.name AND COALESCE(e.payment_source,'')=p.payment_source
-          AND e.amount=p.amount AND e.category=p.category
           AND (e.client_request_id IS NULL OR e.client_request_id NOT LIKE 'recurring_%')) < ?14
       ON CONFLICT(client_request_id) DO NOTHING`)
       .bind(today,p.id,requestId,today,month,p.name,p.amount,p.day,p.weekday,p.schedule_type,p.category,p.payment_source,p.workday_only,manualSlot).run()

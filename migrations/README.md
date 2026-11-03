@@ -1,3 +1,23 @@
+# 現行の移行状態（2026-11-03 読み取り専用確認）
+
+- **本番**: `kakebo`、**Preview**: `kakebo_preview`。Cloudflare Pages のバインディングは別ID。
+- 本番では `recurring_plans.workday_only`、`posting_mode`、`trash_items`、月・日ごとの除外表を実物スキーマで確認済み。`schema_migrations` には `schema-0012-verified` / `schema-0013-verified` / `schema-0014-verified` 等の記録が存在する。ただし、古い全バージョンが一列に並んだ履歴ではないため、台帳の空番を**未適用の証拠**とはみなさない。
+- 本番の `rules` 775件を確認済み。Preview 0件は隔離テストDBであり本番規則の欠損ではない。
+- **追加案0015**: `migrations/0015_sbi_due_transfer_index.sql`。有効日ベースで未処理 SBI 振替を引く部分式インデックス。**この記載だけでは本番への適用を意味しない**。バックアップ/PITR bookmark、Previewでの検証、`EXPLAIN QUERY PLAN` の結果確認のあと、明示的に1回だけ本番へ適用する。適用後に `idx_entries_sbi_due_unapplied` の存在と `schema-0015-verified` を確認する。
+- 現行 Worker Cron: JST 00:30 / 09:30（固定費・SBI期日到来）、19:30 / 23:15（基金NAV）。古い21:00記載は変更前の履歴。
+
+## 安全な0015適用手順
+
+1. D1 Time Travel の現在の bookmark を取得し、必要に応じて JSON バックアップを保存。
+2. `kakebo_preview` に 0015 を先行適用。`PRAGMA index_list(entries)` で1個だけ存在し、`EXPLAIN QUERY PLAN` で索引が選ばれ、2回適用しても履歴が重複しないことを確認。
+3. `npm run build` を含む Cloudflare Pages Preview が成功したことを確認。
+4. 同じ SQL を **本番の `kakebo` だけ** に適用。上書き・DROPは不要。適用後は `PRAGMA index_list(entries)` と `schema_migrations` を確認。
+5. `main` マージ後の Pages/Worker デプロイ、次回 Cron の結果、実際の支出明細の不変性を確認。
+
+以降は旧移行時の手順を記録として残します。**過去の 0001〜0014 を再実行しないでください。**
+
+---
+
 ## 2026-11-02: 日本の平日（土日祝を除く）固定費（0014・適用必須）
 
 **本番D1への追加SQL適用が終わるまでは、この機能のPRをmainへマージ／Pages・Workerへ反映しないでください。** 既存の読み取り・Workerも `workday_only` を使うため、未移行のままデプロイすると失敗します。
@@ -22,7 +42,7 @@
 - まず本番 D1 の検証済みバックアップを取得し、別の D1 コピーでテストしてから、`migrations/0013_recurring_posting_mode.sql` を **一度だけ手動適用**。既存の `0001`～`0012` を再実行しない。
 - `recurring_plans` に `posting_mode`（manual/auto、既存の固定費は必ず manual）、`auto_from_month`（過去分の自動補記を禁止）、`schedule_type`（monthly/weekly、既存は monthly）、`weekday`（0=日曜～6=土曜）を追加。週別に候補を除外する `recurring_date_exclusions` テーブルも追加する。既存データ・明細は変更しない。
 - **順番:** (1) バックアップ (2) SQL 0013 を本番 D1 に一度だけ適用（適用済みなら再実行しない） (3) Pages コードをデプロイ (4) 既存の `kakeibo-nav-sync` を `npm run deploy:nav` または有効な Workers Builds で更新 (5) 同 Worker の NAV と固定費のログ・記帳結果を確認。新しい Worker は作成しない。
-- 既存の `kakeibo-nav-sync` Worker は、固定費を毎日 **00:30 と 09:30 JST** に試行し、NAV を従来どおり 21:00 と 23:15 JST に確認する。毎月は指定日（月末を超える日付は末日）、毎週は指定した曜日にだけ登録する。既存明細と同名・同支払方法・同期間（月次は月、週次は日）があれば重複生成を防止する。1プラン1週の予定日を個別に記録し、同月内の別の週は妨げない。
+- 既存の `kakeibo-nav-sync` Worker は、固定費を毎日 **00:30 と 09:30 JST** に試行し、NAV を現行どおり 19:30 と 23:15 JST に確認（旧版は 21:00）する。毎月は指定日（月末を超える日付は末日）、毎週は指定した曜日にだけ登録する。既存明細と同名・同支払方法・同期間（月次は月、週次は日）があれば重複生成を防止する。1プラン1週の予定日を個別に記録し、同月内の別の週は妨げない。
 - 停止中・ゴミ箱内・月別/日別除外済みのプランは自動記帳しない。新しく auto に設定したときは**その日を過ぎた過去の固定費を一括補記しない**。過去分は従来の「未記帳分を確認」でユーザーが確認・登録できる。
 - 記帳方法・周期・曜日・有効開始月は D1 に保存され、iPhone の PWA を再インストールしても残る。JSON バックアップ/復元にも保存する。古いバックアップは monthly/manual を安全な既定値として使う。
 - **0013 未適用のまま新しい Pages や Worker を公開しない。** 対象列・表がなく API が失敗する。API/Worker はマイグレーションや履歴投入を自動実行しない。

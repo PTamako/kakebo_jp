@@ -738,7 +738,12 @@ export async function onRequest({ request, env, params }) {
           AND NOT EXISTS(SELECT 1 FROM recurring_date_exclusions x WHERE x.plan_id=p.id AND x.date=?1)
           AND (SELECT COUNT(*) FROM entries e WHERE ${samePeriod} AND e.type='expense'
             AND e.merchant=p.name AND COALESCE(e.payment_source,'')=p.payment_source
-            AND (e.client_request_id IS NULL OR e.client_request_id NOT LIKE 'recurring_%')) < ?13
+            AND (e.client_request_id IS NULL OR e.client_request_id NOT LIKE 'recurring_%' OR
+          NOT EXISTS(SELECT 1 FROM recurring_plans owner WHERE owner.enabled=1
+            AND owner.name=e.merchant AND owner.payment_source=COALESCE(e.payment_source,'')
+            AND e.client_request_id=('recurring_'||replace(owner.id,'-','')||'_'||
+              CASE WHEN owner.schedule_type='monthly' THEN replace(substr(e.date,1,7),'-','')
+                ELSE replace(e.date,'-','') END)))) < ?13
         ON CONFLICT(client_request_id) DO NOTHING`)
         .bind(date,clientRequestId,plan.id,plan.name,plan.amount,plan.day,plan.weekday,scheduledMonth,plan.schedule_type,plan.category,plan.payment_source,plan.workday_only,manualSlot).run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})

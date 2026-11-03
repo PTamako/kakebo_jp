@@ -1,11 +1,12 @@
 import { recurringRequestId, scheduledRecurringOnDate, tokyoDateAt } from '../../src/recurring-posting.js'
+import { recurringManualSlot } from './recurring-collision.js'
 
 // Scheduled Worker writes directly to D1, never merely the device cache.
 // Existing manually-entered expenses win. Repeat invocations are idempotent.
 export async function postScheduledRecurring(db,{today=tokyoDateAt()}={}) {
   if(!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(today))throw Error('invalid_tokyo_date')
   const month=today.slice(0,7)
-  const {results=[]}=await db.prepare(`SELECT p.id,p.name,p.amount,p.day,p.weekday,p.schedule_type,p.category,p.payment_source,p.start_month,
+  const {results=[]}=await db.prepare(`SELECT p.id,p.name,p.amount,p.day,p.weekday,p.schedule_type,p.category,p.payment_source,p.start_month,p.enabled,
       p.posting_mode,p.auto_from_month,p.workday_only
     FROM recurring_plans p WHERE p.enabled=1 AND p.posting_mode='auto'
       AND p.start_month<=?1 AND p.auto_from_month<>'' AND p.auto_from_month<=?1
@@ -16,6 +17,7 @@ export async function postScheduledRecurring(db,{today=tokyoDateAt()}={}) {
     out.checked++
     const period=p.schedule_type==='monthly'?month:today
     const requestId=recurringRequestId(p.id,period)
+    const manualSlot=await recurringManualSlot(db,p,today,results)
     const samePeriod=p.schedule_type==='monthly'?'substr(e.date,1,7)=?5':'e.date=?4'
     const result=await db.prepare(`INSERT INTO entries
       (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
@@ -28,10 +30,12 @@ export async function postScheduledRecurring(db,{today=tokyoDateAt()}={}) {
         AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)
         AND NOT EXISTS(SELECT 1 FROM recurring_candidate_exclusions x WHERE x.plan_id=p.id AND x.month=?5)
         AND NOT EXISTS(SELECT 1 FROM recurring_date_exclusions x WHERE x.plan_id=p.id AND x.date=?4)
-        AND NOT EXISTS(SELECT 1 FROM entries e WHERE ${samePeriod}
-          AND e.type='expense' AND e.merchant=p.name AND COALESCE(e.payment_source,'')=p.payment_source)
+        AND (SELECT COUNT(*) FROM entries e WHERE ${samePeriod}
+          AND e.type='expense' AND e.merchant=p.name AND COALESCE(e.payment_source,'')=p.payment_source
+          AND e.amount=p.amount AND e.category=p.category
+          AND (e.client_request_id IS NULL OR e.client_request_id NOT LIKE 'recurring_%')) < ?14
       ON CONFLICT(client_request_id) DO NOTHING`)
-      .bind(today,p.id,requestId,today,month,p.name,p.amount,p.day,p.weekday,p.schedule_type,p.category,p.payment_source,p.workday_only).run()
+      .bind(today,p.id,requestId,today,month,p.name,p.amount,p.day,p.weekday,p.schedule_type,p.category,p.payment_source,p.workday_only,manualSlot).run()
     if(result.meta?.changes)out.created++
     else out.skipped++
   }

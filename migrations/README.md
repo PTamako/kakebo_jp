@@ -3,15 +3,15 @@
 - **本番**: `kakebo`、**Preview**: `kakebo_preview`。Cloudflare Pages のバインディングは別ID。
 - 本番では `recurring_plans.workday_only`、`posting_mode`、`trash_items`、月・日ごとの除外表を実物スキーマで確認済み。`schema_migrations` には `schema-0012-verified` / `schema-0013-verified` / `schema-0014-verified` 等の記録が存在する。ただし、古い全バージョンが一列に並んだ履歴ではないため、台帳の空番を**未適用の証拠**とはみなさない。
 - 本番の `rules` 775件を確認済み。Preview 0件は隔離テストDBであり本番規則の欠損ではない。
-- **追加案0015**: `migrations/0015_sbi_due_transfer_index.sql`。有効日ベースで未処理 SBI 振替を引く部分式インデックス。**この記載だけでは本番への適用を意味しない**。バックアップ/PITR bookmark、Previewでの検証、`EXPLAIN QUERY PLAN` の結果確認のあと、明示的に1回だけ本番へ適用する。適用後に `idx_entries_sbi_due_unapplied` の存在と `schema-0015-verified` を確認する。
+- **0015 本番適用・検証済み（2026-11-03）**: `migrations/0015_sbi_due_transfer_index.sql`。Previewで事前適用し、Cloudflare D1 Point-in-Time Recovery bookmark取得後に本番へ適用。両環境の `EXPLAIN QUERY PLAN` は `idx_entries_sbi_due_unapplied` を使用。`schema-0015-verified` も本番で確認済み。実行前後の本番件数は `entries=244`、`investment_holdings=7`、`rules=775` で変化なし。**本番で0015を再実行する必要はありません**。
 - 現行 Worker Cron: JST 00:30 / 09:30（固定費・SBI期日到来）、19:30 / 23:15（基金NAV）。古い21:00記載は変更前の履歴。
 
-## 安全な0015適用手順
+## 0015 の適用手順（完了済み・新環境向け履歴資料）
 
 1. D1 Time Travel の現在の bookmark を取得し、必要に応じて JSON バックアップを保存。
 2. `kakebo_preview` に 0015 を先行適用。`PRAGMA index_list(entries)` で1個だけ存在し、`EXPLAIN QUERY PLAN` で索引が選ばれ、2回適用しても履歴が重複しないことを確認。
 3. `npm run build` を含む Cloudflare Pages Preview が成功したことを確認。
-4. 同じ SQL を **本番の `kakebo` だけ** に適用。上書き・DROPは不要。適用後は `PRAGMA index_list(entries)` と `schema_migrations` を確認。
+4. ※2026-11-03に本番適用済み。新しい本番環境へ移す場合に限り、同じ SQL を **本番の `kakebo` だけ** に適用。上書き・DROPは不要。適用後は `PRAGMA index_list(entries)` と `schema_migrations` を確認。
 5. `main` マージ後の Pages/Worker デプロイ、次回 Cron の結果、実際の支出明細の不変性を確認。
 
 以降は旧移行時の手順を記録として残します。**過去の 0001〜0014 を再実行しないでください。**

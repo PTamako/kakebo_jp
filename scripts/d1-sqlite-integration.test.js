@@ -108,14 +108,14 @@ test('actual SQLite: manual and old automated recurring conflicts, idempotency a
     const repeated=await call('recurring-post','POST',approvedPost(first))
     assert.equal(repeated.body.duplicate,true)
     const independent=await call('recurring-post','POST',approvedPost(second))
-    assert.equal(independent.body.conflict,true, 'an identical plan with a new ID cannot create a duplicate expense')
-    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,1)
+    assert.equal(independent.body.created,true, 'a separately configured plan has a distinct occurrence ID')
+    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,2)
     const edited=await call('recurring-plans/'+first.id,'PUT',{...first,amount:103000,enabled:false})
     assert.equal(edited.status,200)
     const savedPlans=(await call('recurring-plans')).body
     assert.equal(savedPlans.find(p=>p.id===first.id).amount,103000)
     assert.equal(savedPlans.find(p=>p.id===first.id).enabled,false)
-    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,1)
+    assert.equal((await call('entries?month=2026-10&offset=0')).body.length,2)
   }finally{db.close()}
 })
 
@@ -195,10 +195,10 @@ test('manual priority: editing a ¥101,500 planned debit to ¥98,000 is never ov
     const alternate={...plan,id:'88888888-2222-3333-4444-555555555555'}
     assert.equal((await call('recurring-plans','POST',alternate)).status,200)
     const dup=await call('recurring-post','POST',approvedPost(alternate))
-    assert.equal(dup.body.conflict,true)
+    assert.equal(dup.body.created,true, 'a separately configured plan may post independently')
     rows=(await call('entries?month=2026-10')).body
-    assert.equal(rows.length,1)
-    assert.equal(rows[0].amount,98000)
+    assert.equal(rows.length,2)
+    assert.ok(rows.some(row=>row.amount===98000), 'editing the first plan must preserve its amount')
   } finally{db.close()}
 })
 

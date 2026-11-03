@@ -24,19 +24,19 @@ npm run verify:release
 
 `verify:release` は回帰テスト（`node --test scripts/*.test.js`）、本番依存のセキュリティ監査、Vite ビルドを実行します。
 
-ローカル確認：`npm run cf:dev`。GitHub Actions の自動起動は利用枠の都合で停止しており、Cloudflare Pages のビルドと必要時の手動検証を使用します。静的ビルド成功だけで、実機 Safari や本番 Cron の稼働まで保証されるわけではありません。
+ローカル確認：`npm run cf:dev`。PR マージ前には [リリース前チェック](.github/PULL_REQUEST_TEMPLATE.md) に従い、最新コミットと Cloudflare Pages Preview のビルド成功が一致することを確認します。GitHub Actions の自動起動は利用枠の都合で停止しており、Cloudflare Pages のビルドと必要時の手動検証を使用します。静的ビルド成功だけで、実機 Safari や本番 Cron の稼働まで保証されるわけではありません。
 
 ## Cloudflare の構成
 
 - `wrangler.toml`：Pages 用設定。D1 の `DB` バインディングと、必要に応じた `AI` バインディング
-- `wrangler.nav.toml`：**既存の1つの Worker** `kakeibo-nav-sync`。固定費を日本時間 00:30 と 09:30 に D1 へ自動記帳し、基準価額を 21:00 と 23:15 に同期。NAV と固定費の処理は Cron ごとに独立。新規 Worker は不要
+- `wrangler.nav.toml`：**既存の1つの Worker** `kakeibo-nav-sync`。固定費を日本時間 00:30 と 09:30 に D1 へ自動記帳し、基準価額を 19:30 と 23:15 に同期。NAV と固定費の処理は Cron ごとに独立。新規 Worker は不要
 - NAV 同期の操作・取得可能な基金については [scripts/deploy-nav-worker.md](scripts/deploy-nav-worker.md) を参照
 
 新規環境では D1 のスキーマ移行手順を [migrations/README.md](migrations/README.md) で確認してください。**運用中の D1 に `schema.sql` を再実行して初期化しないでください。** マイグレーションは明示的なレビュー後に適用し、通常の API 呼び出しで旧テーブルやテストデータを再作成しません。
 
 ## プレビュー環境とデータ保護
 
-本番とプレビューには異なる D1 が必要です。プレビューの D1 ID と内部 ID が検証できなければ API は停止し、検証済みプレビューでも財務データの更新は禁止します。Cloudflare Dashboard の Pages Preview 設定・D1 バインディングを確認してください。独自ドメインの場合は `APP_ENV=preview` も設定します。**本番 D1 をプレビューで共有しないでください。**
+本番とプレビューには異なる D1 が必要です。プレビューの D1 ID と内部 ID が検証できなければ API は停止し、検証済みプレビューでも財務データの更新は禁止します。Cloudflare Dashboard の Pages Preview 設定・D1 バインディングを確認してください。独自ドメインの場合は `APP_ENV=preview` も設定します。**本番 D1 をプレビューで共有しないでください。** Preview のログイン検証は本番と異なる Preview 専用 `AUTH_TOKEN` が必要です。認証できても Preview での財務データ更新は HTTP 403 で拒否されます。
 
 ログインには `AUTH_TOKEN` を使用します。端末セッションは取り消し可能で有効期限は最大 30 日です。アクセストークンを公開リポジトリやログに貼り付けないでください。
 

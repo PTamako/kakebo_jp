@@ -215,3 +215,12 @@ test('candidate preview claims a direct expense only once, not all same-name pla
   assert.equal(unposted[0].planId,second)
   assert.equal(unposted[0].conflict,false)
 })
+
+test('orphaned legacy recurring request IDs still prevent a second automatic debit',async()=>{
+  const {sqlite,db}=memoryDb()
+  insertPlan(sqlite)
+  sqlite.prepare(`INSERT INTO entries(date,amount,category,merchant,type,payment_source,client_request_id)
+    VALUES('2026-11-25',98000,'住居','家賃','expense','現金','recurring_oldid_202611')`).run()
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,0)
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,1)
+})

@@ -17,7 +17,7 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
     // A confirmed occurrence belongs to its own plan, not every other plan
     // with the same merchant name. Direct manual entries can claim one slot.
     if(String(entry.client_request_id||'').startsWith('recurring_'))continue
-    const base=[entry.merchant,Number(entry.amount),entry.category,entry.payment_source||''].join('|')
+    const base=[entry.merchant,entry.payment_source||''].join('|')
     for(const period of [date,date.slice(0,7)]){
       const key=period+'|'+base
       manualCounts.set(key,(manualCounts.get(key)||0)+1)
@@ -39,7 +39,7 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
         if(date>endKey || excludedKeys.has(plan.id+':'+m) || excludedKeys.has(plan.id+':'+date))continue
         const requestId=recurringRequestId(plan.id,scheduleType==='monthly'?m:date)
         if(idempotency.has(requestId))continue
-        const base=[plan.name,Number(plan.amount),plan.category,plan.paymentSource||''].join('|')
+        const base=[plan.name,plan.paymentSource||''].join('|')
         const conflictKey=(scheduleType==='monthly'?m:date)+'|'+base
         candidates.push({planId:plan.id,month:m,date,name:plan.name,amount:Number(plan.amount),
           paymentSource:plan.paymentSource,day:Number(plan.day),scheduleType,weekday:Number(plan.weekday||0),

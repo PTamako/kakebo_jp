@@ -32,7 +32,8 @@ test('both automatic and confirmed recurring paths use indexable monthly date bo
   assert.match(collision, /date >= \(\?1 \|\| '-01'\) AND date < date\(/)
   assert.match(automatic, /e\.date >= \(\?5 \|\| '-01'\) AND e\.date < date\(/)
   assert.match(manual, /e\.date >= \(\?8 \|\| '-01'\) AND e\.date < date\(/)
+  // Reject the old SQL expression, not explanatory comments referencing it.
   for (const source of [collision, automatic, manual]) {
-    assert.doesNotMatch(source, /substr\((?:e\.)?date,1,7\)/)
+    assert.doesNotMatch(source, /['"]substr\((?:e\.)?date,1,7\)=\?/)
   }
 })

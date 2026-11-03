@@ -4,7 +4,7 @@ import { recurringRequestId, scheduledRecurringDate, scheduledRecurringOnDate } 
 // share a merchant, amount, category and payment method. Keep their slots apart.
 export function recurringCollisionKey(plan, date) {
   const period = plan.schedule_type === 'monthly' ? date.slice(0, 7) : date
-  return JSON.stringify([period, plan.name, Number(plan.amount), plan.category, plan.payment_source || ''])
+  return JSON.stringify([period, plan.name, plan.payment_source || ''])
 }
 
 const planDate = (plan, date) => plan.schedule_type === 'monthly'
@@ -22,8 +22,8 @@ export async function recurringManualSlot(db, plan, date, knownPlans = null) {
     const data = await db.prepare(`SELECT id,name,amount,day,weekday,schedule_type,workday_only,
       category,payment_source,start_month,enabled,posting_mode,auto_from_month
       FROM recurring_plans WHERE enabled=1 AND start_month<=?1
-        AND name=?2 AND amount=?3 AND category=?4 AND payment_source=?5`)
-      .bind(month, plan.name, plan.amount, plan.category, plan.payment_source).all()
+        AND name=?2 AND payment_source=?3`)
+      .bind(month, plan.name, plan.payment_source).all()
     plans = data.results || []
   }
   const signature = recurringCollisionKey(plan, date)
@@ -38,8 +38,8 @@ export async function recurringManualSlot(db, plan, date, knownPlans = null) {
   const samePeriod = plan.schedule_type === 'monthly' ? 'substr(date,1,7)=?1' : 'date=?1'
   const { results: rows = [] } = await db.prepare(`SELECT client_request_id FROM entries
     WHERE ${samePeriod} AND type='expense' AND merchant=?2
-      AND amount=?3 AND category=?4 AND COALESCE(payment_source,'')=?5`)
-    .bind(period, plan.name, plan.amount, plan.category, plan.payment_source || '').all()
+      AND COALESCE(payment_source,'')=?3`)
+    .bind(period, plan.name, plan.payment_source || '').all()
   const existingIds = new Set(rows.map(row => row.client_request_id).filter(Boolean))
   const { results: excludedMonths = [] } = await db.prepare(
     'SELECT plan_id FROM recurring_candidate_exclusions WHERE month=?1').bind(month).all()

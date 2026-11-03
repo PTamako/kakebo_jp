@@ -41,7 +41,7 @@ test('0015 migration is additive, repeatable and tracked exactly once',()=>{
 test('outstanding SBI UPDATE uses the selective partial expression index',()=>{
   const {sqlite}=fixture()
   const plan=sqlite.prepare(`EXPLAIN QUERY PLAN UPDATE entries SET transfer_applied = 1
-    WHERE type='transfer' AND transfer_target='sbi' AND transfer_applied = 0
+    WHERE type='transfer' AND transfer_target='sbi' AND COALESCE(transfer_applied, 0) = 0
       AND COALESCE(transfer_date,date) <= '2026-11-03'`).all()
   assert.ok(plan.some(row=>String(row.detail).includes('idx_entries_sbi_due_unapplied')),
     'SQLite should use the partial expression index, not scan all historical entries')

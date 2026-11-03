@@ -9,14 +9,25 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
   const end=new Date(current.getFullYear(),current.getMonth(),current.getDate()+(previewDaysAhead===1?1:0))
   const endKey=[end.getFullYear(),String(end.getMonth()+1).padStart(2,'0'),String(end.getDate()).padStart(2,'0')].join('-')
   const earliest=new Date(current.getFullYear(),current.getMonth()-Math.max(0,Math.min(119,historicalMonths)),1)
-  const existing=new Set(),idempotency=new Set()
+  const manualCounts=new Map(),idempotency=new Set()
   for(const entry of entries||[]){
     if(entry.type!=='expense')continue
     const date=String(entry.date||'').slice(0,10)
-    const base=[entry.merchant,entry.payment_source||''].join('|')
-    existing.add(date+'|'+base)
-    existing.add(date.slice(0,7)+'|'+base)
     if(entry.client_request_id)idempotency.add(entry.client_request_id)
+    // A confirmed occurrence belongs to its own plan, not every other plan
+    // with the same merchant name. Direct manual entries can claim one slot.
+    if(String(entry.client_request_id||'').startsWith('recurring_')){
+      const ownedByActivePlan=(plans||[]).some(plan => plan.enabled &&
+        recurringRequestId(plan.id,(plan.scheduleType||'monthly')==='monthly'?date.slice(0,7):date)===entry.client_request_id)
+      if(ownedByActivePlan)continue
+      // Legacy/orphaned recurring references have no active plan owner; retain
+      // their manual-priority conflict instead of silently booking again.
+    }
+    const base=[entry.merchant,entry.payment_source||''].join('|')
+    for(const period of [date,date.slice(0,7)]){
+      const key=period+'|'+base
+      manualCounts.set(key,(manualCounts.get(key)||0)+1)
+    }
   }
   const candidates=[]
   for(const plan of plans||[]){
@@ -38,11 +49,19 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
         const conflictKey=(scheduleType==='monthly'?m:date)+'|'+base
         candidates.push({planId:plan.id,month:m,date,name:plan.name,amount:Number(plan.amount),
           paymentSource:plan.paymentSource,day:Number(plan.day),scheduleType,weekday:Number(plan.weekday||0),
-          category:plan.category,startMonth:plan.startMonth,conflict:existing.has(conflictKey),upcoming:date>currentKey})
+          category:plan.category,startMonth:plan.startMonth,conflictKey,conflict:false,upcoming:date>currentKey})
       }
     }
   }
-  return candidates
+  // Allocate identical manually entered expenses deterministically instead of
+  // falsely marking ALL matching recurring plans as already paid.
+  const seenSlots=new Map()
+  for(const row of [...candidates].sort((a,b)=>a.date.localeCompare(b.date)||a.planId.localeCompare(b.planId))){
+    const used=seenSlots.get(row.conflictKey)||0
+    row.conflict=used<(manualCounts.get(row.conflictKey)||0)
+    seenSlots.set(row.conflictKey,used+1)
+  }
+  return candidates.map(({conflictKey,...row})=>row)
 }
 export async function postApprovedRecurringEntries(api,approved,onConflict=()=>{}) {
   let created=0,conflicts=0

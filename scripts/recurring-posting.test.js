@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { nextAutomaticStartMonth, scheduledRecurringDate, recurringRequestId } from '../src/recurring-posting.js'
 import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
+import { previewRecurringEntries } from '../src/recurring-check.js'
 
 function memoryDb() {
   const sqlite = new DatabaseSync(':memory:')
@@ -140,4 +141,86 @@ test('UI displays saved mode and dynamic explanation with responsive layout',()=
   assert.match(api,/posting_mode=\?8,auto_from_month=\?9,schedule_type=\?10,weekday=\?11,workday_only=\?13/)
   assert.match(api,/nextAutomaticStartMonth\(tokyoToday\(\),item.day,item.startMonth,item.scheduleType\|\|'monthly',item.weekday\|\|0\)/)
   assert.match(api,/postingMode:p.posting_mode\|\|'manual'/)
+})
+
+test('two active auto plans with identical merchant, amount and source each post once',async()=>{
+  const {sqlite,db}=memoryDb()
+  const first=insertPlan(sqlite)
+  const second=insertPlan(sqlite,{id:'bbbbbbbb-cccc-dddd-eeee-ffffffffffff'})
+  const run=await postScheduledRecurring(db,{today:'2026-11-27'})
+  assert.equal(run.created,2)
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,0)
+  const rows=sqlite.prepare('SELECT client_request_id FROM entries ORDER BY client_request_id').all()
+  assert.equal(rows.length,2)
+  assert.deepEqual(rows.map(r=>r.client_request_id),[
+    recurringRequestId(first.id,'2026-11'),
+    recurringRequestId(second.id,'2026-11')
+  ])
+})
+
+test('one direct manual expense occupies one of two identical recurring slots',async()=>{
+  const {sqlite,db}=memoryDb()
+  insertPlan(sqlite)
+  insertPlan(sqlite,{id:'bbbbbbbb-cccc-dddd-eeee-ffffffffffff'})
+  sqlite.prepare(`INSERT INTO entries(date,amount,category,merchant,type,payment_source)
+      VALUES('2026-11-25',101500,'住居','家賃','expense','現金')`).run()
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,1)
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,0)
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,2)
+})
+
+test('two direct manual expenses block both matching recurring slots',async()=>{
+  const {sqlite,db}=memoryDb()
+  insertPlan(sqlite)
+  insertPlan(sqlite,{id:'bbbbbbbb-cccc-dddd-eeee-ffffffffffff'})
+  const manual=sqlite.prepare(`INSERT INTO entries(date,amount,category,merchant,type,payment_source)
+      VALUES('2026-11-25',101500,'住居','家賃','expense','現金')`)
+  manual.run();manual.run()
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,0)
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,2)
+})
+
+test('confirmed recurring plan does not block a separate same-name auto plan',async()=>{
+  const {sqlite,db}=memoryDb()
+  const first=insertPlan(sqlite)
+  insertPlan(sqlite,{id:'bbbbbbbb-cccc-dddd-eeee-ffffffffffff'})
+  sqlite.prepare(`INSERT INTO entries(date,amount,category,merchant,type,payment_source,client_request_id)
+      VALUES('2026-11-27',101500,'住居','家賃','expense','現金',?)`)
+    .run(recurringRequestId(first.id,'2026-11'))
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,1)
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,2)
+})
+
+test('direct manual expense with an edited amount still blocks its fixed-expense slot',async()=>{
+  const {sqlite,db}=memoryDb()
+  insertPlan(sqlite)
+  sqlite.prepare(`INSERT INTO entries(date,amount,category,merchant,type,payment_source)
+      VALUES('2026-11-25',500,'住居','家賃','expense','現金')`).run()
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,0)
+})
+
+test('candidate preview claims a direct expense only once, not all same-name plans',()=>{
+  const first='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+  const second='bbbbbbbb-cccc-dddd-eeee-ffffffffffff'
+  const base={name:'家賃',amount:101500,day:27,category:'住居',paymentSource:'現金',startMonth:'2026-07',scheduleType:'monthly',enabled:true}
+  const plans=[{...base,id:first},{...base,id:second}]
+  const manual=[{date:'2026-11-25',merchant:'家賃',amount:101500,category:'住居',payment_source:'現金',type:'expense'}]
+  const opts={today:new Date(2026,10,27)}
+  const candidates=previewRecurringEntries(plans,manual,opts)
+  assert.equal(candidates.length,2)
+  assert.deepEqual(candidates.map(x=>x.conflict),[true,false])
+  const confirmed=[{...manual[0],client_request_id:recurringRequestId(first,'2026-11')}]
+  const unposted=previewRecurringEntries(plans,confirmed,opts)
+  assert.equal(unposted.length,1)
+  assert.equal(unposted[0].planId,second)
+  assert.equal(unposted[0].conflict,false)
+})
+
+test('orphaned legacy recurring request IDs still prevent a second automatic debit',async()=>{
+  const {sqlite,db}=memoryDb()
+  insertPlan(sqlite)
+  sqlite.prepare(`INSERT INTO entries(date,amount,category,merchant,type,payment_source,client_request_id)
+    VALUES('2026-11-25',98000,'住居','家賃','expense','現金','recurring_oldid_202611')`).run()
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,0)
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,1)
 })

@@ -51,7 +51,8 @@ const recurring=source('src/recurring-check.js')
 
 test('fixed expenses use atomic server-side conflict avoidance and existing valuations remain safe', () => {
   assert.match(api,/if \(a === 'recurring-post' && m === 'POST'\)/)
-  assert.match(api,/const samePeriod=perDate\?'e\.date=\?1':'substr\(e\.date,1,7\)=\?8'/)
+  assert.match(api,/const samePeriod=perDate\?'e\.date=\?1':/)
+  assert.match(api,/e\.date >= \(\?8 \|\| '-01'\) AND e\.date < date\(/)
   assert.match(api,/SELECT COUNT\(\*\) FROM entries e WHERE \$\{samePeriod\}/)
   assert.match(api,/recurringManualSlot\(db,plan,date\)/)
   assert.match(api,/ON CONFLICT\(client_request_id\) DO NOTHING/)

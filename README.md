@@ -26,6 +26,10 @@ npm run verify:release
 
 ローカル確認：`npm run cf:dev`。PR マージ前には [リリース前チェック](.github/PULL_REQUEST_TEMPLATE.md) に従い、最新コミットと Cloudflare Pages Preview のビルド成功が一致することを確認します。GitHub Actions の自動起動は利用枠の都合で停止しており、Cloudflare Pages のビルドと必要時の手動検証を使用します。静的ビルド成功だけで、実機 Safari や本番 Cron の稼働まで保証されるわけではありません。
 
+## D1 無料枠を守る開発方針
+
+新機能は [D1無料枠優先の設計方針](docs/d1-free-tier-policy.md) に従い、`rows_read`・`rows_written` を可能な範囲で減らします。単にSQLをまとめるだけでなく、日付範囲の索引利用、画面内の取得済みデータ再利用、冪等な書き込み、不要なCronアクセス削減を優先します。
+
 ## Cloudflare の構成
 
 - `wrangler.toml`：Pages 用設定。D1 の `DB` バインディングと、必要に応じた `AI` バインディング

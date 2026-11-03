@@ -35,7 +35,10 @@ export async function recurringManualSlot(db, plan, date, knownPlans = null) {
   if (eligible.length <= 1) return 1
 
   const period = plan.schedule_type === 'monthly' ? month : date
-  const samePeriod = plan.schedule_type === 'monthly' ? 'substr(date,1,7)=?1' : 'date=?1'
+  // Keep date as the indexed column: substr(date,...) forces a table scan.
+  const samePeriod = plan.schedule_type === 'monthly'
+    ? "date >= (?1 || '-01') AND date < date(?1 || '-01', '+1 month')"
+    : 'date=?1'
   const { results: rows = [] } = await db.prepare(`SELECT client_request_id FROM entries
     WHERE ${samePeriod} AND type='expense' AND merchant=?2
       AND COALESCE(payment_source,'')=?3`)

@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS entries (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
+-- Due SBI transfers are selected without scanning all historical ledger rows.
+CREATE INDEX IF NOT EXISTS idx_entries_sbi_due_unapplied ON entries(COALESCE(transfer_date,date))
+  WHERE type='transfer' AND transfer_target='sbi' AND transfer_applied=0;
 -- 新建数据库可直接建立去重索引；已有数据库由 API 兼容迁移创建。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_client_request_id ON entries(client_request_id);
 

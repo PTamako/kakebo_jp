@@ -28,6 +28,6 @@ test('enforce date range, amount of rows and cursor strictness',async()=>{
   }
 })
 test('POST is never supported',async()=>{
-  const res=await onRequest()
+  const res=await onRequest({request:new Request('https://example.pages.dev/api/homeflow-ledger',{method:'POST'}),env})
   assert.equal(res.status,405)
 })

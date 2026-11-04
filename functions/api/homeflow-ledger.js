@@ -65,4 +65,4 @@ export async function onRequestGet({request,env}){
       batch[batch.length-1].date+':'+batch[batch.length-1].id:null})
   }catch{return json({error:'ledger_read_unavailable'},503)}
 }
-export async function onRequest(){return json({error:'method_not_allowed'},405)}
+export async function onRequest(ctx){return ctx.request.method==='GET'?onRequestGet(ctx):json({error:'method_not_allowed'},405)}

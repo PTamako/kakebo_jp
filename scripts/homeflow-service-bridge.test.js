@@ -42,3 +42,33 @@ test('bridge reads at most 51 rows for a 50-row page and supports id lookups',as
   assert.equal(response.status,200)
   assert.ok(sqls.at(-1).includes("WHERE type='expense'"))
 })
+
+test('period net uses ONE D1 aggregate and excludes transfers',async()=>{
+  const calls=[]
+  const source={prepare(sql){
+    calls.push(sql)
+    return {bind(...args){assert.deepEqual(args,['2026-11-01','2026-11-04']);return this},
+      async first(){return {income:10000,expense:4392}}}
+  }}
+  const response=await bridge.fetch(req('?summary=net&start=2026-11-01&end=2026-11-04'),{DB:source})
+  assert.equal(response.status,200)
+  assert.deepEqual(await response.json(),{
+    start:'2026-11-01',end:'2026-11-04',income:10000,expense:4392,net:5608
+  })
+  assert.equal(calls.length,1)
+  assert.match(calls[0],/type IN \('income','expense'\)/)
+  assert.doesNotMatch(calls[0],/type='transfer'/)
+})
+test('invalid period summaries do not touch D1',async()=>{
+  let queries=0
+  const db={prepare(){queries++;throw Error('unexpected query')}}
+  for(const query of [
+    '?summary=net&start=2026-01-01&end=2026-11-31',
+    '?summary=net&start=2027-01-01&end=2026-11-01',
+    '?summary=net&start=2010-01-01&end=2026-11-04'
+  ]){
+    const response=await bridge.fetch(req(query),{DB:db})
+    assert.equal(response.status,400,query)
+  }
+  assert.equal(queries,0)
+})

@@ -1,0 +1,16 @@
+name: Test HomeFlow Read-Only Bridge
+on:
+  pull_request:
+    paths:
+      - 'functions/api/homeflow-bridge.js'
+      - 'scripts/homeflow-bridge.test.js'
+      - '.github/workflows/homeflow-bridge-ci.yml'
+jobs:
+  bridge-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/homeflow-bridge.test.js

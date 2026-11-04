@@ -4,6 +4,9 @@ on:
     paths:
       - 'functions/api/homeflow-ledger.js'
       - 'tests/homeflow-ledger.test.mjs'
+      - 'workers/homeflow-service-bridge.js'
+      - 'wrangler.homeflow-bridge.toml'
+      - 'scripts/homeflow-service-bridge.test.js'
       - '.github/workflows/homeflow-bridge.yml'
   push:
     branches: [feat/homeflow-ledger-readonly-20261104]
@@ -16,4 +19,4 @@ jobs:
         with:
           node-version: '22'
       - name: Read-only bridge security tests
-        run: node --test tests/homeflow-ledger.test.mjs
+        run: node --test tests/homeflow-ledger.test.mjs scripts/homeflow-service-bridge.test.js

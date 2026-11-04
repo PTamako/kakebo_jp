@@ -1,0 +1,13 @@
+# Private Cloudflare Service Binding target. No public route and no cron.
+# Deploy: npx wrangler deploy --config wrangler.homeflow-bridge.toml
+# HomeFlow binds this Worker as KAKEBO_LEDGER_SERVICE; kakebo Pages stays separate.
+name = "kakeibo-homeflow-bridge"
+main = "workers/homeflow-service-bridge.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+preview_urls = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kakeibo"
+database_id = "4d790915-fc06-4073-b660-bbb51dc74463"

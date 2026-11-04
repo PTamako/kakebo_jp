@@ -1,0 +1,19 @@
+name: Test HomeFlow Read-Only Bridge
+on:
+  pull_request:
+    paths:
+      - 'functions/api/homeflow-ledger.js'
+      - 'tests/homeflow-ledger.test.mjs'
+      - '.github/workflows/homeflow-bridge.yml'
+  push:
+    branches: [feat/homeflow-ledger-readonly-20261104]
+jobs:
+  bridge-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read-only bridge security tests
+        run: node --test tests/homeflow-ledger.test.mjs

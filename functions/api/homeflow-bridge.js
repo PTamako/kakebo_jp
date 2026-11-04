@@ -24,7 +24,7 @@ export async function onRequestGet({request,env}){
   // Preview is always locked out, regardless of the API secret.
   const hostname=uri.hostname.toLowerCase()
   if(env.APP_ENV==='preview'||(typeof env.CF_PAGES_BRANCH==='string'&&env.CF_PAGES_BRANCH&&env.CF_PAGES_BRANCH!=='main')||
-    (hostname.endsWith('.pages.dev')&&hostname!=='kakeibo-f17.pages.dev'))
+    hostname!=='kakeibo-f17.pages.dev')
       return reply({error:'preview_disabled'},403)
   const secret=env.HOMEFLOW_BRIDGE_TOKEN
   if(typeof secret!=='string'||secret.length<32)return reply({error:'integration_not_configured'},503)
@@ -36,7 +36,7 @@ export async function onRequestGet({request,env}){
   if(days>31)return reply({error:'date_range_too_large'},400)
   if(!env.DB?.prepare)return reply({error:'database_unavailable'},503)
   try{
-    const {results=[],meta}=await env.DB.prepare(`SELECT id,date,amount,category,merchant
+    const {results=[]}=await env.DB.prepare(`SELECT id,date,amount,category,merchant
       FROM entries WHERE date>=?1 AND date<=?2 AND type='expense'
       ORDER BY date,id LIMIT 200`).bind(from,to).all()
     return reply({from,to,items:results.map(x=>({id:x.id,date:x.date,amount:x.amount,

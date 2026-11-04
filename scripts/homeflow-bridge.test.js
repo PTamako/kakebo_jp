@@ -25,6 +25,8 @@ test('fails closed if no token, wrong token or Pages preview',async()=>{
  assert.equal(a.status,503)
  const b=await onRequestGet({request:request(undefined,'wrong'),env:{HOMEFLOW_BRIDGE_TOKEN:token}})
  assert.equal(b.status,401)
+ const custom=await onRequestGet({request:request('https://custom.example/api/homeflow-bridge?from=2026-11-01&to=2026-11-03'),env:{HOMEFLOW_BRIDGE_TOKEN:token}})
+ assert.equal(custom.status,403)
  const c=await onRequestGet({request:request('https://preview.kakeibo-f17.pages.dev/api/homeflow-bridge?from=2026-11-01&to=2026-11-03'),env:{HOMEFLOW_BRIDGE_TOKEN:token}})
  assert.equal(c.status,403)
 })

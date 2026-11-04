@@ -12,8 +12,32 @@ const validDate=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&
 const project=e=>({id:e.id,date:e.date,amount:e.amount,
   category:e.category,merchant:e.merchant||'',type:e.type})
 
+async function envSafeSum(db,start,end){
+  const row=await db.prepare(`SELECT
+    COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) AS income,
+    COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense
+    FROM entries WHERE date>=?1 AND date<=?2 AND type IN ('income','expense')`)
+    .bind(start,end).first()
+  const income=Number(row?.income||0),expense=Number(row?.expense||0)
+  if(!Number.isSafeInteger(income)||!Number.isSafeInteger(expense))
+    throw Error('invalid_sum')
+  return {income,expense}
+}
+
 export async function readLedger(request,db){
   const params=new URL(request.url).searchParams
+  // One aggregate query, not one query per day/entry; transfers never count
+  // toward the same income-minus-expense metric displayed in kakeibo statistics.
+  if(params.get('summary')==='net'){
+    const start=params.get('start'),end=params.get('end')
+    if(!validDate(start)||!validDate(end)||end<start||
+      Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z')>3660*86400000)
+      return json({error:'invalid_range'},400)
+    try{
+      const row=await envSafeSum(db,start,end)
+      return json({start,end,income:row.income,expense:row.expense,net:row.income-row.expense})
+    }catch{return json({error:'ledger_read_unavailable'},503)}
+  }
   const ids=params.get('ids')
   if(ids!==null){
     if(!/^[1-9]\d{0,11}(,[1-9]\d{0,11}){0,49}$/.test(ids))

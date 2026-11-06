@@ -474,7 +474,7 @@ export async function onRequest({ request, env, params }) {
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
         'SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL ORDER BY keyword',
         'SELECT category FROM category_source ORDER BY CASE WHEN category IN (\'其他\',\'その他\') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category',
-        'SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category',
+        'SELECT category,sort_order,icon,display_name,entry_type,is_default FROM category_source ORDER BY category',
         'SELECT entry_id FROM dismissed_transfer_reminders ORDER BY entry_id',
         ...(portfolioReady ? [
           'SELECT fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plans ORDER BY fund_code,account_type',
@@ -1003,7 +1003,7 @@ export async function onRequest({ request, env, params }) {
       }
     }
     if (a === 'category-source' && m === 'GET') {
-      const { results } = await db.prepare('SELECT category,sort_order,icon,display_name FROM category_source ORDER BY sort_order,category').all()
+      const { results } = await db.prepare('SELECT category,sort_order,icon,display_name,entry_type,is_default FROM category_source ORDER BY sort_order,category').all()
       return json(results)
     }
     if (a === 'category-icons') {
@@ -1026,7 +1026,7 @@ export async function onRequest({ request, env, params }) {
       if (m === 'GET') {
         // D1 category_source is the single source. Do not read historic
         // rules markers or manufacture categories absent from production.
-        const {results}=await db.prepare("SELECT category FROM category_source WHERE category NOT IN ('工资','奖金','副业','老公生活费','父母赠与','亲友赠与','退款','ポイント還元','其他收入') ORDER BY CASE WHEN category IN ('其他','その他') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category").all()
+        const {results}=await db.prepare("SELECT category FROM category_source WHERE entry_type='expense' ORDER BY CASE WHEN category IN ('其他','その他') THEN 1 ELSE 0 END,COALESCE(sort_order,10000),category").all()
         return json(results.map(row=>row.category))
       }
       if (m === 'POST') {
@@ -1034,15 +1034,17 @@ export async function onRequest({ request, env, params }) {
         const name = String(body.name || '').trim().slice(0,20)
         if (!name) return json({error:'カテゴリー名を入力してください'},400)
         const reserved = ['餐饮','饮食料品','日用品','交通','购物','居住','医疗','娱乐','宠物','其他','その他','其他收入','その他の収入','ポイント還元']
+        const entryType = body.entryType === 'income' ? 'income' : body.entryType === 'expense' || body.entryType == null ? 'expense' : ''
+        if(!entryType)return json({error:'収入または支出のカテゴリを選択してください'},400)
         const icon = String(body.icon || 'other')
         const validIcons = ['food','dining','daily','transport','shopping','home','medical','pet','beauty','education','insurance','utilities','phone','tax','travel','subscriptions','gift','electricity','water','gas','rent','internet','hair','cosmetics','clothes','shoes','books','lessons','childcare','family','car','bicycle','fuel','parking','fitness','health','medicine','dental','cafe','hobby','music','movie','electronics','furniture','repair','charity','bank','savings','fees','delivery','cleaning','events','work','phone-device','other']
         if (!validIcons.includes(icon)) return json({error:'アイコンを確認してください'},400)
         if (reserved.includes(name)) return json({error:'同じカテゴリが既にあります'},409)
         // User-confirmed category creation only; never write the old rules
         // table or reinsert historical category defaults.
-        const result=await db.prepare(`INSERT INTO category_source(category,sort_order,icon,display_name)
-          VALUES(?1,(SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999),?2,?1)
-          ON CONFLICT(category) DO NOTHING`).bind(name,icon).run()
+        const result=await db.prepare(`INSERT INTO category_source(category,sort_order,icon,display_name,entry_type)
+          VALUES(?1,(SELECT COALESCE(MAX(sort_order),CASE WHEN ?3='income' THEN 10000 ELSE 8 END)+1 FROM category_source WHERE entry_type=?3 AND sort_order<99999),?2,?1,?3)
+          ON CONFLICT(category) DO NOTHING`).bind(name,icon,entryType).run()
         if (!result.meta?.changes) return json({error:'同じカテゴリが既にあります'},409)
         return json({ok:true,category:name})
       }

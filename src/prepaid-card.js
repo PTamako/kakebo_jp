@@ -25,8 +25,13 @@ export function detectPrepaidRecharge(text, names=[]) {
     .map(name=>({name,key:normalized(name)})).filter(x=>x.key.length>=2)
     .map(x=>({...x,aliases:rechargeAliases(x.key)}))
   const found=candidates.filter(x=>x.aliases.some(alias=>value.includes(alias)))
-  // If more than one registered account could match, don't guess a destination.
-  return found.length===1 ? found[0].name : ''
+  // Ambiguous matches and registered overlapping names require manual choice.
+  // E.g. "電子マネー" must not silently win over "電子マネーPlus".
+  if(found.length!==1)return ''
+  const candidate=found[0]
+  if(candidates.some(x=>x.name!==candidate.name &&
+      (x.key.includes(candidate.key) || candidate.key.includes(x.key))))return ''
+  return candidate.name
 }
 export function prepaidBalance({opening_balance=0,charged=0,spent=0,transferred_out=0}) {
   return Number(opening_balance)+Number(charged)-Number(spent)-Number(transferred_out)

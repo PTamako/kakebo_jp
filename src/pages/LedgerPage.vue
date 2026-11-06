@@ -3,7 +3,7 @@ import { inject } from 'vue'
 import TransactionForm from '../TransactionForm.vue'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
-const { categories, tab, month, resetMonth, selectedYear, input, paymentSources, transferDestinations, editReceiptImage, editReceiptFileName, receiptSaveError, selectEditReceipt, receiptImageIds, viewedReceiptUrl, viewReceipt, closeReceipt, removeReceiptImage, editingEntry, INCOME_CATEGORIES, categoryIconPath, categoryLabel, yen, load, setEntryType, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, manualPayment, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, detailFilter, prepaidHistoryFilter, detailLoading, visibleEntryCount, listPageSize, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, expandedMonth, annualMonthGroups, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, groupedPagedEntries, toggleEntryDay, clearDetailFilter, visibleCalendarDays, toggleDay, startSwipe, endSwipe, handleEntryClick, monthLabel, formatLedgerTotal } = inject('kakeibo-page-context')
+const { categories, tab, month, resetMonth, selectedYear, input, paymentSources, transferDestinations, editReceiptImage, editReceiptFileName, receiptSaveError, selectEditReceipt, receiptImageIds, viewedReceiptUrl, viewReceipt, closeReceipt, removeReceiptImage, editingEntry, INCOME_CATEGORIES, categoryIconPath, categoryLabel, yen, load, setEntryType, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, manualPayment, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, detailFilter, prepaidHistoryFilter, detailLoading, visibleEntryCount, listPageSize, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, expandedMonth, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, groupedPagedEntries, toggleEntryDay, clearDetailFilter, visibleCalendarDays, toggleDay, startSwipe, endSwipe, handleEntryClick, monthLabel, formatLedgerTotal } = inject('kakeibo-page-context')
 </script>
 <template>
 <section  class="page-section">
@@ -19,9 +19,9 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
           </button>
         </div>
       </section>
-      <div class="summary-strip"><span v-if="detailFilter?.period === 'card-bill'">{{ detailFilter.cardName }} · {{ detailFilter.start }} ～ {{ detailFilter.end }}</span><span v-else>{{ prepaidHistoryFilter ? prepaidHistoryFilter.card + ' · ' + (prepaidHistoryFilter.kind === 'charge' ? 'チャージ履歴' : '利用・振替履歴') + ' · ' + monthLabel : detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + ({income:'収入',expense:'支出',transfer:'資産移動'}[detailFilter.type] || 'すべて') + ' · ' + (detailFilter.type === 'transfer' ? '資産移動' : categoryLabel(detailFilter.category)) : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel + ' · ' + ({all: 'すべて', income: '収入', expense: '支出', transfer: '資産移動'}[entryTypeFilter])) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
+      <div class="summary-strip"><span v-if="detailFilter?.period === 'card-bill'">{{ detailFilter.cardName }} · {{ detailFilter.start }} ～ {{ detailFilter.end }}</span><span v-else>{{ prepaidHistoryFilter ? prepaidHistoryFilter.card + ' · ' + (prepaidHistoryFilter.kind === 'charge' ? 'チャージ履歴' : '利用・振替履歴') + ' · ' + monthLabel : detailFilter ? (detailFilter.period === 'year' ? selectedYear + '年' : monthLabel) + ' · ' + detailFilter.paymentMethod ? detailFilter.paymentMethod + ' · 支出と資産移動' : ({income:'収入',expense:'支出',transfer:'資産移動'}[detailFilter.type] || 'すべて') + ' · ' + (detailFilter.type === 'transfer' ? '資産移動' : categoryLabel(detailFilter.category)) : (selectedDay ? selectedDay.replace(/-/g, '/') + ' 当日の明細' : monthLabel + ' · ' + ({all: 'すべて', income: '収入', expense: '支出', transfer: '資産移動'}[entryTypeFilter])) }}</span><strong>{{ displayEntries.length }}件の記録</strong></div>
       <div v-if="prepaidHistoryFilter" class="detail-filter-strip"><span>{{ prepaidHistoryFilter.card }}の{{ prepaidHistoryFilter.kind === 'charge' ? 'チャージ' : '利用・振替' }}に絞り込み中</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
-      <div v-if="detailFilter" class="detail-filter-strip"><span>{{ detailFilter.period === 'card-bill' ? 'カードの締め期間で絞り込み中（資産移動を含む）' : detailFilter.type === 'transfer' ? '資産移動で絞り込み中' : 'カテゴリで絞り込み中' }}</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
+      <div v-if="detailFilter" class="detail-filter-strip"><span>{{ detailFilter.period === 'card-bill' ? 'カードの締め期間で絞り込み中（資産移動を含む）' : detailFilter.paymentMethod ? '支払方法で絞り込み中（支出と資産移動）' : detailFilter.type === 'transfer' ? '資産移動で絞り込み中' : 'カテゴリで絞り込み中' }}</span><button type="button" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button></div>
       <p v-if="detailLoading" class="trend-note">明細を読み込み中…</p>
       <div v-if="!detailLoading && !displayEntries.length" class="empty-state"><span class="empty-icon">▤</span><strong>{{ detailFilter || prepaidHistoryFilter ? '該当する明細はありません' : 'この期間の記録はありません' }}</strong><button v-if="detailFilter || prepaidHistoryFilter" class="button-secondary" @click="clearDetailFilter">絞り込みを解除</button><button v-else class="button-primary" @click="tab = 'add'">記録を追加</button></div>
       
@@ -31,7 +31,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
             <span class="entry-day-chevron">{{ expandedMonth === group.month ? '▾' : '▸' }}</span>
             <strong>{{ Number(group.month.slice(5)) }}月</strong>
             <span class="entry-day-count">{{ group.count }}件</span>
-            <span class="entry-day-total">{{ formatLedgerTotal(group.total, entryTypeFilter) }}</span>
+            <span class="entry-day-total">{{ detailFilter?.paymentMethod ? yen(paymentMethodAnnualTotals.get(group.month) || 0) : formatLedgerTotal(group.total, entryTypeFilter) }}</span>
           </button>
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
             <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
@@ -55,7 +55,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
             <span class="entry-day-chevron">{{ expandedEntryDays.has(group.date) ? '▾' : '▸' }}</span>
             <strong>{{ group.date.replace(/-/g, '/') }}</strong>
             <span class="entry-day-count">{{ group.count }}件</span>
-            <span class="entry-day-total">{{ detailFilter?.period === 'card-bill' ? yen(group.total) : formatLedgerTotal(group.total, entryTypeFilter) }}</span>
+            <span class="entry-day-total">{{ detailFilter?.period === 'card-bill' || detailFilter?.paymentMethod ? yen(group.total) : formatLedgerTotal(group.total, entryTypeFilter) }}</span>
           </button>
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
             <li v-for="e in group.items" :key="e.id" :data-ledger-entry-id="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">

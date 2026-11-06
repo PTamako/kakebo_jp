@@ -107,7 +107,7 @@ test('ledger shows billing period, transfer-aware totals and a way to clear filt
   assert.match(ledger,/detailFilter\.start \}\} ～ \{\{ detailFilter\.end/)
   assert.match(ledger,/カードの締め期間で絞り込み中（資産移動を含む）/)
   assert.match(app,/detailFilter\.value\?\.period === 'card-bill' \|\| detailFilter\.value\?\.paymentMethod\s*\? all\.reduce\(\(sum, entry\) => sum \+ Number\(entry\.amount \|\| 0\), 0\)/)
-  assert.match(ledger,/detailFilter\?\.period === 'card-bill' \? yen\(group\.total\)/)
+  assert.match(ledger,/detailFilter\?\.period === 'card-bill' \|\| detailFilter\?\.paymentMethod \? yen\(group\.total\)/)
   assert.match(ledger,/@click="clearDetailFilter">絞り込みを解除/)
 })
 

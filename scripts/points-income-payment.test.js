@@ -46,3 +46,21 @@ test('reward destination is selected from D1 cards and prepaid rewards create a 
   assert.match(api,/const \[result\]=needsPairUpdate \? await db\.batch\(\[entryUpdate,pairedWrite\]\)/)
   assert.match(api,/pairedEntryId:paired\?\.id\|\|null/)
 })
+
+test('generated point-funded prepaid transfers use the registered wallet name with チャージ', () => {
+  const api=read('functions/api/[[path]].js')
+  const topup=api.match(/const pointTopUpSql = `([\s\S]*?)`/)?.[1] || ''
+  assert.ok(topup,'point wallet transfer SQL exists')
+  // Use the actual transfer_target, so future wallets are supported without hardcoding brands.
+  assert.match(topup,/substr\(transfer_target,9\)\|\|'チャージ'/)
+  assert.match(topup,/merchant=excluded\.merchant/)
+  assert.match(topup,/payment_source=excluded\.payment_source/)
+  assert.doesNotMatch(topup,/,'ポイント還元','ポイント還元の自動チャージ'/)
+  // Rename updates both the linked target and its display title, while
+  // unrelated asset transfers keep their existing merchant name.
+  assert.match(api,/client_request_id LIKE 'point_charge_%'/)
+  assert.match(api,/merchant IN \('ポイント還元',\?3\|\|'チャージ'\)/)
+  assert.match(api,/\?4\|\|'チャージ'/)
+  // A previously archived companion also gets the destination-based label on restore.
+  assert.match(api,/pairedEntry\.transfer_target\.slice\(8\)\+'チャージ'/)
+})

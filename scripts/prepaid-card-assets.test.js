@@ -20,6 +20,16 @@ test('recharge detector requires an explicitly registered transit card and recha
 test('newly registered prepaid card names work without a fixed brand list',()=>{
   assert.equal(detectPrepaidRecharge('nanaco チャージ 500円',['nanaco']),'nanaco')
   assert.equal(detectPrepaidRecharge('nanacoチャージ 176円',['nanacoモバイル','Suica']),'nanacoモバイル')
+  // Arbitrary future registered prepaid accounts work without another code edit.
+  assert.equal(detectPrepaidRecharge('PayPayマネーチャージ 1,000円',['PayPay マネーライト','Suica','nanacoモバイル']),'PayPay マネーライト')
+  assert.equal(detectPrepaidRecharge('ＰａｙＰａｙ マネー チャージ ¥1000',['PayPay マネーライト']),'PayPay マネーライト')
+  assert.equal(detectPrepaidRecharge('PayPayマネーライト入金 1000円',['PayPay マネーライト']),'PayPay マネーライト')
+  assert.equal(detectPrepaidRecharge('PayPayチャージ 1000円',['PayPay マネーライト']),'')
+  assert.equal(detectPrepaidRecharge('PayPayマネーチャージ 1000円',['PayPay マネーライト','PayPay マネー']),'')
+  assert.equal(detectPrepaidRecharge('フューチャーペイチャージ',['フューチャーペイウォレット']),'フューチャーペイウォレット')
+  assert.equal(detectPrepaidRecharge('スイカチャージ',['モバイルSuica']),'')
+  assert.equal(detectPrepaidRecharge('Suicaチャージ',['モバイルSuica']),'モバイルSuica')
+  assert.equal(detectPrepaidRecharge('普通の買い物',['PayPay マネーライト']),'')
   assert.equal(detectPrepaidRecharge('NANACO チャージ ¥176',['nanacoモバイル']),'nanacoモバイル')
   assert.equal(detectPrepaidRecharge('nanacoチャージ 176円',['nanacoモバイル','nanacoカード']),'')
   assert.equal(detectPrepaidRecharge('nanaco利用 176円',['nanacoモバイル']),'')

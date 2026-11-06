@@ -444,7 +444,7 @@ export async function onRequest({ request, env, params }) {
           // One SQL statement calculates and writes the bill from authoritative
           // D1 entries. A stale browser cache can never overwrite this total.
           await db.prepare(`INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count)
-            SELECT ?1,?2,?3,?4,COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END),0),COUNT(*)
+            SELECT ?1,?2,?3,?4,MAX(0,COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END),0)),COUNT(*)
             FROM entries WHERE date>=?3 AND date<=?4
               AND ((payment_source=?1 AND (type='expense' OR (type='transfer' AND
                 (transfer_target='sbi' OR (transfer_target LIKE 'prepaid:%' AND LENGTH(transfer_target)>8)))))
@@ -964,8 +964,12 @@ export async function onRequest({ request, env, params }) {
         const amount = Number(e.amount)
         if (!Number.isSafeInteger(id) || id <= 0 || !validDate(e.date) || !validTime(e.time) || !Number.isSafeInteger(amount) || amount <= 0)
           return json({ error: '日付または金額が正しくありません' }, 400)
-        const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date, payment_source FROM entries WHERE id = ?1').bind(id).first()
+        const previous = await db.prepare('SELECT amount, type, category, client_request_id, transfer_target, transfer_applied, transfer_date, date, payment_source FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
+        if(isPointCharge(previous))return json({error:'自動チャージは元のポイント還元収入から編集してください'},409)
+        const reward=await rewardDestination(db,{...e,rewardDestination:e.rewardDestination??(previous.type==='income' && previous.category==='ポイント還元' ? previous.transfer_target : '')})
+        if(reward.error)return json({error:reward.error},400)
+        const linkedId=pointChargeId(previous.client_request_id,id)
         const paymentSource = e.paymentSource == null ? (previous.payment_source || '') : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
         const rawTarget=transfer?String(e.transferTarget||''):''
@@ -987,10 +991,18 @@ export async function onRequest({ request, env, params }) {
         const args=[e.date,e.time||'',amount,transfer?'投資・資産移動':(e.category||(e.type==='income'?'工资':'日用品')),
           e.merchant||'',e.note||'',(e.raw||'').slice(0,2000),
           transfer?'transfer':(e.type==='income'?'income':'expense'),
-          target,applied?1:0,transferDate,paymentSource,id,
+          reward.target || target,applied?1:0,transferDate,reward.source || paymentSource,id,
           ...(optimistic?expectedKeys.map(k=>e.expected[k]):[])]
-        const result=await db.prepare('UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11, payment_source = ?12 WHERE id = ?13'+guard)
-          .bind(...args).run()
+        const entryUpdate=db.prepare('UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11, payment_source = ?12 WHERE id = ?13'+guard)
+          .bind(...args)
+        // Always keep the generated charge in the same D1 transaction as its
+        // income record. Switching destinations removes the old generated row.
+        const pairedWrite=reward.target?.startsWith('prepaid:')
+          ? db.prepare(pointTopUpSql.replace('client_request_id=?1 AND type=', 'id=?1 AND type='))
+              .bind(id,linkedId,reward.target)
+          : db.prepare("DELETE FROM entries WHERE client_request_id=?1 AND type='transfer' AND category='投資・資産移動'")
+              .bind(linkedId)
+        const [result]=await db.batch([entryUpdate,pairedWrite])
         if(optimistic && !result.meta?.changes)
           return json({error:'別の端末で明細が変更されました。最新の明細を再読込してください',code:'stale_entry'},409)
         return json({ok:true,changes:result.meta?.changes??null})

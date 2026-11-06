@@ -2052,7 +2052,17 @@ main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
 main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
 .payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.payment-method-stats-grid-three button:last-child{grid-column:1/-1}.payment-method-note{margin:0 0 4px;font-size:12px;line-height:1.5;color:var(--muted)}.payment-method-breakdown{display:grid;gap:3px;padding-top:6px;margin-top:3px;border-top:1px solid var(--line)}.payment-method-breakdown span{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:5px;font-size:11px;color:var(--muted);min-width:0}
+/* Always keep the three payment methods side by side, including narrow iPhones. */
+.payment-method-stats-grid-three{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.payment-method-stats-grid-three button:last-child{grid-column:auto}
+.payment-method-stats-grid-three button{min-width:0;padding:9px 7px;gap:5px;align-content:start}
+.payment-method-stats-grid-three .payment-method-title{font-size:clamp(10px,2.7vw,13px);line-height:1.35;min-height:2.7em;overflow-wrap:anywhere}
+.payment-method-stats-grid-three .payment-method-outflow-total{font-size:clamp(12px,3.1vw,16px);line-height:1.2;overflow-wrap:anywhere;letter-spacing:-.025em}
+.payment-method-stats-grid-three button>small{font-size:10px;line-height:1.35}
+.payment-method-stats-grid-three .payment-method-breakdown{gap:6px;min-width:0}
+.payment-method-stats-grid-three .payment-method-breakdown span{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;font-size:10px}
+.payment-method-stats-grid-three .payment-method-breakdown span b{font-size:clamp(10px,2.6vw,12px);white-space:normal;overflow-wrap:anywhere;text-align:left;max-width:100%}
+.payment-method-stats-grid-three .payment-method-breakdown span small{font-size:10px}.payment-method-note{margin:0 0 4px;font-size:12px;line-height:1.5;color:var(--muted)}.payment-method-breakdown{display:grid;gap:3px;padding-top:6px;margin-top:3px;border-top:1px solid var(--line)}.payment-method-breakdown span{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:5px;font-size:11px;color:var(--muted);min-width:0}
 .payment-method-breakdown span b{text-align:right;font-size:clamp(11px,2.9vw,13px);overflow-wrap:anywhere}
 .payment-method-breakdown span small{font-size:10px;white-space:nowrap}
 .payment-method-title{font-weight:700;font-size:13px;overflow-wrap:anywhere}

@@ -51,7 +51,7 @@ class LedgerDb {
         if (sql.startsWith('SELECT attempts, reset_at FROM login_attempts')) return db.attempts.get(this.args[0]) || null
         if (sql.startsWith('SELECT id, amount, transfer_target, transfer_applied, transfer_date, date FROM entries'))
           return db.entries.find(e => e.id === this.args[0] && e.type === 'transfer') || null
-        if (sql.startsWith('SELECT amount, type, transfer_target'))
+        if (sql.startsWith('SELECT amount, type, category, client_request_id, transfer_target'))
           return db.entries.find(e => e.id === this.args[0]) || null
         if (sql.startsWith('SELECT amount, transfer_target'))
           return db.entries.find(e => e.id === this.args[0]) || null

@@ -41,7 +41,7 @@ test('today and highest expense/income marks survive month and week calendar vie
 
 test('card bill recalculation is server-authoritative, never saves cached amount',()=>{
   const api=source('functions/api/[[path]].js'),ui=source('src/FinanceTools.vue')
-  assert.match(api,/INSERT INTO card_bills\(payment_source,bill_month,period_start,period_end,total_amount,transaction_count\)\s*SELECT \?1,\?2,\?3,\?4,COALESCE\(SUM\(amount\),0\),COUNT\(\*\)/)
+  assert.match(api,/INSERT INTO card_bills\(payment_source,bill_month,period_start,period_end,total_amount,transaction_count\)\s*SELECT \?1,\?2,\?3,\?4,MAX\(0,COALESCE\(SUM\(CASE WHEN type='income' THEN -amount ELSE amount END\),0\)\),COUNT\(\*\)/)
   assert.match(ui,/props\.api\('card-bills\/recalculate'/)
   assert.doesNotMatch(ui,/total:cardTotal\.value,count:cardTransactions\.value\.length/)
 })

@@ -11,6 +11,36 @@ import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../
 // Cloudflare Pages Functions：/api/*
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
+
+const pointChargeId = (requestId, entryId) =>
+  requestId && requestId.length <= 100 ? 'point_charge_' + requestId : 'point_charge_entry_' + entryId
+const isPointCharge = e => typeof e?.client_request_id === 'string' && e.client_request_id.startsWith('point_charge_')
+async function rewardDestination(db, e) {
+  if (e.type !== 'income' || e.category !== 'ポイント還元') return {target:null,source:null}
+  const target = String(e.rewardDestination || '').trim()
+  if (!target) return {target:null,source:null}
+  if (target.startsWith('prepaid:') && await validPrepaidTarget(db,target))
+    return {target,source:'ポイント還元'}
+  if (target.startsWith('credit:')) {
+    const name=target.slice('credit:'.length)
+    if (name && name.length<=80 && !['現金','その他','其他','ポイント還元'].includes(name)) {
+      const card=await db.prepare("SELECT name FROM payment_sources WHERE name=?1 AND source_type='standard'").bind(name).first()
+      if (card) return {target,source:name}
+    }
+  }
+  return {error:'登録済みのプリペイドカードまたはクレジットカードを選択してください'}
+}
+const pointTopUpSql = `INSERT INTO entries
+  (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
+  SELECT date,time,amount,'投資・資産移動','ポイント還元','ポイント還元の自動チャージ','','transfer',
+    transfer_target,0,date,?2,'ポイント還元'
+  FROM entries WHERE client_request_id=?1 AND type='income' AND category='ポイント還元' AND transfer_target=?3
+  ON CONFLICT(client_request_id) DO UPDATE SET
+    date=excluded.date,time=excluded.time,amount=excluded.amount,category=excluded.category,
+    merchant=excluded.merchant,note=excluded.note,raw=excluded.raw,type=excluded.type,
+    transfer_target=excluded.transfer_target,transfer_applied=0,transfer_date=excluded.transfer_date,
+    payment_source=excluded.payment_source`
+
 const json = (d, s = 200, extraHeaders = {}) =>
   new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extraHeaders } })
 const cookieSession = request => {
@@ -414,10 +444,11 @@ export async function onRequest({ request, env, params }) {
           // One SQL statement calculates and writes the bill from authoritative
           // D1 entries. A stale browser cache can never overwrite this total.
           await db.prepare(`INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count)
-            SELECT ?1,?2,?3,?4,COALESCE(SUM(amount),0),COUNT(*)
-            FROM entries WHERE date>=?3 AND date<=?4 AND payment_source=?1
-              AND (type='expense' OR (type='transfer' AND
-                (transfer_target='sbi' OR (transfer_target LIKE 'prepaid:%' AND LENGTH(transfer_target)>8))))
+            SELECT ?1,?2,?3,?4,MAX(0,COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END),0)),COUNT(*)
+            FROM entries WHERE date>=?3 AND date<=?4
+              AND ((payment_source=?1 AND (type='expense' OR (type='transfer' AND
+                (transfer_target='sbi' OR (transfer_target LIKE 'prepaid:%' AND LENGTH(transfer_target)>8)))))
+                OR (type='income' AND category='ポイント還元' AND transfer_target='credit:'||?1))
             ON CONFLICT(payment_source,bill_month) DO UPDATE SET
               period_start=excluded.period_start,period_end=excluded.period_end,
               total_amount=excluded.total_amount,transaction_count=excluded.transaction_count`)
@@ -707,11 +738,12 @@ export async function onRequest({ request, env, params }) {
         db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2 AND EXISTS (SELECT 1 FROM payment_sources WHERE name=?3)').bind('prepaid:'+newName,'prepaid:'+oldName,oldName),
+        db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2 AND EXISTS (SELECT 1 FROM payment_sources WHERE name=?3)').bind('credit:'+newName,'credit:'+oldName,oldName),
         db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName)
       ])
-      if (!result[5]?.meta?.changes) return json({error:'元のカードが見つかりません。明細は変更していません',code:'payment_source_not_found'},404)
+      if (!result[6]?.meta?.changes) return json({error:'元のカードが見つかりません。明細は変更していません',code:'payment_source_not_found'},404)
       return json({ ok: true, changes: result[1]?.meta?.changes ?? 0 })
     }
     if (a === 'recurring-post' && m === 'POST') {
@@ -793,6 +825,18 @@ export async function onRequest({ request, env, params }) {
         const e=saved?.entry
         if(!e || e.id!==id || !validDate(e.date) || !Number.isSafeInteger(e.amount) || e.amount<=0 ||
           !['expense','income','transfer'].includes(e.type)) return json({error:'保管した明細が正しくありません'},409)
+        if(isPointCharge(e))return json({error:'自動チャージは元のポイント還元収入と一緒に復元してください'},409)
+        const pairedTrashId=Number(saved.pairedEntryId||0)
+        let pairedEntry=null
+        if(Number.isSafeInteger(pairedTrashId)&&pairedTrashId>0){
+          const pairedTrash=await db.prepare("SELECT payload_json FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(pairedTrashId)).first()
+          if(pairedTrash){
+            try { pairedEntry=JSON.parse(pairedTrash.payload_json)?.entry } catch { return json({error:'関連するチャージ記録を復元できません'},409) }
+            if(!pairedEntry || pairedEntry.id!==pairedTrashId || !isPointCharge(pairedEntry) ||
+               pairedEntry.client_request_id!==pointChargeId(e.client_request_id,e.id))
+              return json({error:'関連するチャージ記録を確認してください'},409)
+          }
+        }
         // Stable IDs preserve on-device receipts and SBI transfer links.
         const collision=await db.prepare('SELECT id FROM entries WHERE id=?1 OR (client_request_id IS NOT NULL AND client_request_id=?2) LIMIT 1')
           .bind(id,e.client_request_id??null).first()
@@ -811,6 +855,19 @@ export async function onRequest({ request, env, params }) {
         if(saved.dismissed)statements.push(db.prepare(
           'INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) VALUES(?1)'
         ).bind(id))
+        if(pairedEntry){
+          statements.push(db.prepare(`INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,
+            transfer_date,client_request_id,payment_source,created_at)
+            VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`)
+            .bind(pairedEntry.id,pairedEntry.date,pairedEntry.time||'',pairedEntry.amount,pairedEntry.category,
+              pairedEntry.merchant,pairedEntry.note,pairedEntry.raw,pairedEntry.type,pairedEntry.transfer_target??null,
+              pairedEntry.transfer_applied??0,pairedEntry.transfer_date??null,pairedEntry.client_request_id,
+              pairedEntry.payment_source||'',pairedEntry.created_at||new Date().toISOString()))
+          statements.push(db.prepare("DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(pairedEntry.id)))
+        } else if(e.type==='income' && e.category==='ポイント還元' && e.transfer_target?.startsWith('prepaid:')){
+          statements.push(db.prepare(pointTopUpSql.replace('client_request_id=?1 AND type=', 'id=?1 AND type='))
+            .bind(id,pointChargeId(e.client_request_id,id),e.transfer_target))
+        }
         // Restoring an entry undoes only the exclusion created by its deletion.
         // Never remove exclusions which the user had already set manually.
         const skip=saved.recurringSkip
@@ -874,6 +931,8 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日付または金額が正しくありません' }, 400)
         const paymentSource = e.paymentSource == null ? '' : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
+        const reward=await rewardDestination(db,e)
+        if(reward.error)return json({error:reward.error},400)
         const rawTarget=transfer?String(e.transferTarget||''):''
         if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
         const target=transfer?(rawTarget||null):null
@@ -902,10 +961,18 @@ export async function onRequest({ request, env, params }) {
               AND (type<>'transfer' OR COALESCE(transfer_target,'')=COALESCE(?9,'')))
             ON CONFLICT(client_request_id) DO NOTHING`
           : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
-        const inserted = await db.prepare(insertSql).bind(e.date, e.time || '', amount,
+        const insertStatement = db.prepare(insertSql).bind(e.date, e.time || '', amount,
           transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')),
           e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000),
-          type, target, applied, transferDate, clientRequestId, paymentSource).run()
+          type, reward.target || target, applied, transferDate, clientRequestId, reward.source || paymentSource)
+        const rewardPrepaid=!!reward.target?.startsWith('prepaid:')
+        if(rewardPrepaid && (!clientRequestId || clientRequestId.length>100))
+          return json({error:'ポイントチャージ用の記録IDが必要です'},400)
+        const batchResult=rewardPrepaid
+          ? await db.batch([insertStatement,
+              db.prepare(pointTopUpSql).bind(clientRequestId,pointChargeId(clientRequestId),reward.target)])
+          : [await insertStatement.run()]
+        const inserted=batchResult[0]
         if (checkDuplicate && inserted.meta?.changes === 0) {
           const ownRetry = clientRequestId && await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first()
           if (!ownRetry) return json({error:'同じ日付・金額・店舗・支払方法の記録が追加されました。内容を再確認してください',code:'duplicate_candidate'},409)
@@ -922,8 +989,12 @@ export async function onRequest({ request, env, params }) {
         const amount = Number(e.amount)
         if (!Number.isSafeInteger(id) || id <= 0 || !validDate(e.date) || !validTime(e.time) || !Number.isSafeInteger(amount) || amount <= 0)
           return json({ error: '日付または金額が正しくありません' }, 400)
-        const previous = await db.prepare('SELECT amount, type, transfer_target, transfer_applied, transfer_date, date, payment_source FROM entries WHERE id = ?1').bind(id).first()
+        const previous = await db.prepare('SELECT amount, type, category, client_request_id, transfer_target, transfer_applied, transfer_date, date, payment_source FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
+        if(isPointCharge(previous))return json({error:'自動チャージは元のポイント還元収入から編集してください'},409)
+        const reward=await rewardDestination(db,{...e,rewardDestination:e.rewardDestination??(previous.type==='income' && previous.category==='ポイント還元' ? previous.transfer_target : '')})
+        if(reward.error)return json({error:reward.error},400)
+        const linkedId=pointChargeId(previous.client_request_id,id)
         const paymentSource = e.paymentSource == null ? (previous.payment_source || '') : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
         const rawTarget=transfer?String(e.transferTarget||''):''
@@ -945,10 +1016,20 @@ export async function onRequest({ request, env, params }) {
         const args=[e.date,e.time||'',amount,transfer?'投資・資産移動':(e.category||(e.type==='income'?'工资':'日用品')),
           e.merchant||'',e.note||'',(e.raw||'').slice(0,2000),
           transfer?'transfer':(e.type==='income'?'income':'expense'),
-          target,applied?1:0,transferDate,paymentSource,id,
+          reward.target || target,applied?1:0,transferDate,reward.source || paymentSource,id,
           ...(optimistic?expectedKeys.map(k=>e.expected[k]):[])]
-        const result=await db.prepare('UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11, payment_source = ?12 WHERE id = ?13'+guard)
-          .bind(...args).run()
+        const entryUpdate=db.prepare('UPDATE entries SET date = ?1, time = ?2, amount = ?3, category = ?4, merchant = ?5, note = ?6, raw = ?7, type = ?8, transfer_target = ?9, transfer_applied = ?10, transfer_date = ?11, payment_source = ?12 WHERE id = ?13'+guard)
+          .bind(...args)
+        // Always keep the generated charge in the same D1 transaction as its
+        // income record. Switching destinations removes the old generated row.
+        const pairedWrite=reward.target?.startsWith('prepaid:')
+          ? db.prepare(pointTopUpSql.replace('client_request_id=?1 AND type=', 'id=?1 AND type='))
+              .bind(id,linkedId,reward.target)
+          : db.prepare("DELETE FROM entries WHERE client_request_id=?1 AND type='transfer' AND category='投資・資産移動'")
+              .bind(linkedId)
+        const needsPairUpdate=(previous.type==='income' && previous.category==='ポイント還元') ||
+          reward.target?.startsWith('prepaid:')
+        const [result]=needsPairUpdate ? await db.batch([entryUpdate,pairedWrite]) : [await entryUpdate.run()]
         if(optimistic && !result.meta?.changes)
           return json({error:'別の端末で明細が変更されました。最新の明細を再読込してください',code:'stale_entry'},409)
         return json({ok:true,changes:result.meta?.changes??null})
@@ -963,6 +1044,9 @@ export async function onRequest({ request, env, params }) {
         // D1 batch() makes the recoverable snapshot+deletion atomic.
         const entry=await db.prepare('SELECT * FROM entries WHERE id=?1').bind(id).first()
         if (!entry) return json({error:'明細が見つかりません'},404)
+        if(isPointCharge(entry))return json({error:'自動チャージは元のポイント還元収入を削除してください'},409)
+        const paired=entry.type==='income' ? await db.prepare('SELECT * FROM entries WHERE client_request_id=?1')
+          .bind(pointChargeId(entry.client_request_id,id)).first() : null
         const [link,dismissal]=await Promise.all([
           db.prepare('SELECT purchase_month FROM sbi_transfer_links WHERE entry_id=?1').bind(id).first(),
           db.prepare('SELECT 1 AS found FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id).first()
@@ -998,17 +1082,24 @@ export async function onRequest({ request, env, params }) {
             : 'SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2'
         ).bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month).first() : null
         const snapshot=JSON.stringify({entry,purchaseMonth:link?.purchase_month||null,dismissed:!!dismissal,
-          recurringSkip:alreadySkipped?null:recurringSkip})
+          recurringSkip:alreadySkipped?null:recurringSkip,pairedEntryId:paired?.id||null})
         // All changes happen in one D1 transaction; a partial deletion cannot
         // leave a scheduled expense marked as skipped without its trash record.
         const statements=[
           db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING").bind(String(id),snapshot)
         ]
+        if(paired){
+          const pairedSnapshot=JSON.stringify({entry:paired,purchaseMonth:null,dismissed:false,recurringSkip:null})
+          statements.push(db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING")
+            .bind(String(paired.id),pairedSnapshot))
+        }
         if(recurringSkip)statements.push(db.prepare(skipSql)
           .bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month))
         statements.push(
           db.prepare('DELETE FROM sbi_transfer_links WHERE entry_id=?1').bind(id),
           db.prepare('DELETE FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id),
+          ...(paired ? [db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2)")
+            .bind(paired.id,String(paired.id))] : []),
           db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2)").bind(id,String(id))
         )
         const result=await db.batch(statements)

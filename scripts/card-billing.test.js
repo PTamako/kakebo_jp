@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isCardBilledEntry } from '../src/card-billing.js'
+import { isCardBilledEntry, cardBilledAmount } from '../src/card-billing.js'
 
 const period = {start:'2026-10-01',end:'2026-10-31'}
 const bill = (type,source,target='',date='2026-10-30') =>
@@ -26,4 +26,17 @@ test('credit card billing uses transaction date, not later investment reflection
   assert.equal(isCardBilledEntry(transfer,period,'楽天カード'),true)
   assert.equal(isCardBilledEntry(transfer,{start:'2026-11-01',end:'2026-11-30'},'楽天カード'),false)
   assert.equal(isCardBilledEntry(bill('transfer','楽天カード','prepaid:Suica','2026-11-01'),period,'楽天カード'),false)
+})
+
+test('points reward directly credited to a credit card reduces the correct billing period', () => {
+  const reward={...bill('income','楽天カード','credit:楽天カード'),category:'ポイント還元'}
+  assert.equal(isCardBilledEntry(reward,period,'楽天カード'),true)
+  assert.equal(cardBilledAmount(reward),-1000)
+  assert.equal(isCardBilledEntry(reward,period,'PayPayカード'),false)
+  assert.equal(isCardBilledEntry({...reward,date:'2026-11-01'},period,'楽天カード'),false)
+  assert.equal(isCardBilledEntry({...reward,category:'給与'},period,'楽天カード'),false)
+  assert.equal(isCardBilledEntry({...reward,transfer_target:'prepaid:Suica'},period,'楽天カード'),false)
+  assert.equal(isCardBilledEntry({...reward,payment_source:''},period,'楽天カード'),true)
+  assert.equal([bill('expense','楽天カード'),reward].filter(e=>isCardBilledEntry(e,period,'楽天カード'))
+    .reduce((sum,e)=>sum+cardBilledAmount(e),0),0)
 })

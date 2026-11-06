@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { PAYMENT_STAT_METHODS, UNASSIGNED_TRANSFER_METHOD, paymentMethodForEntry, matchesPaymentStatMethod } from '../src/payment-stat-group.js'
+import { PAYMENT_STAT_METHODS, UNASSIGNED_TRANSFER_METHOD, isCreditPointRedemption, paymentMethodForEntry, matchesPaymentStatMethod } from '../src/payment-stat-group.js'
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const metadata={
   'ポイント還元':{stat_group:'points',source_type:'prepaid'},
@@ -49,7 +49,7 @@ test('the payment method card headline is total outflow while expense stays sepa
   assert.match(page,/const methodOutflow =/)
   assert.match(page,/Number\(methodSummary\(report, method\)\.expenseAmount \|\| 0\) \+ Number\(methodSummary\(report, method\)\.transferAmount \|\| 0\)/)
   assert.equal((page.match(/資金流出の合計/g)||[]).length,0)
-  assert.equal((page.match(/class="payment-method-breakdown-row"/g)||[]).length,4)
+  assert.equal((page.match(/class="payment-method-breakdown-row"/g)||[]).length,6)
   assert.doesNotMatch(page,/支出と資産移動を分けて表示。資産移動は生活支出には含めません。/)
   assert.equal((page.match(/class="payment-method-breakdown-label">支出/g)||[]).length,2)
   assert.equal((page.match(/class="payment-method-breakdown-label">資産移動/g)||[]).length,2)
@@ -59,4 +59,40 @@ test('the payment method card headline is total outflow while expense stays sepa
   assert.match(app,/\.payment-method-stats-grid\.payment-method-stats-grid-three button\{min-width:0;padding:8px 5px;/)
   assert.match(app,/\.payment-method-stats-grid-three \.payment-method-breakdown-row\{display:grid;grid-template-columns:max-content minmax\(0,1fr\) max-content;/)
   assert.match(app,/\.payment-method-stats-grid-three \.payment-method-breakdown-row small\{display:block;justify-self:end;white-space:nowrap;/)
+})
+
+test('October ¥900 credit-card point redemption belongs to point use, not general spending',()=>{
+  const entry={
+    type:'income',category:'ポイント還元',date:'2026-10-25',amount:900,
+    payment_source:'セゾンカード',transfer_target:'credit:セゾンカード'
+  }
+  assert.equal(isCreditPointRedemption(entry),true)
+  assert.equal(paymentMethodForEntry(entry,metadata),'ポイント払い')
+  assert.equal(matchesPaymentStatMethod(entry,'ポイント払い',metadata),true)
+  assert.equal(matchesPaymentStatMethod(entry,'カード・電子決済',metadata),false)
+  assert.equal(matchesPaymentStatMethod(entry,'現金',metadata),false)
+  assert.equal(matchesPaymentStatMethod({...entry,transfer_target:''},'ポイント払い',metadata),false)
+  assert.equal(matchesPaymentStatMethod({...entry,category:'給与'},'ポイント払い',metadata),false)
+  assert.equal(matchesPaymentStatMethod({...entry,type:'expense'},'ポイント払い',metadata),false)
+  // Existing point-source transfers still count; no income enters spending totals.
+  const entries=[
+    entry,
+    {type:'transfer',amount:12,payment_source:'ポイント還元',transfer_target:'prepaid:nanacoモバイル'},
+    {type:'transfer',amount:4,payment_source:'ポイント還元',transfer_target:'prepaid:Suica'}
+  ]
+  assert.equal(entries.filter(e=>matchesPaymentStatMethod(e,'ポイント払い',metadata)).reduce((n,e)=>n+e.amount,0),916)
+})
+
+test('monthly and annual SQL separately aggregate credit point redemptions without changing saved card bills',()=>{
+  const api=read('functions/api/[[path]].js')
+  const page=read('src/pages/StatisticsPage.vue')
+  const handler=api.slice(api.indexOf("if (a === 'stats' && m === 'GET')"))
+  assert.equal((handler.match(/e\.type='income' AND e\.category='ポイント還元' AND e\.transfer_target LIKE 'credit:%' AND LENGTH\(e\.transfer_target\)>7/g)||[]).length,4)
+  assert.equal((handler.match(/creditOffsetAmount/g)||[]).length,2)
+  assert.equal((handler.match(/creditOffsetCount/g)||[]).length,2)
+  assert.equal((page.match(/class="payment-method-breakdown-label">カード充当/g)||[]).length,2)
+  assert.match(page,/Number\(row\.creditOffsetCount \|\| 0\)/)
+  assert.match(page,/creditOffsetAmount \|\| 0/)
+  assert.match(api,/MAX\(0,COALESCE\(SUM\(CASE WHEN type='income' THEN -amount ELSE amount END\),0\)\)/)
+  assert.equal((page.match(/method === 'ポイント払い'/g)||[]).length,3)
 })

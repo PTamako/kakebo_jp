@@ -192,7 +192,7 @@ function onReceiptImagesCleared() {
 }
 
 const editingEntry = ref(null)
-const INCOME_CATEGORIES = sortOtherLast(['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', '其他收入'])
+const INCOME_CATEGORIES = sortOtherLast(['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', 'ポイント還元', '其他收入'])
 const categoryIcons = ref({})
 const categoryDisplayNames = ref({})
 const availableIcons = computed(() => {

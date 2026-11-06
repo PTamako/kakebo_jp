@@ -40,7 +40,7 @@ test('prepaid cards show current balance and compact monthly charge/usage totals
   assert.match(prepaid,/今月のチャージ/)
   assert.match(prepaid,/今月の利用/)
   assert.match(prepaid,/現在残高/)
-  assert.match(prepaid,/money\(Number\(card.charged_month\)\+Number\(card.earned_month\)\)/)
+  assert.match(prepaid,/money\(card.charged_month\)/)
   assert.match(prepaid,/money\(card.spent_month\)/)
   assert.match(prepaid,/wallet-negative/)
   assert.match(prepaid,/\.wallet-outgoing\{[^}]*margin:0;padding:3px 2px/)

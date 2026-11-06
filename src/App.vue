@@ -1124,7 +1124,8 @@ const filteredEntries = computed(() => entries.value.filter(e => String(e.date |
 const detailFilter = ref(null)
 const prepaidHistoryFilter = ref(null)
 // Histories are scoped to one actual prepaid card, never all transport cards.
-const matchesPrepaidHistory = entry => matchesPrepaidHistoryEntry(entry, prepaidHistoryFilter.value)
+const matchesPrepaidHistory = entry => matchesPrepaidHistoryEntry(entry,
+  prepaidHistoryFilter.value ? {...prepaidHistoryFilter.value,reportingMonth:month.value} : null)
 async function openPrepaidHistoryDetails(cardName,kind) {
   if (!prepaidSources.value.includes(cardName) || !['charge','usage'].includes(kind)) return
   editListReturn.value = null

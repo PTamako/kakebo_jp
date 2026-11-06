@@ -2,7 +2,6 @@ import { findTransactionTime, readClockTime } from './entry-time.js'
 import { isStationMerchant } from './station-merchant.js'
 import { isRelativeDateToken, isRelativeTimeToken, resolveRelativeEntryTime } from './relative-entry-time.js'
 // テキスト・OCR解析：日付、時刻、金額、店舗、カテゴリー（ブラウザ内で処理）
-export const CATEGORIES = ['餐饮', '饮食料品', '日用品', '交通', '购物', '居住', '医疗', '娱乐', '宠物', '其他']
 
 const pad = n => String(n).padStart(2, '0')
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`

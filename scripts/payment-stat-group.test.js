@@ -43,3 +43,10 @@ test('month and year use exactly the same three-way stats and clickable detail f
   assert.equal((api.match(/THEN '振替元未指定'/g)||[]).length,2)
   assert.equal((page.match(/methodSummary\([^)]*,'振替元未指定'\)/g)||[]).length>=2,true)
 })
+
+test('the payment method card headline is total outflow while expense stays separate',()=>{
+  const page=read('src/pages/StatisticsPage.vue')
+  assert.match(page,/const methodOutflow =/)
+  assert.match(page,/Number\(methodSummary\(report, method\)\.expenseAmount \|\| 0\) \+ Number\(methodSummary\(report, method\)\.transferAmount \|\| 0\)/)
+  assert.equal((page.match(/資金流出の合計/g)||[]).length,2)
+})

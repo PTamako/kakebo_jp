@@ -52,7 +52,6 @@ function comparisonTone(comparison) {
         </div></div>
       <div class="payment-method-stats">
         <h2>支払方法別</h2>
-        <p class="payment-method-note">支出と資産移動を分けて表示。資産移動は生活支出には含めません。</p>
         <div class="payment-method-stats-grid payment-method-stats-grid-three">
           <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
             :disabled="!paymentMethodCount(methodSummary(stats,method))" @click="openPaymentMethodDetails(method,'month')">
@@ -130,7 +129,6 @@ function comparisonTone(comparison) {
         </div></div>
       <div class="payment-method-stats">
         <h2>支払方法別</h2>
-        <p class="payment-method-note">支出と資産移動を分けて表示。資産移動は生活支出には含めません。</p>
         <div class="payment-method-stats-grid payment-method-stats-grid-three">
           <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
             :disabled="!paymentMethodCount(methodSummary(annualStats,method))" @click="openPaymentMethodDetails(method,'year')">

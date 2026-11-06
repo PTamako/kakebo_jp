@@ -26,6 +26,8 @@ test('registered prepaid cards and generic charge are transfers, but only regist
   assert.deepEqual(detect('Suicaチャージ（楽天ペイ）'),{isTransfer:true,transferTarget:'prepaid:Suica',kind:'recharge'})
   assert.deepEqual(detect('PASMO 入金'),{isTransfer:true,transferTarget:'prepaid:PASMO',kind:'recharge'})
   assert.deepEqual(detect('nanaco チャージ 2,000円'),{isTransfer:true,transferTarget:'prepaid:nanaco',kind:'recharge'})
+  assert.deepEqual(detect('nanacoチャージ',['nanacoモバイル','Suica']),{isTransfer:true,transferTarget:'prepaid:nanacoモバイル',kind:'recharge'})
+  assert.deepEqual(detect('nanacoチャージ',['nanacoモバイル','nanacoカード']),{isTransfer:true,transferTarget:'',kind:'recharge'})
   assert.deepEqual(detect('モバイルSuicaチャージ',['Suica','モバイルSuica']),{isTransfer:true,transferTarget:'',kind:'recharge'})
   assert.deepEqual(detect('楽天ペイチャージ'),{isTransfer:true,transferTarget:'',kind:'recharge'})
   assert.deepEqual(detect('PayPayチャージ',[]),{isTransfer:true,transferTarget:'',kind:'recharge'})

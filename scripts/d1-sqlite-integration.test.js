@@ -26,6 +26,8 @@ class SqliteD1 {
     // Standard category names exist only in this disposable in-memory SQLite DB.
     // Production D1 is already migrated; schema.sql intentionally has no data inserts.
     this.db.exec("INSERT INTO category_source(category,sort_order) VALUES ('餐饮',0),('饮食料品',1),('日用品',2),('交通',3),('购物',4),('居住',5),('医疗',6),('娱乐',7),('宠物',8),('其他',99999),('其他收入',99999)")
+    this.db.exec("UPDATE category_source SET entry_type='income',is_default=1 WHERE category='其他收入'")
+    this.db.exec("UPDATE category_source SET is_default=1 WHERE category='日用品'")
   }
   prepare(sql) {
     const db = this.db

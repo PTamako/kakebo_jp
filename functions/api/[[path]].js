@@ -11,6 +11,36 @@ import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../
 // Cloudflare Pages Functions：/api/*
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
+
+const pointChargeId = (requestId, entryId) =>
+  requestId && requestId.length <= 100 ? 'point_charge_' + requestId : 'point_charge_entry_' + entryId
+const isPointCharge = e => typeof e?.client_request_id === 'string' && e.client_request_id.startsWith('point_charge_')
+async function rewardDestination(db, e) {
+  if (e.type !== 'income' || e.category !== 'ポイント還元') return {target:null,source:null}
+  const target = String(e.rewardDestination || '').trim()
+  if (!target) return {target:null,source:null}
+  if (target.startsWith('prepaid:') && await validPrepaidTarget(db,target))
+    return {target,source:'ポイント還元'}
+  if (target.startsWith('credit:')) {
+    const name=target.slice('credit:'.length)
+    if (name && name.length<=80 && !['現金','その他','其他','ポイント還元'].includes(name)) {
+      const card=await db.prepare("SELECT name FROM payment_sources WHERE name=?1 AND source_type='standard'").bind(name).first()
+      if (card) return {target,source:name}
+    }
+  }
+  return {error:'登録済みのプリペイドカードまたはクレジットカードを選択してください'}
+}
+const pointTopUpSql = `INSERT INTO entries
+  (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
+  SELECT date,time,amount,'投資・資産移動','ポイント還元','ポイント還元の自動チャージ','','transfer',
+    transfer_target,0,date,?2,'ポイント還元'
+  FROM entries WHERE client_request_id=?1 AND type='income' AND category='ポイント還元' AND transfer_target=?3
+  ON CONFLICT(client_request_id) DO UPDATE SET
+    date=excluded.date,time=excluded.time,amount=excluded.amount,category=excluded.category,
+    merchant=excluded.merchant,note=excluded.note,raw=excluded.raw,type=excluded.type,
+    transfer_target=excluded.transfer_target,transfer_applied=0,transfer_date=excluded.transfer_date,
+    payment_source=excluded.payment_source`
+
 const json = (d, s = 200, extraHeaders = {}) =>
   new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extraHeaders } })
 const cookieSession = request => {
@@ -414,10 +444,11 @@ export async function onRequest({ request, env, params }) {
           // One SQL statement calculates and writes the bill from authoritative
           // D1 entries. A stale browser cache can never overwrite this total.
           await db.prepare(`INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count)
-            SELECT ?1,?2,?3,?4,COALESCE(SUM(amount),0),COUNT(*)
-            FROM entries WHERE date>=?3 AND date<=?4 AND payment_source=?1
-              AND (type='expense' OR (type='transfer' AND
-                (transfer_target='sbi' OR (transfer_target LIKE 'prepaid:%' AND LENGTH(transfer_target)>8))))
+            SELECT ?1,?2,?3,?4,COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END),0),COUNT(*)
+            FROM entries WHERE date>=?3 AND date<=?4
+              AND ((payment_source=?1 AND (type='expense' OR (type='transfer' AND
+                (transfer_target='sbi' OR (transfer_target LIKE 'prepaid:%' AND LENGTH(transfer_target)>8)))))
+                OR (type='income' AND category='ポイント還元' AND transfer_target='credit:'||?1))
             ON CONFLICT(payment_source,bill_month) DO UPDATE SET
               period_start=excluded.period_start,period_end=excluded.period_end,
               total_amount=excluded.total_amount,transaction_count=excluded.transaction_count`)
@@ -707,11 +738,12 @@ export async function onRequest({ request, env, params }) {
         db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2 AND EXISTS (SELECT 1 FROM payment_sources WHERE name=?3)').bind('prepaid:'+newName,'prepaid:'+oldName,oldName),
+        db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2 AND EXISTS (SELECT 1 FROM payment_sources WHERE name=?3)').bind('credit:'+newName,'credit:'+oldName,oldName),
         db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare("UPDATE payment_sources SET name=?1,sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END WHERE name=?2").bind(newName,oldName)
       ])
-      if (!result[5]?.meta?.changes) return json({error:'元のカードが見つかりません。明細は変更していません',code:'payment_source_not_found'},404)
+      if (!result[6]?.meta?.changes) return json({error:'元のカードが見つかりません。明細は変更していません',code:'payment_source_not_found'},404)
       return json({ ok: true, changes: result[1]?.meta?.changes ?? 0 })
     }
     if (a === 'recurring-post' && m === 'POST') {
@@ -874,6 +906,8 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日付または金額が正しくありません' }, 400)
         const paymentSource = e.paymentSource == null ? '' : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
+        const reward=await rewardDestination(db,e)
+        if(reward.error)return json({error:reward.error},400)
         const rawTarget=transfer?String(e.transferTarget||''):''
         if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
         const target=transfer?(rawTarget||null):null
@@ -902,10 +936,18 @@ export async function onRequest({ request, env, params }) {
               AND (type<>'transfer' OR COALESCE(transfer_target,'')=COALESCE(?9,'')))
             ON CONFLICT(client_request_id) DO NOTHING`
           : 'INSERT INTO entries (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(client_request_id) DO NOTHING'
-        const inserted = await db.prepare(insertSql).bind(e.date, e.time || '', amount,
+        const insertStatement = db.prepare(insertSql).bind(e.date, e.time || '', amount,
           transfer ? '投資・資産移動' : (e.category || (e.type === 'income' ? '工资' : '日用品')),
           e.merchant || '', e.note || '', (e.raw || '').slice(0, 2000),
-          type, target, applied, transferDate, clientRequestId, paymentSource).run()
+          type, reward.target || target, applied, transferDate, clientRequestId, reward.source || paymentSource)
+        const rewardPrepaid=!!reward.target?.startsWith('prepaid:')
+        if(rewardPrepaid && (!clientRequestId || clientRequestId.length>100))
+          return json({error:'ポイントチャージ用の記録IDが必要です'},400)
+        const batchResult=rewardPrepaid
+          ? await db.batch([insertStatement,
+              db.prepare(pointTopUpSql).bind(clientRequestId,pointChargeId(clientRequestId),reward.target)])
+          : [await insertStatement.run()]
+        const inserted=batchResult[0]
         if (checkDuplicate && inserted.meta?.changes === 0) {
           const ownRetry = clientRequestId && await db.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(clientRequestId).first()
           if (!ownRetry) return json({error:'同じ日付・金額・店舗・支払方法の記録が追加されました。内容を再確認してください',code:'duplicate_candidate'},409)

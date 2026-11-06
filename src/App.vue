@@ -833,6 +833,10 @@ async function saveAll() {
   if (uncertain.length) return flash('金額・内容を確認し、要確認の表示を修正してください')
   // Check every month represented by the drafts, not just the currently displayed month.
   // This is an advisory check: two purchases with the same details can both be legitimate.
+  const sourceForDuplicate = f => f.payment_source ??
+    (f.type==='income' && f.category==='ポイント還元' && f.rewardDestination
+      ? (f.rewardDestination.startsWith('credit:') ? f.rewardDestination.slice(7) : 'ポイント還元')
+      : f.paymentSource || '')
   const duplicateConfirmedKeys=new Set()
   busy.value = '重複を確認中'
   try {
@@ -841,10 +845,6 @@ async function saveAll() {
     const historical = (await Promise.all(months.map(fetchMonthEntries))).flat()
     // Time differs between a manual entry and an OCR scan of the same purchase.
     // Use it for display, not as a reason to suppress a duplicate warning.
-    const sourceForDuplicate = f => f.payment_source ??
-      (f.type==='income' && f.category==='ポイント還元' && f.rewardDestination
-        ? (f.rewardDestination.startsWith('credit:') ? f.rewardDestination.slice(7) : 'ポイント還元')
-        : f.paymentSource || '')
     const key = f => [f.date, Number(f.amount), String(f.merchant || '').trim(),
       sourceForDuplicate(f), f.type || 'expense'].join('|')
     const seen = new Set()

@@ -43,6 +43,7 @@ test('prepaid cards show current balance and compact monthly charge/usage totals
   assert.match(prepaid,/money\(Number\(card.charged_month\)\+Number\(card.earned_month\)\)/)
   assert.match(prepaid,/money\(card.spent_month\)/)
   assert.match(prepaid,/wallet-negative/)
+  assert.match(prepaid,/\.wallet-outgoing\{[^}]*margin:0;padding:3px 2px/)
   assert.match(prepaid,/\.wallet-name strong\{[^}]*overflow-wrap:anywhere/)
   assert.match(prepaid,/\.wallet-card-flow\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
   assert.match(prepaid,/\.wallet-row-actions\{display:grid;grid-template-columns:minmax\(0,1fr\) auto;/)

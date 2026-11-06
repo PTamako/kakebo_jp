@@ -31,6 +31,7 @@ import { monthLedgerMatchesStats } from './month-ledger-consistency.js'
 import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
+import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { peakTransferDates } from './calendar-transfer-peaks.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, setReceiptStorageMode, configureReceiptStorageMode, clearSessionReceiptImages, countReceiptImages } from './receipt-store.js'
@@ -1138,9 +1139,10 @@ async function openPrepaidHistoryDetails(cardName,kind) {
   tab.value = 'list'
   if (!changedMonth) await load()
 }
-const paymentMethodMatches = (entry, method) => method === '現金' ? !String(entry.payment_source || '').trim() || entry.payment_source === '現金' : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
+const paymentMethodMatches = (entry, method) => matchesPaymentStatMethod(entry, method, paymentSourceMeta.value)
 async function openPaymentMethodDetails(method, period) {
-  await openCategoryDetails('', 'expense', period, method)
+  if (!paymentSettingsLoaded) await loadPaymentSettings()
+  await openCategoryDetails('', 'all', period, method)
 }
 const detailSourceEntries = ref([])
 const detailLoading = ref(false)
@@ -1173,7 +1175,7 @@ const displayEntries = computed(() => {
   const narrowed = detailFilter.value?.period === 'card-bill'
     ? source.filter(entry => isCardBilledEntry(entry, detailFilter.value, detailFilter.value.cardName))
     : detailFilter.value
-      ? source.filter(entry => detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) : detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer'))
+      ? source.filter(entry => detailFilter.value.paymentMethod ? paymentMethodMatches(entry,detailFilter.value.paymentMethod) : detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer'))
       : source
   return narrowed.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
 })
@@ -1220,6 +1222,15 @@ const pagedEntries = computed(() => sortedDisplayEntries.value.slice(0, visibleE
 const expandedMonth = ref('')
 const annualVisibleCounts = ref({})
 const annualMonthGroups = computed(() => groupAnnualEntries(sortedDisplayEntries.value, annualVisibleCounts.value, listPageSize, entryTypeFilter.value))
+const paymentMethodAnnualTotals = computed(() => {
+  const totals = new Map()
+  if (!detailFilter.value?.paymentMethod) return totals
+  for (const entry of sortedDisplayEntries.value) {
+    const period = String(entry.date||'').slice(0,7)
+    totals.set(period,(totals.get(period)||0)+Number(entry.amount||0))
+  }
+  return totals
+})
 function loadMoreAnnualEntries(group) {
   annualVisibleCounts.value = { ...annualVisibleCounts.value, [group.month]: Math.min(group.count, group.items.length + listPageSize) }
   if (editedListContextMatches()) editListReturn.value.annualCounts = { ...annualVisibleCounts.value }
@@ -1246,7 +1257,7 @@ const groupedPagedEntries = computed(() => {
   const totalsByDay = new Map()
   for (const [day, all] of fullDays) {
     // Billing usage sums charges and card-funded transfers as positive amounts.
-    const total = detailFilter.value?.period === 'card-bill'
+    const total = detailFilter.value?.period === 'card-bill' || detailFilter.value?.paymentMethod
       ? all.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
       : ledgerEntriesTotal(all, entryTypeFilter.value)
     totalsByDay.set(day, { count: all.length, total })
@@ -1352,7 +1363,7 @@ async function openCategoryDetails(category, type, period, paymentMethod = '', p
   if (!preserveEditContext) editListReturn.value = null
   prepaidHistoryFilter.value = null
   detailFilter.value = { category, type, period, paymentMethod }
-  entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
+  entryTypeFilter.value = paymentMethod ? 'all' : type === 'transfer' ? 'transfer' : type
   selectedDay.value = ''
   detailSourceEntries.value = []
   visibleEntryCount.value = 20
@@ -1395,7 +1406,7 @@ let suppressRowClick = false
 const calendarEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : entries.value
   return source.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !detailFilter.value || (
-    detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) :
+    detailFilter.value.paymentMethod ? paymentMethodMatches(entry,detailFilter.value.paymentMethod) :
     detailFilter.value.type === 'transfer' ? entry.type === 'transfer' :
     entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer')
   )).filter(entry => String(entry.date || '').startsWith(month.value))
@@ -1639,7 +1650,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
 // All page links share these same reactive refs and navigation handlers.
 // Child page components never create separate ledger selection state.
-provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, openCardBillDetails, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, averageDailySummary, monthlyDayTypeAverages, annualDayTypeAverages, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, maxYearMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
+provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, openCardBillDetails, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, averageDailySummary, monthlyDayTypeAverages, annualDayTypeAverages, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, maxYearMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
 </script>
 
 <template>
@@ -2040,7 +2051,15 @@ main .bottom-nav button{min-width:0;max-width:100%;white-space:nowrap;overflow:h
 main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
 main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
-.payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}
+.payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.payment-method-stats-grid-three button:last-child{grid-column:1/-1}.payment-method-note{margin:0 0 4px;font-size:12px;line-height:1.5;color:var(--muted)}.payment-method-breakdown{display:grid;gap:3px;padding-top:6px;margin-top:3px;border-top:1px solid var(--line)}.payment-method-breakdown span{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:5px;font-size:11px;color:var(--muted);min-width:0}
+.payment-method-breakdown span b{text-align:right;font-size:clamp(11px,2.9vw,13px);overflow-wrap:anywhere}
+.payment-method-breakdown span small{font-size:10px;white-space:nowrap}
+.payment-method-title{font-weight:700;font-size:13px;overflow-wrap:anywhere}
+.payment-method-unassigned{display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;min-height:42px;padding:9px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink);text-align:left;font:inherit;font-size:12px}
+.payment-method-unassigned strong{margin-left:auto;white-space:nowrap;font-size:13px}
+.payment-method-unassigned small{color:var(--muted);font-size:11px}
+.payment-method-unassigned:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.payment-method-breakdown b{font-weight:700;color:var(--ink);font-size:12px;white-space:nowrap}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}
 /* Period controls live alongside the section title, not in the global top bar. */
 .page-heading{gap:10px;min-width:0}.page-heading>div:first-child{min-width:0}.heading-period{display:flex;align-items:center;gap:5px;flex:none;min-width:0}.heading-period .month{width:135px;max-width:100%;font-size:13px}.heading-year{display:flex;align-items:center;gap:3px;flex:none;padding:0 8px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--muted);font-size:12px;font-weight:750}
 @media(max-width:390px){.page-heading .heading-period .month{width:115px;font-size:12px}.page-heading .heading-period .period-reset{padding:8px 6px}.page-heading:has(.heading-period),.page-heading:has(.heading-year){gap:6px}}

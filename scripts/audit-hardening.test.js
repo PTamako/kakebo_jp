@@ -74,7 +74,7 @@ test('stats and calendar do not show old-period data or unfiltered payment amoun
   assert.match(app,/loadedMonth = ''/)
   assert.match(app,/stats\.value = null/)
   assert.match(app,/annualStats\.value = null/)
-  assert.match(app,/detailFilter\.value\.paymentMethod \? entry\.type === 'expense' && paymentMethodMatches/)
+  assert.match(app,/detailFilter\.value\.paymentMethod \? paymentMethodMatches/)
   assert.match(api,/集計月を確認してください/)
 })
 

@@ -191,7 +191,9 @@ const cardPeriod = computed(() => {
 })
 const newPaymentSource = ref('')
 const newSourceType = ref('standard')
+const newStatGroup = ref('card')
 const editSourceType = ref('standard')
+const selectedStatGroup = computed(() => props.paymentSourceMeta[selectedCard.value]?.stat_group || 'card')
 const selectedSourceType = computed(() => props.paymentSourceMeta[selectedCard.value]?.source_type || 'standard')
 async function saveCardType(){
   if(!selectedCard.value||busy.value)return
@@ -208,6 +210,18 @@ async function saveCardType(){
     cardMessage.value='カード種別を更新しました'
     cardMode.value=''
   }catch(e){cardMessage.value='種別を保存できませんでした：'+e.message}
+  finally{busy.value=false}
+}
+async function saveStatGroup(group) {
+  const name=selectedCard.value
+  if(busy.value || !name || name==='現金' || !['card','points'].includes(group))return
+  busy.value=true
+  try{
+    await props.api('payment-sources/stat-group',{method:'POST',body:JSON.stringify({name,statGroup:group})})
+    emit('payment-settings-refresh')
+    emit('ledger-updated')
+    cardMessage.value='支払集計の区分を保存しました'
+  }catch(e){cardMessage.value='集計区分を保存できませんでした：'+e.message}
   finally{busy.value=false}
 }
 const cardMessage = ref('')
@@ -284,10 +298,11 @@ async function addPaymentSource() {
   if (busy.value) return
   busy.value = true
   try {
-    await props.api('payment-sources',{method:'POST',body:JSON.stringify({name,sourceType:newSourceType.value})})
+    await props.api('payment-sources',{method:'POST',body:JSON.stringify({name,sourceType:newSourceType.value,statGroup:newStatGroup.value})})
     emit('payment-settings-refresh')
     newPaymentSource.value = ''
     newSourceType.value = 'standard'
+    newStatGroup.value = 'card'
     cardMode.value = ''
     cardMessage.value = name + 'を追加しました'
   } catch(e) { cardMessage.value = 'カードを追加できませんでした：' + e.message }
@@ -1254,6 +1269,7 @@ async function removeCardBill(record) {
     <div v-if="cardMode === 'add'" class="card-editor card-add-editor" role="group" aria-label="カードを追加">
       <label class="card-add-field">名称<input v-model="newPaymentSource" maxlength="80" placeholder="例：Suica、楽天カード" aria-label="新しいカード名"></label>
       <label class="card-add-field">種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
+      <label class="card-add-field">支払集計<select v-model="newStatGroup" aria-label="新しい支払方法の集計区分"><option value="card">カード・電子決済</option><option value="points">ポイント払い</option></select></label>
       <p v-if="newSourceType === 'prepaid'" class="card-type-hint">期首残高は「残高」で設定できます。</p>
       <div class="card-add-actions">
         <button type="button" class="card-add-cancel" :disabled="busy" @click="cardMode = ''">キャンセル</button>
@@ -1264,6 +1280,7 @@ async function removeCardBill(record) {
       <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
       <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
       <p v-if="editSourceType === 'prepaid' && !['現金','その他','其他'].includes(selectedCard)" class="card-type-hint">期首残高は「残高」画面で変更できます。</p>
+      <label v-if="selectedCard !== '現金'">支払集計<select :value="selectedStatGroup" :disabled="busy" aria-label="支払方法の集計区分" @change="saveStatGroup($event.target.value)"><option value="card">カード・電子決済</option><option value="points">ポイント払い</option></select></label>
       <label v-if="isCreditCard(selectedCard) && editSourceType === 'standard'">締め日
         <select :key="selectedCard + '-closing-day'" :value="closingDayFor(selectedCard)" @change="saveClosingDay(selectedCard,$event.target.value)">
           <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>

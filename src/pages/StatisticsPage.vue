@@ -10,6 +10,7 @@ function methodSummary(report, method) {
     || {amount:0,count:0,expenseAmount:0,transferAmount:0,expenseCount:0,transferCount:0}
 }
 const paymentMethodCount = row => Number(row.expenseCount || 0) + Number(row.transferCount || 0)
+const methodOutflow = (report, method) => Number(methodSummary(report, method).expenseAmount || 0) + Number(methodSummary(report, method).transferAmount || 0)
 function comparisonRate(comparison) {
   const percent = comparison?.percent
   if (percent === null || percent === undefined || !Number.isFinite(percent)) return '—'
@@ -56,6 +57,8 @@ function comparisonTone(comparison) {
           <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
             :disabled="!paymentMethodCount(methodSummary(stats,method))" @click="openPaymentMethodDetails(method,'month')">
             <span class="payment-method-title">{{method}}</span>
+            <strong class="payment-method-outflow-total">{{yen(methodOutflow(stats,method))}}</strong>
+            <small>資金流出の合計</small>
             <div class="payment-method-breakdown">
               <span>支出 <b>{{yen(methodSummary(stats,method).expenseAmount)}}</b> <small>{{methodSummary(stats,method).expenseCount}}件</small></span>
               <span>資産移動 <b>{{yen(methodSummary(stats,method).transferAmount)}}</b> <small>{{methodSummary(stats,method).transferCount}}件</small></span>
@@ -133,6 +136,8 @@ function comparisonTone(comparison) {
           <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
             :disabled="!paymentMethodCount(methodSummary(annualStats,method))" @click="openPaymentMethodDetails(method,'year')">
             <span class="payment-method-title">{{method}}</span>
+            <strong class="payment-method-outflow-total">{{yen(methodOutflow(annualStats,method))}}</strong>
+            <small>資金流出の合計</small>
             <div class="payment-method-breakdown">
               <span>支出 <b>{{yen(methodSummary(annualStats,method).expenseAmount)}}</b> <small>{{methodSummary(annualStats,method).expenseCount}}件</small></span>
               <span>資産移動 <b>{{yen(methodSummary(annualStats,method).transferAmount)}}</b> <small>{{methodSummary(annualStats,method).transferCount}}件</small></span>

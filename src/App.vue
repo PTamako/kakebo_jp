@@ -83,6 +83,10 @@ const paymentClosingDays = ref({})
 const paymentSourceMeta = ref({})
 const prepaidSources = computed(() => paymentSources.value.filter(name=>paymentSourceMeta.value[name]?.source_type==='prepaid'))
 const transferDestinations = computed(() => prepaidSources.value.map(name=>({value:prepaidTarget(name),name})))
+const rewardDestinations = computed(() => [
+  ...prepaidSources.value.map(name => ({value:prepaidTarget(name),name:name+'（プリペイド）'})),
+  ...paymentSources.value.filter(name => paymentSourceMeta.value[name]?.source_type==='standard' && !['現金','その他','其他','ポイント還元'].includes(name)).map(name => ({value:'credit:'+name,name:name+'（クレジットカード）'}))
+])
 async function updatePaymentSources(values) {
   const removed = paymentSources.value.filter(name => !values.includes(name))
   const added = values.filter(name => !paymentSources.value.includes(name))
@@ -773,7 +777,7 @@ function addBlank(type = 'expense') {
   const now = new Date()
   const today = now.toLocaleDateString('sv-SE')
   const category = categoryDefaults.value[type] || ''
-  forms.value.push({ date: today, transferDate: today, transferTarget: '', time: localHHMM(now), amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  forms.value.push({ date: today, transferDate: today, transferTarget: '', rewardDestination: '', time: localHHMM(now), amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   if (form.type !== type) {
@@ -787,6 +791,7 @@ function setEntryType(form, type) {
       form.receiptFileName = ''
     }
     if (type !== 'transfer') form.transferTarget = ''
+    if (type !== 'income') form.rewardDestination = ''
     if (type === 'transfer') form.transferDate = form.transferDate || form.date
   }
   form.type = type
@@ -948,7 +953,7 @@ function startEdit(entry) {
       .map(key=>[key,entry[key]??null])),
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
-    transferTarget: entry.transfer_target || '', transferDate: entry.transfer_date || entry.date,
+    transferTarget: entry.transfer_target || '', rewardDestination: entry.type==='income' && entry.category==='ポイント還元' ? (entry.transfer_target || '') : '', transferDate: entry.transfer_date || entry.date,
     category: entry.category || '日用品', paymentSource: entry.payment_source || '', merchant: entry.merchant || '',
     note: entry.note || '', raw: entry.raw || ''
   }
@@ -1754,7 +1759,7 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
       </div>
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
         <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新しい記録' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
-        <TransactionForm :transfer-destinations="transferDestinations" :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="entryInputMode === 'manual' || f.showReceiptAttachment === true" @change-type="setEntryType(f, $event)" @merchant-change="applyMerchantPayment(f)" @payment-change="manualPayment(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''" />
+        <TransactionForm :reward-destinations="rewardDestinations" :transfer-destinations="transferDestinations" :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="entryInputMode === 'manual' || f.showReceiptAttachment === true" @change-type="setEntryType(f, $event)" @merchant-change="applyMerchantPayment(f)" @payment-change="manualPayment(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''" />
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">

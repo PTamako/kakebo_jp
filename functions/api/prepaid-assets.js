@@ -43,14 +43,26 @@ export async function handlePrepaid({db,request,method,sub}) {
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='income' AND e.category='ポイント還元' AND e.payment_source=p.name
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) earned,
-    -- Older points-income rows can have no source; attribute these only to
-    -- the explicitly named ポイント還元 wallet for monthly reporting, never
-    -- to other prepaid wallets or the anchor-based current balance.
+    -- Old point-income rows can have no source. For monthly reporting,
+    -- recover only receipts matched to a real points-funded transfer;
+    -- leave standalone cash income and current anchored balance unchanged.
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='income' AND e.category='ポイント還元'
         AND (e.payment_source=p.name
           OR (p.name='ポイント還元' AND COALESCE(e.payment_source,'')=''
-            AND COALESCE(e.transfer_target,'')=''))
+            AND COALESCE(e.transfer_target,'')=''
+            -- Unassigned legacy points count only when the user also recorded
+            -- a matching debit from this wallet (e.g. +176 / -176 nanaco).
+            -- A standalone "income only" reward is NOT a wallet top-up.
+            AND EXISTS (SELECT 1 FROM entries t
+              WHERE t.type='transfer' AND t.payment_source=p.name
+                AND t.date=e.date AND t.amount=e.amount AND t.id>e.id
+                AND e.id=(SELECT MAX(i.id) FROM entries i
+                  WHERE i.type='income' AND i.category='ポイント還元'
+                    AND COALESCE(i.payment_source,'')=''
+                    AND COALESCE(i.transfer_target,'')=''
+                    AND i.date=e.date AND i.amount=e.amount AND i.id<t.id)
+            )))
         AND e.date BETWEEN ?2 AND ?1),0) earned_month,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='expense' AND e.payment_source=p.name

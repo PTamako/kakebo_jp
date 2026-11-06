@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS payment_sources (
   is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)),
   closing_day INTEGER DEFAULT NULL CHECK(closing_day IS NULL OR closing_day BETWEEN 0 AND 31),
   source_type TEXT NOT NULL DEFAULT 'standard' CHECK(source_type IN ('standard','prepaid')),
+  stat_group TEXT NOT NULL DEFAULT 'card' CHECK(stat_group IN ('card','points')),
   opening_balance INTEGER NOT NULL DEFAULT 0 CHECK(opening_balance >= 0),
   opening_date TEXT NOT NULL DEFAULT '',
   opening_entry_id INTEGER NOT NULL DEFAULT 0 CHECK(opening_entry_id >= 0)

@@ -1,16 +1,10 @@
 <script setup>
 import { inject } from 'vue'
-import { PAYMENT_STAT_METHODS } from '../payment-stat-group.js'
+import PaymentMethodSwitcher from '../PaymentMethodSwitcher.vue'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
 const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, input, categoryIconPath, categoryLabel, yen, categoryRows, expensePalette, donutSelected, donutPercent, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openPaymentMethodDetails, openCategoryDetails, weekRows, maxWeek, averageDaily, averageDailySummary, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, monthlyDayTypeAverages, annualDayTypeAverages, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthLabel, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel } = inject('kakeibo-page-context')
 
-function methodSummary(report, method) {
-  return (report?.paymentMethods || []).find(row => row.method === method)
-    || {amount:0,count:0,expenseAmount:0,transferAmount:0,creditOffsetAmount:0,expenseCount:0,transferCount:0,creditOffsetCount:0}
-}
-const paymentMethodCount = row => Number(row.expenseCount || 0) + Number(row.transferCount || 0) + Number(row.creditOffsetCount || 0)
-const methodOutflow = (report, method) => Number(methodSummary(report, method).expenseAmount || 0) + Number(methodSummary(report, method).transferAmount || 0) + (method === 'ポイント払い' ? Number(methodSummary(report, method).creditOffsetAmount || 0) : 0)
 function comparisonRate(comparison) {
   const percent = comparison?.percent
   if (percent === null || percent === undefined || !Number.isFinite(percent)) return '—'
@@ -50,28 +44,7 @@ function comparisonTone(comparison) {
           <strong :class="comparisonTone(stats?.periodComparison)">{{ comparisonRate(stats?.periodComparison) }}</strong>
           <span class="comparison-note">{{ comparisonNote(stats?.periodComparison) }}</span>
         </div></div>
-      <div class="payment-method-stats">
-        <h2>支払方法別</h2>
-        <div class="payment-method-stats-grid payment-method-stats-grid-three">
-          <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
-            :disabled="!paymentMethodCount(methodSummary(stats,method))" @click="openPaymentMethodDetails(method,'month')">
-            <span class="payment-method-title">{{method}}</span>
-            <strong class="payment-method-outflow-total">{{yen(methodOutflow(stats,method))}}</strong>
-            <div class="payment-method-breakdown">
-              <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">支出</span><b>{{yen(methodSummary(stats,method).expenseAmount)}}</b><small>{{methodSummary(stats,method).expenseCount}}件</small></div>
-              <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">資産移動</span><b>{{yen(methodSummary(stats,method).transferAmount)}}</b><small>{{methodSummary(stats,method).transferCount}}件</small></div>
-              <div v-if="method === 'ポイント払い'" class="payment-method-breakdown-row" title="クレジットカード利用額に充当したポイント"><span class="payment-method-breakdown-label">カード充当</span><b>{{yen(methodSummary(stats,method).creditOffsetAmount)}}</b><small>{{methodSummary(stats,method).creditOffsetCount}}件</small></div>
-            </div>
-            <small>明細を見る ›</small>
-          </button>
-        </div>
-        <button v-if="Number(methodSummary(stats,'振替元未指定').transferCount)>0" class="payment-method-unassigned"
-          type="button" @click="openPaymentMethodDetails('振替元未指定','month')">
-          <span>振替元未指定の資産移動</span>
-          <strong>{{yen(methodSummary(stats,'振替元未指定').transferAmount)}}</strong>
-          <small>{{methodSummary(stats,'振替元未指定').transferCount}}件 · 明細を見る ›</small>
-        </button>
-      </div>
+      <PaymentMethodSwitcher :report="stats" period="month" :yen="yen" :open-details="openPaymentMethodDetails" />
       <div class="metric-grid">
         <div class="metric-card day-average-metric" title="休日は土曜・日曜・国民の祝日・振替休日・国民の休日を含みます">
           <span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M7.5 3v4M16.5 3v4M3.5 10h17M7.5 14h3M13.5 14h3M7.5 18h3"/></svg></span>
@@ -128,28 +101,7 @@ function comparisonTone(comparison) {
           <strong :class="comparisonTone(annualStats?.periodComparison)">{{ comparisonRate(annualStats?.periodComparison) }}</strong>
           <span class="comparison-note">{{ comparisonNote(annualStats?.periodComparison) }}</span>
         </div></div>
-      <div class="payment-method-stats">
-        <h2>支払方法別</h2>
-        <div class="payment-method-stats-grid payment-method-stats-grid-three">
-          <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
-            :disabled="!paymentMethodCount(methodSummary(annualStats,method))" @click="openPaymentMethodDetails(method,'year')">
-            <span class="payment-method-title">{{method}}</span>
-            <strong class="payment-method-outflow-total">{{yen(methodOutflow(annualStats,method))}}</strong>
-            <div class="payment-method-breakdown">
-              <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">支出</span><b>{{yen(methodSummary(annualStats,method).expenseAmount)}}</b><small>{{methodSummary(annualStats,method).expenseCount}}件</small></div>
-              <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">資産移動</span><b>{{yen(methodSummary(annualStats,method).transferAmount)}}</b><small>{{methodSummary(annualStats,method).transferCount}}件</small></div>
-              <div v-if="method === 'ポイント払い'" class="payment-method-breakdown-row" title="クレジットカード利用額に充当したポイント"><span class="payment-method-breakdown-label">カード充当</span><b>{{yen(methodSummary(annualStats,method).creditOffsetAmount)}}</b><small>{{methodSummary(annualStats,method).creditOffsetCount}}件</small></div>
-            </div>
-            <small>明細を見る ›</small>
-          </button>
-        </div>
-        <button v-if="Number(methodSummary(annualStats,'振替元未指定').transferCount)>0" class="payment-method-unassigned"
-          type="button" @click="openPaymentMethodDetails('振替元未指定','year')">
-          <span>振替元未指定の資産移動</span>
-          <strong>{{yen(methodSummary(annualStats,'振替元未指定').transferAmount)}}</strong>
-          <small>{{methodSummary(annualStats,'振替元未指定').transferCount}}件 · 明細を見る ›</small>
-        </button>
-      </div>
+      <PaymentMethodSwitcher :report="annualStats" period="year" :yen="yen" :open-details="openPaymentMethodDetails" />
       <div class="metric-grid">
         <div class="metric-card day-average-metric annual-day-average-metric" title="休日は土曜・日曜・国民の祝日・振替休日・国民の休日を含みます">
           <span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M7.5 3v4M16.5 3v4M3.5 10h17M7.5 14h3M13.5 14h3M7.5 18h3"/></svg></span>

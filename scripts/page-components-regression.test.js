@@ -48,7 +48,9 @@ test('extracted pages share exactly the parent navigation refs and do not create
   }
   assert.match(stats,/@click="openMonthDetails\(point, 'expense'\)"/)
   assert.match(stats,/@click="openCategoryDetails\(c\.category, 'expense', 'year'\)"/)
-  assert.match(stats,/@click="openPaymentMethodDetails\(method,'year'\)"/)
+  assert.match(stats,/import PaymentMethodSwitcher from/)
+  assert.match(stats,/<PaymentMethodSwitcher :report="annualStats" period="year" :yen="yen" :open-details="openPaymentMethodDetails"/)
+  assert.match(read('src/PaymentMethodSwitcher.vue'),/props\.openDetails\(selectedMethod\.value, props\.period\)/)
   assert.match(app,/@open-duplicate="openDuplicateDate"/)
   assert.match(app,/@click="openLedgerFromNav"/)
   assert.match(ledger,/@click="clearDetailFilter"/)

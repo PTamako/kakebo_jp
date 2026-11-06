@@ -7,7 +7,7 @@ test('category presentation reads already-migrated D1 without auto-seeding or im
   const api=read('functions/api/[[path]].js')
   const icons=read('src/icon-library.js')
   assert.match(api,/if \(a === 'category-source' && m === 'GET'\)/)
-  assert.match(api,/SELECT category,sort_order,icon,display_name FROM category_source/)
+  assert.match(api,/SELECT category,sort_order,icon,display_name,entry_type,is_default FROM category_source/)
   assert.match(app,/await api\('category-source'\)/)
   assert.match(app,/categoryDisplayNames\.value\[name\] \|\| name/)
   assert.doesNotMatch(app,/legacyCategoryLabels|const INCOME_CATEGORIES = sortOtherLast\(\[/)

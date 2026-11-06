@@ -468,7 +468,7 @@ export async function onRequest({ request, env, params }) {
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         
         "SELECT " + (await prepaidSchemaReady(db)
-          ? "name,closing_day,is_default,sort_order,source_type,opening_balance,opening_date,opening_entry_id"
+          ? "name,closing_day,is_default,sort_order,source_type,stat_group,opening_balance,opening_date,opening_entry_id"
           : "name,closing_day,is_default,sort_order,'standard' AS source_type,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id")
           + " FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
@@ -538,7 +538,7 @@ export async function onRequest({ request, env, params }) {
       // transaction/payment references or any user-created payment method.
       // The completed migration already persisted payment sorting. Read only.
       const migrated=await prepaidSchemaReady(db)
-      const columns=migrated?'name,is_default,closing_day,source_type,opening_balance,opening_date,opening_entry_id':"name,is_default,closing_day,'standard' AS source_type,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id"
+      const columns=migrated?'name,is_default,closing_day,source_type,stat_group,opening_balance,opening_date,opening_entry_id':"name,is_default,closing_day,'standard' AS source_type,'card' AS stat_group,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id"
       const {results}=await db.prepare("SELECT "+columns+" FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
       return json(results)
     }
@@ -582,15 +582,30 @@ export async function onRequest({ request, env, params }) {
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
       if (!name || name.length > 80) return json({ error: 'カード名を確認してください' }, 400)
       const kind=body.sourceType||'standard'
-      if(!['standard','prepaid'].includes(kind))return json({error:'カード種別を確認してください'},400)
+      const statGroup=body.statGroup||'card'
+      if(!['standard','prepaid'].includes(kind)||!['card','points'].includes(statGroup)||(name==='現金' && statGroup!=='card'))return json({error:'カード種別・集計区分を確認してください'},400)
       if(kind==='prepaid'){
         if(['現金','その他','其他'].includes(name))return json({error:'現金・その他はプリペイドに設定できません'},400)
         if(!await prepaidSchemaReady(db))return json({error:'プリペイド設定の移行が必要です'},409)
-        await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order,source_type,opening_balance,opening_date,opening_entry_id) VALUES(?1,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE sort_order<99999),'prepaid',0,?2,(SELECT COALESCE(MAX(id),0) FROM entries))").bind(name,new Date(Date.now()+9*3600000).toISOString().slice(0,10)).run()
+        await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order,source_type,stat_group,opening_balance,opening_date,opening_entry_id) VALUES(?1,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE sort_order<99999),'prepaid',?3,0,?2,(SELECT COALESCE(MAX(id),0) FROM entries))").bind(name,new Date(Date.now()+9*3600000).toISOString().slice(0,10),statGroup).run()
       } else {
-        await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END)").bind(name).run()
+        await db.prepare("INSERT OR IGNORE INTO payment_sources(name,sort_order,stat_group) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END,?2)").bind(name,statGroup).run()
       }
       return json({ok:true})
+    }
+    if (a === 'payment-sources' && b === 'stat-group' && m === 'POST') {
+      const body = await request.json().catch(() => null)
+      const name = typeof body?.name === 'string' ? body.name.trim() : ''
+      const statGroup = body?.statGroup
+      if(!name || name.length>80 || name==='現金' || !['card','points'].includes(statGroup))
+        return json({error:'支払方法と集計区分を確認してください'},400)
+      const existing=await db.prepare('SELECT stat_group FROM payment_sources WHERE name=?1').bind(name).first()
+      if(!existing)return json({error:'登録済みの支払方法が見つかりません'},404)
+      if(existing.stat_group===statGroup)return json({ok:true,changed:false})
+      const updated=await db.prepare('UPDATE payment_sources SET stat_group=?1 WHERE name=?2 AND stat_group=?3')
+        .bind(statGroup,name,existing.stat_group).run()
+      if(!updated.meta?.changes)return json({error:'支払方法の設定が変更されました。再読み込みしてください'},409)
+      return json({ok:true,changed:true})
     }
     if (a === 'payment-sources' && b === 'type' && m === 'POST') {
       if(!await prepaidSchemaReady(db))return json({error:'プリペイド設定の移行が必要です'},409)
@@ -1195,7 +1210,7 @@ export async function onRequest({ request, env, params }) {
         const incomeMonthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY substr(date,1,7) ORDER BY month").bind(like).all()
         const incomeCategoryRows = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
         const incomeMonthCategoryRows = await db.prepare("SELECT substr(date,1,7) month, category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY substr(date,1,7), category ORDER BY month, amount DESC").bind(like).all()
-        const paymentRows = await db.prepare("SELECT CASE WHEN TRIM(COALESCE(payment_source,'')) = '' OR payment_source = '現金' THEN '現金' ELSE 'カード・電子決済' END method, COUNT(*) count, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY method ORDER BY amount DESC").bind(like).all()
+        const paymentRows = await db.prepare("SELECT CASE WHEN TRIM(COALESCE(e.payment_source,'')) = '' OR e.payment_source = '現金' THEN '現金' WHEN p.stat_group='points' THEN 'ポイント払い' ELSE 'カード・電子決済' END method, COUNT(*) count, SUM(e.amount) amount FROM entries e LEFT JOIN payment_sources p ON p.name=e.payment_source WHERE e.date LIKE ?1 AND e.type = 'expense' GROUP BY method ORDER BY amount DESC").bind(like).all()
         const comparison = await periodComparison(day.results, { year })
         return json({ periodComparison: comparison, paymentMethods: paymentRows.results, year: Number(year), total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, recordCount: total.recordCount, byCategory: cat.results, byDay: day.results, byMonth: monthRows.results, incomeByMonth: incomeMonthRows.results, incomeByCategory: incomeCategoryRows.results, incomeByMonthCategory: incomeMonthCategoryRows.results })
       }
@@ -1204,7 +1219,7 @@ export async function onRequest({ request, env, params }) {
       const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income, COALESCE(SUM(CASE WHEN type = 'transfer' THEN amount ELSE 0 END),0) transferTotal, SUM(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END) transferCount, COUNT(*) recordCount FROM entries WHERE date LIKE ?1").bind(like).first()
       const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()
       const day = await db.prepare("SELECT substr(date,1,10) date, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY substr(date,1,10) ORDER BY date").bind(like).all()
-      const paymentRows = await db.prepare("SELECT CASE WHEN TRIM(COALESCE(payment_source,'')) = '' OR payment_source = '現金' THEN '現金' ELSE 'カード・電子決済' END method, COUNT(*) count, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY method ORDER BY amount DESC").bind(like).all()
+      const paymentRows = await db.prepare("SELECT CASE WHEN TRIM(COALESCE(e.payment_source,'')) = '' OR e.payment_source = '現金' THEN '現金' WHEN p.stat_group='points' THEN 'ポイント払い' ELSE 'カード・電子決済' END method, COUNT(*) count, SUM(e.amount) amount FROM entries e LEFT JOIN payment_sources p ON p.name=e.payment_source WHERE e.date LIKE ?1 AND e.type = 'expense' GROUP BY method ORDER BY amount DESC").bind(like).all()
       const comparison = await periodComparison(day.results, { month })
       return json({ periodComparison: comparison, paymentMethods: paymentRows.results, total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, recordCount: total.recordCount, byCategory: cat.results, byDay: day.results })
     }

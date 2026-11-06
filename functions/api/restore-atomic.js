@@ -39,6 +39,11 @@ export async function restoreAtomic(db, archive) {
   }
   const statements=[]
   const add = (sql,...args) => statements.push(db.prepare(sql).bind(...args))
+  // Upgrade the category metadata in old archives without reclassifying any
+  // existing target DB category. New archives carry their authoritative types.
+  const legacyIncome = new Set(['工资','奖金','副业','老公生活费','父母赠与','亲友赠与','退款','其他收入','ポイント還元'])
+  const historicalType = category => category==='投資・資産移動'?'transfer':legacyIncome.has(category)?'income':'expense'
+  const historicalDefault = category => ['日用品','工资','投資・資産移動'].includes(category)?1:0
   for (const source of archive.paymentSources||[]) {
     if(source.source_type==='prepaid'){
       add("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day,source_type,opening_balance,opening_date,opening_entry_id) VALUES(?1,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE sort_order<99999),?2,'prepaid',0,'__restore_pending__',0)",source.name,source.closing_day??null)
@@ -49,17 +54,20 @@ export async function restoreAtomic(db, archive) {
   const preferred=(archive.paymentSources||[]).find(s=>s.is_default)
   if(preferred)add('UPDATE payment_sources SET is_default=1 WHERE name=?1 AND NOT EXISTS(SELECT 1 FROM payment_sources WHERE is_default=1)',preferred.name)
   for (const row of archive.categoryMetadata||[]) {
-    add(`INSERT INTO category_source(category,sort_order,icon,display_name) VALUES(?1,?2,?3,?4)
+    add(`INSERT INTO category_source(category,sort_order,icon,display_name,entry_type,is_default)
+      VALUES(?1,?2,?3,?4,?5,?6)
       ON CONFLICT(category) DO UPDATE SET
         sort_order=COALESCE(category_source.sort_order,excluded.sort_order),
         icon=COALESCE(category_source.icon,excluded.icon),
         display_name=COALESCE(category_source.display_name,excluded.display_name)`,
-      row.category,row.sort_order??null,row.icon??null,row.display_name??null)
+      row.category,row.sort_order??null,row.icon??null,row.display_name??null,
+      row.entry_type||historicalType(row.category),row.is_default??historicalDefault(row.category))
   }
   for(const category of archive.categories||[]) {
-    // Never rewrite historical category assignments; these rows only register
-    // a user-added category in the category dropdown.
-    add("INSERT INTO category_source(category,sort_order) VALUES(?1,CASE WHEN ?1 IN ('其他','其他收入') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999) END) ON CONFLICT(category) DO NOTHING",category)
+    // Restore old backups while preserving the backed-up income/expense split.
+    // Existing target categories and recorded transactions are never retyped.
+    add("INSERT INTO category_source(category,sort_order,entry_type,is_default) VALUES(?1,CASE WHEN ?1 IN ('其他','其他收入') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),8)+1 FROM category_source WHERE sort_order<99999) END,?2,?3) ON CONFLICT(category) DO NOTHING",
+      category,historicalType(category),historicalDefault(category))
   }
   for(const [category,icon] of Object.entries(archive.categoryIcons||{})) {
     if(!/^[a-z][a-z-]{1,40}$/.test(icon))throw Error('atomic_restore_invalid_icon')

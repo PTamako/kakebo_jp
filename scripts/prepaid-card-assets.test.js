@@ -15,6 +15,7 @@ test('recharge detector requires an explicitly registered transit card and recha
   assert.equal(prepaidTarget('Suica'),'prepaid:Suica')
   assert.equal(prepaidBalance({opening_balance:1000,charged:3000,spent:220}),3780)
   assert.equal(prepaidBalance({opening_balance:1000,charged:3000,spent:220,transferred_out:500}),3280)
+  assert.equal(prepaidBalance({opening_balance:0,charged:0,earned:4,spent:0,transferred_out:4}),0)
 })
 
 test('newly registered prepaid card names work without a fixed brand list',()=>{
@@ -129,4 +130,21 @@ test('portable restore preserves wallet-to-wallet conservation and respects futu
     {name:'Suica',openingBalance:3500},
     {name:'PASMO',openingBalance:3000}
   ])
+})
+
+test('backup restore includes earned points and holds future-dated point credits',()=>{
+ const today='2026-11-07',tomorrow='2026-11-08'
+ const archive={
+   paymentSources:[{name:'ポイント還元',source_type:'prepaid',opening_balance:0,opening_date:today,opening_entry_id:2}],
+   entries:[
+     {id:1,date:today,type:'income',category:'ポイント還元',payment_source:'ポイント還元',amount:176},
+     {id:2,date:today,type:'transfer',payment_source:'ポイント還元',transfer_target:'prepaid:Suica',transfer_date:today,amount:176},
+     {id:3,date:today,type:'income',category:'ポイント還元',payment_source:'ポイント還元',amount:4},
+     {id:4,date:today,type:'transfer',payment_source:'ポイント還元',transfer_target:'prepaid:Suica',transfer_date:today,amount:4},
+     {id:5,date:tomorrow,type:'income',category:'ポイント還元',payment_source:'ポイント還元',amount:10}
+   ]
+ }
+ assert.deepEqual(prepaidRestoreBalances(archive,today),[{name:'ポイント還元',openingBalance:0}])
+ assert.equal(isFuturePrepaidMovement(archive.entries[4],['ポイント還元'],today),true)
+ assert.equal(isFuturePrepaidMovement(archive.entries[2],['ポイント還元'],today),false)
 })

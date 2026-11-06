@@ -23,7 +23,7 @@ test('prepaid history navigates to current month in existing ledger tab',()=>{
  assert.match(app,/const targetMonth = currentMonth\(\)/)
  assert.match(app,/month\.value = targetMonth/)
  assert.match(app,/tab\.value = 'list'/)
- assert.match(app,/entryTypeFilter\.value = kind === 'charge' \? 'transfer' : 'all'/)
+ assert.match(app,/entryTypeFilter\.value = 'all'/)
  assert.match(app,/openingEntryId:Number\(source\?\.opening_entry_id\|\|0\)/)
  assert.match(ledger,/prepaidHistoryFilter\.card \+ ' · '/)
 })

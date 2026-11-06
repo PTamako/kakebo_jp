@@ -40,6 +40,6 @@ export function detectPrepaidRecharge(text, names=[]) {
       (x.key.includes(candidate.key) || candidate.key.includes(x.key))))return ''
   return candidate.name
 }
-export function prepaidBalance({opening_balance=0,charged=0,spent=0,transferred_out=0}) {
-  return Number(opening_balance)+Number(charged)-Number(spent)-Number(transferred_out)
+export function prepaidBalance({opening_balance=0,charged=0,earned=0,spent=0,transferred_out=0}) {
+  return Number(opening_balance)+Number(charged)+Number(earned)-Number(spent)-Number(transferred_out)
 }

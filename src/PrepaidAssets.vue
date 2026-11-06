@@ -88,7 +88,7 @@ onMounted(()=>{if(props.active)void refresh()})
             </div>
             <div class="wallet-card-flow" aria-label="今月のチャージと利用">
               <div class="wallet-flow-value">
-                <span>今月のチャージ</span><strong class="wallet-charge-value">＋{{money(card.charged_month)}}</strong>
+                <span>{{card.earned_month>0?'今月の還元・チャージ':'今月のチャージ'}}</span><strong class="wallet-charge-value">＋{{money(Number(card.charged_month)+Number(card.earned_month))}}</strong>
               </div>
               <div class="wallet-flow-value">
                 <span>今月の利用</span><strong>−{{money(card.spent_month)}}</strong>

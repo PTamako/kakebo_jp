@@ -50,6 +50,7 @@ test('the payment method card headline is total outflow while expense stays sepa
   assert.match(page,/Number\(methodSummary\(report, method\)\.expenseAmount \|\| 0\) \+ Number\(methodSummary\(report, method\)\.transferAmount \|\| 0\)/)
   assert.equal((page.match(/資金流出の合計/g)||[]).length,0)
   assert.equal((page.match(/class="payment-method-breakdown-row"/g)||[]).length,4)
+  assert.doesNotMatch(page,/支出と資産移動を分けて表示。資産移動は生活支出には含めません。/)
   assert.equal((page.match(/class="payment-method-breakdown-label">支出/g)||[]).length,2)
   assert.equal((page.match(/class="payment-method-breakdown-label">資産移動/g)||[]).length,2)
   const app=read('src/App.vue')

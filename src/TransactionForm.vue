@@ -20,7 +20,7 @@ const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receipt
   <div v-if="!(Number(record.amount)>0)" class="amount-warning" role="alert">金額を確認してください。</div>
   <div class="field-grid">
     <label class="form-field"><span>日付</span><input v-model="record.date" type="date" required /><small v-if="!record.date" class="amount-warning">日付を確認してください</small></label>
-    <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><select v-model="record.category"><option v-for="c in (record.type==='income'?orderedIncomeCategories:record.type==='transfer'?['投資・資産移動']:orderedCategories)" :key="c" :value="c">{{categoryLabel(c)}}</option></select></label>
+    <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><select v-model="record.category"><option v-for="c in (record.type==='income'?orderedIncomeCategories:orderedCategories)" :key="c" :value="c">{{categoryLabel(c)}}</option></select></label>
     <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
     <label v-if="record.type==='expense'" class="form-field"><span>支払方法・カード</span><select :value="record.paymentSource" @change="emit('payment-change', $event.target.value)"><option value="">未設定</option><option v-for="source in orderedPayments" :key="source" :value="source">{{source}}</option><option v-if="record.paymentSource && !paymentSources.includes(record.paymentSource)" :value="record.paymentSource">{{record.paymentSource}}（既存の設定）</option></select></label>
   </div>

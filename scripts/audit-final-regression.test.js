@@ -19,7 +19,7 @@ test('categoryMetadata preserves Japanese labels, icon and sort and rejects inva
   assert.throws(()=>validateBackup({...base,categoryMetadata:[{category:'bad',icon:'<script>'}]}))
 })
 test('snapshot and both backup paths carry categoryMetadata',()=>{
-  assert.match(api,/SELECT category,sort_order,icon,display_name FROM category_source ORDER BY category/)
+  assert.match(api,/SELECT category,sort_order,icon,display_name,entry_type,is_default FROM category_source ORDER BY category/)
   assert.match(api,/categoryMetadata:rows\(7\)/)
   assert.match(finance,/props\.api\('category-source'\)/)
   assert.match(finance,/chunkRestoreSettings\(backup,BATCH_SIZE\)/)

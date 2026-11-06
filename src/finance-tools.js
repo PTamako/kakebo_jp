@@ -178,6 +178,8 @@ export function validateBackup(value) {
       !x || !isText(x.category,20) ||
       (x.display_name != null && (typeof x.display_name !== 'string' || x.display_name.length > 80)) ||
       (x.icon != null && (typeof x.icon !== 'string' || !/^[a-z][a-z-]{1,40}$/.test(x.icon))) ||
+      (x.entry_type != null && !['expense','income','transfer'].includes(x.entry_type)) ||
+      (x.is_default != null && ![0,1].includes(x.is_default)) ||
       (x.sort_order != null && (!Number.isSafeInteger(x.sort_order) || x.sort_order < 0 || x.sort_order > 99999))))
     throw Error('カテゴリー表示設定が不正です')
   if (value.categoryIcons && Object.entries(value.categoryIcons).some(([k,v]) =>

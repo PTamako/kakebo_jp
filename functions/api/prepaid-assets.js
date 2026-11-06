@@ -31,26 +31,32 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
         AND COALESCE(e.transfer_date,e.date)<=?1
         AND COALESCE(e.payment_source,'')<>p.name),0) charged,
+    -- Month-to-date activity is the full calendar month, even when a card
+    -- was registered mid-month. Only the current balance uses the opening
+    -- anchor; otherwise pre-registration transactions disappear from totals.
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name
-        AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
-        AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
+        AND e.date<=?1 AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
         AND COALESCE(e.payment_source,'')<>p.name),0) charged_month,
     -- Point rewards credited to the wallet are receipts, not transfers. The
     -- generated top-up is a separate outgoing transfer; both sides must count.
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='income' AND e.category='ポイント還元' AND e.payment_source=p.name
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) earned,
+    -- Older points-income rows can have no source; attribute these only to
+    -- the explicitly named ポイント還元 wallet for monthly reporting, never
+    -- to other prepaid wallets or the anchor-based current balance.
     COALESCE((SELECT SUM(e.amount) FROM entries e
-      WHERE e.type='income' AND e.category='ポイント還元' AND e.payment_source=p.name
-        AND e.id>p.opening_entry_id AND e.date>=p.opening_date
+      WHERE e.type='income' AND e.category='ポイント還元'
+        AND (e.payment_source=p.name
+          OR (p.name='ポイント還元' AND COALESCE(e.payment_source,'')=''
+            AND COALESCE(e.transfer_target,'')=''))
         AND e.date BETWEEN ?2 AND ?1),0) earned_month,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='expense' AND e.payment_source=p.name
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) spent,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='expense' AND e.payment_source=p.name
-        AND e.id>p.opening_entry_id AND e.date>=p.opening_date
         AND e.date BETWEEN ?2 AND ?1),0) spent_month,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.payment_source=p.name
@@ -59,8 +65,7 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.payment_source=p.name
-        AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
-        AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
+        AND e.date<=?1 AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
         AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out_month
     FROM payment_sources p WHERE p.source_type='prepaid'
     ORDER BY p.sort_order,p.name`).bind(today,monthStart).all()

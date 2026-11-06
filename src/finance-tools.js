@@ -158,6 +158,7 @@ export function validateBackup(value) {
     throw Error('旧版投資バックアップを確認してください')
   const validSource = x => x && isText(x.name,80) &&
     (x.source_type == null || ['standard','prepaid'].includes(x.source_type)) &&
+    (x.stat_group == null || ['card','points'].includes(x.stat_group)) &&
     (x.opening_balance == null || (safeAmount(x.opening_balance) && x.opening_balance<=100000000)) &&
     (x.opening_entry_id == null || safeAmount(x.opening_entry_id)) &&
     (x.opening_date == null || x.opening_date==='' || validDate(x.opening_date)) &&

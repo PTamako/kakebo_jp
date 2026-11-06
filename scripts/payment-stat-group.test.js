@@ -108,5 +108,5 @@ test('payment statistics keep three readable equal-height compact cards on mobil
   assert.match(app,/\.payment-method-stats-grid-three button>small\{margin-top:auto;padding-top:2px;/)
   assert.equal((stats.match(/v-for="method in PAYMENT_STAT_METHODS"/g)||[]).length,2)
   assert.equal((stats.match(/method === 'ポイント払い'" class="payment-method-breakdown-row"/g)||[]).length,2)
-  assert.equal((stats.match(/明細を見る ›/g)||[]).length,2)
+  assert.equal((stats.match(/<small>明細を見る ›<\/small>/g)||[]).length,2)
 })

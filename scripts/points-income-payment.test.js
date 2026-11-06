@@ -8,10 +8,13 @@ test('points cashback is selectable only as income, not as an expense category',
   const app = read('src/App.vue')
   const api = read('functions/api/[[path]].js')
   const form = read('src/TransactionForm.vue')
-  assert.match(app, /const INCOME_CATEGORIES = sortOtherLast\(\[[^\]]*'ポイント還元'[^\]]*\]\)/)
+  const migration = read('migrations/0016_category_types.sql')
+  assert.match(app, /const INCOME_CATEGORIES = ref\(\[\]\)/)
+  assert.match(app, /INCOME_CATEGORIES\.value = sortOtherLast\(rows\.filter\(row => row\.entry_type === 'income'\)/)
   assert.match(form, /record\.type==='income'\?orderedIncomeCategories/)
-  assert.match(api, /SELECT category FROM category_source WHERE category NOT IN \([^)]*'ポイント還元'[^)]*\)/)
-  assert.match(api, /const reserved = \[[^\]]*'ポイント還元'[^\]]*\]/)
+  assert.match(api, /SELECT category FROM category_source WHERE entry_type='expense'/)
+  assert.match(migration, /'ポイント還元'/)
+  assert.doesNotMatch(app, /CATEGORIES as BASE_CATEGORIES|legacyCategoryLabels/)
 })
 
 test('points payment source is loaded from D1 and can fund wallet transfers and expenses', () => {

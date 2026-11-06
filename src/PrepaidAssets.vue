@@ -133,7 +133,7 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-add{background:var(--card)}
 .wallet-refresh span{font-size:17px;line-height:1}
 .wallet-list{display:grid;gap:9px;min-width:0}
-.wallet-row{display:grid;gap:10px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.wallet-row{display:grid;gap:8px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
 .wallet-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:9px;min-width:0}
 .wallet-card-identity{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
 .wallet-card-icon{display:grid;place-items:center;width:35px;height:35px;flex:none;border-radius:11px;background:color-mix(in srgb,var(--blue) 11%,var(--card));color:var(--blue-dark)}
@@ -168,6 +168,6 @@ onMounted(()=>{if(props.active)void refresh()})
 </style>
 
 <style scoped>
-.wallet-outgoing{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 0;padding:7px 2px;font-size:12px;color:var(--muted)}
+.wallet-outgoing{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0;padding:3px 2px;font-size:12px;color:var(--muted)}
 .wallet-outgoing strong{font-variant-numeric:tabular-nums;color:var(--ink)}
 </style>

@@ -31,6 +31,7 @@ import { monthLedgerMatchesStats } from './month-ledger-consistency.js'
 import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
+import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { peakTransferDates } from './calendar-transfer-peaks.js'
 import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, setReceiptStorageMode, configureReceiptStorageMode, clearSessionReceiptImages, countReceiptImages } from './receipt-store.js'
@@ -1138,8 +1139,9 @@ async function openPrepaidHistoryDetails(cardName,kind) {
   tab.value = 'list'
   if (!changedMonth) await load()
 }
-const paymentMethodMatches = (entry, method) => method === '現金' ? !String(entry.payment_source || '').trim() || entry.payment_source === '現金' : Boolean(String(entry.payment_source || '').trim()) && entry.payment_source !== '現金'
+const paymentMethodMatches = (entry, method) => matchesPaymentStatMethod(entry, method, paymentSourceMeta.value)
 async function openPaymentMethodDetails(method, period) {
+  if (!paymentSettingsLoaded) await loadPaymentSettings()
   await openCategoryDetails('', 'expense', period, method)
 }
 const detailSourceEntries = ref([])

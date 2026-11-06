@@ -36,6 +36,15 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
         AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
         AND COALESCE(e.payment_source,'')<>p.name),0) charged_month,
+    -- Point rewards credited to the wallet are receipts, not transfers. The
+    -- generated top-up is a separate outgoing transfer; both sides must count.
+    COALESCE((SELECT SUM(e.amount) FROM entries e
+      WHERE e.type='income' AND e.category='ポイント還元' AND e.payment_source=p.name
+        AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) earned,
+    COALESCE((SELECT SUM(e.amount) FROM entries e
+      WHERE e.type='income' AND e.category='ポイント還元' AND e.payment_source=p.name
+        AND e.id>p.opening_entry_id AND e.date>=p.opening_date
+        AND e.date BETWEEN ?2 AND ?1),0) earned_month,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='expense' AND e.payment_source=p.name
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) spent,
@@ -76,7 +85,7 @@ export async function handlePrepaid({db,request,method,sub}) {
         e.date DESC,COALESCE(e.time,'') DESC,e.id DESC LIMIT 1`).bind(today).first()
   ])
   return json({
-    cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)-Number(p.spent)-Number(p.transferred_out)})),
+    cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)+Number(p.earned)-Number(p.spent)-Number(p.transferred_out)})),
     latestUsage:latestUsage || null,
     latestCharge:latestCharge || null
   })

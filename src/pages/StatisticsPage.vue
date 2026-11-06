@@ -58,10 +58,9 @@ function comparisonTone(comparison) {
             :disabled="!paymentMethodCount(methodSummary(stats,method))" @click="openPaymentMethodDetails(method,'month')">
             <span class="payment-method-title">{{method}}</span>
             <strong class="payment-method-outflow-total">{{yen(methodOutflow(stats,method))}}</strong>
-            <small>資金流出の合計</small>
             <div class="payment-method-breakdown">
-              <span>支出 <b>{{yen(methodSummary(stats,method).expenseAmount)}}</b> <small>{{methodSummary(stats,method).expenseCount}}件</small></span>
-              <span>資産移動 <b>{{yen(methodSummary(stats,method).transferAmount)}}</b> <small>{{methodSummary(stats,method).transferCount}}件</small></span>
+              <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">支出</span><b>{{yen(methodSummary(stats,method).expenseAmount)}}</b><small>{{methodSummary(stats,method).expenseCount}}件</small></div>
+              <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">資産移動</span><b>{{yen(methodSummary(stats,method).transferAmount)}}</b><small>{{methodSummary(stats,method).transferCount}}件</small></div>
             </div>
             <small>明細を見る ›</small>
           </button>
@@ -137,10 +136,9 @@ function comparisonTone(comparison) {
             :disabled="!paymentMethodCount(methodSummary(annualStats,method))" @click="openPaymentMethodDetails(method,'year')">
             <span class="payment-method-title">{{method}}</span>
             <strong class="payment-method-outflow-total">{{yen(methodOutflow(annualStats,method))}}</strong>
-            <small>資金流出の合計</small>
             <div class="payment-method-breakdown">
-              <span>支出 <b>{{yen(methodSummary(annualStats,method).expenseAmount)}}</b> <small>{{methodSummary(annualStats,method).expenseCount}}件</small></span>
-              <span>資産移動 <b>{{yen(methodSummary(annualStats,method).transferAmount)}}</b> <small>{{methodSummary(annualStats,method).transferCount}}件</small></span>
+              <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">支出</span><b>{{yen(methodSummary(annualStats,method).expenseAmount)}}</b><small>{{methodSummary(annualStats,method).expenseCount}}件</small></div>
+              <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">資産移動</span><b>{{yen(methodSummary(annualStats,method).transferAmount)}}</b><small>{{methodSummary(annualStats,method).transferCount}}件</small></div>
             </div>
             <small>明細を見る ›</small>
           </button>

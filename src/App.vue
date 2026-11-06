@@ -12,7 +12,7 @@ import { countThroughEditedDay } from './ledger-day-focus.js'
 import { isCardBilledEntry } from './card-billing.js'
 import { ledgerEntryAmount, ledgerEntriesTotal, formatLedgerTotal } from './ledger-totals.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
-import { classify, parseReceipt, parseEntries, ocrImage, CATEGORIES as BASE_CATEGORIES } from './parse.js'
+import { classify, parseReceipt, parseEntries, ocrImage } from './parse.js'
 import { localHHMM } from './entry-time.js'
 import { compressReceiptImage } from './receipt-image.js'
 import LedgerPage from './pages/LedgerPage.vue'
@@ -72,7 +72,7 @@ function resetMonth() { month.value = currentMonth() }
 const selectedYear = ref(new Date().getFullYear())
 const annualStats = ref(null)
 const selectedRatioMonth = ref('')
-const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([...BASE_CATEGORIES])
+const rules = ref([]), entries = ref([]), stats = ref(null), categories = ref([])
 const input = ref(''), busy = ref(''), msg = ref('')
 const ocrEngine = ref(''), ocrWarning = ref('')
 const forms = ref([])
@@ -192,7 +192,8 @@ function onReceiptImagesCleared() {
 }
 
 const editingEntry = ref(null)
-const INCOME_CATEGORIES = sortOtherLast(['工资', '奖金', '副业', '老公生活费', '父母赠与', '亲友赠与', '退款', 'ポイント還元', '其他收入'])
+const INCOME_CATEGORIES = ref([])
+const categoryDefaults = ref({expense:'',income:'',transfer:''})
 const categoryIcons = ref({})
 const categoryDisplayNames = ref({})
 const availableIcons = computed(() => {
@@ -201,11 +202,15 @@ const availableIcons = computed(() => {
   return ICON_LIBRARY.filter(icon => icon.id === 'other' || (!used.has(icon.id) && !existingLabels.has(icon.label)))
 })
 const categoryIconPath = name => ICON_LIBRARY.find(icon => icon.id === categoryIcons.value[name])?.path || ICON_LIBRARY.find(icon => icon.id === 'other').path
-const legacyCategoryLabels = Object.freeze({'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','交通':'交通費','工资':'給与','奖金':'賞与','副业':'副業','老公生活费':'夫からの生活費','父母赠与':'両親からの援助','亲友赠与':'親族・友人からの援助','退款':'返金','其他收入':'その他の収入'})
-// Keep historical D1 identifiers. Only the user-facing fallback is localized.
-const categoryLabel = name => categoryDisplayNames.value[name] && categoryDisplayNames.value[name] !== name ? categoryDisplayNames.value[name] : (legacyCategoryLabels[name] || categoryDisplayNames.value[name] || name)
+// Category identifiers and labels are both owned by D1 category_source.
+const categoryLabel = name => categoryDisplayNames.value[name] || name
 async function loadCategoryMetadata() {
   const rows = await api('category-source')
+  if (!Array.isArray(rows) || !rows.some(row => row.entry_type === 'income') || !rows.some(row => row.entry_type === 'expense'))
+    throw Error('カテゴリ設定の更新が必要です。管理者に確認してください')
+  categories.value = sortOtherLast(rows.filter(row => row.entry_type === 'expense').map(row => row.category))
+  INCOME_CATEGORIES.value = sortOtherLast(rows.filter(row => row.entry_type === 'income').map(row => row.category))
+  categoryDefaults.value = Object.fromEntries(['expense','income','transfer'].map(type => [type,rows.find(row => row.entry_type === type && Number(row.is_default) === 1)?.category || rows.find(row => row.entry_type === type)?.category || '']))
   categoryIcons.value = Object.fromEntries(rows.filter(row => row.icon).map(row => [row.category, row.icon]))
   categoryDisplayNames.value = Object.fromEntries(rows.filter(row => row.display_name).map(row => [row.category, row.display_name]))
 }
@@ -348,7 +353,7 @@ async function load() {
   try {
     if (!rules.value.length) rules.value = await api('rules')
     if (!paymentSettingsLoaded) await loadPaymentSettings()
-    const nextCategories = await api('categories')
+    await loadCategoryMetadata()
     let nextEntries, nextStats
     // Entries and totals are different D1 reads; a concurrent write can land
     // between them. Retry once instead of showing contradictory financial data.
@@ -359,8 +364,6 @@ async function load() {
       if (attempt===1) throw Error('記録と集計の更新時点が一致しません。もう一度読み込んでください')
     }
     if (requestId !== loadRequestId || requestedMonth !== month.value) return
-    categories.value = sortOtherLast(nextCategories)
-    try { await loadCategoryMetadata() } catch { /* Keep previously loaded category metadata until the next request. */ }
     entries.value = nextEntries
     refreshReceiptImageIds().catch(() => {})
     stats.value = nextStats
@@ -687,7 +690,7 @@ function recognize(mode = recognitionMode.value, append = false, referenceTime =
     const chosenPayment=type==='transfer' ? (imported||'')
       : suggestedPayment(f.merchant,recognizedPayment,type,imported)
     const icFare=!!icContext?.municipalityFares?.has(f)
-    const chosenCategory=type==='transfer'?'投資・資産移動':icFare?'交通':f.category
+    const chosenCategory=type==='transfer'?categoryDefaults.value.transfer:icFare?'交通':f.category
     const extraNote=icFare?'交通系ICの利用履歴から推定した交通費（登録前に確認）':''
     return { ...f, type, category: chosenCategory, note:[f.note,extraNote].filter(Boolean).join(' / '), transferTarget: detectedTransfer.transferTarget || f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && type === 'expense' ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && type === 'expense' && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
   })
@@ -768,7 +771,7 @@ function addBlank(type = 'expense') {
   entryInputMode.value = 'manual'
   const now = new Date()
   const today = now.toLocaleDateString('sv-SE')
-  const category = type === 'income' ? '工资' : type === 'transfer' ? '投資・資産移動' : '日用品'
+  const category = categoryDefaults.value[type] || ''
   forms.value.push({ date: today, transferDate: today, transferTarget: '', time: localHHMM(now), amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
@@ -786,25 +789,25 @@ function setEntryType(form, type) {
     if (type === 'transfer') form.transferDate = form.transferDate || form.date
   }
   form.type = type
-  if (type === 'income') form.category = INCOME_CATEGORIES.includes(form.category) ? form.category : '工资'
-  else if (type === 'transfer') form.category = '投資・資産移動'
-  else if (INCOME_CATEGORIES.includes(form.category) || form.category === '投資・資産移動') form.category = '日用品'
+  if (type === 'income') form.category = INCOME_CATEGORIES.value.includes(form.category) ? form.category : categoryDefaults.value.income
+  else if (type === 'transfer') form.category = categoryDefaults.value.transfer
+  else if (!categories.value.includes(form.category)) form.category = categoryDefaults.value.expense
   if (type === 'expense' && !form.paymentSource) applyMerchantPayment(form)
 }
 const categoryDialog = ref(false)
 const categoryName = ref('')
+const categoryEntryType = ref('expense')
 const categoryIcon = ref('other')
 const categorySaving = ref(false)
-function addCategory() { categoryName.value = ''; categoryIcon.value = availableIcons.value[0]?.id || 'other'; categoryDialog.value = true }
+function addCategory() { categoryName.value = ''; categoryEntryType.value = 'expense'; categoryIcon.value = availableIcons.value[0]?.id || 'other'; categoryDialog.value = true }
 async function saveCategory() {
   if (categorySaving.value) return
   const name = categoryName.value.trim()
   if (!name) return flash('カテゴリ名を入力してください')
-  if (categories.value.some(c => c === name || categoryLabel(c) === name)) return flash('同じカテゴリが既にあります')
+  if ([...categories.value,...INCOME_CATEGORIES.value].some(c => c === name || categoryLabel(c) === name)) return flash('同じカテゴリが既にあります')
   categorySaving.value = true
   try {
-    await api('categories', { method: 'POST', body: JSON.stringify({ name, icon: categoryIcon.value }) })
-    categories.value = sortOtherLast(await api('categories'))
+    await api('categories', { method: 'POST', body: JSON.stringify({ name, icon: categoryIcon.value, entryType: categoryEntryType.value }) })
     await loadCategoryMetadata()
     categoryDialog.value = false
     flash('カテゴリを追加しました')
@@ -1681,6 +1684,7 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
       <div v-if="categoryDialog" class="edit-overlay" @click.self="!categorySaving && (categoryDialog = false)">
         <form class="edit-dialog category-dialog" @submit.prevent="saveCategory" aria-label="カテゴリを追加">
           <div class="edit-dialog-heading"><h2>カテゴリを追加</h2><button type="button" class="icon-button" :disabled="categorySaving" @click="categoryDialog = false" aria-label="閉じる">×</button></div>
+          <label class="form-field"><span>種類</span><select v-model="categoryEntryType" :disabled="categorySaving"><option value="expense">支出</option><option value="income">収入</option></select></label>
           <label class="form-field"><span>カテゴリ名</span><input v-model.trim="categoryName" maxlength="20" required :disabled="categorySaving" placeholder="例：美容" /></label>
           <p class="field-label">アイコンを選択</p>
           <div class="icon-picker" role="group" aria-label="アイコンを選択">

@@ -90,7 +90,13 @@ export async function handlePrepaid({db,request,method,sub}) {
         e.date DESC,COALESCE(e.time,'') DESC,e.id DESC LIMIT 1`).bind(today).first()
   ])
   return json({
-    cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)+Number(p.earned)-Number(p.spent)-Number(p.transferred_out)})),
+    // The legacy PWA displays charged_month directly. Return all monthly
+    // incoming funds there (recharges + earned points), so older installed
+    // clients also show the correct month total without double counting.
+    cards:cards.map(p=>({...p,
+      charged_month:Number(p.charged_month)+Number(p.earned_month),
+      balance:Number(p.opening_balance)+Number(p.charged)+Number(p.earned)-Number(p.spent)-Number(p.transferred_out)
+    })),
     latestUsage:latestUsage || null,
     latestCharge:latestCharge || null
   })

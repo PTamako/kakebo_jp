@@ -110,7 +110,7 @@ test('point wallet earns an income credit once and debits its linked Suica charg
     const suica=cards.find(c=>c.name==='Suica')
     assert.equal(points.earned,4)
     assert.equal(points.earned_month,180,'November includes older ¥176 unassigned points plus ¥4 named points')
-    assert.equal(points.charged_month,0)
+    assert.equal(points.charged_month,180,'monthly incoming total supports current and legacy PWA clients')
     assert.equal(points.transferred_out_month,180,'November includes ¥176 transfer before the opening anchor')
     assert.equal(points.balance,0,'current balance remains anchored: only +4/-4')
     assert.equal(suica.charged_month,180,'monthly charge includes pre-anchor ¥176 plus ¥4')

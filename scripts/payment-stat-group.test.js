@@ -49,4 +49,8 @@ test('the payment method card headline is total outflow while expense stays sepa
   assert.match(page,/const methodOutflow =/)
   assert.match(page,/Number\(methodSummary\(report, method\)\.expenseAmount \|\| 0\) \+ Number\(methodSummary\(report, method\)\.transferAmount \|\| 0\)/)
   assert.equal((page.match(/資金流出の合計/g)||[]).length,2)
+  const app=read('src/App.vue')
+  assert.match(app,/\.payment-method-stats-grid-three\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/)
+  assert.match(app,/\.payment-method-stats-grid-three button:last-child\{grid-column:auto\}/)
+  assert.match(app,/\.payment-method-stats-grid\.payment-method-stats-grid-three button\{min-width:0;padding:9px 7px;/)
 })

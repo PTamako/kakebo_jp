@@ -841,8 +841,12 @@ async function saveAll() {
     const historical = (await Promise.all(months.map(fetchMonthEntries))).flat()
     // Time differs between a manual entry and an OCR scan of the same purchase.
     // Use it for display, not as a reason to suppress a duplicate warning.
+    const sourceForDuplicate = f => f.payment_source ??
+      (f.type==='income' && f.category==='ポイント還元' && f.rewardDestination
+        ? (f.rewardDestination.startsWith('credit:') ? f.rewardDestination.slice(7) : 'ポイント還元')
+        : f.paymentSource || '')
     const key = f => [f.date, Number(f.amount), String(f.merchant || '').trim(),
-      f.payment_source ?? f.paymentSource ?? '', f.type || 'expense'].join('|')
+      sourceForDuplicate(f), f.type || 'expense'].join('|')
     const seen = new Set()
     const known = new Set(historical.map(key))
     const possibleDuplicates = forms.value.filter(f => {
@@ -878,7 +882,7 @@ async function saveAll() {
         ...f, amount: Number(f.amount), duplicatePolicy:'check',
         // Approval applies only to flagged rows, not the whole import batch.
         allowDuplicate:duplicateConfirmedKeys.has([f.date,Number(f.amount),String(f.merchant||'').trim(),
-          f.paymentSource||'',f.type||'expense'].join('|'))
+          sourceForDuplicate(f),f.type||'expense'].join('|'))
       }) })
       const receiptBlob = f.type === 'expense' ? f.receiptImage : null
       if (receiptBlob) {

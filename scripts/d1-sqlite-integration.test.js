@@ -1153,3 +1153,56 @@ test('actual SQLite: a workday exclusion blocks automatic commuting but not the 
     assert.equal((await call('recurring-exclusions')).body.some(e=>e.planId===id&&e.date===date),true)
   }finally{db.close()}
 })
+
+
+test('actual SQLite: monthly and yearly card/cash/points totals are mutually exclusive and drillable',async()=>{
+  const {db,call}=await createClient()
+  try {
+    db.db.exec("INSERT INTO payment_sources(name,sort_order,source_type,stat_group) VALUES ('Suica',1,'prepaid','card'),('ポイント還元',2,'prepaid','points'),('nanacoモバイル',3,'prepaid','card')")
+    const entry=db.db.prepare('INSERT INTO entries(date,time,amount,category,merchant,type,payment_source,transfer_target) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)')
+    for (const [date,amount,type,source,target] of [
+      ['2026-11-06',100,'expense','Suica',null],
+      ['2026-11-06',60,'expense','',null],
+      ['2026-11-06',40,'expense','ポイント還元',null],
+      ['2026-11-07',200,'expense','nanacoモバイル',null],
+      ['2026-11-07',176,'transfer','ポイント還元','prepaid:nanacoモバイル'],
+      ['2026-11-07',176,'income','',null],
+      ['2026-10-29',90,'expense','ポイント還元',null]
+    ]) entry.run(date,'15:00',amount,type==='income'?'ポイント還元':'日用品','統計確認',type,source,target)
+
+    const month=await call('stats?month=2026-11')
+    const year=await call('stats?year=2026')
+    assert.equal(month.status,200)
+    assert.equal(year.status,200)
+    const totals=rows=>Object.fromEntries(rows.map(x=>[x.method,{amount:Number(x.amount),count:Number(x.count)}]))
+    assert.deepEqual(totals(month.body.paymentMethods),{
+      'カード・電子決済':{amount:300,count:2},
+      '現金':{amount:60,count:1},
+      'ポイント払い':{amount:40,count:1}
+    })
+    assert.deepEqual(totals(year.body.paymentMethods),{
+      'カード・電子決済':{amount:300,count:2},
+      '現金':{amount:60,count:1},
+      'ポイント払い':{amount:130,count:2}
+    })
+    assert.equal(month.body.total,400)
+    assert.equal(year.body.total,490)
+    assert.equal(month.body.paymentMethods.reduce((sum,row)=>sum+Number(row.amount),0),month.body.total)
+    assert.equal(year.body.paymentMethods.reduce((sum,row)=>sum+Number(row.amount),0),year.body.total)
+
+    const invalid=await call('payment-sources/stat-group','POST',{name:'現金',statGroup:'points'})
+    assert.equal(invalid.status,400)
+    const invalidGroup=await call('payment-sources/stat-group','POST',{name:'Suica',statGroup:'cash'})
+    assert.equal(invalidGroup.status,400)
+    const modified=await call('payment-sources/stat-group','POST',{name:'Suica',statGroup:'points'})
+    assert.equal(modified.status,200)
+    assert.equal(db.db.prepare("SELECT stat_group FROM payment_sources WHERE name='Suica'").get().stat_group,'points')
+    const updated=await call('stats?month=2026-11')
+    assert.deepEqual(totals(updated.body.paymentMethods),{
+      'カード・電子決済':{amount:200,count:1},
+      '現金':{amount:60,count:1},
+      'ポイント払い':{amount:140,count:2}
+    })
+    assert.equal(updated.body.total,400,'reclassification cannot alter total spend')
+  }finally{db.close()}
+})

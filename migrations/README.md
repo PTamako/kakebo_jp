@@ -1,3 +1,14 @@
+# 0016: カテゴリの種類・既定値をD1で管理（2026-11-06）
+
+- `category_source.entry_type` を `expense / income / transfer` に、`is_default` を各種類の既定値として追加。これまでVue側に固定していた収入・支出カテゴリ一覧はD1から取得する。カテゴリー名・日本語表示名・アイコン・並び順は既存D1の値を保持。
+- 既存の「給与」などは履歴用キーを変えずに `income`、資産移動は `transfer` として区分する。「ポイント還元」は `income` として登録する。明細 `entries`、カード、残高、ルール、過去統計は書き換えない。
+- `migrations/0016_category_types.sql` は**一度だけ手動で適用**。事前に D1 Time Travel bookmark を取得し、Previewへ先に適用して `PRAGMA table_info(category_source)` と件数を確認する。同じALTERを再実行しない。
+- Previewに対する `npm run build` の全テストとPages Deploy成功後、Productionに0016を適用。Production D1の `entry_type` 分布、各タイプの既定値、明細件数とカテゴリ件数の不変を確認した後、PRをmainにマージする。
+- `ポイント還元` の支払方法はD1の `payment_sources` に追加。過去の¥176を含め、既存明細を自動で再分類しない。古いバックアップはリストア時に歴史的なカテゴリーIDから1回限り区別し、新しいバックアップではD1の分類メタデータを保存する。
+- 通常APIやページ読込で DDL / 古いカテゴリの自動投入は行わない。0016適用前に新コードをProductionへ出さない。
+
+---
+
 # 現行の移行状態（2026-11-03 読み取り専用確認）
 
 - **本番**: `kakebo`、**Preview**: `kakebo_preview`。Cloudflare Pages のバインディングは別ID。

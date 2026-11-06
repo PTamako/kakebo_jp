@@ -825,6 +825,18 @@ export async function onRequest({ request, env, params }) {
         const e=saved?.entry
         if(!e || e.id!==id || !validDate(e.date) || !Number.isSafeInteger(e.amount) || e.amount<=0 ||
           !['expense','income','transfer'].includes(e.type)) return json({error:'保管した明細が正しくありません'},409)
+        if(isPointCharge(e))return json({error:'自動チャージは元のポイント還元収入と一緒に復元してください'},409)
+        const pairedTrashId=Number(saved.pairedEntryId||0)
+        let pairedEntry=null
+        if(Number.isSafeInteger(pairedTrashId)&&pairedTrashId>0){
+          const pairedTrash=await db.prepare("SELECT payload_json FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(pairedTrashId)).first()
+          if(pairedTrash){
+            try { pairedEntry=JSON.parse(pairedTrash.payload_json)?.entry } catch { return json({error:'関連するチャージ記録を復元できません'},409) }
+            if(!pairedEntry || pairedEntry.id!==pairedTrashId || !isPointCharge(pairedEntry) ||
+               pairedEntry.client_request_id!==pointChargeId(e.client_request_id,e.id))
+              return json({error:'関連するチャージ記録を確認してください'},409)
+          }
+        }
         // Stable IDs preserve on-device receipts and SBI transfer links.
         const collision=await db.prepare('SELECT id FROM entries WHERE id=?1 OR (client_request_id IS NOT NULL AND client_request_id=?2) LIMIT 1')
           .bind(id,e.client_request_id??null).first()
@@ -843,6 +855,19 @@ export async function onRequest({ request, env, params }) {
         if(saved.dismissed)statements.push(db.prepare(
           'INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) VALUES(?1)'
         ).bind(id))
+        if(pairedEntry){
+          statements.push(db.prepare(`INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,
+            transfer_date,client_request_id,payment_source,created_at)
+            VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`)
+            .bind(pairedEntry.id,pairedEntry.date,pairedEntry.time||'',pairedEntry.amount,pairedEntry.category,
+              pairedEntry.merchant,pairedEntry.note,pairedEntry.raw,pairedEntry.type,pairedEntry.transfer_target??null,
+              pairedEntry.transfer_applied??0,pairedEntry.transfer_date??null,pairedEntry.client_request_id,
+              pairedEntry.payment_source||'',pairedEntry.created_at||new Date().toISOString()))
+          statements.push(db.prepare("DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(pairedEntry.id)))
+        } else if(e.type==='income' && e.category==='ポイント還元' && e.transfer_target?.startsWith('prepaid:')){
+          statements.push(db.prepare(pointTopUpSql.replace('client_request_id=?1 AND type=', 'id=?1 AND type='))
+            .bind(id,pointChargeId(e.client_request_id,id),e.transfer_target))
+        }
         // Restoring an entry undoes only the exclusion created by its deletion.
         // Never remove exclusions which the user had already set manually.
         const skip=saved.recurringSkip
@@ -1017,6 +1042,9 @@ export async function onRequest({ request, env, params }) {
         // D1 batch() makes the recoverable snapshot+deletion atomic.
         const entry=await db.prepare('SELECT * FROM entries WHERE id=?1').bind(id).first()
         if (!entry) return json({error:'明細が見つかりません'},404)
+        if(isPointCharge(entry))return json({error:'自動チャージは元のポイント還元収入を削除してください'},409)
+        const paired=entry.type==='income' ? await db.prepare('SELECT * FROM entries WHERE client_request_id=?1')
+          .bind(pointChargeId(entry.client_request_id,id)).first() : null
         const [link,dismissal]=await Promise.all([
           db.prepare('SELECT purchase_month FROM sbi_transfer_links WHERE entry_id=?1').bind(id).first(),
           db.prepare('SELECT 1 AS found FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id).first()
@@ -1052,17 +1080,24 @@ export async function onRequest({ request, env, params }) {
             : 'SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2'
         ).bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month).first() : null
         const snapshot=JSON.stringify({entry,purchaseMonth:link?.purchase_month||null,dismissed:!!dismissal,
-          recurringSkip:alreadySkipped?null:recurringSkip})
+          recurringSkip:alreadySkipped?null:recurringSkip,pairedEntryId:paired?.id||null})
         // All changes happen in one D1 transaction; a partial deletion cannot
         // leave a scheduled expense marked as skipped without its trash record.
         const statements=[
           db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING").bind(String(id),snapshot)
         ]
+        if(paired){
+          const pairedSnapshot=JSON.stringify({entry:paired,purchaseMonth:null,dismissed:false,recurringSkip:null})
+          statements.push(db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING")
+            .bind(String(paired.id),pairedSnapshot))
+        }
         if(recurringSkip)statements.push(db.prepare(skipSql)
           .bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month))
         statements.push(
           db.prepare('DELETE FROM sbi_transfer_links WHERE entry_id=?1').bind(id),
           db.prepare('DELETE FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id),
+          ...(paired ? [db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2)")
+            .bind(paired.id,String(paired.id))] : []),
           db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2)").bind(id,String(id))
         )
         const result=await db.batch(statements)

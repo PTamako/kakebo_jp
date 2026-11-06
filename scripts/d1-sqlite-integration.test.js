@@ -1166,6 +1166,10 @@ test('actual SQLite: monthly and yearly card/cash/points totals are mutually exc
       ['2026-11-06',40,'expense','ポイント還元',null],
       ['2026-11-07',200,'expense','nanacoモバイル',null],
       ['2026-11-07',176,'transfer','ポイント還元','prepaid:nanacoモバイル'],
+      ['2026-11-07',300,'transfer','Suica','prepaid:nanacoモバイル'],
+      ['2026-11-07',70,'transfer','現金','prepaid:nanacoモバイル'],
+      ['2026-11-07',88,'transfer','','prepaid:nanacoモバイル'],
+      ['2026-11-07',66,'transfer','その他','prepaid:nanacoモバイル'],
       ['2026-11-07',176,'income','',null],
       ['2026-10-29',90,'expense','ポイント還元',null]
     ]) entry.run(date,'15:00',amount,type==='income'?'ポイント還元':'日用品','統計確認',type,source,target)
@@ -1174,21 +1178,30 @@ test('actual SQLite: monthly and yearly card/cash/points totals are mutually exc
     const year=await call('stats?year=2026')
     assert.equal(month.status,200)
     assert.equal(year.status,200)
-    const totals=rows=>Object.fromEntries(rows.map(x=>[x.method,{amount:Number(x.amount),count:Number(x.count)}]))
+    const totals=rows=>Object.fromEntries(rows.map(x=>[x.method,{
+      amount:Number(x.amount),count:Number(x.count),
+      transferAmount:Number(x.transferAmount),transferCount:Number(x.transferCount)
+    }]))
     assert.deepEqual(totals(month.body.paymentMethods),{
-      'カード・電子決済':{amount:300,count:2},
-      '現金':{amount:60,count:1},
-      'ポイント払い':{amount:40,count:1}
+      'カード・電子決済':{amount:300,count:2,transferAmount:300,transferCount:1},
+      '現金':{amount:60,count:1,transferAmount:70,transferCount:1},
+      'ポイント払い':{amount:40,count:1,transferAmount:176,transferCount:1},
+      '振替元未指定':{amount:0,count:0,transferAmount:154,transferCount:2}
     })
     assert.deepEqual(totals(year.body.paymentMethods),{
-      'カード・電子決済':{amount:300,count:2},
-      '現金':{amount:60,count:1},
-      'ポイント払い':{amount:130,count:2}
+      'カード・電子決済':{amount:300,count:2,transferAmount:300,transferCount:1},
+      '現金':{amount:60,count:1,transferAmount:70,transferCount:1},
+      'ポイント払い':{amount:130,count:2,transferAmount:176,transferCount:1},
+      '振替元未指定':{amount:0,count:0,transferAmount:154,transferCount:2}
     })
     assert.equal(month.body.total,400)
     assert.equal(year.body.total,490)
+    assert.equal(month.body.transferTotal,700)
+    assert.equal(year.body.transferTotal,700)
     assert.equal(month.body.paymentMethods.reduce((sum,row)=>sum+Number(row.amount),0),month.body.total)
     assert.equal(year.body.paymentMethods.reduce((sum,row)=>sum+Number(row.amount),0),year.body.total)
+    assert.equal(month.body.paymentMethods.reduce((sum,row)=>sum+Number(row.transferAmount),0),month.body.transferTotal)
+    assert.equal(year.body.paymentMethods.reduce((sum,row)=>sum+Number(row.transferAmount),0),year.body.transferTotal)
 
     const invalid=await call('payment-sources/stat-group','POST',{name:'現金',statGroup:'points'})
     assert.equal(invalid.status,400)
@@ -1199,9 +1212,10 @@ test('actual SQLite: monthly and yearly card/cash/points totals are mutually exc
     assert.equal(db.db.prepare("SELECT stat_group FROM payment_sources WHERE name='Suica'").get().stat_group,'points')
     const updated=await call('stats?month=2026-11')
     assert.deepEqual(totals(updated.body.paymentMethods),{
-      'カード・電子決済':{amount:200,count:1},
-      '現金':{amount:60,count:1},
-      'ポイント払い':{amount:140,count:2}
+      'カード・電子決済':{amount:200,count:1,transferAmount:0,transferCount:0},
+      '現金':{amount:60,count:1,transferAmount:70,transferCount:1},
+      'ポイント払い':{amount:140,count:2,transferAmount:476,transferCount:2},
+      '振替元未指定':{amount:0,count:0,transferAmount:154,transferCount:2}
     })
     assert.equal(updated.body.total,400,'reclassification cannot alter total spend')
   }finally{db.close()}

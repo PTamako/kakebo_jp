@@ -9,6 +9,6 @@ export function paymentMethodForEntry(entry, sourceMeta = {}) {
   return sourceMeta[source]?.stat_group === 'points' ? 'ポイント払い' : 'カード・電子決済'
 }
 export function matchesPaymentStatMethod(entry, method, sourceMeta = {}) {
-  return entry?.type === 'expense' && PAYMENT_STAT_METHODS.includes(method)
+  return ['expense','transfer'].includes(entry?.type) && PAYMENT_STAT_METHODS.includes(method)
     && paymentMethodForEntry(entry, sourceMeta) === method
 }

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
-import {matchesPrepaidHistoryEntry} from '../src/prepaid-history.js'
+import {matchesPrepaidHistoryEntry,matchedUnassignedPointIncomeIds} from '../src/prepaid-history.js'
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 const wallet=read('src/PrepaidAssets.vue')
 const assets=read('src/pages/AssetsPage.vue')
@@ -118,4 +118,21 @@ test('selected calendar month shows points earned and transfers before wallet op
  assert.equal(matchesPrepaidHistoryEntry(outgoing,{...filter,kind:'usage'},day),true)
  assert.equal(matchesPrepaidHistoryEntry(oldIncome,{...filter,reportingMonth:'2026-10'},day),false)
  assert.match(app,/reportingMonth:month\.value/)
+})
+
+test('unassigned legacy point receipts are only in wallet history when matched to a transfer',()=>{
+ const date='2026-11-06',rows=[
+  {id:453,date,type:'income',category:'ポイント還元',payment_source:'',amount:176},
+  {id:454,date,type:'transfer',payment_source:'ポイント還元',transfer_target:'prepaid:nanacoモバイル',amount:176},
+  {id:455,date,type:'income',category:'ポイント還元',payment_source:'ポイント還元',amount:4},
+  {id:456,date,type:'transfer',payment_source:'ポイント還元',transfer_target:'prepaid:Suica',amount:4},
+  {id:457,date,type:'income',category:'ポイント還元',payment_source:'',amount:12}
+ ]
+ const matches=matchedUnassignedPointIncomeIds(rows)
+ assert.deepEqual([...matches],[453])
+ const filter={card:'ポイント還元',kind:'charge',openingDate:date,openingEntryId:454,reportingMonth:'2026-11',
+   matchedUnassignedPointIncomeIds:matches}
+ assert.equal(matchesPrepaidHistoryEntry(rows[0],filter,date),true)
+ assert.equal(matchesPrepaidHistoryEntry(rows[2],filter,date),true)
+ assert.equal(matchesPrepaidHistoryEntry(rows[4],filter,date),false)
 })

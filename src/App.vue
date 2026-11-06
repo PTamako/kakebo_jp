@@ -2055,7 +2055,7 @@ main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hi
 /* Always keep the three payment methods side by side, including narrow iPhones. */
 .payment-method-stats-grid-three{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .payment-method-stats-grid-three button:last-child{grid-column:auto}
-.payment-method-stats-grid-three button{min-width:0;padding:9px 7px;gap:5px;align-content:start}
+.payment-method-stats-grid.payment-method-stats-grid-three button{min-width:0;padding:9px 7px;gap:5px;align-content:start}
 .payment-method-stats-grid-three .payment-method-title{font-size:clamp(10px,2.7vw,13px);line-height:1.35;min-height:2.7em;overflow-wrap:anywhere}
 .payment-method-stats-grid-three .payment-method-outflow-total{font-size:clamp(12px,3.1vw,16px);line-height:1.2;overflow-wrap:anywhere;letter-spacing:-.025em}
 .payment-method-stats-grid-three button>small{font-size:10px;line-height:1.35}

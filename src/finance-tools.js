@@ -44,6 +44,7 @@ export function isFuturePrepaidMovement(entry, prepaidNames, today=new Date(Date
   const prepaidSource=prepaidNames.includes(source)
   const prepaidTarget=prepaidNames.some(name=>entry.transfer_target==='prepaid:'+name)
   if(entry.type==='expense')return prepaidSource && entry.date>today
+  if(entry.type==='income')return entry.category==='ポイント還元' && prepaidSource && entry.date>today
   if(entry.type!=='transfer' || (!prepaidSource && !prepaidTarget))return false
   return entry.date>today || (entry.transfer_date||entry.date)>today
 }
@@ -58,10 +59,11 @@ export function prepaidRestoreBalances(archive, today=new Date(Date.now()+9*3600
     // Future prepaid rows are NOT included in this balance. The restore
     // workflow stages them after the rebase so they remain effective on due day.
     const charged=eligible.filter(e=>e.type==='transfer'&&e.transfer_target==='prepaid:'+source.name&&e.payment_source!==source.name&&e.date<=today&&(e.transfer_date||e.date)<=today).reduce((n,e)=>n+Number(e.amount),0)
+    const earned=eligible.filter(e=>e.type==='income'&&e.category==='ポイント還元'&&e.payment_source===source.name&&e.date<=today).reduce((n,e)=>n+Number(e.amount),0)
     const spent=eligible.filter(e=>e.type==='expense'&&e.payment_source===source.name&&e.date<=today).reduce((n,e)=>n+Number(e.amount),0)
     const transferredOut=eligible.filter(e=>e.type==='transfer'&&e.payment_source===source.name&&e.transfer_target!=='prepaid:'+source.name&&e.date<=today&&(e.transfer_date||e.date)<=today).reduce((n,e)=>n+Number(e.amount),0)
     const opening=Number(source.opening_balance||0)
-    const balance=opening+charged-spent-transferredOut
+    const balance=opening+charged+earned-spent-transferredOut
     if(!Number.isSafeInteger(balance)||balance<0||balance>100000000)throw Error('プリペイド残高が計算できません。復元を中止しました')
     return {name:source.name,openingBalance:balance}
   })

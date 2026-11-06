@@ -1027,7 +1027,9 @@ export async function onRequest({ request, env, params }) {
               .bind(id,linkedId,reward.target)
           : db.prepare("DELETE FROM entries WHERE client_request_id=?1 AND type='transfer' AND category='投資・資産移動'")
               .bind(linkedId)
-        const [result]=await db.batch([entryUpdate,pairedWrite])
+        const needsPairUpdate=(previous.type==='income' && previous.category==='ポイント還元') ||
+          reward.target?.startsWith('prepaid:')
+        const [result]=needsPairUpdate ? await db.batch([entryUpdate,pairedWrite]) : [await entryUpdate.run()]
         if(optimistic && !result.meta?.changes)
           return json({error:'別の端末で明細が変更されました。最新の明細を再読込してください',code:'stale_entry'},409)
         return json({ok:true,changes:result.meta?.changes??null})

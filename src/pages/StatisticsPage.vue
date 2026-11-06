@@ -7,10 +7,10 @@ const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, s
 
 function methodSummary(report, method) {
   return (report?.paymentMethods || []).find(row => row.method === method)
-    || {amount:0,count:0,expenseAmount:0,transferAmount:0,expenseCount:0,transferCount:0}
+    || {amount:0,count:0,expenseAmount:0,transferAmount:0,creditOffsetAmount:0,expenseCount:0,transferCount:0,creditOffsetCount:0}
 }
-const paymentMethodCount = row => Number(row.expenseCount || 0) + Number(row.transferCount || 0)
-const methodOutflow = (report, method) => Number(methodSummary(report, method).expenseAmount || 0) + Number(methodSummary(report, method).transferAmount || 0)
+const paymentMethodCount = row => Number(row.expenseCount || 0) + Number(row.transferCount || 0) + Number(row.creditOffsetCount || 0)
+const methodOutflow = (report, method) => Number(methodSummary(report, method).expenseAmount || 0) + Number(methodSummary(report, method).transferAmount || 0) + (method === 'ポイント払い' ? Number(methodSummary(report, method).creditOffsetAmount || 0) : 0)
 function comparisonRate(comparison) {
   const percent = comparison?.percent
   if (percent === null || percent === undefined || !Number.isFinite(percent)) return '—'
@@ -60,6 +60,7 @@ function comparisonTone(comparison) {
             <div class="payment-method-breakdown">
               <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">支出</span><b>{{yen(methodSummary(stats,method).expenseAmount)}}</b><small>{{methodSummary(stats,method).expenseCount}}件</small></div>
               <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">資産移動</span><b>{{yen(methodSummary(stats,method).transferAmount)}}</b><small>{{methodSummary(stats,method).transferCount}}件</small></div>
+              <div v-if="method === 'ポイント払い'" class="payment-method-breakdown-row" title="クレジットカード利用額に充当したポイント"><span class="payment-method-breakdown-label">カード充当</span><b>{{yen(methodSummary(stats,method).creditOffsetAmount)}}</b><small>{{methodSummary(stats,method).creditOffsetCount}}件</small></div>
             </div>
             <small>明細を見る ›</small>
           </button>
@@ -137,6 +138,7 @@ function comparisonTone(comparison) {
             <div class="payment-method-breakdown">
               <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">支出</span><b>{{yen(methodSummary(annualStats,method).expenseAmount)}}</b><small>{{methodSummary(annualStats,method).expenseCount}}件</small></div>
               <div class="payment-method-breakdown-row"><span class="payment-method-breakdown-label">資産移動</span><b>{{yen(methodSummary(annualStats,method).transferAmount)}}</b><small>{{methodSummary(annualStats,method).transferCount}}件</small></div>
+              <div v-if="method === 'ポイント払い'" class="payment-method-breakdown-row" title="クレジットカード利用額に充当したポイント"><span class="payment-method-breakdown-label">カード充当</span><b>{{yen(methodSummary(annualStats,method).creditOffsetAmount)}}</b><small>{{methodSummary(annualStats,method).creditOffsetCount}}件</small></div>
             </div>
             <small>明細を見る ›</small>
           </button>

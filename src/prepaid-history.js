@@ -11,12 +11,17 @@ export function matchesPrepaidHistoryEntry(entry, filter, today=new Date(Date.no
   // A scheduled transfer booked before a restore/rebase may become effective
   // after the new opening date. Use its effective date for the anchor boundary.
   const effective=entry?.type==='transfer' ? (entry.transfer_date||entry.date) : entry?.date
-  if (!entry?.date || entry.date>today ||
-      (entry.date<opened && effective<opened) || Number(entry.id)<=idCutoff) return false
+  if (!entry?.date || entry.date>today) return false
+  // The selected calendar month shows every transaction in that month.
+  // Older months keep the anchored balance-history rule when not selected.
+  const isSelectedMonth = filter.reportingMonth && entry.date.slice(0,7)===filter.reportingMonth
+  if (!isSelectedMonth && ((entry.date<opened && effective<opened) || Number(entry.id)<=idCutoff)) return false
   if (filter.kind === 'charge') {
     return (entry.type==='transfer' && entry.transfer_target===prepaidTarget(filter.card) && entry.payment_source!==filter.card &&
       (entry.transfer_date||entry.date)<=today) ||
-      (entry.type==='income' && entry.category==='ポイント還元' && entry.payment_source===filter.card)
+      (entry.type==='income' && entry.category==='ポイント還元' &&
+        (entry.payment_source===filter.card ||
+         (filter.card==='ポイント還元' && !entry.payment_source && !entry.transfer_target)))
   }
   return (entry.type==='expense' && entry.payment_source===filter.card) ||
     (entry.type==='transfer' && entry.payment_source===filter.card &&

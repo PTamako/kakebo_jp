@@ -1175,7 +1175,7 @@ const displayEntries = computed(() => {
   const narrowed = detailFilter.value?.period === 'card-bill'
     ? source.filter(entry => isCardBilledEntry(entry, detailFilter.value, detailFilter.value.cardName))
     : detailFilter.value
-      ? source.filter(entry => detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) : detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer'))
+      ? source.filter(entry => detailFilter.value.paymentMethod ? paymentMethodMatches(entry,detailFilter.value.paymentMethod) : detailFilter.value.type === 'transfer' ? entry.type === 'transfer' : entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer'))
       : source
   return narrowed.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !selectedDay.value || String(entry.date || '').slice(0, 10) === selectedDay.value)
 })
@@ -1354,7 +1354,7 @@ async function openCategoryDetails(category, type, period, paymentMethod = '', p
   if (!preserveEditContext) editListReturn.value = null
   prepaidHistoryFilter.value = null
   detailFilter.value = { category, type, period, paymentMethod }
-  entryTypeFilter.value = type === 'transfer' ? 'transfer' : type
+  entryTypeFilter.value = paymentMethod ? 'all' : type === 'transfer' ? 'transfer' : type
   selectedDay.value = ''
   detailSourceEntries.value = []
   visibleEntryCount.value = 20
@@ -1397,7 +1397,7 @@ let suppressRowClick = false
 const calendarEntries = computed(() => {
   const source = detailFilter.value ? detailSourceEntries.value : entries.value
   return source.filter(entryMatchesType).filter(matchesPrepaidHistory).filter(entry => !detailFilter.value || (
-    detailFilter.value.paymentMethod ? entry.type === 'expense' && paymentMethodMatches(entry,detailFilter.value.paymentMethod) :
+    detailFilter.value.paymentMethod ? paymentMethodMatches(entry,detailFilter.value.paymentMethod) :
     detailFilter.value.type === 'transfer' ? entry.type === 'transfer' :
     entry.category === detailFilter.value.category && (detailFilter.value.type === 'income' ? entry.type === 'income' : entry.type !== 'income' && entry.type !== 'transfer')
   )).filter(entry => String(entry.date || '').startsWith(month.value))

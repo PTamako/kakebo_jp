@@ -1,3 +1,13 @@
+# 0017 支払方法別統計に「ポイント払い」を追加（2026-11-06）
+
+- 年次・月次ともに同じ三分類「カード・電子決済 / 現金 / ポイント払い」。集計対象は **expense のみ**。入金や残高チャージ（transfer）は集計に混ぜない。
+- `payment_sources.stat_group`（card / points）は**D1**に保存する。空の支払方法と「現金」は現金、明示的にpoints指定した支払方法はポイント、他はカード・電子決済（Suica・nanaco・PayPayマネーライトを含む）。既存の`ポイント還元`の支払方法のみpointsに設定。以後新規カードでも「管理 → カード → 支払集計」で変更できる。
+- `migrations/0017_payment_statistics_groups.sql` を Preview の独立D1で先行実行してから、コードをPreviewでテスト。Preview CI成功後、本番D1のTime Travel bookmarkを取得し1回だけALTERを実行。再実行しない。
+- SQL集計と「明細を見る」の条件はD1の`stat_group`で一致させ、年間全件ページングでも同じ分類。データの金額・分類・決済方法・残高履歴は変更しない。バックアップには`stat_group`を含み、旧バックアップに無い場合のみcardを採用する。
+- D1への自動schema repairなし。production D1に0017適用前に新APIを本番リリースしない。
+
+---
+
 # 0016: カテゴリの種類・既定値をD1で管理（2026-11-06）
 
 - `category_source.entry_type` を `expense / income / transfer` に、`is_default` を各種類の既定値として追加。これまでVue側に固定していた収入・支出カテゴリ一覧はD1から取得する。カテゴリー名・日本語表示名・アイコン・並び順は既存D1の値を保持。

@@ -117,8 +117,11 @@ CREATE TABLE IF NOT EXISTS category_source (
   category TEXT PRIMARY KEY,
   sort_order INTEGER,
   icon TEXT,
-  display_name TEXT
+  display_name TEXT,
+  entry_type TEXT NOT NULL DEFAULT 'expense' CHECK(entry_type IN ('expense','income','transfer')),
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1))
 );
+CREATE INDEX IF NOT EXISTS idx_category_source_entry_type_sort ON category_source(entry_type,sort_order,category);
 -- New installs only use merchant_rules; legacy tables are not created.
 CREATE TABLE IF NOT EXISTS dismissed_transfer_reminders (entry_id INTEGER PRIMARY KEY, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 -- User-reviewed alerts are persisted separately from financial transactions.

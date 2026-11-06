@@ -24,14 +24,14 @@ test('selected month and legacy income categories always present natural Japanes
   assert.doesNotMatch(stats,/今月の支出合計|差引残高/)
   assert.match(stats,/収支差額/)
   assert.match(ledger,/選択解除|支出最多|収入最多/)
-  assert.match(app,/legacyCategoryLabels/)
-  assert.match(app,/'工资':'給与'/)
-  assert.match(app,/'其他收入':'その他の収入'/)
+  assert.match(app,/const categoryLabel = name => categoryDisplayNames\.value\[name\] \|\| name/)
+  assert.match(app,/INCOME_CATEGORIES\.value = sortOtherLast\(rows\.filter/)
+  assert.doesNotMatch(app,/legacyCategoryLabels/)
   assert.match(finance,/最終更新：/)
   assert.match(finance,/@media \(max-width: 520px\)/)
   assert.doesNotMatch(api,/年份格式不正确/)
   // Database identifiers remain stable; this is display-only localization.
-  assert.match(app,/const INCOME_CATEGORIES = sortOtherLast\(\['工资'/)
+  assert.match(app,/const INCOME_CATEGORIES = ref\(\[\]\)/)
 })
 
 test('prepaid source transfers are subtracted from balance, excluded until due, and never self-charged',()=>{

@@ -9,6 +9,7 @@ function methodSummary(report, method) {
   return (report?.paymentMethods || []).find(row => row.method === method)
     || {amount:0,count:0,expenseAmount:0,transferAmount:0,expenseCount:0,transferCount:0}
 }
+const paymentMethodCount = row => Number(row.expenseCount || 0) + Number(row.transferCount || 0)
 function comparisonRate(comparison) {
   const percent = comparison?.percent
   if (percent === null || percent === undefined || !Number.isFinite(percent)) return '—'
@@ -53,17 +54,21 @@ function comparisonTone(comparison) {
         <p class="payment-method-note">支出と資産移動を分けて表示。資産移動は生活支出には含めません。</p>
         <div class="payment-method-stats-grid payment-method-stats-grid-three">
           <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
-            :disabled="!methodSummary(stats,method).count" @click="openPaymentMethodDetails(method,'month')">
-            <span>{{method}}</span>
-            <strong>{{yen(methodSummary(stats,method).amount)}}</strong>
-            <small>資金流出の合計</small>
+            :disabled="!paymentMethodCount(methodSummary(stats,method))" @click="openPaymentMethodDetails(method,'month')">
+            <span class="payment-method-title">{{method}}</span>
             <div class="payment-method-breakdown">
-              <span>支出 <b>{{yen(methodSummary(stats,method).expenseAmount)}}</b></span>
-              <span>資産移動 <b>{{yen(methodSummary(stats,method).transferAmount)}}</b></span>
+              <span>支出 <b>{{yen(methodSummary(stats,method).expenseAmount)}}</b> <small>{{methodSummary(stats,method).expenseCount}}件</small></span>
+              <span>資産移動 <b>{{yen(methodSummary(stats,method).transferAmount)}}</b> <small>{{methodSummary(stats,method).transferCount}}件</small></span>
             </div>
-            <small>{{methodSummary(stats,method).count}}件 · 明細を見る ›</small>
+            <small>明細を見る ›</small>
           </button>
         </div>
+        <button v-if="Number(methodSummary(stats,'振替元未指定').transferCount)>0" class="payment-method-unassigned"
+          type="button" @click="openPaymentMethodDetails('振替元未指定','month')">
+          <span>振替元未指定の資産移動</span>
+          <strong>{{yen(methodSummary(stats,'振替元未指定').transferAmount)}}</strong>
+          <small>{{methodSummary(stats,'振替元未指定').transferCount}}件 · 明細を見る ›</small>
+        </button>
       </div>
       <div class="metric-grid">
         <div class="metric-card day-average-metric" title="休日は土曜・日曜・国民の祝日・振替休日・国民の休日を含みます">
@@ -126,17 +131,21 @@ function comparisonTone(comparison) {
         <p class="payment-method-note">支出と資産移動を分けて表示。資産移動は生活支出には含めません。</p>
         <div class="payment-method-stats-grid payment-method-stats-grid-three">
           <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
-            :disabled="!methodSummary(annualStats,method).count" @click="openPaymentMethodDetails(method,'year')">
-            <span>{{method}}</span>
-            <strong>{{yen(methodSummary(annualStats,method).amount)}}</strong>
-            <small>資金流出の合計</small>
+            :disabled="!paymentMethodCount(methodSummary(annualStats,method))" @click="openPaymentMethodDetails(method,'year')">
+            <span class="payment-method-title">{{method}}</span>
             <div class="payment-method-breakdown">
-              <span>支出 <b>{{yen(methodSummary(annualStats,method).expenseAmount)}}</b></span>
-              <span>資産移動 <b>{{yen(methodSummary(annualStats,method).transferAmount)}}</b></span>
+              <span>支出 <b>{{yen(methodSummary(annualStats,method).expenseAmount)}}</b> <small>{{methodSummary(annualStats,method).expenseCount}}件</small></span>
+              <span>資産移動 <b>{{yen(methodSummary(annualStats,method).transferAmount)}}</b> <small>{{methodSummary(annualStats,method).transferCount}}件</small></span>
             </div>
-            <small>{{methodSummary(annualStats,method).count}}件 · 明細を見る ›</small>
+            <small>明細を見る ›</small>
           </button>
         </div>
+        <button v-if="Number(methodSummary(annualStats,'振替元未指定').transferCount)>0" class="payment-method-unassigned"
+          type="button" @click="openPaymentMethodDetails('振替元未指定','year')">
+          <span>振替元未指定の資産移動</span>
+          <strong>{{yen(methodSummary(annualStats,'振替元未指定').transferAmount)}}</strong>
+          <small>{{methodSummary(annualStats,'振替元未指定').transferCount}}件 · 明細を見る ›</small>
+        </button>
       </div>
       <div class="metric-grid">
         <div class="metric-card day-average-metric annual-day-average-metric" title="休日は土曜・日曜・国民の祝日・振替休日・国民の休日を含みます">

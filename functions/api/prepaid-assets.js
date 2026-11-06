@@ -31,26 +31,44 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
         AND COALESCE(e.transfer_date,e.date)<=?1
         AND COALESCE(e.payment_source,'')<>p.name),0) charged,
+    -- Month-to-date activity is the full calendar month, even when a card
+    -- was registered mid-month. Only the current balance uses the opening
+    -- anchor; otherwise pre-registration transactions disappear from totals.
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name
-        AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
-        AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
+        AND e.date<=?1 AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
         AND COALESCE(e.payment_source,'')<>p.name),0) charged_month,
     -- Point rewards credited to the wallet are receipts, not transfers. The
     -- generated top-up is a separate outgoing transfer; both sides must count.
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='income' AND e.category='ポイント還元' AND e.payment_source=p.name
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) earned,
+    -- Old point-income rows can have no source. For monthly reporting,
+    -- recover only receipts matched to a real points-funded transfer;
+    -- leave standalone cash income and current anchored balance unchanged.
     COALESCE((SELECT SUM(e.amount) FROM entries e
-      WHERE e.type='income' AND e.category='ポイント還元' AND e.payment_source=p.name
-        AND e.id>p.opening_entry_id AND e.date>=p.opening_date
+      WHERE e.type='income' AND e.category='ポイント還元'
+        AND (e.payment_source=p.name
+          OR (p.name='ポイント還元' AND COALESCE(e.payment_source,'')=''
+            AND COALESCE(e.transfer_target,'')=''
+            -- Unassigned legacy points count only when the user also recorded
+            -- a matching debit from this wallet (e.g. +176 / -176 nanaco).
+            -- A standalone "income only" reward is NOT a wallet top-up.
+            AND EXISTS (SELECT 1 FROM entries t
+              WHERE t.type='transfer' AND t.payment_source=p.name
+                AND t.date=e.date AND t.amount=e.amount AND t.id>e.id
+                AND e.id=(SELECT MAX(i.id) FROM entries i
+                  WHERE i.type='income' AND i.category='ポイント還元'
+                    AND COALESCE(i.payment_source,'')=''
+                    AND COALESCE(i.transfer_target,'')=''
+                    AND i.date=e.date AND i.amount=e.amount AND i.id<t.id)
+            )))
         AND e.date BETWEEN ?2 AND ?1),0) earned_month,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='expense' AND e.payment_source=p.name
         AND e.id>p.opening_entry_id AND e.date>=p.opening_date AND e.date<=?1),0) spent,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='expense' AND e.payment_source=p.name
-        AND e.id>p.opening_entry_id AND e.date>=p.opening_date
         AND e.date BETWEEN ?2 AND ?1),0) spent_month,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.payment_source=p.name
@@ -59,8 +77,7 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.payment_source=p.name
-        AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
-        AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
+        AND e.date<=?1 AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
         AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out_month
     FROM payment_sources p WHERE p.source_type='prepaid'
     ORDER BY p.sort_order,p.name`).bind(today,monthStart).all()
@@ -85,7 +102,13 @@ export async function handlePrepaid({db,request,method,sub}) {
         e.date DESC,COALESCE(e.time,'') DESC,e.id DESC LIMIT 1`).bind(today).first()
   ])
   return json({
-    cards:cards.map(p=>({...p,balance:Number(p.opening_balance)+Number(p.charged)+Number(p.earned)-Number(p.spent)-Number(p.transferred_out)})),
+    // The legacy PWA displays charged_month directly. Return all monthly
+    // incoming funds there (recharges + earned points), so older installed
+    // clients also show the correct month total without double counting.
+    cards:cards.map(p=>({...p,
+      charged_month:Number(p.charged_month)+Number(p.earned_month),
+      balance:Number(p.opening_balance)+Number(p.charged)+Number(p.earned)-Number(p.spent)-Number(p.transferred_out)
+    })),
     latestUsage:latestUsage || null,
     latestCharge:latestCharge || null
   })

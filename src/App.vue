@@ -28,7 +28,7 @@ import { prepaidTarget } from './prepaid-card.js'
 import { recognizeAssetTransfer } from './transfer-recognition.js'
 import { detectIcHistoryContext } from './transport-history.js'
 import { monthLedgerMatchesStats } from './month-ledger-consistency.js'
-import { matchesPrepaidHistoryEntry } from './prepaid-history.js'
+import { matchesPrepaidHistoryEntry, matchedUnassignedPointIncomeIds } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
@@ -1123,8 +1123,13 @@ const swipedReceiptId = ref(null)
 const filteredEntries = computed(() => entries.value.filter(e => String(e.date || '').startsWith(month.value) && (!selectedDay.value || String(e.date || '').slice(0, 10) === selectedDay.value)))
 const detailFilter = ref(null)
 const prepaidHistoryFilter = ref(null)
+// Match legacy unsourced point rewards only when paired with an actual points-wallet
+// transfer. The monthly drilldown must agree with the server's monthly totals.
+const matchingLegacyPointCredits = computed(() => matchedUnassignedPointIncomeIds(entries.value))
 // Histories are scoped to one actual prepaid card, never all transport cards.
-const matchesPrepaidHistory = entry => matchesPrepaidHistoryEntry(entry, prepaidHistoryFilter.value)
+const matchesPrepaidHistory = entry => matchesPrepaidHistoryEntry(entry,
+  prepaidHistoryFilter.value ? {...prepaidHistoryFilter.value,reportingMonth:month.value,
+    matchedUnassignedPointIncomeIds:matchingLegacyPointCredits.value} : null)
 async function openPrepaidHistoryDetails(cardName,kind) {
   if (!prepaidSources.value.includes(cardName) || !['charge','usage'].includes(kind)) return
   editListReturn.value = null

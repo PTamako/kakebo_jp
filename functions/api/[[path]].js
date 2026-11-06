@@ -866,7 +866,7 @@ export async function onRequest({ request, env, params }) {
             transfer_date,client_request_id,payment_source,created_at)
             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`)
             .bind(pairedEntry.id,pairedEntry.date,pairedEntry.time||'',pairedEntry.amount,pairedEntry.category,
-              pairedEntry.merchant,pairedEntry.note,pairedEntry.raw,pairedEntry.type,pairedEntry.transfer_target??null,
+              (pairedEntry.transfer_target?.startsWith('prepaid:') ? pairedEntry.transfer_target.slice(8)+'チャージ' : pairedEntry.merchant),pairedEntry.note,pairedEntry.raw,pairedEntry.type,pairedEntry.transfer_target??null,
               pairedEntry.transfer_applied??0,pairedEntry.transfer_date??null,pairedEntry.client_request_id,
               pairedEntry.payment_source||'',pairedEntry.created_at||new Date().toISOString()))
           statements.push(db.prepare("DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(pairedEntry.id)))

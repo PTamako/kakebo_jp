@@ -5,6 +5,10 @@ import { PAYMENT_STAT_METHODS } from '../payment-stat-group.js'
 // This page only renders its own view; links to 明細 call the same parent actions.
 const { stats, tab, statsPeriod, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, input, categoryIconPath, categoryLabel, yen, categoryRows, expensePalette, donutSelected, donutPercent, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openPaymentMethodDetails, openCategoryDetails, weekRows, maxWeek, averageDaily, averageDailySummary, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, monthlyDayTypeAverages, annualDayTypeAverages, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthLabel, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel } = inject('kakeibo-page-context')
 
+function methodSummary(report, method) {
+  return (report?.paymentMethods || []).find(row => row.method === method)
+    || {amount:0,count:0,expenseAmount:0,transferAmount:0,expenseCount:0,transferCount:0}
+}
 function comparisonRate(comparison) {
   const percent = comparison?.percent
   if (percent === null || percent === undefined || !Number.isFinite(percent)) return '—'
@@ -44,7 +48,23 @@ function comparisonTone(comparison) {
           <strong :class="comparisonTone(stats?.periodComparison)">{{ comparisonRate(stats?.periodComparison) }}</strong>
           <span class="comparison-note">{{ comparisonNote(stats?.periodComparison) }}</span>
         </div></div>
-      <div class="payment-method-stats"><h2>支払方法別</h2><div class="payment-method-stats-grid payment-method-stats-grid-three"><button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button" :disabled="!(stats?.paymentMethods || []).some(item => item.method === method && Number(item.count) > 0)" @click="openPaymentMethodDetails(method,'month')"><span>{{method}}</span><strong>{{(stats?.paymentMethods || []).find(item => item.method === method) ? yen((stats?.paymentMethods || []).find(item => item.method === method).amount) : '—'}}</strong><small>{{(stats?.paymentMethods || []).find(item => item.method === method) ? ((stats?.paymentMethods || []).find(item => item.method === method).count + '件 · 明細を見る ›') : '—'}}</small></button></div></div>
+      <div class="payment-method-stats">
+        <h2>支払方法別</h2>
+        <p class="payment-method-note">支出と資産移動を分けて表示。資産移動は生活支出には含めません。</p>
+        <div class="payment-method-stats-grid payment-method-stats-grid-three">
+          <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
+            :disabled="!methodSummary(stats,method).count" @click="openPaymentMethodDetails(method,'month')">
+            <span>{{method}}</span>
+            <strong>{{yen(methodSummary(stats,method).amount)}}</strong>
+            <small>資金流出の合計</small>
+            <div class="payment-method-breakdown">
+              <span>支出 <b>{{yen(methodSummary(stats,method).expenseAmount)}}</b></span>
+              <span>資産移動 <b>{{yen(methodSummary(stats,method).transferAmount)}}</b></span>
+            </div>
+            <small>{{methodSummary(stats,method).count}}件 · 明細を見る ›</small>
+          </button>
+        </div>
+      </div>
       <div class="metric-grid">
         <div class="metric-card day-average-metric" title="休日は土曜・日曜・国民の祝日・振替休日・国民の休日を含みます">
           <span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M7.5 3v4M16.5 3v4M3.5 10h17M7.5 14h3M13.5 14h3M7.5 18h3"/></svg></span>
@@ -101,7 +121,23 @@ function comparisonTone(comparison) {
           <strong :class="comparisonTone(annualStats?.periodComparison)">{{ comparisonRate(annualStats?.periodComparison) }}</strong>
           <span class="comparison-note">{{ comparisonNote(annualStats?.periodComparison) }}</span>
         </div></div>
-      <div class="payment-method-stats"><h2>支払方法別</h2><div class="payment-method-stats-grid payment-method-stats-grid-three"><button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button" :disabled="!(annualStats?.paymentMethods || []).some(item => item.method === method && Number(item.count) > 0)" @click="openPaymentMethodDetails(method,'year')"><span>{{method}}</span><strong>{{(annualStats?.paymentMethods || []).find(item => item.method === method) ? yen((annualStats?.paymentMethods || []).find(item => item.method === method).amount) : '—'}}</strong><small>{{(annualStats?.paymentMethods || []).find(item => item.method === method) ? ((annualStats?.paymentMethods || []).find(item => item.method === method).count + '件 · 明細を見る ›') : '—'}}</small></button></div></div>
+      <div class="payment-method-stats">
+        <h2>支払方法別</h2>
+        <p class="payment-method-note">支出と資産移動を分けて表示。資産移動は生活支出には含めません。</p>
+        <div class="payment-method-stats-grid payment-method-stats-grid-three">
+          <button v-for="method in PAYMENT_STAT_METHODS" :key="method" type="button"
+            :disabled="!methodSummary(annualStats,method).count" @click="openPaymentMethodDetails(method,'year')">
+            <span>{{method}}</span>
+            <strong>{{yen(methodSummary(annualStats,method).amount)}}</strong>
+            <small>資金流出の合計</small>
+            <div class="payment-method-breakdown">
+              <span>支出 <b>{{yen(methodSummary(annualStats,method).expenseAmount)}}</b></span>
+              <span>資産移動 <b>{{yen(methodSummary(annualStats,method).transferAmount)}}</b></span>
+            </div>
+            <small>{{methodSummary(annualStats,method).count}}件 · 明細を見る ›</small>
+          </button>
+        </div>
+      </div>
       <div class="metric-grid">
         <div class="metric-card day-average-metric annual-day-average-metric" title="休日は土曜・日曜・国民の祝日・振替休日・国民の休日を含みます">
           <span class="metric-icon"><svg class="ui-line-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M7.5 3v4M16.5 3v4M3.5 10h17M7.5 14h3M13.5 14h3M7.5 18h3"/></svg></span>

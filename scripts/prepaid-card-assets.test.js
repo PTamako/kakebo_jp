@@ -19,6 +19,12 @@ test('recharge detector requires an explicitly registered transit card and recha
 
 test('newly registered prepaid card names work without a fixed brand list',()=>{
   assert.equal(detectPrepaidRecharge('nanaco チャージ 500円',['nanaco']),'nanaco')
+  assert.equal(detectPrepaidRecharge('nanacoチャージ 176円',['nanacoモバイル','Suica']),'nanacoモバイル')
+  assert.equal(detectPrepaidRecharge('NANACO チャージ ¥176',['nanacoモバイル']),'nanacoモバイル')
+  assert.equal(detectPrepaidRecharge('nanacoチャージ 176円',['nanacoモバイル','nanacoカード']),'')
+  assert.equal(detectPrepaidRecharge('nanaco利用 176円',['nanacoモバイル']),'')
+  assert.equal(detectPrepaidRecharge('nanacoチャージ 176円',['Suica']),'')
+  assert.equal(detectPrepaidRecharge('Suicaチャージ',['Suica','モバイルSuica']),'')
   assert.equal(detectPrepaidRecharge('WAON入金 1000円',['WAON']),'WAON')
   assert.equal(detectPrepaidRecharge('楽天 Edy チャージ 1500円',['楽天Edy']),'楽天Edy')
   assert.equal(detectPrepaidRecharge('オリジナルカード　チャージ 400円',['オリジナルカード']),'オリジナルカード')

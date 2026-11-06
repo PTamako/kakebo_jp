@@ -1142,7 +1142,7 @@ async function openPrepaidHistoryDetails(cardName,kind) {
 const paymentMethodMatches = (entry, method) => matchesPaymentStatMethod(entry, method, paymentSourceMeta.value)
 async function openPaymentMethodDetails(method, period) {
   if (!paymentSettingsLoaded) await loadPaymentSettings()
-  await openCategoryDetails('', 'expense', period, method)
+  await openCategoryDetails('', 'all', period, method)
 }
 const detailSourceEntries = ref([])
 const detailLoading = ref(false)
@@ -2043,7 +2043,14 @@ main .bottom-nav button .nav-icon{width:100%;flex-shrink:0}
 main .bottom-nav button span:last-child{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:390px){main .bottom-nav{gap:2px;padding:5px}main .bottom-nav button{font-size:10px;padding-inline:0}}
 .payment-method-stats{margin:12px 0;display:grid;gap:8px}.payment-method-stats h2{font-size:15px;margin:0}.payment-method-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.payment-method-stats-grid-three button:last-child{grid-column:1/-1}.payment-method-note{margin:0 0 4px;font-size:12px;line-height:1.5;color:var(--muted)}.payment-method-breakdown{display:grid;gap:3px;padding-top:6px;margin-top:3px;border-top:1px solid var(--line)}.payment-method-breakdown span{display:flex;justify-content:space-between;gap:4px;font-size:12px;color:var(--muted)}.payment-method-breakdown b{font-weight:700;color:var(--ink);font-size:12px;white-space:nowrap}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}
+.payment-method-stats-grid-three button:last-child{grid-column:1/-1}.payment-method-note{margin:0 0 4px;font-size:12px;line-height:1.5;color:var(--muted)}.payment-method-breakdown{display:grid;gap:3px;padding-top:6px;margin-top:3px;border-top:1px solid var(--line)}.payment-method-breakdown span{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:5px;font-size:11px;color:var(--muted);min-width:0}
+.payment-method-breakdown span b{text-align:right;font-size:clamp(11px,2.9vw,13px);overflow-wrap:anywhere}
+.payment-method-breakdown span small{font-size:10px;white-space:nowrap}
+.payment-method-title{font-weight:700;font-size:13px;overflow-wrap:anywhere}
+.payment-method-unassigned{display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;min-height:42px;padding:9px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink);text-align:left;font:inherit;font-size:12px}
+.payment-method-unassigned strong{margin-left:auto;white-space:nowrap;font-size:13px}
+.payment-method-unassigned small{color:var(--muted);font-size:11px}
+.payment-method-unassigned:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.payment-method-breakdown b{font-weight:700;color:var(--ink);font-size:12px;white-space:nowrap}.payment-method-stats-grid button{display:grid;gap:5px;text-align:left;min-width:0;min-height:80px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink)}.payment-method-stats-grid strong{font-size:17px;overflow-wrap:anywhere}.payment-method-stats-grid small{color:var(--muted)}.payment-method-stats-grid button:disabled{opacity:.65;cursor:default}.payment-method-stats-grid button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.text-entry-details{margin-top:10px}.text-entry-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 0}.text-entry-details[open] summary{margin-bottom:8px}.text-entry-details textarea{width:100%;box-sizing:border-box}
 /* Period controls live alongside the section title, not in the global top bar. */
 .page-heading{gap:10px;min-width:0}.page-heading>div:first-child{min-width:0}.heading-period{display:flex;align-items:center;gap:5px;flex:none;min-width:0}.heading-period .month{width:135px;max-width:100%;font-size:13px}.heading-year{display:flex;align-items:center;gap:3px;flex:none;padding:0 8px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--muted);font-size:12px;font-weight:750}
 @media(max-width:390px){.page-heading .heading-period .month{width:115px;font-size:12px}.page-heading .heading-period .period-reset{padding:8px 6px}.page-heading:has(.heading-period),.page-heading:has(.heading-year){gap:6px}}

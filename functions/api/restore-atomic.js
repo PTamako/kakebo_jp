@@ -46,9 +46,9 @@ export async function restoreAtomic(db, archive) {
   const historicalDefault = category => ['日用品','工资','投資・資産移動'].includes(category)?1:0
   for (const source of archive.paymentSources||[]) {
     if(source.source_type==='prepaid'){
-      add("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day,source_type,opening_balance,opening_date,opening_entry_id) VALUES(?1,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE sort_order<99999),?2,'prepaid',0,'__restore_pending__',0)",source.name,source.closing_day??null)
+      add("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day,source_type,stat_group,opening_balance,opening_date,opening_entry_id) VALUES(?1,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE sort_order<99999),?2,'prepaid',?3,0,'__restore_pending__',0)",source.name,source.closing_day??null,source.stat_group||'card')
     }else{
-      add("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END,?2)",source.name,source.closing_day??null)
+      add("INSERT OR IGNORE INTO payment_sources(name,sort_order,closing_day,stat_group) VALUES(?1,CASE WHEN ?1 IN ('その他','其他') THEN 99999 ELSE (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources WHERE name NOT IN ('その他','其他') AND sort_order<99999) END,?2,?3)",source.name,source.closing_day??null,source.name==='現金'?'card':source.stat_group||'card')
     }
   }
   const preferred=(archive.paymentSources||[]).find(s=>s.is_default)

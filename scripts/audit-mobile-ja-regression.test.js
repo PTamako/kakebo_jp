@@ -41,7 +41,7 @@ test('prepaid source transfers are subtracted from balance, excluded until due, 
   const history=read('src/prepaid-history.js')
   assert.match(api,/transferred_out/)
   assert.match(api,/Number\(p\.spent\)-Number\(p\.transferred_out\)/)
-  assert.match(balance,/balance=opening\+charged-spent-transferredOut/)
+  assert.match(balance,/balance=opening\+charged\+earned-spent-transferredOut/)
   assert.match(history,/entry\.type==='transfer' && entry\.payment_source===filter\.card/)
   assert.match(formApi,/同じプリペイドカードへの振替は登録できません/)
 })

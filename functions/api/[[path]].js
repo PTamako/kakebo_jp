@@ -32,7 +32,7 @@ async function rewardDestination(db, e) {
 }
 const pointTopUpSql = `INSERT INTO entries
   (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
-  SELECT date,time,amount,'投資・資産移動','ポイント還元','ポイント還元の自動チャージ','','transfer',
+  SELECT date,time,amount,'投資・資産移動',substr(transfer_target,9)||'チャージ','ポイント還元の自動チャージ','','transfer',
     transfer_target,0,date,?2,'ポイント還元'
   FROM entries WHERE client_request_id=?1 AND type='income' AND category='ポイント還元' AND transfer_target=?3
   ON CONFLICT(client_request_id) DO UPDATE SET
@@ -737,7 +737,13 @@ export async function onRequest({ request, env, params }) {
       const result = await db.batch([
         db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
-        db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2 AND EXISTS (SELECT 1 FROM payment_sources WHERE name=?3)').bind('prepaid:'+newName,'prepaid:'+oldName,oldName),
+        db.prepare(`UPDATE entries
+          SET transfer_target=?1, merchant=CASE
+            WHEN type='transfer' AND client_request_id LIKE 'point_charge_%'
+              AND merchant IN ('ポイント還元',?3||'チャージ') THEN ?4||'チャージ'
+            ELSE merchant END
+          WHERE transfer_target=?2 AND EXISTS (SELECT 1 FROM payment_sources WHERE name=?5)`)
+          .bind('prepaid:'+newName,'prepaid:'+oldName,oldName,newName,oldName),
         db.prepare('UPDATE entries SET transfer_target=?1 WHERE transfer_target=?2 AND EXISTS (SELECT 1 FROM payment_sources WHERE name=?3)').bind('credit:'+newName,'credit:'+oldName,oldName),
         db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),
         db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2 AND '+present).bind(newName,oldName),

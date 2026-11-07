@@ -15,7 +15,10 @@ export async function restoreAtomic(db, archive) {
   // Each request is atomic. The client sends bounded, idempotent stages
   // rather than dropping settings from a large archive.
   if (allEntries.length > 500 || totalSettings > 500) throw Error('atomic_restore_too_large')
-  if (!allEntries.every(e=>typeof e.clientRequestId === 'string' && /^restore_[a-f0-9]{32}$/.test(e.clientRequestId)))
+  if (!allEntries.every(e=>typeof e.clientRequestId === 'string' &&
+      (/^restore_[a-f0-9]{32}$/.test(e.clientRequestId) ||
+       /^point_charge_(?:restore_[a-f0-9]{32}|entry_[1-9][0-9]*|[a-zA-Z0-9_-]{8,100})$/.test(e.clientRequestId) ||
+       /^recurring_[a-zA-Z0-9]{8,80}_(?:[0-9]{6}|[0-9]{8})$/.test(e.clientRequestId))))
     throw Error('atomic_restore_invalid_ids')
   if (new Set(allEntries.map(e=>e.clientRequestId)).size!==allEntries.length)
     throw Error('atomic_restore_duplicate_ids')
@@ -102,7 +105,12 @@ export async function restoreAtomic(db, archive) {
   const insertedIndexes=[]
   const appendEntry=e=>{
     const type=e.type, transfer=type==='transfer'
-    const target=transfer && (e.transfer_target==='sbi' || /^prepaid:[^:]{1,80}$/.test(e.transfer_target||'')) ? e.transfer_target : null
+    const pointIncome=type==='income' && e.category==='ポイント還元'
+    const destination=String(e.transfer_target||'')
+    const target=transfer && (destination==='sbi' || /^prepaid:[^:]{1,80}$/.test(destination))
+      ? destination
+      : pointIncome && (/^prepaid:[^:]{1,80}$/.test(destination) ||
+        /^credit:[^:]{1,80}$/.test(destination)) ? destination : null
     const transferDate=transfer?(e.transfer_date||e.date):null
     // Applied status is a derived fact, NEVER trust a backup's flag for
     // future-dated SBI transfers. Preserve the manual valuation separately.

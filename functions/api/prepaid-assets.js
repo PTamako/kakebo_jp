@@ -80,7 +80,7 @@ export async function handlePrepaid({db,request,method,sub}) {
         AND e.date<=?1 AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
         AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out_month
     FROM payment_sources p WHERE p.source_type='prepaid'
-    ORDER BY p.sort_order,p.name`).bind(today,monthStart).all()
+    ORDER BY p.is_archived,p.sort_order,p.name`).bind(today,monthStart).all()
   // Latest activity is read-only and uses exactly the same opening anchor/date
   // predicates as the balance and card-history filters. No extra ledger table.
   const [latestUsage,latestCharge] = await Promise.all([

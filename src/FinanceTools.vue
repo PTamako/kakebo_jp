@@ -8,7 +8,7 @@ import { duplicateTrashKey, recurringTrashKey, transferTrashKey, visibleReviewed
 import AmountInput from './AmountInput.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
-import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings } from './finance-tools.js'
+import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
 import { isCardBilledEntry, cardBilledAmount } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
@@ -653,12 +653,19 @@ async function restore(){
     investmentPlans:[],investmentPlanHistory:[],investmentHoldings:[],
     fundPrices:[],transferLinks:[],categoryIcons:{}
   }
-  const makeRestoreRow=async e=>{
-    const payload=JSON.stringify([e.id,e.backupIndex,e.date,e.time,e.amount,e.merchant,e.type,e.category,e.note,e.payment_source,e.transfer_target,e.transfer_date])
-    const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload))
-    const clientRequestId='restore_'+Array.from(new Uint8Array(hash)).slice(0,16).map(x=>x.toString(16).padStart(2,'0')).join('')
-    restoreOwnKeys.value=new Map([...restoreOwnKeys.value,[clientRequestId,transactionKey(e)]])
-    return {...e,clientRequestId}
+  // Compute cross-batch relationships BEFORE writing the first D1 batch.
+  // A partial selection must not strand a generated point-charge record.
+  let preparedRows
+  try {
+    preparedRows=await prepareLinkedRestoreRows(selectedRows,backup.entries,rows.value,
+      [...(backup.plans||[]),...(backup.archivedPlans||[])])
+  }catch(e){message.value='復元の関連付けを確認してください：'+e.message;return}
+  const preparedByIndex=new Map(preparedRows.map(e=>[e.backupIndex,e]))
+  const makeRestoreRow=e=>{
+    const row=preparedByIndex.get(e.backupIndex)
+    if(!row)throw Error('復元元の明細を確認してください')
+    restoreOwnKeys.value=new Map([...restoreOwnKeys.value,[row.clientRequestId,transactionKey(e)]])
+    return row
   }
   busy.value=true
   let completed=0,settingsRestored=0,alreadyPresent=0,processed=0
@@ -666,8 +673,8 @@ async function restore(){
     for(let i=0;i<jobs.length;i++){
       const job=jobs[i]
       const [atomicRows,deferredPrepaidEntries]=await Promise.all([
-        Promise.all(job.rows.map(makeRestoreRow)),
-        Promise.all(job.deferred.map(makeRestoreRow))
+        Promise.resolve(job.rows.map(makeRestoreRow)),
+        Promise.resolve(job.deferred.map(makeRestoreRow))
       ])
       const included=[...job.rows,...job.deferred]
       const oldIds=new Set(included.map(e=>Number(e.id)))

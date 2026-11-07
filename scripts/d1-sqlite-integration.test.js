@@ -1290,3 +1290,81 @@ test('audit: indexed month/year queries retain exact totals and cursor paginatio
     assert.ok(plan.some(r=>r.detail.includes('idx_entries_date')))
   }finally{db.close()}
 })
+
+test('source archive: credit and prepaid history, bills and wallet balance remain intact',async()=>{
+  const {db,call}=await createClient()
+  try{
+    assert.equal((await call('payment-sources','POST',{name:'楽天カード'})).status,200)
+    assert.equal((await call('payment-sources','POST',{name:'Suica',sourceType:'prepaid'})).status,200)
+    assert.equal((await call('payment-sources/default','POST',{name:'楽天カード'})).status,200)
+    assert.equal((await call('entries','POST',{date:'2026-10-15',amount:2200,type:'expense',
+      merchant:'historical credit',paymentSource:'楽天カード'})).status,200)
+    const earned=await call('entries','POST',{date:'2026-10-15',amount:900,type:'income',
+      category:'ポイント還元',merchant:'point redemption',rewardDestination:'prepaid:Suica',
+      clientRequestId:'archive_earned_20261107'})
+    assert.equal(earned.status,200)
+    const before=(await call('prepaid-assets')).body.cards.find(x=>x.name==='Suica')
+    assert.equal(before.balance,900)
+    assert.equal(db.db.prepare("SELECT COUNT(*) n FROM entries WHERE client_request_id='point_charge_archive_earned_20261107'").get().n,1)
+    const countBefore=db.db.prepare('SELECT COUNT(*) n FROM entries').get().n
+    for(const name of ['楽天カード','Suica']){
+      const response=await call('payment-sources/archive','POST',{name,archived:true})
+      assert.equal(response.status,200,name)
+      assert.equal(response.body.archived,true)
+      assert.equal((await call('payment-sources')).body.find(x=>x.name===name).is_archived,1)
+    }
+    assert.equal((await call('payment-sources')).body.find(x=>x.name==='楽天カード').is_default,0)
+    assert.equal((await call('payment-sources/default','POST',{name:'楽天カード'})).status,400)
+    assert.equal((await call('entries','POST',{date:'2026-10-16',amount:100,type:'expense',
+      paymentSource:'楽天カード'})).status,409)
+    assert.equal((await call('entries','POST',{date:'2026-10-16',amount:20,type:'transfer',
+      paymentSource:'現金',transferTarget:'prepaid:Suica'})).status,409)
+    assert.equal((await call('entries','POST',{date:'2026-10-16',amount:20,type:'income',
+      category:'ポイント還元',rewardDestination:'prepaid:Suica',clientRequestId:'archive_again_20261107'})).status,400)
+    assert.equal((await call('prepaid-assets')).body.cards.find(x=>x.name==='Suica').balance,before.balance)
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM entries').get().n,countBefore)
+    const backup=(await call('backup-snapshot')).body
+    assert.equal(backup.paymentSources.find(x=>x.name==='Suica').is_archived,1)
+    assert.equal(backup.paymentSources.find(x=>x.name==='楽天カード').is_archived,1)
+    assert.equal((await call('payment-sources/remove','POST',{name:'Suica'})).status,409)
+    for(const name of ['楽天カード','Suica'])
+      assert.equal((await call('payment-sources/archive','POST',{name,archived:false})).status,200)
+    assert.equal((await call('payment-sources')).body.find(x=>x.name==='Suica').is_archived,0)
+    assert.equal((await call('prepaid-assets')).body.cards.find(x=>x.name==='Suica').balance,900)
+  }finally{db.close()}
+})
+test('source archive: active recurring blocks archiving until disabled, unused prepaid deletes',async()=>{
+  const {db,call}=await createClient()
+  try{
+    assert.equal((await call('payment-sources','POST',{name:'Recurring Card'})).status,200)
+    const plan={id:'33333333-2222-3333-4444-555555555555',name:'fixed',
+      amount:3500,day:14,category:'日用品',paymentSource:'Recurring Card',startMonth:'2026-10',enabled:true}
+    assert.equal((await call('recurring-plans','POST',plan)).status,200)
+    const rejected=await call('payment-sources/archive','POST',{name:'Recurring Card',archived:true})
+    assert.equal(rejected.status,409)
+    assert.equal(rejected.body.code,'active_recurring_plan')
+    assert.equal((await call('payment-sources')).body.find(x=>x.name==='Recurring Card').is_archived,0)
+    // A disabled plan still references the historical card but no longer auto-posts.
+    db.db.prepare('UPDATE recurring_plans SET enabled=0 WHERE id=?').run(plan.id)
+    assert.equal((await call('payment-sources/archive','POST',{name:'Recurring Card',archived:true})).status,200)
+    assert.equal((await call('payment-sources/remove','POST',{name:'Recurring Card'})).status,409)
+    assert.equal((await call('payment-sources','POST',{name:'Fresh Wallet',sourceType:'prepaid'})).status,200)
+    assert.equal((await call('payment-sources/remove','POST',{name:'Fresh Wallet'})).status,200)
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM payment_sources WHERE name=?').get('Fresh Wallet').n,0)
+  }finally{db.close()}
+})
+test('card points rebates lower utilization without a second prepaid transfer',async()=>{
+  const {db,call}=await createClient()
+  try{
+    assert.equal((await call('payment-sources','POST',{name:'Visa'})).status,200)
+    assert.equal((await call('entries','POST',{date:'2026-10-12',amount:2000,type:'expense',paymentSource:'Visa'})).status,200)
+    assert.equal((await call('entries','POST',{date:'2026-10-13',amount:900,type:'income',
+      category:'ポイント還元',rewardDestination:'credit:Visa'})).status,200)
+    assert.equal(db.db.prepare("SELECT COUNT(*) n FROM entries WHERE type='transfer'").get().n,0)
+    const saved=await call('card-bills/recalculate','POST',{name:'Visa',month:'2026-10',
+      start:'2026-10-01',end:'2026-10-31'})
+    assert.equal(saved.status,200)
+    assert.equal(saved.body.total,1100)
+    assert.equal(db.db.prepare("SELECT COUNT(*) n FROM entries WHERE type='income' AND category='ポイント還元'").get().n,1)
+  }finally{db.close()}
+})

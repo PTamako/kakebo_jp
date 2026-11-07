@@ -9,7 +9,7 @@ import AmountInput from './AmountInput.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
-import { isCardBilledEntry, cardBilledAmount } from './card-billing.js'
+import { isCardBilledEntry, cardBilledAmount, billingPeriodForMonth } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { recurringDatesInMonth, recurringFrequencyLabel, tokyoDateAt, WEEKDAYS_JA } from './recurring-posting.js'
@@ -178,21 +178,8 @@ async function renameCard() {
   }
   cardMode.value = ''
 }
-const cardPeriod = computed(() => {
-  if (!isCreditCard(bill.value.name)) return null
-  const match = /^(\d{4})-(\d{2})$/.exec(bill.value.month)
-  const day = closingDayFor(bill.value.name)
-  if (!match || !day) return null
-  const year = Number(match[1]), month = Number(match[2])
-  if (month < 1 || month > 12) return null
-  const last = (y,m) => new Date(Date.UTC(y,m,0)).getUTCDate()
-  const cutoff = (y,m) => day === '末日' ? last(y,m) : Math.min(Number(day),last(y,m))
-  const previous = new Date(Date.UTC(year,month-2,1))
-  const py = previous.getUTCFullYear(), pm = previous.getUTCMonth()+1
-  const start = new Date(Date.UTC(py,pm-1,cutoff(py,pm)+1)).toISOString().slice(0,10)
-  const end = [year,String(month).padStart(2,'0'),String(cutoff(year,month)).padStart(2,'0')].join('-')
-  return {start,end}
-})
+const cardPeriod = computed(() => isCreditCard(bill.value.name)
+  ? billingPeriodForMonth(bill.value.month, closingDayFor(bill.value.name)) : null)
 const newPaymentSource = ref('')
 const newSourceType = ref('standard')
 const newStatGroup = ref('card')
@@ -457,6 +444,25 @@ watch(creditCardSources, sources => {
   if (bill.value.name && !sources.includes(bill.value.name)) bill.value.name = ''
 })
 const settingsReady = ref(false)
+const jobHealth=ref([])
+const jobHealthBusy=ref(false)
+const jobHealthError=ref('')
+const jobNames={recurring:'固定費自動記帳',sbi:'SBI積立振替',nav:'投信基準価額更新'}
+async function loadJobHealth() {
+  if(jobHealthBusy.value)return
+  jobHealthBusy.value=true;jobHealthError.value=''
+  try {
+    const result=await props.api('job-health')
+    if(!Array.isArray(result))throw Error('応答形式を確認してください')
+    jobHealth.value=result
+  }catch(e){jobHealthError.value='実行履歴を取得できません：'+e.message}
+  finally{jobHealthBusy.value=false}
+}
+function jobHealthText(row) {
+  const state=row?.status==='failed'?'失敗':row?.status==='skipped'?'休場日のため対象外':'成功'
+  const when=row?.scheduledAt ? new Date(row.scheduledAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}) : '日時不明'
+  return when+' · '+state
+}
 async function loadFinanceSettings() {
   const [loadedPlans,loadedBills] = await Promise.all([props.api('recurring-plans'),props.api('card-bills')])
   if (!Array.isArray(loadedPlans) || !Array.isArray(loadedBills)) throw Error('保存データの形式が不正です')
@@ -1227,7 +1233,12 @@ async function removePlan(id) {
 const cardTransactions=computed(()=>rows.value.filter(e=>isCardBilledEntry(e,cardPeriod.value,bill.value.name)))
 const cardTotal=computed(()=>Math.max(0,cardTransactions.value.reduce((sum,e)=>sum+cardBilledAmount(e),0)))
 const selectedSavedBill = computed(() => isCreditCard(bill.value.name) ? bills.value.find(record => record.name === bill.value.name && record.month === bill.value.month) || null : null)
-const savedBillDifference = computed(() => selectedSavedBill.value && loaded.value ? cardTotal.value - Number(selectedSavedBill.value.total) : null)
+const savedBillDifference = computed(() => selectedSavedBill.value
+  ? Number(selectedSavedBill.value.currentTotal ?? cardTotal.value)-Number(selectedSavedBill.value.total) : null)
+const selectedSavedBillStale = computed(() => !!selectedSavedBill.value &&
+  (selectedSavedBill.value.stale ||
+    selectedSavedBill.value.start !== cardPeriod.value?.start ||
+    selectedSavedBill.value.end !== cardPeriod.value?.end))
 const cardBillHistory = computed(() => isCreditCard(bill.value.name) ? bills.value.filter(record => record.name === bill.value.name && record.month !== bill.value.month).slice().sort((a,b) => b.month.localeCompare(a.month)) : [])
 
 function viewCardBillDetails() {
@@ -1486,25 +1497,32 @@ async function removeCardBill(record) {
     </div>
     <p v-if="!loaded">全明細を更新してください。</p>
     <p v-else-if="bill.name && cardPeriod" class="card-billing-period">{{cardPeriod.start}} ～ {{cardPeriod.end}} · {{cardTransactions.length}}件（資産移動・ポイント還元を含む）</p>
-    <p v-if="selectedSavedBill" class="card-billing-period">保存済み請求額は保存時点の記録です。明細を編集・削除した後は「この月の利用額を保存」で再計算してください。</p>
+    <p v-if="selectedSavedBillStale" class="card-billing-period" role="status">保存済みの請求額と現在のD1明細・締め期間に差があります。再計算して保存してください。</p>
     <div v-if="bill.name" class="card-billing-actions">
       <button type="button" class="card-billing-save" :disabled="!settingsReady || !loaded || !isCreditCard(bill.name) || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
       <button type="button" class="card-billing-detail" :disabled="!settingsReady || !isCreditCard(bill.name) || !cardPeriod" @click="viewCardBillDetails">明細を見る</button>
     </div>
     <div v-if="selectedSavedBill" class="finance-saved-bill">
-      <div class="finance-saved-bill-text"><span class="finance-saved-bill-caption">保存済みの請求額 · {{selectedSavedBill.month}}</span><strong>{{yen(selectedSavedBill.total)}}</strong><span v-if="savedBillDifference !== null" role="status">{{savedBillDifference === 0 ? '現在の明細と一致' : '現在の明細との差額：'+yen(savedBillDifference)+'（再保存すると更新）'}}</span></div>
+      <div class="finance-saved-bill-text"><span class="finance-saved-bill-caption">保存済みの請求額 · {{selectedSavedBill.month}}</span><strong>{{yen(selectedSavedBill.total)}}</strong><span v-if="savedBillDifference !== null" role="status">{{selectedSavedBillStale ? '現在の明細との差額：'+yen(savedBillDifference)+'（更新が必要）' : '現在の明細と一致'}}</span></div>
       <button type="button" class="finance-compact-action" @click="removeCardBill(selectedSavedBill)" :aria-label="selectedSavedBill.month+' の保存済み請求額を削除'">削除</button>
     </div>
     <details v-if="bill.name && cardBillHistory.length" class="finance-bill-history">
       <summary>過去の保存済み請求 <span>{{cardBillHistory.length}}件</span></summary>
       <div class="finance-bill-history-scroll">
         <div v-for="record in cardBillHistory" :key="record.name+'-'+record.month" class="finance-row finance-bill-history-row">
-          <span>{{record.month}} · {{yen(record.total)}}</span>
+          <span>{{record.month}} · {{yen(record.total)}}<span v-if="record.stale"> · 要再計算</span></span>
           <button type="button" class="finance-compact-action" @click="removeCardBill(record)" :aria-label="record.name+' '+record.month+' の請求額を削除'">削除</button>
         </div>
       </div>
     </details>
   </article>
+  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
+    <summary>定期処理の実行状況</summary>
+    <button type="button" :disabled="jobHealthBusy" @click="loadJobHealth">{{jobHealthBusy?'確認中…':'最新の実行結果を確認'}}</button>
+    <p v-if="jobHealthError" role="alert">{{jobHealthError}}</p>
+    <p v-if="!jobHealthBusy && jobHealth.length===0">記録がありません。次の実行後に再確認してください。</p>
+    <p v-for="row in jobHealth" :key="row.job" :role="row.status==='failed'?'alert':undefined">{{jobNames[row.job]||row.job}}：{{jobHealthText(row)}}</p>
+  </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure device-privacy-panel">
     <summary>端末のプライバシー設定</summary>
     <div class="device-privacy-section">

@@ -7,6 +7,9 @@ import { nextAutomaticStartMonth, recurringRequestId, scheduledRecurringOnDate, 
 import { recurringManualSlot } from './recurring-collision.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
+import { validateRegisteredPaymentSource } from './payment-source-validation.js'
+import { getCardBillSnapshots } from './card-bill-snapshots.js'
+import { readScheduledJobStatus } from './scheduled-job-status.js'
 import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
 // Cloudflare Pages Functions：/api/*
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
@@ -377,8 +380,7 @@ export async function onRequest({ request, env, params }) {
           }
           return json(results.map(p => ({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled,postingMode:p.posting_mode||'manual',autoFromMonth:p.auto_from_month||'',scheduleType:p.workday_only?'workday':(p.schedule_type||'monthly'),weekday:Number(p.weekday||0), ...(trash ? {archivedAt:p.archived_at} : {})})))
         }
-        const {results} = await db.prepare('SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY bill_month DESC,payment_source').all()
-        return json(results.map(x => ({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})))
+        return json(await getCardBillSnapshots(db))
       }
       if (a === 'recurring-plans') {
         if (m === 'POST' && !b) {
@@ -390,9 +392,8 @@ export async function onRequest({ request, env, params }) {
               typeof item.category !== 'string' || !item.category || typeof item.paymentSource !== 'string' ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') || typeof item.enabled !== 'boolean' || !['auto','manual'].includes(item.postingMode ?? 'manual') || !['monthly','weekly','workday'].includes(item.scheduleType ?? 'monthly') || !Number.isInteger(item.weekday ?? 0) || (item.weekday ?? 0)<0 || (item.weekday ?? 0)>6)
             return json({error:'固定支出の入力を確認してください'},400)
-          if(item.enabled && item.paymentSource &&
-            await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(item.paymentSource).first())
-            return json({error:'アーカイブ済みカードを使う固定費は有効にできません',code:'payment_source_archived'},409)
+          const paymentProblem=await validateRegisteredPaymentSource(db,item.paymentSource,{allowArchived:!item.enabled})
+          if(paymentProblem)return json({error:paymentProblem.error,code:paymentProblem.code},paymentProblem.status)
           const mode=item.postingMode||'manual'
           const workdayOnly=item.scheduleType==='workday'?1:0
           const storedSchedule=workdayOnly?'weekly':(item.scheduleType||'monthly')
@@ -409,9 +410,8 @@ export async function onRequest({ request, env, params }) {
               typeof item.paymentSource !== 'string' ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
               typeof item.enabled !== 'boolean' || (item.postingMode != null && !['auto','manual'].includes(item.postingMode)) || (item.scheduleType != null && !['monthly','weekly','workday'].includes(item.scheduleType)) || !Number.isInteger(item.weekday ?? 0) || (item.weekday ?? 0)<0 || (item.weekday ?? 0)>6) return json({error:'固定支出の入力を確認してください'},400)
-          if(item.enabled && item.paymentSource &&
-            await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(item.paymentSource).first())
-            return json({error:'アーカイブ済みカードを使う固定費は有効にできません',code:'payment_source_archived'},409)
+          const paymentProblem=await validateRegisteredPaymentSource(db,item.paymentSource,{allowArchived:!item.enabled})
+          if(paymentProblem)return json({error:paymentProblem.error,code:paymentProblem.code},paymentProblem.status)
           const prior = await db.prepare("SELECT name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b).first()
           if (!prior) return json({error:'固定支出が見つかりません'},404)
           const mode=item.postingMode ?? prior.posting_mode
@@ -498,6 +498,10 @@ export async function onRequest({ request, env, params }) {
         }
       }
       return json({error:'未対応の操作です'},405)
+    }
+    if (a === 'job-health' && m === 'GET') {
+      try { return json(await readScheduledJobStatus(db)) }
+      catch { return json({error:'定期処理の記録を確認できません',code:'job_status_unavailable'},503) }
     }
     if (a === 'backup-snapshot' && m === 'GET') {
       // db.batch() executes all SELECTs inside one D1 transaction, preventing
@@ -987,8 +991,8 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日付または金額が正しくありません' }, 400)
         const paymentSource = e.paymentSource == null ? '' : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
-        if(paymentSource && await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(paymentSource).first())
-          return json({error:'アーカイブ済みの支払方法は新しい記帳に使用できません',code:'payment_source_archived'},409)
+        const sourceProblem=await validateRegisteredPaymentSource(db,paymentSource)
+        if(sourceProblem)return json({error:sourceProblem.error,code:sourceProblem.code},sourceProblem.status)
         const reward=await rewardDestination(db,e)
         if(reward.error)return json({error:reward.error},400)
         const rawTarget=transfer?String(e.transferTarget||''):''
@@ -1058,9 +1062,8 @@ export async function onRequest({ request, env, params }) {
         const linkedId=pointChargeId(previous.client_request_id,id)
         const paymentSource = e.paymentSource == null ? (previous.payment_source || '') : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
-        if(paymentSource!==previous.payment_source && paymentSource &&
-          await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(paymentSource).first())
-          return json({error:'アーカイブ済みのカードへ変更できません',code:'payment_source_archived'},409)
+        const sourceProblem=await validateRegisteredPaymentSource(db,paymentSource,{currentSource:previous.payment_source})
+        if(sourceProblem)return json({error:sourceProblem.error,code:sourceProblem.code},sourceProblem.status)
         const rawTarget=transfer?String(e.transferTarget||''):''
         if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
         if(transfer&&rawTarget!==previous.transfer_target&&rawTarget.startsWith('prepaid:') &&

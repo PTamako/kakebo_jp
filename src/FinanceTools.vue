@@ -672,10 +672,8 @@ async function restore(){
   try{
     for(let i=0;i<jobs.length;i++){
       const job=jobs[i]
-      const [atomicRows,deferredPrepaidEntries]=await Promise.all([
-        Promise.resolve(job.rows.map(makeRestoreRow)),
-        Promise.resolve(job.deferred.map(makeRestoreRow))
-      ])
+      const atomicRows=job.rows.map(makeRestoreRow)
+      const deferredPrepaidEntries=job.deferred.map(makeRestoreRow)
       const included=[...job.rows,...job.deferred]
       const oldIds=new Set(included.map(e=>Number(e.id)))
       const scopedArchive={

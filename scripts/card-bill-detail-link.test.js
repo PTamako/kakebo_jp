@@ -66,6 +66,11 @@ test('billing-period navigation opens all matching transactions including transf
   assert.ok(opener,'drilldown navigation handler exists')
   const state = {
     paymentSources:{value:['楽天カード','PayPayカード']},
+    paymentSourceMeta:{value:{
+      '楽天カード':{source_type:'standard'},
+      'PayPayカード':{source_type:'standard'},
+      '過去カード':{source_type:'standard',is_archived:1}
+    }},
     month:{value:'2026-11'},
     editListReturn:{value:null},
     prepaidHistoryFilter:{value:{card:'Suica'}},
@@ -99,6 +104,10 @@ test('billing-period navigation opens all matching transactions including transf
   assert.equal(state.detailSourceEntries.value[0].type,'transfer')
   assert.equal(state.visibleEntryCount.value,20)
   assert.equal(state.detailLoading.value,false)
+  assert.equal(state.paymentSources.value.includes('過去カード'),false)
+  await open({name:'過去カード',month:'2026-10',start:'2026-09-11',end:'2026-10-10'})
+  assert.equal(state.detailFilter.value.cardName,'過去カード')
+  assert.equal(state.tab.value,'list')
 })
 
 test('ledger shows billing period, transfer-aware totals and a way to clear filtering',()=>{

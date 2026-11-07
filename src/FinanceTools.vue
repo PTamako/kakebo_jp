@@ -26,7 +26,9 @@ const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
 const archivedPaymentSources = computed(() => sortOtherLast(Object.values(props.paymentSourceMeta)
   .filter(card=>Boolean(card.is_archived)).map(card=>card.name)))
 const isCreditCard = name => !!name && !['現金','その他','其他'].includes(name) && props.paymentSourceMeta[name]?.source_type === 'standard'
-const creditCardSources = computed(() => orderedPayments.value.filter(isCreditCard))
+// Archived cards remain selectable for viewing their historical saved bills.
+const creditCardSources = computed(() => sortOtherLast([...orderedPayments.value,
+  ...archivedPaymentSources.value].filter(isCreditCard)))
 const managementTab = ref('cards')
 const appContext = inject('kakeibo-page-context', null)
 const investmentRefreshKey = ref(0)
@@ -1473,7 +1475,7 @@ async function removeCardBill(record) {
   <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">
     <h2>カード別利用額</h2>
     <div class="finance-inputs card-billing-fields">
-      <label>カード<select v-model="bill.name" aria-label="カード名"><option value="">カードを選択</option><option v-for="source in creditCardSources" :key="source" :value="source">{{source}}</option></select></label>
+      <label>カード<select v-model="bill.name" aria-label="カード名"><option value="">カードを選択</option><option v-for="source in creditCardSources" :key="source" :value="source">{{source}}{{props.paymentSourceMeta[source]?.is_archived?'（アーカイブ済み）':''}}</option></select></label>
       <label>締め月<input class="card-closing-month" v-model="bill.month" type="month" aria-label="締め月"></label>
       <label>利用額<output class="card-usage-total" aria-live="polite">{{loaded && bill.name && cardPeriod ? yen(cardTotal) : "—"}}</output></label>
     </div>

@@ -12,6 +12,16 @@ import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../
 const validTime = value => value == null || value === '' || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
 
+// Date ranges are indexed; LIKE prefixes otherwise scan every ledger entry.
+const entryDateBounds = period => {
+  if(typeof period!=='string'||!/^\d{4}(?:-(0[1-9]|1[0-2]))?$/.test(period))return null
+  const year=Number(period.slice(0,4));if(year<1||year>9998)return null
+  const nextYear=String(year+1).padStart(4,'0')
+  if(period.length===4)return {start:period+'-01-01',end:nextYear+'-01-01'}
+  const month=Number(period.slice(5))
+  return {start:period+'-01',end:month===12?nextYear+'-01-01':
+    period.slice(0,5)+String(month+1).padStart(2,'0')+'-01'}
+}
 const pointChargeId = (requestId, entryId) =>
   requestId && requestId.length <= 100 ? 'point_charge_' + requestId : 'point_charge_entry_' + entryId
 const isPointCharge = e => typeof e?.client_request_id === 'string' && e.client_request_id.startsWith('point_charge_')
@@ -680,6 +690,12 @@ export async function onRequest({ request, env, params }) {
         const card=await db.prepare('SELECT source_type FROM payment_sources WHERE name=?1').bind(name).first()
         if(card?.source_type==='prepaid')return json({error:'プリペイドカードは通常タイプへ戻してから削除してください'},409)
       }
+      // Source identifiers are part of history; never orphan an old bill or reward.
+      const historical=await db.prepare(`SELECT 1 AS linked FROM entries
+        WHERE payment_source=?1 OR transfer_target='prepaid:'||?1 OR transfer_target='credit:'||?1
+        UNION ALL SELECT 1 FROM card_bills WHERE payment_source=?1
+        UNION ALL SELECT 1 FROM recurring_plans WHERE payment_source=?1 LIMIT 1`).bind(name).first()
+      if(historical)return json({error:'過去の明細・保存済み請求・固定費で使用中のため削除できません。名称変更で履歴を保持してください',code:'payment_source_in_use'},409)
       await db.batch([
         db.prepare('DELETE FROM merchant_rules WHERE payment_source=?1 AND category IS NULL').bind(name),
         db.prepare('UPDATE merchant_rules SET payment_source=NULL WHERE payment_source=?1').bind(name),
@@ -911,12 +927,14 @@ export async function onRequest({ request, env, params }) {
             (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) ||
             (!entriesYear && !month)) return json({ error: '対象期間が正しくありません' }, 400)
         const datePrefix = entriesYear || month
+        const bounds=entryDateBounds(datePrefix)
+        if(!bounds)return json({error:'対象期間が正しくありません'},400)
         // Stable ID-cursor pagination for full exports. Keep OFFSET for older clients.
         const cursorRaw = url.searchParams.get('cursor')
         if (cursorRaw !== null) {
           const cursor = Number(cursorRaw)
           if (!Number.isSafeInteger(cursor) || cursor < 0) return json({error:'読み込み位置が正しくありません'},400)
-          const {results} = await db.prepare('SELECT * FROM entries WHERE date LIKE ?1 AND id > ?2 ORDER BY id ASC LIMIT 500').bind(datePrefix+'%',cursor).all()
+          const {results} = await db.prepare('SELECT * FROM entries WHERE date>=?1 AND date<?2 AND id>?3 ORDER BY id ASC LIMIT 500').bind(bounds.start,bounds.end,cursor).all()
           return json(results)
         }
         const offsetRaw = url.searchParams.get('offset')
@@ -925,8 +943,8 @@ export async function onRequest({ request, env, params }) {
         // Legacy clients get the same list shape; the annual view requests 500-row pages.
         const limit = offsetRaw === null ? 10000 : 500
         const { results } = await db
-          .prepare('SELECT * FROM entries WHERE date LIKE ?1 ORDER BY date DESC, time DESC, id DESC LIMIT ?2 OFFSET ?3')
-          .bind(datePrefix + '%', limit, offset).all()
+          .prepare('SELECT * FROM entries WHERE date>=?1 AND date<?2 ORDER BY date DESC, time DESC, id DESC LIMIT ?3 OFFSET ?4')
+          .bind(bounds.start,bounds.end,limit,offset).all()
         return json(results)
       }
       if (m === 'POST') {
@@ -1028,10 +1046,14 @@ export async function onRequest({ request, env, params }) {
           .bind(...args)
         // Always keep the generated charge in the same D1 transaction as its
         // income record. Switching destinations removes the old generated row.
+        // changes() reads the preceding UPDATE within the same D1 batch.
+        // If a stale optimistic edit updates zero rows, no auto-charge mutation.
         const pairedWrite=reward.target?.startsWith('prepaid:')
-          ? db.prepare(pointTopUpSql.replace('client_request_id=?1 AND type=', 'id=?1 AND type='))
+          ? db.prepare(pointTopUpSql.replace('client_request_id=?1 AND type=', 'id=?1 AND type=')
+              .replace('AND transfer_target=?3\n  ON CONFLICT',
+                'AND transfer_target=?3 AND changes()>0\n  ON CONFLICT'))
               .bind(id,linkedId,reward.target)
-          : db.prepare("DELETE FROM entries WHERE client_request_id=?1 AND type='transfer' AND category='投資・資産移動'")
+          : db.prepare("DELETE FROM entries WHERE client_request_id=?1 AND type='transfer' AND category='投資・資産移動' AND changes()>0")
               .bind(linkedId)
         const needsPairUpdate=(previous.type==='income' && previous.category==='ポイント還元') ||
           reward.target?.startsWith('prepaid:')
@@ -1299,24 +1321,26 @@ export async function onRequest({ request, env, params }) {
       const year = url.searchParams.get('year') || ''
       if (year) {
         if (!/^\d{4}$/.test(year)) return json({ error: '対象年の形式が正しくありません' }, 400)
-        const like = year + '%'
-        const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income, COALESCE(SUM(CASE WHEN type = 'transfer' THEN amount ELSE 0 END),0) transferTotal, SUM(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END) transferCount, COUNT(*) recordCount FROM entries WHERE date LIKE ?1").bind(like).first()
-        const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()
-        const monthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY substr(date,1,7) ORDER BY month").bind(like).all()
-        const day = await db.prepare("SELECT substr(date,1,10) date, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY substr(date,1,10) ORDER BY date").bind(like).all()
-        const incomeMonthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY substr(date,1,7) ORDER BY month").bind(like).all()
-        const incomeCategoryRows = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY category ORDER BY amount DESC").bind(like).all()
-        const incomeMonthCategoryRows = await db.prepare("SELECT substr(date,1,7) month, category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'income' GROUP BY substr(date,1,7), category ORDER BY month, amount DESC").bind(like).all()
-        const paymentRows = await db.prepare("SELECT CASE WHEN e.type='income' AND e.category='ポイント還元' AND e.transfer_target LIKE 'credit:%' AND LENGTH(e.transfer_target)>7 THEN 'ポイント払い' WHEN e.type='transfer' AND (TRIM(COALESCE(e.payment_source,''))='' OR e.payment_source IN ('その他','其他')) THEN '振替元未指定' WHEN TRIM(COALESCE(e.payment_source,'')) = '' OR e.payment_source = '現金' THEN '現金' WHEN p.stat_group='points' THEN 'ポイント払い' ELSE 'カード・電子決済' END method, SUM(CASE WHEN e.type='expense' THEN 1 ELSE 0 END) count, COALESCE(SUM(CASE WHEN e.type='expense' THEN e.amount ELSE 0 END),0) amount, COALESCE(SUM(CASE WHEN e.type='expense' THEN e.amount ELSE 0 END),0) expenseAmount, COALESCE(SUM(CASE WHEN e.type='transfer' THEN e.amount ELSE 0 END),0) transferAmount, SUM(CASE WHEN e.type='expense' THEN 1 ELSE 0 END) expenseCount, SUM(CASE WHEN e.type='transfer' THEN 1 ELSE 0 END) transferCount, COALESCE(SUM(CASE WHEN e.type='income' THEN e.amount ELSE 0 END),0) creditOffsetAmount, SUM(CASE WHEN e.type='income' THEN 1 ELSE 0 END) creditOffsetCount FROM entries e LEFT JOIN payment_sources p ON p.name=e.payment_source WHERE e.date LIKE ?1 AND (e.type IN ('expense','transfer') OR (e.type='income' AND e.category='ポイント還元' AND e.transfer_target LIKE 'credit:%' AND LENGTH(e.transfer_target)>7)) GROUP BY method ORDER BY amount DESC").bind(like).all()
+        const {start:rangeStart,end:rangeEnd}=entryDateBounds(year)||{}
+        if(!rangeStart)return json({error:'対象年の形式が正しくありません'},400)
+        const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income, COALESCE(SUM(CASE WHEN type = 'transfer' THEN amount ELSE 0 END),0) transferTotal, SUM(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END) transferCount, COUNT(*) recordCount FROM entries WHERE date>=?1 AND date<?2").bind(rangeStart,rangeEnd).first()
+        const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date>=?1 AND date<?2 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(rangeStart,rangeEnd).all()
+        const monthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date>=?1 AND date<?2 AND type = 'expense' GROUP BY substr(date,1,7) ORDER BY month").bind(rangeStart,rangeEnd).all()
+        const day = await db.prepare("SELECT substr(date,1,10) date, SUM(amount) amount FROM entries WHERE date>=?1 AND date<?2 AND type = 'expense' GROUP BY substr(date,1,10) ORDER BY date").bind(rangeStart,rangeEnd).all()
+        const incomeMonthRows = await db.prepare("SELECT substr(date,1,7) month, SUM(amount) amount FROM entries WHERE date>=?1 AND date<?2 AND type = 'income' GROUP BY substr(date,1,7) ORDER BY month").bind(rangeStart,rangeEnd).all()
+        const incomeCategoryRows = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date>=?1 AND date<?2 AND type = 'income' GROUP BY category ORDER BY amount DESC").bind(rangeStart,rangeEnd).all()
+        const incomeMonthCategoryRows = await db.prepare("SELECT substr(date,1,7) month, category, SUM(amount) amount FROM entries WHERE date>=?1 AND date<?2 AND type = 'income' GROUP BY substr(date,1,7), category ORDER BY month, amount DESC").bind(rangeStart,rangeEnd).all()
+        const paymentRows = await db.prepare("SELECT CASE WHEN e.type='income' AND e.category='ポイント還元' AND e.transfer_target LIKE 'credit:%' AND LENGTH(e.transfer_target)>7 THEN 'ポイント払い' WHEN e.type='transfer' AND (TRIM(COALESCE(e.payment_source,''))='' OR e.payment_source IN ('その他','其他')) THEN '振替元未指定' WHEN TRIM(COALESCE(e.payment_source,'')) = '' OR e.payment_source = '現金' THEN '現金' WHEN p.stat_group='points' THEN 'ポイント払い' ELSE 'カード・電子決済' END method, SUM(CASE WHEN e.type='expense' THEN 1 ELSE 0 END) count, COALESCE(SUM(CASE WHEN e.type='expense' THEN e.amount ELSE 0 END),0) amount, COALESCE(SUM(CASE WHEN e.type='expense' THEN e.amount ELSE 0 END),0) expenseAmount, COALESCE(SUM(CASE WHEN e.type='transfer' THEN e.amount ELSE 0 END),0) transferAmount, SUM(CASE WHEN e.type='expense' THEN 1 ELSE 0 END) expenseCount, SUM(CASE WHEN e.type='transfer' THEN 1 ELSE 0 END) transferCount, COALESCE(SUM(CASE WHEN e.type='income' THEN e.amount ELSE 0 END),0) creditOffsetAmount, SUM(CASE WHEN e.type='income' THEN 1 ELSE 0 END) creditOffsetCount FROM entries e LEFT JOIN payment_sources p ON p.name=e.payment_source WHERE e.date>=?1 AND date<?2 AND (e.type IN ('expense','transfer') OR (e.type='income' AND e.category='ポイント還元' AND e.transfer_target LIKE 'credit:%' AND LENGTH(e.transfer_target)>7)) GROUP BY method ORDER BY amount DESC").bind(rangeStart,rangeEnd).all()
         const comparison = await periodComparison(day.results, { year })
         return json({ periodComparison: comparison, paymentMethods: paymentRows.results, year: Number(year), total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, recordCount: total.recordCount, byCategory: cat.results, byDay: day.results, byMonth: monthRows.results, incomeByMonth: incomeMonthRows.results, incomeByCategory: incomeCategoryRows.results, incomeByMonthCategory: incomeMonthCategoryRows.results })
       }
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({error:'集計月を確認してください'},400)
-      const like = month + '%'
-      const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income, COALESCE(SUM(CASE WHEN type = 'transfer' THEN amount ELSE 0 END),0) transferTotal, SUM(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END) transferCount, COUNT(*) recordCount FROM entries WHERE date LIKE ?1").bind(like).first()
-      const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(like).all()
-      const day = await db.prepare("SELECT substr(date,1,10) date, SUM(amount) amount FROM entries WHERE date LIKE ?1 AND type = 'expense' GROUP BY substr(date,1,10) ORDER BY date").bind(like).all()
-      const paymentRows = await db.prepare("SELECT CASE WHEN e.type='income' AND e.category='ポイント還元' AND e.transfer_target LIKE 'credit:%' AND LENGTH(e.transfer_target)>7 THEN 'ポイント払い' WHEN e.type='transfer' AND (TRIM(COALESCE(e.payment_source,''))='' OR e.payment_source IN ('その他','其他')) THEN '振替元未指定' WHEN TRIM(COALESCE(e.payment_source,'')) = '' OR e.payment_source = '現金' THEN '現金' WHEN p.stat_group='points' THEN 'ポイント払い' ELSE 'カード・電子決済' END method, SUM(CASE WHEN e.type='expense' THEN 1 ELSE 0 END) count, COALESCE(SUM(CASE WHEN e.type='expense' THEN e.amount ELSE 0 END),0) amount, COALESCE(SUM(CASE WHEN e.type='expense' THEN e.amount ELSE 0 END),0) expenseAmount, COALESCE(SUM(CASE WHEN e.type='transfer' THEN e.amount ELSE 0 END),0) transferAmount, SUM(CASE WHEN e.type='expense' THEN 1 ELSE 0 END) expenseCount, SUM(CASE WHEN e.type='transfer' THEN 1 ELSE 0 END) transferCount, COALESCE(SUM(CASE WHEN e.type='income' THEN e.amount ELSE 0 END),0) creditOffsetAmount, SUM(CASE WHEN e.type='income' THEN 1 ELSE 0 END) creditOffsetCount FROM entries e LEFT JOIN payment_sources p ON p.name=e.payment_source WHERE e.date LIKE ?1 AND (e.type IN ('expense','transfer') OR (e.type='income' AND e.category='ポイント還元' AND e.transfer_target LIKE 'credit:%' AND LENGTH(e.transfer_target)>7)) GROUP BY method ORDER BY amount DESC").bind(like).all()
+      const {start:rangeStart,end:rangeEnd}=entryDateBounds(month)||{}
+      if(!rangeStart)return json({error:'集計月を確認してください'},400)
+      const total = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END),0) t, SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END) n, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END),0) income, COALESCE(SUM(CASE WHEN type = 'transfer' THEN amount ELSE 0 END),0) transferTotal, SUM(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END) transferCount, COUNT(*) recordCount FROM entries WHERE date>=?1 AND date<?2").bind(rangeStart,rangeEnd).first()
+      const cat = await db.prepare("SELECT category, SUM(amount) amount FROM entries WHERE date>=?1 AND date<?2 AND type = 'expense' GROUP BY category ORDER BY amount DESC").bind(rangeStart,rangeEnd).all()
+      const day = await db.prepare("SELECT substr(date,1,10) date, SUM(amount) amount FROM entries WHERE date>=?1 AND date<?2 AND type = 'expense' GROUP BY substr(date,1,10) ORDER BY date").bind(rangeStart,rangeEnd).all()
+      const paymentRows = await db.prepare("SELECT CASE WHEN e.type='income' AND e.category='ポイント還元' AND e.transfer_target LIKE 'credit:%' AND LENGTH(e.transfer_target)>7 THEN 'ポイント払い' WHEN e.type='transfer' AND (TRIM(COALESCE(e.payment_source,''))='' OR e.payment_source IN ('その他','其他')) THEN '振替元未指定' WHEN TRIM(COALESCE(e.payment_source,'')) = '' OR e.payment_source = '現金' THEN '現金' WHEN p.stat_group='points' THEN 'ポイント払い' ELSE 'カード・電子決済' END method, SUM(CASE WHEN e.type='expense' THEN 1 ELSE 0 END) count, COALESCE(SUM(CASE WHEN e.type='expense' THEN e.amount ELSE 0 END),0) amount, COALESCE(SUM(CASE WHEN e.type='expense' THEN e.amount ELSE 0 END),0) expenseAmount, COALESCE(SUM(CASE WHEN e.type='transfer' THEN e.amount ELSE 0 END),0) transferAmount, SUM(CASE WHEN e.type='expense' THEN 1 ELSE 0 END) expenseCount, SUM(CASE WHEN e.type='transfer' THEN 1 ELSE 0 END) transferCount, COALESCE(SUM(CASE WHEN e.type='income' THEN e.amount ELSE 0 END),0) creditOffsetAmount, SUM(CASE WHEN e.type='income' THEN 1 ELSE 0 END) creditOffsetCount FROM entries e LEFT JOIN payment_sources p ON p.name=e.payment_source WHERE e.date>=?1 AND date<?2 AND (e.type IN ('expense','transfer') OR (e.type='income' AND e.category='ポイント還元' AND e.transfer_target LIKE 'credit:%' AND LENGTH(e.transfer_target)>7)) GROUP BY method ORDER BY amount DESC").bind(rangeStart,rangeEnd).all()
       const comparison = await periodComparison(day.results, { month })
       return json({ periodComparison: comparison, paymentMethods: paymentRows.results, total: total.t, count: total.n, income: total.income, transferTotal: total.transferTotal, transferCount: total.transferCount, recordCount: total.recordCount, byCategory: cat.results, byDay: day.results })
     }

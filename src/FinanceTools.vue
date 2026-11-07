@@ -1341,7 +1341,7 @@ async function removeCardBill(record) {
       </div>
     </details>
   </article>
-  <details v-show="managementTab === 'tools'" class="finance-panel merchant-rules-panel">
+  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure merchant-rules-panel">
     <summary class="merchant-rules-summary"><span>店舗ルール管理</span><span class="merchant-rules-count">{{ merchantRulesCombined.length }}件</span></summary>
     <div v-if="merchantRulesCombined.length" class="merchant-rule-search">
       <input type="search" :value="merchantRuleSearch" @input="searchMerchantRules($event.target.value)" placeholder="店舗名・カテゴリ・カードで検索" aria-label="店舗ルールを検索" />
@@ -1681,10 +1681,9 @@ async function removeCardBill(record) {
 .merchant-rules-panel{gap:10px}
 .merchant-rules-summary{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;min-height:32px;font-weight:700;font-size:17px;list-style:none}
 .merchant-rules-summary::-webkit-details-marker{display:none}
-.merchant-rules-summary::before{content:'›';font-size:21px;transform:rotate(0deg);transition:transform .15s;color:var(--muted)}
-.merchant-rules-panel[open] .merchant-rules-summary::before{transform:rotate(90deg)}
-.merchant-rules-summary>span:first-of-type{flex:1}
-.merchant-rules-count{font-size:12px;font-weight:600;color:var(--muted)}
+/* Reuse the same block layout and right-hand chevron as other Tools disclosures. */
+.merchant-rules-panel>.merchant-rules-summary>span:first-of-type{flex:1;min-width:0;color:var(--ink);font-size:15px;font-weight:750}
+.merchant-rules-count{flex:none;font-size:11px;font-weight:500;color:var(--muted)}
 .merchant-rule-search{display:flex;align-items:center;gap:9px;min-width:0}
 .merchant-rule-search input{flex:1;min-width:0;width:100%;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink)}
 .merchant-rule-search span{flex:none;white-space:nowrap;font-size:12px;color:var(--muted)}

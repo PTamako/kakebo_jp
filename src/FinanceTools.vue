@@ -1304,11 +1304,11 @@ async function removeCardBill(record) {
           <option v-for="day in 31" :key="day" :value="String(day)">{{day}}日</option><option value="末日">月末</option>
         </select>
       </label>
-      <div class="finance-inputs card-edit-actions">
-        <button type="button" :disabled="busy" @click="saveCardType">{{editSourceType!==selectedSourceType?'種別を保存':'保存'}}</button>
-        <button type="button" :disabled="busy" @click="cardMode = ''">閉じる</button>
-        <button v-if="!['現金','その他','其他'].includes(selectedCard)" type="button" :disabled="busy" @click="archivePaymentSource(selectedCard)">アーカイブ</button>
-        <button v-if="selectedCard !== '現金'" type="button" :disabled="busy" @click="removePaymentSource(selectedCard)">完全削除</button>
+      <div class="finance-inputs card-edit-actions" role="group" aria-label="カード編集の操作">
+        <button type="button" class="card-edit-save" :disabled="busy" @click="saveCardType">{{editSourceType!==selectedSourceType?'種別を保存':'保存'}}</button>
+        <button type="button" class="card-edit-icon card-edit-close" :disabled="busy" @click="cardMode = ''" aria-label="閉じる" title="閉じる"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        <button v-if="!['現金','その他','其他'].includes(selectedCard)" type="button" class="card-edit-icon card-edit-archive" :disabled="busy" @click="archivePaymentSource(selectedCard)" aria-label="カードをアーカイブ" title="アーカイブ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/></svg></button>
+        <button v-if="selectedCard !== '現金'" type="button" class="card-edit-icon card-edit-delete" :disabled="busy" @click="removePaymentSource(selectedCard)" aria-label="カードを完全削除" title="完全削除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v7m4-7v7"/></svg></button>
       </div>
     </div>
     <details v-if="archivedPaymentSources.length" class="card-archive-disclosure">
@@ -1982,4 +1982,13 @@ async function removeCardBill(record) {
 .backup-receipt-group .device-privacy-row{align-items:center}
 .backup-receipt-group>button{width:100%;min-height:44px}
 
+
+/* Four card-edit actions must remain a single touch-safe row on iPhone widths.
+   Keep Save readable; icon-only secondary actions retain accessible names. */
+.finance-panel .card-edit-actions{display:flex;flex-wrap:nowrap;align-items:stretch;gap:6px;min-width:0;max-width:100%;width:100%;box-sizing:border-box}
+.finance-panel .card-edit-actions>button{display:inline-flex;align-items:center;justify-content:center;min-width:0;min-height:44px;height:44px;padding:0;margin:0;white-space:nowrap;box-sizing:border-box}
+.finance-panel .card-edit-actions>.card-edit-save{flex:1 1 0;min-width:0;padding:0 8px;font-size:13px;font-weight:750}
+.finance-panel .card-edit-actions>.card-edit-icon{flex:0 0 44px;width:44px;max-width:44px}
+.finance-panel .card-edit-actions>.card-edit-icon svg{display:block;width:20px;height:20px;flex:none}
+.finance-panel .card-edit-actions>.card-edit-delete{color:var(--danger,#b7495d)}
 </style>

@@ -1452,6 +1452,7 @@ async function removeCardBill(record) {
     </div>
     <p v-if="!loaded">全明細を更新してください。</p>
     <p v-else-if="bill.name && cardPeriod" class="card-billing-period">{{cardPeriod.start}} ～ {{cardPeriod.end}} · {{cardTransactions.length}}件（資産移動・ポイント還元を含む）</p>
+    <p v-if="selectedSavedBill" class="card-billing-period">保存済み請求額は保存時点の記録です。明細を編集・削除した後は「この月の利用額を保存」で再計算してください。</p>
     <div v-if="bill.name" class="card-billing-actions">
       <button type="button" class="card-billing-save" :disabled="!settingsReady || !loaded || !isCreditCard(bill.name) || !cardPeriod" @click="saveCardBill">この月の利用額を保存</button>
       <button type="button" class="card-billing-detail" :disabled="!settingsReady || !isCreditCard(bill.name) || !cardPeriod" @click="viewCardBillDetails">明細を見る</button>

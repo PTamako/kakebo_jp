@@ -51,7 +51,7 @@ test('A04/A07/A08: v4 SBI archive still accepts v1-v3 backups and guards restore
   assert.match(ui,/api\('entries\?year='\+year\+'&cursor='\+cursor\)/)
   assert.match(ui,/backupLedgerFingerprint\.value!==unrelatedLedgerFingerprint\(rows\.value\)/)
   assert.match(ui,/props\.api\('dismissed-transfer-reminders'\)/)
-  assert.match(read('functions/api/[[path]].js'),/SELECT \* FROM entries WHERE date LIKE \?1 AND id > \?2 ORDER BY id ASC LIMIT 500/)
+  assert.match(read('functions/api/[[path]].js'),/SELECT \* FROM entries WHERE date>=\?1 AND date<\?2 AND id>\?3 ORDER BY id ASC LIMIT 500/)
 })
 
 test('A05/A09/A10/A11/A12: filters, privacy, quota, local imagery and due transfers',()=>{

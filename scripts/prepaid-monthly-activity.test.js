@@ -18,11 +18,11 @@ const followingMonthStart = today => {
 test('wallet shows month-to-date activity, but calculates balance from full posted history', async () => {
   const sqlite = new DatabaseSync(':memory:')
   try {
-    sqlite.exec('CREATE TABLE payment_sources (name TEXT PRIMARY KEY, source_type TEXT, opening_balance INTEGER, opening_date TEXT, opening_entry_id INTEGER, sort_order INTEGER); CREATE TABLE entries (id INTEGER PRIMARY KEY, type TEXT, payment_source TEXT, transfer_target TEXT, date TEXT, transfer_date TEXT, amount INTEGER, time TEXT, merchant TEXT, category TEXT);')
+    sqlite.exec('CREATE TABLE payment_sources (name TEXT PRIMARY KEY, source_type TEXT, opening_balance INTEGER, opening_date TEXT, opening_entry_id INTEGER, sort_order INTEGER, is_archived INTEGER NOT NULL DEFAULT 0); CREATE TABLE entries (id INTEGER PRIMARY KEY, type TEXT, payment_source TEXT, transfer_target TEXT, date TEXT, transfer_date TEXT, amount INTEGER, time TEXT, merchant TEXT, category TEXT);')
     const today=dayInJST(), previous=previousMonthEnd(today), upcoming=followingMonthStart(today)
-    sqlite.prepare("INSERT INTO payment_sources VALUES (?,?,?,?,?,?)")
+    sqlite.prepare("INSERT INTO payment_sources (name,source_type,opening_balance,opening_date,opening_entry_id,sort_order) VALUES (?,?,?,?,?,?)")
       .run('Suica','prepaid',1000,previous,0,0)
-    sqlite.prepare("INSERT INTO payment_sources VALUES (?,?,?,?,?,?)")
+    sqlite.prepare("INSERT INTO payment_sources (name,source_type,opening_balance,opening_date,opening_entry_id,sort_order) VALUES (?,?,?,?,?,?)")
       .run('PASMO','prepaid',0,previous,0,1)
     const insert=sqlite.prepare('INSERT INTO entries (id,type,payment_source,transfer_target,date,transfer_date,amount,time,merchant) VALUES (?,?,?,?,?,?,?,?,?)')
     insert.run(1,'transfer','現金','prepaid:Suica',previous,previous,10000,'12:00','前月チャージ')
@@ -74,9 +74,9 @@ test('wallet shows month-to-date activity, but calculates balance from full post
 test('point wallet earns an income credit once and debits its linked Suica charge once', async () => {
   const sqlite = new DatabaseSync(':memory:')
   try {
-    sqlite.exec('CREATE TABLE payment_sources (name TEXT PRIMARY KEY, source_type TEXT, opening_balance INTEGER, opening_date TEXT, opening_entry_id INTEGER, sort_order INTEGER); CREATE TABLE entries (id INTEGER PRIMARY KEY, type TEXT, category TEXT, payment_source TEXT, transfer_target TEXT, date TEXT, transfer_date TEXT, amount INTEGER, time TEXT, merchant TEXT);')
+    sqlite.exec('CREATE TABLE payment_sources (name TEXT PRIMARY KEY, source_type TEXT, opening_balance INTEGER, opening_date TEXT, opening_entry_id INTEGER, sort_order INTEGER, is_archived INTEGER NOT NULL DEFAULT 0); CREATE TABLE entries (id INTEGER PRIMARY KEY, type TEXT, category TEXT, payment_source TEXT, transfer_target TEXT, date TEXT, transfer_date TEXT, amount INTEGER, time TEXT, merchant TEXT);')
     const today=dayInJST(), upcoming=followingMonthStart(today)
-    const insertCard=sqlite.prepare('INSERT INTO payment_sources VALUES (?,?,?,?,?,?)')
+    const insertCard=sqlite.prepare('INSERT INTO payment_sources (name,source_type,opening_balance,opening_date,opening_entry_id,sort_order) VALUES (?,?,?,?,?,?)')
     insertCard.run('ポイント還元','prepaid',0,today,2,0)
     insertCard.run('Suica','prepaid',0,today,2,1)
     const add=sqlite.prepare('INSERT INTO entries (id,date,type,category,payment_source,transfer_target,transfer_date,amount) VALUES (?,?,?,?,?,?,?,?)')

@@ -1299,7 +1299,8 @@ test('source archive: credit and prepaid history, bills and wallet balance remai
     assert.equal((await call('payment-sources/default','POST',{name:'楽天カード'})).status,200)
     assert.equal((await call('entries','POST',{date:'2026-10-15',amount:2200,type:'expense',
       merchant:'historical credit',paymentSource:'楽天カード'})).status,200)
-    const earned=await call('entries','POST',{date:'2026-10-15',amount:900,type:'income',
+    const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10)
+    const earned=await call('entries','POST',{date:today,amount:900,type:'income',
       category:'ポイント還元',merchant:'point redemption',rewardDestination:'prepaid:Suica',
       clientRequestId:'archive_earned_20261107'})
     assert.equal(earned.status,200)

@@ -21,7 +21,7 @@ test('the category and card dropdowns use the same stable Other-last order',()=>
   const app=sourceFile('src/App.vue')
   const form=sourceFile('src/TransactionForm.vue')
   const finance=sourceFile('src/FinanceTools.vue')
-  assert.match(app,/paymentSources\.value = sortOtherLast\(cards\.map\(x => x\.name\)\)/)
+  assert.match(app,/paymentSources\.value = sortOtherLast\(cards\.filter\(x=>!x\.is_archived\)\.map\(x => x\.name\)\)/)
   assert.match(app,/categories\.value = sortOtherLast\(rows\.filter\(row => row\.entry_type === 'expense'\)/)
   assert.match(app,/INCOME_CATEGORIES\.value = sortOtherLast\(rows\.filter\(row => row\.entry_type === 'income'\)/)
   assert.match(form,/v-for="source in orderedPayments"/)

@@ -20,6 +20,8 @@ class LedgerDb {
       args: [],
       bind(...args) { this.args = args; return this },
       async first() {
+        // Mock represents the pre-existing active-only card registry.
+        if (sql.startsWith('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1')) return null
         if (sql.startsWith('SELECT 1 AS linked FROM entries')) {
           const name=this.args[0]
           return db.entries.some(e=>e.payment_source===name || e.transfer_target==='prepaid:'+name || e.transfer_target==='credit:'+name) ||

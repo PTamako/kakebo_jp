@@ -106,10 +106,12 @@ async function loadPaymentSettings() {
   if (paymentSettingsLoading) return paymentSettingsLoading
   paymentSettingsLoading = (async () => {
     const cards = await api('payment-sources')
-    paymentSources.value = sortOtherLast(cards.map(x => x.name))
+    // Keep archived cards in metadata for old ledger references and management.
+    // Only active cards appear for NEW spending, receipts, top-ups and rewards.
+    paymentSources.value = sortOtherLast(cards.filter(x=>!x.is_archived).map(x => x.name))
     paymentSourceMeta.value = Object.fromEntries(cards.map(x => [x.name,x]))
     paymentClosingDays.value = Object.fromEntries(cards.filter(x => x.closing_day !== null && x.closing_day !== undefined).map(x => [x.name, x.closing_day]))
-    defaultPaymentSource.value = cards.find(x => x.is_default)?.name || ''
+    defaultPaymentSource.value = cards.find(x => x.is_default && !x.is_archived)?.name || ''
     merchantPaymentRules.value = await api('merchant-payment-rules')
     customCategoryRules.value = await api('custom-rules')
     paymentSettingsLoaded = true

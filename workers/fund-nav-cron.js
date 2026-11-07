@@ -3,6 +3,7 @@ import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
 import { applyDueSbiTransfers } from '../functions/api/investment-transfer.js'
 import { tokyoDateAt } from '../src/recurring-posting.js'
 import { isJapanHoliday } from '../src/japan-holidays.js'
+import { recordScheduledJobStatus } from '../functions/api/scheduled-job-status.js'
 
 // One D1-bound scheduled Worker: independent NAV, recurring-expense and SBI transfer jobs.
 // Production redeploy refresh: route each scheduled trigger independently; no D1 migration.
@@ -17,6 +18,13 @@ export default {
     const scheduledTime = Number.isFinite(event?.scheduledTime)
       ? event.scheduledTime : Date.now()
     const scheduledAt = new Date(scheduledTime).toISOString()
+    // Monitoring is best-effort: an unavailable heartbeat table must never
+    // block booking or updating NAV. Financial work retains its own errors.
+    const heartbeat = async (job,status,summary={}) => {
+      if(env?.HEARTBEAT_ENABLED!=='true')return
+      try { await recordScheduledJobStatus(env.DB,job,scheduledAt,status,summary) }
+      catch(error) { console.warn('Cron heartbeat unavailable',job,String(error?.message||error)) }
+    }
 
     if (RECURRING_CRONS.has(cron)) {
       const today = tokyoDateAt(scheduledTime)
@@ -25,7 +33,9 @@ export default {
         try {
           const result = await postScheduledRecurring(env.DB, {today})
           console.log('Recurring fixed-expense sync', JSON.stringify(result))
+          await heartbeat('recurring','success',result)
         } catch (error) {
+          await heartbeat('recurring','failed')
           console.error('Recurring fixed-expense sync failed', String(error?.message || error))
           throw error
         }
@@ -36,7 +46,9 @@ export default {
         try {
           const result = await applyDueSbiTransfers(env.DB, today)
           console.log('SBI due-transfer sync', JSON.stringify(result))
+          await heartbeat('sbi','success',result)
         } catch (error) {
+          await heartbeat('sbi','failed')
           console.error('SBI due-transfer sync failed', String(error?.message || error))
           throw error
         }
@@ -62,7 +74,9 @@ export default {
           })
           console.log('NAV sync',JSON.stringify(result))
           if (result.failed.length) throw Error('some fund quotes could not be refreshed')
+          await heartbeat('nav','success',result)
         } catch (error) {
+          await heartbeat('nav','failed')
           console.error('NAV sync failed', String(error?.message || error))
           throw error
         }

@@ -51,3 +51,21 @@ test('closing day only appears for an actual credit card, never cash, other or p
   assert.match(source, /:value="closingDayFor\(selectedCard\)"/)
   assert.match(source, /@change="saveClosingDay\(selectedCard,\$event\.target\.value\)"/)
 })
+
+test('card editing keeps Save, Close, Archive and Delete on one mobile row', () => {
+  const actions=source.match(/<div class="finance-inputs card-edit-actions"[\s\S]*?<\/div>/)?.[0] || ''
+  assert.equal((actions.match(/<button\b/g)||[]).length,4)
+  assert.match(actions,/class="card-edit-save"/)
+  assert.match(actions,/class="card-edit-icon card-edit-close"/)
+  assert.match(actions,/class="card-edit-icon card-edit-archive"/)
+  assert.match(actions,/class="card-edit-icon card-edit-delete"/)
+  assert.match(actions,/aria-label="閉じる"/)
+  assert.match(actions,/aria-label="カードをアーカイブ"/)
+  assert.match(actions,/aria-label="カードを完全削除"/)
+  assert.match(actions,/@click="saveCardType"/)
+  assert.match(actions,/@click="archivePaymentSource\(selectedCard\)"/)
+  assert.match(actions,/@click="removePaymentSource\(selectedCard\)"/)
+  assert.match(source,/\.finance-panel \.card-edit-actions\{display:flex;flex-wrap:nowrap;/)
+  assert.match(source,/\.finance-panel \.card-edit-actions>\.card-edit-icon\{flex:0 0 44px;/)
+  assert.match(source,/\.finance-panel \.card-edit-actions>button\{[^}]*min-height:44px/)
+})

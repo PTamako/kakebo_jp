@@ -2,8 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
+import { createHash } from 'node:crypto'
 import { prepareLinkedRestoreRows } from '../src/finance-tools.js'
 import { restoreAtomic } from '../functions/api/restore-atomic.js'
+import { onRequest } from '../functions/api/[[path]].js'
 import { isCardBilledEntry, cardBilledAmount } from '../src/card-billing.js'
 import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
 
@@ -125,4 +127,55 @@ test('archived cards remain viewable, while archived sources stay unavailable fo
   assert.match(app,/paymentSourceMeta\.value\[name\]\?\.source_type !== 'standard'/)
   assert.match(app,/cards\.filter\(x=>!x\.is_archived\)/)
   assert.match(prepaid,/ORDER BY p\.is_archived,p\.sort_order,p\.name/)
+})
+
+async function deleteEntryThroughApi(db,id) {
+  const token='b'.repeat(64)
+  const digest=createHash('sha256').update(token).digest('hex')
+  db.sqlite.prepare('INSERT OR IGNORE INTO device_sessions(token_hash,expires_at) VALUES(?,?)')
+    .run(digest,Date.now()+3600000)
+  const request=new Request('https://kakeibo-f17.pages.dev/api/entries/'+id,{
+    method:'DELETE',headers:{'x-session':token,'x-confirm-delete':String(id)}
+  })
+  const response=await onRequest({
+    request,env:{DB:db,AUTH_TOKEN:'test-access-code'},params:{path:['entries',String(id)]}
+  })
+  assert.equal(response.status,200,JSON.stringify(await response.clone().json()))
+  return response.json()
+}
+
+test('deleting a restored point reward atomically moves its paired charge to trash',async()=>{
+  const archive=makeArchive()
+  const rebuilt=await prepareLinkedRestoreRows(archive.entries,archive.entries,[],archive.plans)
+  const db=new D1()
+  try {
+    await restoreAtomic(db,{...archive,entries:rebuilt,
+      prepaidRestoreInProgress:true,prepaidFinalize:[{name:'Suica',openingBalance:900}]})
+    const income=db.sqlite.prepare("SELECT id FROM entries WHERE merchant='還元'").get()
+    const charge=db.sqlite.prepare("SELECT id FROM entries WHERE merchant='Suicaチャージ'").get()
+    const result=await deleteEntryThroughApi(db,income.id)
+    assert.equal(result.trashed,true)
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM entries WHERE id IN (?,?)')
+      .get(income.id,charge.id).n,0)
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM trash_items WHERE item_type='entry' AND item_id IN (?,?)")
+      .get(String(income.id),String(charge.id)).n,2)
+  } finally {db.close()}
+})
+
+test('deleting a restored fixed expense records its period exclusion and Cron cannot rebook it',async()=>{
+  const archive=makeArchive()
+  const rebuilt=await prepareLinkedRestoreRows(archive.entries,archive.entries,[],archive.plans)
+  const db=new D1()
+  try {
+    await restoreAtomic(db,{...archive,entries:rebuilt,
+      prepaidRestoreInProgress:true,prepaidFinalize:[{name:'Suica',openingBalance:900}]})
+    const due=db.sqlite.prepare("SELECT id FROM entries WHERE merchant='テスト家賃'").get()
+    const result=await deleteEntryThroughApi(db,due.id)
+    assert.equal(result.skippedRecurring,true)
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM recurring_candidate_exclusions WHERE plan_id=? AND month=?')
+      .get(archive.plans[0].id,'2026-11').n,1)
+    const rerun=await postScheduledRecurring(db,{today:'2026-11-07'})
+    assert.equal(rerun.created,0)
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM entries WHERE merchant='テスト家賃'").get().n,0)
+  } finally {db.close()}
 })

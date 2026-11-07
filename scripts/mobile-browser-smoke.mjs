@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {spawn} from 'node:child_process'
 import {webkit,devices} from 'playwright'
 const host='http://127.0.0.1:5173'
-const server=spawn('npm',['run','dev','--','--host','127.0.0.1','--port','5173'],{stdio:['ignore','pipe','pipe']})
+const server=spawn('npm',['run','dev','--','--host','127.0.0.1','--port','5173'],{stdio:['ignore','pipe','pipe'],detached:true})
 let logs=''
 server.stdout.on('data',x=>{logs+=String(x)})
 server.stderr.on('data',x=>{logs+=String(x)})
@@ -48,4 +48,10 @@ try{
     await context.close()
   }
   console.log('iPhone-size WebKit smoke passed (320/375/390/430px)')
-}finally{await browser?.close();server.kill('SIGTERM')}
+}finally{
+  await browser?.close()
+  try{process.kill(-server.pid,'SIGTERM')}catch{}
+  server.stdout.destroy()
+  server.stderr.destroy()
+  server.unref()
+}

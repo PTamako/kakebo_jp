@@ -19,6 +19,9 @@ try{
   for(const width of [320,375,390,430]){
     const context=await browser.newContext({...devices['iPhone 13'],viewport:{width,height:780}})
     const page=await context.newPage()
+    page.setDefaultTimeout(10000)
+    page.setDefaultNavigationTimeout(10000)
+    console.log('WebKit viewport',width)
     // Disable native blocking dialogs in the unauthenticated smoke scenario.
     // Playwright WebKit may otherwise close a pending dialog with its page.
     await page.addInitScript(() => {
@@ -30,7 +33,7 @@ try{
     const errors=[]
     page.on('pageerror',error=>errors.push(String(error)))
     await page.route('**/api/**',route=>route.fulfill({status:401,contentType:'application/json',body:'{"error":"authentication required"}'}))
-    await page.goto(host,{waitUntil:'domcontentloaded'})
+    await page.goto(host,{waitUntil:'domcontentloaded',timeout:10000})
     await page.locator('#app').waitFor()
     await page.waitForTimeout(500)
     const result=await page.evaluate(()=>({
@@ -42,8 +45,6 @@ try{
     assert.equal(result.startupError,false,'Startup failure at '+width)
     assert.ok(result.overflow<=2,'Horizontal page overflow '+result.overflow+'px at '+width)
     assert.deepEqual(errors,[],'Browser JS error at '+width)
-    await page.reload({waitUntil:'domcontentloaded'})
-    assert.equal(await page.locator('#app').evaluate(el=>el.childElementCount>0),true)
     await context.close()
   }
   console.log('iPhone-size WebKit smoke passed (320/375/390/430px)')

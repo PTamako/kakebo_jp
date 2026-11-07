@@ -1220,3 +1220,73 @@ test('actual SQLite: monthly and yearly card/cash/points totals are mutually exc
     assert.equal(updated.body.total,400,'reclassification cannot alter total spend')
   }finally{db.close()}
 })
+
+test('audit: stale optimistic points edits never delete or reassign auto charge',async()=>{
+  const {db,call}=await createClient()
+  try {
+    db.db.exec("INSERT INTO payment_sources(name,sort_order,source_type) VALUES ('Suica',1,'prepaid'),('nanacoモバイル',2,'prepaid'),('楽天カード',3,'standard')")
+    const created=await call('entries','POST',{date:'2026-11-06',time:'15:00',amount:4,
+      type:'income',category:'ポイント還元',merchant:'audit points',
+      rewardDestination:'prepaid:Suica',clientRequestId:'audit_stale_charge_20261107'})
+    assert.equal(created.status,200)
+    const id=created.body.id, keys=['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_date','payment_source']
+    const prior=db.db.prepare('SELECT * FROM entries WHERE id=?').get(id)
+    const expected=Object.fromEntries(keys.map(k=>[k,prior[k]]))
+    const body={date:prior.date,time:prior.time,amount:8,type:'income',category:prior.category,
+      merchant:prior.merchant,note:prior.note,raw:prior.raw,paymentSource:prior.payment_source,
+      rewardDestination:'prepaid:Suica',expected}
+    const good=await call('entries/'+id,'PUT',body)
+    assert.equal(good.status,200)
+    const linked='point_charge_audit_stale_charge_20261107'
+    assert.equal(db.db.prepare('SELECT amount FROM entries WHERE client_request_id=?').get(linked).amount,8)
+    const staleDelete=await call('entries/'+id,'PUT',{...body,amount:10,rewardDestination:''})
+    assert.equal(staleDelete.status,409)
+    assert.equal(staleDelete.body.code,'stale_entry')
+    const staleMove=await call('entries/'+id,'PUT',{...body,amount:10,rewardDestination:'prepaid:nanacoモバイル'})
+    assert.equal(staleMove.status,409)
+    assert.equal(staleMove.body.code,'stale_entry')
+    const pair=db.db.prepare('SELECT amount,transfer_target FROM entries WHERE client_request_id=?').get(linked)
+    assert.equal(pair.amount,8)
+    assert.equal(pair.transfer_target,'prepaid:Suica')
+    assert.equal(db.db.prepare("SELECT COUNT(*) n FROM entries WHERE transfer_target='prepaid:nanacoモバイル'").get().n,0)
+    const latest=db.db.prepare('SELECT * FROM entries WHERE id=?').get(id)
+    const freshExpected=Object.fromEntries(keys.map(k=>[k,latest[k]]))
+    assert.equal((await call('entries/'+id,'PUT',{...body,expected:freshExpected,rewardDestination:'credit:楽天カード'})).status,200)
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM entries WHERE client_request_id=?').get(linked).n,0)
+  }finally{db.close()}
+})
+test('audit: cards referenced by history or saved bills cannot be removed',async()=>{
+  const {db,call}=await createClient()
+  try{
+    for(const name of ['UsedVisa','SavedBill','Unused'])
+      assert.equal((await call('payment-sources','POST',{name})).status,200)
+    assert.equal((await call('entries','POST',{date:'2026-11-06',amount:100,type:'expense',paymentSource:'UsedVisa'})).status,200)
+    db.db.prepare("INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,'2026-11','2026-11-01','2026-11-30',100,1)").run('SavedBill')
+    for(const name of ['UsedVisa','SavedBill']){
+      const r=await call('payment-sources/remove','POST',{name})
+      assert.equal(r.status,409,name)
+      assert.equal(r.body.code,'payment_source_in_use')
+      assert.equal(db.db.prepare('SELECT COUNT(*) n FROM payment_sources WHERE name=?').get(name).n,1)
+    }
+    assert.equal((await call('payment-sources/remove','POST',{name:'Unused'})).status,200)
+  }finally{db.close()}
+})
+test('audit: indexed month/year queries retain exact totals and cursor pagination',async()=>{
+  const {db,call}=await createClient()
+  try{
+    for(const [date,type,amount] of [['2025-12-31','expense',999],['2026-10-31','expense',110],
+      ['2026-11-01','expense',220],['2026-11-02','income',400],['2026-12-01','transfer',45]])
+      assert.equal((await call('entries','POST',{date,type,amount,category:type==='income'?'其他收入':'日用品'})).status,200)
+    const month=await call('stats?month=2026-11'),year=await call('stats?year=2026')
+    assert.equal(month.status,200)
+    assert.equal(month.body.total,220)
+    assert.equal(month.body.income,400)
+    assert.equal(month.body.recordCount,2)
+    assert.equal(year.body.total,330)
+    assert.equal(year.body.transferTotal,45)
+    assert.equal((await call('entries?month=2026-11&cursor=0')).body.length,2)
+    assert.equal((await call('entries?year=2026&cursor=0')).body.length,4)
+    const plan=db.db.prepare('EXPLAIN QUERY PLAN SELECT * FROM entries WHERE date>=?1 AND date<?2 ORDER BY date DESC LIMIT 10').all('2026-11-01','2026-12-01')
+    assert.ok(plan.some(r=>r.detail.includes('idx_entries_date')))
+  }finally{db.close()}
+})

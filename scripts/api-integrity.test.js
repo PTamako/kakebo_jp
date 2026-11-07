@@ -20,6 +20,12 @@ class LedgerDb {
       args: [],
       bind(...args) { this.args = args; return this },
       async first() {
+        if (sql.startsWith('SELECT 1 AS linked FROM entries')) {
+          const name=this.args[0]
+          return db.entries.some(e=>e.payment_source===name || e.transfer_target==='prepaid:'+name || e.transfer_target==='credit:'+name) ||
+            [...db.cardBills.values()].some(b=>b.name===name) ||
+            [...db.recurringPlans.values()].some(p=>p.paymentSource===name) ? {linked:1}:null
+        }
         if (sql.includes("name='closing-days-migrated-v1'")) return db.financeSettings.has('closing-days-migrated-v1') ? {value:'true'} : null
         if (sql.includes("name='closing-days'")) return db.financeSettings.has('closing-days') ? {value:db.financeSettings.get('closing-days')} : null
         if (sql.startsWith('SELECT COUNT(*) AS n FROM payment_sources')) return {n:db.paymentSources.size}

@@ -25,7 +25,7 @@ export async function handlePrepaid({db,request,method,sub}) {
   if(method!=='GET'||sub)return json({error:'未対応の操作です'},405)
   const today=todayJST()
   const monthStart=today.slice(0,7)+'-01'
-  const {results:cards}=await db.prepare(`SELECT p.name,p.opening_balance,p.opening_entry_id,p.opening_date,
+  const {results:cards}=await db.prepare(`SELECT p.name,p.is_archived,p.opening_balance,p.opening_entry_id,p.opening_date,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name
         AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1

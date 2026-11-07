@@ -39,7 +39,8 @@ test('N06/N08: historical recurring rows require individual approval and deletio
 test('N02/N03: restore recognizes verified self writes and export detects concurrent edits',()=>{
   const ui=text('src/FinanceTools.vue')
   assert.match(ui,/unrelatedLedgerFingerprint\(rows\.value\)/)
-  assert.match(ui,/restoreOwnKeys\.value=new Map\(\[\.\.\.restoreOwnKeys\.value,\[clientRequestId,transactionKey\(e\)\]\]\)/)
+  assert.match(ui,/restoreOwnKeys\.value=new Map\(\[\.\.\.restoreOwnKeys\.value,\[row\.clientRequestId,transactionKey\(e\)\]\]\)/)
+  assert.match(ui,/prepareLinkedRestoreRows\(selectedRows,backup\.entries,rows\.value,/)
   assert.match(ui,/ledgerFingerprint\(rows\.value\)!==before/)
 })
 test('N07: backup rejects malformed child settings before touching the database',()=>{

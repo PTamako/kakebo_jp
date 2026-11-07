@@ -100,6 +100,90 @@ export function prepareRestoreRows(existing, incoming) {
   return { newRows, conflicts }
 }
 
+// Restore IDs are deterministic across retries, but financial relationships
+// must be rebased together: never use the source database's numeric entry IDs.
+export async function prepareLinkedRestoreRows(selectedRows, archiveEntries, existingRows = [], plans = []) {
+  const selectedIds = new Set(selectedRows.map(e => Number(e.id)))
+  if (selectedIds.size !== selectedRows.length ||
+      selectedRows.some(e => !Number.isSafeInteger(Number(e.id)) || Number(e.id) <= 0))
+    throw Error('復元元の明細IDを確認してください')
+
+  const originalChargeParents = new Map()
+  const originalChargeRows = new Map()
+  for (const income of archiveEntries) {
+    if (income.type !== 'income' || income.category !== 'ポイント還元' ||
+        !String(income.transfer_target || '').startsWith('prepaid:')) continue
+    const requestId = income.client_request_id
+    const originalPairId = typeof requestId === 'string' && requestId && requestId.length <= 100
+      ? 'point_charge_' + requestId : 'point_charge_entry_' + income.id
+    originalChargeParents.set(originalPairId, income)
+  }
+  for (const entry of archiveEntries) {
+    if (entry.type !== 'transfer' || typeof entry.client_request_id !== 'string' ||
+        !entry.client_request_id.startsWith('point_charge_')) continue
+    const income = originalChargeParents.get(entry.client_request_id)
+    if (!income || entry.transfer_target !== income.transfer_target ||
+        Number(entry.amount) !== Number(income.amount) || entry.date !== income.date ||
+        entry.payment_source !== 'ポイント還元')
+      throw Error('バックアップのポイント自動チャージに対応する還元収入がありません')
+    if (originalChargeRows.has(Number(income.id)))
+      throw Error('ポイント自動チャージが重複しています')
+    originalChargeRows.set(Number(income.id), entry)
+  }
+  for (const [parentId, charge] of originalChargeRows) {
+    if (selectedIds.has(parentId) && !selectedIds.has(Number(charge.id)))
+      throw Error('ポイント還元収入と自動チャージはセットで復元してください')
+    if (selectedIds.has(Number(charge.id)) && !selectedIds.has(parentId)) {
+      const income = originalChargeParents.get(charge.client_request_id)
+      if (!existingRows.some(e => transactionKey(e) === transactionKey(income)))
+        throw Error('自動チャージの元となるポイント還元収入も復元してください')
+    }
+  }
+
+  const idByOriginalEntry = new Map()
+  for (const entry of selectedRows) {
+    const payload = JSON.stringify([
+      entry.id, entry.backupIndex, entry.date, entry.time, entry.amount, entry.merchant,
+      entry.type, entry.category, entry.note, entry.payment_source,
+      entry.transfer_target, entry.transfer_date
+    ])
+    const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
+    let id = 'restore_' + Array.from(new Uint8Array(bytes)).slice(0,16)
+      .map(x => x.toString(16).padStart(2,'0')).join('')
+    // Keep a genuine recurring occurrence's server ID. Cron deduplication and
+    // explicit deletion/skipping both depend on this exact occurrence identity.
+    const original = String(entry.client_request_id || '')
+    if (entry.type === 'expense' && plans.some(plan => {
+      const prefix = 'recurring_' + String(plan.id || '').replace(/-/g,'') + '_'
+      const suffix = original.startsWith(prefix) ? original.slice(prefix.length) : ''
+      return /^\d{6}(?:\d{2})?$/.test(suffix) &&
+        suffix.length === (plan.scheduleType === 'monthly' || !plan.scheduleType ? 6 : 8)
+    })) id = original
+    idByOriginalEntry.set(Number(entry.id), id)
+  }
+
+  return selectedRows.map(entry => {
+    let clientRequestId = idByOriginalEntry.get(Number(entry.id))
+    const parent = originalChargeParents.get(entry.client_request_id)
+    if (parent && entry.type === 'transfer') {
+      const restoredParentId = idByOriginalEntry.get(Number(parent.id))
+      const existingParent = restoredParentId ? null
+        : existingRows.find(e => transactionKey(e) === transactionKey(parent))
+      const source = restoredParentId || (
+        existingParent && typeof existingParent.client_request_id === 'string' &&
+        /^[a-zA-Z0-9_-]{8,100}$/.test(existingParent.client_request_id)
+          ? existingParent.client_request_id : null
+      )
+      clientRequestId = source ? 'point_charge_' + source :
+        existingParent && Number.isSafeInteger(Number(existingParent.id))
+          ? 'point_charge_entry_' + existingParent.id : ''
+      if (!clientRequestId || clientRequestId.length > 128)
+        throw Error('ポイント還元と自動チャージの対応関係を復元できません')
+    }
+    return {...entry, clientRequestId}
+  })
+}
+
 export function validateBackup(value) {
   if (!value || value.format !== 'kakeibo-ledger-backup' ||
       ![1, 2, 3, backupVersion].includes(value.version) || !Array.isArray(value.entries)) {

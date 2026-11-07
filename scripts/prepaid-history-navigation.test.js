@@ -19,7 +19,7 @@ test('each prepaid card exposes its own charge and usage links',()=>{
 
 test('prepaid history navigates to current month in existing ledger tab',()=>{
  assert.match(app,/async function openPrepaidHistoryDetails\(cardName,kind\)/)
- assert.match(app,/prepaidSources\.value\.includes\(cardName\)/)
+ assert.match(app,/paymentSourceMeta\.value\[cardName\]\?\.source_type !== 'prepaid'/)
  assert.match(app,/const targetMonth = currentMonth\(\)/)
  assert.match(app,/month\.value = targetMonth/)
  assert.match(app,/tab\.value = 'list'/)
@@ -48,7 +48,7 @@ test('new prepaid names are dynamic: no special-case Suica or PASMO requirement'
  assert.equal(matchesPrepaidHistoryEntry(charge,{card:'Suica',kind:'charge'}),false)
  assert.equal(matchesPrepaidHistoryEntry(usage,{card:'PASMO',kind:'usage'}),false)
  assert.match(wallet,/v-for="card in \(showAll \? data.cards : data.cards.slice\(0,2\)\)"/)
- assert.match(app,/prepaidSources\.value\.includes\(cardName\)/)
+ assert.match(app,/paymentSourceMeta\.value\[cardName\]\?\.source_type !== 'prepaid'/)
 })
 
 test('navigation does not re-import old payment settings or create D1 history',()=>{

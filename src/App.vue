@@ -1133,7 +1133,7 @@ const matchesPrepaidHistory = entry => matchesPrepaidHistoryEntry(entry,
   prepaidHistoryFilter.value ? {...prepaidHistoryFilter.value,reportingMonth:month.value,
     matchedUnassignedPointIncomeIds:matchingLegacyPointCredits.value} : null)
 async function openPrepaidHistoryDetails(cardName,kind) {
-  if (!prepaidSources.value.includes(cardName) || !['charge','usage'].includes(kind)) return
+  if (paymentSourceMeta.value[cardName]?.source_type !== 'prepaid' || !['charge','usage'].includes(kind)) return
   editListReturn.value = null
   detailRequestId++
   detailLoading.value = false
@@ -1340,7 +1340,7 @@ async function openCardBillDetails(details) {
   const start = String(details?.start || '')
   const end = String(details?.end || '')
   const closingMonth = String(details?.month || '')
-  if (!paymentSources.value.includes(name) ||
+  if (paymentSourceMeta.value[name]?.source_type !== 'standard' ||
       !/^\d{4}-(0[1-9]|1[0-2])$/.test(closingMonth) ||
       !/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(start) ||
       !/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(end) ||

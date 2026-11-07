@@ -390,6 +390,9 @@ export async function onRequest({ request, env, params }) {
               typeof item.category !== 'string' || !item.category || typeof item.paymentSource !== 'string' ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') || typeof item.enabled !== 'boolean' || !['auto','manual'].includes(item.postingMode ?? 'manual') || !['monthly','weekly','workday'].includes(item.scheduleType ?? 'monthly') || !Number.isInteger(item.weekday ?? 0) || (item.weekday ?? 0)<0 || (item.weekday ?? 0)>6)
             return json({error:'固定支出の入力を確認してください'},400)
+          if(item.enabled && item.paymentSource &&
+            await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(item.paymentSource).first())
+            return json({error:'アーカイブ済みカードを使う固定費は有効にできません',code:'payment_source_archived'},409)
           const mode=item.postingMode||'manual'
           const workdayOnly=item.scheduleType==='workday'?1:0
           const storedSchedule=workdayOnly?'weekly':(item.scheduleType||'monthly')
@@ -406,6 +409,9 @@ export async function onRequest({ request, env, params }) {
               typeof item.paymentSource !== 'string' ||
               !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.startMonth || '') ||
               typeof item.enabled !== 'boolean' || (item.postingMode != null && !['auto','manual'].includes(item.postingMode)) || (item.scheduleType != null && !['monthly','weekly','workday'].includes(item.scheduleType)) || !Number.isInteger(item.weekday ?? 0) || (item.weekday ?? 0)<0 || (item.weekday ?? 0)>6) return json({error:'固定支出の入力を確認してください'},400)
+          if(item.enabled && item.paymentSource &&
+            await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(item.paymentSource).first())
+            return json({error:'アーカイブ済みカードを使う固定費は有効にできません',code:'payment_source_archived'},409)
           const prior = await db.prepare("SELECT name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only FROM recurring_plans WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=?1)").bind(b).first()
           if (!prior) return json({error:'固定支出が見つかりません'},404)
           const mode=item.postingMode ?? prior.posting_mode

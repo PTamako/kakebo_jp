@@ -122,7 +122,7 @@ test('changing cards while editing refreshes the name and cannot rename the prev
   assert.ok(editor)
   assert.match(editor, /<input :key="selectedCard" v-model="editedCardName"/)
   assert.match(editor, /:disabled="busy \|\| selectedCard === '現金'"/)
-  assert.match(editor, /<button type="button" :disabled="busy" @click="saveCardType">\{\{editSourceType!==selectedSourceType\?'種別を保存':'保存'\}\}<\/button>/)
+  assert.match(editor, /<button type="button" class="card-edit-save" :disabled="busy" @click="saveCardType">\{\{editSourceType!==selectedSourceType\?'種別を保存':'保存'\}\}<\/button>/)
   assert.match(finance, /if\(kind===selectedSourceType\.value\)return renameCard\(\)/)
   assert.match(finance, /名称変更と種別変更は分けて保存してください/)
   assert.match(finance, /async function renameCard\(\) \{\s*if \(busy\.value\) return/)

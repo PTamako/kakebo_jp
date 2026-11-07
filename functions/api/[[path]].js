@@ -25,16 +25,19 @@ const entryDateBounds = period => {
 const pointChargeId = (requestId, entryId) =>
   requestId && requestId.length <= 100 ? 'point_charge_' + requestId : 'point_charge_entry_' + entryId
 const isPointCharge = e => typeof e?.client_request_id === 'string' && e.client_request_id.startsWith('point_charge_')
-async function rewardDestination(db, e) {
+async function rewardDestination(db, e, existingTarget = '') {
   if (e.type !== 'income' || e.category !== 'ポイント還元') return {target:null,source:null}
   const target = String(e.rewardDestination || '').trim()
   if (!target) return {target:null,source:null}
-  if (target.startsWith('prepaid:') && await validPrepaidTarget(db,target))
-    return {target,source:'ポイント還元'}
+  if (target.startsWith('prepaid:') && await validPrepaidTarget(db,target)) {
+    const cardName=target.slice('prepaid:'.length)
+    const eligible=target===existingTarget || await db.prepare("SELECT name FROM payment_sources WHERE name=?1 AND is_archived=0").bind(cardName).first()
+    if(eligible)return {target,source:'ポイント還元'}
+  }
   if (target.startsWith('credit:')) {
     const name=target.slice('credit:'.length)
     if (name && name.length<=80 && !['現金','その他','其他','ポイント還元'].includes(name)) {
-      const card=await db.prepare("SELECT name FROM payment_sources WHERE name=?1 AND source_type='standard'").bind(name).first()
+      const card=await db.prepare("SELECT name FROM payment_sources WHERE name=?1 AND source_type='standard' AND (is_archived=0 OR ?2=1)").bind(name,target===existingTarget?1:0).first()
       if (card) return {target,source:name}
     }
   }
@@ -509,7 +512,7 @@ export async function onRequest({ request, env, params }) {
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         
         "SELECT " + (await prepaidSchemaReady(db)
-          ? "name,closing_day,is_default,sort_order,source_type,stat_group,opening_balance,opening_date,opening_entry_id"
+          ? "name,closing_day,is_default,sort_order,source_type,stat_group,opening_balance,opening_date,opening_entry_id,is_archived"
           : "name,closing_day,is_default,sort_order,'standard' AS source_type,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id")
           + " FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name",
         'SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY keyword',
@@ -579,7 +582,7 @@ export async function onRequest({ request, env, params }) {
       // transaction/payment references or any user-created payment method.
       // The completed migration already persisted payment sorting. Read only.
       const migrated=await prepaidSchemaReady(db)
-      const columns=migrated?'name,is_default,closing_day,source_type,stat_group,opening_balance,opening_date,opening_entry_id':"name,is_default,closing_day,'standard' AS source_type,'card' AS stat_group,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id"
+      const columns=migrated?'name,is_default,closing_day,source_type,stat_group,opening_balance,opening_date,opening_entry_id,is_archived':"name,is_default,closing_day,'standard' AS source_type,'card' AS stat_group,0 AS opening_balance,'' AS opening_date,0 AS opening_entry_id,0 AS is_archived"
       const {results}=await db.prepare("SELECT "+columns+" FROM payment_sources ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name").all()
       return json(results)
     }
@@ -601,7 +604,7 @@ export async function onRequest({ request, env, params }) {
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
       if (!name || name.length > 80) return json({error:'既定カードを確認してください'},400)
       // Never reset a newer default set by another device while restoring.
-      const result = await db.prepare('UPDATE payment_sources SET is_default=1 WHERE name=?1 AND NOT EXISTS (SELECT 1 FROM payment_sources WHERE is_default=1)').bind(name).run()
+      const result = await db.prepare('UPDATE payment_sources SET is_default=1 WHERE name=?1 AND is_archived=0 AND NOT EXISTS (SELECT 1 FROM payment_sources WHERE is_default=1)').bind(name).run()
       return json({ok:true,restored:!!result.meta?.changes})
     }
     if (a === 'payment-sources' && b === 'closing-day' && m === 'POST') {
@@ -667,17 +670,39 @@ export async function onRequest({ request, env, params }) {
     if (a === 'payment-sources' && b === 'default' && m === 'POST') {
       const body = await request.json()
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
-      if (name && !(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(name).first())) return json({ error: '登録済みのカードを選択してください' }, 400)
+      if (name && !(await db.prepare('SELECT name FROM payment_sources WHERE name=?1 AND is_archived=0').bind(name).first())) return json({ error: '有効なカードを選択してください' }, 400)
       // One atomic SQL statement: never leave every card without a default
       // if a second request fails or another device edits the same setting.
       // Guard the target inside the statement in case it was deleted after
       // the existence check above. An empty name explicitly clears defaults.
       const updated = await db.prepare(`UPDATE payment_sources
         SET is_default=CASE WHEN name=?1 THEN 1 ELSE 0 END
-        WHERE ?1='' OR EXISTS(SELECT 1 FROM payment_sources WHERE name=?1)`)
+        WHERE ?1='' OR EXISTS(SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=0)`)
         .bind(name).run()
       if (name && !updated.meta?.changes) return json({error:'登録済みのカードを選択してください'},404)
       return json({ ok: true })
+    }
+    if (a === 'payment-sources' && b === 'archive' && m === 'POST') {
+      const body=await request.json().catch(()=>null)
+      const name=typeof body?.name==='string'?body.name.trim():''
+      const archived=body?.archived
+      if(!name||name.length>80||['現金','その他','其他'].includes(name)||typeof archived!=='boolean')
+        return json({error:'アーカイブするカードと状態を確認してください'},400)
+      const current=await db.prepare('SELECT is_archived FROM payment_sources WHERE name=?1').bind(name).first()
+      if(!current)return json({error:'カードが見つかりません'},404)
+      if(Boolean(current.is_archived)===archived)return json({ok:true,archived,changed:false})
+      // Disabled/archived plans keep history; ACTIVE recurring postings must
+      // be stopped or reassigned explicitly before archiving the payment card.
+      const updated=await db.prepare(`UPDATE payment_sources
+        SET is_archived=?1,is_default=CASE WHEN ?1=1 THEN 0 ELSE is_default END
+        WHERE name=?2 AND is_archived<>?1 AND
+          (?1=0 OR NOT EXISTS(SELECT 1 FROM recurring_plans
+            WHERE payment_source=?2 AND enabled=1 AND NOT EXISTS(
+              SELECT 1 FROM trash_items WHERE item_type='recurring_plan' AND item_id=recurring_plans.id)))`)
+        .bind(archived?1:0,name).run()
+      if(!updated.meta?.changes)
+        return json({error:'有効な固定費で使用中のためアーカイブできません。先に固定費を停止または変更してください',code:'active_recurring_plan'},409)
+      return json({ok:true,archived,changed:true})
     }
     if (a === 'payment-sources' && b === 'remove' && m === 'POST') {
       const body = await request.json()
@@ -687,8 +712,9 @@ export async function onRequest({ request, env, params }) {
       const activePlan = await db.prepare('SELECT id FROM recurring_plans WHERE payment_source=?1 AND enabled=1 LIMIT 1').bind(name).first()
       if (activePlan) return json({error:'このカードを利用する固定支出が残っています。先に固定支出の設定を整理してください'},409)
       if(await prepaidSchemaReady(db)){
-        const card=await db.prepare('SELECT source_type FROM payment_sources WHERE name=?1').bind(name).first()
-        if(card?.source_type==='prepaid')return json({error:'プリペイドカードは通常タイプへ戻してから削除してください'},409)
+        const card=await db.prepare('SELECT source_type,opening_balance FROM payment_sources WHERE name=?1').bind(name).first()
+        if(card?.source_type==='prepaid' && Number(card.opening_balance)>0)
+          return json({error:'期首残高のあるプリペイドカードは削除できません。アーカイブをご利用ください'},409)
       }
       // Source identifiers are part of history; never orphan an old bill or reward.
       const historical=await db.prepare(`SELECT 1 AS linked FROM entries
@@ -712,7 +738,7 @@ export async function onRequest({ request, env, params }) {
       const keyword = typeof body?.keyword === 'string' ? body.keyword.trim() : ''
       const name = typeof body?.paymentSource === 'string' ? body.paymentSource.trim() : ''
       if (keyword.length < 2 || keyword.length > 80 || !name || name.length > 80) return json({ error: '店舗と支払方法を確認してください' }, 400)
-      if (!(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(name).first())) return json({ error: '登録済みの支払方法を選択してください' }, 400)
+      if (!(await db.prepare('SELECT name FROM payment_sources WHERE name=?1 AND is_archived=0').bind(name).first())) return json({ error: '有効な支払方法を選択してください' }, 400)
       // PUT is reserved for insert-if-missing during restore. Normal POST keeps edit behavior.
       const statement = m === 'PUT'
         ? 'INSERT INTO merchant_rules(keyword,payment_source) VALUES(?1,?2) ON CONFLICT(keyword) DO UPDATE SET payment_source=COALESCE(merchant_rules.payment_source,excluded.payment_source)'
@@ -955,10 +981,15 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日付または金額が正しくありません' }, 400)
         const paymentSource = e.paymentSource == null ? '' : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
+        if(paymentSource && await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(paymentSource).first())
+          return json({error:'アーカイブ済みの支払方法は新しい記帳に使用できません',code:'payment_source_archived'},409)
         const reward=await rewardDestination(db,e)
         if(reward.error)return json({error:reward.error},400)
         const rawTarget=transfer?String(e.transferTarget||''):''
         if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
+        if(transfer&&rawTarget.startsWith('prepaid:') &&
+          await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(rawTarget.slice(8)).first())
+          return json({error:'アーカイブ済みのプリペイドカードには新規チャージできません',code:'payment_source_archived'},409)
         const target=transfer?(rawTarget||null):null
          if(transfer&&target?.startsWith('prepaid:')&&paymentSource===target.slice('prepaid:'.length))
            return json({error:'同じプリペイドカードへの振替は登録できません'},400)
@@ -1016,13 +1047,19 @@ export async function onRequest({ request, env, params }) {
         const previous = await db.prepare('SELECT amount, type, category, client_request_id, transfer_target, transfer_applied, transfer_date, date, payment_source FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
         if(isPointCharge(previous))return json({error:'自動チャージは元のポイント還元収入から編集してください'},409)
-        const reward=await rewardDestination(db,{...e,rewardDestination:e.rewardDestination??(previous.type==='income' && previous.category==='ポイント還元' ? previous.transfer_target : '')})
+        const reward=await rewardDestination(db,{...e,rewardDestination:e.rewardDestination??(previous.type==='income' && previous.category==='ポイント還元' ? previous.transfer_target : '')},previous.transfer_target||'')
         if(reward.error)return json({error:reward.error},400)
         const linkedId=pointChargeId(previous.client_request_id,id)
         const paymentSource = e.paymentSource == null ? (previous.payment_source || '') : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
+        if(paymentSource!==previous.payment_source && paymentSource &&
+          await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(paymentSource).first())
+          return json({error:'アーカイブ済みのカードへ変更できません',code:'payment_source_archived'},409)
         const rawTarget=transfer?String(e.transferTarget||''):''
         if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
+        if(transfer&&rawTarget!==previous.transfer_target&&rawTarget.startsWith('prepaid:') &&
+          await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(rawTarget.slice(8)).first())
+          return json({error:'アーカイブ済みのプリペイドカードへ変更できません',code:'payment_source_archived'},409)
         const target=transfer?(rawTarget||null):null
          if(transfer&&target?.startsWith('prepaid:')&&paymentSource===target.slice('prepaid:'.length))
            return json({error:'同じプリペイドカードへの振替は登録できません'},400)

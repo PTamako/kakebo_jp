@@ -9,7 +9,7 @@ export const cardBilledAmount = entry =>
 
 // Billing period calculation is shared with card management and test cases.
 export function billingPeriodForMonth(closingMonth, closingDay) {
-  const match=/^(\\d{4})-(\\d{2})$/.exec(String(closingMonth||''))
+  const match=/^(\d{4})-(\d{2})$/.exec(String(closingMonth||''))
   if(!match || closingDay==null || closingDay==='')return null
   const year=Number(match[1]),month=Number(match[2])
   if(month<1||month>12)return null

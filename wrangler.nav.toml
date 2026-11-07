@@ -14,6 +14,7 @@ crons = ["30 15 * * *", "30 0 * * *", "30 10 * * *", "15 14 * * *"]
 # Disable the experimental CSV fetch until an authorized public feed becomes available.
 [vars]
 DAIWA_CSV_EXPERIMENT = "false"
+HEARTBEAT_ENABLED = "true"
 
 # Preserve every once-daily scheduled invocation and its console messages.
 # Workers Logs are separate from Workers Builds deployment logs.

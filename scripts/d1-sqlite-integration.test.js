@@ -399,6 +399,7 @@ test('actual SQLite: card bill totals use latest D1 ledger even after another de
   const {db,call}=await createClient()
   try{
     const source='検証カード'
+    assert.equal((await call('payment-sources','POST',{name:source})).status,200)
     assert.equal((await call('entries','POST',{date:'2026-10-01',amount:1000,type:'expense',merchant:'店A',paymentSource:source})).status,200)
     assert.equal((await call('entries','POST',{date:'2026-10-02',amount:500,type:'expense',merchant:'店B',paymentSource:source})).status,200)
     assert.equal((await call('entries','POST',{date:'2026-10-02',amount:900,type:'income',category:'工资'})).status,200)
@@ -589,6 +590,7 @@ test('actual SQLite: Suica and PASMO prepaid balances are ledger-derived, and op
     const add=await call('payment-sources','POST',{name:'Suica',sourceType:'prepaid'})
     assert.equal(add.status,200)
     assert.equal((await call('payment-sources','POST',{name:'PASMO',sourceType:'prepaid'})).status,200)
+    assert.equal((await call('payment-sources','POST',{name:'三井住友カード'})).status,200)
     const cards=(await call('payment-sources')).body
     assert.equal(cards.find(x=>x.name==='Suica').source_type,'prepaid')
     assert.equal(cards.find(x=>x.name==='PASMO').source_type,'prepaid')
@@ -677,8 +679,10 @@ test('rules GET merges existing defaults with user overrides without inserting a
 test('missing source card cannot rename orphaned ledger rows or manufacture a card',async()=>{
   const {db,call}=await createClient()
   try{
-    const created=await call('entries','POST',{date:'2026-10-20',amount:1200,merchant:'安全テスト',category:'日用品',type:'expense',paymentSource:'過去に削除したカード',clientRequestId:'orphan-card-test-001'})
-    assert.equal(created.status,200)
+    const refused=await call('entries','POST',{date:'2026-10-20',amount:1200,merchant:'安全テスト',category:'日用品',type:'expense',paymentSource:'過去に削除したカード',clientRequestId:'orphan-card-test-001'})
+    assert.equal(refused.status,400,'new requests cannot create orphaned sources')
+    db.db.prepare("INSERT INTO entries(date,amount,type,payment_source,client_request_id) VALUES('2026-10-20',1200,'expense','過去に削除したカード','orphan-card-test-legacy')").run()
+    const created={body:{id:db.db.prepare("SELECT id FROM entries WHERE client_request_id='orphan-card-test-legacy'").get().id}}
     const before=db.db.prepare('SELECT id,amount,type,payment_source FROM entries WHERE id=?1').get(created.body.id)
     const response=await call('payment-sources/rename','POST',{oldName:'過去に削除したカード',newName:'別カード'})
     assert.equal(response.status,404)
@@ -951,6 +955,7 @@ test('actual SQLite: backed-up excluded fixed-expense months restore with their 
 test('actual SQLite: recycle bin restores expenses with the original IDs',async()=>{
   const {db,call}=await createClient()
   try {
+    assert.equal((await call('payment-sources','POST',{name:'Suica'})).status,200)
     const created=await call('entries','POST',{date:'2026-10-28',amount:1250,type:'expense',merchant:'テスト店舗',paymentSource:'Suica',clientRequestId:'trash-test-0001'})
     assert.equal(created.status,200)
     const id=created.body.id
@@ -1224,7 +1229,7 @@ test('actual SQLite: monthly and yearly card/cash/points totals are mutually exc
 test('audit: stale optimistic points edits never delete or reassign auto charge',async()=>{
   const {db,call}=await createClient()
   try {
-    db.db.exec("INSERT INTO payment_sources(name,sort_order,source_type) VALUES ('Suica',1,'prepaid'),('nanacoモバイル',2,'prepaid'),('楽天カード',3,'standard')")
+    db.db.exec("INSERT INTO payment_sources(name,sort_order,source_type) VALUES ('Suica',1,'prepaid'),('nanacoモバイル',2,'prepaid'),('楽天カード',3,'standard'),('ポイント還元',4,'prepaid')")
     const created=await call('entries','POST',{date:'2026-11-06',time:'15:00',amount:4,
       type:'income',category:'ポイント還元',merchant:'audit points',
       rewardDestination:'prepaid:Suica',clientRequestId:'audit_stale_charge_20261107'})

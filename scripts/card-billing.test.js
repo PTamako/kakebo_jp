@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isCardBilledEntry, cardBilledAmount } from '../src/card-billing.js'
+import { isCardBilledEntry, cardBilledAmount, billingPeriodForMonth } from '../src/card-billing.js'
 
 const period = {start:'2026-10-01',end:'2026-10-31'}
 const bill = (type,source,target='',date='2026-10-30') =>
@@ -39,4 +39,12 @@ test('points reward directly credited to a credit card reduces the correct billi
   assert.equal(isCardBilledEntry({...reward,payment_source:''},period,'楽天カード'),true)
   assert.equal([bill('expense','楽天カード'),reward].filter(e=>isCardBilledEntry(e,period,'楽天カード'))
     .reduce((sum,e)=>sum+cardBilledAmount(e),0),0)
+})
+
+test('billing period helper handles closing-day boundaries without shifting the month',()=>{
+  assert.deepEqual(billingPeriodForMonth('2026-11',10),{start:'2026-10-11',end:'2026-11-10'})
+  assert.deepEqual(billingPeriodForMonth('2026-03','末日'),{start:'2026-03-01',end:'2026-03-31'})
+  assert.deepEqual(billingPeriodForMonth('2026-02',31),{start:'2026-02-01',end:'2026-02-28'})
+  assert.equal(billingPeriodForMonth('2026-13',10),null)
+  assert.equal(billingPeriodForMonth('2026-11',32),null)
 })

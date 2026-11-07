@@ -380,7 +380,9 @@ export async function onRequest({ request, env, params }) {
           }
           return json(results.map(p => ({id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled,postingMode:p.posting_mode||'manual',autoFromMonth:p.auto_from_month||'',scheduleType:p.workday_only?'workday':(p.schedule_type||'monthly'),weekday:Number(p.weekday||0), ...(trash ? {archivedAt:p.archived_at} : {})})))
         }
-        return json(await getCardBillSnapshots(db))
+        if(url.searchParams.get('fresh')==='1')return json(await getCardBillSnapshots(db))
+        const {results} = await db.prepare('SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY bill_month DESC,payment_source').all()
+        return json(results.map(x => ({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})))
       }
       if (a === 'recurring-plans') {
         if (m === 'POST' && !b) {

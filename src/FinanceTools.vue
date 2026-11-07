@@ -178,8 +178,10 @@ async function renameCard() {
   }
   cardMode.value = ''
 }
-const cardPeriod = computed(() => isCreditCard(bill.value.name)
-  ? billingPeriodForMonth(bill.value.month, closingDayFor(bill.value.name)) : null)
+const cardPeriod = computed(() => {
+  if (!isCreditCard(bill.value.name)) return null
+  return billingPeriodForMonth(bill.value.month,closingDayFor(bill.value.name))
+})
 const newPaymentSource = ref('')
 const newSourceType = ref('standard')
 const newStatGroup = ref('card')
@@ -464,7 +466,7 @@ function jobHealthText(row) {
   return when+' · '+state
 }
 async function loadFinanceSettings() {
-  const [loadedPlans,loadedBills] = await Promise.all([props.api('recurring-plans'),props.api('card-bills')])
+  const [loadedPlans,loadedBills] = await Promise.all([props.api('recurring-plans'),props.api('card-bills?fresh=1')])
   if (!Array.isArray(loadedPlans) || !Array.isArray(loadedBills)) throw Error('保存データの形式が不正です')
   plans.value = loadedPlans
   bills.value = loadedBills

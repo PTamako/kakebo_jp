@@ -21,6 +21,7 @@ export default {
     // Monitoring is best-effort: an unavailable heartbeat table must never
     // block booking or updating NAV. Financial work retains its own errors.
     const heartbeat = async (job,status,summary={}) => {
+      if(env?.HEARTBEAT_ENABLED!=='true')return
       try { await recordScheduledJobStatus(env.DB,job,scheduledAt,status,summary) }
       catch(error) { console.warn('Cron heartbeat unavailable',job,String(error?.message||error)) }
     }
@@ -61,7 +62,6 @@ export default {
       const today = tokyoDateAt(scheduledTime)
       if (isJapanHoliday(today)) {
         console.log('NAV sync skipped: Japan non-trading day', JSON.stringify({cron,today}))
-        ctx.waitUntil(heartbeat('nav','skipped'))
         return
       }
       // Both official NAV cron paths remain unchanged on Japanese trading days.

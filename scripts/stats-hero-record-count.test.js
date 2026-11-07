@@ -7,7 +7,7 @@ const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf
 test('monthly and yearly statistics reuse existing aggregate queries for all record counts', () => {
   const api = source('functions/api/[[path]].js')
   const statsHandler = api.slice(api.indexOf("if (a === 'stats' && m === 'GET')"))
-  assert.equal((statsHandler.match(/COUNT\(\*\) recordCount FROM entries WHERE date LIKE \?1/g) || []).length, 2)
+  assert.equal((statsHandler.match(/COUNT\(\*\) recordCount FROM entries WHERE date>=\?1 AND date<\?2/g) || []).length, 2)
   assert.equal((statsHandler.match(/recordCount: total\.recordCount/g) || []).length, 2)
   assert.equal((statsHandler.match(/SUM\(CASE WHEN type = 'expense' THEN 1 ELSE 0 END\) n/g) || []).length, 2)
   assert.equal((statsHandler.match(/SUM\(CASE WHEN type = 'transfer' THEN 1 ELSE 0 END\) transferCount/g) || []).length, 2)
@@ -29,5 +29,5 @@ test('top cards keep unchanged expense totals, without extra D1 queries', () => 
   assert.match(ui, /yen\(stats\?\.total\)/)
   assert.match(ui, /yen\(annualStats\?\.total\)/)
   // Both counts are returned by the original period-specific SELECT.
-  assert.equal((api.match(/COUNT\(\*\) recordCount FROM entries WHERE date LIKE \?1/g) || []).length, 2)
+  assert.equal((api.match(/COUNT\(\*\) recordCount FROM entries WHERE date>=\?1 AND date<\?2/g) || []).length, 2)
 })

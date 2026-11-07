@@ -19,6 +19,14 @@ try{
   for(const width of [320,375,390,430]){
     const context=await browser.newContext({...devices['iPhone 13'],viewport:{width,height:780}})
     const page=await context.newPage()
+    // Disable native blocking dialogs in the unauthenticated smoke scenario.
+    // Playwright WebKit may otherwise close a pending dialog with its page.
+    await page.addInitScript(() => {
+      window.alert=()=>{}
+      window.confirm=()=>false
+      window.prompt=()=>null
+    })
+    page.on('dialog',dialog=>{void dialog.dismiss().catch(()=>{})})
     const errors=[]
     page.on('pageerror',error=>errors.push(String(error)))
     await page.route('**/api/**',route=>route.fulfill({status:401,contentType:'application/json',body:'{"error":"authentication required"}'}))

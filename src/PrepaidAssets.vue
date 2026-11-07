@@ -78,7 +78,7 @@ onMounted(()=>{if(props.active)void refresh()})
                 <span class="wallet-card-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h5"/></svg>
                 </span>
-                <div class="wallet-name"><strong :title="card.name">{{card.name}}</strong><small>プリペイド</small></div>
+                <div class="wallet-name"><strong :title="card.name">{{card.name}}</strong><small>{{card.is_archived?'アーカイブ済み':'プリペイド'}}</small></div>
               </div>
               <div class="wallet-money" :class="{'wallet-negative':card.balance<0}">
                 <small>現在残高</small>

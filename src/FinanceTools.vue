@@ -23,6 +23,8 @@ const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-dupl
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
 const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
+const archivedPaymentSources = computed(() => sortOtherLast(Object.values(props.paymentSourceMeta)
+  .filter(card=>Boolean(card.is_archived)).map(card=>card.name)))
 const isCreditCard = name => !!name && !['現金','その他','其他'].includes(name) && props.paymentSourceMeta[name]?.source_type === 'standard'
 const creditCardSources = computed(() => orderedPayments.value.filter(isCreditCard))
 const managementTab = ref('cards')
@@ -308,16 +310,30 @@ async function addPaymentSource() {
   } catch(e) { cardMessage.value = 'カードを追加できませんでした：' + e.message }
   finally { busy.value = false }
 }
+async function archivePaymentSource(name, archived=true) {
+  if(!name || busy.value)return
+  if(archived && !confirm(name+'をアーカイブしますか？過去の明細・請求・残高は残り、いつでも復元できます。'))return
+  busy.value=true
+  try{
+    await props.api('payment-sources/archive',{method:'POST',body:JSON.stringify({name,archived})})
+    emit('payment-settings-refresh')
+    emit('settings-changed')
+    selectedCard.value=''
+    cardMode.value=''
+    cardMessage.value=name+(archived?'をアーカイブしました':'を復元しました')
+  }catch(e){cardMessage.value=(archived?'アーカイブ':'復元')+'に失敗しました：'+e.message}
+  finally{busy.value=false}
+}
 async function removePaymentSource(name) {
   if (name === '現金' || busy.value) return
-  if (!confirm(name + 'を削除しますか？明細・請求履歴は残ります。')) return
+  if (!confirm(name + 'を完全削除しますか？使用履歴のあるカードは削除できません。履歴を残す場合はアーカイブしてください。')) return
   busy.value = true
   try {
     await props.api('payment-sources/remove',{method:'POST',body:JSON.stringify({name})})
     emit('payment-settings-refresh')
     selectedCard.value = ''
     cardMode.value = ''
-    cardMessage.value = name + 'を削除しました（明細は保持）'
+    cardMessage.value = name + 'を完全削除しました'
   } catch(e) { cardMessage.value = 'カードを削除できませんでした：' + e.message }
   finally { busy.value = false }
 }
@@ -1289,10 +1305,21 @@ async function removeCardBill(record) {
       <div class="finance-inputs card-edit-actions">
         <button type="button" :disabled="busy" @click="saveCardType">{{editSourceType!==selectedSourceType?'種別を保存':'保存'}}</button>
         <button type="button" :disabled="busy" @click="cardMode = ''">閉じる</button>
-        <button v-if="selectedCard !== '現金'" type="button" :disabled="busy" @click="removePaymentSource(selectedCard)">削除</button>
+        <button v-if="!['現金','その他','其他'].includes(selectedCard)" type="button" :disabled="busy" @click="archivePaymentSource(selectedCard)">アーカイブ</button>
+        <button v-if="selectedCard !== '現金'" type="button" :disabled="busy" @click="removePaymentSource(selectedCard)">完全削除</button>
       </div>
     </div>
-    
+    <details v-if="archivedPaymentSources.length" class="card-archive-disclosure">
+      <summary>アーカイブ済みのカード <strong>{{archivedPaymentSources.length}}件</strong></summary>
+      <p class="card-type-hint">新しい記帳には表示しません。過去の明細、請求、プリペイド残高はそのまま残ります。</p>
+      <div v-for="name in archivedPaymentSources" :key="name" class="card-archived-item">
+        <span>{{name}} <small>（{{props.paymentSourceMeta[name]?.source_type==='prepaid'?'プリペイド':'カード'}}）</small></span>
+        <div class="card-archive-actions">
+          <button type="button" :disabled="busy" @click="archivePaymentSource(name,false)">復元</button>
+          <button type="button" :disabled="busy" @click="removePaymentSource(name)">完全削除</button>
+        </div>
+      </div>
+    </details>
   </article>
   <details v-show="managementTab === 'tools'" class="finance-panel merchant-rules-panel">
     <summary class="merchant-rules-summary"><span>店舗ルール管理</span><span class="merchant-rules-count">{{ merchantRulesCombined.length }}件</span></summary>

@@ -465,14 +465,14 @@ test('normalized D1 plans preserve IDs and allow deleting only a schedule', asyn
   assert.equal(db.sql.some(sql=>sql.includes('finance_settings')),false)
 })
 
-test('normalized D1 bills support update and delete without editing ledger', async () => {
+test('historic card-bill backup is insert-only; deleting a bill leaves ledger unchanged', async () => {
   const db=new LedgerDb()
   const bill={name:'セゾンカード',month:'2026-10',start:'2026-09-11',end:'2026-10-10',total:45000,count:18}
   db.cardBills.set(bill.name+'|'+bill.month,bill)
   db.entries.push({id:1,amount:3000,payment_source:'セゾンカード'})
   assert.deepEqual((await call(db,'card-bills')).body,[bill])
-  assert.equal((await call(db,'card-bills','PUT',{...bill,total:46000})).status,200)
-  assert.equal((await call(db,'card-bills')).body[0].total,46000)
+  assert.equal((await call(db,'card-bills','POST',{...bill,total:46000})).status,200)
+  assert.equal((await call(db,'card-bills')).body[0].total,45000)
   assert.equal((await call(db,'card-bills?name=%E3%82%BB%E3%82%BE%E3%83%B3%E3%82%AB%E3%83%BC%E3%83%89&month=2026-10','DELETE')).status,200)
   assert.deepEqual((await call(db,'card-bills')).body,[])
   assert.equal(db.entries[0].amount,3000)

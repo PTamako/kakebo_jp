@@ -47,6 +47,62 @@ try{
     assert.deepEqual(errors,[],'Browser JS error at '+width)
     await context.close()
   }
+  // Exercise the actual logged-in page tree with synthetic, non-sensitive
+  // financial data. The original unauthenticated test cannot catch management
+  // form overflow or tab navigation regressions.
+  for(const width of [320,390]){
+    const context=await browser.newContext({...devices['iPhone 13'],viewport:{width,height:780}})
+    await context.addInitScript(() => {
+      sessionStorage.setItem('kakeibo-device-session','f'.repeat(64))
+      window.alert=()=>{};window.confirm=()=>false;window.prompt=()=>null
+    })
+    const page=await context.newPage()
+    page.setDefaultTimeout(10000)
+    const errors=[]
+    page.on('pageerror',error=>errors.push(String(error)))
+    await page.route('**/api/**',async route=>{
+      const u=new URL(route.request().url())
+      const p=u.pathname.replace(/^\/api\//,'')
+      let data=[]
+      if(p==='app-state')data={}
+      else if(p==='payment-sources')data=[
+        {name:'現金',is_default:1,is_archived:0,source_type:'standard',closing_day:null},
+        {name:'テストカード',is_default:0,is_archived:0,source_type:'standard',closing_day:10}
+      ]
+      else if(p==='category-source')data=[
+        {category:'日用品',display_name:'日用品',entry_type:'expense',is_default:1,icon:'daily',sort_order:1},
+        {category:'工资',display_name:'給与',entry_type:'income',is_default:1,icon:'work',sort_order:2},
+        {category:'投資・資産移動',display_name:'資産移動',entry_type:'transfer',is_default:1,icon:'savings',sort_order:3}
+      ]
+      else if(p==='entries')data=[{id:1,date:new Date().toLocaleDateString('sv-SE'),
+        time:'12:00',type:'expense',amount:1234,category:'日用品',
+        merchant:'テスト商店',payment_source:'テストカード',note:'',raw:''}]
+      else if(p==='stats')data={total:1234,count:1,income:0,transferTotal:0,transferCount:0,recordCount:1,
+        byDay:[{date:new Date().toLocaleDateString('sv-SE'),amount:1234}],
+        byCategory:[{category:'日用品',amount:1234}],byMonth:[],incomeByMonth:[],incomeByCategory:[],
+        incomeByMonthCategory:[],paymentMethods:[],periodComparison:null}
+      else if(p==='entry-years')data=[{year:String(new Date().getFullYear()),count:1}]
+      else if(p==='job-health')data=[]
+      else if(p==='prepaid-assets')data={cards:[],latestUsage:null,latestCharge:null}
+      else if(p==='investment-portfolio')data={holdings:[],plans:[],prices:[]}
+      await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)})
+    })
+    await page.goto(host,{waitUntil:'domcontentloaded'})
+    await page.locator('.bottom-nav').waitFor()
+    await page.getByRole('navigation',{name:'メインメニュー'}).getByRole('button',{name:'明細'}).click()
+    await page.locator('.ledger').first().waitFor()
+    await page.getByRole('navigation',{name:'メインメニュー'}).getByRole('button',{name:'統計'}).click()
+    await page.locator('.stats-page').waitFor()
+    await page.getByRole('navigation',{name:'メインメニュー'}).getByRole('button',{name:'管理'}).click()
+    await page.locator('.finance-tools').waitFor()
+    await page.getByRole('button',{name:'カードを追加'}).click()
+    await page.locator('.card-add-editor').waitFor()
+    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)
+    assert.ok(overflow<=2,'Authenticated '+width+'px layout overflows by '+overflow+'px')
+    assert.deepEqual(errors,[],'Authenticated WebKit JS errors at '+width)
+    await context.close()
+  }
+  console.log('Authenticated iPhone-size WebKit synthetic ledger/statistics smoke passed')
   console.log('iPhone-size WebKit smoke passed (320/375/390/430px)')
 }finally{
   await browser?.close()

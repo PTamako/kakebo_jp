@@ -17,8 +17,8 @@ import { recurringPlanNextStatus, recurringPlanNextLabel } from './recurring-nex
 import { recurringReviewWindow, validRecurringMonth } from './recurring-review-window.js'
 import { nextCivilDay } from './stats-period-comparison.js'
 import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
-import { receiptZip } from './receipt-export.js'
-const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
+import { receiptZip, ledgerAndReceiptsZip } from './receipt-export.js'
+const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -373,8 +373,9 @@ function toggleRecurringPlanDetails(id) {
   expandedRecurringPlanId.value = expandedRecurringPlanId.value === id ? '' : id
 }
 const bills = ref([])
-const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費','工资':'給与','奖金':'賞与','副业':'副業','老公生活费':'夫からの生活費','父母赠与':'両親からの援助','亲友赠与':'親族・友人からの援助','退款':'返金','其他收入':'その他の収入'}
-const categoryLabel = category => categoryJapaneseLabels[category] || category
+// D1 category_source owns both identifiers and displayed category names.
+// Keep the management screen in sync with ledger/statistics without a second hard-coded map.
+const categoryLabel = category => props.categoryDisplayNames[category] || category
 const currentRecurringMonth = () => new Date().toLocaleDateString('sv-SE').slice(0,7)
 const blankPlan = () => ({name:'',amount:'',day:1,weekday:1,scheduleType:'monthly',category:'',paymentSource:'現金',startMonth:currentRecurringMonth(),postingMode:'manual'})
 const plan = ref(blankPlan())
@@ -594,6 +595,26 @@ async function downloadBackup(){
     message.value='帳簿JSONを保存しました'
   } catch(e) { message.value='バックアップを作成できませんでした：'+e.message }
   finally { backupBusy.value=false }
+}
+// Optional single-file recovery bundle. Signed v4 JSON remains compatible
+// with the existing restore dialog after extracting it from the ZIP.
+// Receipt files are exported locally; never upload photos to Pages or D1.
+async function downloadFullBackup(){
+  if(busy.value || backupBusy.value || receiptImagesBusy.value)return
+  backupBusy.value=true
+  try{
+    const ledger=validateBackup(await props.api('backup-snapshot'))
+    const sealed=await sealBackup(ledger)
+    const images=await listReceiptImagesForExport()
+    const archive=await ledgerAndReceiptsZip(sealed,images)
+    const url=URL.createObjectURL(archive),a=document.createElement('a')
+    a.href=url;a.download='kakeibo-complete-backup-'+new Date().toISOString().slice(0,10)+'.zip'
+    document.body.appendChild(a);a.click();a.remove()
+    setTimeout(()=>URL.revokeObjectURL(url),60000)
+    message.value='帳簿JSONとレシート画像 '+images.length+'件をZIP保存しました。復元時はZIPを展開し、帳簿JSONを選択してください'
+  }catch(e){
+    message.value='一括ZIP保存に失敗しました：'+e.message+'。帳簿JSONと画像ZIPを別々に保存してください'
+  }finally{backupBusy.value=false}
 }
 async function preview(event){
   const file=event.target.files?.[0];event.target.value=''
@@ -1553,6 +1574,7 @@ async function removeCardBill(record) {
     <p>帳簿・設定をJSON保存（レシート画像は対象外）</p>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
+      <button type="button" :disabled="busy || backupBusy || receiptImagesBusy || !loaded" @click="downloadFullBackup">{{backupBusy ? '作成中…' : '帳簿＋画像をまとめてZIP保存'}}</button>
       <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像をZIP保存</button>
       
     </div>

@@ -8,6 +8,7 @@ import { recurringManualSlot } from './recurring-collision.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
 import { validateRegisteredPaymentSource } from './payment-source-validation.js'
+import { validateLedgerTextFields } from './ledger-input-validation.js'
 import { getCardBillSnapshots } from './card-bill-snapshots.js'
 import { readScheduledJobStatus } from './scheduled-job-status.js'
 import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
@@ -986,7 +987,9 @@ export async function onRequest({ request, env, params }) {
         return json(results)
       }
       if (m === 'POST') {
-        const e = await request.json()
+        const e = await request.json().catch(() => null)
+        const textProblem = validateLedgerTextFields(e)
+        if (textProblem) return json({error:textProblem.error,code:textProblem.code},400)
         const transfer = e.type === 'transfer' || (!['income', 'expense'].includes(e.type) && isInvestmentTransfer(e))
         const amount = Number(e.amount)
         if (!validDate(e.date) || !validTime(e.time) || !Number.isSafeInteger(Number(e.amount)) || !Number.isSafeInteger(amount) || amount <= 0)
@@ -1050,7 +1053,9 @@ export async function onRequest({ request, env, params }) {
         return json({ ok: true, duplicate: inserted.meta?.changes === 0, id: savedEntry?.id || null })
       }
       if (m === 'PUT' && b) {
-        const e = await request.json()
+        const e = await request.json().catch(() => null)
+        const textProblem = validateLedgerTextFields(e)
+        if (textProblem) return json({error:textProblem.error,code:textProblem.code},400)
         const transfer = e.type === 'transfer' || (!['income', 'expense'].includes(e.type) && isInvestmentTransfer(e))
         const id = Number(b)
         const amount = Number(e.amount)

@@ -485,6 +485,28 @@ export async function onRequest({ request, env, params }) {
               !validDate(item.start) || !validDate(item.end) || item.start > item.end || !Number.isSafeInteger(item.total) || item.total < 0 ||
               !Number.isSafeInteger(item.count) || item.count < 0)
             return json({error:'カード請求額を確認してください'},400)
+          // A legacy PUT must never accept a browser-supplied financial total.
+          // Recalculate from current D1 entries in the SAME SQL write, just
+          // like the modern /recalculate endpoint. POST stays insert-only for
+          // historic backup snapshots (which may not have all ledger rows yet).
+          if (m === 'PUT') {
+            const days=(Date.parse(item.end+'T00:00:00Z')-Date.parse(item.start+'T00:00:00Z'))/86400000
+            if (!Number.isFinite(days) || days>35 ||
+                ['現金','その他','其他'].includes(item.name) ||
+                !(await db.prepare("SELECT 1 FROM payment_sources WHERE name=?1 AND source_type='standard'").bind(item.name).first()))
+              return json({error:'カードの締め期間・支払方法を確認してください',code:'invalid_card_bill_period'},400)
+            await db.prepare(`INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count)
+              SELECT ?1,?2,?3,?4,MAX(0,COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END),0)),COUNT(*)
+              FROM entries WHERE date>=?3 AND date<=?4 AND
+                ((payment_source=?1 AND (type='expense' OR (type='transfer' AND
+                  (transfer_target='sbi' OR (transfer_target LIKE 'prepaid:%' AND LENGTH(transfer_target)>8)))))
+                  OR (type='income' AND category='ポイント還元' AND transfer_target='credit:'||?1))
+              ON CONFLICT(payment_source,bill_month) DO UPDATE SET
+                period_start=excluded.period_start,period_end=excluded.period_end,
+                total_amount=excluded.total_amount,transaction_count=excluded.transaction_count`)
+              .bind(item.name,item.month,item.start,item.end).run()
+            return json({ok:true,calculatedOnServer:true})
+          }
           // Restore uses POST (insert-only) so another device's saved bill always wins.
           const statement = m === 'POST'
             ? 'INSERT OR IGNORE INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count) VALUES(?1,?2,?3,?4,?5,?6)'

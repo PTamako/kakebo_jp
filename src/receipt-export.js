@@ -6,8 +6,8 @@ function crc32(bytes) {
  return (c^0xffffffff)>>>0
 }
 export async function receiptZip(rows, extraFiles=[]) {
- if(!Array.isArray(rows)||!Array.isArray(extraFiles)||rows.length+extraFiles.length<1||
-   rows.length+extraFiles.length>1001)throw Error('ZIP保存対象を確認してください')
+ if(!Array.isArray(rows)||!Array.isArray(extraFiles)||rows.length>1000||
+   rows.length+extraFiles.length<1||rows.length+extraFiles.length>1001)throw Error('ZIP保存対象を確認してください')
  // Allow one signed JSON ledger alongside the existing device-only receipts.
  // No other arbitrary paths or MIME types can enter the archive.
  if(extraFiles.length>1 || extraFiles.some(x=>x?.name!=='kakeibo-ledger-settings.json'||x.blob?.type!=='application/json'))

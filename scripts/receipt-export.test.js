@@ -27,5 +27,5 @@ test('complete bundle exports signed JSON plus local photos without network acce
  assert.ok(text.includes('kakeibo-ledger-backup'))
  const emptyImages=await ledgerAndReceiptsZip(ledger,[])
  assert.equal(new DataView(await emptyImages.arrayBuffer()).getUint16(emptyImages.size-22+8,true),1)
- await assert.rejects(()=>ledgerAndReceiptsZip({},[]))
+ assert.throws(()=>ledgerAndReceiptsZip({},[]))
 })

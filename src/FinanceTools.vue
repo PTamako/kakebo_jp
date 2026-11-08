@@ -18,7 +18,7 @@ import { recurringReviewWindow, validRecurringMonth } from './recurring-review-w
 import { nextCivilDay } from './stats-period-comparison.js'
 import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
 import { receiptZip } from './receipt-export.js'
-const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
+const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -373,8 +373,9 @@ function toggleRecurringPlanDetails(id) {
   expandedRecurringPlanId.value = expandedRecurringPlanId.value === id ? '' : id
 }
 const bills = ref([])
-const categoryJapaneseLabels = {'餐饮':'外食','饮食料品':'飲食料品','购物':'買い物','居住':'住居費','医疗':'医療費','娱乐':'娯楽','宠物':'ペット','其他':'その他','日用品':'日用品','交通':'交通費','工资':'給与','奖金':'賞与','副业':'副業','老公生活费':'夫からの生活費','父母赠与':'両親からの援助','亲友赠与':'親族・友人からの援助','退款':'返金','其他收入':'その他の収入'}
-const categoryLabel = category => categoryJapaneseLabels[category] || category
+// D1 category_source owns both identifiers and displayed category names.
+// Keep the management screen in sync with ledger/statistics without a second hard-coded map.
+const categoryLabel = category => props.categoryDisplayNames[category] || category
 const currentRecurringMonth = () => new Date().toLocaleDateString('sv-SE').slice(0,7)
 const blankPlan = () => ({name:'',amount:'',day:1,weekday:1,scheduleType:'monthly',category:'',paymentSource:'現金',startMonth:currentRecurringMonth(),postingMode:'manual'})
 const plan = ref(blankPlan())

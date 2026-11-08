@@ -61,7 +61,7 @@ try{
     const errors=[]
     page.on('pageerror',error=>errors.push(String(error)))
     await page.route('**/api/**',async route=>{
-      const u=new URL(route.request().url)
+      const u=new URL(route.request().url())
       const p=u.pathname.replace(/^\/api\//,'')
       let data=[]
       if(p==='app-state')data={}

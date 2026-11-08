@@ -1575,7 +1575,7 @@ async function removeCardBill(record) {
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
       <button type="button" :disabled="busy || backupBusy || receiptImagesBusy || !loaded" @click="downloadFullBackup">{{backupBusy ? '作成中…' : '帳簿＋画像をまとめてZIP保存'}}</button>
-      <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像のみZIP保存</button>
+      <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像をZIP保存</button>
       
     </div>
     <div v-if="backupPreview" class="restore-preview">

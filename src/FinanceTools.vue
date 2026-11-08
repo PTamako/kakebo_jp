@@ -17,7 +17,7 @@ import { recurringPlanNextStatus, recurringPlanNextLabel } from './recurring-nex
 import { recurringReviewWindow, validRecurringMonth } from './recurring-review-window.js'
 import { nextCivilDay } from './stats-period-comparison.js'
 import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
-import { receiptZip } from './receipt-export.js'
+import { receiptZip, ledgerAndReceiptsZip } from './receipt-export.js'
 const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
@@ -595,6 +595,26 @@ async function downloadBackup(){
     message.value='帳簿JSONを保存しました'
   } catch(e) { message.value='バックアップを作成できませんでした：'+e.message }
   finally { backupBusy.value=false }
+}
+// Optional single-file recovery bundle. Signed v4 JSON remains compatible
+// with the existing restore dialog after extracting it from the ZIP.
+// Receipt files are exported locally; never upload photos to Pages or D1.
+async function downloadFullBackup(){
+  if(busy.value || backupBusy.value || receiptImagesBusy.value)return
+  backupBusy.value=true
+  try{
+    const ledger=validateBackup(await props.api('backup-snapshot'))
+    const sealed=await sealBackup(ledger)
+    const images=await listReceiptImagesForExport()
+    const archive=await ledgerAndReceiptsZip(sealed,images)
+    const url=URL.createObjectURL(archive),a=document.createElement('a')
+    a.href=url;a.download='kakeibo-complete-backup-'+new Date().toISOString().slice(0,10)+'.zip'
+    document.body.appendChild(a);a.click();a.remove()
+    setTimeout(()=>URL.revokeObjectURL(url),60000)
+    message.value='帳簿JSONとレシート画像 '+images.length+'件をZIP保存しました。復元時はZIPを展開し、帳簿JSONを選択してください'
+  }catch(e){
+    message.value='一括ZIP保存に失敗しました：'+e.message+'。帳簿JSONと画像ZIPを別々に保存してください'
+  }finally{backupBusy.value=false}
 }
 async function preview(event){
   const file=event.target.files?.[0];event.target.value=''
@@ -1554,7 +1574,8 @@ async function removeCardBill(record) {
     <p>帳簿・設定をJSON保存（レシート画像は対象外）</p>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
-      <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像をZIP保存</button>
+      <button type="button" :disabled="busy || backupBusy || receiptImagesBusy || !loaded" @click="downloadFullBackup">{{backupBusy ? '作成中…' : '帳簿＋画像をまとめてZIP保存'}}</button>
+      <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像のみZIP保存</button>
       
     </div>
     <div v-if="backupPreview" class="restore-preview">

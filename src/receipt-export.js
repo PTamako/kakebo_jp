@@ -1,6 +1,6 @@
 // Lossless local-only ZIP. No external library, network access or D1 writes.
 const w16=(v,i,n)=>v.setUint16(i,n,true),w32=(v,i,n)=>v.setUint32(i,n>>>0,true)
-function crc32(bytes) {
+export function crc32(bytes) {
  let c=0xffffffff
  for(const b of bytes){c^=b;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0)}
  return (c^0xffffffff)>>>0

@@ -8,6 +8,7 @@ import { recurringManualSlot } from './recurring-collision.js'
 import { aiQuotaState, reserveAiAttempt } from './ai-quota.js'
 import { restoreAtomic } from './restore-atomic.js'
 import { validateRegisteredPaymentSource } from './payment-source-validation.js'
+import { validateCardBillRecalculation } from './card-bill-validation.js'
 import { validateLedgerTextFields } from './ledger-input-validation.js'
 import { getCardBillSnapshots } from './card-bill-snapshots.js'
 import { readScheduledJobStatus } from './scheduled-job-status.js'
@@ -459,10 +460,8 @@ export async function onRequest({ request, env, params }) {
       } else {
         if (m === 'POST' && b === 'recalculate') {
           const item=await request.json()
-          if(typeof item?.name!=='string'||!item.name.trim()||item.name.length>80||
-             !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.month||'')||
-             !validDate(item.start)||!validDate(item.end)||item.start>item.end)
-            return json({error:'カードの対象期間を確認してください'},400)
+          const periodProblem=await validateCardBillRecalculation(db,item)
+          if(periodProblem)return json(periodProblem,400)
           // One SQL statement calculates and writes the bill from authoritative
           // D1 entries. A stale browser cache can never overwrite this total.
           await db.prepare(`INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count)
@@ -490,11 +489,8 @@ export async function onRequest({ request, env, params }) {
           // like the modern /recalculate endpoint. POST stays insert-only for
           // historic backup snapshots (which may not have all ledger rows yet).
           if (m === 'PUT') {
-            const days=(Date.parse(item.end+'T00:00:00Z')-Date.parse(item.start+'T00:00:00Z'))/86400000
-            if (!Number.isFinite(days) || days>35 ||
-                ['現金','その他','其他'].includes(item.name) ||
-                !(await db.prepare("SELECT 1 FROM payment_sources WHERE name=?1 AND source_type='standard'").bind(item.name).first()))
-              return json({error:'カードの締め期間・支払方法を確認してください',code:'invalid_card_bill_period'},400)
+            const periodProblem=await validateCardBillRecalculation(db,item)
+            if(periodProblem)return json(periodProblem,400)
             await db.prepare(`INSERT INTO card_bills(payment_source,bill_month,period_start,period_end,total_amount,transaction_count)
               SELECT ?1,?2,?3,?4,MAX(0,COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END),0)),COUNT(*)
               FROM entries WHERE date>=?3 AND date<=?4 AND

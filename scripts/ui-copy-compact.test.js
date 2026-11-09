@@ -8,7 +8,7 @@ const finance = source('src/FinanceTools.vue')
 const form = source('src/TransactionForm.vue')
 
 test('管理・その他: backup description is compact but still discloses local receipts excluded', () => {
-  assert.match(finance, /帳簿・設定をJSON保存（レシート画像は対象外）/)
+  assert.match(finance, /JSONは帳簿のみ。家計簿の一括ZIPなら/)
   assert.doesNotMatch(finance, /全明細・SBI評価額と損益・固定支出・カード設定・通知状態をJSONで保存します/)
   assert.match(finance, /既存データは保持/)
   assert.match(finance, /バックアップを選び直してください/)
@@ -16,7 +16,7 @@ test('管理・その他: backup description is compact but still discloses loca
 })
 test('management controls keep irreversible image-clear warning and retain D1 ledger', () => {
   assert.match(finance, /画像は復元できません。明細・SBI評価額は残ります/)
-  assert.match(finance, /画像は対象外/)
+  assert.match(finance, /JSONは帳簿のみ/)
   assert.match(finance, /端末保存・30日/)
   assert.match(finance, /明細は残ります/)
   assert.match(source('src/receipt-store.js'), /const TTL = 30 \* 24 \* 60 \* 60 \* 1000/)

@@ -47,7 +47,7 @@ test('legacy card bill PUT computes from D1, not supplied client totals',()=>{
   assert.ok(start>0 && end>start,'legacy PUT guard is present')
   const guarded=api.slice(start,end)
   assert.match(guarded,/SUM\(CASE WHEN type='income' THEN -amount ELSE amount END\)/)
-  assert.match(guarded,/source_type='standard'/)
+  assert.match(guarded,/validateCardBillRecalculation\(db,item\)/)
   assert.match(guarded,/calculatedOnServer:true/)
   assert.doesNotMatch(guarded,/\.bind\(item\.name,item\.month,item\.start,item\.end,item\.total/)
 })

@@ -16,8 +16,10 @@ import { recurringDatesInMonth, recurringFrequencyLabel, tokyoDateAt, WEEKDAYS_J
 import { recurringPlanNextStatus, recurringPlanNextLabel } from './recurring-next-status.js'
 import { recurringReviewWindow, validRecurringMonth } from './recurring-review-window.js'
 import { nextCivilDay } from './stats-period-comparison.js'
-import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
+import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport, getReceiptImage, saveReceiptImage } from './receipt-store.js'
 import { receiptZip, ledgerAndReceiptsZip } from './receipt-export.js'
+import { readCompleteBackupZip } from './receipt-import.js'
+import { planReceiptRestoration } from './receipt-restore-plan.js'
 const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
 
@@ -340,6 +342,7 @@ const restoreRows = ref([])
 const restoreConflicts = ref([])
 const restoreIncludeConflicts = ref(false)
 const backupPreview = ref(null)
+const backupReceiptImages = ref(new Map())
 const backupLedgerFingerprint = ref('')
 // Restore progress survives a recoverable API error in this page, without ever modifying existing records.
 const restoreOwnKeys = ref(new Map())
@@ -448,9 +451,12 @@ watch(creditCardSources, sources => {
 })
 const settingsReady = ref(false)
 const jobHealth=ref([])
+const jobHealthLoaded=ref(false)
 const jobHealthBusy=ref(false)
 const jobHealthError=ref('')
 const jobNames={recurring:'固定費自動記帳',sbi:'SBI積立振替',nav:'投信基準価額更新'}
+const jobHealthDisplay=computed(()=>Object.keys(jobNames).map(job=>
+  jobHealth.value.find(row=>row.job===job) || {job,status:'missing'}))
 async function loadJobHealth() {
   if(jobHealthBusy.value)return
   jobHealthBusy.value=true;jobHealthError.value=''
@@ -458,10 +464,12 @@ async function loadJobHealth() {
     const result=await props.api('job-health')
     if(!Array.isArray(result))throw Error('応答形式を確認してください')
     jobHealth.value=result
-  }catch(e){jobHealthError.value='実行履歴を取得できません：'+e.message}
+    jobHealthLoaded.value=true
+  }catch(e){jobHealthLoaded.value=false;jobHealthError.value='実行履歴を取得できません：'+e.message}
   finally{jobHealthBusy.value=false}
 }
 function jobHealthText(row) {
+  if(!row?.scheduledAt)return '実行記録なし（初回実行後に確認してください）'
   const state=row?.status==='failed'?'失敗':row?.status==='skipped'?'休場日のため対象外':'成功'
   const when=row?.scheduledAt ? new Date(row.scheduledAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}) : '日時不明'
   return when+' · '+state
@@ -611,28 +619,31 @@ async function downloadFullBackup(){
     a.href=url;a.download='kakeibo-complete-backup-'+new Date().toISOString().slice(0,10)+'.zip'
     document.body.appendChild(a);a.click();a.remove()
     setTimeout(()=>URL.revokeObjectURL(url),60000)
-    message.value='帳簿JSONとレシート画像 '+images.length+'件をZIP保存しました。復元時はZIPを展開し、帳簿JSONを選択してください'
+    message.value='帳簿JSONとレシート画像 '+images.length+'件をZIP保存しました。このZIPはバックアップ選択画面から復元できます'
   }catch(e){
     message.value='一括ZIP保存に失敗しました：'+e.message+'。帳簿JSONと画像ZIPを別々に保存してください'
   }finally{backupBusy.value=false}
 }
 async function preview(event){
   const file=event.target.files?.[0];event.target.value=''
-  restoreRows.value=[];restoreConflicts.value=[];backupPreview.value=null;restoreIncludeConflicts.value=false
+  restoreRows.value=[];restoreConflicts.value=[];backupPreview.value=null;backupReceiptImages.value=new Map();restoreIncludeConflicts.value=false
   restoreOwnKeys.value=new Map()
   if(!file)return
   try{
     if(!loaded.value)throw Error('先に全明細を読み込んでください')
-    if(file.size>25*1024*1024)throw Error('ファイルが大きすぎます')
-    const backup=validateBackup(JSON.parse(await file.text()))
+    const zipped=/\.zip$/i.test(file.name)
+    if(file.size>(zipped?75:25)*1024*1024)throw Error('ファイルが大きすぎます')
+    const selected=zipped?await readCompleteBackupZip(file):{ledger:JSON.parse(await file.text()),images:new Map()}
+    const backup=validateBackup(selected.ledger)
     await verifyBackupIntegrity(backup)
     const result=prepareRestoreRows(rows.value,backup.entries)
     backupLedgerFingerprint.value=ledgerFingerprint(rows.value)
     restoreRows.value=result.newRows
     restoreConflicts.value=result.conflicts
     backupPreview.value=backup
+    backupReceiptImages.value=selected.images
     const settingsCount=(backup.recurringExclusions?.length||0)+(backup.plans?.length||0)+(backup.archivedPlans?.length||0)+(backup.trashedEntries?.length||0)+(backup.bills?.length||0)+(backup.paymentSources?.length||0)+(backup.customRules?.length||0)
-    message.value=backup.entries.length+'件 · 追加 '+restoreRows.value.length+'件 · 重複 '+restoreConflicts.value.length+'件 · 設定 '+settingsCount+'件'
+    message.value=backup.entries.length+'件 · 追加 '+restoreRows.value.length+'件 · 重複 '+restoreConflicts.value.length+'件 · 設定 '+settingsCount+'件 · 画像 '+selected.images.size+'件'
   }catch(e){backupPreview.value=null;message.value='確認失敗：'+e.message}
 }
 async function restore(){
@@ -723,9 +734,29 @@ async function restore(){
       restoreConflicts.value=restoreConflicts.value.filter(row=>!keys.has(row.backupIndex))
       message.value=`復元中 ${processed}/${selectedRows.length}件・${i+1}/${jobs.length}回`
     }
-    loaded.value=false;backupPreview.value=null;restoreRows.value=[];restoreConflicts.value=[]
+    // D1 may assign entirely new numeric IDs to restored entries. Always
+    // fetch authoritative rows before attaching any device-local photos.
+    const images=backupReceiptImages.value
+    let imageStatus=''
+    busy.value=false
+    if(images.size){
+      if(await loadAll()){
+        const planned=planReceiptRestoration(backup.entries,images,rows.value,preparedRows)
+        let written=0,existing=0,failed=0
+        for(const item of planned.items){
+          try{
+            if(await getReceiptImage(item.id)){existing++;continue}
+            await saveReceiptImage(item.id,item.blob)
+            written++
+          }catch{failed++}
+        }
+        imageStatus=`・画像 ${written}件復元 / ${existing}件保存済み / ${planned.unmatched+failed}件未復元`
+        await refreshLocalReceiptCount()
+      }else imageStatus='・画像は明細再取得エラーのため未復元（ZIPを再選択してください）'
+    }
+    loaded.value=false;backupPreview.value=null;backupReceiptImages.value=new Map();restoreRows.value=[];restoreConflicts.value=[]
     restoreIncludeConflicts.value=false;restoreOwnKeys.value=new Map()
-    message.value=`復元完了：明細 ${completed}件・設定 ${settingsRestored}件（重複除外 ${alreadyPresent}件）`
+    message.value=`復元完了：明細 ${completed}件・設定 ${settingsRestored}件（重複除外 ${alreadyPresent}件）`+imageStatus
     await loadFinanceSettings()
     emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
   }catch(e){
@@ -1543,8 +1574,8 @@ async function removeCardBill(record) {
     <summary>定期処理の実行状況</summary>
     <button type="button" :disabled="jobHealthBusy" @click="loadJobHealth">{{jobHealthBusy?'確認中…':'最新の実行結果を確認'}}</button>
     <p v-if="jobHealthError" role="alert">{{jobHealthError}}</p>
-    <p v-if="!jobHealthBusy && jobHealth.length===0">記録がありません。次の実行後に再確認してください。</p>
-    <p v-for="row in jobHealth" :key="row.job" :role="row.status==='failed'?'alert':undefined">{{jobNames[row.job]||row.job}}：{{jobHealthText(row)}}</p>
+    <p v-if="!jobHealthBusy && jobHealthLoaded && jobHealth.length===0">各処理の実行履歴がまだありません。</p>
+    <p v-for="row in jobHealthLoaded ? jobHealthDisplay : []" :key="row.job" :role="row.status==='failed'?'alert':undefined">{{jobNames[row.job]||row.job}}：{{jobHealthText(row)}}</p>
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure device-privacy-panel">
     <summary>端末のプライバシー設定</summary>
@@ -1571,15 +1602,15 @@ async function removeCardBill(record) {
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="$event.target.open && refreshLocalReceiptCount()">
     <summary>バックアップ・復元</summary>
-    <p>帳簿・設定をJSON保存（レシート画像は対象外）</p>
-    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,application/json" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
+    <p>JSONは帳簿のみ。家計簿の一括ZIPなら帳簿とこの端末の画像をまとめて確認・復元できます。既存の画像は上書きしません。</p>
+    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,.zip,application/json,application/zip" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
       <button type="button" :disabled="busy || backupBusy || receiptImagesBusy || !loaded" @click="downloadFullBackup">{{backupBusy ? '作成中…' : '帳簿＋画像をまとめてZIP保存'}}</button>
       <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像をZIP保存</button>
       
     </div>
     <div v-if="backupPreview" class="restore-preview">
-      <p>追加 {{restoreRows.length}}件 · 重複候補 {{restoreConflicts.length}}件（既存データは保持）</p>
+      <p>追加 {{restoreRows.length}}件 · 重複候補 {{restoreConflicts.length}}件 · 画像 {{backupReceiptImages.size}}件（既存データは保持）</p>
       <details v-if="restoreConflicts.length"><summary>重複候補を確認（{{restoreConflicts.length}}件）</summary><p v-for="e in restoreConflicts.slice(0,30)" :key="e.backupIndex">{{e.date}} · {{e.merchant || e.category}} · {{yen(e.amount)}} · {{e.payment_source || '未設定'}}</p><p v-if="restoreConflicts.length>30">30件まで表示</p></details>
       <label v-if="restoreConflicts.length" class="restore-confirm-duplicates"><input type="checkbox" v-model="restoreIncludeConflicts" />重複候補も別取引として追加する（再確認あり）</label>
       <button type="button" :disabled="busy||backupBusy" @click="restore">未登録の設定と明細を確認して復元</button>

@@ -62,6 +62,9 @@ export default {
       const today = tokyoDateAt(scheduledTime)
       if (isJapanHoliday(today)) {
         console.log('NAV sync skipped: Japan non-trading day', JSON.stringify({cron,today}))
+        // A skipped market day is an expected state, not a missing/failed run.
+        // One monotonic heartbeat is written without requesting any fund quotes.
+        ctx.waitUntil(heartbeat('nav','skipped',{skipped:1}))
         return
       }
       // Both official NAV cron paths remain unchanged on Japanese trading days.

@@ -23,7 +23,8 @@ test('ZIP rejects corrupted CRC, unexpected compression and missing ledger',asyn
   const invalid=new Uint8Array(await src.arrayBuffer())
   invalid[8]=8;invalid[9]=0
   await assert.rejects(()=>readCompleteBackupZip(new Blob([invalid])))
-  await assert.rejects(()=>readCompleteBackupZip(await receiptZip([{entryId:17,blob:image}])))
+  const imagesOnly=await receiptZip([{entryId:17,blob:image}])
+  await assert.rejects(()=>readCompleteBackupZip(imagesOnly))
 })
 test('restore maps new D1 IDs with a verified deterministic request ID',()=>{
   const prepared=[{id:17,clientRequestId:'restore_a1'}]

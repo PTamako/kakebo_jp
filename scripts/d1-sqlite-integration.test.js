@@ -263,7 +263,7 @@ test('actual SQLite: restore insert-only cannot overwrite newer card bills and c
     const saved=await call('entries','POST',{date:'2026-09-14',time:'12:00',
       amount:9000,type:'expense',merchant:'テスト店舗',category:'日用品',paymentSource:'カードA'})
     assert.equal(saved.status,200)
-    const bill={name:'カードA',month:'2026-10',start:'2026-09-01',end:'2026-09-30',total:9000,count:1}
+    const bill={name:'カードA',month:'2026-09',start:'2026-09-01',end:'2026-09-30',total:9000,count:1}
     assert.equal((await call('card-bills','PUT',bill)).status,200)
     assert.equal((await call('card-bills','POST',{...bill,total:99999})).status,200)
     assert.equal((await call('card-bills')).body.find(row=>row.name==='カードA').total,9000)

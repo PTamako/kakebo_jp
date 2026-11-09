@@ -41,21 +41,30 @@ test('unrelated API routes bypass dictionary backup work',async()=>{
   const res=await onRequest({request:new Request('https://example.test/api/rules'),next:async()=>Response.json({ok:true}),env:{}})
   assert.equal((await res.json()).ok,true)
 })
-test('NAV Cron does not call D1 on a Japanese public holiday',async()=>{
-  let called=false
+test('NAV Cron on a public holiday records a skip without querying fund holdings',async()=>{
+  const queries=[],pending=[]
+  const db={prepare(sql){queries.push(sql);return {bind(){return this},async run(){return {meta:{changes:1}}}}}}
   await cronWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-11-03T10:30:00Z')},
-    {DB:{prepare(){called=true;throw Error('no D1 on holiday')}}},
-    {waitUntil(){called=true}})
-  assert.equal(called,false)
+    {DB:db,HEARTBEAT_ENABLED:'true'},{waitUntil(p){pending.push(p)}})
+  await Promise.all(pending)
+  assert.equal(queries.length,1)
+  assert.match(queries[0],/INSERT INTO scheduled_job_state/)
 })
-test('NAV Cron does not call D1 on weekend but does on trading day',async()=>{
-  let called=false
-  const ctx={waitUntil(p){called=true;return p}}
-  const db={prepare(){return {all:async()=>({results:[]})}}}
-  await cronWorker.scheduled({cron:'15 14 * * *',scheduledTime:Date.parse('2026-11-07T14:15:00Z')},{DB:db},ctx)
-  assert.equal(called,false)
-  await cronWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-11-04T10:30:00Z')},{DB:db},ctx)
-  assert.equal(called,true)
+test('NAV Cron on weekends records a skip; trading days still query holdings',async()=>{
+  const queries=[],pending=[]
+  const ctx={waitUntil(p){pending.push(p)}}
+  const db={prepare(sql){queries.push(sql);return {bind(){return this},
+    async run(){return {meta:{changes:1}}},async all(){return {results:[]}}}}}
+  await cronWorker.scheduled({cron:'15 14 * * *',scheduledTime:Date.parse('2026-11-07T14:15:00Z')},
+    {DB:db,HEARTBEAT_ENABLED:'true'},ctx)
+  await Promise.all(pending.splice(0))
+  assert.equal(queries.length,1)
+  assert.match(queries[0],/INSERT INTO scheduled_job_state/)
+  queries.length=0
+  await cronWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-11-04T10:30:00Z')},
+    {DB:db,HEARTBEAT_ENABLED:'true'},ctx)
+  await Promise.all(pending)
+  assert.ok(queries.some(sql=>/investment_holdings/.test(sql)))
 })
 
 test('full 775-keyword dictionary remains intact across bounded restore stages',()=>{

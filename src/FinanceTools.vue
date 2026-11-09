@@ -448,9 +448,12 @@ watch(creditCardSources, sources => {
 })
 const settingsReady = ref(false)
 const jobHealth=ref([])
+const jobHealthLoaded=ref(false)
 const jobHealthBusy=ref(false)
 const jobHealthError=ref('')
 const jobNames={recurring:'固定費自動記帳',sbi:'SBI積立振替',nav:'投信基準価額更新'}
+const jobHealthDisplay=computed(()=>Object.keys(jobNames).map(job=>
+  jobHealth.value.find(row=>row.job===job) || {job,status:'missing'}))
 async function loadJobHealth() {
   if(jobHealthBusy.value)return
   jobHealthBusy.value=true;jobHealthError.value=''
@@ -458,10 +461,12 @@ async function loadJobHealth() {
     const result=await props.api('job-health')
     if(!Array.isArray(result))throw Error('応答形式を確認してください')
     jobHealth.value=result
-  }catch(e){jobHealthError.value='実行履歴を取得できません：'+e.message}
+    jobHealthLoaded.value=true
+  }catch(e){jobHealthLoaded.value=false;jobHealthError.value='実行履歴を取得できません：'+e.message}
   finally{jobHealthBusy.value=false}
 }
 function jobHealthText(row) {
+  if(!row?.scheduledAt)return '実行記録なし（初回実行後に確認してください）'
   const state=row?.status==='failed'?'失敗':row?.status==='skipped'?'休場日のため対象外':'成功'
   const when=row?.scheduledAt ? new Date(row.scheduledAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}) : '日時不明'
   return when+' · '+state
@@ -1543,8 +1548,8 @@ async function removeCardBill(record) {
     <summary>定期処理の実行状況</summary>
     <button type="button" :disabled="jobHealthBusy" @click="loadJobHealth">{{jobHealthBusy?'確認中…':'最新の実行結果を確認'}}</button>
     <p v-if="jobHealthError" role="alert">{{jobHealthError}}</p>
-    <p v-if="!jobHealthBusy && jobHealth.length===0">記録がありません。次の実行後に再確認してください。</p>
-    <p v-for="row in jobHealth" :key="row.job" :role="row.status==='failed'?'alert':undefined">{{jobNames[row.job]||row.job}}：{{jobHealthText(row)}}</p>
+    <p v-if="!jobHealthBusy && jobHealthLoaded && jobHealth.length===0">各処理の実行履歴がまだありません。</p>
+    <p v-for="row in jobHealthLoaded ? jobHealthDisplay : []" :key="row.job" :role="row.status==='failed'?'alert':undefined">{{jobNames[row.job]||row.job}}：{{jobHealthText(row)}}</p>
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure device-privacy-panel">
     <summary>端末のプライバシー設定</summary>

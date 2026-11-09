@@ -24,7 +24,7 @@ npm run verify:release
 
 `verify:release` は回帰テスト（`node --test scripts/*.test.js`）、本番依存のセキュリティ監査、Vite ビルドを実行します。
 
-ローカル確認：`npm run cf:dev`。PR マージ前には [リリース前チェック](.github/PULL_REQUEST_TEMPLATE.md) に従い、最新コミットと Cloudflare Pages Preview のビルド成功が一致することを確認します。GitHub Actions の自動起動は利用枠の都合で停止しており、Cloudflare Pages のビルドと必要時の手動検証を使用します。静的ビルド成功だけで、実機 Safari や本番 Cron の稼働まで保証されるわけではありません。
+ローカル確認：`npm run cf:dev`。PR マージ前には [リリース前チェック](.github/PULL_REQUEST_TEMPLATE.md) に従い、最新コミットと Cloudflare Pages Preview のビルド成功が一致することを確認します。GitHub Actions は PR ごとに Validate を自動起動し、画面変更を含む PR では Mobile WebKit Smoke も起動します。Cloudflare Pages Preview の成功と GitHub CI の成功を両方確認してからマージしてください。非公開リポジトリの強制ブランチ保護は契約上有効化できない場合があり、手動チェックリストだけでは直接 push を防げません。静的ビルド成功だけで、実機 Safari や本番 Cron の稼働まで保証されるわけではありません。
 
 ## D1 無料枠を守る開発方針
 

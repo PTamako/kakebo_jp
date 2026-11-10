@@ -82,6 +82,18 @@ async function checkPreviouslyDeletedImages(){
   }finally{receiptCleanupBusy.value=false}
 }
 const receiptExportMessage = ref('')
+const receiptBatchCursor=ref(0)
+const receiptPeriodExportCursor=ref(0)
+const RECEIPTS_PER_ZIP=200
+async function saveReceiptZipChunk(ids,filename){
+  const rows=await listReceiptsForBackup(await listReceiptImagesForExport(),{ids})
+  if(rows.length!==ids.length)throw Error('画像の件数が変わりました。もう一度確認してください')
+  const blob=await receiptZip(rows)
+  const url=URL.createObjectURL(blob),a=document.createElement('a')
+  a.href=url;a.download=filename
+  document.body.appendChild(a);a.click();a.remove()
+  setTimeout(()=>URL.revokeObjectURL(url),60000)
+}
 async function refreshLocalReceiptCount() {
   if (receiptImagesBusy.value) return
   receiptImagesBusy.value = true
@@ -96,19 +108,20 @@ async function refreshLocalReceiptCount() {
     receiptImagePrivacyMessage.value = '画像の件数を確認できません：' + e.message
   } finally { receiptImagesBusy.value = false }
 }
-async function downloadReceiptImages() {
-  if(receiptImagesBusy.value)return
+async function downloadReceiptImages(){
+  if(receiptImagesBusy.value||receiptPeriodBusy.value)return
   receiptImagesBusy.value=true
-  try {
-    const records=await listReceiptsForBackup(await listReceiptImagesForExport())
-    if(!records.length){receiptExportMessage.value='保存対象のレシート画像はありません';return}
-    const blob=await receiptZip(records)
-    const url=URL.createObjectURL(blob),a=document.createElement('a')
-    a.href=url;a.download='kakeibo-receipts-'+new Date().toISOString().slice(0,10)+'.zip'
-    document.body.appendChild(a)
-    a.click();a.remove()
-    setTimeout(()=>URL.revokeObjectURL(url),60000)
-    receiptExportMessage.value=records.length+'件の画像をZIPに保存しました。帳簿JSONとは別に保管してください'
+  try{
+    const inventory=await receiptInventory(await listReceiptImagesForExport(),{fresh:true})
+    const ids=inventory.map(x=>x.entryId).sort((a,b)=>a-b)
+    if(!ids.length){receiptExportMessage.value='保存対象のレシート画像はありません';return}
+    let chunk=ids.filter(id=>id>receiptBatchCursor.value).slice(0,RECEIPTS_PER_ZIP)
+    if(!chunk.length){receiptBatchCursor.value=0;chunk=ids.slice(0,RECEIPTS_PER_ZIP)}
+    await saveReceiptZipChunk(chunk,'kakeibo-receipts-'+chunk[0]+'-'+chunk.at(-1)+'.zip')
+    const finished=ids.at(-1)<=chunk.at(-1)
+    receiptBatchCursor.value=finished?0:chunk.at(-1)
+    receiptExportMessage.value=chunk.length+'件の画像をZIP保存しました（全'+ids.length+'件）。'+
+      (finished?'全件の分割保存が完了しました。':'次の画像ZIPも保存してください。')
   }catch(e){receiptExportMessage.value='画像の保存に失敗しました：'+e.message}
   finally{receiptImagesBusy.value=false}
 }
@@ -179,7 +192,28 @@ const receiptPeriodLabel = computed(() => receiptPeriodYear.value + '年' +
 const receiptPeriodSize = bytes => bytes >= 1024*1024
   ? (bytes/(1024*1024)).toFixed(2)+' MB'
   : (bytes/1024).toFixed(1)+' KB'
-watch([receiptPeriodYear,receiptPeriodMonth],()=>{receiptPeriodPreview.value=null})
+watch([receiptPeriodYear,receiptPeriodMonth],()=>{
+  receiptPeriodPreview.value=null
+  receiptPeriodExportCursor.value=0
+})
+async function downloadSelectedReceiptPeriod(){
+  if(receiptImagesBusy.value||receiptPeriodBusy.value||busy.value)return
+  receiptImagesBusy.value=true
+  try{
+    const plan=await freshReceiptPeriodPlan()
+    let chunk=plan.ids.filter(id=>id>receiptPeriodExportCursor.value).slice(0,RECEIPTS_PER_ZIP)
+    if(!chunk.length){receiptPeriodExportCursor.value=0;chunk=plan.ids.slice(0,RECEIPTS_PER_ZIP)}
+    if(!chunk.length){receiptExportMessage.value='選択期間に該当する画像はありません';return}
+    await saveReceiptZipChunk(chunk,'kakeibo-receipts-'+receiptPeriodYear.value+
+      (receiptPeriodMonth.value?'-'+receiptPeriodMonth.value:'')+'-'+chunk[0]+'-'+chunk.at(-1)+'.zip')
+    const done=plan.ids.at(-1)<=chunk.at(-1)
+    receiptPeriodExportCursor.value=done?0:chunk.at(-1)
+    receiptExportMessage.value=receiptPeriodLabel.value+'：'+chunk.length+'件をZIP保存（対象'+plan.ids.length+
+      '件）。'+(done?'この期間の保存が完了しました。':'次のZIPも保存してください。')+
+      (plan.unmatched?' 日付未確認の画像は「全画像を分割ZIP保存」で保存してください。':'')
+  }catch(e){receiptExportMessage.value='期間指定の画像ZIP保存に失敗しました：'+e.message}
+  finally{receiptImagesBusy.value=false}
+}
 async function freshReceiptPeriodPlan() {
   // Reload all dated rows rather than trusting a stale management-page snapshot.
   if (!(await loadAll())) throw Error('全明細を更新できません。通信を確認してください')
@@ -738,7 +772,7 @@ async function downloadFullBackup(){
     setTimeout(()=>URL.revokeObjectURL(url),60000)
     message.value='帳簿JSONとレシート画像 '+images.length+'件をZIP保存しました。このZIPはバックアップ選択画面から復元できます'
   }catch(e){
-    message.value='一括ZIP保存に失敗しました：'+e.message+'。帳簿JSONと画像ZIPを別々に保存してください'
+    message.value='一括ZIP保存に失敗しました：'+e.message+'。帳簿JSONを保存し、画像は200件ずつ分割ZIP保存してください'
   }finally{backupBusy.value=false}
 }
 async function preview(event){
@@ -1679,6 +1713,7 @@ async function removeCardBill(record) {
           </label>
         </div>
         <button type="button" :disabled="receiptPeriodBusy || receiptImagesBusy || busy || !localReceiptCount" @click="previewReceiptPeriodDeletion">{{receiptPeriodBusy?'確認中…':'削除対象を確認'}}</button>
+        <button type="button" :disabled="receiptPeriodBusy || receiptImagesBusy || busy || !localReceiptCount" @click="downloadSelectedReceiptPeriod">この期間の画像を分割ZIP保存（200件ずつ）</button>
         <p v-if="receiptPeriodPreview" class="device-receipt-period-status" role="status">
           {{receiptPeriodLabel}}：{{receiptPeriodPreview.ids.length}}件 · {{receiptPeriodPreview.unknownSizes ? '一部サイズ未取得' : '約'+receiptPeriodSize(receiptPeriodPreview.bytes)}}
           <span v-if="receiptPeriodPreview.unmatched">（日付を確認できない{{receiptPeriodPreview.unmatched}}件は対象外）</span>
@@ -1699,9 +1734,10 @@ async function removeCardBill(record) {
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,.zip,application/json,application/zip" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
       <button type="button" :disabled="busy || backupBusy || receiptImagesBusy || !loaded" @click="downloadFullBackup">{{backupBusy ? '作成中…' : '帳簿＋画像をまとめてZIP保存'}}</button>
-      <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">レシート画像をZIP保存</button>
+      <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">全画像を分割ZIP保存（200件ずつ）</button>
       
     </div>
+    <p v-if="receiptExportMessage" role="status">{{receiptExportMessage}}</p>
     <div v-if="backupPreview" class="restore-preview">
       <p>追加 {{restoreRows.length}}件 · 重複候補 {{restoreConflicts.length}}件 · 画像 {{backupReceiptImages.size}}件（既存データは保持）</p>
       <details v-if="restoreConflicts.length"><summary>重複候補を確認（{{restoreConflicts.length}}件）</summary><p v-for="e in restoreConflicts.slice(0,30)" :key="e.backupIndex">{{e.date}} · {{e.merchant || e.category}} · {{yen(e.amount)}} · {{e.payment_source || '未設定'}}</p><p v-if="restoreConflicts.length>30">30件まで表示</p></details>

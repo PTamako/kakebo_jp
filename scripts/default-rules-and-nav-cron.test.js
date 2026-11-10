@@ -41,30 +41,46 @@ test('unrelated API routes bypass dictionary backup work',async()=>{
   const res=await onRequest({request:new Request('https://example.test/api/rules'),next:async()=>Response.json({ok:true}),env:{}})
   assert.equal((await res.json()).ok,true)
 })
-test('NAV Cron on a public holiday records a skip without querying fund holdings',async()=>{
+test('NAV on a public holiday skips vendor calls while recurring and SBI still run',async()=>{
   const queries=[],pending=[]
-  const db={prepare(sql){queries.push(sql);return {bind(){return this},async run(){return {meta:{changes:1}}}}}}
+  const db={prepare(sql){
+    queries.push(sql)
+    if(sql.includes('FROM recurring_plans p'))return {bind(){return this},all:async()=>({results:[]})}
+    if(sql.includes('UPDATE entries SET transfer_applied = 1'))
+      return {bind(){return this},run:async()=>({meta:{changes:0}})}
+    if(sql.includes('INSERT INTO scheduled_job_state'))
+      return {bind(){return this},run:async()=>({meta:{changes:1}})}
+    throw Error('holiday Cron should not read holdings: '+sql)
+  }}
   await cronWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-11-03T10:30:00Z')},
     {DB:db,HEARTBEAT_ENABLED:'true'},{waitUntil(p){pending.push(p)}})
   await Promise.all(pending)
-  assert.equal(queries.length,1)
-  assert.match(queries[0],/INSERT INTO scheduled_job_state/)
+  assert.equal(queries.filter(sql=>/investment_holdings/.test(sql)).length,0)
+  assert.equal(queries.filter(sql=>/INSERT INTO scheduled_job_state/.test(sql)).length,3)
 })
-test('NAV Cron on weekends records a skip; trading days still query holdings',async()=>{
+
+test('weekend NAV is skipped at 19:30 but prior Friday can be retried on Saturday 00:30',async()=>{
   const queries=[],pending=[]
+  const db={prepare(sql){
+    queries.push(sql)
+    if(sql.includes('FROM recurring_plans p'))return {bind(){return this},all:async()=>({results:[]})}
+    if(sql.includes('UPDATE entries SET transfer_applied = 1'))
+      return {bind(){return this},run:async()=>({meta:{changes:0}})}
+    if(sql.includes('investment_holdings'))return {all:async()=>({results:[]})}
+    if(sql.includes('INSERT INTO scheduled_job_state'))
+      return {bind(){return this},run:async()=>({meta:{changes:1}})}
+    throw Error('unexpected Cron SQL '+sql)
+  }}
   const ctx={waitUntil(p){pending.push(p)}}
-  const db={prepare(sql){queries.push(sql);return {bind(){return this},
-    async run(){return {meta:{changes:1}}},async all(){return {results:[]}}}}}
-  await cronWorker.scheduled({cron:'15 14 * * *',scheduledTime:Date.parse('2026-11-07T14:15:00Z')},
+  await cronWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-11-07T10:30:00Z')},
     {DB:db,HEARTBEAT_ENABLED:'true'},ctx)
   await Promise.all(pending.splice(0))
-  assert.equal(queries.length,1)
-  assert.match(queries[0],/INSERT INTO scheduled_job_state/)
+  assert.equal(queries.filter(sql=>/investment_holdings/.test(sql)).length,0)
   queries.length=0
-  await cronWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-11-04T10:30:00Z')},
+  await cronWorker.scheduled({cron:'30 15 * * *',scheduledTime:Date.parse('2026-11-06T15:30:00Z')},
     {DB:db,HEARTBEAT_ENABLED:'true'},ctx)
-  await Promise.all(pending)
-  assert.ok(queries.some(sql=>/investment_holdings/.test(sql)))
+  await Promise.all(pending.splice(0))
+  assert.equal(queries.filter(sql=>/investment_holdings/.test(sql)).length,1)
 })
 
 test('full 775-keyword dictionary remains intact across bounded restore stages',()=>{

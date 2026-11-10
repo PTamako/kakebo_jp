@@ -31,6 +31,15 @@ test('completed R2 receipt migration removes only the temporary migration contro
   assert.match(privacy,/R2・端末の画像をすべて削除/)
 })
 
+test('new receipt upload never stores a phone copy when R2 is unavailable',()=>{
+  const receiptSave=app.split('async function persistReceipt(id, blob, replace = false) {')[1]?.split('const receiptImageIds = ref(new Set())')[0]
+  assert.ok(receiptSave, 'receipt save handler must exist')
+  assert.match(receiptSave,/await uploadR2Receipt\(entryId, blob, \{ replace \}\)/)
+  assert.match(receiptSave,/throw Error\('R2への画像保存に失敗しました。端末に新しい画像コピーは作成していません/)
+  assert.doesNotMatch(receiptSave,/saveReceiptImage\s*\(/)
+  assert.doesNotMatch(app,/import \{[^\n]*saveReceiptImage[^\n]*\} from '\.\/receipt-store.js'/)
+})
+
 function fakeStorage(){
   const map=new Map()
   return {

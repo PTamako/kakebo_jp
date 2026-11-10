@@ -407,7 +407,7 @@ async function loadYear() {
   }
 }
 onMounted(async () => {
-  cleanupReceiptImages().catch(() => {}) // Existing 30-day photo retention is unchanged.
+  cleanupReceiptImages().catch(() => {}) // Legacy photos are never deleted automatically.
   if (!locked.value) {
     // Recover D1 preferences and drafts before loading the ledger.
     await restoreAppState()

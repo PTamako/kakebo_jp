@@ -113,6 +113,19 @@ try{
     await page.locator('.card-add-editor').waitFor()
     // Management opens a full bottom panel, not a long inline accordion.
     await page.locator('.finance-section-tabs').getByRole('button',{name:'その他'}).click()
+    const appearance=await page.evaluate(()=>{
+      const entry=document.querySelector('.merchant-sheet-launch')
+      const peer=document.querySelector('.finance-tools details.finance-disclosure')
+      const card=getComputedStyle(entry), reference=getComputedStyle(peer)
+      return {border:card.borderTopWidth, peerBorder:reference.borderTopWidth,
+        background:card.backgroundColor, peerBackground:reference.backgroundColor,
+        radius:card.borderTopLeftRadius, peerRadius:reference.borderTopLeftRadius,
+        height:entry.getBoundingClientRect().height}
+    })
+    assert.equal(appearance.border,appearance.peerBorder,'merchant entry must have the same card border')
+    assert.equal(appearance.background,appearance.peerBackground,'merchant entry must use the same white card surface')
+    assert.equal(appearance.radius,appearance.peerRadius,'merchant entry must use matching rounded corners')
+    assert.ok(appearance.height>=64,'merchant entry must remain thumb-friendly')
     await page.locator('.merchant-sheet-launch-button').click()
     const merchantSheet=page.getByRole('dialog',{name:'店舗ルール管理'})
     await merchantSheet.waitFor()

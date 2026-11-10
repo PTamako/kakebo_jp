@@ -51,20 +51,15 @@ test('card management, billing, and recurring category can return to initial lab
   assert.match(transaction, /<MobileChoiceSheet :model-value="record\.paymentSource"[^>]*paymentOptions/)
 })
 
-test('clearing a selected management card closes its editor and discards stale draft data', () => {
-  const body = finance.match(/watch\(selectedCard, \(name\) => \{([\s\S]*?)\}, \{ flush: 'sync' \}\)/)?.[1]
-  assert.ok(body, 'card selection watcher exists')
-  const cardMode = { value: 'edit' }
-  const editedCardName = { value: '以前のカード' }
-  const editSourceType = { value: 'prepaid' }
-  const selectedSourceType = { value: 'standard' }
-  const cardMessage = { value: '以前のカードを保存しました' }
-  const handleChange = new Function('name', 'cardMode', 'editedCardName', 'editSourceType', 'selectedSourceType', 'cardMessage', body)
-  handleChange('', cardMode, editedCardName, editSourceType, selectedSourceType, cardMessage)
-  assert.equal(cardMode.value, '')
-  assert.equal(editedCardName.value, '')
-  assert.equal(editSourceType.value, 'standard')
-  assert.equal(cardMessage.value, '')
+test('the card editor resets its draft every time the selected card or mode changes', () => {
+  const sheet=read('src/MobileCardEditorSheet.vue')
+  assert.match(sheet,/watch\(\(\)=>\[props\.mode,props\.cardName\]/)
+  assert.match(sheet,/resetDraft\(\)/)
+  assert.match(sheet,/name\.value=props\.cardName/)
+  assert.match(sheet,/sourceType\.value=card\.source_type\|\|'standard'/)
+  assert.match(sheet,/statGroup\.value=card\.stat_group\|\|'card'/)
+  assert.match(sheet,/name\.value='';sourceType\.value='standard'/)
+  assert.match(sheet,/if\(dirty\.value&&!window\.confirm\('変更内容を破棄しますか？'\)\)return/)
 })
 
 test('blank billing card hides totals, saved bill and actions instead of mutating D1', () => {

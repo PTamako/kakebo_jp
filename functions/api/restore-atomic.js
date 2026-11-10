@@ -103,6 +103,7 @@ export async function restoreAtomic(db, archive) {
     add('INSERT OR IGNORE INTO fund_prices(fund_code,nav_per_10000,price_date,source,updated_at) VALUES(?1,?2,?3,?4,?5)',
       p.fund_code,p.nav_per_10000,p.price_date,p.source,p.updated_at||new Date().toISOString())
   const insertedIndexes=[]
+  const archivedIndexes=[]
   const appendEntry=e=>{
     const type=e.type, transfer=type==='transfer'
     const pointIncome=type==='income' && e.category==='ポイント還元'
@@ -186,6 +187,7 @@ export async function restoreAtomic(db, archive) {
     // All collision checks, ID allocation and the INSERT execute within the
     // same D1 batch transaction. Never overwrite an existing live/trash row.
     // A second import sees the tagged identity and inserts nothing.
+    archivedIndexes.push(statements.length)
     add(`INSERT INTO trash_items(item_type,item_id,payload_json,deleted_at)
       WITH chosen(id) AS (
         SELECT CASE WHEN
@@ -228,11 +230,13 @@ export async function restoreAtomic(db, archive) {
   for(const item of archive.recurringDateExclusions||[])
     add('INSERT OR IGNORE INTO recurring_date_exclusions(plan_id,date) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)',
       item.planId,item.date)
-  if(!statements.length) return {ok:true,created:0,settings:0,skipped:0}
+  if(!statements.length) return {ok:true,created:0,settings:0,skipped:0,archivedImported:0,archivedSkipped:0}
   const result=await db.batch(statements)
   if(!Array.isArray(result)||result.length!==statements.length||result.some(r=>r?.success===false))
     throw Error('atomic_restore_db_failed')
   const insertedSet=new Set(insertedIndexes)
   const created=insertedIndexes.reduce((n,i)=>n+Number(result[i]?.meta?.changes||0),0)
-  return {ok:true,created,settings:result.reduce((n,r,i)=>n+(!insertedSet.has(i)?Number(r.meta?.changes||0):0),0),skipped:allEntries.length-created}
+  const archivedImported=archivedIndexes.reduce((n,i)=>n+Number(result[i]?.meta?.changes||0),0)
+  return {ok:true,created,settings:result.reduce((n,r,i)=>n+(!insertedSet.has(i)?Number(r.meta?.changes||0):0),0),skipped:allEntries.length-created,
+    archivedImported,archivedSkipped:archivedIndexes.length-archivedImported}
 }

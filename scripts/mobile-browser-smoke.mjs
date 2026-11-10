@@ -82,6 +82,8 @@ try{
         byDay:[{date:new Date().toLocaleDateString('sv-SE'),amount:1234}],
         byCategory:[{category:'日用品',amount:1234}],byMonth:[],incomeByMonth:[],incomeByCategory:[],
         incomeByMonthCategory:[],paymentMethods:[],periodComparison:null}
+      else if(p==='custom-rules')data=[{keyword:'テスト商店',category:'日用品'}]
+      else if(p==='merchant-payment-rules')data=[{keyword:'テスト商店',payment_source:'テストカード'}]
       else if(p==='entry-years')data=[{year:String(new Date().getFullYear()),count:1}]
       else if(p==='job-health')data=[]
       else if(p==='prepaid-assets')data={cards:[],latestUsage:null,latestCharge:null}
@@ -109,6 +111,23 @@ try{
     assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Closing sheet must unlock page scroll')
         await page.getByRole('button',{name:'カードを追加'}).click()
     await page.locator('.card-add-editor').waitFor()
+    // Management opens a full bottom panel, not a long inline accordion.
+    await page.locator('.finance-section-tabs').getByRole('button',{name:'その他'}).click()
+    await page.locator('.merchant-sheet-launch-button').click()
+    const merchantSheet=page.getByRole('dialog',{name:'店舗ルール管理'})
+    await merchantSheet.waitFor()
+    await merchantSheet.getByRole('searchbox',{name:'店舗ルールを日本語で検索'}).fill('ﾃｽﾄ')
+    await merchantSheet.getByRole('button',{name:'テスト商店のルールを編集'}).click()
+    const payPicker=merchantSheet.getByRole('button',{name:/支払方法：/})
+    await payPicker.click()
+    const payChoices=page.getByRole('dialog',{name:'支払方法',exact:true})
+    await payChoices.getByRole('option',{name:'現金'}).click()
+    await merchantSheet.getByRole('button',{name:'変更を保存'}).click()
+    await merchantSheet.getByRole('button',{name:'閉じる'}).click()
+    assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Merchant sheet must unlock page scroll')
+    const merchantOverflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)
+    assert.ok(merchantOverflow<=2,'Merchant panel overflow at '+width)
+
     const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)
     assert.ok(overflow<=2,'Authenticated '+width+'px layout overflows by '+overflow+'px')
     assert.deepEqual(errors,[],'Authenticated WebKit JS errors at '+width)

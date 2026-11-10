@@ -8,6 +8,7 @@ import { parseSbiHoldingsText } from './sbi-holdings-import.js'
 import { parseSbiFundDetailText, applySbiFundDetailUpdates } from './sbi-fund-detail-import.js'
 import { ocrImage } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
+import MobileChoiceSegments from './MobileChoiceSegments.vue'
 
 const props = defineProps({
   api: { type: Function, required: true },
@@ -288,7 +289,7 @@ async function saveBulk(){
   }finally{saving.value=false}
 }
 function closeEditor() { if(!saving.value && !bulkBusy.value){ editing.value = ''; editingTransfer.value = null } }
-function onEditorKeydown(event) { if (event.key === 'Escape') closeEditor() }
+function onEditorKeydown(event) { if (event.key === 'Escape' && !document.querySelector('.mobile-choice-backdrop')) closeEditor() }
 
 const availableFunds = computed(() => {
   const items = new Map(knownFunds.map(item => [item.code,item]))
@@ -559,7 +560,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <div v-if="shouldShowNavReferences(plan.fundCode)" class="sbi-nav-links">
           <a v-for="refLink in navReferences(plan.fundCode,plan.fundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer" :title="refLink.label" :aria-label="refLink.label+'を開く'">{{navLinkLabel(refLink)}} <span aria-hidden="true">↗</span></a>
         </div>
-        <label>口座区分<select v-model="plan.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option></select></label>
+        <label>口座区分<MobileChoiceSegments v-model="plan.accountType" :disabled="existingIdentity" label="口座区分"
+  :options="[{value:'tsumitate',label:'NISA（つみたて）'},{value:'growth',label:'NISA（成長）'}]" /></label>
         <label>毎月の積立額（円）<input v-model.number="plan.monthlyAmount" type="number" min="0" step="1" required /></label>
         <label>注文希望日<input v-model.number="plan.orderDay" type="number" min="1" max="28" required /></label>
         <label>適用開始月<input v-model="plan.effectiveMonth" type="month" required /></label><p class="sbi-hint">変更は指定した月以降に適用され、以前の月は変更されません。</p>
@@ -637,7 +639,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <div v-if="shouldShowNavReferences(holding.fundCode)" class="sbi-nav-links">
           <a v-for="refLink in navReferences(holding.fundCode,holding.fundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer" :title="refLink.label" :aria-label="refLink.label+'を開く'">{{navLinkLabel(refLink)}} <span aria-hidden="true">↗</span></a>
         </div>
-        <label>口座区分<select v-model="holding.accountType" :disabled="existingIdentity"><option value="tsumitate">NISA（つみたて）</option><option value="growth">NISA（成長）</option><option value="combined">NISA（成長＋つみたて 合算）</option></select></label>
+        <label>口座区分<MobileChoiceSegments v-model="holding.accountType" :disabled="existingIdentity" label="口座区分"
+  :options="[{value:'tsumitate',label:'NISA（つみたて）'},{value:'growth',label:'NISA（成長）'},{value:'combined',label:'NISA（成長＋つみたて 合算）'}]" /></label>
         <label>保有口数<input v-model.number="holding.units" type="number" min="0" step="1" required /></label>
         <label>取得金額（円）<input v-model.number="holding.acquisitionCost" type="number" min="0" step="1" required /></label>
         <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>

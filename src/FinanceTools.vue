@@ -7,6 +7,7 @@ import { findLedgerDuplicateGroups, duplicateReviewSignature } from './duplicate
 import { duplicateTrashKey, recurringTrashKey, transferTrashKey, visibleReviewedTrash } from './review-trash.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
+import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
@@ -379,6 +380,34 @@ const filteredMerchantRules = computed(() => {
 const visibleMerchantRules = computed(() => filteredMerchantRules.value.slice(0, visibleMerchantRuleCount.value))
 function searchMerchantRules(value) { merchantRuleSearch.value = value; visibleMerchantRuleCount.value = merchantRuleBatchSize }
 function showMoreMerchantRules() { visibleMerchantRuleCount.value += merchantRuleBatchSize }
+// Only explicit Save mutates remembered rules; reading/opening the sheet is local.
+async function saveMerchantRule({keyword,oldCategory,oldPayment,category,paymentSource}){
+  const original=merchantRulesCombined.value.find(item=>item.keyword===keyword)
+  if(!original)throw Error('ルールが変更されています。一覧を更新してください')
+  if(original.category!==oldCategory||original.payment_source!==oldPayment)
+    throw Error('別の端末で変更されました。画面を更新してください')
+  if(category && !props.categories.includes(category) && category!==original.category)
+    throw Error('カテゴリを確認してください')
+  if(paymentSource && !props.paymentSources.includes(paymentSource) && paymentSource!==original.payment_source)
+    throw Error('支払方法を確認してください')
+  let changed=false
+  try{
+    if(category!==original.category){
+      if(category)await props.api('rules',{method:'POST',body:JSON.stringify({keyword,category})})
+      else await props.api('custom-rules?keyword='+encodeURIComponent(keyword),{method:'DELETE'})
+      changed=true
+    }
+    if(paymentSource!==original.payment_source){
+      if(paymentSource)await props.api('merchant-payment-rules',{method:'POST',body:JSON.stringify({keyword,paymentSource})})
+      else await props.api('merchant-payment-rules?keyword='+encodeURIComponent(keyword),{method:'DELETE'})
+      changed=true
+    }
+    cardMessage.value='店舗ルールを更新しました'
+  }finally{
+    // A partial server success is refreshed too; keep the editor open on failure.
+    if(changed)emit('merchant-rules-changed')
+  }
+}
 async function changeCategoryRule(rule, category) {
   if (category === rule.category) return
   try {
@@ -1512,34 +1541,9 @@ async function removeCardBill(record) {
       </div>
     </details>
   </article>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure merchant-rules-panel">
-    <summary class="merchant-rules-summary"><span>店舗ルール管理</span><span class="merchant-rules-count">{{ merchantRulesCombined.length }}件</span></summary>
-    <div v-if="merchantRulesCombined.length" class="merchant-rule-search">
-      <input type="search" :value="merchantRuleSearch" @input="searchMerchantRules($event.target.value)" placeholder="店舗名・カテゴリ・カードで検索" aria-label="店舗ルールを検索" />
-      <span>{{ filteredMerchantRules.length }}件</span>
-    </div>
-    <p v-if="!merchantRulesCombined.length">記憶した店舗ルールはありません。</p>
-    <p v-else-if="!filteredMerchantRules.length">該当するルールはありません。</p>
-    <div v-for="rule in visibleMerchantRules" :key="rule.keyword" class="merchant-rule-row">
-      <strong>{{ rule.keyword }}</strong>
-      <div class="merchant-rule-fields">
-        <label>カテゴリ
-          <MobileChoiceSheet :model-value="rule.category" :label="rule.keyword+'のカテゴリ'"
-            :options="[{value:'',label:'ルールなし'},...orderedCategories.map(category=>({value:category,label:categoryLabel(category)})),...(rule.category && !categories.includes(rule.category)?[{value:rule.category,label:categoryLabel(rule.category)}]:[])]"
-            @change="changeCategoryRule(rule,$event)" />
-        </label>
-        <label>支払方法
-          <MobileChoiceSheet :model-value="rule.payment_source" :label="rule.keyword+'の支払方法'"
-            :options="[{value:'',label:'ルールなし'},...orderedPayments.map(source=>({value:source,label:source})),...(rule.payment_source && !paymentSources.includes(rule.payment_source)?[{value:rule.payment_source,label:rule.payment_source}]:[])]"
-            @change="changePaymentRule(rule,$event)" />
-        </label>
-      </div>
-    </div>
-    <div v-if="visibleMerchantRules.length < filteredMerchantRules.length" class="merchant-rule-more">
-      <button type="button" @click="showMoreMerchantRules">もっと見る</button>
-      <span>{{ visibleMerchantRules.length }} / {{ filteredMerchantRules.length }}件</span>
-    </div>
-  </details>
+  <MobileMerchantRulesPanel v-if="managementTab === 'tools'"
+    :rules="merchantRulesCombined" :categories="orderedCategories"
+    :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" />
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>
     <div class="recurring-form-layout">

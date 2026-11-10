@@ -8,8 +8,8 @@ test('the backup chooser accepts complete ZIP and JSON without routing photos to
   assert.match(ui,/readCompleteBackupZip\(file\)/)
   assert.match(ui,/verifyBackupIntegrity\(backup\)/)
   assert.match(ui,/planReceiptRestoration\(backup\.entries,images,rows\.value,preparedRows\)/)
-  assert.match(ui,/if\(await getReceiptImage\(item\.id\)\)/)
-  assert.match(ui,/saveReceiptImage\(item\.id,item\.blob\)/)
+  assert.match(ui,/if\(cloudIds\.has\(item\.id\) \|\| await getReceiptImage\(item\.id\)\)/)
+  assert.match(ui,/await uploadR2Receipt\(item\.id,item\.blob\)/)
   assert.match(ui,/未復元/)
 })
 test('NAV non-trading days are recorded and status UI shows absent jobs',()=>{

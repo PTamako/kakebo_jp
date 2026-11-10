@@ -564,8 +564,8 @@ export async function onRequest({ request, env, params }) {
       const statements=[
         'SELECT * FROM entries ORDER BY id',
         recurringArchiveReady
-          ? `SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id`
-          : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only FROM recurring_plans ORDER BY id',
+          ? `SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only,weekdays_json,month_days_json,interval_months FROM recurring_plans p WHERE NOT EXISTS (SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id) ORDER BY id`
+          : 'SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only,weekdays_json,month_days_json,interval_months FROM recurring_plans ORDER BY id',
         'SELECT payment_source,bill_month,period_start,period_end,total_amount,transaction_count FROM card_bills ORDER BY payment_source,bill_month',
         
         "SELECT " + (await prepaidSchemaReady(db)
@@ -595,7 +595,7 @@ export async function onRequest({ request, env, params }) {
       return json({
         format:'kakeibo-ledger-backup',version:portfolioReady ? 4 : 3,exportedAt:new Date().toISOString(),
         entries:rows(0),
-        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled,postingMode:x.posting_mode||'manual',autoFromMonth:x.auto_from_month||'',scheduleType:x.workday_only?'workday':(x.schedule_type||'monthly'),weekday:Number(x.weekday||0)})),
+        plans:rows(1).map(x=>({id:x.id,name:x.name,amount:x.amount,day:x.day,category:x.category,paymentSource:x.payment_source,startMonth:x.start_month,enabled:!!x.enabled,postingMode:x.posting_mode||'manual',autoFromMonth:x.auto_from_month||'',scheduleType:x.workday_only?'workday':(x.schedule_type||'monthly'),weekday:Number(x.weekday||0),weekdays:recurringWeekdays(x),monthDays:recurringMonthDays(x),intervalMonths:recurringIntervalMonths(x)})),
         bills:rows(2).map(x=>({name:x.payment_source,month:x.bill_month,start:x.period_start,end:x.period_end,total:x.total_amount,count:x.transaction_count})),
         paymentSources:rows(3),merchantPaymentRules:rows(4),
         customRules:rows(5).map(rule=>({...rule,is_custom:true})),
@@ -606,7 +606,8 @@ export async function onRequest({ request, env, params }) {
         recurringExclusions:rows(portfolioReady ? 14 : 9).map(x=>({planId:x.plan_id,month:x.month})),
         recurringDateExclusions:rows(portfolioReady ? (recurringArchiveReady?17:15) : (recurringArchiveReady?12:10)).map(x=>({planId:x.plan_id,date:x.date})),
         archivedPlans:recurringArchiveReady ? rows(portfolioReady ? 15 : 10).map(p=>({
-          id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled,postingMode:p.posting_mode||'manual',autoFromMonth:p.auto_from_month||'',scheduleType:p.workday_only?'workday':(p.schedule_type||'monthly'),weekday:Number(p.weekday||0)
+          id:p.id,name:p.name,amount:p.amount,day:p.day,category:p.category,paymentSource:p.payment_source,startMonth:p.start_month,enabled:!!p.enabled,postingMode:p.posting_mode||'manual',autoFromMonth:p.auto_from_month||'',scheduleType:p.workday_only?'workday':(p.schedule_type||'monthly'),weekday:Number(p.weekday||0),
+          weekdays:recurringWeekdays(p),monthDays:recurringMonthDays(p),intervalMonths:recurringIntervalMonths(p)
         })) : [],
         trashedEntries:recurringArchiveReady ? rows(portfolioReady ? 16 : 11) : [],
         ...(portfolioReady ? {investmentPlans:rows(9),investmentPlanHistory:rows(10),

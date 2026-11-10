@@ -240,7 +240,7 @@ test('real SQLite worker posts Friday and Saturday as separate idempotent entrie
 })
 test('real SQLite worker respects three-month anchor and posts two dates in due month',async()=>{
   const {sqlite,db}=memoryDb()
-  const p=insertPlan(sqlite,{name:'季節契約',day:1,posting_mode:'auto'})
+  const p=insertPlan(sqlite,{name:'季節契約',day:1,start_month:'2026-11',auto_from_month:'2026-11',posting_mode:'auto'})
   sqlite.prepare("UPDATE recurring_plans SET schedule_type='monthly',day=1,month_days_json='[1,15]',interval_months=3 WHERE id=?").run(p.id)
   assert.equal((await postScheduledRecurring(db,{today:'2026-11-01'})).created,1)
   assert.equal((await postScheduledRecurring(db,{today:'2026-11-15'})).created,1)

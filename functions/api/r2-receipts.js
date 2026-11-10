@@ -114,7 +114,9 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
       const stored=await bucket.put(objectKey,image,{
         ...(!replace ? {onlyIf:new Headers({'If-None-Match':'*'})} : {}),
         httpMetadata:{contentType:type},
-        customMetadata:{sha256:hash}
+        customMetadata:{sha256:hash},
+        // R2 validates this checksum as part of the same PUT (no extra read).
+        sha256:hash
       })
       if(!stored){
         const existing=await bucket.head(objectKey)

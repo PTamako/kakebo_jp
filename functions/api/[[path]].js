@@ -906,14 +906,37 @@ export async function onRequest({ request, env, params }) {
           !['expense','income','transfer'].includes(e.type)) return json({error:'保管した明細が正しくありません'},409)
         if(isPointCharge(e))return json({error:'自動チャージは元のポイント還元収入と一緒に復元してください'},409)
         const pairedTrashId=Number(saved.pairedEntryId||0)
+        const importedTrash=typeof saved.restore_identity==='string' &&
+          /^trash_[a-f0-9]{64}$/.test(saved.restore_identity)
+        const originalId=importedTrash?Number(saved.restore_original_id):id
         let pairedEntry=null
         if(Number.isSafeInteger(pairedTrashId)&&pairedTrashId>0){
-          const pairedTrash=await db.prepare("SELECT payload_json FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(pairedTrashId)).first()
+          let pairedTrash=null
+          if(importedTrash){
+            // Numeric IDs were rebased on import. Match the saved auto-charge by
+            // its request ID, not the now-stale numeric ID in the source archive.
+            const expectedId=pointChargeId(e.client_request_id,originalId)
+            const {results}=await db.prepare(`SELECT item_id,payload_json FROM trash_items
+              WHERE item_type='entry' AND CASE WHEN json_valid(payload_json)
+                THEN json_extract(payload_json,'$.entry.client_request_id') END=?1 LIMIT 2`)
+              .bind(expectedId).all()
+            if(results.length>1)return json({error:'関連するチャージ記録が複数あります。復元を中止しました'},409)
+            pairedTrash=results[0]||null
+          }else{
+            pairedTrash=await db.prepare("SELECT item_id,payload_json FROM trash_items WHERE item_type='entry' AND item_id=?1")
+              .bind(String(pairedTrashId)).first()
+          }
           if(pairedTrash){
             try { pairedEntry=JSON.parse(pairedTrash.payload_json)?.entry } catch { return json({error:'関連するチャージ記録を復元できません'},409) }
-            if(!pairedEntry || pairedEntry.id!==pairedTrashId || !isPointCharge(pairedEntry) ||
-               pairedEntry.client_request_id!==pointChargeId(e.client_request_id,e.id))
+            if(!pairedEntry || String(pairedEntry.id)!==String(pairedTrash.item_id) ||
+               !isPointCharge(pairedEntry) ||
+               pairedEntry.client_request_id!==pointChargeId(e.client_request_id,originalId))
               return json({error:'関連するチャージ記録を確認してください'},409)
+            // A new parent ID needs a new derived child request ID for future
+            // edits/deletes to keep the income and recharge together.
+            pairedEntry={...pairedEntry,client_request_id:pointChargeId(e.client_request_id,id)}
+          }else if(importedTrash){
+            return json({error:'関連するチャージ記録が見つかりません。ZIPの履歴を確認してください'},409)
           }
         }
         // Stable IDs preserve on-device receipts and SBI transfer links.

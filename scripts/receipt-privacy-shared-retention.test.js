@@ -12,7 +12,7 @@ test('privacy and backup no longer repeat receipt count, expiry or refresh contr
   const backup=finance.split('<summary>バックアップ・復元</summary>')[1].split('</details>')[0]
   assert.match(privacy,/ログイン・レシート画像の保存/)
   assert.match(privacy,/保存済みレシート画像/)
-  assert.match(privacy,/props.rememberDevice \? '端末保存・30日' : 'セッション内のみ保存'/)
+  assert.match(privacy,/props.rememberDevice \? '端末保存・自動削除なし' : 'セッション内のみ保存'/)
   assert.doesNotMatch(privacy,/件数を更新/)
   assert.match(privacy,/画像をすべて削除/)
   assert.match(backup,/レシート画像をZIP保存/)

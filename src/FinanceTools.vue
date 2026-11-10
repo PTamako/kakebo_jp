@@ -16,12 +16,13 @@ import { recurringDatesInMonth, recurringFrequencyLabel, tokyoDateAt, WEEKDAYS_J
 import { recurringPlanNextStatus, recurringPlanNextLabel } from './recurring-next-status.js'
 import { recurringReviewWindow, validRecurringMonth } from './recurring-review-window.js'
 import { nextCivilDay } from './stats-period-comparison.js'
-import { countReceiptImages, clearAllReceiptImages, listReceiptImagesForExport, getReceiptImage, saveReceiptImage } from './receipt-store.js'
+import { countReceiptImages, clearAllReceiptImages, deleteReceiptImagesByIds, listReceiptImagesForExport, getReceiptImage, saveReceiptImage } from './receipt-store.js'
+import { planReceiptPeriodDeletion } from './receipt-period.js'
 import { receiptZip, ledgerAndReceiptsZip } from './receipt-export.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
 const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
-const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared'])
+const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared', 'receipt-images-removed'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
 const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
@@ -118,6 +119,75 @@ watch([() => props.active, managementTab], ([active,tab]) => {
     void loadDeletedEntries()
   }
 })
+const receiptPeriodYear = ref(new Intl.DateTimeFormat('en',{timeZone:'Asia/Tokyo',year:'numeric'}).format(new Date()))
+const receiptPeriodMonth = ref('')
+const receiptPeriodPreview = ref(null)
+const receiptPeriodBusy = ref(false)
+const receiptYearOptions = computed(() => [...new Set([
+  receiptPeriodYear.value,
+  ...rows.value.map(entry => String(entry.date || '').slice(0,4)),
+  ...deletedEntries.value.map(entry => String(entry.date || '').slice(0,4))
+].filter(year => /^\d{4}$/.test(year)))].sort((a,b)=>b.localeCompare(a)))
+const receiptPeriodLabel = computed(() => receiptPeriodYear.value + '年' +
+  (receiptPeriodMonth.value ? Number(receiptPeriodMonth.value) + '月' : '全体'))
+const receiptPeriodSize = bytes => bytes >= 1024*1024
+  ? (bytes/(1024*1024)).toFixed(2)+' MB'
+  : (bytes/1024).toFixed(1)+' KB'
+watch([receiptPeriodYear,receiptPeriodMonth],()=>{receiptPeriodPreview.value=null})
+async function freshReceiptPeriodPlan() {
+  // Reload all dated rows rather than trusting a stale management-page snapshot.
+  if (!(await loadAll())) throw Error('全明細を更新できません。通信を確認してください')
+  const [trash,images] = await Promise.all([
+    props.api('trash-items?full=1'),listReceiptImagesForExport()
+  ])
+  if (!Array.isArray(trash) || trash.length >= 10000)
+    throw Error('削除済み明細の確認が完了しませんでした')
+  return planReceiptPeriodDeletion(images,rows.value,trash,receiptPeriodYear.value,receiptPeriodMonth.value)
+}
+async function previewReceiptPeriodDeletion() {
+  if (receiptPeriodBusy.value || receiptImagesBusy.value || busy.value) return
+  receiptPeriodBusy.value=true
+  receiptPeriodPreview.value=null
+  receiptImagePrivacyMessage.value=''
+  try {
+    const year=receiptPeriodYear.value,month=receiptPeriodMonth.value
+    const planned=await freshReceiptPeriodPlan()
+    // Selection may change while data is loading.
+    if(year!==receiptPeriodYear.value || month!==receiptPeriodMonth.value)return
+    receiptPeriodPreview.value={...planned,year,month}
+    if(!planned.ids.length)
+      receiptImagePrivacyMessage.value='選択期間に該当する画像はありません'
+  } catch(e) {
+    receiptImagePrivacyMessage.value='削除対象を確認できません：'+e.message
+  } finally { receiptPeriodBusy.value=false }
+}
+async function deleteSelectedReceiptPeriod() {
+  const preview=receiptPeriodPreview.value
+  if (!preview?.ids?.length || receiptPeriodBusy.value || receiptImagesBusy.value || busy.value) return
+  if(preview.year!==receiptPeriodYear.value || preview.month!==receiptPeriodMonth.value)return
+  receiptPeriodBusy.value=true
+  receiptImagePrivacyMessage.value=''
+  try {
+    const fresh=await freshReceiptPeriodPlan()
+    if (preview.year!==receiptPeriodYear.value || preview.month!==receiptPeriodMonth.value) return
+    if (JSON.stringify(preview.ids)!==JSON.stringify(fresh.ids) || preview.bytes!==fresh.bytes ||
+        preview.unmatched!==fresh.unmatched) {
+      receiptPeriodPreview.value={...fresh,year:preview.year,month:preview.month}
+      receiptImagePrivacyMessage.value='画像または明細が変更されました。対象を再確認してください'
+      return
+    }
+    if(!confirm(receiptPeriodLabel.value+'のレシート画像 '+fresh.ids.length+'件（約'+
+      receiptPeriodSize(fresh.bytes)+'）を削除しますか？削除後はZIPバックアップがないと復元できません。記帳済み明細・回収箱・統計は残ります。'))return
+    await deleteReceiptImagesByIds(fresh.ids)
+    localReceiptCount.value=await countReceiptImages()
+    receiptPeriodPreview.value=null
+    receiptImagePrivacyMessage.value=receiptPeriodLabel.value+'の画像 '+fresh.ids.length+'件を削除しました（記帳明細は保持）'
+    emit('receipt-images-removed',fresh.ids)
+  } catch(e) {
+    receiptPeriodPreview.value=null
+    receiptImagePrivacyMessage.value='期間指定の削除に失敗しました：'+e.message
+  } finally { receiptPeriodBusy.value=false }
+}
 watch(() => props.rememberDevice, () => {
   if(props.active && managementTab.value==='tools')void refreshLocalReceiptCount()
 })
@@ -1597,8 +1667,31 @@ async function removeCardBill(record) {
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
       </div>
       <p>{{props.rememberDevice ? '端末保存・自動削除なし' : 'セッション内のみ保存'}}（明細は保持）</p>
+      <div class="device-receipt-period">
+        <strong>期間を選んで画像を削除</strong>
+        <div class="device-receipt-period-fields">
+          <label>対象年
+            <select v-model="receiptPeriodYear" :disabled="receiptPeriodBusy">
+              <option v-for="year in receiptYearOptions" :key="year" :value="year">{{year}}年</option>
+            </select>
+          </label>
+          <label>対象月
+            <select v-model="receiptPeriodMonth" :disabled="receiptPeriodBusy">
+              <option value="">1年分</option>
+              <option v-for="m in 12" :key="m" :value="String(m).padStart(2,'0')">{{m}}月</option>
+            </select>
+          </label>
+        </div>
+        <button type="button" :disabled="receiptPeriodBusy || receiptImagesBusy || busy || !localReceiptCount" @click="previewReceiptPeriodDeletion">{{receiptPeriodBusy?'確認中…':'削除対象を確認'}}</button>
+        <p v-if="receiptPeriodPreview" class="device-receipt-period-status" role="status">
+          {{receiptPeriodLabel}}：{{receiptPeriodPreview.ids.length}}件 · 約{{receiptPeriodSize(receiptPeriodPreview.bytes)}}
+          <span v-if="receiptPeriodPreview.unmatched">（日付を確認できない{{receiptPeriodPreview.unmatched}}件は対象外）</span>
+        </p>
+        <button v-if="receiptPeriodPreview?.ids.length" type="button" class="device-receipt-period-delete" :disabled="receiptPeriodBusy || receiptImagesBusy || busy" @click="deleteSelectedReceiptPeriod">この期間の画像{{receiptPeriodPreview.ids.length}}件を削除</button>
+        <p class="device-receipt-period-note">画像だけを削除します。記帳済み明細は残ります。大切な画像は先にZIP保存してください。</p>
+      </div>
       <div class="device-receipt-actions">
-        <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
+        <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || receiptPeriodBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
       </div>
       
     </div>
@@ -1786,6 +1879,16 @@ async function removeCardBill(record) {
 .device-receipt-actions .device-receipt-clear{grid-column:1}
 .device-privacy-panel .device-receipt-clear{color:var(--blue-dark);background:var(--card)}
 @media(max-width:360px){.device-privacy-panel .device-receipt-actions button{font-size:12px;padding-inline:5px}}
+
+.device-receipt-period{display:grid;gap:9px;min-width:0;padding:11px;border:1px solid var(--line);border-radius:12px}
+.device-receipt-period>strong{font-size:13px}
+.device-receipt-period-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.device-receipt-period-fields label{display:grid;gap:5px;min-width:0;font-size:12px;color:var(--muted)}
+.device-privacy-panel .device-receipt-period select{width:100%;min-width:0;min-height:44px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:9px;font-size:16px;padding:0 8px}
+.device-receipt-period>button{min-height:44px}
+.device-receipt-period .device-receipt-period-delete{color:var(--red,#b23a53);background:var(--card);border:1px solid currentColor}
+.device-receipt-period-status{font-size:13px;font-weight:650;overflow-wrap:anywhere}
+.device-receipt-period-status span,.device-receipt-period-note{font-size:11px;line-height:1.5;color:var(--muted)}
 
 /* Recurring expense manager: compact, expandable, touch-friendly and height-bounded. */
 .recurring-start-month{display:grid;gap:5px;min-width:0;font-size:12px;color:var(--muted)}

@@ -10,7 +10,7 @@ export async function restoreAtomic(db, archive) {
   if(!Array.isArray(deferredPrepaidEntries))throw Error('atomic_restore_invalid_deferred')
   const allEntries = [...entries,...deferredPrepaidEntries]
   if(deferredPrepaidEntries.length)validateBackup({...archive,entries:allEntries})
-  const collections = ['paymentSources','merchantPaymentRules','customRules','defaultRules','categories','plans','bills','recurringExclusions','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks','archivedPlans','trashedEntries']
+  const collections = ['paymentSources','merchantPaymentRules','customRules','defaultRules','categories','plans','bills','recurringExclusions','recurringDateExclusions','dismissedTransfers','categoryMetadata','investmentPlans','investmentPlanHistory','investmentHoldings','fundPrices','transferLinks','archivedPlans','trashedEntries']
   const totalSettings = collections.reduce((n,k)=>n+(archive[k]?.length||0),0) + Object.keys(archive.categoryIcons||{}).length
   // Each request is atomic. The client sends bounded, idempotent stages
   // rather than dropping settings from a large archive.
@@ -161,20 +161,51 @@ export async function restoreAtomic(db, archive) {
       plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0,plan.postingMode||'manual',plan.postingMode==='auto'?(plan.autoFromMonth||''):'',plan.scheduleType==='workday'?'weekly':(plan.scheduleType||'monthly'),plan.weekday??0,plan.scheduleType==='workday'?1:0)
     add("INSERT OR IGNORE INTO trash_items(item_type,item_id) SELECT 'recurring_plan',?1 WHERE EXISTS(SELECT 1 FROM recurring_plans WHERE id=?1)",plan.id)
   }
-  // Restore archived entries only as trash snapshots. Never make a deleted
-  // purchase silently reappear in the active ledger when importing a backup.
+  // Import deleted entries with a portable identity. A numeric source ID can
+  // collide with a LIVE destination entry or another deleted entry: remap that
+  // snapshot to the next free numeric ID instead of silently dropping history.
+  // Retain the original source ID inside the snapshot so repeated imports and
+  // multi-generation backup/restore operations remain idempotent.
   for(const item of archive.trashedEntries||[]){
     const id=Number(item.item_id)
     const saved=JSON.parse(item.payload_json)
     if(!Number.isSafeInteger(id)||id<=0||saved.entry.id!==id)
       throw Error('atomic_restore_invalid_trashed_entry')
-    // An active entry in the target always wins (also when this same batch
-    // imported it earlier). Never archive that active entry's ID.
+    const sourceId=saved.restore_original_id ?? id
+    if(!Number.isSafeInteger(sourceId)||sourceId<=0)
+      throw Error('atomic_restore_invalid_trashed_entry')
+    const original={...saved,entry:{...saved.entry,id:sourceId}}
+    delete original.restore_identity
+    delete original.restore_original_id
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(
+      JSON.stringify([sourceId,original,item.deleted_at])))
+    const restoreIdentity='trash_'+Array.from(new Uint8Array(digest),
+      x=>x.toString(16).padStart(2,'0')).join('')
+    const tagged=JSON.stringify({...saved,restore_identity:restoreIdentity,
+      restore_original_id:sourceId})
+    // All collision checks, ID allocation and the INSERT execute within the
+    // same D1 batch transaction. Never overwrite an existing live/trash row.
+    // A second import sees the tagged identity and inserts nothing.
     add(`INSERT INTO trash_items(item_type,item_id,payload_json,deleted_at)
-      SELECT 'entry',?1,?2,?3
-      WHERE NOT EXISTS (SELECT 1 FROM entries WHERE id=?4)
-      ON CONFLICT(item_type,item_id) DO NOTHING`,
-      String(id),item.payload_json,item.deleted_at,id)
+      WITH chosen(id) AS (
+        SELECT CASE WHEN
+          EXISTS(SELECT 1 FROM entries WHERE id=?1) OR
+          EXISTS(SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=CAST(?1 AS TEXT))
+        THEN (SELECT MAX(n)+1 FROM (
+          SELECT COALESCE(MAX(id),0) n FROM entries
+          UNION ALL SELECT COALESCE(MAX(CAST(item_id AS INTEGER)),0) n
+            FROM trash_items WHERE item_type='entry' AND item_id NOT GLOB '*[^0-9]*'
+        ))
+        ELSE ?1 END
+      )
+      SELECT 'entry',CAST(chosen.id AS TEXT),
+        json_set(?2,'$.entry.id',chosen.id),?3
+      FROM chosen
+      WHERE NOT EXISTS (
+        SELECT 1 FROM trash_items WHERE item_type='entry'
+          AND CASE WHEN json_valid(payload_json)
+            THEN json_extract(payload_json,'$.restore_identity') END=?4
+      )`,id,tagged,item.deleted_at,restoreIdentity)
   }
   // Restore only exclusion links that still point to an existing fixed-expense plan.
   for(const item of archive.recurringExclusions||[])

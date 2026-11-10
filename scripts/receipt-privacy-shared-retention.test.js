@@ -18,7 +18,7 @@ test('privacy and backup no longer repeat receipt count, expiry or refresh contr
   assert.match(backup,/レシート画像をZIP保存/)
   assert.doesNotMatch(backup,/device-privacy-count|30日間保存|帳簿JSONとは別に保存/)
   assert.match(finance,/if\(managementTab.value==='tools'\)await refreshLocalReceiptCount\(\)/)
-  assert.match(app,/await uploadR2Receipt\(entryId, blob, \{ replace \}\)/)
+  assert.match(app,/await uploadR2Receipt\(entryId, blob, \{ replace, expectedVersion \}\)/)
   assert.doesNotMatch(app,/if\(!rememberDevice.value\)clearSessionReceiptImages\(\)/)
 })
 test('completed R2 receipt migration removes only the temporary migration controls',()=>{
@@ -33,9 +33,9 @@ test('completed R2 receipt migration removes only the temporary migration contro
 })
 
 test('new receipt upload never stores a phone copy when R2 is unavailable',()=>{
-  const receiptSave=app.split('async function persistReceipt(id, blob, replace = false) {')[1]?.split('const receiptImageIds = ref(new Set())')[0]
+  const receiptSave=app.split('async function persistReceipt(id, blob, replace = false, expectedVersion = null) {')[1]?.split('const receiptImageIds = ref(new Set())')[0]
   assert.ok(receiptSave, 'receipt save handler must exist')
-  assert.match(receiptSave,/await uploadR2Receipt\(entryId, blob, \{ replace \}\)/)
+  assert.match(receiptSave,/await uploadR2Receipt\(entryId, blob, \{ replace, expectedVersion \}\)/)
   assert.match(receiptSave,/throw Error\('R2への画像保存に失敗しました。端末に新しい画像コピーは作成していません/)
   assert.doesNotMatch(receiptSave,/saveReceiptImage\s*\(/)
   assert.doesNotMatch(app,/import \{[^\n]*saveReceiptImage[^\n]*\} from '\.\/receipt-store.js'/)

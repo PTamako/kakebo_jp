@@ -21,6 +21,16 @@ test('privacy and backup no longer repeat receipt count, expiry or refresh contr
   assert.match(app,/await uploadR2Receipt\(entryId, blob, \{ replace \}\)/)
   assert.doesNotMatch(app,/if\(!rememberDevice.value\)clearSessionReceiptImages\(\)/)
 })
+test('completed R2 receipt migration removes only the temporary migration controls',()=>{
+  const privacy=finance.split('<summary>端末のプライバシー設定</summary>')[1].split('</details>')[0]
+  assert.match(privacy,/<template v-if="deviceReceiptCount > 0">[\s\S]*?@click="syncLegacyReceiptImages"[\s\S]*?<\/template>/)
+  assert.match(privacy,/v-if="receiptMigrationStatus"/)
+  assert.doesNotMatch(privacy,/R2＋端末の合計/)
+  assert.match(privacy,/保存済みレシート画像/)
+  assert.match(privacy,/期間を選んで画像を削除/)
+  assert.match(privacy,/R2・端末の画像をすべて削除/)
+})
+
 function fakeStorage(){
   const map=new Map()
   return {

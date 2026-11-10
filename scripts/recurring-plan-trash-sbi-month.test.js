@@ -41,7 +41,7 @@ test('archiving is non-destructive and does not remove recurring-plan exclusions
 
 test('after 0013, existing trash-table fallback and recurring approval remain usable',()=>{
   assert.match(api,/no such table: trash_items/i)
-  assert.match(api,/SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only FROM recurring_plans ORDER BY name,id/)
+  assert.match(api,/SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only,weekdays_json,month_days_json,interval_months FROM recurring_plans ORDER BY name,id/)
   assert.match(api,/const plan=await db\.prepare\(/)
   assert.match(api,/SELECT id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only[\s\S]*NOT EXISTS \(SELECT 1 FROM trash_items t/)
 })

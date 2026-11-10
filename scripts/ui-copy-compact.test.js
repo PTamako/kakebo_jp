@@ -37,7 +37,7 @@ test('remove redundant visual helper paragraphs without changing chart labels or
 test('input and OCR use the single short remaining-count label without pricing warnings', () => {
   assert.match(app, /本日のAI残り回数/)
   assert.doesNotMatch(app, /Cloudflare AIに画像を送信|回数上限≠料金上限|本日の共通AI残り|共通残り/)
-  assert.match(app, /画像は端末内に保存（手動削除まで）/)
+  assert.match(app, /画像は非公開R2に保存（手動削除まで）/)
   assert.match(form, /<span>反映日<\/span>/)
   assert.match(form, /選択済み/)
 })

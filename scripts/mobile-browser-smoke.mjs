@@ -202,6 +202,30 @@ try{
     assert.ok(filterLayout.buttons[2].right<=filterLayout.search.x+filterLayout.search.width+2,
       'Status filters must fit without horizontal overflow at '+width+'px')
 
+    // Recurrence is a single bottom-sheet dropdown, with independently chosen
+    // multiple weekdays/dates. Never expand all frequency options inline.
+    const recurringForm=page.locator('.recurring-manager-panel')
+    await recurringForm.getByRole('button',{name:/記帳周期：/}).click()
+    const cycleSheet=page.getByRole('dialog',{name:'記帳周期'})
+    await cycleSheet.getByRole('option',{name:'毎週'}).click()
+    await recurringForm.getByRole('button',{name:/記帳する曜日：/}).click()
+    const weekdays=page.getByRole('dialog',{name:'記帳する曜日'})
+    await weekdays.getByRole('button',{name:'月曜日'}).click()
+    await weekdays.getByRole('button',{name:'金曜日'}).click()
+    await weekdays.getByRole('button',{name:'土曜日'}).click()
+    await weekdays.getByRole('button',{name:'決定'}).click()
+    assert.match(await recurringForm.getByRole('button',{name:/記帳する曜日：/}).innerText(),/金曜日.*土曜日/)
+    await recurringForm.getByRole('button',{name:/記帳周期：/}).click()
+    await cycleSheet.getByRole('option',{name:'毎年'}).click()
+    await recurringForm.getByRole('button',{name:/記帳する日付：/}).click()
+    const days=page.getByRole('dialog',{name:'記帳する日付'})
+    await days.getByRole('button',{name:'15日'}).click()
+    await days.getByRole('button',{name:'決定'}).click()
+    assert.match(await recurringForm.getByRole('button',{name:/記帳する日付：/}).innerText(),/1日.*15日/)
+    assert.equal(await page.evaluate(()=>document.body.style.overflow),'')
+    const recurringOverflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)
+    assert.ok(recurringOverflow<=2,'Recurrence bottom-sheet overflow at '+width)
+
     // Management opens a full bottom panel, not a long inline accordion.
     await page.locator('.finance-section-tabs').getByRole('button',{name:'その他'}).click()
     const appearance=await page.evaluate(()=>{

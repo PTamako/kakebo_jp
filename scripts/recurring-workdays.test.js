@@ -54,7 +54,7 @@ test('mobile UI, cloud Worker and backup understand workday cadence without addi
  const api=readFileSync(new URL('../functions/api/[[path]].js',import.meta.url),'utf8')
  const worker=readFileSync(new URL('../functions/api/recurring-auto.js',import.meta.url),'utf8')
  const migration=readFileSync(new URL('../migrations/0014_recurring_business_days.sql',import.meta.url),'utf8')
- assert.match(finance,/value="workday">平日（土日祝を除く）<\/option>/)
+ assert.match(finance,/value:'workday',label:'平日（土日祝を除く）'/)
  assert.match(finance, /row.scheduleType!=='monthly'/)
  assert.match(api,/workday_only/)
  assert.match(worker,/p.workday_only/)

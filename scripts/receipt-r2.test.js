@@ -121,3 +121,16 @@ test('R2 absent binding is fail closed and preview never shares production R2',a
   assert.doesNotMatch(config,/kakeibo-receipts-preview/)
   assert.match(config,/# Preview has no R2 binding/)
 })
+
+test('interrupted deletion or re-attachment never destroys a residual local receipt',async()=>{
+  const b=mockedBackend()
+  assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg'})).status,200)
+  // Simulate an R2 deletion that left an object after D1 tombstoning.
+  b.states.set(4,1)
+  const result=await call(b,'PUT',['4'],jpeg,{
+    'content-type':'image/jpeg','x-receipt-migration':'1'
+  })
+  assert.equal(result.status,409)
+  assert.equal((await result.json()).code,'receipt_deletion_pending')
+  assert.equal(b.objects.size,1)
+})

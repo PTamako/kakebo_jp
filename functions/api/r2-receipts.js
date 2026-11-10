@@ -81,7 +81,7 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
     const id=Number(idSegment)
     const objectKey=key(id)
     if(method==='GET') {
-      if((await deletedRow(id))?.deleted===1)return json({error:'画像が見つかりません'},404)
+      if((await deletedRow(id))?.deleted===1)return json({error:'削除済みのレシート画像です',code:'receipt_previously_deleted'},410)
       const object=await bucket.get(objectKey)
       if(!object)return json({error:'画像が見つかりません'},404)
       const type=object.httpMetadata?.contentType

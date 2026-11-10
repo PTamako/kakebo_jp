@@ -140,7 +140,11 @@ async function danger(action){
   finally{saving.value=false}
 }
 watch(()=>[props.mode,props.cardName],([mode],[previous])=>{
-  if(!mode)return
+  if(!mode){
+    // Save and confirmed cancel both erase transient fields after the parent closes.
+    resetDraft()
+    return
+  }
   if(mode!==previous)lastTrigger.value=document.activeElement
   resetDraft()
 },{flush:'sync'})

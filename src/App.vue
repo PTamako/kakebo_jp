@@ -23,6 +23,7 @@ import AssetsPage from './pages/AssetsPage.vue'
 import ManagementPage from './pages/ManagementPage.vue'
 import TransactionForm from './TransactionForm.vue'
 import { paymentForDraft } from './payment-rules.js'
+import { selectedImportCard } from './import-payment-scope.js'
 import { detectRegisteredReceiptPayment } from './receipt-payment.js'
 import { prepaidTarget } from './prepaid-card.js'
 import { recognizeAssetTransfer } from './transfer-recognition.js'
@@ -105,7 +106,9 @@ async function updatePaymentSources(values) {
 const defaultPaymentSource = ref('')
 const merchantPaymentRules = ref([])
 const customCategoryRules = ref([])
+// Keep pasted-text and image-recognition card choices independent across tab switches.
 const importPaymentSource = ref('')
+const scanImportPaymentSource = ref('')
 const importPaymentOptions = computed(()=>[{value:'',label:'自動判定'},...paymentSources.value.map(source=>({value:source,label:source}))])
 let paymentSettingsLoaded = false
 let paymentSettingsLoading = null
@@ -116,6 +119,9 @@ async function loadPaymentSettings() {
     // Keep archived cards in metadata for old ledger references and management.
     // Only active cards appear for NEW spending, receipts, top-ups and rewards.
     paymentSources.value = sortOtherLast(cards.filter(x=>!x.is_archived).map(x => x.name))
+    // An archived or removed card must not remain locked into a new OCR draft.
+    if (importPaymentSource.value && !paymentSources.value.includes(importPaymentSource.value)) importPaymentSource.value = ''
+    if (scanImportPaymentSource.value && !paymentSources.value.includes(scanImportPaymentSource.value)) scanImportPaymentSource.value = ''
     paymentSourceMeta.value = Object.fromEntries(cards.map(x => [x.name,x]))
     paymentClosingDays.value = Object.fromEntries(cards.filter(x => x.closing_day !== null && x.closing_day !== undefined).map(x => [x.name, x.closing_day]))
     defaultPaymentSource.value = cards.find(x => x.is_default && !x.is_archived)?.name || ''
@@ -802,6 +808,7 @@ onUnmounted(() => {
 function recognize(mode = recognitionMode.value, append = false, referenceTime = new Date(), fromImage = false) {
   recognitionMode.value = mode
   if (!input.value.trim()) return
+  const selectedImport = selectedImportCard(fromImage, importPaymentSource.value, scanImportPaymentSource.value)
   // Scheduled-looking text expands into *drafts* only. Explicit review/save
   // and ordinary duplicate protections remain mandatory.
   // Natural-language expense drafts must work in 手入力 even after the user
@@ -818,7 +825,7 @@ function recognize(mode = recognitionMode.value, append = false, referenceTime =
   // Recognize a *coherent* Suica history image, not isolated station strings
   // in arbitrary card statements. All guesses remain editable before saving.
   const icContext=fromImage && effectiveMode==='statement' &&
-    (!importPaymentSource.value || importPaymentSource.value==='Suica')
+    (!selectedImport || selectedImport==='Suica')
     ? detectIcHistoryContext(parsed,paymentSources.value) : null
   const parsedForms = parsed.map(f => {
     // Apply the same rules to pasted text, statements and scanned receipts.
@@ -828,7 +835,8 @@ function recognize(mode = recognitionMode.value, append = false, referenceTime =
     })
     const type = detectedTransfer.isTransfer ? 'transfer'
       : effectiveMode === 'receipt' ? 'expense' : normalizedDraftType(f.type)
-    const imported = effectiveMode === 'statement' ? importPaymentSource.value : ''
+    // Explicitly chosen source applies to both statements AND receipts.
+    const imported = selectedImport
     const receiptPayment=effectiveMode==='receipt'
       ? detectRegisteredReceiptPayment(f.raw||input.value,paymentSources.value,paymentSourceMeta.value) : ''
     // Rule > registered OCR card > default, with a user-selected card
@@ -1824,7 +1832,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
 // All page links share these same reactive refs and navigation handlers.
 // Child page components never create separate ledger selection state.
-provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, rewardDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, receiptMigrationInfo, migrateReceiptsNow, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, openCardBillDetails, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, averageDailySummary, monthlyDayTypeAverages, annualDayTypeAverages, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, maxYearMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
+provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, rewardDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, scanImportPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, receiptMigrationInfo, migrateReceiptsNow, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, openCardBillDetails, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, averageDailySummary, monthlyDayTypeAverages, annualDayTypeAverages, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, maxYearMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
 </script>
 
 <template>
@@ -1918,8 +1926,8 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
           </div>
         </div>
         <p v-if="aiQuota" class="ocr-engine-note" role="note">本日のAI残り回数：{{aiQuota.remaining}}/{{aiQuota.limit}}回</p>
+        <label class="form-field"><span>読み取り対象のカード</span><MobileChoiceSheet v-model="scanImportPaymentSource" :options="importPaymentOptions" label="読み取り対象のカード" :disabled="!!busy" /></label>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><MobileChoiceSegments v-model="recognitionMode" label="読み取り対象" :options="[{value:'statement',label:'利用明細'},{value:'receipt',label:'レシート'}]" /></label>
-        <label v-if="recognitionMode === 'statement'" class="form-field"><span>読み取り対象のカード</span><MobileChoiceSheet v-model="importPaymentSource" :options="importPaymentOptions" label="読み取り対象のカード" /></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? '明細を複数件読み取り' : 'レシートを1件読み取り' }}</p>
 
 

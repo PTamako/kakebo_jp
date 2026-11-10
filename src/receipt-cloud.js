@@ -50,6 +50,24 @@ export async function listR2Receipts({fresh=false}={}) {
   try{return (await inFlightIndex).map(item=>({...item}))}
   finally{inFlightIndex=null}
 }
+// Only inspect D1 metadata for entries currently displayed; no R2 operations.
+export async function listR2ReceiptsByIds(ids) {
+  if(!Array.isArray(ids))throw Error('画像の検索対象を確認してください')
+  const unique=[...new Set(ids.map(Number))]
+  if(unique.some(id=>!Number.isSafeInteger(id)||id<=0))throw Error('画像IDを確認してください')
+  const rows=[]
+  for(let i=0;i<unique.length;i+=250){
+    const chunk=unique.slice(i,i+250)
+    const response=await requestR2('?ids='+chunk.join(','))
+    const body=await response.json()
+    if(!body?.ok||!Array.isArray(body.items))throw Error('画像の検索結果を確認できません')
+    for(const item of body.items){
+      const id=Number(item.id)
+      if(chunk.includes(id))rows.push({entryId:id,size:item.size===null?null:Number(item.size)})
+    }
+  }
+  return rows
+}
 const asId=id=>{
   const value=Number(id)
   if(!Number.isSafeInteger(value)||value<=0)throw Error('レシートIDを確認できません')
@@ -121,9 +139,10 @@ export async function deleteR2ReceiptsByIds(ids) {
   invalidateR2ReceiptIndex()
   return deleted
 }
-export async function listReceiptsForBackup(localRows) {
-  const remote=await listR2Receipts({fresh:true})
-  const rows=new Map((localRows||[]).map(row=>[Number(row.entryId),row]))
+export async function listReceiptsForBackup(localRows,{ids=null}={}) {
+  const requested=ids===null?null:new Set(ids.map(Number))
+  const remote=ids===null?await listR2Receipts({fresh:true}):await listR2ReceiptsByIds([...requested])
+  const rows=new Map((localRows||[]).filter(row=>requested===null||requested.has(Number(row.entryId))).map(row=>[Number(row.entryId),row]))
   for(let i=0;i<remote.length;i+=4) {
     const batch=await Promise.all(remote.slice(i,i+4).map(async item=>{
       const blob=await getR2Receipt(item.entryId)

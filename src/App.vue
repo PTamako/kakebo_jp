@@ -37,7 +37,7 @@ import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { peakTransferDates } from './calendar-transfer-peaks.js'
 import { getReceiptImage, deleteReceiptImage, cleanupReceiptImages, listReceiptImageIds } from './receipt-store.js'
-import { uploadR2Receipt, getR2Receipt, getR2ReceiptVersion, deleteR2Receipt, listR2Receipts } from './receipt-cloud.js'
+import { uploadR2Receipt, getR2Receipt, getR2ReceiptVersion, deleteR2Receipt, listR2ReceiptsByIds } from './receipt-cloud.js'
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readDeviceDraft, writeDeviceDraft } from './draft-store.js'
 
@@ -235,15 +235,22 @@ async function migrateReceiptsNow() {
 }
 const viewedReceiptUrl = ref('')
 const viewedReceiptId = ref(null)
-async function refreshReceiptImageIds({fresh=false}={}) {
+let receiptIndexRequest=0
+async function refreshReceiptImageIds() {
+  const requestId=++receiptIndexRequest
+  const ids=[...new Set([...entries.value,...detailSourceEntries.value]
+    .map(row=>Number(row.id)).filter(id=>Number.isSafeInteger(id)&&id>0))]
+  if(!ids.length){receiptImageIds.value=new Set();return}
   try {
-    const [remote,localIds]=await Promise.all([listR2Receipts({fresh}),listReceiptImageIds()])
-    receiptImageIds.value=new Set([...remote.map(item=>item.entryId),...localIds])
+    const [remote,localIds]=await Promise.all([listR2ReceiptsByIds(ids),listReceiptImageIds()])
+    if(requestId!==receiptIndexRequest)return
+    const wanted=new Set(ids)
+    receiptImageIds.value=new Set([...remote.map(item=>item.entryId),...localIds.filter(id=>wanted.has(id))])
   } catch(error) {
-    // Cloud errors are not evidence that cloud receipts have disappeared.
+    if(requestId!==receiptIndexRequest)return
     const localIds=await listReceiptImageIds().catch(()=>[])
     receiptImageIds.value=new Set([...receiptImageIds.value,...localIds])
-    flash('R2の画像一覧を確認できません：'+error.message)
+    flash('レシート画像の表示状態を確認できません：'+error.message)
   }
 }
 async function viewReceipt(entryId) {
@@ -1455,7 +1462,7 @@ async function openCardBillDetails(details) {
   const requestId = ++detailRequestId
   try {
     const rows = await fetchCardBillDetailRows(detailFilter.value)
-    if (requestId === detailRequestId) detailSourceEntries.value = rows
+    if (requestId === detailRequestId) { detailSourceEntries.value = rows; void refreshReceiptImageIds() }
   } catch (e) {
     if (requestId === detailRequestId) flash('カード明細の読み込みに失敗しました：' + e.message)
   } finally {
@@ -1475,7 +1482,7 @@ async function openCategoryDetails(category, type, period, paymentMethod = '', p
   const requestId = ++detailRequestId
   try {
     const rows = await fetchPeriodDetailRows(period, requestId)
-    if (requestId === detailRequestId) detailSourceEntries.value = rows
+    if (requestId === detailRequestId) { detailSourceEntries.value = rows; void refreshReceiptImageIds() }
   } catch (e) {
     if (requestId === detailRequestId) flash('明細の読み込みに失敗しました：' + e.message)
   } finally {
@@ -1488,8 +1495,10 @@ async function refreshDetailSource() {
   try {
     const requestId = detailRequestId
     const rows = await fetchPeriodDetailRows(filter.period, requestId)
-    if (requestId === detailRequestId && filter === detailFilter.value)
+    if (requestId === detailRequestId && filter === detailFilter.value) {
       detailSourceEntries.value = rows
+      void refreshReceiptImageIds()
+    }
   } catch (e) { flash('明細の再読み込みに失敗しました：' + e.message) }
 }
 function clearDetailFilter() {

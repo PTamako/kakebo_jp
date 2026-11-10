@@ -34,7 +34,9 @@ import { sortOtherLast } from './category-sort.js'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { peakTransferDates } from './calendar-transfer-peaks.js'
-import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, setReceiptStorageMode, configureReceiptStorageMode, clearSessionReceiptImages, countReceiptImages } from './receipt-store.js'
+import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
+import { uploadR2Receipt, getR2Receipt, deleteR2Receipt, listR2Receipts } from './receipt-cloud.js'
+import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readDeviceDraft, writeDeviceDraft } from './draft-store.js'
 
 const tab = ref('add')
@@ -153,29 +155,62 @@ async function selectEditReceipt(event) {
   try { const blob = await compressReceiptImage(file); editReceiptImage.value = blob; editReceiptFileName.value = file.name; receiptSaveError.value = '' }
   catch { receiptSaveError.value = 'レシート画像を準備できませんでした。元の写真を保管してください。' }
 }
-async function persistReceipt(id, blob) {
+async function persistReceipt(id, blob, replace = false) {
   const entryId = Number(id)
   if (!Number.isSafeInteger(entryId) || entryId <= 0) throw new Error('記録IDを確認できません')
-  await saveReceiptImage(entryId, blob)
-  if (!await getReceiptImage(entryId)) throw new Error('保存した画像を確認できません')
+  try {
+    await uploadR2Receipt(entryId, blob, { replace })
+    // A stale local copy is erased ONLY after the R2 server verifies size and SHA-256.
+    try { await deleteReceiptImage(entryId) } catch { /* Retried by migration. */ }
+  } catch (error) {
+    // Never lose a photo because a mobile connection goes offline after
+    // the D1 ledger transaction was saved.
+    try { await saveReceiptImage(entryId, blob) }
+    catch { throw Error('R2と端末の両方への画像保存に失敗しました：'+error.message) }
+    throw Error('R2に保存できず、この端末だけに画像を保護しました。通信回復後に再同期してください：'+error.message)
+  }
   receiptImageIds.value = new Set([...receiptImageIds.value, entryId])
 }
 
 const receiptImageIds = ref(new Set())
+const receiptMigrationInfo = ref('')
+async function migrateReceiptsNow() {
+  try {
+    const result=await migrateLegacyReceipts()
+    if(result.total) {
+      receiptMigrationInfo.value='R2へ移行 '+(result.migrated+result.removedAlreadyCloud)+'件・端末から削除 '+
+        (result.migrated+result.removedAlreadyCloud+result.removedDeleted)+'件・未完了 '+(result.failed+result.conflicts)+'件'
+      if(result.failed || result.conflicts)
+        flash('R2同期未完了の画像が'+(result.failed+result.conflicts)+'件あります。端末の画像は保持しました')
+    }
+    await refreshReceiptImageIds()
+  }catch(error){receiptMigrationInfo.value='R2画像の同期ができません：'+error.message}
+}
 const viewedReceiptUrl = ref('')
 const viewedReceiptId = ref(null)
 async function refreshReceiptImageIds() {
-  const visible = [...(entries.value || []), ...(displayEntries.value || [])]
-  const ids = [...new Set(visible.map(entry => Number(entry.id)).filter(Number.isSafeInteger))]
-  const present = await Promise.all(ids.map(async id => {
-    try { return [id, !!(await getReceiptImage(id))] }
-    catch { return [id, false] }
-  }))
-  receiptImageIds.value = new Set(present.filter(([, found]) => found).map(([id]) => id))
+  try {
+    const [remote,local]=await Promise.all([listR2Receipts({fresh:true}),listReceiptImagesForExport()])
+    receiptImageIds.value=new Set([...remote.map(item=>item.entryId),...local.map(item=>item.entryId)])
+  } catch(error) {
+    // Cloud errors are not evidence that cloud receipts have disappeared.
+    const local=await listReceiptImagesForExport().catch(()=>[])
+    receiptImageIds.value=new Set([...receiptImageIds.value,...local.map(item=>item.entryId)])
+    flash('R2の画像一覧を確認できません：'+error.message)
+  }
 }
 async function viewReceipt(entryId) {
-  const blob = await getReceiptImage(entryId)
-  if (!blob) { receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => Number(id) !== Number(entryId))); return flash('レシート画像は保存されていません') }
+  let blob=null,cloudError=null
+  try { blob=await getR2Receipt(entryId) }
+  catch(error){cloudError=error}
+  if(!blob) {
+    try { blob=await getReceiptImage(entryId) } catch {}
+  }
+  if(!blob) {
+    if(cloudError)return flash('R2から画像を読み込めません：'+cloudError.message)
+    receiptImageIds.value=new Set([...receiptImageIds.value].filter(id=>Number(id)!==Number(entryId)))
+    return flash('レシート画像は保存されていません')
+  }
   if (viewedReceiptUrl.value) URL.revokeObjectURL(viewedReceiptUrl.value)
   viewedReceiptUrl.value = URL.createObjectURL(blob)
   viewedReceiptId.value = entryId
@@ -186,13 +221,17 @@ function closeReceipt() {
   viewedReceiptId.value = null
 }
 async function removeReceiptImage() {
-  if (!confirm('レシート画像のみ削除します。記録は残ります。よろしいですか？')) return
-  await deleteReceiptImage(viewedReceiptId.value)
-  receiptImageIds.value = new Set([...receiptImageIds.value].filter(id => id !== viewedReceiptId.value))
-  closeReceipt()
-  flash('レシート画像を削除しました。記録は残っています')
+  if (!confirm('R2と端末のレシート画像のみ削除します。記帳済み明細は残ります。よろしいですか？')) return
+  const id=Number(viewedReceiptId.value)
+  try {
+    await deleteR2Receipt(id)
+    await deleteReceiptImage(id)
+    receiptImageIds.value=new Set([...receiptImageIds.value].filter(item=>item!==id))
+    closeReceipt()
+    flash('R2と端末の画像を削除しました。記帳済み明細は保持しています')
+  }catch(error){flash('画像の削除を確認できません：'+error.message)}
 }
-// Device-only bulk image removal from 管理 → その他. Ledger records remain unchanged.
+// Bulk image removal from 管理 → その他; neither R2 nor local removal touches D1 ledger.
 function onReceiptImagesCleared() {
   closeReceipt()
   receiptImageIds.value = new Set()
@@ -234,30 +273,12 @@ const rememberDevice = ref(true)
 const token = ref(sessionStorage.getItem('kakeibo-device-session') || '')
 async function setRememberDevice(remember) {
   if(rememberDevice.value===remember)return
-  // A privacy change affects receipt photos as well as login persistence.
-  // Never discard pre-existing images without an informed opt-in.
-  if(!remember){
-    try{
-      const count=await countReceiptImages()
-      if(count && !confirm('保存済みレシート画像 '+count+
-        '件もこのセッション内のみの保存に切り替えます。セッション終了後は利用できなくなります。必要な画像は先にZIP保存してください。続けますか？'))return
-    }catch(error){flash('保存済み画像を確認できません：'+error.message);return}
-  }
-  try{
-    // Copy images to their new storage first. A quota failure keeps both
-    // the original photos and the previous login preference unchanged.
-    await setReceiptStorageMode(remember)
-    try {
-      // The endpoint saves the D1 preference before sending the new HttpOnly cookie.
-      await api('auth/remember',{method:'PUT',body:JSON.stringify({remember})})
-    } catch(error) {
-      // Prefer keeping existing receipts recoverable if a network save failed.
-      try { await setReceiptStorageMode(!remember) } catch {}
-      throw error
-    }
+  try {
+    // Cloud receipt retention is independent of login persistence.
+    await api('auth/remember',{method:'PUT',body:JSON.stringify({remember})})
     rememberDevice.value=remember
-    flash('保存設定をD1に保存しました')
-  }catch(error){flash('保存方法を変更できませんでした。画像は確認してください：'+error.message)}
+    flash('ログインの保存設定を更新しました。R2画像はそのまま保管します')
+  }catch(error){flash('ログイン保存設定を変更できませんでした：'+error.message)}
 }
 const locked = ref(sessionStorage.getItem('kakeibo-logged-out') === '1')
 async function signIn(code) {
@@ -272,9 +293,7 @@ async function signIn(code) {
 }
 async function logout() {
   if (busy.value || editSaving.value || transferActionId.value !== null) return flash('処理が完了してからログアウトしてください')
-  if (!confirm(rememberDevice.value
-    ? 'ログアウトしますか？下書きは端末に保存され、クラウドには定期同期されます。記帳済み明細は残ります。'
-    : 'ログアウトしますか？このセッション内のレシート画像は消去されます。下書きは端末に、記帳済み明細はD1に残ります。')) return
+  if (!confirm('ログアウトしますか？記帳済み明細とR2画像は保持されます。未同期の端末画像は次回ログイン後に再同期できます。')) return
   // Explicit logout is a useful synchronization boundary; the local draft
   // remains available even if the cloud copy cannot be updated.
   await persistDraftLocally()
@@ -283,7 +302,6 @@ async function logout() {
   token.value = ''
   sessionStorage.removeItem('kakeibo-device-session')
   sessionStorage.removeItem('kakeibo-token')
-  if(!rememberDevice.value)clearSessionReceiptImages()
   sessionStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
   // Cookie-only sessions must also be revoked, even with no in-tab token.
@@ -309,7 +327,7 @@ async function ensureLogin() {
   try { await loginPromise } finally { loginPromise = null }
 }
 async function unlock() {
-  try { await ensureLogin(); await restoreAppState(); await Promise.all([load(), loadYear(), loadTransfers()]) }
+  try { await ensureLogin(); await restoreAppState(); await Promise.all([load(), loadYear(), loadTransfers()]); void migrateReceiptsNow() }
   catch (error) { flash(error.message) }
 }
 async function api(path, opt = {}) {
@@ -418,6 +436,7 @@ onMounted(async () => {
     // Recover D1 preferences and drafts before loading the ledger.
     await restoreAppState()
     await load()
+    void migrateReceiptsNow()
     await Promise.allSettled([loadYear(), loadTransfers()])
   }
 })
@@ -597,7 +616,6 @@ async function restoreAppState() {
   try {
     const state=await api('app-state')
     if (typeof state.remember_device === 'boolean') rememberDevice.value=state.remember_device
-    configureReceiptStorageMode(rememberDevice.value)
     cloud=validDraft(state.unsaved_draft) ? state.unsaved_draft : null
     draftRemoteKnown=true
   } catch(error) {
@@ -992,7 +1010,7 @@ async function saveEdit() {
     })
     ledgerRevision.value++
     if (editReceiptImage.value) {
-      try { await persistReceipt(e.id, editReceiptImage.value); editReceiptImage.value = null }
+      try { await persistReceipt(e.id, editReceiptImage.value, true); editReceiptImage.value = null }
       catch { receiptSaveError.value = '記録は更新されましたが、レシート画像を保存できませんでした。元の写真を保管してください。' }
     }
     const editedDay = e.date.slice(0, 10)
@@ -1672,7 +1690,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 
 // All page links share these same reactive refs and navigation handlers.
 // Child page components never create separate ledger selection state.
-provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, rewardDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, openCardBillDetails, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, averageDailySummary, monthlyDayTypeAverages, annualDayTypeAverages, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, maxYearMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
+provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, rewardDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, receiptMigrationInfo, migrateReceiptsNow, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, openCardBillDetails, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, averageDailySummary, monthlyDayTypeAverages, annualDayTypeAverages, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, maxYearMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
 </script>
 
 <template>

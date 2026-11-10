@@ -946,7 +946,7 @@ export async function onRequest({ request, env, params }) {
       const scheduledMonth = typeof body?.month === 'string' ? body.month : ''
       if (!/^[a-zA-Z0-9-]{8,80}$/.test(planId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(scheduledMonth))
         return json({error:'固定支出の対象を確認してください'},400)
-      const plan=await db.prepare(`SELECT id,name,amount,day,weekday,schedule_type,workday_only,category,payment_source,start_month,enabled
+      const plan=await db.prepare(`SELECT id,name,amount,day,weekday,schedule_type,workday_only,weekdays_json,month_days_json,interval_months,category,payment_source,start_month,enabled
         FROM recurring_plans WHERE id=?1
         AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=recurring_plans.id)`).bind(planId).first()
       if (!plan || !plan.enabled || !Number.isSafeInteger(Number(plan.amount)) || Number(plan.amount)<=0)
@@ -955,8 +955,8 @@ export async function onRequest({ request, env, params }) {
       if(approved.error)return json({error:approved.error,code:approved.code},approved.status)
       const date=approved.date
       if(date>tokyoToday())return json({error:'予定日前の固定支出は登録できません'},409)
-      const perDate=plan.schedule_type!=='monthly'
-      const period=perDate?date:scheduledMonth
+      const perDate=recurringIsPerDate(plan)
+      const period=recurringOccurrencePeriod(plan,date)
       const clientRequestId=recurringRequestId(plan.id,period)
       // A previously excluded occurrence must be rejected explicitly.
       // Keep this server-side even when the preview list is stale on another device.
@@ -975,6 +975,7 @@ export async function onRequest({ request, env, params }) {
         FROM recurring_plans p WHERE p.id=?3 AND p.enabled=1
           AND p.name=?4 AND p.amount=?5 AND p.day=?6 AND p.weekday=?7
           AND p.schedule_type=?9 AND p.category=?10 AND p.payment_source=?11 AND p.workday_only=?12
+          AND p.weekdays_json=?14 AND p.month_days_json=?15 AND p.interval_months=?16
           AND NOT EXISTS(SELECT 1 FROM trash_items t WHERE t.item_type='recurring_plan' AND t.item_id=p.id)
           AND NOT EXISTS(SELECT 1 FROM recurring_candidate_exclusions x WHERE x.plan_id=p.id AND x.month=?8)
           AND NOT EXISTS(SELECT 1 FROM recurring_date_exclusions x WHERE x.plan_id=p.id AND x.date=?1)
@@ -984,10 +985,10 @@ export async function onRequest({ request, env, params }) {
           NOT EXISTS(SELECT 1 FROM recurring_plans owner WHERE owner.enabled=1
             AND owner.name=e.merchant AND owner.payment_source=COALESCE(e.payment_source,'')
             AND e.client_request_id=('recurring_'||replace(owner.id,'-','')||'_'||
-              CASE WHEN owner.schedule_type='monthly' THEN replace(substr(e.date,1,7),'-','')
-                ELSE replace(e.date,'-','') END)))) < ?13
+              CASE WHEN owner.schedule_type='monthly' AND json_array_length(owner.month_days_json)<=1
+                THEN replace(substr(e.date,1,7),'-','') ELSE replace(e.date,'-','') END)))) < ?13
         ON CONFLICT(client_request_id) DO NOTHING`)
-        .bind(date,clientRequestId,plan.id,plan.name,plan.amount,plan.day,plan.weekday,scheduledMonth,plan.schedule_type,plan.category,plan.payment_source,plan.workday_only,manualSlot).run()
+        .bind(date,clientRequestId,plan.id,plan.name,plan.amount,plan.day,plan.weekday,scheduledMonth,plan.schedule_type,plan.category,plan.payment_source,plan.workday_only,manualSlot,plan.weekdays_json,plan.month_days_json,plan.interval_months).run()
       return json({ok:true,created:!!result.meta?.changes,duplicate:false,conflict:!result.meta?.changes})
     }
     // Genuine deletions share one trash table; reviews/exclusions remain states.

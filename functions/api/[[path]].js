@@ -793,6 +793,93 @@ export async function onRequest({ request, env, params }) {
       return json({ ok: true })
     }
 
+    // Apply a card's name, type, statistics and closing day in one D1 batch.
+    // The optimistic snapshot and the same guard on every dependent update
+    // prevent stale editors from relabelling historical ledger references.
+    if (a === 'payment-sources' && b === 'update' && m === 'POST') {
+      if(!await prepaidSchemaReady(db))return json({error:'カード設定の移行が必要です'},409)
+      const body=await request.json().catch(()=>null)
+      const oldName=typeof body?.oldName==='string'?body.oldName.trim():''
+      const newName=typeof body?.name==='string'?body.name.trim():''
+      const kind=body?.sourceType,group=body?.statGroup,expected=body?.expected
+      const changedClosing=Object.prototype.hasOwnProperty.call(body||{},'closingDay')
+      const day=body?.closingDay
+      if(!oldName||!newName||oldName.length>80||newName.length>80||
+        !['standard','prepaid'].includes(kind)||!['card','points'].includes(group)||
+        (changedClosing&&(!Number.isInteger(day)||day<0||day>31))||
+        !expected||!['standard','prepaid'].includes(expected.sourceType)||
+        !['card','points'].includes(expected.statGroup)||
+        !(expected.closingDay===null||Number.isInteger(expected.closingDay)&&expected.closingDay>=0&&expected.closingDay<=31)||
+        ![0,1].includes(expected.isArchived))
+        return json({error:'カードの編集内容を確認してください'},400)
+      if((oldName==='現金'&&(newName!==oldName||kind!=='standard'||group!=='card'))||
+        (['現金','その他','其他'].includes(oldName)&&kind==='prepaid')||
+        (['現金','その他','其他'].includes(newName)&&kind==='prepaid'))
+        return json({error:'現金・その他はこの設定に変更できません'},400)
+      const current=await db.prepare('SELECT name,source_type,stat_group,closing_day,is_archived FROM payment_sources WHERE name=?1')
+        .bind(oldName).first()
+      if(!current)return json({error:'カードが見つかりません。画面を更新してください'},404)
+      if(current.source_type!==expected.sourceType||
+        (current.stat_group||'card')!==expected.statGroup||
+        (current.closing_day??null)!==expected.closingDay||
+        Number(current.is_archived||0)!==expected.isArchived)
+        return json({error:'カード設定が別の端末で変更されました。再読み込みしてください'},409)
+      if(current.is_archived)return json({error:'アーカイブ済みのカードは編集できません'},409)
+      if(oldName!==newName&&await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1').bind(newName).first())
+        return json({error:'同じカード名が登録されています'},409)
+      if(current.source_type==='prepaid'&&kind==='standard'&&
+        await db.prepare("SELECT 1 FROM entries WHERE type='transfer' AND transfer_target=?1 LIMIT 1")
+          .bind('prepaid:'+oldName).first())
+        return json({error:'チャージ履歴があるため通常カードに変更できません'},409)
+      if(oldName===newName&&current.source_type===kind&&(current.stat_group||'card')===group&&
+        (!changedClosing||current.closing_day===day))return json({ok:true,changed:false,changes:0})
+      const guard="EXISTS(SELECT 1 FROM payment_sources ps WHERE "+
+        "ps.name=?2 AND ps.source_type=?3 AND COALESCE(ps.stat_group,'card')=?4 "+
+        "AND ps.closing_day IS ?5 AND ps.is_archived=?6 "+
+        "AND (?1=?2 OR NOT EXISTS(SELECT 1 FROM payment_sources WHERE name=?1)) "+
+        "AND (?7!='standard' OR ps.source_type!='prepaid' OR NOT EXISTS("+
+        "SELECT 1 FROM entries WHERE type='transfer' AND transfer_target='prepaid:'||?2)))"
+      const args=[newName,oldName,expected.sourceType,expected.statGroup,expected.closingDay,expected.isArchived,kind]
+      const statements=[]
+      if(oldName!==newName){
+        statements.push(
+          db.prepare('UPDATE merchant_rules SET payment_source=?1 WHERE payment_source=?2 AND '+guard).bind(...args),
+          db.prepare('UPDATE entries SET payment_source=?1 WHERE payment_source=?2 AND '+guard).bind(...args),
+          db.prepare("UPDATE entries SET transfer_target=?8, "+
+            "merchant=CASE WHEN type='transfer' AND client_request_id LIKE 'point_charge_%' "+
+            "AND merchant IN ('ポイント還元',?9||'チャージ') THEN ?1||'チャージ' "+
+            "ELSE merchant END WHERE transfer_target=?10 AND "+guard)
+            .bind(...args,'prepaid:'+newName,oldName,'prepaid:'+oldName),
+          db.prepare('UPDATE entries SET transfer_target=?8 WHERE transfer_target=?9 AND '+guard)
+            .bind(...args,'credit:'+newName,'credit:'+oldName),
+          db.prepare('UPDATE recurring_plans SET payment_source=?1 WHERE payment_source=?2 AND '+guard).bind(...args),
+          db.prepare('UPDATE card_bills SET payment_source=?1 WHERE payment_source=?2 AND '+guard).bind(...args)
+        )
+      }
+      const update=db.prepare("UPDATE payment_sources SET "+
+        "name=?1,source_type=?7,stat_group=?8, "+
+        "closing_day=CASE WHEN ?9=1 THEN ?10 ELSE closing_day END, "+
+        "opening_balance=CASE WHEN source_type<>?7 THEN 0 ELSE opening_balance END, "+
+        "opening_date=CASE WHEN source_type=?7 THEN opening_date WHEN ?7='prepaid' THEN ?11 ELSE '' END, "+
+        "opening_entry_id=CASE WHEN source_type=?7 THEN opening_entry_id "+
+        "WHEN ?7='prepaid' THEN (SELECT COALESCE(MAX(id),0) FROM entries) ELSE 0 END, "+
+        "sort_order=CASE WHEN ?1 IN ('その他','其他') THEN 99999 "+
+        "WHEN ?2 IN ('その他','其他') THEN (SELECT COALESCE(MAX(sort_order),-1)+1 FROM payment_sources "+
+        "WHERE name NOT IN ('その他','其他') AND sort_order<99999) ELSE sort_order END "+
+        "WHERE name=?2 AND "+guard)
+        .bind(...args,group,changedClosing?1:0,changedClosing?day:null,
+          new Date(Date.now()+9*3600000).toISOString().slice(0,10))
+      statements.push(update)
+      try{
+        const result=await db.batch(statements)
+        if(!result.at(-1)?.meta?.changes)return json({error:'カード設定が更新されています。再読み込みしてください'},409)
+        return json({ok:true,changed:true,changes:oldName===newName?0:(result[1]?.meta?.changes||0),name:newName})
+      }catch(error){
+        if(/UNIQUE constraint|constraint failed/i.test(String(error)))
+          return json({error:'カード名・保存済み請求の重複を確認してください'},409)
+        throw error
+      }
+    }
     if (a === 'payment-sources' && b === 'rename' && m === 'POST') {
       const body = await request.json()
       const oldName = typeof body?.oldName === 'string' ? body.oldName.trim() : ''

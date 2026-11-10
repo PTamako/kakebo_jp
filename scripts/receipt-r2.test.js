@@ -175,7 +175,7 @@ test('new upload avoids HEAD, duplicate retry needs only one HEAD, editing needs
   assert.deepEqual(b.calls,{put:2,head:1,get:0,delete:0,list:0})
   const version=(await call(b,'HEAD',['4'])).headers.get('etag')
   assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg','x-receipt-replace':'1','x-receipt-if-match':version})).status,200)
-  assert.deepEqual(b.calls,{put:3,head:1,get:0,delete:0,list:0})
+  assert.deepEqual(b.calls,{put:3,head:2,get:0,delete:0,list:0})
 })
 test('delete does not use costly per-image HEAD checks',async()=>{
   const b=mockedBackend()

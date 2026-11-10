@@ -1,137 +1,133 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import {readFileSync} from 'node:fs'
 import navWorker from '../workers/fund-nav-cron.js'
 
-const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
+const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')
+const MORNING='30 15 * * *',EVENING='30 10 * * *'
 
-test('NAV Cron runs at 19:30 and retries missing MUFG NAV at 23:15 JST', () => {
-  const config=read('wrangler.nav.toml')
-  const docs=read('scripts/deploy-nav-worker.md')
-  assert.match(config,/crons = \["30 15 \* \* \*", "30 0 \* \* \*", "30 10 \* \* \*", "15 14 \* \* \*"\]/)
+function fakeDb(queries=[]){
+  return {prepare(sql){
+    queries.push(sql)
+    if(sql.includes('FROM recurring_plans p'))
+      return {bind(){return this},all:async()=>({results:[]})}
+    if(sql.includes('UPDATE entries SET transfer_applied = 1'))
+      return {bind(){return this},run:async()=>({meta:{changes:0}})}
+    if(sql.includes('investment_holdings'))
+      return {all:async()=>({results:[]})}
+    if(sql.includes('INSERT INTO scheduled_job_state'))
+      return {bind(){return this},run:async()=>({meta:{changes:1}})}
+    throw Error('unexpected cron SQL '+sql)
+  }}
+}
+async function fire({cron,scheduledTime,db,heartbeat=false}){
+  const jobs=[]
+  const original=console.log,seen=[]
+  console.log=(...args)=>seen.push(args)
+  try{
+    await navWorker.scheduled({cron,scheduledTime:Date.parse(scheduledTime)},
+      {DB:db,HEARTBEAT_ENABLED:heartbeat?'true':'false'},
+      {waitUntil(p){jobs.push(p)}})
+    await Promise.all(jobs)
+  }finally{console.log=original}
+  return {jobs,seen}
+}
+
+test('two production Cron triggers replace four; preserved 00:30/19:30 JST',()=>{
+  const config=read('wrangler.nav.toml'),docs=read('scripts/deploy-nav-worker.md')
+  assert.match(config,/crons = \["30 15 \* \* \*", "30 10 \* \* \*"\]/)
+  assert.doesNotMatch(config,/"30 0 \* \* \*"|"15 14 \* \* \*"/)
   assert.match(config,/DAIWA_CSV_EXPERIMENT = "false"/)
-  assert.match(docs,/日本時間19:30（UTC10:30）/)
-  assert.match(docs,/23:15（UTC14:15）/)
-  assert.doesNotMatch(config,/30 11 \* \* \*/)
+  assert.match(docs,/00:30（UTC前日15:30）/)
+  assert.match(docs,/19:30（UTC10:30）/)
+  assert.match(docs,/2件/)
 })
 
-test('NAV job reuses D1 prices and never creates a fresh database or changes transactions', () => {
-  const config = read('wrangler.nav.toml')
-  const worker = read('workers/fund-nav-cron.js')
-  assert.match(config, /name = "kakeibo-nav-sync"/)
-  assert.match(config, /database_name = "kakeibo"/)
-  assert.match(worker, /syncFundNav\(env\.DB,/)
-  assert.doesNotMatch(worker, /DELETE\s+FROM|DROP\s+TABLE|investment_holdings\s+SET/i)
+test('NAV and recurring use the existing D1; no new Worker or migration',()=>{
+  const config=read('wrangler.nav.toml'),worker=read('workers/fund-nav-cron.js')
+  assert.match(config,/name = "kakeibo-nav-sync"/)
+  assert.match(config,/database_name = "kakeibo"/)
+  assert.match(worker,/syncFundNav\(env\.DB,/)
+  assert.match(worker,/postScheduledRecurring\(env\.DB,/)
+  assert.match(worker,/applyDueSbiTransfers\(env\.DB,/)
+  assert.doesNotMatch(worker,/DELETE\s+FROM|DROP\s+TABLE|investment_holdings\s+SET/i)
 })
 
+test('both daily triggers independently run recurring, SBI and (when trading) NAV',async()=>{
+  for(const [cron,time,date,retry] of [
+    [MORNING,'2026-11-05T15:30:00Z','2026-11-06','2026-11-05'],
+    [EVENING,'2026-11-06T10:30:00Z','2026-11-06','2026-11-06']
+  ]){
+    const queries=[]
+    const {jobs,seen}=await fire({cron,scheduledTime:time,db:fakeDb(queries)})
+    assert.equal(jobs.length,3)
+    assert.equal(queries.filter(sql=>sql.includes('FROM recurring_plans p')).length,1)
+    assert.equal(queries.filter(sql=>sql.includes('UPDATE entries SET transfer_applied = 1')).length,1)
+    assert.equal(queries.filter(sql=>sql.includes('investment_holdings')).length,1)
+    assert.ok(seen.some(x=>x[0]==='SBI due-transfer sync'))
+    assert.ok(seen.some(x=>x[0]==='Recurring fixed-expense sync'))
+    const started=seen.find(x=>x[0]==='NAV sync started')
+    assert.equal(JSON.parse(started[1]).targetNavDate,retry)
+    assert.equal(JSON.parse(started[1]).cron,cron)
+    assert.equal(JSON.parse(seen.find(x=>x[0]==='Recurring fixed-expense sync started')[1]).today,date)
+  }
+})
 
-test('the one-per-day Worker always persists logs and captures every scheduled invocation', () => {
-  const config=read('wrangler.nav.toml')
-  const worker=read('workers/fund-nav-cron.js')
+test('Saturday 00:30 checks Friday NAV while Saturday 19:30 avoids provider calls',async()=>{
+  const morning=[]
+  const saturdayMorning=await fire({cron:MORNING,scheduledTime:'2026-11-06T15:30:00Z',db:fakeDb(morning)})
+  assert.equal(saturdayMorning.jobs.length,3)
+  assert.equal(JSON.parse(saturdayMorning.seen.find(x=>x[0]==='NAV sync started')[1]).targetNavDate,'2026-11-06')
+  assert.equal(morning.filter(sql=>sql.includes('investment_holdings')).length,1)
+  const evening=[]
+  const saturdayEvening=await fire({cron:EVENING,scheduledTime:'2026-11-07T10:30:00Z',db:fakeDb(evening)})
+  assert.equal(saturdayEvening.jobs.length,2)
+  assert.equal(evening.filter(sql=>sql.includes('investment_holdings')).length,0)
+})
+
+test('after a Japanese holiday only recurring and SBI run; skipped NAV recorded once',async()=>{
+  const queries=[]
+  const {jobs,seen}=await fire({cron:MORNING,scheduledTime:'2026-11-03T15:30:00Z',db:fakeDb(queries),heartbeat:true})
+  assert.equal(jobs.length,3,'two financial tasks plus skip heartbeat')
+  assert.ok(seen.some(x=>x[0]==='NAV sync skipped: Japan non-trading day'))
+  assert.equal(queries.filter(sql=>sql.includes('investment_holdings')).length,0)
+  assert.equal(queries.filter(sql=>sql.includes('INSERT INTO scheduled_job_state')).length,3)
+})
+
+test('unknown scheduled expression does not query D1 or write fund prices',async()=>{
+  let touched=false
+  const originalWarn=console.warn
+  console.warn=()=>{}
+  try{
+    const jobs=[]
+    await navWorker.scheduled({cron:'30 0 * * *',scheduledTime:Date.now()},
+      {DB:{prepare(){touched=true;throw Error('unexpected')}}},{waitUntil(p){jobs.push(p)}})
+    assert.equal(jobs.length,0)
+    assert.equal(touched,false)
+  }finally{console.warn=originalWarn}
+})
+
+test('scheduled work failures are logged independently on the shared Worker',async()=>{
+  const errors=[],originalError=console.error,originalLog=console.log
+  console.error=(...args)=>errors.push(args)
+  console.log=()=>{}
+  try{
+    const jobs=[]
+    await navWorker.scheduled({cron:EVENING,scheduledTime:Date.parse('2026-11-06T10:30:00Z')},
+      {DB:null},{waitUntil(p){jobs.push(p)}})
+    assert.equal(jobs.length,3)
+    assert.equal((await Promise.allSettled(jobs)).filter(x=>x.status==='rejected').length,3)
+    assert.ok(errors.some(x=>x[0]==='Recurring fixed-expense sync failed'))
+    assert.ok(errors.some(x=>x[0]==='SBI due-transfer sync failed'))
+    assert.ok(errors.some(x=>x[0]==='NAV sync failed'))
+  }finally{console.error=originalError;console.log=originalLog}
+})
+
+test('worker still records each invocation with detailed logs and enabled observability',()=>{
+  const config=read('wrangler.nav.toml'),worker=read('workers/fund-nav-cron.js')
   assert.match(config,/\[observability\]\s+enabled = true\s+head_sampling_rate = 1/)
   assert.match(worker,/console\.log\('NAV sync started'/)
   assert.match(worker,/console\.log\('NAV sync',JSON\.stringify\(result\)\)/)
   assert.match(worker,/console\.error\('NAV sync failed'/)
   assert.match(worker,/throw error/)
-})
-
-test('scheduled event prints start and successful summary even when there are no supported holdings', async () => {
-  const output=[]
-  const original=console.log
-  console.log=(...args)=>output.push(args)
-  try{
-    let job
-    const ctx={waitUntil(promise){job=promise}}
-    const db={prepare(){return{all:async()=>({results:[]})}}}
-    await navWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-10-30T10:30:00Z')},{DB:db},ctx)
-    assert.ok(job,'Worker must keep async sync task alive via waitUntil')
-    await job
-    const started=output.find(([name])=>name==='NAV sync started')
-    const complete=output.find(([name])=>name==='NAV sync')
-    assert.ok(started)
-    assert.equal(JSON.parse(started[1]).cron,'30 10 * * *')
-    assert.equal(JSON.parse(started[1]).scheduledAt,'2026-10-30T10:30:00.000Z')
-    assert.ok(complete)
-    assert.deepEqual(JSON.parse(complete[1]),{checked:0,updated:[],unchanged:[],failed:[],unsupported:[]})
-  }finally{console.log=original}
-})
-
-test('scheduled failures log an explicit error and remain observable as failed invocations',async()=>{
-  const originalLog=console.log
-  const originalError=console.error
-  const events=[]
-  console.log=(...args)=>events.push(args)
-  console.error=(...args)=>events.push(args)
-  try{
-    let job
-    await navWorker.scheduled({cron:'30 10 * * *',scheduledTime:Date.parse('2026-10-30T10:30:00Z')},{DB:null},{waitUntil(p){job=p}})
-    assert.ok(job)
-    await assert.rejects(job,/missing_d1_binding/)
-    assert.ok(events.some(args=>args[0]==='NAV sync started'))
-    assert.ok(events.some(args=>args[0]==='NAV sync failed'&&String(args[1]).includes('missing_d1_binding')))
-  }finally{console.log=originalLog;console.error=originalError}
-})
-
-test('existing NAV Worker handles scheduled fixed-expense dates without running NAV sync', async () => {
-  const calls=[]
-  const output=[]
-  const originalLog=console.log
-  console.log=(...args)=>output.push(args)
-  try {
-    for(const [cron,time,date] of [
-      ['30 15 * * *','2026-11-01T15:30:00Z','2026-11-02'],
-      ['30 0 * * *','2026-11-02T00:30:00Z','2026-11-02']
-    ]) {
-      const jobs=[]
-      const db={prepare(sql){
-        calls.push(sql)
-        if(sql.includes('FROM recurring_plans p')) {
-          return {bind(...args){assert.equal(args[0], '2026-11');return this},all:async()=>({results:[]})}
-        }
-        if(sql.includes('UPDATE entries SET transfer_applied = 1')) {
-          return {bind(day){assert.equal(day,date);return this},run:async()=>({meta:{changes:0}})}
-        }
-        throw Error('unexpected NAV query during recurring job')
-      }}
-      await navWorker.scheduled({cron,scheduledTime:Date.parse(time)},{DB:db},
-        {waitUntil(p){jobs.push(p)}})
-      assert.equal(jobs.length,2, 'scheduled fixed expenses and SBI transfers are independent')
-      await Promise.all(jobs)
-      const summary=output.filter(x=>x[0]==='Recurring fixed-expense sync').at(-1)
-      assert.equal(JSON.parse(summary[1]).date,date)
-      assert.ok(output.some(x=>x[0]==='SBI due-transfer sync'))
-    }
-    assert.equal(calls.length,4)
-    assert.equal(output.filter(x=>x[0]==='NAV sync').length,0)
-  } finally { console.log=originalLog }
-})
-
-test('unknown cron does not create entries or modify fund prices', async () => {
-  const originalWarn=console.warn
-  console.warn=()=>{}
-  try {
-    let invoked=false
-    await navWorker.scheduled({cron:'1 1 * * *',scheduledTime:Date.now()},
-      {DB:{prepare(){invoked=true;throw Error('should not query database')}}},
-      {waitUntil(){invoked=true}})
-    assert.equal(invoked,false)
-  }finally{console.warn=originalWarn}
-})
-
-test('fixed-expense job failure is logged independently of the NAV job', async () => {
-  const events=[]
-  const originalLog=console.log, originalError=console.error
-  console.log=(...args)=>events.push(args)
-  console.error=(...args)=>events.push(args)
-  try {
-    const jobs=[]
-    await navWorker.scheduled({cron:'30 15 * * *',scheduledTime:Date.parse('2026-11-01T15:30:00Z')},
-      {DB:null},{waitUntil(p){jobs.push(p)}})
-    assert.equal(jobs.length,2)
-    const outcomes=await Promise.allSettled(jobs)
-    assert.ok(outcomes.every(x=>x.status==='rejected'))
-    assert.ok(events.some(args=>args[0]==='Recurring fixed-expense sync failed'))
-    assert.ok(events.some(args=>args[0]==='SBI due-transfer sync failed'))
-    assert.ok(!events.some(args=>args[0]==='NAV sync started'))
-  }finally{console.log=originalLog;console.error=originalError}
 })

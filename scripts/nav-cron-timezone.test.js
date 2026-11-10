@@ -81,7 +81,7 @@ test('Saturday 00:30 checks Friday NAV while Saturday 19:30 avoids provider call
   assert.equal(morning.filter(sql=>sql.includes('investment_holdings')).length,1)
   const evening=[]
   const saturdayEvening=await fire({cron:EVENING,scheduledTime:'2026-11-07T10:30:00Z',db:fakeDb(evening)})
-  assert.equal(saturdayEvening.jobs.length,2)
+  assert.equal(saturdayEvening.jobs.length,3,'two financial tasks plus NAV skip heartbeat')
   assert.equal(evening.filter(sql=>sql.includes('investment_holdings')).length,0)
 })
 

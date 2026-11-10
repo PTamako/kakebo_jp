@@ -52,7 +52,7 @@ test('single D1 batch snapshot protects cross-table export',()=>{
   assert.match(api,/if \(a === 'backup-snapshot' && m === 'GET'\)/)
   assert.match(api,/const results=await db\.batch\(statements\)/)
   assert.match(ui,/props\.api\('backup-snapshot'\)/)
-  assert.match(ui,/await sealBackup\(validated\)/)
+  assert.match(ui,/if\(atomicBackup\)return sealBackup\(validateBackup\(atomicBackup\)\)/)
 })
 
 test('preview requires matching identity from bound D1, not only configured flags',()=>{

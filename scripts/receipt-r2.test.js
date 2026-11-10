@@ -10,16 +10,20 @@ function mockedBackend(){
   const bucket={
     async put(key,bytes,{httpMetadata,customMetadata,onlyIf}){
       calls.put++
-      if(onlyIf?.get('If-None-Match')==='*' && objects.has(key))return null
+      const old=objects.get(key)
+      if(onlyIf?.get('If-None-Match')==='*' && old)return null
+      if(onlyIf?.has('If-Match') && old?.httpEtag!==onlyIf.get('If-Match'))return null
       const data=new Uint8Array(bytes)
-      const metadata={size:data.length,httpMetadata,customMetadata}
+      const metadata={size:data.length,httpMetadata,customMetadata,
+        httpEtag:'"'+customMetadata.sha256.slice(0,32)+'"'}
       objects.set(key,{data,...metadata})
       return metadata
     },
     async head(key){
       calls.head++
       const row=objects.get(key)
-      return row?{size:row.data.length,customMetadata:row.customMetadata,httpMetadata:row.httpMetadata}:null
+      return row?{size:row.data.length,customMetadata:row.customMetadata,
+        httpMetadata:row.httpMetadata,httpEtag:row.httpEtag}:null
     },
     async get(key){
       calls.get++
@@ -47,7 +51,8 @@ function mockedBackend(){
             },
             async all(){
               if(sql.includes('SELECT entry_id FROM receipt_r2_state'))
-                return {results:[...states].filter(([,deleted])=>deleted===1).map(([entry_id])=>({entry_id}))}
+                return {results:[...states].filter(([id,deleted])=>deleted===1&&id>values[0])
+                  .sort((a,b)=>a[0]-b[0]).slice(0,100).map(([entry_id])=>({entry_id}))}
               return {results:[]}
             },
             async run(){
@@ -168,8 +173,9 @@ test('new upload avoids HEAD, duplicate retry needs only one HEAD, editing needs
   assert.equal(repeat.status,200)
   assert.equal((await repeat.json()).already,true)
   assert.deepEqual(b.calls,{put:2,head:1,get:0,delete:0,list:0})
-  assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg','x-receipt-replace':'1'})).status,200)
-  assert.deepEqual(b.calls,{put:3,head:1,get:0,delete:0,list:0})
+  const version=(await call(b,'HEAD',['4'])).headers.get('etag')
+  assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg','x-receipt-replace':'1','x-receipt-if-match':version})).status,200)
+  assert.deepEqual(b.calls,{put:3,head:2,get:0,delete:0,list:0})
 })
 test('delete does not use costly per-image HEAD checks',async()=>{
   const b=mockedBackend()
@@ -193,7 +199,7 @@ test('app startup never migrates old images or reads R2 and a click fetches one 
   assert.ok(unlock)
   assert.doesNotMatch(mounted,/migrateReceiptsNow\(\)/)
   assert.doesNotMatch(unlock,/migrateReceiptsNow\(\)/)
-  assert.match(app,/async function refreshReceiptImageIds\(\)[\s\S]*?listR2Receipts\(\{fresh:true\}\)/)
+  assert.match(app,/async function refreshReceiptImageIds\(\{fresh=false\}\=\{\}\)[\s\S]*?listR2Receipts\(\{fresh\}\)/)
   assert.match(app,/async function viewReceipt\(entryId\)[\s\S]*?getR2Receipt\(entryId\)/)
   assert.match(migration,/if\(!local\.length\)return result[\s\S]*?await listR2Receipts\(\{fresh:true\}\)/)
   assert.doesNotMatch(server,/await bucket\.list\(/)
@@ -217,4 +223,44 @@ test('a non-identical duplicate cannot overwrite existing R2 object',async()=>{
   assert.equal(response.status,409)
   assert.equal(b.calls.head,1)
   assert.deepEqual([...b.objects.get('receipts/v1/4').data],[...jpeg])
+})
+
+test('versioned replacement rejects stale concurrent images without an unconditional overwrite',async()=>{
+  const b=mockedBackend()
+  assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg'})).status,200)
+  const oldVersion=(await call(b,'HEAD',['4'])).headers.get('etag')
+  assert.match(oldVersion,/^"[a-f0-9]{32}"$/)
+  const updated=new Uint8Array([0xff,0xd8,0xff,0xe0,9,9,9,9])
+  assert.equal((await call(b,'PUT',['4'],updated,{'content-type':'image/jpeg',
+    'x-receipt-replace':'1','x-receipt-if-match':oldVersion})).status,200)
+  const stale=await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg',
+    'x-receipt-replace':'1','x-receipt-if-match':oldVersion})
+  assert.equal(stale.status,409)
+  assert.equal((await stale.json()).code,'receipt_changed')
+  assert.deepEqual([...b.objects.get('receipts/v1/4').data],[...updated])
+  assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg',
+    'x-receipt-replace':'1'})).status,428)
+})
+test('explicit cleanup retries tombstoned objects without HEAD/list reads',async()=>{
+  const b=mockedBackend()
+  for(const id of [4,5])
+    assert.equal((await call(b,'PUT',[String(id)],jpeg,{'content-type':'image/jpeg'})).status,200)
+  // Simulates a failed network deletion with tombstones already recorded.
+  b.states.set(4,1)
+  b.states.set(5,1)
+  for(const name of Object.keys(b.calls))b.calls[name]=0
+  const result=await call(b,'POST',['cleanup'],JSON.stringify({after:0}),
+    {'content-type':'application/json'})
+  assert.equal(result.status,200)
+  assert.equal((await result.json()).checked,2)
+  assert.equal(b.objects.size,0)
+  assert.deepEqual(b.calls,{put:0,head:0,get:0,delete:1,list:0})
+  assert.equal((await call(b,'GET')).status,200)
+})
+test('all page entry clicks use one receipt GET and ID-only IndexedDB index',()=>{
+  const app=source('src/App.vue')
+  const store=source('src/receipt-store.js')
+  assert.match(app,/listReceiptImageIds\(\)/)
+  assert.match(store,/listReceiptImageIds\(\)[\s\S]*?getAllKeys\(\)/)
+  assert.doesNotMatch(app,/listR2Receipts\(\{fresh:true\}\)/)
 })

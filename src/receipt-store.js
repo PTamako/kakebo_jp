@@ -146,6 +146,16 @@ export async function countReceiptImages(){
   for(const row of await readDeviceRows())ids.add(row.entryId)
   return ids.size
 }
+// Read keys without loading historical image Blob payloads into memory.
+export async function listReceiptImageIds(){
+  const keys=await operate('readonly',store=>store.getAllKeys())||[]
+  const ids=new Set(keys.map(Number).filter(id=>Number.isSafeInteger(id)&&id>0))
+  for(const key of sessionKeys()){
+    const id=Number(key.slice(SESSION_PREFIX.length))
+    if(Number.isSafeInteger(id)&&id>0)ids.add(id)
+  }
+  return [...ids]
+}
 export async function listReceiptImagesForExport(){
   const unique=new Map((await readDeviceRows()).map(row=>[row.entryId,row]))
   for(const row of readSessionRows())unique.set(row.entryId,row)

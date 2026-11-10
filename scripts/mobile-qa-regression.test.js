@@ -43,7 +43,7 @@ test('finance management starts loading only when tab is active and refreshes on
   assert.match(finance, /if \(ledgerDirty \|\| !lastLoadedAt\.value \|\|/)
   assert.match(finance, /Date\.now\(\) - lastLoadedAt\.value\.getTime\(\) >= MANAGEMENT_LEDGER_TTL_MS/)
   assert.match(finance, /void loadAll\(\)/)
-  assert.match(finance, /async function downloadBackup\(\)\{[\s\S]*?if \(!\(await loadAll\(\)\)\) throw Error/)
+  assert.match(finance, /async function createVerifiedLedgerBackup\(\)\{[\s\S]*?if \(!\(await loadAll\(\)\)\) throw Error/)
 })
 
 test('failed finance loads cannot be exported as stale complete backups', () => {

@@ -1169,10 +1169,27 @@ export async function onRequest({ request, env, params }) {
         if (!Number.isSafeInteger(id) || id <= 0 ||
             request.headers.get('x-confirm-delete') !== String(id))
           return json({ error: '削除する記録の確認が必要です' }, 428)
-        // D1 batch() makes the recoverable snapshot+deletion atomic.
+        // The UI sends the exact displayed row to prevent deleting a newer
+        // cross-device edit after the user's confirmation. Legacy callers
+        // without a snapshot still get an atomic server-side row guard.
+        const requestPayload=await request.json().catch(()=>null)
+        const expectedKeys=['date','time','amount','category','merchant','note','raw',
+          'type','transfer_target','transfer_applied','transfer_date','client_request_id','payment_source']
         const entry=await db.prepare('SELECT * FROM entries WHERE id=?1').bind(id).first()
         if (!entry) return json({error:'明細が見つかりません'},404)
         if(isPointCharge(entry))return json({error:'自動チャージは元のポイント還元収入を削除してください'},409)
+        const supplied=requestPayload?.expected
+        if(supplied!==undefined && (!supplied || Array.isArray(supplied) ||
+            typeof supplied!=='object' || !expectedKeys.every(k=>Object.hasOwn(supplied,k))))
+          return json({error:'削除前の記録情報を確認してください'},428)
+        const expected=supplied||Object.fromEntries(expectedKeys.map(k=>[k,entry[k]??null]))
+        if(expectedKeys.some(k=>(expected[k]??null)!==(entry[k]??null)))
+          return json({error:'別の端末で明細が更新されました。再読み込みして確認してください',code:'stale_entry'},409)
+        // Re-evaluate all expected fields inside the D1 transaction, not only
+        // before it. Every side effect below is guarded by this same row.
+        const guard=(start)=>'EXISTS (SELECT 1 FROM entries e WHERE e.id=?'+start+
+          ' AND '+expectedKeys.map((k,i)=>'e.'+k+' IS ?'+(start+i+1)).join(' AND ')+')'
+        const guardValues=expectedKeys.map(k=>expected[k])
         const paired=entry.type==='income' ? await db.prepare('SELECT * FROM entries WHERE client_request_id=?1')
           .bind(pointChargeId(entry.client_request_id,id)).first() : null
         const [link,dismissal]=await Promise.all([
@@ -1211,24 +1228,31 @@ export async function onRequest({ request, env, params }) {
         ).bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month).first() : null
         const snapshot=JSON.stringify({entry,purchaseMonth:link?.purchase_month||null,dismissed:!!dismissal,
           recurringSkip:alreadySkipped?null:recurringSkip,pairedEntryId:paired?.id||null})
-        // All changes happen in one D1 transaction; a partial deletion cannot
-        // leave a scheduled expense marked as skipped without its trash record.
         const statements=[
-          db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING").bind(String(id),snapshot)
+          db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) SELECT 'entry',?1,?2 WHERE "+
+            guard(3)+" ON CONFLICT(item_type,item_id) DO NOTHING")
+            .bind(String(id),snapshot,id,...guardValues)
         ]
         if(paired){
           const pairedSnapshot=JSON.stringify({entry:paired,purchaseMonth:null,dismissed:false,recurringSkip:null})
-          statements.push(db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) VALUES('entry',?1,?2) ON CONFLICT(item_type,item_id) DO NOTHING")
-            .bind(String(paired.id),pairedSnapshot))
+          statements.push(db.prepare(
+            "INSERT INTO trash_items(item_type,item_id,payload_json) SELECT 'entry',?1,?2 WHERE "+
+            guard(3)+" ON CONFLICT(item_type,item_id) DO NOTHING"
+          ).bind(String(paired.id),pairedSnapshot,id,...guardValues))
         }
-        if(recurringSkip)statements.push(db.prepare(skipSql)
-          .bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month))
+        if(recurringSkip)statements.push(db.prepare(
+          'INSERT OR IGNORE INTO '+(recurringSkip.date?'recurring_date_exclusions(plan_id,date)':'recurring_candidate_exclusions(plan_id,month)')+
+          ' SELECT ?1,?2 WHERE '+guard(3)
+        ).bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month,id,...guardValues))
         statements.push(
-          db.prepare('DELETE FROM sbi_transfer_links WHERE entry_id=?1').bind(id),
-          db.prepare('DELETE FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id),
-          ...(paired ? [db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2)")
-            .bind(paired.id,String(paired.id))] : []),
-          db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2)").bind(id,String(id))
+          db.prepare('DELETE FROM sbi_transfer_links WHERE entry_id=?1 AND '+guard(2))
+            .bind(id,id,...guardValues),
+          db.prepare('DELETE FROM dismissed_transfer_reminders WHERE entry_id=?1 AND '+guard(2))
+            .bind(id,id,...guardValues),
+          ...(paired ? [db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2) AND "+guard(3))
+            .bind(paired.id,String(paired.id),id,...guardValues)] : []),
+          db.prepare("DELETE FROM entries WHERE id=?1 AND EXISTS (SELECT 1 FROM trash_items WHERE item_type='entry' AND item_id=?2) AND "+guard(3))
+            .bind(id,String(id),id,...guardValues)
         )
         const result=await db.batch(statements)
         if(!result[0]?.meta?.changes || !result[result.length-1]?.meta?.changes)

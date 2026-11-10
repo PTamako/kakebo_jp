@@ -36,6 +36,20 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
   ).bind(id,size).run()
   const idSegment=segments[0] || ''
   try {
+    // Explicit owner action only. Re-issue idempotent deletes for tombstoned
+    // IDs after an interrupted network/R2 delete, without listing R2 objects.
+    // Never run from startup, pagination, login or scheduled jobs.
+    if(idSegment==='cleanup' && segments.length===1 && method==='POST'){
+      const payload=await request.json().catch(()=>null)
+      const after=Number(payload?.after??0)
+      if(!Number.isSafeInteger(after)||after<0)return json({error:'再確認の位置を確認してください'},400)
+      const {results=[]}=await db.prepare(
+        'SELECT entry_id FROM receipt_r2_state WHERE deleted=1 AND entry_id>?1 ORDER BY entry_id LIMIT 100'
+      ).bind(after).all()
+      const ids=results.map(row=>Number(row.entry_id))
+      if(ids.length)await bucket.delete(ids.map(key))
+      return json({ok:true,checked:ids.length,nextCursor:ids.length===100?ids[ids.length-1]:null})
+    }
     if (!idSegment) {
       if (method==='GET') {
         // Only D1 is read for badge/index/count/period views. Never call
@@ -72,6 +86,15 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
       return json({error:'画像IDを確認してください'},400)
     const id=Number(idSegment)
     const objectKey=key(id)
+    if(method==='HEAD') {
+      // A version request happens only when the user selects a replacement
+      // image. Ordinary ledger views never HEAD each receipt.
+      const removed=(await deletedRow(id))?.deleted===1
+      const metadata=await bucket.head(objectKey)
+      if(removed)return new Response(null,{status:metadata?410:404,headers:cacheHeaders('text/plain')})
+      if(!metadata)return new Response(null,{status:404,headers:cacheHeaders('text/plain')})
+      return new Response(null,{status:200,headers:{...cacheHeaders('text/plain'),etag:metadata.httpEtag}})
+    }
     if(method==='GET') {
       if((await deletedRow(id))?.deleted===1)return json({error:'削除済みのレシート画像です',code:'receipt_previously_deleted'},410)
       const object=await bucket.get(objectKey)
@@ -107,18 +130,25 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
       }
       const hash=await digestHex(image)
       const replace=request.headers.get('x-receipt-replace')==='1'
-      // A conditional PUT protects existing images without a separate HEAD.
-      // If the key already exists, R2 returns null and only that collision
-      // needs one Class B HEAD to distinguish idempotent retries from conflicts.
-      // Explicit image editing intentionally overwrites this same entry ID.
+      const expected=request.headers.get('x-receipt-if-match')
+      // Replacements must use the ETag captured when the user selected the
+      // new image. This rejects stale edits rather than last-writer-wins.
+      if(replace && expected!=='*' && !/^"[a-zA-Z0-9_-]{16,128}"$/.test(expected||''))
+        return json({error:'画像の更新前の状態を確認してください',code:'receipt_version_required'},428)
+      const condition=replace && expected!=='*'
+        ? new Headers({'If-Match':expected})
+        : new Headers({'If-None-Match':'*'})
+      // Conditional PUT avoids a preliminary HEAD on every upload. Only an
+      // ordinary idempotent retry checks HEAD after a failed condition.
       const stored=await bucket.put(objectKey,image,{
-        ...(!replace ? {onlyIf:new Headers({'If-None-Match':'*'})} : {}),
+        onlyIf:condition,
         httpMetadata:{contentType:type},
         customMetadata:{sha256:hash},
         // R2 validates this checksum as part of the same PUT (no extra read).
         sha256:hash
       })
       if(!stored){
+        if(replace)return json({error:'別の端末で画像が変更されました。最新の画像を確認して再度選択してください',code:'receipt_changed'},409)
         const existing=await bucket.head(objectKey)
         if(existing && existing.size===image.byteLength &&
           existing.customMetadata?.sha256===hash){

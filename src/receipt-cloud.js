@@ -3,6 +3,10 @@
 const ENDPOINT='/api/receipts'
 const LIMIT=200*1024
 let cachedIndex=null
+let cachedAt=0
+let inFlightIndex=null
+let indexGeneration=0
+const INDEX_TTL_MS=5*60*1000
 
 async function requestR2(path='',options={}) {
   let token=''
@@ -21,22 +25,30 @@ async function requestR2(path='',options={}) {
   }
   return response
 }
-export const invalidateR2ReceiptIndex=()=>{cachedIndex=null}
+export const invalidateR2ReceiptIndex=()=>{cachedIndex=null;cachedAt=0;indexGeneration++}
 export async function listR2Receipts({fresh=false}={}) {
-  if(cachedIndex && !fresh)return cachedIndex.map(item=>({...item}))
-  const response=await requestR2()
-  const body=await response.json()
-  if(!body?.ok || !Array.isArray(body.items))throw Error('R2画像一覧の形式を確認できません')
-  const entries=[]
-  const ids=new Set()
-  for(const item of body.items){
-    const id=Number(item.id)
-    if(!Number.isSafeInteger(id)||id<=0||ids.has(id))continue
-    ids.add(id)
-    entries.push({entryId:id,size:item.size===null ? null : Number(item.size)||0})
-  }
-  cachedIndex=entries
-  return entries.map(item=>({...item}))
+  if(cachedIndex && !fresh && Date.now()-cachedAt<INDEX_TTL_MS)
+    return cachedIndex.map(item=>({...item}))
+  // Share an in-flight index query between month refresh and management.
+  if(inFlightIndex)return (await inFlightIndex).map(item=>({...item}))
+  const generation=indexGeneration
+  inFlightIndex=(async()=>{
+    const response=await requestR2()
+    const body=await response.json()
+    if(!body?.ok || !Array.isArray(body.items))throw Error('画像一覧の形式を確認できません')
+    const entries=[]
+    const ids=new Set()
+    for(const item of body.items){
+      const id=Number(item.id)
+      if(!Number.isSafeInteger(id)||id<=0||ids.has(id))continue
+      ids.add(id)
+      entries.push({entryId:id,size:item.size===null ? null : Number(item.size)||0})
+    }
+    if(generation===indexGeneration){cachedIndex=entries;cachedAt=Date.now()}
+    return entries
+  })()
+  try{return (await inFlightIndex).map(item=>({...item}))}
+  finally{inFlightIndex=null}
 }
 const asId=id=>{
   const value=Number(id)
@@ -45,13 +57,29 @@ const asId=id=>{
 }
 const sha256=async blob=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))]
   .map(b=>b.toString(16).padStart(2,'0')).join('')
-export async function uploadR2Receipt(entryId,blob,{replace=false,migration=false}={}) {
+export async function getR2ReceiptVersion(entryId) {
+  const id=asId(entryId)
+  let response
+  try{response=await requestR2('/'+id,{method:'HEAD'})}
+  catch(error){if(error.status===404)return '*';throw error}
+  const version=response.headers.get('etag')
+  if(!version || !/^"[a-zA-Z0-9_-]{16,128}"$/.test(version))
+    throw Error('画像の更新情報を確認できません')
+  return version
+}
+export async function retryDeletedReceiptCleanup(after=0) {
+  if(!Number.isSafeInteger(after)||after<0)throw Error('確認位置を確認してください')
+  const response=await requestR2('/cleanup',{method:'POST',
+    headers:{'content-type':'application/json'},body:JSON.stringify({after})})
+  return response.json()
+}
+export async function uploadR2Receipt(entryId,blob,{replace=false,migration=false,expectedVersion=null}={}) {
   const id=asId(entryId)
   if(!blob || !['image/webp','image/jpeg'].includes(blob.type) ||
     blob.size<=0 || blob.size>LIMIT)throw Error('レシート画像は200KB以下のWebPまたはJPEGを選択してください')
   const originalSha=await sha256(blob)
   const response=await requestR2('/'+id,{
-    method:'PUT',headers:{'content-type':blob.type,...(replace?{'x-receipt-replace':'1'}:{}),...(migration?{'x-receipt-migration':'1'}:{})},body:blob
+    method:'PUT',headers:{'content-type':blob.type,...(replace?{'x-receipt-replace':'1','x-receipt-if-match':expectedVersion||''}:{}),...(migration?{'x-receipt-migration':'1'}:{})},body:blob
   })
   const result=await response.json()
   if(!result.ok || result.sha256!==originalSha || Number(result.size)!==blob.size)

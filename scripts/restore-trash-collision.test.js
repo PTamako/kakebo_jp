@@ -137,3 +137,15 @@ test('restoring re-IDed point reward restores its paired charge together',async(
     assert.equal(restoredChild.client_request_id,'point_charge_reward_link_0001')
   }finally{db.close()}
 })
+
+test('a restored active entry is not re-archived by an old backup',async()=>{
+  const db=new D1()
+  try{
+    db.sqlite.prepare("INSERT INTO entries(id,date,amount,type,merchant,category,payment_source,client_request_id) VALUES(7,'2026-10-02',250,'expense','active','日用品','現金','active_match_0001')").run()
+    const item=archived(7,'active','active_match_0001')
+    const result=await restoreAtomic(db,archive([item]))
+    assert.equal(result.settings,0)
+    assert.equal(trash(db).length,0)
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM entries').get().n,1)
+  }finally{db.close()}
+})

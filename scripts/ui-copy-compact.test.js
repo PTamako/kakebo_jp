@@ -7,17 +7,17 @@ const app = source('src/App.vue')+'\n'+source('src/pages/LedgerPage.vue')+'\n'+s
 const finance = source('src/FinanceTools.vue')
 const form = source('src/TransactionForm.vue')
 
-test('管理・その他: backup description is compact but still discloses local receipts excluded', () => {
-  assert.match(finance, /JSONは帳簿のみ。家計簿の一括ZIPなら/)
+test('管理・その他: backup description explains JSON excludes private R2 receipts', () => {
+  assert.match(finance, /JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます/)
   assert.doesNotMatch(finance, /全明細・SBI評価額と損益・固定支出・カード設定・通知状態をJSONで保存します/)
   assert.match(finance, /既存データは保持/)
   assert.match(finance, /バックアップを選び直してください/)
   assert.match(finance, /if\(!confirm\(descriptions/)
 })
 test('management controls keep irreversible image-clear warning and retain D1 ledger', () => {
-  assert.match(finance, /画像は復元できません。明細・SBI評価額は残ります/)
+  assert.match(finance, /画像はZIPバックアップがないと復元できません。明細・SBI評価額は残ります/)
   assert.match(finance, /JSONは帳簿のみ/)
-  assert.match(finance, /端末保存・自動削除なし/)
+  assert.match(finance, /非公開R2で保管・自動削除なし/)
   assert.match(finance, /明細は残ります/)
   assert.doesNotMatch(source('src/receipt-store.js'), /const TTL = 30 \* 24 \* 60 \* 60 \* 1000/)
 })

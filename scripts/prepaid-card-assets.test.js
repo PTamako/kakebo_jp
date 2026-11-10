@@ -97,7 +97,7 @@ test('credit-card billing excludes prepaid and non-card payment methods',()=>{
   assert.match(finance,/const isCreditCard = name =>/)
   assert.match(finance,/props\.paymentSourceMeta\[name\]\?\.source_type === 'standard'/)
   assert.match(finance,/const creditCardSources = computed\(\(\) => sortOtherLast\(\[\.\.\.orderedPayments\.value,[\s\S]*?\.\.\.archivedPaymentSources\.value\]\.filter\(isCreditCard\)\)\)/)
-  assert.match(finance,/v-for="source in creditCardSources"/)
+  assert.match(finance,/creditCardSources\.map\(source=>/)
   assert.match(finance,/watch\(creditCardSources, sources => \{/)
   assert.match(finance,/!isCreditCard\(bill\.value\.name\)/)
   assert.match(finance,/isCreditCard\(bill\.value\.name\) \? bills\.value\.filter/)

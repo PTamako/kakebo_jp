@@ -24,7 +24,7 @@ const selects = vueFiles.flatMap(file =>
 test('all native select placeholders remain selectable on iOS Safari', () => {
   // A disabled placeholder stays visible in iOS's native picker, but users
   // cannot select it after choosing a real option.
-  assert.ok(selects.length >= 19, 'audit every native select across the app')
+  assert.ok(selects.length >= 6, 'audit the remaining native short-option selects across the app')
   for (const { file, markup } of selects) {
     assert.doesNotMatch(markup, /<option\b(?=[^>]*\bvalue=(?:""|''))(?=[^>]*\bdisabled\b)[^>]*>/,
       file + ': initial blank option must not be disabled')
@@ -42,13 +42,13 @@ test('all native selects have controlled application state', () => {
 })
 
 test('card management, billing, and recurring category can return to initial labels', () => {
-  assert.match(finance, /<select v-model="selectedCard"[^>]*><option value="">支払方法・カードを選択<\/option>/)
-  assert.match(finance, /<select v-model="bill\.name"[^>]*><option value="">カードを選択<\/option>/)
-  assert.match(finance, /<select v-model="plan\.category"[^>]*><option value="">選択してください<\/option>/)
+  assert.match(finance, /<MobileChoiceSheet v-model="selectedCard"[^>]*支払方法・カードを選択/)
+  assert.match(finance, /<MobileChoiceSheet v-model="bill\.name"[^>]*カードを選択/)
+  assert.match(finance, /<MobileChoiceSheet v-model="plan\.category"[^>]*選択してください/)
   // Other optional selectors must remain resettable too.
   const transaction = read('src/TransactionForm.vue')
-  assert.match(transaction, /<select v-model="record\.transferTarget"><option value="">選択してください<\/option>/)
-  assert.match(transaction, /<select :value="record\.paymentSource"[^>]*><option value="">未設定<\/option>/)
+  assert.match(transaction, /<MobileChoiceSheet v-model="record\.transferTarget"[^>]*transferOptions/)
+  assert.match(transaction, /<MobileChoiceSheet :model-value="record\.paymentSource"[^>]*paymentOptions/)
 })
 
 test('clearing a selected management card closes its editor and discards stale draft data', () => {

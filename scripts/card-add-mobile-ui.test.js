@@ -48,8 +48,8 @@ test('switching cards immediately refreshes the editor name and card type', () =
 test('closing day only appears for an actual credit card, never cash, other or prepaid', () => {
   assert.match(source, /const isCreditCard = name => [^\n]*!\['現金','その他','其他'\]\.includes\(name\)[^\n]*source_type === 'standard'/)
   assert.match(source, /v-if="isCreditCard\(selectedCard\) && editSourceType === 'standard'">締め日/)
-  assert.match(source, /:value="closingDayFor\(selectedCard\)"/)
-  assert.match(source, /@change="saveClosingDay\(selectedCard,\$event\.target\.value\)"/)
+  assert.match(source, /:model-value="closingDayFor\(selectedCard\)"/)
+  assert.match(source, /@change="saveClosingDay\(selectedCard,\$event\)"/)
 })
 
 test('card editing keeps Save, Close, Archive and Delete on one mobile row', () => {

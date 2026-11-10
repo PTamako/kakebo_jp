@@ -33,6 +33,7 @@ test('card editor resets after parent closes without losing a failed-save draft'
   assert.match(card,/await props\.onSave\(payload\)\s*emit\('close'\)/)
   assert.match(card,/catch\(e\)\{error\.value='保存できませんでした/)
   assert.match(card,/watch\(\(\)=>\[props\.mode,props\.cardName\],[\s\S]*?if\(!mode\)\{[\s\S]*?resetDraft\(\)/)
+  assert.match(card,/if\(saving\.value \|\| props\.busy\)return[\s\S]*?resetDraft\(\)/)
   assert.match(card,/if\(dirty\.value&&!window\.confirm\('変更内容を破棄しますか？'\)\)return/)
 })
 

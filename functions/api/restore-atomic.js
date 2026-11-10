@@ -205,6 +205,20 @@ export async function restoreAtomic(db, archive) {
         SELECT 1 FROM trash_items WHERE item_type='entry'
           AND CASE WHEN json_valid(payload_json)
             THEN json_extract(payload_json,'$.restore_identity') END=?4
+      )
+      AND NOT EXISTS (
+        -- When the same transaction has already been restored to an ACTIVE
+        -- ledger, keep that active record authoritative instead of re-archiving
+        -- it on a later import of an old backup.
+        SELECT 1 FROM entries e WHERE
+          (e.client_request_id IS NOT NULL AND
+           e.client_request_id=json_extract(?2,'$.entry.client_request_id'))
+          OR (e.id=?1 AND e.date=json_extract(?2,'$.entry.date')
+              AND e.amount=json_extract(?2,'$.entry.amount')
+              AND e.type=json_extract(?2,'$.entry.type')
+              AND e.merchant=json_extract(?2,'$.entry.merchant')
+              AND e.category=json_extract(?2,'$.entry.category')
+              AND e.payment_source=json_extract(?2,'$.entry.payment_source'))
       )`,id,tagged,item.deleted_at,restoreIdentity)
   }
   // Restore only exclusion links that still point to an existing fixed-expense plan.

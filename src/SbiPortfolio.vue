@@ -738,8 +738,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
    grid label and the internal date-edit box are allowed to shrink. */
 .sbi-dialog{min-width:0;max-width:min(100vw,520px);overflow-x:hidden}
 .sbi-dialog>label{min-width:0;max-width:100%;width:100%;box-sizing:border-box;overflow:hidden}
-.sbi-dialog label input[type=month]{-webkit-appearance:none;appearance:none;display:block;width:100%!important;min-width:0!important;max-width:100%!important;inline-size:100%;min-inline-size:0;max-inline-size:100%;box-sizing:border-box;overflow:hidden;padding-inline:8px!important;text-align:center}
-.sbi-dialog label input[type=month]::-webkit-date-and-time-value{display:block;width:100%;min-width:0;text-align:center}
+.sbi-dialog label input[type=month]{-webkit-appearance:none;appearance:none;display:inline-flex;align-items:center;width:100%!important;min-width:0!important;max-width:100%!important;inline-size:100%;min-inline-size:0;max-inline-size:100%;box-sizing:border-box;overflow:hidden;padding-inline:8px!important;text-align:center}
+.sbi-dialog label input[type=month]::-webkit-date-and-time-value{display:inline-flex;align-items:center;width:100%;min-width:0;text-align:center}
 .sbi-dialog label input[type=month]::-webkit-datetime-edit{min-width:0;max-width:100%;padding:0}
 .sbi-dialog label input[type=month]::-webkit-calendar-picker-indicator{flex:none;max-width:24px;margin:0;padding:0}
 .sbi-dialog .sbi-checkbox{display:flex;align-items:center;gap:10px}.sbi-dialog .sbi-checkbox input{width:auto;min-height:auto}

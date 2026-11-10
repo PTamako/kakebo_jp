@@ -32,7 +32,7 @@ test('short messages use 下書き / 記帳 and state the OCR payment selection 
   assert.match(app,/読み取り対象のカード/)
   assert.doesNotMatch(app,/草稿として保存されます|今回の明細のカード/)
   assert.match(finance,/記帳前に内容を確認してください/)
-  assert.match(finance,/毎月の記帳日/)
+  assert.match(finance,/記帳日（複数選択可）/)
   assert.doesNotMatch(finance,/入帳前に確認してください|毎月の登録日/)
 })
 test('the wallet activity uses natural concise Japanese, without hard-coded card names or destructive data changes',()=>{

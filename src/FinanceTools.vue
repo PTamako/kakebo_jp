@@ -19,7 +19,7 @@ import { nextCivilDay } from './stats-period-comparison.js'
 import { countReceiptImages, clearAllReceiptImages, deleteReceiptImagesByIds, listReceiptImagesForExport, getReceiptImage, saveReceiptImage } from './receipt-store.js'
 import { planReceiptPeriodDeletion } from './receipt-period.js'
 import { receiptZip, ledgerAndReceiptsZip } from './receipt-export.js'
-import { listR2Receipts, getR2Receipt, uploadR2Receipt, deleteR2ReceiptsByIds, receiptInventory, listReceiptsForBackup } from './receipt-cloud.js'
+import { listR2Receipts, getR2Receipt, uploadR2Receipt, deleteR2ReceiptsByIds, retryDeletedReceiptCleanup, receiptInventory, listReceiptsForBackup } from './receipt-cloud.js'
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
@@ -60,7 +60,23 @@ const deviceReceiptCount = ref(null)
 const receiptStorageBytes = ref(null)
 const receiptMigrationStatus = ref('')
 const receiptImagesBusy = ref(false)
+const receiptCleanupCursor = ref(0)
+const receiptCleanupBusy = ref(false)
 const receiptImagePrivacyMessage = ref('')
+async function checkPreviouslyDeletedImages(){
+  if(receiptCleanupBusy.value || receiptImagesBusy.value || receiptPeriodBusy.value)return
+  receiptCleanupBusy.value=true
+  try{
+    const result=await retryDeletedReceiptCleanup(receiptCleanupCursor.value)
+    if(!result?.ok || !Number.isSafeInteger(result.checked))throw Error('結果を確認できません')
+    receiptCleanupCursor.value=result.nextCursor||0
+    receiptImagePrivacyMessage.value=result.nextCursor
+      ? '削除済み画像 '+result.checked+'件を再確認しました。続きも確認できます。'
+      : '削除済み画像の再確認が完了しました。'
+  }catch(error){
+    receiptImagePrivacyMessage.value='画像の再確認ができません：'+error.message
+  }finally{receiptCleanupBusy.value=false}
+}
 const receiptExportMessage = ref('')
 async function refreshLocalReceiptCount() {
   if (receiptImagesBusy.value) return
@@ -649,25 +665,14 @@ async function exportPortfolioSafely() {
     throw error
   }
 }
-async function downloadBackup(){
-  if (busy.value || backupBusy.value) return
-  backupBusy.value = true
-  try {
-    // One server-side D1 read transaction avoids cross-table mixed snapshots.
-    // Oversized archives retain the existing twice-verified resumable export.
-    let atomicBackup=null
-    try { atomicBackup=await props.api('backup-snapshot') }
-    catch(e) { if(!/snapshot_too_large|大容量|413/.test(String(e.message)))throw e }
-    if(atomicBackup){
-      const validated=validateBackup(atomicBackup)
-      const sealed=await sealBackup(validated)
-      const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
-      const anchor=document.createElement('a')
-      anchor.href=url;anchor.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+'.json';anchor.click()
-      setTimeout(()=>URL.revokeObjectURL(url),30000)
-      message.value='D1の同一時点の帳簿と設定を保存しました'
-      return
-    }
+// A single sealed backup builder is shared by JSON and full ZIP.
+ // Archives over 10,000 rows use the existing twice-verified cursor export
+ // instead of failing at the small server-snapshot threshold.
+async function createVerifiedLedgerBackup(){
+  let atomicBackup=null
+  try{atomicBackup=await props.api('backup-snapshot')}
+  catch(e){if(!/snapshot_too_large|大容量|413/.test(String(e.message)))throw e}
+  if(atomicBackup)return sealBackup(validateBackup(atomicBackup))
     // Refresh ledger and D1 metadata immediately before export. A partial fetch
     // must not be mistaken for a complete, safe recovery archive.
     if (!(await loadAll())) throw Error('明細がすべて取得できなかったため、バックアップを中止しました')
@@ -697,14 +702,20 @@ async function downloadBackup(){
       entries:snapshot,plans:nextPlans,bills:nextBills,
       paymentSources,merchantPaymentRules,customRules,defaultRules:mergedRules.filter(rule=>rule.is_custom===false).map(({keyword,category})=>({keyword,category})),categories,categoryIcons,dismissedTransfers,categoryMetadata,recurringExclusions:recurringExclusionsBackup.filter(row=>!row.date),recurringDateExclusions:recurringExclusionsBackup.filter(row=>!!row.date).map(row=>({planId:row.planId,date:row.date})),archivedPlans:archivedPlansBackup.map(({archivedAt,...p})=>p),trashedEntries:trashedEntriesBackup,...portfolio
     })
-    const sealed = await sealBackup(data)
+  return sealBackup(data)
+}
+async function downloadBackup(){
+  if(busy.value || backupBusy.value)return
+  backupBusy.value=true
+  try{
+    const sealed=await createVerifiedLedgerBackup()
     const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
     const a=document.createElement('a')
     a.href=url;a.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+'.json';a.click()
     setTimeout(()=>URL.revokeObjectURL(url),30000)
-    message.value='帳簿JSONを保存しました'
-  } catch(e) { message.value='バックアップを作成できませんでした：'+e.message }
-  finally { backupBusy.value=false }
+    message.value='帳簿と設定を保存しました'
+  }catch(e){message.value='バックアップを作成できませんでした：'+e.message}
+  finally{backupBusy.value=false}
 }
 // Optional single-file recovery bundle. Signed v4 JSON remains compatible
 // with the existing restore dialog after extracting it from the ZIP.
@@ -713,8 +724,7 @@ async function downloadFullBackup(){
   if(busy.value || backupBusy.value || receiptImagesBusy.value)return
   backupBusy.value=true
   try{
-    const ledger=validateBackup(await props.api('backup-snapshot'))
-    const sealed=await sealBackup(ledger)
+    const sealed=await createVerifiedLedgerBackup()
     const images=await listReceiptsForBackup(await listReceiptImagesForExport())
     const archive=await ledgerAndReceiptsZip(sealed,images)
     const url=URL.createObjectURL(archive),a=document.createElement('a')
@@ -1730,6 +1740,8 @@ async function removeCardBill(record) {
       </div>
       <div class="device-receipt-actions">
         <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || receiptPeriodBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
+      <button type="button" :disabled="receiptImagesBusy || receiptPeriodBusy || receiptCleanupBusy"
+        @click="checkPreviouslyDeletedImages">{{receiptCleanupBusy?'確認中…':receiptCleanupCursor?'削除済み画像の続きを確認':'削除済み画像を再確認'}}</button>
       </div>
       
     </div>

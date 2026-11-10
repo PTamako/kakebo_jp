@@ -17,6 +17,7 @@ test('店舗ルール管理 launches a bottom sheet instead of expanding a long 
   assert.match(panel,/\.merchant-sheet-launch\{[^}]*border-radius:17px/,'merchant entry must match management card corners')
   assert.match(panel,/\.merchant-sheet-launch\{[^}]*background:var\(--card/,'merchant entry uses same card surface as peers')
   assert.match(panel,/\.merchant-sheet-launch-button\{[^}]*min-height:68px/,'merchant entry is easy to tap')
+  assert.match(panel,/\.merchant-sheet-launch-button\{[^}]*min-height:68px!important/,'prevent inherited management button selectors overriding touch target size')
   assert.match(panel,/<Teleport to="body">/)
   assert.match(panel,/role="dialog" aria-modal="true" aria-label="店舗ルール管理"/)
   assert.match(panel,/class="merchant-sheet-search"/)

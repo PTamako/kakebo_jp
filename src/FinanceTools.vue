@@ -1541,7 +1541,7 @@ async function removeCardBill(record) {
       </div>
     </details>
   </article>
-  <MobileMerchantRulesPanel v-show="managementTab === 'tools'"
+  <MobileMerchantRulesPanel v-if="managementTab === 'tools'"
     :rules="merchantRulesCombined" :categories="orderedCategories"
     :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" />
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">

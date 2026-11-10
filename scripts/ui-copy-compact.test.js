@@ -17,7 +17,7 @@ test('管理・その他: backup description explains JSON excludes private R2 r
 test('management controls keep irreversible image-clear warning and retain D1 ledger', () => {
   assert.match(finance, /画像はZIPバックアップがないと復元できません。明細・SBI評価額は残ります/)
   assert.match(finance, /JSONは帳簿のみ/)
-  assert.match(finance, /非公開R2で保管・自動削除なし/)
+  assert.doesNotMatch(finance, /非公開R2で保管・自動削除なし/)
   assert.match(finance, /明細は残ります/)
   assert.doesNotMatch(source('src/receipt-store.js'), /const TTL = 30 \* 24 \* 60 \* 60 \* 1000/)
 })

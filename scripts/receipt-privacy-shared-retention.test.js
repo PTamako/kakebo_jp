@@ -12,7 +12,7 @@ test('privacy and backup no longer repeat receipt count, expiry or refresh contr
   const backup=finance.split('<summary>バックアップ・復元</summary>')[1].split('</details>')[0]
   assert.match(privacy,/ログイン状態の保存/)
   assert.match(privacy,/保存済みレシート画像/)
-  assert.match(privacy,/非公開R2で保管・自動削除なし/)
+  assert.doesNotMatch(privacy,/非公開R2で保管・自動削除なし/)
   assert.doesNotMatch(privacy,/件数を更新/)
   assert.match(privacy,/画像をすべて削除/)
   assert.match(backup,/レシート画像をZIP保存/)
@@ -28,7 +28,8 @@ test('completed R2 receipt migration removes only the temporary migration contro
   assert.doesNotMatch(privacy,/R2＋端末の合計/)
   assert.match(privacy,/保存済みレシート画像/)
   assert.match(privacy,/期間を選んで画像を削除/)
-  assert.match(privacy,/R2・端末の画像をすべて削除/)
+  assert.match(privacy,/>画像をすべて削除<\/button>/)
+  assert.doesNotMatch(privacy,/R2と端末の画像だけを削除します。/)
 })
 
 test('new receipt upload never stores a phone copy when R2 is unavailable',()=>{

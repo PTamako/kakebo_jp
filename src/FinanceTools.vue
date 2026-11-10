@@ -1699,7 +1699,6 @@ async function removeCardBill(record) {
         <strong>保存済みレシート画像</strong>
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
       </div>
-      <p>非公開R2で保管・自動削除なし（明細はD1で保持）</p>
       <template v-if="deviceReceiptCount > 0">
         <p class="device-receipt-period-note">端末に未同期の旧画像：{{deviceReceiptCount}}件</p>
         <div class="device-receipt-actions">
@@ -1728,10 +1727,9 @@ async function removeCardBill(record) {
           <span v-if="receiptPeriodPreview.unmatched">（日付を確認できない{{receiptPeriodPreview.unmatched}}件は対象外）</span>
         </p>
         <button v-if="receiptPeriodPreview?.ids.length" type="button" class="device-receipt-period-delete" :disabled="receiptPeriodBusy || receiptImagesBusy || busy" @click="deleteSelectedReceiptPeriod">この期間の画像{{receiptPeriodPreview.ids.length}}件を削除</button>
-        <p class="device-receipt-period-note">R2と端末の画像だけを削除します。記帳済み明細は残ります。大切な画像は先にZIP保存してください。</p>
       </div>
       <div class="device-receipt-actions">
-        <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || receiptPeriodBusy || !localReceiptCount" @click="clearLocalReceiptImages">R2・端末の画像をすべて削除</button>
+        <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || receiptPeriodBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
       </div>
       
     </div>

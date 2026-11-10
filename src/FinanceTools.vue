@@ -708,7 +708,7 @@ async function restore(){
     return row
   }
   busy.value=true
-  let completed=0,settingsRestored=0,alreadyPresent=0,processed=0
+  let completed=0,settingsRestored=0,alreadyPresent=0,processed=0,archivedImported=0,archivedSkipped=0
   try{
     for(let i=0;i<jobs.length;i++){
       const job=jobs[i]
@@ -728,6 +728,8 @@ async function restore(){
       completed+=result.created
       settingsRestored+=result.settings
       alreadyPresent+=result.skipped
+      archivedImported+=Number(result.archivedImported||0)
+      archivedSkipped+=Number(result.archivedSkipped||0)
       processed+=included.length
       const keys=new Set(included.map(e=>e.backupIndex))
       restoreRows.value=restoreRows.value.filter(row=>!keys.has(row.backupIndex))
@@ -756,7 +758,8 @@ async function restore(){
     }
     loaded.value=false;backupPreview.value=null;backupReceiptImages.value=new Map();restoreRows.value=[];restoreConflicts.value=[]
     restoreIncludeConflicts.value=false;restoreOwnKeys.value=new Map()
-    message.value=`復元完了：明細 ${completed}件・設定 ${settingsRestored}件（重複除外 ${alreadyPresent}件）`+imageStatus
+    message.value=`復元完了：明細 ${completed}件・設定 ${settingsRestored}件（重複除外 ${alreadyPresent}件）`+
+      (archivedImported||archivedSkipped?`・ゴミ箱 ${archivedImported}件追加、${archivedSkipped}件は既存記録優先／重複除外`:'')+imageStatus
     await loadFinanceSettings()
     emit('payment-settings-refresh');emit('merchant-rules-changed');emit('settings-changed');emit('ledger-updated')
   }catch(e){

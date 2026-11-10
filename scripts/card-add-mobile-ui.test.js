@@ -32,8 +32,8 @@ test('save and cancel use two equal-width mobile action columns', () => {
 })
 
 test('both card types remain available and prepaid remains linked to assets', () => {
-  assert.match(creation, /value="standard">クレジットカード/)
-  assert.match(creation, /value="prepaid">プリペイドカード/)
+  assert.match(creation, /value:'standard',label:'クレジットカード'/)
+  assert.match(creation, /value:'prepaid',label:'プリペイドカード'/)
   assert.match(creation, /期首残高は「残高」で設定できます。/)
 })
 

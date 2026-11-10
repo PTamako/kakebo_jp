@@ -299,3 +299,13 @@ Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=
 6. 新版の本番動作とバックアップ、ロールバック手順が確認できるまで旧 `recurring_plan_trash` は保留。後日削除する場合も**別途明示的な手動操作**とし、自動DROPは行わない。
 
 マイグレーション0012を適用する前にPRをマージすると、`trash_items` が存在せず削除機能が失敗するため順番を守る。
+
+## 2026-11-10: 0013 — 非公開 R2 レシートの削除マーカー
+
+- 本番の `kakeibo-receipts` は非公開 R2 バケット。HomeFlow の `homeflow-family-media` は変更しない。Preview では R2 を使わない。
+- `migrations/0013_receipt_r2_state.sql` は `receipt_r2_state` を追加するだけで、`entries`、`trash_items`、資産、SBI 資料を書き換えない。
+- R2 画像を削除した後、古い iPhone の IndexedDB から復活してしまうことを防ぐため、削除前に D1 に削除マーカーを記録する。
+- **先に隔離 D1 でテストし、本番 D1 に 0013 を適用してから R2 対応の Pages コードをデプロイする。** 通常の起動や GET API に DDL を入れない。
+- 本番への適用例は `npx wrangler d1 execute kakeibo --remote --file=./migrations/0013_receipt_r2_state.sql`。対象の D1 UUID を必ず確認する。
+- 旧端末の画像は、本人が最新版 PWA を開いてから初めて取得できる。R2 に正しい同一画像を検証できるまでは端末の Blob を削除しない。衝突/ネット切断時は端末コピーを保持。
+- ZIP バックアップは R2 と未移行の端末画像を含む。画像の単体、年月単位、全体の削除は非公開 R2 と端末の両方に反映する。レシートの削除操作は明細を削除しない。

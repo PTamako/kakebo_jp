@@ -10,6 +10,11 @@ database_id = "4d790915-fc06-4073-b660-bbb51dc74463"   # 既存の本番 D1 ID�
 [ai]
 binding = "AI"
 
+# Private receipt images (never a public R2 domain).
+[[r2_buckets]]
+binding = "RECEIPTS_R2"
+bucket_name = "kakeibo-receipts"
+
 # Pages Git integration reads this file as the source of truth. Do not rely on
 # dashboard-only Preview overrides: preview builds can reset those bindings.
 # Production above keeps the existing real D1; preview always uses test D1.
@@ -20,6 +25,8 @@ database_id = "b1c73b65-9530-468a-b9a3-49554f8a9264"
 
 [env.preview.ai]
 binding = "AI"
+
+# Preview has no R2 binding. Receipt API is disabled on all preview URLs.
 
 [env.preview.vars]
 APP_ENV = "preview"

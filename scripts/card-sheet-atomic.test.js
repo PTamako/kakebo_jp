@@ -73,9 +73,9 @@ test('one card Save atomically reassigns ledger, transfer targets, rules, plans,
     const result=await edit(db,draft())
     assert.equal(result.status,200,JSON.stringify(result))
     assert.equal(result.body.ok,true)
-    assert.deepEqual(sqlite.prepare('SELECT name,source_type,stat_group,closing_day,is_default FROM payment_sources').get(),
+    assert.deepEqual({...sqlite.prepare('SELECT name,source_type,stat_group,closing_day,is_default FROM payment_sources').get()},
       {name:'新カード',source_type:'standard',stat_group:'points',closing_day:15,is_default:1})
-    assert.deepEqual(sqlite.prepare('SELECT DISTINCT payment_source FROM entries').all(),[{payment_source:'新カード'}])
+    assert.deepEqual(sqlite.prepare('SELECT DISTINCT payment_source FROM entries').all().map(row=>({...row})),[{payment_source:'新カード'}])
     assert.equal(sqlite.prepare('SELECT transfer_target FROM entries WHERE id=2').get().transfer_target,'credit:新カード')
     const topup=sqlite.prepare('SELECT transfer_target,merchant FROM entries WHERE id=3').get()
     assert.equal(topup.transfer_target,'prepaid:新カード')

@@ -158,9 +158,11 @@ watch(query,()=>{limit.value=8})
 </template>
 
 <style scoped>
-.merchant-sheet-launch{padding:0!important;overflow:hidden}
-.merchant-sheet-launch-button{display:flex;align-items:center;gap:10px;min-height:54px;width:100%;padding:12px 14px;border:0;background:transparent;color:var(--ink,#242833);font:inherit;text-align:left;cursor:pointer}
+.merchant-sheet-launch{box-sizing:border-box;display:block;width:100%;min-width:0;max-width:100%;margin:0;padding:0!important;overflow:hidden;border:1px solid var(--line,#e7dce3);border-radius:17px;background:var(--card,#fff)}
+.merchant-sheet-launch-button{box-sizing:border-box;display:flex;align-items:center;gap:10px;min-height:68px;width:100%;padding:14px 13px;border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;color:var(--ink,#242833);font:inherit;text-align:left;cursor:pointer;touch-action:manipulation}
 .merchant-sheet-launch-title{font-size:15px;font-weight:750;flex:1;min-width:0}
+.merchant-sheet-launch-button:focus-visible{outline:2px solid var(--blue-dark,#be577e);outline-offset:-3px}
+.merchant-sheet-launch-button:active{background:var(--tint,#f6f1f5)!important}
 .merchant-sheet-launch-count{font-size:12px;color:var(--muted,#707580)}
 .merchant-sheet-launch-button>svg{width:18px;height:18px;color:var(--muted,#707580)}
 .merchant-sheet-overlay{position:fixed;z-index:2147483500;inset:0;display:flex;align-items:flex-end;justify-content:center;background:#161a2480;overscroll-behavior:contain}

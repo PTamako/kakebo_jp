@@ -1,10 +1,29 @@
 name: Validate
 # Validate category-to-details navigation and shared-list pagination as part of the production build
-# PR validation complements the same checks in Cloudflare Pages npm run build.
+# Run full release checks on PRs; Pages Preview only compiles, while production runs release checks.
 # Manual dispatch remains available for post-release incident verification.
 on:
   pull_request:
+    paths:
+      - 'src/**'
+      - 'functions/**'
+      - 'public/**'
+      - 'migrations/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'workers/**'
+      - 'index.html'
+      - 'schema.sql'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.js'
+      - 'wrangler*.toml'
+      - '.node-version'
+      - '.github/workflows/validate.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -18,12 +37,13 @@ jobs:
       - name: Verify tests, production build and production dependency advisories
         run: npm run verify:release
       - name: Report all dependency advisories (non-blocking dev dependency inventory)
-        if: always()
+        if: success()
         run: npm audit --json > dependency-audit.json || true
       - name: Upload audit report
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: dependency-audit
           path: dependency-audit.json
           if-no-files-found: ignore
+          retention-days: 3

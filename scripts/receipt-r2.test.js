@@ -5,22 +5,31 @@ import {handleR2Receipts} from '../functions/api/r2-receipts.js'
 
 const source=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 function mockedBackend(){
-  const objects=new Map(),states=new Map(),ledger=new Set([4,5,6])
+  const objects=new Map(),states=new Map(),sizes=new Map(),ledger=new Set([4,5,6])
+  const calls={put:0,head:0,get:0,delete:0,list:0}
   const bucket={
-    async put(key,bytes,{httpMetadata,customMetadata}){
-      objects.set(key,{data:new Uint8Array(bytes),httpMetadata,customMetadata})
+    async put(key,bytes,{httpMetadata,customMetadata,onlyIf}){
+      calls.put++
+      if(onlyIf?.get('If-None-Match')==='*' && objects.has(key))return null
+      const data=new Uint8Array(bytes)
+      const metadata={size:data.length,httpMetadata,customMetadata}
+      objects.set(key,{data,...metadata})
+      return metadata
     },
     async head(key){
+      calls.head++
       const row=objects.get(key)
       return row?{size:row.data.length,customMetadata:row.customMetadata,httpMetadata:row.httpMetadata}:null
     },
     async get(key){
+      calls.get++
       const row=objects.get(key)
       return row?{size:row.data.length,httpMetadata:row.httpMetadata,
         body:new Response(row.data).body}:null
     },
-    async delete(keys){for(const k of Array.isArray(keys)?keys:[keys])objects.delete(k)},
+    async delete(keys){calls.delete++;for(const k of Array.isArray(keys)?keys:[keys])objects.delete(k)},
     async list({prefix}){
+      calls.list++
       return {objects:[...objects].filter(([key])=>key.startsWith(prefix))
         .map(([key,v])=>({key,size:v.data.length})),truncated:false}
     }
@@ -42,12 +51,19 @@ function mockedBackend(){
               return {results:[]}
             },
             async run(){
-              if(sql.includes('INSERT INTO receipt_r2_state'))states.set(values[0],sql.includes('VALUES(?1,1')?1:0)
+              if(sql.includes('INSERT INTO receipt_r2_state')){
+                const deleted=sql.includes('VALUES(?1,1')
+                states.set(values[0],deleted?1:0)
+                sizes.set(values[0],deleted?null:values[1])
+              }
               return {success:true}
             }
           }
         },
         async all(){
+          if(sql.includes('SELECT entry_id AS id,size_bytes AS size FROM receipt_r2_state'))
+            return {results:[...states].filter(([,deleted])=>deleted===0)
+              .map(([id])=>({id,size:sizes.get(id)??null})).sort((a,b)=>a.id-b.id)}
           if(sql.includes('SELECT entry_id FROM receipt_r2_state'))
             return {results:[...states].filter(([,deleted])=>deleted===1).map(([entry_id])=>({entry_id}))}
           return {results:[]}
@@ -56,7 +72,7 @@ function mockedBackend(){
     },
     async batch(statements){for(const item of statements)await item.run()}
   }
-  return {env:{RECEIPTS_R2:bucket},db,objects,states}
+  return {env:{RECEIPTS_R2:bucket},db,objects,states,calls,sizes}
 }
 const call=(backend,method,parts=[],body,headers={})=>handleR2Receipts(
   new Request('https://kakeibo-f17.pages.dev/api/receipts'+(parts.length?'/'+parts.join('/'):''),
@@ -133,4 +149,36 @@ test('interrupted deletion or re-attachment never destroys a residual local rece
   assert.equal(result.status,409)
   assert.equal((await result.json()).code,'receipt_deletion_pending')
   assert.equal(b.objects.size,1)
+})
+
+test('index/list requests read D1 only, with no Class A/B R2 calls',async()=>{
+  const b=mockedBackend()
+  const up=await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg'})
+  assert.equal(up.status,200)
+  for(const kind of Object.keys(b.calls))b.calls[kind]=0
+  const index=await call(b,'GET')
+  assert.deepEqual((await index.json()).items,[{id:4,size:jpeg.length}])
+  assert.deepEqual(b.calls,{put:0,head:0,get:0,delete:0,list:0})
+})
+test('new upload avoids HEAD, duplicate retry needs only one HEAD, editing needs none',async()=>{
+  const b=mockedBackend()
+  assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg'})).status,200)
+  assert.deepEqual(b.calls,{put:1,head:0,get:0,delete:0,list:0})
+  const repeat=await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg'})
+  assert.equal(repeat.status,200)
+  assert.equal((await repeat.json()).already,true)
+  assert.deepEqual(b.calls,{put:2,head:1,get:0,delete:0,list:0})
+  assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg','x-receipt-replace':'1'})).status,200)
+  assert.deepEqual(b.calls,{put:3,head:1,get:0,delete:0,list:0})
+})
+test('delete does not use costly per-image HEAD checks',async()=>{
+  const b=mockedBackend()
+  for(const id of [4,5,6])
+    assert.equal((await call(b,'PUT',[String(id)],jpeg,{'content-type':'image/jpeg'})).status,200)
+  for(const kind of Object.keys(b.calls))b.calls[kind]=0
+  assert.equal((await call(b,'DELETE',[],JSON.stringify({ids:[4,5]}),{'content-type':'application/json'})).status,200)
+  assert.deepEqual(b.calls,{put:0,head:0,get:0,delete:1,list:0})
+  assert.deepEqual((await (await call(b,'GET')).json()).items,[{id:6,size:jpeg.length}])
+  assert.equal(b.calls.list,0)
+  assert.equal(b.calls.head,0)
 })

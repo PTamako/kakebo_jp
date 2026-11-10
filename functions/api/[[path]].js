@@ -11,6 +11,7 @@ import { validateRegisteredPaymentSource } from './payment-source-validation.js'
 import { validateCardBillRecalculation } from './card-bill-validation.js'
 import { validateLedgerTextFields } from './ledger-input-validation.js'
 import { getCardBillSnapshots } from './card-bill-snapshots.js'
+import { handleR2Receipts } from './r2-receipts.js'
 import { readScheduledJobStatus } from './scheduled-job-status.js'
 import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
 // Cloudflare Pages Functions：/api/*
@@ -195,6 +196,11 @@ export async function onRequest({ request, env, params }) {
   try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
   catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
   if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
+  if (a === 'receipts') {
+    // A preview must never read OR mutate the production private receipt bucket.
+    if (isPagesPreview) return json({error:'プレビューではR2画像を利用できません'},403)
+    return handleR2Receipts(request,env,db,(params.path||[]).slice(1))
+  }
   if (a === 'ai-ocr' && b === 'quota' && m === 'GET') {
     try { return json(await aiQuotaState(db,env)) }
     catch { return json({error:'AI利用枠を確認できません'},503) }

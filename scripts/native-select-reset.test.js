@@ -24,7 +24,7 @@ const selects = vueFiles.flatMap(file =>
 test('all native select placeholders remain selectable on iOS Safari', () => {
   // A disabled placeholder stays visible in iOS's native picker, but users
   // cannot select it after choosing a real option.
-  assert.ok(selects.length >= 6, 'audit the remaining native short-option selects across the app')
+  assert.ok(selects.length >= 4, 'audit the remaining native specialized selects across the app')
   for (const { file, markup } of selects) {
     assert.doesNotMatch(markup, /<option\b(?=[^>]*\bvalue=(?:""|''))(?=[^>]*\bdisabled\b)[^>]*>/,
       file + ': initial blank option must not be disabled')

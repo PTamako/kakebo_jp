@@ -729,3 +729,55 @@ main .asset-wallet-card {
   main .calendar-legend { font-size: 10px; }
   main .month-calendar .calendar-day small { font-size: 11px; }
 }
+
+/* iPhone Safari: native date/month/time controls must remain inline-flex.
+   display:block/inline-block on temporal inputs causes WebKit to pin their
+   value to the top of an otherwise 44px-tall control. Keep the native picker
+   and calendar icon; only normalize internal value alignment/padding.
+   See https://bugs.webkit.org/show_bug.cgi?id=139848 */
+main input:is([type="date"],[type="month"],[type="time"]) {
+  display: inline-flex !important;
+  align-items: center;
+  vertical-align: middle;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding-block: 0 !important;
+  line-height: normal;
+  color-scheme: light;
+}
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-date-and-time-value {
+  display: inline-flex !important;
+  align-items: center !important;
+  align-self: center;
+  min-width: 0;
+  min-height: 1.5em;
+  height: 1.5em;
+  margin: 0;
+  padding: 0 !important;
+  line-height: normal;
+}
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-datetime-edit,
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-datetime-edit-fields-wrapper {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 !important;
+  line-height: normal;
+}
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-datetime-edit-text,
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-datetime-edit-day-field,
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-datetime-edit-month-field,
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-datetime-edit-year-field,
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-datetime-edit-hour-field,
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-datetime-edit-minute-field,
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-datetime-edit-meridiem-field {
+  padding: 0 !important;
+  line-height: normal;
+}
+main input:is([type="date"],[type="month"],[type="time"])::-webkit-calendar-picker-indicator {
+  flex: none;
+  align-self: center;
+  margin-block: 0;
+}

@@ -213,3 +213,42 @@ test('23:15 retry fetches only MUFG funds without a current-day official NAV',as
     assert.equal(db.prepare("SELECT units FROM investment_holdings WHERE fund_code='0331418A'").get().units,1000)
   }finally{fixture.close()}
 })
+
+
+test('overnight 00:30 JST retries only missing Friday NAV even though Saturday is closed',async()=>{
+  const fixture=dbFixture()
+  try{
+    const {db,d1}=fixture,now=new Date('2026-11-06T15:30:00Z')
+    for(const code of ['03311187','0331418A'])
+      db.prepare("INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost) VALUES(?,'tsumitate','test',1000,5000)").run(code)
+    db.prepare("INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES('03311187',40000,'2026-11-06','official_mufg')").run()
+    db.prepare("INSERT INTO fund_prices(fund_code,nav_per_10000,price_date,source) VALUES('0331418A',38000,'2026-11-05','official_mufg')").run()
+    const fetched=[]
+    const result=await syncFundNav(d1,{
+      now,retryPendingNav:true,retryForDate:'2026-11-06',
+      logger:{warn(){}},
+      fetcher:mockFetcher(url=>{
+        const code=url.slice(-8);fetched.push(code)
+        return response(code,'20261106',41000)
+      })
+    })
+    assert.deepEqual(fetched,['0331418A'])
+    assert.deepEqual(result.updated,['0331418A'])
+    assert.deepEqual(result.unchanged,['03311187'])
+    assert.equal(result.failed.length,0)
+  }finally{fixture.close()}
+})
+test('overnight retry skips if the prior day itself was a weekend',async()=>{
+  const fixture=dbFixture()
+  try{
+    const now=new Date('2026-11-07T15:30:00Z') // Sunday 00:30 JST, Saturday target
+    fixture.db.prepare("INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost) VALUES('0331418A','growth','test',1000,5000)").run()
+    let fetched=false
+    const result=await syncFundNav(fixture.d1,{
+      now,retryPendingNav:true,retryForDate:'2026-11-07',logger:{warn(){}},
+      fetcher:async()=>{fetched=true;throw Error('not allowed')}
+    })
+    assert.equal(fetched,false)
+    assert.equal(result.checked,0)
+  }finally{fixture.close()}
+})

@@ -78,7 +78,7 @@ export async function probeFundNavSupport(fundCode,{fetcher=fetch,now=new Date()
 
 // The experimental Daiwa provider is isolated: failure never blocks MUFG updates.
 export async function syncFundNav(db,{
-  fetcher=fetch,now=new Date(),logger=console,enableDaiwaCsv=false,retryOnlyDaiwa=false,retryPendingNav=false
+  fetcher=fetch,now=new Date(),logger=console,enableDaiwaCsv=false,retryOnlyDaiwa=false,retryPendingNav=false,retryForDate=null
 }={}) {
   if(!db)throw Error('missing_d1_binding')
   const {results=[]}=await db.prepare(
@@ -87,9 +87,12 @@ export async function syncFundNav(db,{
   const codes=results.map(x=>String(x.fund_code||'').trim().toUpperCase())
   const hasDaiwa=codes.includes(DAIWA_FUND_CODE)
   const jstToday=todayJstDate(now)
-  const weekday=new Date(jstToday+'T00:00:00Z').getUTCDay()
+  const retryDate=retryPendingNav && retryForDate ? isoDate(retryForDate) : jstToday
+  if(!retryDate||retryDate>jstToday)throw Error('invalid_retry_nav_date')
+  const weekday=new Date(retryDate+'T00:00:00Z').getUTCDay()
   const skipLateRetry=retryPendingNav && (weekday===0||weekday===6)
-  const activeDaiwa=hasDaiwa && enableDaiwaCsv && !skipLateRetry
+  // Overnight retry only checks pending MUFG NAV, never refetches Daiwa CSV.
+  const activeDaiwa=hasDaiwa && enableDaiwaCsv && !retryPendingNav && !skipLateRetry
   const ordinaryCodes=(retryOnlyDaiwa||skipLateRetry)?[]:codes.filter(code=>code!==DAIWA_FUND_CODE)
   const unsupported=ordinaryCodes.filter(code=>Object.hasOwn(PENDING_NAV_FUNDS,code))
   if(hasDaiwa&&!activeDaiwa&&!retryOnlyDaiwa)unsupported.push(DAIWA_FUND_CODE)
@@ -113,7 +116,7 @@ export async function syncFundNav(db,{
       if(retryPendingNav){
         const {results:currentQuotes=[]}=await db.prepare('SELECT price_date,source FROM fund_prices WHERE fund_code=?1').bind(code).all()
         const current=currentQuotes[0]
-        if(current?.source?.startsWith('official_') && current.price_date>=jstToday){
+        if(current?.source?.startsWith('official_') && current.price_date>=retryDate){
           summary.unchanged.push(code)
           continue
         }
@@ -130,8 +133,7 @@ export async function syncFundNav(db,{
     }
   }
   if(activeDaiwa){
-    // Only the extra 23:15 event is conditional. Never request the same day's
-    // official quote a second time, and never run an unnecessary weekend retry.
+    // The experimental Daiwa source is used only on the first market-day NAV check.
     let shouldFetch=true
     if(retryOnlyDaiwa){
       const weekday=new Date(todayJstDate(now)+'T00:00:00Z').getUTCDay()

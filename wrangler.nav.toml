@@ -1,14 +1,15 @@
 # Separate scheduled Worker; this does not replace Pages wrangler.toml.
 # Workers Builds production deploy: npx wrangler deploy --config wrangler.nav.toml
 # Keep the repository root wrangler.toml for Pages; never rename it to this Worker.
-# One existing Worker handles independent tasks: recurring expenses and SBI due transfers
-# at 00:30/09:30 JST, fund NAV at 19:30 JST plus conditional 23:15 retry.
+# One existing Worker, two daily triggers:
+# 00:30 JST: recurring/SBI primary plus prior trading-day NAV retry.
+# 19:30 JST: NAV primary plus idempotent recurring/SBI catch-up.
 name = "kakeibo-nav-sync"
 main = "workers/fund-nav-cron.js"
 compatibility_date = "2026-10-01"
 
 [triggers]
-crons = ["30 15 * * *", "30 0 * * *", "30 10 * * *", "15 14 * * *"]
+crons = ["30 15 * * *", "30 10 * * *"]
 
 # Daiwa official website currently rejects automated access (HTTP 403).
 # Disable the experimental CSV fetch until an authorized public feed becomes available.
@@ -16,7 +17,7 @@ crons = ["30 15 * * *", "30 0 * * *", "30 10 * * *", "15 14 * * *"]
 DAIWA_CSV_EXPERIMENT = "false"
 HEARTBEAT_ENABLED = "true"
 
-# Preserve every once-daily scheduled invocation and its console messages.
+# Log both daily invocations; NAV and financial job outcomes remain independent.
 # Workers Logs are separate from Workers Builds deployment logs.
 [observability]
 enabled = true

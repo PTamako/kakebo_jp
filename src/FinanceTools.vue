@@ -1699,11 +1699,13 @@ async function removeCardBill(record) {
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
       </div>
       <p>非公開R2で保管・自動削除なし（明細はD1で保持）</p>
-      <p class="device-receipt-period-note" v-if="receiptStorageBytes !== null">R2＋端末の合計：約{{receiptPeriodSize(receiptStorageBytes)}} · 端末の旧画像：{{deviceReceiptCount ?? '確認中'}}件</p>
-      <div class="device-receipt-actions">
-        <button type="button" :disabled="receiptImagesBusy || receiptPeriodBusy" @click="syncLegacyReceiptImages">端末の旧画像をR2へ同期</button>
-      </div>
-      <p v-if="receiptMigrationStatus" role="status" class="device-receipt-period-note">{{receiptMigrationStatus}}</p>
+      <template v-if="deviceReceiptCount > 0">
+        <p class="device-receipt-period-note">端末に未同期の旧画像：{{deviceReceiptCount}}件</p>
+        <div class="device-receipt-actions">
+          <button type="button" :disabled="receiptImagesBusy || receiptPeriodBusy" @click="syncLegacyReceiptImages">端末の旧画像をR2へ同期</button>
+        </div>
+        <p v-if="receiptMigrationStatus" role="status" class="device-receipt-period-note">{{receiptMigrationStatus}}</p>
+      </template>
       <div class="device-receipt-period">
         <strong>期間を選んで画像を削除</strong>
         <div class="device-receipt-period-fields">

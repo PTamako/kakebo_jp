@@ -50,6 +50,9 @@ function mockedBackend(){
               return null
             },
             async all(){
+              if(sql.includes('SELECT entry_id AS id,size_bytes AS size FROM receipt_r2_state'))
+                return {results:[...states].filter(([id,deleted])=>deleted===0&&values.includes(id))
+                  .map(([id])=>({id,size:sizes.get(id)??null})).sort((a,b)=>a.id-b.id)}
               if(sql.includes('SELECT entry_id FROM receipt_r2_state'))
                 return {results:[...states].filter(([id,deleted])=>deleted===1&&id>values[0])
                   .sort((a,b)=>a[0]-b[0]).slice(0,100).map(([entry_id])=>({entry_id}))}
@@ -199,7 +202,8 @@ test('app startup never migrates old images or reads R2 and a click fetches one 
   assert.ok(unlock)
   assert.doesNotMatch(mounted,/migrateReceiptsNow\(\)/)
   assert.doesNotMatch(unlock,/migrateReceiptsNow\(\)/)
-  assert.match(app,/async function refreshReceiptImageIds\(\{fresh=false\}\=\{\}\)[\s\S]*?listR2Receipts\(\{fresh\}\)/)
+  assert.match(app,/async function refreshReceiptImageIds\(\)[\s\S]*?listR2ReceiptsByIds\(ids\)/)
+  assert.doesNotMatch(app,/async function refreshReceiptImageIds[\s\S]*?listR2Receipts\(\{fresh\}\)/)
   assert.match(app,/async function viewReceipt\(entryId\)[\s\S]*?getR2Receipt\(entryId\)/)
   assert.match(migration,/if\(!local\.length\)return result[\s\S]*?await listR2Receipts\(\{fresh:true\}\)/)
   assert.doesNotMatch(server,/await bucket\.list\(/)
@@ -263,4 +267,18 @@ test('all page entry clicks use one receipt GET and ID-only IndexedDB index',()=
   assert.match(app,/listReceiptImageIds\(\)/)
   assert.match(store,/listReceiptImageIds\(\)[\s\S]*?getAllKeys\(\)/)
   assert.doesNotMatch(app,/listR2Receipts\(\{fresh:true\}\)/)
+})
+
+test('selected receipt index queries D1 only and rejects invalid or duplicate ID lists',async()=>{
+  const b=mockedBackend()
+  for(const id of [4,5,6])await call(b,'PUT',[String(id)],jpeg,{'content-type':'image/jpeg'})
+  for(const key of Object.keys(b.calls))b.calls[key]=0
+  const get=ids=>handleR2Receipts(new Request('https://kakeibo-f17.pages.dev/api/receipts?ids='+ids),
+    b.env,b.db,[])
+  const selected=await get('4,6')
+  assert.equal(selected.status,200)
+  assert.deepEqual((await selected.json()).items,[{id:4,size:jpeg.length},{id:6,size:jpeg.length}])
+  assert.equal((await get('4,4')).status,400)
+  assert.equal((await get('4,abc')).status,400)
+  assert.deepEqual(b.calls,{put:0,head:0,get:0,delete:0,list:0})
 })

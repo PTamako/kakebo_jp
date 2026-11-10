@@ -199,3 +199,22 @@ test('app startup never migrates old images or reads R2 and a click fetches one 
   assert.doesNotMatch(server,/await bucket\.list\(/)
   assert.match(server,/await bucket\.get\(objectKey\)/)
 })
+
+test('a user-requested image view is the only ordinary path with one R2 GET',async()=>{
+  const b=mockedBackend()
+  assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg'})).status,200)
+  for(const kind of Object.keys(b.calls))b.calls[kind]=0
+  const response=await call(b,'GET',['4'])
+  assert.equal(response.status,200)
+  assert.deepEqual([...new Uint8Array(await response.arrayBuffer())],[...jpeg])
+  assert.deepEqual(b.calls,{put:0,head:0,get:1,delete:0,list:0})
+})
+test('a non-identical duplicate cannot overwrite existing R2 object',async()=>{
+  const b=mockedBackend()
+  assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg'})).status,200)
+  const another=new Uint8Array([0xff,0xd8,0xff,0xe0,5,6,7,8])
+  const response=await call(b,'PUT',['4'],another,{'content-type':'image/jpeg'})
+  assert.equal(response.status,409)
+  assert.equal(b.calls.head,1)
+  assert.deepEqual([...b.objects.get('receipts/v1/4').data],[...jpeg])
+})

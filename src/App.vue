@@ -31,6 +31,7 @@ import { monthLedgerMatchesStats } from './month-ledger-consistency.js'
 import { matchesPrepaidHistoryEntry, matchedUnassignedPointIncomeIds } from './prepaid-history.js'
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
+import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { peakTransferDates } from './calendar-transfer-peaks.js'
@@ -102,6 +103,7 @@ const defaultPaymentSource = ref('')
 const merchantPaymentRules = ref([])
 const customCategoryRules = ref([])
 const importPaymentSource = ref('')
+const importPaymentOptions = computed(()=>[{value:'',label:'自動判定'},...paymentSources.value.map(source=>({value:source,label:source}))])
 let paymentSettingsLoaded = false
 let paymentSettingsLoading = null
 async function loadPaymentSettings() {
@@ -1814,7 +1816,7 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
         <details class="text-entry-details">
           <summary>テキストを貼り付けて読み取る</summary>
           <label class="field-label" for="entry-text">テキスト入力</label>
-          <label class="form-field"><span>読み取り対象のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
+          <label class="form-field"><span>読み取り対象のカード</span><MobileChoiceSheet v-model="importPaymentSource" :options="importPaymentOptions" label="読み取り対象のカード" /></label>
           <textarea id="entry-text" v-model="input" rows="4" :placeholder="recognitionMode === 'statement' ? '例：勉強会　10月毎週の金曜日（もしくは　10/10） 100円' : 'レシートの読み取り文字を貼り付けられます。'"></textarea>
           <div class="action-row">
             <button class="button-secondary" @click="recognize(recognitionMode)" :disabled="!!busy || !input.trim()">テキストを読み取る</button>
@@ -1837,7 +1839,7 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
         </div>
         <p v-if="aiQuota" class="ocr-engine-note" role="note">本日のAI残り回数：{{aiQuota.remaining}}/{{aiQuota.limit}}回</p>
         <label class="form-field receipt-mode-select"><span>読み取り対象</span><select v-model="recognitionMode" aria-label="読み取り対象"><option value="statement">利用明細</option><option value="receipt">レシート</option></select></label>
-        <label v-if="recognitionMode === 'statement'" class="form-field"><span>読み取り対象のカード</span><select v-model="importPaymentSource"><option value="">自動判定</option><option v-for="source in paymentSources" :key="source" :value="source">{{ source }}</option></select></label>
+        <label v-if="recognitionMode === 'statement'" class="form-field"><span>読み取り対象のカード</span><MobileChoiceSheet v-model="importPaymentSource" :options="importPaymentOptions" label="読み取り対象のカード" /></label>
         <p class="microcopy">{{ recognitionMode === 'statement' ? '明細を複数件読み取り' : 'レシートを1件読み取り' }}</p>
 
 

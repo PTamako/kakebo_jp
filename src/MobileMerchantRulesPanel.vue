@@ -14,7 +14,14 @@ const open=ref(false), trigger=ref(null), closeButton=ref(null)
 const query=ref(''), limit=ref(8), activeKeyword=ref('')
 const category=ref(''), payment=ref(''), saving=ref(false), error=ref('')
 const themeStyle=ref({})
-let previousOverflow=''
+let previousOverflow='',handleStartY=null
+function handleTouchStart(event){handleStartY=event.changedTouches?.[0]?.clientY??null}
+function handleTouchEnd(event){
+  if(handleStartY===null)return
+  const distance=(event.changedTouches?.[0]?.clientY??0)-handleStartY
+  handleStartY=null
+  if(distance>75)closePanel()
+}
 const selected=computed(()=>props.rules.find(r=>r.keyword===activeKeyword.value))
 const matching=computed(()=>filterJapaneseChoices(props.rules.map(r=>({
   ...r,value:r.keyword,label:[r.keyword,props.categoryLabel(r.category),r.payment_source].join(' '),
@@ -108,7 +115,7 @@ watch(query,()=>{limit.value=8})
     <Transition name="merchant-sheet-transition">
       <div v-if="open" class="merchant-sheet-overlay" :style="themeStyle" @click.self="closePanel">
         <section class="merchant-sheet" role="dialog" aria-modal="true" aria-label="店舗ルール管理" @keydown="trap">
-          <div class="merchant-sheet-handle" aria-hidden="true"></div>
+          <div class="merchant-sheet-handle-area" aria-hidden="true" @touchstart.passive="handleTouchStart" @touchend.passive="handleTouchEnd"><span class="merchant-sheet-handle"></span></div>
           <header class="merchant-sheet-heading">
             <button v-if="activeKeyword" type="button" class="merchant-sheet-back" :disabled="saving" aria-label="一覧に戻る" @click="back">戻る</button>
             <h2>{{activeKeyword ? '店舗ルールを編集' : '店舗ルール管理'}}</h2>
@@ -158,7 +165,8 @@ watch(query,()=>{limit.value=8})
 .merchant-sheet-launch-button>svg{width:18px;height:18px;color:var(--muted,#707580)}
 .merchant-sheet-overlay{position:fixed;z-index:2147483500;inset:0;display:flex;align-items:flex-end;justify-content:center;background:#161a2480;overscroll-behavior:contain}
 .merchant-sheet{box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;width:min(100%,600px);max-height:min(88dvh,800px);background:var(--card,#fff);color:var(--ink,#252830);border-radius:22px 22px 0 0;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -12px 42px #0002}
-.merchant-sheet-handle{flex:none;align-self:center;width:38px;height:5px;border-radius:99px;background:var(--line,#dde0e6);margin:8px 0 7px}
+.merchant-sheet-handle-area{display:flex;align-items:center;justify-content:center;width:100%;height:22px;flex:none;touch-action:pan-y}
+.merchant-sheet-handle{display:block;width:38px;height:5px;border-radius:99px;background:var(--line,#dde0e6)}
 .merchant-sheet-heading{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:0 16px 12px;flex:none}
 .merchant-sheet-heading h2{font-size:17px;font-weight:750;margin:0;min-width:0;flex:1;text-align:left}
 .merchant-sheet-heading button{flex:none;min-height:44px;border:0;border-radius:10px;padding:8px 10px;background:var(--tint,#f1f4f8);color:var(--blue-dark,#476c9c);font-size:14px;font-weight:700}

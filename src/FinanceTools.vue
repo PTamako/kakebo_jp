@@ -1971,7 +1971,7 @@ async function removeCardBill(record) {
 .recurring-manager-panel .recurring-form-field{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%;font-size:12px;font-weight:700;color:var(--muted);box-sizing:border-box}
 .recurring-manager-panel .recurring-form-field>span:first-child{font-size:12px;font-weight:700;color:var(--muted)}
 .recurring-manager-panel .recurring-form-field input,.recurring-manager-panel .recurring-form-field select{max-width:100%;min-width:0;box-sizing:border-box;font-size:16px;min-height:44px}
-.recurring-manager-panel .recurring-day-picker{display:flex;align-items:center;gap:7px;min-height:44px;color:var(--ink)}
+.recurring-manager-panel .recurring-day-picker{display:flex;flex-wrap:wrap;align-items:stretch;gap:7px;min-height:44px;color:var(--ink)}
 .recurring-manager-panel .recurring-day-picker select{flex:1;max-width:100%;min-width:0}
 .recurring-manager-panel .recurring-start-month{width:100%}
 .recurring-manager-panel .recurring-start-month input[type=month]{width:100%;max-width:100%;min-width:0;box-sizing:border-box;min-height:44px}

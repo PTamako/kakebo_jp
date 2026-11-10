@@ -52,7 +52,7 @@ test('submit occurs once and there is no API write on selection or cancellation'
 })
 
 test('danger operations are tucked away, require confirmation and keep archival history',()=>{
-  assert.match(sheet,/<details v-if="isEdit&&!isSpecial" class="card-editor-danger">/)
+  assert.match(sheet,/<details v-if="isEdit&&cardName!=='現金'" class="card-editor-danger">/)
   assert.match(sheet,/アーカイブ/)
   assert.match(sheet,/完全削除/)
   assert.match(finance,/async function runCardDanger\(action,name\)/)

@@ -26,6 +26,8 @@ watch(()=>props.open,async opened=>{
     document.addEventListener('keydown',onKeydown)
     await nextTick();input.value?.focus({preventScroll:true})
   }else{
+    // The access code must not persist in memory after cancel or successful login.
+    code.value=''
     document.body.style.overflow=previousOverflow
     document.removeEventListener('keydown',onKeydown)
   }

@@ -89,7 +89,7 @@ test('a deleted R2 receipt is hidden and stale-device migration cannot resurrect
   assert.equal((await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg'})).status,200)
   assert.equal((await call(b,'DELETE',['4'])).status,200)
   assert.equal(b.states.get(4),1)
-  assert.equal((await call(b,'GET',['4'])).status,404)
+  assert.equal((await call(b,'GET',['4'])).status,410)
   const rejected=await call(b,'PUT',['4'],jpeg,{'content-type':'image/jpeg','x-receipt-migration':'1'})
   assert.equal(rejected.status,410)
   assert.equal((await rejected.json()).code,'receipt_previously_deleted')

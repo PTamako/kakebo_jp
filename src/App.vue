@@ -34,7 +34,7 @@ import { sortOtherLast } from './category-sort.js'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { peakTransferDates } from './calendar-transfer-peaks.js'
-import { saveReceiptImage, getReceiptImage, deleteReceiptImage, cleanupReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
+import { getReceiptImage, deleteReceiptImage, cleanupReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
 import { uploadR2Receipt, getR2Receipt, deleteR2Receipt, listR2Receipts } from './receipt-cloud.js'
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readDeviceDraft, writeDeviceDraft } from './draft-store.js'
@@ -163,11 +163,10 @@ async function persistReceipt(id, blob, replace = false) {
     // A stale local copy is erased ONLY after the R2 server verifies size and SHA-256.
     try { await deleteReceiptImage(entryId) } catch { /* Retried by migration. */ }
   } catch (error) {
-    // Never lose a photo because a mobile connection goes offline after
-    // the D1 ledger transaction was saved.
-    try { await saveReceiptImage(entryId, blob) }
-    catch { throw Error('R2と端末の両方への画像保存に失敗しました：'+error.message) }
-    throw Error('R2に保存できず、この端末だけに画像を保護しました。通信回復後に再同期してください：'+error.message)
+    // Strict cloud-only policy: NEVER create an IndexedDB/sessionStorage
+    // receipt fallback. The selected photo must be kept by its owner until
+    // R2 upload succeeds, even if the D1 ledger was already committed.
+    throw Error('R2への画像保存に失敗しました。端末に新しい画像コピーは作成していません。元の写真を保管し、通信回復後に再度添付してください：'+error.message)
   }
   receiptImageIds.value = new Set([...receiptImageIds.value, entryId])
 }

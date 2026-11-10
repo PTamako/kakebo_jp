@@ -13,8 +13,9 @@ const smoke=read('scripts/mobile-browser-smoke.mjs')
 
 test('merchant-rule successful Save and Cancel close entire sheet, clearing all transients',()=>{
   assert.match(merchant,/function clearPanelDraft\(\)\{[\s\S]*?query\.value=''[\s\S]*?limit\.value=8[\s\S]*?activeKeyword\.value=''[\s\S]*?category\.value=''[\s\S]*?payment\.value=''[\s\S]*?error\.value=''/)
-  assert.match(merchant,/function closePanel\(force=false\)\{[\s\S]*?if\(saving\.value&&!force\)return[\s\S]*?open\.value=false[\s\S]*?clearPanelDraft\(\)/)
-  assert.match(merchant,/await props\.onSave\([\s\S]*?closePanel\(true\)/)
+  assert.match(merchant,/function finishClosePanel\(\)\{[\s\S]*?open\.value=false[\s\S]*?clearPanelDraft\(\)/)
+  assert.match(merchant,/function closePanel\(\)\{[\s\S]*?if\(saving\.value\)return[\s\S]*?finishClosePanel\(\)/)
+  assert.match(merchant,/await props\.onSave\([\s\S]*?finishClosePanel\(\)/)
   assert.match(merchant,/class="merchant-sheet-cancel" :disabled="saving" @click="closePanel\(\)"/)
   assert.match(merchant,/catch\(e\)\{error\.value='保存できませんでした/)
   assert.match(merchant,/function back\(\)\{[\s\S]*?activeKeyword\.value=''[\s\S]*?category\.value=''[\s\S]*?payment\.value=''/)

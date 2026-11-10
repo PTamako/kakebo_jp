@@ -1936,7 +1936,10 @@ async function removeCardBill(record) {
 .recurring-list-summary-title strong{font-variant-numeric:tabular-nums}
 .recurring-list-summary-total{font-size:12px;color:var(--muted);white-space:normal}
 .recurring-list-body{display:grid;gap:9px;padding:0 10px 10px;min-width:0}
-.recurring-list-filters{display:grid;grid-template-columns:minmax(0,1fr) 102px;gap:8px}
+/* Search gets the full width; all three status choices stay side-by-side on phones. */
+.recurring-list-filters{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.recurring-list-filters :deep(.mobile-choice-segments){display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.recurring-list-filters :deep(.mobile-choice-segments > button){width:100%;min-width:0;padding-inline:6px;white-space:nowrap}
 .finance-panel .recurring-list-filters input,.finance-panel .recurring-list-filters select{width:100%;min-width:0;max-width:100%;height:44px;min-height:44px;padding:0 9px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;font-size:16px}
 .recurring-plan-scroll{display:grid;gap:6px;max-height:320px;overflow-y:auto;overscroll-behavior:contain;padding:1px 3px 3px 1px}
 .recurring-plan-scroll.is-expanded{max-height:none;overflow:visible}
@@ -1954,7 +1957,7 @@ async function removeCardBill(record) {
 .recurring-list-empty{padding:12px 6px;text-align:center;color:var(--muted);font-size:13px}
 .finance-panel .recurring-list-more{width:100%;min-height:44px;background:var(--card);color:var(--blue-dark)}
 .recurring-candidate-list{display:grid;gap:5px;max-height:240px;overflow-y:auto;overscroll-behavior:contain;min-width:0;padding-right:3px}
-@media(max-width:360px){.recurring-list-filters{grid-template-columns:minmax(0,1fr) 92px;gap:5px}.recurring-list-summary{padding:10px}.recurring-plan-meta{font-size:10px}}
+@media(max-width:360px){.recurring-list-filters{gap:6px}.recurring-list-filters :deep(.mobile-choice-segments){gap:6px}.recurring-list-summary{padding:10px}.recurring-plan-meta{font-size:10px}}
 
 /* Fixed expense form: the same readable hierarchy on iPhone and iPad. */
 .recurring-manager-panel .recurring-form-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:9px;margin:0 0 6px;align-items:start}

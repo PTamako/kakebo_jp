@@ -292,14 +292,24 @@ async function saveCardFromSheet(payload){
     // The backend already commits the rename and all foreign references; only
     // refresh the client snapshot and selection after that transaction succeeds.
     if(payload.mode==='edit'&&name!==currentName){
-      rows.value=rows.value.map(row=>row.payment_source===currentName?{...row,payment_source:name}:row)
+      rows.value=rows.value.map(row=>{
+        const next={...row}
+        if(next.payment_source===currentName)next.payment_source=name
+        if(next.transfer_target==='prepaid:'+currentName){
+          next.transfer_target='prepaid:'+name
+          if(next.type==='transfer'&&String(next.client_request_id||'').startsWith('point_charge_')&&
+            ['ポイント還元',currentName+'チャージ'].includes(next.merchant))
+            next.merchant=name+'チャージ'
+        }
+        if(next.transfer_target==='credit:'+currentName)next.transfer_target='credit:'+name
+        return next
+      })
       if(bill.value.name===currentName)bill.value.name=name
-      emit('ledger-updated')
     }
     selectedCard.value=name
     emit('payment-settings-refresh')
     emit('settings-changed')
-    if(payload.mode==='edit'&&kind!==payload.expected?.sourceType)emit('ledger-updated')
+    if(payload.mode==='edit')emit('ledger-updated')
     // A settings refresh failing after a successful write must not make the
     // user repeat a non-idempotent save.
     try{await loadFinanceSettings()}catch(e){loadError.value='カードは保存されましたが、関連データの更新に失敗しました：'+e.message}
@@ -1459,7 +1469,7 @@ async function removeCardBill(record) {
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>支払方法・カード管理</h2>
     <div class="finance-inputs card-controls card-main-controls">
-      <MobileChoiceSheet v-model="selectedCard" :disabled="busy" label="管理するカード" :options="[{value:'',label:'支払方法・カードを選択'},...orderedPayments.map(source=>({value:source,label:source}))]" />
+      <MobileChoiceSheet v-model="selectedCard" :disabled="busy" label="管理するカード" :options="[{value:'',label:'支払方法・カードを選択'},...orderedPayments.map(source=>({value:source,label:source})),...(selectedCard&&!orderedPayments.includes(selectedCard)?[{value:selectedCard,label:selectedCard}]:[])]" />
       <button type="button" class="card-icon-action" :disabled="!selectedCard || selectedCard === defaultPaymentSource" @click="emit('set-default-payment-source', selectedCard)" aria-label="デフォルトに設定" title="デフォルトに設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.5l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9L12 3Z"/></svg></button>
       <button type="button" class="card-icon-action" :disabled="!selectedCard" @click="selectCardForEdit" aria-label="カードを編集" title="カードを編集"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 4.5a2.1 2.1 0 0 1 3 3L9 18l-4 1 1-4L16.5 4.5Z"/></svg></button>
       <button type="button" class="card-icon-action" @click="cardMode = 'add'" aria-label="カードを追加" title="カードを追加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>

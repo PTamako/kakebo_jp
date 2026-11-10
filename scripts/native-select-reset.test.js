@@ -72,7 +72,7 @@ test('blank billing card hides totals, saved bill and actions instead of mutatin
 })
 
 test('clearing a required recurring category is reversible without saving invalid settings', () => {
-  assert.match(finance, /const blankPlan = \(\) => \(\{name:'',amount:'',day:1,weekday:1,scheduleType:'monthly',category:'',paymentSource:'現金'/)
+  assert.match(finance, /const blankPlan = \(\) => \(\{name:'',amount:'',day:1,weekday:1,weekdays:\[1\],monthDays:\[1\],intervalMonths:1,scheduleType:'monthly',category:'',paymentSource:'現金'/)
   assert.match(finance, /!props\.categories\.includes\(plan\.value\.category\)/)
   assert.match(finance, /message\.value='名称・金額・記帳日・開始月・カテゴリ・支払方法を確認してください';return/)
 })

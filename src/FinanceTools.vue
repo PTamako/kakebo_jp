@@ -1783,7 +1783,7 @@ async function removeCardBill(record) {
       </details>
       <details v-if="deletedEntries.length" class="review-trash-category">
         <summary>削除した明細 <span>{{deletedEntries.length}}件</span></summary>
-        <p class="review-trash-category-note">元の明細に戻します（別の帳簿から復元した記録は新しいIDになる場合があります）。レシート画像は元の端末に残ります。</p>
+        <p class="review-trash-category-note">元の明細に戻します（別の帳簿から復元した記録は新しいIDになる場合があります）。レシート画像は非公開R2に保持されます。</p>
         <div v-for="item in deletedEntries" :key="item.id" class="review-trash-item">
           <span class="review-trash-text" :title="item.date+' '+(item.merchant||item.category)">{{item.date}} · {{item.merchant||item.category}} · {{yen(item.amount)}}</span>
           <ReviewTrashActions :label="item.merchant||item.category" restore-label="明細を復元" remove-label="明細を完全削除"

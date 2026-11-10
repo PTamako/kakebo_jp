@@ -39,7 +39,7 @@ test('login code and SBI editor fields are cleared only when their sheet is clos
   assert.match(login,/if\(opened\)\{\s*code\.value=''/)
   assert.match(login,/\}else\{[\s\S]*?code\.value=''[\s\S]*?document\.body\.style\.overflow=previousOverflow/)
   assert.match(sbi,/watch\(\[editing,editingTransfer\],\(\[mode,transfer\]\)=>\{[\s\S]*?if\(mode \|\| transfer!==null\)return[\s\S]*?plan\.value=emptyPlan\(\)[\s\S]*?holding\.value=emptyHolding\(\)[\s\S]*?bulkRows\.value=\[\]/)
-  assert.match(sbi,/function closeEditor\(\)\{?\s*if\(saving\.value \|\| bulkBusy\.value\)return/)
+  assert.match(sbi,/function closeEditor\(\)\s*\{\s*if\(saving\.value \|\| bulkBusy\.value\)return/)
   assert.doesNotMatch(sbi,/@click="editing=''"|@click="editingTransfer=null"/)
   assert.match(sbi,/catch\(e\)\{\s*error\.value = e\.message\s*\}/)
 })

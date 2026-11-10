@@ -41,7 +41,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
                 <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
               </div>
               <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedEntryId = null" aria-label="レシート画像を見る">レシート</button>
-              <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
+              <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id,e); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
           <div v-if="expandedMonth === group.month && group.items.length < group.count" class="load-more-wrap">
@@ -66,7 +66,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
               </div>
               
               <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedEntryId = null" aria-label="レシート画像を見る">レシート</button>
-              <button class="swipe-delete" @click.stop="remove(e.id); swipedEntryId = null" aria-label="記録を削除">削除</button>
+              <button class="swipe-delete" @click.stop="remove(e.id,e); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
         </section>

@@ -34,8 +34,8 @@ import { sortOtherLast } from './category-sort.js'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { peakTransferDates } from './calendar-transfer-peaks.js'
-import { getReceiptImage, deleteReceiptImage, cleanupReceiptImages, listReceiptImagesForExport } from './receipt-store.js'
-import { uploadR2Receipt, getR2Receipt, deleteR2Receipt, listR2Receipts } from './receipt-cloud.js'
+import { getReceiptImage, deleteReceiptImage, cleanupReceiptImages, listReceiptImageIds } from './receipt-store.js'
+import { uploadR2Receipt, getR2Receipt, getR2ReceiptVersion, deleteR2Receipt, listR2Receipts } from './receipt-cloud.js'
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readDeviceDraft, writeDeviceDraft } from './draft-store.js'
 
@@ -142,7 +142,40 @@ const pendingReceiptImage = ref(null)
 const pendingReceiptFileName = ref('')
 const editReceiptImage = ref(null)
 const editReceiptFileName = ref('')
+const editReceiptVersion = ref(null)
 const receiptSaveError = ref('')
+// Failed uploads are retained in page memory only. They are never written
+// into IndexedDB, sessionStorage, localStorage, or the D1 draft.
+const pendingReceiptUploads = ref([])
+const receiptRetryBusy = ref(false)
+function queueReceiptRetry(entryId,blob,{replace=false,expectedVersion=null}={}){
+  const id=Number(entryId)
+  if(!Number.isSafeInteger(id)||id<=0||!blob)return
+  pendingReceiptUploads.value=[
+    ...pendingReceiptUploads.value.filter(row=>row.entryId!==id),
+    {entryId:id,blob,replace,expectedVersion}
+  ]
+}
+async function retryPendingReceipts(){
+  if(receiptRetryBusy.value || !pendingReceiptUploads.value.length)return
+  receiptRetryBusy.value=true
+  const failures=[]
+  let restored=0
+  for(const item of pendingReceiptUploads.value){
+    try{
+      await persistReceipt(item.entryId,item.blob,item.replace,item.expectedVersion)
+      restored++
+    }catch{failures.push(item)}
+  }
+  pendingReceiptUploads.value=failures
+  receiptSaveError.value=failures.length
+    ? '画像 '+failures.length+'件をまだ保存できません。元の写真は保管してください。'
+    : ''
+  flash(failures.length
+    ? '画像 '+restored+'件を保存、'+failures.length+'件は未完了です'
+    : '保留中のレシート画像を保存しました')
+  receiptRetryBusy.value=false
+}
 async function selectDraftReceipt(event, form) {
   const file = event.target.files?.[0]; event.target.value = ''
   if (!file) return
@@ -152,14 +185,26 @@ async function selectDraftReceipt(event, form) {
 async function selectEditReceipt(event) {
   const file = event.target.files?.[0]; event.target.value = ''
   if (!file) return
-  try { const blob = await compressReceiptImage(file); editReceiptImage.value = blob; editReceiptFileName.value = file.name; receiptSaveError.value = '' }
-  catch { receiptSaveError.value = 'レシート画像を準備できませんでした。元の写真を保管してください。' }
+  const id=Number(editingEntry.value?.id)
+  try {
+    const blob=await compressReceiptImage(file)
+    const version=await getR2ReceiptVersion(id)
+    if(Number(editingEntry.value?.id)!==id)return
+    editReceiptImage.value=blob
+    editReceiptVersion.value=version
+    editReceiptFileName.value=file.name
+    receiptSaveError.value=''
+  }catch{
+    editReceiptImage.value=null
+    editReceiptVersion.value=null
+    receiptSaveError.value='画像の更新状態を確認できませんでした。元の写真を保管してください。'
+  }
 }
-async function persistReceipt(id, blob, replace = false) {
+async function persistReceipt(id, blob, replace = false, expectedVersion = null) {
   const entryId = Number(id)
   if (!Number.isSafeInteger(entryId) || entryId <= 0) throw new Error('記録IDを確認できません')
   try {
-    await uploadR2Receipt(entryId, blob, { replace })
+    await uploadR2Receipt(entryId, blob, { replace, expectedVersion })
     // A stale local copy is erased ONLY after the R2 server verifies size and SHA-256.
     try { await deleteReceiptImage(entryId) } catch { /* Retried by migration. */ }
   } catch (error) {
@@ -187,14 +232,14 @@ async function migrateReceiptsNow() {
 }
 const viewedReceiptUrl = ref('')
 const viewedReceiptId = ref(null)
-async function refreshReceiptImageIds() {
+async function refreshReceiptImageIds({fresh=false}={}) {
   try {
-    const [remote,local]=await Promise.all([listR2Receipts({fresh:true}),listReceiptImagesForExport()])
-    receiptImageIds.value=new Set([...remote.map(item=>item.entryId),...local.map(item=>item.entryId)])
+    const [remote,localIds]=await Promise.all([listR2Receipts({fresh}),listReceiptImageIds()])
+    receiptImageIds.value=new Set([...remote.map(item=>item.entryId),...localIds])
   } catch(error) {
     // Cloud errors are not evidence that cloud receipts have disappeared.
-    const local=await listReceiptImagesForExport().catch(()=>[])
-    receiptImageIds.value=new Set([...receiptImageIds.value,...local.map(item=>item.entryId)])
+    const localIds=await listReceiptImageIds().catch(()=>[])
+    receiptImageIds.value=new Set([...receiptImageIds.value,...localIds])
     flash('R2の画像一覧を確認できません：'+error.message)
   }
 }
@@ -918,7 +963,7 @@ async function saveAll() {
       const receiptBlob = f.type === 'expense' ? f.receiptImage : null
       if (receiptBlob) {
         try { await persistReceipt(result?.id, receiptBlob) }
-        catch { receiptImageWarning = ' レシート画像は保存できませんでした。元の写真を保管してください。'; receiptSaveError.value = '記録は保存されましたが、レシート画像の保存に失敗しました。元の写真を保管してください。' }
+        catch { queueReceiptRetry(result?.id,receiptBlob); receiptImageWarning = ' レシート画像の送信が保留中です。'; receiptSaveError.value = '記帳は保存済みです。画像のみ再送できます。アプリを閉じる前に再送するか、元の写真を保管してください。' }
       }
       if (forms.value.length === 1) pendingReceiptImage.value = null
       forms.value.shift()
@@ -956,9 +1001,12 @@ async function saveAll() {
 const ledgerRevision = ref(0)
 const pendingEntryIds = ref(new Set())
 const editSaving = ref(false)
-async function remove(id) {
-  const targetEntry = entries.value.find(entry => Number(entry.id) === Number(id))
-  const operatedDate = targetEntry?.date?.slice(0, 10)
+async function remove(id,visibleSnapshot=null) {
+  const targetEntry = visibleSnapshot ||
+    entries.value.find(entry => Number(entry.id) === Number(id)) ||
+    detailSourceEntries.value.find(entry => Number(entry.id) === Number(id))
+  if(!targetEntry)return flash('明細を再読み込みしてから削除してください')
+  const operatedDate = targetEntry.date?.slice(0, 10)
   if (pendingEntryIds.value.has(id)) return
   const recurringEntry = targetEntry?.type === 'expense' &&
     /^recurring_[a-zA-Z0-9]+_\d{6}(?:\d{2})?$/.test(targetEntry?.client_request_id || '')
@@ -968,7 +1016,13 @@ async function remove(id) {
   if (!confirm(deletePrompt)) return
   pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
   try {
-    const removal = await api('entries/' + id, { method: 'DELETE', headers: { 'x-confirm-delete': String(id) } })
+    const expected=Object.fromEntries(
+      ['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_applied','transfer_date','client_request_id','payment_source']
+        .map(k=>[k,targetEntry[k]??null]))
+    const removal = await api('entries/' + id, {
+      method: 'DELETE', headers: { 'x-confirm-delete': String(id) },
+      body:JSON.stringify({expected})
+    })
     ledgerRevision.value++
     // Keep the original local receipt image under the same ledger entry ID.
     // Restoring from trash reuses that ID, so the photo remains retrievable.
@@ -981,6 +1035,7 @@ async function remove(id) {
 }
 function startEdit(entry) {
   editReceiptImage.value = null
+  editReceiptVersion.value = null
   editReceiptFileName.value = ''
   editingEntry.value = {
     // Send an immutable snapshot for optimistic concurrency in D1.
@@ -993,7 +1048,7 @@ function startEdit(entry) {
     note: entry.note || '', raw: entry.raw || ''
   }
 }
-function cancelEdit() { if (!editSaving.value) { editingEntry.value = null; editReceiptImage.value = null; editReceiptFileName.value = '' } }
+function cancelEdit() { if (!editSaving.value) { editingEntry.value = null; editReceiptImage.value = null; editReceiptVersion.value = null; editReceiptFileName.value = '' } }
 async function saveEdit() {
   const e = editingEntry.value
   if (!e || editSaving.value) return
@@ -1015,8 +1070,8 @@ async function saveEdit() {
     })
     ledgerRevision.value++
     if (editReceiptImage.value) {
-      try { await persistReceipt(e.id, editReceiptImage.value, true); editReceiptImage.value = null }
-      catch { receiptSaveError.value = '記録は更新されましたが、レシート画像を保存できませんでした。元の写真を保管してください。' }
+      try { await persistReceipt(e.id, editReceiptImage.value, true, editReceiptVersion.value); editReceiptImage.value = null; editReceiptVersion.value = null }
+      catch { queueReceiptRetry(e.id,editReceiptImage.value,{replace:true,expectedVersion:editReceiptVersion.value}); editReceiptImage.value=null; editReceiptVersion.value=null; receiptSaveError.value = '記録は更新済みです。画像のみ再送できます。元の写真を保管してください。' }
     }
     const editedDay = e.date.slice(0, 10)
     const destinationMonth = editedEntryMonth(e.date)
@@ -1702,7 +1757,12 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
   <GlobalToast />
   <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong><p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
   <main v-else :class="`theme-${theme}`">
-    <div v-if="receiptSaveError" role="alert" class="receipt-error-banner"><span>{{ receiptSaveError }}</span><button type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button></div>
+    <div v-if="receiptSaveError || pendingReceiptUploads.length" role="alert" class="receipt-error-banner">
+      <span>{{ receiptSaveError || '未送信のレシート画像があります。元の写真を保管してください。' }}</span>
+      <button v-if="pendingReceiptUploads.length" type="button" :disabled="receiptRetryBusy"
+        @click="retryPendingReceipts">{{ receiptRetryBusy ? '送信中…' : '画像を再送（'+pendingReceiptUploads.length+'件）' }}</button>
+      <button v-else type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button>
+    </div>
     <header class="topbar">
       <div class="brand">
         <img class="brand-wordmark" src="/branding/kakeibo-wordmark.png?v=4"

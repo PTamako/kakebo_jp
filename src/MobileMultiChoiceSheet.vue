@@ -29,6 +29,8 @@ function toggle(value){
 }
 function close(){
   open.value=false
+  // Never retain uncommitted selections after Done, Cancel, backdrop or Escape.
+  draft.value=[]
   nextTick(()=>{if(previousFocus?.isConnected)previousFocus.focus({preventScroll:true});else trigger.value?.focus({preventScroll:true})})
 }
 function commit(){

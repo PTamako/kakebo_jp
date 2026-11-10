@@ -140,7 +140,14 @@ async function danger(action){
   finally{saving.value=false}
 }
 watch(()=>[props.mode,props.cardName],([mode],[previous])=>{
-  if(!mode)return
+  if(!mode){
+    // Save and confirmed cancel both erase transient fields after the parent closes.
+    resetDraft()
+    return
+  }
+  // The parent updates its selected card before a successful save resolves.
+  // Do not flash an empty editor while the sheet is still saving.
+  if(saving.value || props.busy)return
   if(mode!==previous)lastTrigger.value=document.activeElement
   resetDraft()
 },{flush:'sync'})

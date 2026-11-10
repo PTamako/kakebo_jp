@@ -288,7 +288,28 @@ async function saveBulk(){
     bulkInfo.value=e.message
   }finally{saving.value=false}
 }
-function closeEditor() { if(!saving.value && !bulkBusy.value){ editing.value = ''; editingTransfer.value = null } }
+function closeEditor() {
+  if(saving.value || bulkBusy.value)return
+  editing.value=''
+  editingTransfer.value=null
+}
+// Closing any SBI bottom sheet (successful Save, Cancel, X, backdrop or
+// Escape) discards its temporary editor. Failed saves leave it open.
+watch([editing,editingTransfer],([mode,transfer])=>{
+  if(mode || transfer!==null)return
+  existingIdentity.value=false
+  plan.value=emptyPlan()
+  holding.value=emptyHolding()
+  price.value=emptyPrice()
+  priceFundName.value=''
+  newPurchaseMonth.value=''
+  bulkRows.value=[]
+  bulkText.value=''
+  importedScreenshotKeys.value=[]
+  bulkWarning.value=''
+  bulkInfo.value=''
+  error.value=''
+},{flush:'sync'})
 function onEditorKeydown(event) { if (event.key === 'Escape' && !document.querySelector('.mobile-choice-backdrop')) closeEditor() }
 
 const availableFunds = computed(() => {
@@ -549,7 +570,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
     </div>
     <div v-if="editing || editingTransfer!==null" class="sbi-overlay" @click.self="closeEditor">
       <form v-if="editing==='plan'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="積立設定の編集" @submit.prevent="submit('plan',{...plan,monthlyAmount:Number(plan.monthlyAmount),orderDay:Number(plan.orderDay)},'積立設定を保存しました')">
-        <div class="sbi-line-heading"><h3>積立設定</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
+        <div class="sbi-line-heading"><h3>積立設定</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
         <label>銘柄コード<input v-model.trim="plan.fundCode" maxlength="8" required :disabled="existingIdentity" placeholder="03311187" @input="plan.fundCode=plan.fundCode.toUpperCase();fillFund(plan)"/></label>
         <label>銘柄名<input v-model.trim="plan.fundName" maxlength="120" required /></label>
         <div class="sbi-nav-guidance" role="status">
@@ -566,7 +587,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <label>注文希望日<input v-model.number="plan.orderDay" type="number" min="1" max="28" required /></label>
         <label>適用開始月<input v-model="plan.effectiveMonth" type="month" required /></label><p class="sbi-hint">変更は指定した月以降に適用され、以前の月は変更されません。</p>
         <label class="sbi-checkbox"><input v-model="plan.enabled" type="checkbox"/>積立中</label>
-        <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
       </form>
       <form v-else-if="editing==='bulk'" class="sbi-dialog sbi-bulk-dialog" role="dialog" aria-modal="true" aria-label="画像から保有を更新" @submit.prevent="saveBulk">
         <div class="sbi-line-heading"><h3>画像から保有を更新</h3><button type="button" class="sbi-close" :disabled="saving || bulkBusy" @click="closeEditor">×</button></div>
@@ -628,7 +649,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving || bulkBusy" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving || bulkBusy || !bulkChanged.length">{{saving ? '保存中…' : '更新 '+bulkChanged.length+'件'}}</button></div>
       </form>
       <form v-else-if="editing==='holding'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="保有情報の編集" @submit.prevent="submit('holding',{...holding,units:Number(holding.units),acquisitionCost:Number(holding.acquisitionCost)},'保有情報を更新しました')">
-        <div class="sbi-line-heading"><h3>保有口数・取得金額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
+        <div class="sbi-line-heading"><h3>保有口数・取得金額</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
         <label>銘柄コード<input v-model.trim="holding.fundCode" maxlength="8" required :disabled="existingIdentity" @input="holding.fundCode=holding.fundCode.toUpperCase();fillFund(holding)" /></label>
         <div class="sbi-nav-guidance" role="status">
           <span class="sbi-nav-status" :class="'sbi-nav-'+navMode(holding.fundCode)">{{navModeLabel(holding.fundCode)}}</span>
@@ -643,22 +664,22 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
   :options="[{value:'tsumitate',label:'NISA（つみたて）'},{value:'growth',label:'NISA（成長）'},{value:'combined',label:'NISA（成長＋つみたて 合算）'}]" /></label>
         <label>保有口数<input v-model.number="holding.units" type="number" min="0" step="1" required /></label>
         <label>取得金額（円）<input v-model.number="holding.acquisitionCost" type="number" min="0" step="1" required /></label>
-        <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
       </form>
       <form v-else-if="editing==='price'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="基準価額の編集" @submit.prevent="submit('price',{...price,navPer10000:Number(price.navPer10000)},'基準価額を更新しました')">
-        <div class="sbi-line-heading"><h3>基準価額</h3><button type="button" class="sbi-close" @click="editing=''">×</button></div>
+        <div class="sbi-line-heading"><h3>基準価額</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
         <p>銘柄コード：{{price.fundCode}}</p>
         <div v-if="shouldShowNavReferences(price.fundCode)" class="sbi-nav-links">
           <a v-for="refLink in navReferences(price.fundCode,priceFundName)" :key="refLink.url" :href="refLink.url" target="_blank" rel="noopener noreferrer" :title="refLink.label" :aria-label="refLink.label+'を開く'">{{navLinkLabel(refLink)}} <span aria-hidden="true">↗</span></a>
         </div>
         <label>基準価額（1万口当たり円）<input v-model.number="price.navPer10000" type="number" min="1" step="1" required /></label>
         <label>基準日<input v-model="price.priceDate" type="date" required /></label>
-        <div class="sbi-actions"><button type="button" class="button-secondary" @click="editing=''">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
       </form>
       <form v-else-if="editingTransfer!==null" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付月の編集" @submit.prevent="submitTransfer">
-        <div class="sbi-line-heading"><h3>振替の買付月</h3><button class="sbi-close" type="button" @click="editingTransfer=null">×</button></div>
+        <div class="sbi-line-heading"><h3>振替の買付月</h3><button class="sbi-close" type="button" :disabled="saving" @click="closeEditor">×</button></div>
         <label>対象月<input v-model="newPurchaseMonth" type="month" required /></label>
-        <div class="sbi-actions"><button type="button" class="button-secondary" @click="editingTransfer=null">キャンセル</button><button type="submit" class="button-primary" :disabled="saving">保存</button></div>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button type="submit" class="button-primary" :disabled="saving">保存</button></div>
       </form>
     </div>
   </div>

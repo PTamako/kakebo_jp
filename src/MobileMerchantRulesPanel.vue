@@ -43,14 +43,26 @@ function openPanel(){
   if(open.value)return
   const css=getComputedStyle(trigger.value)
   themeStyle.value=Object.fromEntries(['--card','--ink','--muted','--line','--blue','--blue-dark','--tint','--paper'].map(k=>[k,css.getPropertyValue(k).trim()]).filter(([,v])=>v))
-  query.value='';limit.value=8;activeKeyword.value='';error.value='';open.value=true
+  clearPanelDraft();open.value=true
+}
+function clearPanelDraft(){
+  query.value=''
+  limit.value=8
+  activeKeyword.value=''
+  category.value=''
+  payment.value=''
+  error.value=''
+}
+function finishClosePanel(){
+  open.value=false
+  clearPanelDraft()
+  nextTick(()=>trigger.value?.focus({preventScroll:true}))
 }
 function closePanel(){
+  // Vue passes a MouseEvent to @click handlers. It must never act as an
+  // accidental "force" flag while the save request is still in progress.
   if(saving.value)return
-  open.value=false
-  activeKeyword.value=''
-  error.value=''
-  nextTick(()=>trigger.value?.focus({preventScroll:true}))
+  finishClosePanel()
 }
 function edit(rule){
   activeKeyword.value=rule.keyword
@@ -58,14 +70,23 @@ function edit(rule){
   payment.value=rule.payment_source||''
   error.value=''
 }
-function back(){if(saving.value)return;activeKeyword.value='';error.value='';nextTick(()=>closeButton.value?.focus({preventScroll:true}))}
+function back(){
+  if(saving.value)return
+  activeKeyword.value=''
+  category.value=''
+  payment.value=''
+  error.value=''
+  nextTick(()=>closeButton.value?.focus({preventScroll:true}))
+}
 async function save(){
   if(!selected.value||!hasChanges.value||saving.value)return
   saving.value=true;error.value=''
   try{
     await props.onSave({keyword:selected.value.keyword,oldCategory:selected.value.category||'',
       oldPayment:selected.value.payment_source||'',category:category.value,paymentSource:payment.value})
-    activeKeyword.value=''
+    // A successful save finishes the operation; do not leave the full sheet
+    // open on its list or keep an edited category/payment in component memory.
+    finishClosePanel()
   }catch(e){error.value='保存できませんでした：'+(e?.message||'通信を確認してください')}
   finally{saving.value=false}
 }
@@ -147,7 +168,7 @@ watch(query,()=>{limit.value=8})
             <p v-if="!category||!payment" class="merchant-sheet-note">「ルールなし」は、その項目の自動設定を解除します。過去の記帳明細は変更しません。</p>
             <p v-if="error" class="merchant-sheet-error" role="alert">{{error}}</p>
             <div class="merchant-sheet-actions">
-              <button type="button" class="merchant-sheet-cancel" :disabled="saving" @click="back">キャンセル</button>
+              <button type="button" class="merchant-sheet-cancel" :disabled="saving" @click="closePanel()">キャンセル</button>
               <button type="button" class="merchant-sheet-save" :disabled="saving||!hasChanges" @click="save">{{saving?'保存中…':'変更を保存'}}</button>
             </div>
           </div>

@@ -17,7 +17,10 @@ async function assertNativeTemporalLayout(input,label,width) {
     return {display:style.display,top:parseFloat(style.paddingTop),
       bottom:parseFloat(style.paddingBottom),height:rect.height,width:rect.width}
   })
-  assert.equal(metrics.display,'inline-flex',label+' must keep Safari native inline-flex at '+width+'px')
+  // WebKit may report computed display:flex for an input declared inline-flex.
+  // Either flex layout is valid; block layout is the top-aligned regression.
+  assert.ok(['flex','inline-flex'].includes(metrics.display),
+    label+' must keep Safari native flex layout at '+width+'px (got '+metrics.display+')')
   assert.equal(metrics.top,0,label+' must have zero top padding at '+width+'px')
   assert.equal(metrics.bottom,0,label+' must have zero bottom padding at '+width+'px')
   assert.ok(metrics.height>=44 && metrics.width>0,label+' must remain touch-sized at '+width+'px')
@@ -226,6 +229,13 @@ try{
     await cycleSheet.getByRole('option',{name:'毎週'}).click()
     await recurringForm.getByRole('button',{name:/記帳する曜日：/}).click()
     const weekdays=page.getByRole('dialog',{name:'記帳する曜日'})
+    // Cancel discards the temporary selection, then re-opening starts from
+    // the saved plan rather than the abandoned draft.
+    await weekdays.getByRole('button',{name:'水曜日'}).click()
+    await weekdays.getByRole('button',{name:'閉じる'}).click()
+    await weekdays.waitFor({state:'hidden'})
+    await recurringForm.getByRole('button',{name:/記帳する曜日：/}).click()
+    assert.equal(await weekdays.getByRole('button',{name:'水曜日'}).getAttribute('aria-pressed'),'false')
     await weekdays.getByRole('button',{name:'月曜日'}).click()
     await weekdays.getByRole('button',{name:'金曜日'}).click()
     await weekdays.getByRole('button',{name:'土曜日'}).click()
@@ -267,8 +277,17 @@ try{
     const payChoices=page.getByRole('dialog',{name:'支払方法',exact:true})
     await payChoices.getByRole('option',{name:'現金'}).click()
     await merchantSheet.getByRole('button',{name:'変更を保存'}).click()
-    await merchantSheet.getByRole('button',{name:'閉じる'}).click()
-    assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Merchant sheet must unlock page scroll')
+    await merchantSheet.waitFor({state:'hidden'})
+    assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Successful Save must close and unlock the merchant sheet')
+    // Re-opening must show an empty search; Cancel inside an editor must close
+    // the entire sheet as well, without retaining unsaved category/payment.
+    await page.locator('.merchant-sheet-launch-button').click()
+    await merchantSheet.waitFor()
+    assert.equal(await merchantSheet.getByRole('searchbox',{name:'店舗ルールを日本語で検索'}).inputValue(),'')
+    await merchantSheet.getByRole('button',{name:'テスト商店のルールを編集'}).click()
+    await merchantSheet.getByRole('button',{name:'キャンセル'}).click()
+    await merchantSheet.waitFor({state:'hidden'})
+    assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Cancel must close and unlock the merchant sheet')
     const merchantOverflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)
     assert.ok(merchantOverflow<=2,'Merchant panel overflow at '+width)
 

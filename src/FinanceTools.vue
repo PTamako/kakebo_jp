@@ -1582,7 +1582,7 @@ async function removeCardBill(record) {
     <div class="device-privacy-section">
       <label class="device-login-field"><span>ログイン・レシート画像の保存</span>
         <select :value="props.rememberDevice ? 'remember' : 'session'" aria-label="ログインとレシート画像の保存方法" @change="emit('change-remember-device', $event.target.value === 'remember'); $event.target.value = props.rememberDevice ? 'remember' : 'session'">
-          <option value="remember">この端末に保存（最長30日）</option>
+          <option value="remember">この端末に保存（画像は手動削除まで保持）</option>
           <option value="session">このセッション内のみ保存</option>
         </select>
       </label>
@@ -1593,7 +1593,7 @@ async function removeCardBill(record) {
         <strong>保存済みレシート画像</strong>
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
       </div>
-      <p>{{props.rememberDevice ? '端末保存・30日' : 'セッション内のみ保存'}}（明細は保持）</p>
+      <p>{{props.rememberDevice ? '端末保存・自動削除なし' : 'セッション内のみ保存'}}（明細は保持）</p>
       <div class="device-receipt-actions">
         <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
       </div>
@@ -1650,7 +1650,7 @@ async function removeCardBill(record) {
       </details>
       <details v-if="deletedEntries.length" class="review-trash-category">
         <summary>削除した明細 <span>{{deletedEntries.length}}件</span></summary>
-        <p class="review-trash-category-note">元のIDで復元できます。レシート画像は元の端末に残ります。</p>
+        <p class="review-trash-category-note">元の明細に戻します（別の帳簿から復元した記録は新しいIDになる場合があります）。レシート画像は元の端末に残ります。</p>
         <div v-for="item in deletedEntries" :key="item.id" class="review-trash-item">
           <span class="review-trash-text" :title="item.date+' '+(item.merchant||item.category)">{{item.date}} · {{item.merchant||item.category}} · {{yen(item.amount)}}</span>
           <ReviewTrashActions :label="item.merchant||item.category" restore-label="明細を復元" remove-label="明細を完全削除"

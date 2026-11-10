@@ -221,7 +221,7 @@ onBeforeUnmount(()=>{
               <p v-if="error" class="card-editor-error" role="alert">{{error}}</p>
               <details v-if="isEdit&&cardName!=='現金'" class="card-editor-danger">
                 <summary>その他の操作</summary>
-                <div class="card-editor-danger-actions">
+                <div class="card-editor-danger-actions" :class="{single:['その他','其他'].includes(cardName)}">
                   <button v-if="!['その他','其他'].includes(cardName)" type="button" :disabled="saving||busy" @click="danger('archive')">アーカイブ</button>
                   <button type="button" class="card-editor-delete" :disabled="saving||busy" @click="danger('delete')">完全削除</button>
                 </div>
@@ -259,6 +259,7 @@ onBeforeUnmount(()=>{
 .card-editor-danger summary{display:flex;align-items:center;min-height:44px;cursor:pointer;color:var(--muted,#7a8089);font-size:13px;font-weight:700}
 .card-editor-danger summary:after{content:'⌄';margin-left:auto}
 .card-editor-danger-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:6px 0 10px}
+.card-editor-danger-actions.single{grid-template-columns:minmax(0,1fr)}
 .card-editor-danger-actions button{min-height:46px;border:1px solid var(--line,#dbe0e5);border-radius:11px;color:var(--ink,#333);background:var(--card,#fff);font-size:13px;font-weight:700}
 .card-editor-danger-actions .card-editor-delete{color:#b32b4a;border-color:#ecc9d1}
 .card-editor-footer{display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:none;padding:12px 16px max(12px,env(safe-area-inset-bottom,0px));border-top:1px solid var(--line,#e6e8ef);background:var(--card,#fff)}

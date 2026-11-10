@@ -6,6 +6,8 @@ on:
       - 'functions/api/**'
       - 'public/**'
       - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
       - 'scripts/mobile-browser-smoke.mjs'
       - '.github/workflows/mobile-e2e.yml'
   workflow_dispatch:

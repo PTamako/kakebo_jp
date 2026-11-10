@@ -812,7 +812,9 @@ export async function onRequest({ request, env, params }) {
         !(expected.closingDay===null||Number.isInteger(expected.closingDay)&&expected.closingDay>=0&&expected.closingDay<=31)||
         ![0,1].includes(expected.isArchived))
         return json({error:'カードの編集内容を確認してください'},400)
-      if((oldName==='現金'&&(newName!==oldName||kind!=='standard'||group!=='card'))||
+      if((oldName==='現金'&&(newName!==oldName||kind!=='standard'||group!=='card'||changedClosing))||
+        (newName==='現金'&&oldName!=='現金')||
+        (changedClosing&&kind!=='standard')||
         (['現金','その他','其他'].includes(oldName)&&kind==='prepaid')||
         (['現金','その他','其他'].includes(newName)&&kind==='prepaid'))
         return json({error:'現金・その他はこの設定に変更できません'},400)

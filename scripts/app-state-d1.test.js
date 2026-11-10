@@ -115,7 +115,11 @@ test('cookie-only logout revokes the server-side D1 session and clears the cooki
   assert.match(response.headers.get('set-cookie')||'',/kakeibo_session=;.*HttpOnly.*Max-Age=0/)
   const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
   const logout=app.match(/async function logout\(\) \{([\s\S]*?)\n\}/)?.[1]||''
-  assert.match(logout,/await fetch\('\/api\/auth\/logout'/)
+  assert.match(logout,/await completeServerLogout\(oldSession\)/)
+  assert.match(app,/async function completeServerLogout\(oldSession=''/)
+  assert.match(app,/fetch\('\/api\/auth\/logout'/)
+  assert.match(app,/serverLogoutPending\.value=true/)
+  assert.match(app,/localStorage\.setItem\(PENDING_LOGOUT_KEY,'1'\)/)
   assert.doesNotMatch(logout,/if \(oldSession\)/)
 })
 test('missing migration cannot silently fall back to browser state',async()=>{

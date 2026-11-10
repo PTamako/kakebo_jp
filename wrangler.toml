@@ -26,10 +26,7 @@ database_id = "b1c73b65-9530-468a-b9a3-49554f8a9264"
 [env.preview.ai]
 binding = "AI"
 
-# Dedicated preview bucket. Preview API remains read-only and cannot open receipts.
-[[env.preview.r2_buckets]]
-binding = "RECEIPTS_R2"
-bucket_name = "kakeibo-receipts-preview"
+# Preview has no R2 binding. Receipt API is disabled on all preview URLs.
 
 [env.preview.vars]
 APP_ENV = "preview"

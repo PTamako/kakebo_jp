@@ -45,13 +45,13 @@ const asId=id=>{
 }
 const sha256=async blob=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))]
   .map(b=>b.toString(16).padStart(2,'0')).join('')
-export async function uploadR2Receipt(entryId,blob,{replace=false}={}) {
+export async function uploadR2Receipt(entryId,blob,{replace=false,migration=false}={}) {
   const id=asId(entryId)
   if(!blob || !['image/webp','image/jpeg'].includes(blob.type) ||
     blob.size<=0 || blob.size>LIMIT)throw Error('レシート画像は200KB以下のWebPまたはJPEGを選択してください')
   const originalSha=await sha256(blob)
   const response=await requestR2('/'+id,{
-    method:'PUT',headers:{'content-type':blob.type,...(replace?{'x-receipt-replace':'1'}:{})},body:blob
+    method:'PUT',headers:{'content-type':blob.type,...(replace?{'x-receipt-replace':'1'}:{}),...(migration?{'x-receipt-migration':'1'}:{})},body:blob
   })
   const result=await response.json()
   if(!result.ok || result.sha256!==originalSha || Number(result.size)!==blob.size)

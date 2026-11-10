@@ -106,25 +106,29 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
         return json({error:'以前に削除された画像です。端末の旧画像も削除してください',code:'receipt_previously_deleted'},410)
       }
       const hash=await digestHex(image)
-      // Explicit edits overwrite directly (0 preflight Class B calls).
-      // New photos still check for an existing object to avoid overwrites.
-      const before=request.headers.get('x-receipt-replace')==='1'
-        ? null : await bucket.head(objectKey)
-      if(before){
-        if(before.size===image.byteLength && before.customMetadata?.sha256===hash){
-          await activate(id,before.size)
-          return json({ok:true,id,size:before.size,sha256:hash,already:true})
-        }
-        return json({error:'R2に別の画像があります。元画像は端末に保持します'},409)
-      }
-      // The R2 binding returns committed object metadata after a successful
-      // PUT, so avoid a redundant Class B HEAD request. Legacy iPhone migration
-      // separately GETs and hashes the image before deleting its original.
+      const replace=request.headers.get('x-receipt-replace')==='1'
+      // A conditional PUT protects existing images without a separate HEAD.
+      // If the key already exists, R2 returns null and only that collision
+      // needs one Class B HEAD to distinguish idempotent retries from conflicts.
+      // Explicit image editing intentionally overwrites this same entry ID.
       const stored=await bucket.put(objectKey,image,{
+        ...(!replace ? {onlyIf:new Headers({'If-None-Match':'*'})} : {}),
         httpMetadata:{contentType:type},
         customMetadata:{sha256:hash}
       })
-      if(!stored || stored.size!==image.byteLength ||
+      if(!stored){
+        const existing=await bucket.head(objectKey)
+        if(existing && existing.size===image.byteLength &&
+          existing.customMetadata?.sha256===hash){
+          await activate(id,existing.size)
+          return json({ok:true,id,size:existing.size,sha256:hash,already:true})
+        }
+        return json({error:'R2に別の画像があります。元画像は端末に保持します'},409)
+      }
+      // R2 returns committed object metadata; no post-upload HEAD needed.
+      // Existing iPhone photos are still GET+SHA-verified during migration
+      // before their local copies are erased.
+      if(stored.size!==image.byteLength ||
         stored.customMetadata?.sha256!==hash ||
         stored.httpMetadata?.contentType!==type)
         return json({error:'R2保存の検証が完了しませんでした。元の写真を保持してください'},503)

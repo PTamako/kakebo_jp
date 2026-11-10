@@ -8,6 +8,20 @@ let logs=''
 server.stdout.on('data',x=>{logs+=String(x)})
 server.stderr.on('data',x=>{logs+=String(x)})
 let browser
+// Regression for iPhone Safari's native calendar/month value being stuck at
+// the top of the field when it is forced to display:block or padded vertically.
+async function assertNativeTemporalLayout(input,label,width) {
+  const metrics=await input.evaluate(el=>{
+    const style=getComputedStyle(el)
+    const rect=el.getBoundingClientRect()
+    return {display:style.display,top:parseFloat(style.paddingTop),
+      bottom:parseFloat(style.paddingBottom),height:rect.height,width:rect.width}
+  })
+  assert.equal(metrics.display,'inline-flex',label+' must keep Safari native inline-flex at '+width+'px')
+  assert.equal(metrics.top,0,label+' must have zero top padding at '+width+'px')
+  assert.equal(metrics.bottom,0,label+' must have zero bottom padding at '+width+'px')
+  assert.ok(metrics.height>=44 && metrics.width>0,label+' must remain touch-sized at '+width+'px')
+}
 try{
   let ready=false
   for(let i=0;i<50;i++){
@@ -177,6 +191,7 @@ try{
     assert.equal(cardAdds[0].sourceType,'prepaid')
     assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Card sheets must unlock scroll after save')
     assert.ok(Math.abs((await panel.evaluate(el=>el.getBoundingClientRect().height))-heightBefore)<2)
+    await assertNativeTemporalLayout(page.locator('.card-billing-panel input.card-closing-month'),'締め月',width)
 
     // Fixed-expense search spans the panel width and all three statuses stay on one row.
     await page.locator('.finance-section-tabs').getByRole('button',{name:'固定費'}).click()
@@ -205,6 +220,7 @@ try{
     // Recurrence is a single bottom-sheet dropdown, with independently chosen
     // multiple weekdays/dates. Never expand all frequency options inline.
     const recurringForm=page.locator('.recurring-manager-panel')
+    await assertNativeTemporalLayout(recurringForm.locator('input[type=month]'),'固定費の開始月',width)
     await recurringForm.getByRole('button',{name:/記帳周期：/}).click()
     const cycleSheet=page.getByRole('dialog',{name:'記帳周期'})
     await cycleSheet.getByRole('option',{name:'毎週'}).click()

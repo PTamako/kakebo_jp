@@ -331,7 +331,7 @@ async function ensureLogin() {
   try { await loginPromise } finally { loginPromise = null }
 }
 async function unlock() {
-  try { await ensureLogin(); await restoreAppState(); await Promise.all([load(), loadYear(), loadTransfers()]); void migrateReceiptsNow() }
+  try { await ensureLogin(); await restoreAppState(); await Promise.all([load(), loadYear(), loadTransfers()]) }
   catch (error) { flash(error.message) }
 }
 async function api(path, opt = {}) {
@@ -440,7 +440,8 @@ onMounted(async () => {
     // Recover D1 preferences and drafts before loading the ledger.
     await restoreAppState()
     await load()
-    void migrateReceiptsNow()
+    // Legacy photo migration is manual from 管理 → その他 only.
+    // Opening the PWA never uploads to or downloads from R2.
     await Promise.allSettled([loadYear(), loadTransfers()])
   }
 })

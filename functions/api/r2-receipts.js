@@ -27,6 +27,13 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
   if (!env.RECEIPTS_R2) return json({error:'R2画像ストレージが未設定です'},503)
   const bucket=env.RECEIPTS_R2
   const method=request.method
+  const deletedRow=async id=>db.prepare('SELECT deleted FROM receipt_r2_state WHERE entry_id=?1').bind(id).first()
+  const tombstone=ids=>db.batch(ids.map(id=>db.prepare(
+    'INSERT INTO receipt_r2_state(entry_id,deleted,updated_at) VALUES(?1,1,CURRENT_TIMESTAMP) ON CONFLICT(entry_id) DO UPDATE SET deleted=1,updated_at=CURRENT_TIMESTAMP'
+  ).bind(id)))
+  const activate=id=>db.prepare(
+    'INSERT INTO receipt_r2_state(entry_id,deleted,updated_at) VALUES(?1,0,CURRENT_TIMESTAMP) ON CONFLICT(entry_id) DO UPDATE SET deleted=0,updated_at=CURRENT_TIMESTAMP'
+  ).bind(id).run()
   const idSegment=segments[0] || ''
   try {
     if (!idSegment) {
@@ -46,7 +53,10 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
           if(!page.cursor || page.cursor===cursor) return json({error:'R2画像一覧を最後まで読み込めません'},503)
           cursor=page.cursor
         }while(true)
-        return json({ok:true,items})
+        // A retryable failed R2 deletion must not re-expose a tombstoned photo.
+        const deleted=await db.prepare('SELECT entry_id FROM receipt_r2_state WHERE deleted=1 LIMIT 10001').all()
+        const banned=new Set((deleted.results||[]).map(x=>Number(x.entry_id)))
+        return json({ok:true,items:items.filter(x=>!banned.has(x.id))})
       }
       if(method==='DELETE') {
         const payload=await request.json().catch(()=>null)
@@ -56,6 +66,8 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
           new Set(ids).size!==ids.length)
           return json({error:'削除する画像IDを確認してください（最大100件）'},400)
         const keys=ids.map(key)
+        // Tombstone first: an offline iPhone may have an older local photo.
+        await tombstone(ids)
         await bucket.delete(keys)
         // R2 delete is idempotent; verify that objects are actually absent.
         const heads=await Promise.all(keys.map(k=>bucket.head(k)))
@@ -69,6 +81,7 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
     const id=Number(idSegment)
     const objectKey=key(id)
     if(method==='GET') {
+      if((await deletedRow(id))?.deleted===1)return json({error:'画像が見つかりません'},404)
       const object=await bucket.get(objectKey)
       if(!object)return json({error:'画像が見つかりません'},404)
       const type=object.httpMetadata?.contentType
@@ -76,6 +89,7 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
       return new Response(object.body,{status:200,headers:{...cacheHeaders(type),'content-length':String(object.size)}})
     }
     if(method==='DELETE') {
+      await tombstone([id])
       await bucket.delete(objectKey)
       if(await bucket.head(objectKey)) return json({error:'画像の削除を確認できません'},503)
       return json({ok:true,deleted:id})
@@ -93,11 +107,15 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
         "SELECT 1 AS found FROM entries WHERE id=?1 UNION ALL SELECT 1 AS found FROM trash_items WHERE item_type='entry' AND item_id=?2 LIMIT 1"
       ).bind(id,String(id)).first()
       if(!found)return json({error:'対象の記帳明細が見つかりません'},404)
+      if(request.headers.get('x-receipt-migration')==='1' && (await deletedRow(id))?.deleted===1)
+        return json({error:'以前に削除された画像です。端末の旧画像も削除してください',code:'receipt_previously_deleted'},410)
       const hash=await digestHex(image)
       const before=await bucket.head(objectKey)
       if(before && request.headers.get('x-receipt-replace')!=='1'){
-        if(before.size===image.byteLength && before.customMetadata?.sha256===hash)
+        if(before.size===image.byteLength && before.customMetadata?.sha256===hash){
+          await activate(id)
           return json({ok:true,id,size:before.size,sha256:hash,already:true})
+        }
         return json({error:'R2に別の画像があります。元画像は端末に保持します'},409)
       }
       await bucket.put(objectKey,image,{
@@ -109,6 +127,7 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
         verified.customMetadata?.sha256!==hash ||
         verified.httpMetadata?.contentType!==type)
         return json({error:'R2保存の検証が完了しませんでした。端末の画像を保持してください'},503)
+      await activate(id)
       return json({ok:true,id,size:verified.size,sha256:hash,already:false})
     }
     return json({error:'操作を確認してください'},405)

@@ -159,7 +159,7 @@ watch(query,()=>{limit.value=8})
 
 <style scoped>
 .merchant-sheet-launch{box-sizing:border-box;display:block;width:100%;min-width:0;max-width:100%;margin:0;padding:0!important;overflow:hidden;border:1px solid var(--line,#e7dce3);border-radius:17px;background:var(--card,#fff)}
-.merchant-sheet-launch-button{box-sizing:border-box;display:flex;align-items:center;gap:10px;min-height:68px;width:100%;padding:14px 13px;border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;color:var(--ink,#242833);font:inherit;text-align:left;cursor:pointer;touch-action:manipulation}
+.merchant-sheet-launch-button{box-sizing:border-box;display:flex;align-items:center;gap:10px;min-height:68px!important;height:auto;width:100%;padding:14px 13px;border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;color:var(--ink,#242833);font:inherit;text-align:left;cursor:pointer;touch-action:manipulation}
 .merchant-sheet-launch-title{font-size:15px;font-weight:750;flex:1;min-width:0}
 .merchant-sheet-launch-button:focus-visible{outline:2px solid var(--blue-dark,#be577e);outline-offset:-3px}
 .merchant-sheet-launch-button:active{background:var(--tint,#f6f1f5)!important}

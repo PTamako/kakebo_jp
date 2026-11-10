@@ -319,7 +319,7 @@ async function saveCardFromSheet(payload){
 }
 async function runCardDanger(action,name){
   if(busy.value||name!==selectedCard.value)throw Error('カードを再選択してください')
-  if(!['archive','delete'].includes(action)||['現金','その他','其他'].includes(name))
+  if(!['archive','delete'].includes(action)||name==='現金'||(action==='archive'&&['その他','其他'].includes(name)))
     throw Error('この操作は利用できません')
   busy.value=true
   try{

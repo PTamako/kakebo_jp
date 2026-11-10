@@ -16,7 +16,7 @@ test('saved-entry editor applies a manually selected card, even after statement 
   assert.ok(editor, 'saved-entry editor exists')
   assert.match(editor, /@payment-change="manualPayment\(editingEntry, \$event\)"/)
   assert.match(ledger, /saveEdit, manualPayment, selectedDay/)
-  assert.match(form, /@change="emit\('payment-change', \$event.target.value\)"/)
+  assert.match(form, /@change="emit\('payment-change',\$event\)"/)
 
   const manual = app.match(/function manualPayment\(form, value\) \{[^\n]*\}/)?.[0] || ''
   assert.ok(manual)

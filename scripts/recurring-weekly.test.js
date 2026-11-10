@@ -71,7 +71,7 @@ test('D1 migrations, UI, API and backups persist weekly schedule and exclude dat
   assert.match(migration,/ALTER TABLE recurring_plans ADD COLUMN schedule_type/)
   assert.match(migration,/CREATE TABLE IF NOT EXISTS recurring_date_exclusions/)
   assert.match(ui,/v-model="plan.scheduleType"/)
-  assert.match(ui,/v-model.number="plan.weekday"/)
+  assert.match(ui,/v-model="plan.weekday"[^>]*WEEKDAYS_JA\.map/)
   assert.match(ui,/recurringFrequencyLabel\(p\)/)
   assert.match(api,/recurringDateExclusions:/)
   assert.match(backup,/archive.recurringDateExclusions/)

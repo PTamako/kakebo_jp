@@ -29,7 +29,7 @@ export function planReceiptPeriodDeletion(images, entries, trashedItems, year, m
     } catch { /* Malformed trash records must never authorize image deletion. */ }
   }
   const ids = [], seen = new Set()
-  let bytes = 0, unmatched = 0
+  let bytes = 0, unmatched = 0, unknownSizes = 0
   for (const image of images) {
     const id = safeId(image?.entryId)
     if (!id || seen.has(id) || conflicting.has(id) || !dated.has(id)) {
@@ -40,8 +40,10 @@ export function planReceiptPeriodDeletion(images, entries, trashedItems, year, m
     const date = dated.get(id)
     if (date.slice(0, 4) !== String(year) || (month && date.slice(5, 7) !== month)) continue
     ids.push(id)
-    bytes += Number(image?.size ?? image?.blob?.size) || 0
+    const size=image?.size ?? image?.blob?.size
+    if(size == null) unknownSizes++
+    else bytes += Number(size) || 0
   }
   ids.sort((a, b) => a - b)
-  return {ids, bytes, unmatched, total: images.length}
+  return {ids, bytes, unmatched, unknownSizes, total: images.length}
 }

@@ -13,7 +13,7 @@ const html = read('index.html')
 test('one native iPhone Safari alignment rule covers month, date and time throughout the app', () => {
   const target='main input:is([type="date"],[type="month"],[type="time"])'
   assert.match(mobile, /native date\/month\/time controls must remain inline-flex/)
-  assert.match(mobile, new RegExp(target.replace(/[.*+?^$()|[\]{}]/g, '\\$&')+' \\{[\\s\\S]*?display: inline-flex !important;'))
+  assert.ok(mobile.includes(target+' {\n  display: inline-flex !important;'))
   assert.match(mobile, /min-height: 44px;[\s\S]*?padding-block: 0 !important;/)
   assert.match(mobile, /::-webkit-date-and-time-value \{[\s\S]*?align-items: center !important;/)
   assert.match(mobile, /::-webkit-datetime-edit-fields-wrapper \{[\s\S]*?align-items: center;/)

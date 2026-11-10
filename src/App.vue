@@ -203,6 +203,11 @@ async function viewReceipt(entryId) {
   let blob=null,cloudError=null
   try { blob=await getR2Receipt(entryId) }
   catch(error){cloudError=error}
+  if(cloudError?.status===410) {
+    try { await deleteReceiptImage(Number(entryId)) } catch {}
+    receiptImageIds.value=new Set([...receiptImageIds.value].filter(id=>Number(id)!==Number(entryId)))
+    return flash('別の端末で削除された画像です。端末に残っていた旧画像も削除しました')
+  }
   if(!blob) {
     try { blob=await getReceiptImage(entryId) } catch {}
   }

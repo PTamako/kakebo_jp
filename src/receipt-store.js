@@ -151,6 +151,20 @@ export async function listReceiptImagesForExport(){
   for(const row of readSessionRows())unique.set(row.entryId,row)
   return [...unique.values()]
 }
+// Delete exactly the validated IDs in one IndexedDB transaction, then clear
+// session copies. A failed IndexedDB write leaves session copies untouched.
+export async function deleteReceiptImagesByIds(entryIds) {
+  if (!Array.isArray(entryIds) || entryIds.some(id=>!Number.isSafeInteger(id)||id<=0))
+    throw Error('画像の削除対象を確認できません')
+  const unique=[...new Set(entryIds)]
+  if (!unique.length) return 0
+  await operate('readwrite', store=>{
+    for (const id of unique) store.delete(id)
+  })
+  const storage=storeSession()
+  for (const id of unique) storage?.removeItem(sessionKey(id))
+  return unique.length
+}
 export async function clearAllReceiptImages() {
   await operate('readwrite', store => store.clear())
   clearSessionReceiptImages()

@@ -218,6 +218,7 @@ CREATE INDEX IF NOT EXISTS idx_sbi_transfer_links_month ON sbi_transfer_links(pu
 CREATE TABLE IF NOT EXISTS receipt_r2_state (
   entry_id INTEGER PRIMARY KEY,
   deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0,1)),
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  size_bytes INTEGER DEFAULT NULL CHECK(size_bytes IS NULL OR (size_bytes >= 0 AND size_bytes <= 204800))
 );
 CREATE INDEX IF NOT EXISTS idx_receipt_r2_deleted ON receipt_r2_state(deleted);

@@ -145,6 +145,9 @@ watch(()=>[props.mode,props.cardName],([mode],[previous])=>{
     resetDraft()
     return
   }
+  // The parent updates its selected card before a successful save resolves.
+  // Do not flash an empty editor while the sheet is still saving.
+  if(saving.value || props.busy)return
   if(mode!==previous)lastTrigger.value=document.activeElement
   resetDraft()
 },{flush:'sync'})

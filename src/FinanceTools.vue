@@ -689,7 +689,7 @@ async function restore(){
   }
   const emptySettings={
     paymentSources:[],merchantPaymentRules:[],customRules:[],defaultRules:[],categories:[],
-    plans:[],archivedPlans:[],trashedEntries:[],bills:[],recurringExclusions:[],dismissedTransfers:[],categoryMetadata:[],
+    plans:[],archivedPlans:[],trashedEntries:[],bills:[],recurringExclusions:[],recurringDateExclusions:[],dismissedTransfers:[],categoryMetadata:[],
     investmentPlans:[],investmentPlanHistory:[],investmentHoldings:[],
     fundPrices:[],transferLinks:[],categoryIcons:{}
   }

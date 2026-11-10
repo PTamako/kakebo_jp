@@ -17,9 +17,9 @@ test('管理・その他: backup description is compact but still discloses loca
 test('management controls keep irreversible image-clear warning and retain D1 ledger', () => {
   assert.match(finance, /画像は復元できません。明細・SBI評価額は残ります/)
   assert.match(finance, /JSONは帳簿のみ/)
-  assert.match(finance, /端末保存・30日/)
+  assert.match(finance, /端末保存・自動削除なし/)
   assert.match(finance, /明細は残ります/)
-  assert.match(source('src/receipt-store.js'), /const TTL = 30 \* 24 \* 60 \* 60 \* 1000/)
+  assert.doesNotMatch(source('src/receipt-store.js'), /const TTL = 30 \* 24 \* 60 \* 60 \* 1000/)
 })
 test('remove redundant visual helper paragraphs without changing chart labels or chart logic', () => {
   assert.doesNotMatch(app, /<p class="trend-note"><\/p>/)
@@ -37,7 +37,7 @@ test('remove redundant visual helper paragraphs without changing chart labels or
 test('input and OCR use the single short remaining-count label without pricing warnings', () => {
   assert.match(app, /本日のAI残り回数/)
   assert.doesNotMatch(app, /Cloudflare AIに画像を送信|回数上限≠料金上限|本日の共通AI残り|共通残り/)
-  assert.match(app, /画像は端末内に30日保存/)
+  assert.match(app, /画像は端末内に保存（手動削除まで）/)
   assert.match(form, /<span>反映日<\/span>/)
   assert.match(form, /選択済み/)
 })

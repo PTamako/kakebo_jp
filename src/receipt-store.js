@@ -1,9 +1,8 @@
-// Receipt photos never leave this browser. Device mode: 30-day IndexedDB.
+// Receipt photos never leave this browser. Device mode: durable IndexedDB until an explicit deletion.
 // Session mode: sessionStorage (cleared with the browser session or logout).
 // Do not silently delete already-saved images while switching modes.
 const DB_NAME='kakeibo-receipt-images'
 const STORE='receipts'
-const TTL = 30 * 24 * 60 * 60 * 1000
 const SESSION_PREFIX='kakeibo-session-receipt-v1-'
 const storeSession=()=>typeof sessionStorage==='undefined'?null:sessionStorage
 let deviceMode = true
@@ -41,7 +40,7 @@ async function operate(mode,callback){
   }finally{db.close()}
 }
 const validRow=row=>Number.isSafeInteger(row?.entryId) && row.entryId>0 &&
-  row.expiresAt>Date.now() && ['image/webp','image/jpeg'].includes(row.blob?.type)
+  ['image/webp','image/jpeg'].includes(row.blob?.type)
 async function readDeviceRows(){
   return (await operate('readonly',store=>store.getAll())||[]).filter(validRow)
 }
@@ -66,7 +65,6 @@ function readSessionRow(key){
   try{
     const data=JSON.parse(storage.getItem(key)||'null')
     if(!Number.isSafeInteger(data?.entryId) || data.entryId<=0 ||
-      !Number.isFinite(data.expiresAt) || data.expiresAt<=Date.now() ||
       !['image/jpeg','image/webp'].includes(data.mime) || !data.base64)return null
     return {entryId:data.entryId,expiresAt:data.expiresAt,blob:decodeImage(data.base64,data.mime)}
   }catch{return null}
@@ -118,7 +116,7 @@ export async function saveReceiptImage(entryId,blob){
   if(!Number.isSafeInteger(entryId)||entryId<=0 ||
     !['image/webp','image/jpeg'].includes(blob?.type)||blob.size>200*1024)
     throw Error('画像を保存できません')
-  const row={entryId,blob,expiresAt:Date.now()+TTL}
+  const row={entryId,blob}
   if(isDeviceMode()){
     await operate('readwrite',store=>store.put(row))
     storeSession()?.removeItem(sessionKey(entryId))
@@ -134,7 +132,6 @@ export async function getReceiptImage(entryId){
   if(session)return session.blob
   const row=await operate('readonly',store=>store.get(id))
   if(!row)return null
-  if(row.expiresAt<=Date.now()){await deleteReceiptImage(id);return null}
   return row.blob
 }
 export async function deleteReceiptImage(entryId){
@@ -158,20 +155,8 @@ export async function clearAllReceiptImages() {
   await operate('readwrite', store => store.clear())
   clearSessionReceiptImages()
 }
+// Retain all legacy images, including photos previously marked with a 30-day
+// expiration. Device storage is cleared only by the explicit user action.
 export async function cleanupReceiptImages(){
-  const db=await openDb()
-  try{
-    await new Promise((resolve,reject)=>{
-      const tx=db.transaction(STORE,'readwrite')
-      const cursor=tx.objectStore(STORE).openCursor()
-      cursor.onsuccess=()=>{
-        const row=cursor.result
-        if(row){if(row.value.expiresAt<=Date.now())row.delete();row.continue()}
-      }
-      tx.oncomplete=resolve
-      tx.onerror=()=>reject(tx.error)
-    })
-  }finally{db.close()}
-  // Only expired session photos are discarded. Valid legacy photos are preserved.
-  for(const key of sessionKeys())if(!readSessionRow(key))storeSession()?.removeItem(key)
+  // No automatic deletion. Session photos disappear on logout/session end.
 }

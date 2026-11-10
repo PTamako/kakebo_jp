@@ -27,7 +27,7 @@ test('image clearing is explicitly confirmed, local only, and synchronizes the v
   assert.match(management, /await clearAllReceiptImages\(\)/)
   assert.match(management, /emit\('receipt-images-cleared'\)/)
   assert.doesNotMatch(management.slice(management.indexOf('async function clearLocalReceiptImages()'),management.indexOf('watch([() => props.active')), /props\.api\(/)
-  assert.match(store, /const TTL = 30 \* 24 \* 60 \* 60 \* 1000/)
+  assert.doesNotMatch(store, /const TTL = 30 \* 24 \* 60 \* 60 \* 1000/)
   assert.match(store, /export async function clearAllReceiptImages\(\) \{\s*await operate\('readwrite', store => store\.clear\(\)\)/)
 })
 

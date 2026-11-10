@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {saveReceiptImage,getReceiptImage,countReceiptImages,listReceiptImagesForExport,
-  setReceiptStorageMode,configureReceiptStorageMode,clearSessionReceiptImages,clearAllReceiptImages} from '../src/receipt-store.js'
+  setReceiptStorageMode,configureReceiptStorageMode,clearSessionReceiptImages,clearAllReceiptImages,cleanupReceiptImages} from '../src/receipt-store.js'
 
 const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
 const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
@@ -12,7 +12,7 @@ test('privacy and backup no longer repeat receipt count, expiry or refresh contr
   const backup=finance.split('<summary>バックアップ・復元</summary>')[1].split('</details>')[0]
   assert.match(privacy,/ログイン・レシート画像の保存/)
   assert.match(privacy,/保存済みレシート画像/)
-  assert.match(privacy,/props.rememberDevice \? '端末保存・30日' : 'セッション内のみ保存'/)
+  assert.match(privacy,/props.rememberDevice \? '端末保存・自動削除なし' : 'セッション内のみ保存'/)
   assert.doesNotMatch(privacy,/件数を更新/)
   assert.match(privacy,/画像をすべて削除/)
   assert.match(backup,/レシート画像をZIP保存/)
@@ -109,6 +109,32 @@ test('session storage quota failure retains all original device images',async()=
     assert.equal(disk.size,1)
     assert.equal((await getReceiptImage(21)).size,3)
     assert.equal(disk.size,1)
+  }finally{
+    configureReceiptStorageMode(true)
+    for(const [key,value] of Object.entries(originals)){
+      if(value===undefined)delete globalThis[key]
+      else globalThis[key]=value
+    }
+  }
+})
+
+test('expired legacy device receipts remain visible until the user explicitly clears them',async()=>{
+  const originals={indexedDB:globalThis.indexedDB,sessionStorage:globalThis.sessionStorage}
+  const photo=new Blob([new Uint8Array([9,8,7])],{type:'image/jpeg'})
+  const disk=new Map([[41,{entryId:41,blob:photo,expiresAt:Date.now()-40*86400000}]])
+  globalThis.indexedDB=fakeDb(disk)
+  globalThis.sessionStorage=fakeStorage()
+  try{
+    configureReceiptStorageMode(true)
+    await cleanupReceiptImages()
+    assert.equal(disk.size,1,'expired legacy photos cannot be silently deleted')
+    assert.equal((await getReceiptImage(41)).size,3)
+    assert.equal((await listReceiptImagesForExport()).length,1)
+    await saveReceiptImage(42,photo)
+    assert.equal(disk.get(42).expiresAt,undefined,'new permanent photos have no TTL')
+    assert.equal(await countReceiptImages(),2)
+    await clearAllReceiptImages()
+    assert.equal(disk.size,0,'explicit confirmed clear still removes device photos')
   }finally{
     configureReceiptStorageMode(true)
     for(const [key,value] of Object.entries(originals)){

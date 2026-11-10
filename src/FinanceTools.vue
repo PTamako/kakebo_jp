@@ -7,6 +7,7 @@ import { findLedgerDuplicateGroups, duplicateReviewSignature } from './duplicate
 import { duplicateTrashKey, recurringTrashKey, transferTrashKey, visibleReviewedTrash } from './review-trash.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
+import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
@@ -1473,8 +1474,8 @@ async function removeCardBill(record) {
     <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
     <div v-if="cardMode === 'add'" class="card-editor card-add-editor" role="group" aria-label="カードを追加">
       <label class="card-add-field">名称<input v-model="newPaymentSource" maxlength="80" placeholder="例：Suica、楽天カード" aria-label="新しいカード名"></label>
-      <label class="card-add-field">種類<select v-model="newSourceType" aria-label="新しいカードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
-      <label class="card-add-field">支払集計<select v-model="newStatGroup" aria-label="新しい支払方法の集計区分"><option value="card">カード・電子決済</option><option value="points">ポイント払い</option></select></label>
+      <label class="card-add-field">種類<MobileChoiceSegments v-model="newSourceType" label="新しいカードの種類" :options="[{value:'standard',label:'クレジットカード'},{value:'prepaid',label:'プリペイドカード'}]" /></label>
+      <label class="card-add-field">支払集計<MobileChoiceSegments v-model="newStatGroup" label="新しい支払方法の集計区分" :options="[{value:'card',label:'カード・電子決済'},{value:'points',label:'ポイント払い'}]" /></label>
       <p v-if="newSourceType === 'prepaid'" class="card-type-hint">期首残高は「残高」で設定できます。</p>
       <div class="card-add-actions">
         <button type="button" class="card-add-cancel" :disabled="busy" @click="cardMode = ''">キャンセル</button>
@@ -1483,9 +1484,9 @@ async function removeCardBill(record) {
     </div>
     <div v-if="cardMode === 'edit' && selectedCard" :key="selectedCard" class="card-editor">
       <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
-      <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<select v-model="editSourceType" aria-label="カードの種類"><option value="standard">クレジットカード</option><option value="prepaid">プリペイドカード</option></select></label>
+      <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<MobileChoiceSegments v-model="editSourceType" label="カードの種類" :options="[{value:'standard',label:'クレジットカード'},{value:'prepaid',label:'プリペイドカード'}]" /></label>
       <p v-if="editSourceType === 'prepaid' && !['現金','その他','其他'].includes(selectedCard)" class="card-type-hint">期首残高は「残高」画面で変更できます。</p>
-      <label v-if="selectedCard !== '現金'">支払集計<select :value="selectedStatGroup" :disabled="busy" aria-label="支払方法の集計区分" @change="saveStatGroup($event.target.value)"><option value="card">カード・電子決済</option><option value="points">ポイント払い</option></select></label>
+      <label v-if="selectedCard !== '現金'">支払集計<MobileChoiceSegments :model-value="selectedStatGroup" :disabled="busy" label="支払方法の集計区分" :options="[{value:'card',label:'カード・電子決済'},{value:'points',label:'ポイント払い'}]" @change="saveStatGroup($event)" /></label>
       <label v-if="isCreditCard(selectedCard) && editSourceType === 'standard'">締め日
         <MobileChoiceSheet :key="selectedCard + '-closing-day'" :model-value="closingDayFor(selectedCard)"
           label="カードの締め日" :searchable="false"
@@ -1544,7 +1545,7 @@ async function removeCardBill(record) {
     <div class="recurring-form-layout">
       <label class="recurring-form-field recurring-form-name"><span>名称</span><input v-model="plan.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120" /></label>
       <div class="recurring-form-field recurring-form-amount"><span>金額</span><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
-      <label class="recurring-form-field recurring-form-schedule"><span>周期</span><span class="recurring-day-picker"><select v-model="plan.scheduleType" aria-label="記帳周期"><option value="monthly">毎月</option><option value="weekly">毎週</option><option value="workday">平日（土日祝を除く）</option></select><MobileChoiceSheet v-if="plan.scheduleType==='monthly'" v-model="plan.day" label="毎月の記帳日" :searchable="false" :options="Array.from({length:31},(_,i)=>({value:i+1,label:(i+1)+'日'}))" /><MobileChoiceSheet v-else-if="plan.scheduleType==='weekly'" v-model="plan.weekday" label="毎週の曜日" :searchable="false" :options="WEEKDAYS_JA.map((name,index)=>({value:index,label:name+'曜日'}))" /></span></label>
+      <label class="recurring-form-field recurring-form-schedule"><span>周期</span><span class="recurring-day-picker"><MobileChoiceSegments v-model="plan.scheduleType" label="記帳周期" :options="[{value:'monthly',label:'毎月'},{value:'weekly',label:'毎週'},{value:'workday',label:'平日（土日祝を除く）'}]" /><MobileChoiceSheet v-if="plan.scheduleType==='monthly'" v-model="plan.day" label="毎月の記帳日" :searchable="false" :options="Array.from({length:31},(_,i)=>({value:i+1,label:(i+1)+'日'}))" /><MobileChoiceSheet v-else-if="plan.scheduleType==='weekly'" v-model="plan.weekday" label="毎週の曜日" :searchable="false" :options="WEEKDAYS_JA.map((name,index)=>({value:index,label:name+'曜日'}))" /></span></label>
       <label class="recurring-form-field"><span>カテゴリ</span><MobileChoiceSheet v-model="plan.category" label="固定費カテゴリ" :options="[{value:'',label:'選択してください'},...orderedCategories.map(category=>({value:category,label:categoryLabel(category)}))]" /></label>
       <label class="recurring-form-field"><span>支払方法</span><MobileChoiceSheet v-model="plan.paymentSource" label="固定費支払方法" :options="[...orderedPayments.map(source=>({value:source,label:source})),...(plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)?[{value:plan.paymentSource,label:plan.paymentSource+'（既存の設定）'}]:[])]" /></label>
       <label class="recurring-form-field recurring-start-month"><span>開始月</span><input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>
@@ -1625,7 +1626,7 @@ async function removeCardBill(record) {
       <div class="recurring-list-body">
         <div class="recurring-list-filters">
           <input v-model="recurringListQuery" type="search" placeholder="名前で検索" aria-label="固定費を検索" />
-          <select v-model="recurringListFilter" aria-label="固定費の状態"><option value="all">すべて</option><option value="active">有効</option><option value="stopped">停止中</option></select>
+          <MobileChoiceSegments v-model="recurringListFilter" label="固定費の状態" :options="[{value:'all',label:'すべて'},{value:'active',label:'有効'},{value:'stopped',label:'停止中'}]" />
         </div>
         <div v-if="!filteredRecurringPlans.length" class="recurring-list-empty">{{plans.length ? '該当する固定費はありません' : '固定費はまだありません'}}</div>
         <div v-else id="recurring-plan-list" class="recurring-plan-scroll" :class="{'is-expanded': recurringListShowAll}" role="list" aria-label="固定費一覧">
@@ -1695,10 +1696,9 @@ async function removeCardBill(record) {
     <summary>端末のプライバシー設定</summary>
     <div class="device-privacy-section">
       <label class="device-login-field"><span>ログイン状態の保存</span>
-        <select :value="props.rememberDevice ? 'remember' : 'session'" aria-label="ログイン状態の保存方法" @change="emit('change-remember-device', $event.target.value === 'remember'); $event.target.value = props.rememberDevice ? 'remember' : 'session'">
-          <option value="remember">ログイン状態を保持（最長30日）</option>
-          <option value="session">ログイン状態をセッション内のみ保持</option>
-        </select>
+        <MobileChoiceSegments :model-value="props.rememberDevice ? 'remember' : 'session'" label="ログイン状態の保存方法"
+          :options="[{value:'remember',label:'ログイン状態を保持（最長30日）'},{value:'session',label:'セッション内のみ保持'}]"
+          @change="emit('change-remember-device', $event === 'remember')" />
       </label>
       
     </div>

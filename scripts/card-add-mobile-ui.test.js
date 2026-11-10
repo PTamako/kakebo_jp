@@ -1,71 +1,97 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import {readFileSync} from 'node:fs'
+const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
+const finance=read('src/FinanceTools.vue')
+const sheet=read('src/MobileCardEditorSheet.vue')
+const api=read('functions/api/[[path]].js')
 
-const source = readFileSync(new URL('../src/FinanceTools.vue', import.meta.url), 'utf8')
-const creation = source.match(/<div v-if="cardMode === 'add'"[\s\S]*?(?=\n    <div v-if="cardMode === 'edit')/)?.[0] || ''
-
-test('card creation has its own single-column form, not the card icon toolbar grid', () => {
-  assert.match(creation, /class="card-editor card-add-editor"/)
-  assert.doesNotMatch(creation, /class="finance-inputs card-controls"/)
-  assert.match(source, /\.card-add-editor\{display:grid;grid-template-columns:minmax\(0,1fr\)/)
-  assert.match(creation, /class="card-add-field">名称/)
-  assert.match(creation, /class="card-add-field">種類/)
+test('card selector and toolbar stay on the main page while add/edit use a shared bottom sheet',()=>{
+  assert.match(finance,/<MobileChoiceSheet v-model="selectedCard"/)
+  assert.match(finance,/@click="selectCardForEdit"/)
+  assert.match(finance,/@click="cardMode = 'add'"/)
+  assert.match(finance,/<MobileCardEditorSheet :mode="cardMode"/)
+  assert.match(finance,/:on-save="saveCardFromSheet"/)
+  assert.match(finance,/:on-danger="runCardDanger"/)
+  assert.doesNotMatch(finance,/<div v-if="cardMode === 'add'"/)
+  assert.doesNotMatch(finance,/<div v-if="cardMode === 'edit'"/)
+  assert.match(sheet,/<Teleport to="body">/)
+  assert.match(sheet,/role="dialog"/)
+  assert.match(sheet,/aria-modal="true"/)
+  assert.match(sheet,/isEdit\?'カードを編集':'カードを追加'/)
+  assert.match(sheet,/class="card-editor-backdrop"/)
+  assert.match(sheet,/border-radius:22px 22px 0 0/)
 })
 
-test('card creation uses one cancel control and no redundant header or close icon', () => {
-  assert.doesNotMatch(creation, /card-add-heading|card-add-close|追加を閉じる/)
-  assert.doesNotMatch(source, /\.card-add-heading|\.card-add-close/)
-  assert.match(creation, /role="group" aria-label="カードを追加"/)
-  assert.match(creation, /class="card-add-cancel"[^>]*@click="cardMode = ''"/)
-  assert.match(source, /\.card-add-editor\{[^}]*gap:8px;[^}]*padding:10px 12px 12px/)
-  assert.match(source, /\.finance-panel \.card-add-actions button\{[^}]*min-height:44px/)
+test('shared form drafts card name, type, payment statistics and closing date',()=>{
+  assert.match(sheet,/v-model="name"/)
+  assert.match(sheet,/v-model="sourceType"/)
+  assert.match(sheet,/v-model="statGroup"/)
+  assert.match(sheet,/v-model="closingDay"/)
+  assert.match(sheet,/value:'standard',label:'クレジットカード'/)
+  assert.match(sheet,/value:'prepaid',label:'プリペイドカード'/)
+  assert.match(sheet,/value:'points',label:'ポイント払い'/)
+  assert.match(sheet,/canEditClosing=computed\(\(\)=>isEdit.value&&!isSpecial.value&&sourceType.value==='standard'\)/)
+  assert.match(sheet,/期首残高は「残高」で設定できます/)
+  assert.doesNotMatch(sheet,/v-model(?:\.number)?="openingBalance"/)
+  assert.match(sheet,/payload\.expected=\{/)
+  assert.match(sheet,/payload\.closingDay=closingDay\.value==='末日'\?0:Number\(closingDay\.value\)/)
 })
 
-test('save and cancel use two equal-width mobile action columns', () => {
-  assert.match(creation, /class="card-add-actions"/)
-  assert.match(source, /\.card-add-actions\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
-  assert.match(source, /\.finance-panel \.card-add-actions button\{[^}]*white-space:nowrap/)
-  assert.match(creation, /class="card-add-cancel"[^>]*>キャンセル/)
-  assert.match(creation, /class="card-add-save"[^>]*@click="addPaymentSource"/)
-  assert.match(creation, /:disabled="busy \|\| !newPaymentSource\.trim\(\)"/)
+test('submit occurs once and there is no API write on selection or cancellation',()=>{
+  assert.match(sheet,/@submit\.prevent="save"/)
+  assert.match(sheet,/await props\.onSave\(payload\)/)
+  assert.match(sheet,/await props\.onDanger\(action,name\)/)
+  assert.match(finance,/props\.api\(payload\.mode==='add'\?'payment-sources':'payment-sources\/update'/)
+  assert.match(finance,/async function saveCardFromSheet\(payload\)/)
+  assert.match(finance,/if\(payload\.mode==='edit'&&name!==currentName\)/)
+  assert.doesNotMatch(sheet,/props\.api\(|fetch\(/)
+  assert.match(sheet,/window\.confirm\('変更内容を破棄しますか？'\)/)
+  assert.match(sheet,/window\.confirm\('未保存の変更を破棄して操作しますか？'\)/)
+  assert.match(sheet,/emit\('close'\)/)
 })
 
-test('both card types remain available and prepaid remains linked to assets', () => {
-  assert.match(creation, /value:'standard',label:'クレジットカード'/)
-  assert.match(creation, /value:'prepaid',label:'プリペイドカード'/)
-  assert.match(creation, /期首残高は「残高」で設定できます。/)
+test('danger operations are tucked away, require confirmation and keep archival history',()=>{
+  assert.match(sheet,/<details v-if="isEdit&&cardName!=='現金'" class="card-editor-danger">/)
+  assert.match(sheet,/アーカイブ/)
+  assert.match(sheet,/完全削除/)
+  assert.match(finance,/async function runCardDanger\(action,name\)/)
+  assert.match(finance,/payment-sources\/archive/)
+  assert.match(finance,/payment-sources\/remove/)
+  assert.match(api,/有効な固定費で使用中のためアーカイブできません/)
+  assert.match(api,/過去の明細・保存済み請求・固定費で使用中のため削除できません/)
 })
 
-test('switching cards immediately refreshes the editor name and card type', () => {
-  assert.match(source, /watch\(selectedCard, \(name\) => \{[\s\S]*?editedCardName\.value = name \|\| ''[\s\S]*?editSourceType\.value = selectedSourceType\.value[\s\S]*?\}, \{ flush: 'sync' \}\)/)
-  assert.match(source, /watch\(selectedSourceType, \(type, previousType\) => \{[\s\S]*?editSourceType\.value = type/)
-  assert.match(source, /v-if="cardMode === 'edit' && selectedCard" :key="selectedCard"/)
-  assert.match(source, /:key="selectedCard \+ '-closing-day'"/)
-  assert.match(source, /const selectedSourceType = computed\(\(\) => props\.paymentSourceMeta\[selectedCard\.value\]/)
+test('mobile card sheet handles keyboard, focus, nested selectors and fixed footer',()=>{
+  assert.match(sheet,/visualViewport\?\.addEventListener\('resize',syncViewport\)/)
+  assert.match(sheet,/keyboardInset\.value=Math\.max/)
+  assert.match(sheet,/document\.body\.style\.overflow='hidden'/)
+  assert.match(sheet,/document\.querySelector\('\.mobile-choice-backdrop'\)/)
+  assert.match(sheet,/nextTick\(\(\)=>closeButton\.value\?\.focus/)
+  assert.match(sheet,/@keydown="trapFocus"/)
+  assert.match(sheet,/class="card-editor-grab-area"/)
+  assert.match(sheet,/if\(distance>75\)requestClose\(\)/)
+  assert.match(sheet,/class="card-editor-footer"/)
+  assert.match(sheet,/\.card-editor-footer\{display:grid;grid-template-columns:1fr 1fr/)
+  assert.match(sheet,/padding:12px 16px max\(12px,env\(safe-area-inset-bottom/)
+  assert.match(sheet,/\.card-editor-footer button\{[^}]*min-height:48px/)
+  assert.match(sheet,/@media\(prefers-reduced-motion:reduce\)/)
 })
 
-test('closing day only appears for an actual credit card, never cash, other or prepaid', () => {
-  assert.match(source, /const isCreditCard = name => [^\n]*!\['現金','その他','其他'\]\.includes\(name\)[^\n]*source_type === 'standard'/)
-  assert.match(source, /v-if="isCreditCard\(selectedCard\) && editSourceType === 'standard'">締め日/)
-  assert.match(source, /:model-value="closingDayFor\(selectedCard\)"/)
-  assert.match(source, /@change="saveClosingDay\(selectedCard,\$event\)"/)
-})
-
-test('card editing keeps Save, Close, Archive and Delete on one mobile row', () => {
-  const actions=source.match(/<div class="finance-inputs card-edit-actions"[\s\S]*?<\/div>/)?.[0] || ''
-  assert.equal((actions.match(/<button\b/g)||[]).length,4)
-  assert.match(actions,/class="card-edit-save"/)
-  assert.match(actions,/class="card-edit-icon card-edit-close"/)
-  assert.match(actions,/class="card-edit-icon card-edit-archive"/)
-  assert.match(actions,/class="card-edit-icon card-edit-delete"/)
-  assert.match(actions,/aria-label="閉じる"/)
-  assert.match(actions,/aria-label="カードをアーカイブ"/)
-  assert.match(actions,/aria-label="カードを完全削除"/)
-  assert.match(actions,/@click="saveCardType"/)
-  assert.match(actions,/@click="archivePaymentSource\(selectedCard\)"/)
-  assert.match(actions,/@click="removePaymentSource\(selectedCard\)"/)
-  assert.match(source,/\.finance-panel \.card-edit-actions\{display:flex;flex-wrap:nowrap;/)
-  assert.match(source,/\.finance-panel \.card-edit-actions>\.card-edit-icon\{flex:0 0 44px;/)
-  assert.match(source,/\.finance-panel \.card-edit-actions>button\{[^}]*min-height:44px/)
+test('edit endpoint batches updates with a shared concurrency guard for saved bills and ledger',()=>{
+  const handler=api.split("if (a === 'payment-sources' && b === 'update' && m === 'POST') {")[1]
+    ?.split("if (a === 'payment-sources' && b === 'rename' && m === 'POST') {")[0]||''
+  assert.ok(handler)
+  assert.match(handler,/await prepaidSchemaReady\(db\)/)
+  assert.match(handler,/expected\.closingDay/)
+  assert.match(handler,/is_archived/)
+  assert.match(handler,/NOT EXISTS\(SELECT 1 FROM payment_sources WHERE name=\?1\)/)
+  assert.match(handler,/NOT EXISTS\(/)
+  assert.match(handler,/SELECT 1 FROM entries WHERE type='transfer'/)
+  for(const t of ['merchant_rules','entries','recurring_plans','card_bills','payment_sources']){
+    assert.match(handler,new RegExp('UPDATE '+t))
+  }
+  assert.match(handler,/const result=await db\.batch\(statements\)/)
+  assert.match(handler,/if\(!result\.at\(-1\)\?\.meta\?\.changes\)/)
+  assert.match(handler,/return json\(\{error:'カード設定が更新されています。再読み込みしてください'\},409\)/)
 })

@@ -9,6 +9,7 @@ import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
+import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
@@ -246,117 +247,90 @@ watch(() => props.rememberDevice, () => {
 const cardMode = ref('')
 watch(()=>props.cardSettingsRequest,()=>{managementTab.value='cards';cardMode.value='add'})
 const selectedCard = ref('')
-const editedCardName = ref('')
+const cardMessage = ref('')
 const closingDays = computed(() => props.paymentClosingDays)
 const defaultClosingDay = name => {
-  const normalized = String(name || '').normalize('NFKC').toLowerCase().replace(/[\\s　・（）()_-]/g, '')
+  const normalized = String(name || '').normalize('NFKC').toLowerCase().replace(/[\s　・（）()_-]/g, '')
   if (/セゾン|saison/.test(normalized)) return '10'
   if (/セブンカード|7card/.test(normalized)) return '15'
   return '末日'
 }
 const closingDayFor = name => closingDays.value[name] === 0 ? '末日' : closingDays.value[name] == null ? defaultClosingDay(name) : String(closingDays.value[name])
 function selectCardForEdit() {
-  if (!selectedCard.value) return
-  editedCardName.value = selectedCard.value
-  editSourceType.value=selectedSourceType.value
-  cardMode.value = 'edit'
+  if(!selectedCard.value||busy.value)return
+  cardMode.value='edit'
 }
-async function saveClosingDay(name, day) {
-  if (!name || (day !== '末日' && !(Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31))) return
-  try {
-    await props.api('payment-sources/closing-day',{method:'POST',body:JSON.stringify({name,closingDay:day === '末日' ? 0 : Number(day)})})
-    emit('payment-settings-refresh')
-    cardMessage.value = '締め日を更新しました'
-  } catch(e) { cardMessage.value = '締め日の保存に失敗しました：'+e.message }
-}
-async function renameCard() {
-  if (busy.value) return
-  const name = editedCardName.value.trim(), old = selectedCard.value
-  if (!old || old === '現金' || !name || name.length > 80 || (name !== old && props.paymentSources.includes(name))) {
-    cardMessage.value = '名称を確認してください（重複・現金の変更不可）'
-    return
-  }
-  if (name !== old) {
-    if (busy.value || !settingsReady.value) return
-    busy.value = true
-    try {
-      // Commit the ledger rename on D1 before updating local display names.
-      const result = await props.api('payment-sources/rename', {method:'POST',body:JSON.stringify({oldName:old,newName:name})})
-      rows.value = rows.value.map(e => e.payment_source === old ? {...e,payment_source:name} : e)
-      // Payment source references are changed server-side with the card rename.
-      await loadFinanceSettings()
-      // Closing day follows the renamed payment_sources row automatically.
-      // D1 already renamed the card, its merchant bindings and historical payments.
-      // Refresh the card list; never interpret a rename as delete + insert.
-      emit('payment-settings-refresh')
-      emit('settings-changed')
-      if (bill.value.name === old) bill.value.name = name
-      selectedCard.value = name
-      cardMessage.value = '名称を変更しました（明細 '+(result?.changes ?? 0)+'件も更新）'
-      emit('ledger-updated')
-    } catch(e) {
-      cardMessage.value = '名称変更に失敗しました：'+e.message
-      return
-    } finally { busy.value = false }
-  }
-  cardMode.value = ''
-}
+watch(selectedCard,()=>{cardMessage.value=''},{flush:'sync'})
 const cardPeriod = computed(() => {
   if (!isCreditCard(bill.value.name)) return null
   return billingPeriodForMonth(bill.value.month,closingDayFor(bill.value.name))
 })
-const newPaymentSource = ref('')
-const newSourceType = ref('standard')
-const newStatGroup = ref('card')
-const editSourceType = ref('standard')
-const selectedStatGroup = computed(() => props.paymentSourceMeta[selectedCard.value]?.stat_group || 'card')
-const selectedSourceType = computed(() => props.paymentSourceMeta[selectedCard.value]?.source_type || 'standard')
-async function saveCardType(){
-  if(!selectedCard.value||busy.value)return
-  const kind=editSourceType.value
-  if(kind===selectedSourceType.value)return renameCard()
-  if(editedCardName.value.trim()!==selectedCard.value){
-    cardMessage.value='名称変更と種別変更は分けて保存してください'
-    return
-  }
+// A mobile draft is sent once. The edit endpoint commits card metadata and
+// every linked historical reference in one guarded D1 transaction.
+async function saveCardFromSheet(payload){
+  if(busy.value)throw Error('別の処理が実行中です')
+  const name=String(payload?.name||'').trim()
+  const kind=payload?.sourceType,statGroup=payload?.statGroup
+  if(!name||name.length>80||!['standard','prepaid'].includes(kind)||!['card','points'].includes(statGroup))
+    throw Error('名称・種類・集計区分を確認してください')
+  if(payload.mode==='add'){
+    if(props.paymentSources.includes(name)||props.paymentSourceMeta[name])
+      throw Error('同じ名前が登録されています')
+    if(kind==='prepaid'&&['現金','その他','其他'].includes(name))
+      throw Error('この名前はプリペイドに設定できません')
+  }else if(payload.mode==='edit'){
+    if(!selectedCard.value||selectedCard.value!==payload.oldName)throw Error('編集対象が変更されました')
+    if(!props.paymentSourceMeta[selectedCard.value])throw Error('最新のカード設定を読み込んでください')
+  }else throw Error('編集内容を確認してください')
   busy.value=true
   try{
-    await props.api('payment-sources/type',{method:'POST',body:JSON.stringify({name:selectedCard.value,sourceType:kind})})
+    const currentName=selectedCard.value
+    const response=await props.api(payload.mode==='add'?'payment-sources':'payment-sources/update',{
+      method:'POST',body:JSON.stringify(payload)
+    })
+    if(!response?.ok)throw Error('保存結果を確認できません')
+    // The backend already commits the rename and all foreign references; only
+    // refresh the client snapshot and selection after that transaction succeeds.
+    if(payload.mode==='edit'&&name!==currentName){
+      rows.value=rows.value.map(row=>{
+        const next={...row}
+        if(next.payment_source===currentName)next.payment_source=name
+        if(next.transfer_target==='prepaid:'+currentName){
+          next.transfer_target='prepaid:'+name
+          if(next.type==='transfer'&&String(next.client_request_id||'').startsWith('point_charge_')&&
+            ['ポイント還元',currentName+'チャージ'].includes(next.merchant))
+            next.merchant=name+'チャージ'
+        }
+        if(next.transfer_target==='credit:'+currentName)next.transfer_target='credit:'+name
+        return next
+      })
+      if(bill.value.name===currentName)bill.value.name=name
+    }
+    selectedCard.value=name
     emit('payment-settings-refresh')
-    cardMessage.value='カード種別を更新しました'
-    cardMode.value=''
-  }catch(e){cardMessage.value='種別を保存できませんでした：'+e.message}
-  finally{busy.value=false}
+    emit('settings-changed')
+    if(payload.mode==='edit')emit('ledger-updated')
+    // A settings refresh failing after a successful write must not make the
+    // user repeat a non-idempotent save.
+    try{await loadFinanceSettings()}catch(e){loadError.value='カードは保存されましたが、関連データの更新に失敗しました：'+e.message}
+    cardMessage.value=payload.mode==='add'?name+'を追加しました':name+'を更新しました'
+    return response
+  }finally{busy.value=false}
 }
-async function saveStatGroup(group) {
-  const name=selectedCard.value
-  if(busy.value || !name || name==='現金' || !['card','points'].includes(group))return
+async function runCardDanger(action,name){
+  if(busy.value||name!==selectedCard.value)throw Error('カードを再選択してください')
+  if(!['archive','delete'].includes(action)||name==='現金'||(action==='archive'&&['その他','其他'].includes(name)))
+    throw Error('この操作は利用できません')
   busy.value=true
   try{
-    await props.api('payment-sources/stat-group',{method:'POST',body:JSON.stringify({name,statGroup:group})})
+    const url=action==='archive'?'payment-sources/archive':'payment-sources/remove'
+    await props.api(url,{method:'POST',body:JSON.stringify(action==='archive'?{name,archived:true}:{name})})
+    selectedCard.value=''
     emit('payment-settings-refresh')
-    emit('ledger-updated')
-    cardMessage.value='支払集計の区分を保存しました'
-  }catch(e){cardMessage.value='集計区分を保存できませんでした：'+e.message}
-  finally{busy.value=false}
+    emit('settings-changed')
+    cardMessage.value=name+(action==='archive'?'をアーカイブしました':'を完全削除しました')
+  }finally{busy.value=false}
 }
-const cardMessage = ref('')
-// Changing the selected card must discard the previous card's unsaved draft.
-// Keep the editor open, but always show the new card's actual stored type.
-watch(selectedCard, (name) => {
-  // A native iOS select must be able to return to its placeholder.
-  // Clearing the card also closes a previously opened editor; no stale
-  // card-specific draft or actions should survive the reset.
-  if (!name && cardMode.value === 'edit') cardMode.value = ''
-  editedCardName.value = name || ''
-  editSourceType.value = selectedSourceType.value
-  cardMessage.value = ''
-}, { flush: 'sync' })
-// If card metadata arrives after the selection, refresh an untouched type field.
-// Do not overwrite a pending type choice the user has edited manually.
-watch(selectedSourceType, (type, previousType) => {
-  if (editSourceType.value === previousType) editSourceType.value = type
-}, { flush: 'sync' })
 const merchantRulesCombined = computed(() => {
   const items = new Map()
   for (const r of props.categoryRules) items.set(r.keyword, { keyword: r.keyword, category: r.category, payment_source: '' })
@@ -1495,40 +1469,16 @@ async function removeCardBill(record) {
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>支払方法・カード管理</h2>
     <div class="finance-inputs card-controls card-main-controls">
-      <MobileChoiceSheet v-model="selectedCard" :disabled="busy" label="管理するカード" :options="[{value:'',label:'支払方法・カードを選択'},...orderedPayments.map(source=>({value:source,label:source}))]" />
+      <MobileChoiceSheet v-model="selectedCard" :disabled="busy" label="管理するカード" :options="[{value:'',label:'支払方法・カードを選択'},...orderedPayments.map(source=>({value:source,label:source})),...(selectedCard&&!orderedPayments.includes(selectedCard)?[{value:selectedCard,label:selectedCard}]:[])]" />
       <button type="button" class="card-icon-action" :disabled="!selectedCard || selectedCard === defaultPaymentSource" @click="emit('set-default-payment-source', selectedCard)" aria-label="デフォルトに設定" title="デフォルトに設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.5l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9L12 3Z"/></svg></button>
       <button type="button" class="card-icon-action" :disabled="!selectedCard" @click="selectCardForEdit" aria-label="カードを編集" title="カードを編集"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 4.5a2.1 2.1 0 0 1 3 3L9 18l-4 1 1-4L16.5 4.5Z"/></svg></button>
       <button type="button" class="card-icon-action" @click="cardMode = 'add'" aria-label="カードを追加" title="カードを追加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
     <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
-    <div v-if="cardMode === 'add'" class="card-editor card-add-editor" role="group" aria-label="カードを追加">
-      <label class="card-add-field">名称<input v-model="newPaymentSource" maxlength="80" placeholder="例：Suica、楽天カード" aria-label="新しいカード名"></label>
-      <label class="card-add-field">種類<MobileChoiceSegments v-model="newSourceType" label="新しいカードの種類" :options="[{value:'standard',label:'クレジットカード'},{value:'prepaid',label:'プリペイドカード'}]" /></label>
-      <label class="card-add-field">支払集計<MobileChoiceSegments v-model="newStatGroup" label="新しい支払方法の集計区分" :options="[{value:'card',label:'カード・電子決済'},{value:'points',label:'ポイント払い'}]" /></label>
-      <p v-if="newSourceType === 'prepaid'" class="card-type-hint">期首残高は「残高」で設定できます。</p>
-      <div class="card-add-actions">
-        <button type="button" class="card-add-cancel" :disabled="busy" @click="cardMode = ''">キャンセル</button>
-        <button type="button" class="card-add-save" :disabled="busy || !newPaymentSource.trim()" @click="addPaymentSource">{{busy ? '保存中…' : '保存'}}</button>
-      </div>
-    </div>
-    <div v-if="cardMode === 'edit' && selectedCard" :key="selectedCard" class="card-editor">
-      <label>名称<input :key="selectedCard" v-model="editedCardName" maxlength="80" :disabled="busy || selectedCard === '現金'" aria-label="カード名を編集"></label>
-      <label v-if="!['現金','その他','其他'].includes(selectedCard)">種類<MobileChoiceSegments v-model="editSourceType" label="カードの種類" :options="[{value:'standard',label:'クレジットカード'},{value:'prepaid',label:'プリペイドカード'}]" /></label>
-      <p v-if="editSourceType === 'prepaid' && !['現金','その他','其他'].includes(selectedCard)" class="card-type-hint">期首残高は「残高」画面で変更できます。</p>
-      <label v-if="selectedCard !== '現金'">支払集計<MobileChoiceSegments :model-value="selectedStatGroup" :disabled="busy" label="支払方法の集計区分" :options="[{value:'card',label:'カード・電子決済'},{value:'points',label:'ポイント払い'}]" @change="saveStatGroup($event)" /></label>
-      <label v-if="isCreditCard(selectedCard) && editSourceType === 'standard'">締め日
-        <MobileChoiceSheet :key="selectedCard + '-closing-day'" :model-value="closingDayFor(selectedCard)"
-          label="カードの締め日" :searchable="false"
-          :options="[...Array.from({length:31},(_,i)=>({value:String(i+1),label:(i+1)+'日'})),{value:'末日',label:'月末'}]"
-          @change="saveClosingDay(selectedCard,$event)" />
-      </label>
-      <div class="finance-inputs card-edit-actions" role="group" aria-label="カード編集の操作">
-        <button type="button" class="card-edit-save" :disabled="busy" @click="saveCardType">{{editSourceType!==selectedSourceType?'種別を保存':'保存'}}</button>
-        <button type="button" class="card-edit-icon card-edit-close" :disabled="busy" @click="cardMode = ''" aria-label="閉じる" title="閉じる"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-        <button v-if="!['現金','その他','其他'].includes(selectedCard)" type="button" class="card-edit-icon card-edit-archive" :disabled="busy" @click="archivePaymentSource(selectedCard)" aria-label="カードをアーカイブ" title="アーカイブ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/></svg></button>
-        <button v-if="selectedCard !== '現金'" type="button" class="card-edit-icon card-edit-delete" :disabled="busy" @click="removePaymentSource(selectedCard)" aria-label="カードを完全削除" title="完全削除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v7m4-7v7"/></svg></button>
-      </div>
-    </div>
+    <MobileCardEditorSheet :mode="cardMode" :card-name="selectedCard"
+      :card="paymentSourceMeta[selectedCard]||null" :closing-day="closingDayFor(selectedCard)"
+      :payment-sources="paymentSources" :busy="busy" :on-save="saveCardFromSheet"
+      :on-danger="runCardDanger" @close="cardMode=''" />
     <details v-if="archivedPaymentSources.length" class="card-archive-disclosure">
       <summary>アーカイブ済みのカード <strong>{{archivedPaymentSources.length}}件</strong></summary>
       <p class="card-type-hint">新しい記帳には表示しません。過去の明細、請求、プリペイド残高はそのまま残ります。</p>

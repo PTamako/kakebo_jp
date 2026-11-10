@@ -138,7 +138,7 @@ test('wallet navigation, Japanese labels and minimum calendar legibility survive
   assert.match(app,/cardSettingsRequest\.value\+\+/)
   assert.match(assets,/openCardSettingsFromWallet\(\)/)
   assert.match(manager,/managementTab\.value='cards';cardMode\.value='add'/)
-  assert.match(manager,/期首残高は「残高」で設定できます/)
+  assert.match(read('src/MobileCardEditorSheet.vue'),/期首残高は「残高」で設定できます/)
   assert.doesNotMatch(manager,/期首残高は「資産」で設定できます/)
   assert.match(wallet,/利用・振替履歴/)
   assert.match(css,/font-size: clamp\(11px, 2\.9vw, 12px\)/)

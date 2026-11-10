@@ -28,7 +28,7 @@ test('points payment source is loaded from D1 and can fund wallet transfers and 
   assert.match(form, /orderedPayments\.value\.map\(name=>/)
   assert.match(form, /record\.type==='transfer'/)
   assert.match(finance, /const isCreditCard = name =>[^\n]*source_type === 'standard'/)
-  assert.match(finance, /value:'prepaid',label:'プリペイドカード'/)
+  assert.match(read('src/MobileCardEditorSheet.vue'), /value:'prepaid',label:'プリペイドカード'/)
 })
 
 test('reward destination is selected from D1 cards and prepaid rewards create a linked transfer atomically', () => {

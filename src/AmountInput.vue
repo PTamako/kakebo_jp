@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onBeforeUnmount, inject } from 'vue'
 import { formatYenInput, normalizeYenInput, calculateYenExpression, convertToYen, calculateJapaneseConsumptionTax } from './amount-tools.js'
+import MobileChoiceSheet from './MobileChoiceSheet.vue'
 
 const props = defineProps({ modelValue: { type: [Number, String], default: 0 }, inputLabel: { type: String, default: '金額（円）' } })
 const emit = defineEmits(['update:modelValue'])
@@ -235,11 +236,8 @@ function apply() {
               <label v-if="taxRate!==0" class="money-tax-row money-rounding-row">
                 <span class="money-tax-label">端数</span>
                 <span class="money-rounding-picker">
-                  <select v-model="taxRounding" aria-label="消費税の端数処理">
-                    <option value="floor">切り捨て</option>
-                    <option value="round">四捨五入</option>
-                    <option value="ceil">切り上げ</option>
-                  </select>
+                  <MobileChoiceSheet v-model="taxRounding" label="消費税の端数処理" :searchable="false"
+                    :options="[{value:'floor',label:'切り捨て'},{value:'round',label:'四捨五入'},{value:'ceil',label:'切り上げ'}]" />
                 </span>
               </label>
             </div>
@@ -259,15 +257,10 @@ function apply() {
             </div>
           </div>
           <div v-else class="money-fx" role="tabpanel">
-            <label class="money-sr-only" for="money-from">換算元</label>
+            <span class="money-sr-only">換算元</span>
             <div class="money-fx-source">
-              <select id="money-from" v-model="currency" aria-label="換算元の通貨">
-                <option value="CNY">CNY · 人民元</option>
-                <option value="USD">USD · 米ドル</option>
-                <option value="EUR">EUR · ユーロ</option>
-                <option value="KRW">KRW · 韓国ウォン</option>
-                <option value="JPY">JPY · 日本円</option>
-              </select>
+              <MobileChoiceSheet v-model="currency" label="換算元の通貨" :searchable="false"
+                :options="[{value:'CNY',label:'CNY · 人民元'},{value:'USD',label:'USD · 米ドル'},{value:'EUR',label:'EUR · ユーロ'},{value:'KRW',label:'KRW · 韓国ウォン'},{value:'JPY',label:'JPY · 日本円'}]" />
               <input v-model="foreignAmount" type="text" inputmode="decimal" autocomplete="off"
                 aria-label="換算元の金額" placeholder="0" />
             </div>
@@ -333,7 +326,7 @@ function apply() {
 .money-keypad button.operator{background:var(--tint,#edf2ff);color:var(--blue-dark,var(--blue,#486ca9))}
 .money-keypad button.muted{color:var(--muted,#6e7a90)}
 .money-fx-source{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:9px}
-.money-fx-source select,.money-fx-source input,.money-manual-rate input{box-sizing:border-box;min-width:0;width:100%;min-height:50px;padding:10px!important;border:1px solid var(--line,#dfe3eb)!important;border-radius:12px!important;background:var(--paper,#fafbff)!important;color:var(--ink,#283346);font-size:16px!important}
+.money-fx-source :deep(.mobile-choice-trigger),.money-fx-source input,.money-manual-rate input{box-sizing:border-box;min-width:0;width:100%;min-height:50px;padding:10px!important;border:1px solid var(--line,#dfe3eb)!important;border-radius:12px!important;background:var(--paper,#fafbff)!important;color:var(--ink,#283346);font-size:16px!important}
 .money-fx-arrow{text-align:center;margin:6px auto 1px;color:var(--muted,#6e7a90);font-size:14px}
 .money-fx-arrow span{font-size:13px;font-weight:750}
 .money-rate-info{min-height:28px;padding:2px 0;font-size:12px;line-height:1.45;color:var(--muted,#6e7a90)}
@@ -348,11 +341,11 @@ function apply() {
 .money-rounding-row{gap:4px}
 .money-rounding-row .money-tax-label{flex:0 0 auto;font-size:12px}
 .money-rounding-picker{position:relative;display:inline-flex;align-items:center;min-width:0}
-.money-rounding-picker:after{content:'⌄';position:absolute;right:6px;top:50%;transform:translateY(-55%);font-size:14px;color:var(--blue-dark,var(--blue,#486ca9));pointer-events:none}
-.money-rounding-picker select{box-sizing:border-box;appearance:none;-webkit-appearance:none;display:block;min-width:0;width:100px;height:44px;min-height:44px;padding:6px 20px 6px 7px!important;border:1px solid var(--line,#e5e8ee)!important;border-radius:11px!important;background:var(--paper,#f7f8fb)!important;color:var(--ink,#283346);font-size:12px!important;font-weight:750;line-height:1.25;touch-action:manipulation}
-.money-rounding-picker select:focus-visible{outline:2px solid var(--blue,#668bdd);outline-offset:2px}
-@media(max-width:390px){.money-tax-controls{gap:4px}.money-tax-row{gap:4px}.money-tax-label{flex-basis:36px;font-size:11px}.money-tax-choices button{min-width:44px;padding-inline:7px}.money-rounding-row .money-tax-label{font-size:11px}.money-rounding-picker select{width:92px;padding-left:6px!important;font-size:11px!important}}
-@media(max-width:350px){.money-tax-label{flex-basis:34px}.money-tax-choices{gap:2px}.money-tax-choices button{padding-inline:6px}.money-rounding-picker select{width:84px;padding-right:17px!important}.money-rounding-picker:after{right:4px}}
+.money-rounding-picker:after{content:none}
+.money-rounding-picker :deep(.mobile-choice-trigger){box-sizing:border-box;appearance:none;-webkit-appearance:none;display:block;min-width:0;width:100px;height:44px;min-height:44px;padding:6px 20px 6px 7px!important;border:1px solid var(--line,#e5e8ee)!important;border-radius:11px!important;background:var(--paper,#f7f8fb)!important;color:var(--ink,#283346);font-size:12px!important;font-weight:750;line-height:1.25;touch-action:manipulation}
+.money-rounding-picker :deep(.mobile-choice-trigger):focus-visible{outline:2px solid var(--blue,#668bdd);outline-offset:2px}
+@media(max-width:390px){.money-tax-controls{gap:4px}.money-tax-row{gap:4px}.money-tax-label{flex-basis:36px;font-size:11px}.money-tax-choices button{min-width:44px;padding-inline:7px}.money-rounding-row .money-tax-label{font-size:11px}.money-rounding-picker :deep(.mobile-choice-trigger){width:92px;padding-left:6px!important;font-size:11px!important}}
+@media(max-width:350px){.money-tax-label{flex-basis:34px}.money-tax-choices{gap:2px}.money-tax-choices button{padding-inline:6px}.money-rounding-picker :deep(.mobile-choice-trigger){width:84px;padding-right:17px!important}.money-rounding-picker:after{right:4px}}
 .money-tax-breakdown{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;column-gap:12px;row-gap:3px;width:100%;font-size:11px;color:var(--muted,#6e7a90)}
 .money-tax-breakdown span{font-size:11px}
 .money-footer-actions{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:9px}

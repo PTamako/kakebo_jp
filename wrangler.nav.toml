@@ -26,3 +26,14 @@ head_sampling_rate = 1
 binding = "DB"
 database_name = "kakeibo"
 database_id = "4d790915-fc06-4073-b660-bbb51dc74463"
+
+# Worker Previews are isolated: this is NEVER the production D1.
+# Preview Worker has no cron trigger; heartbeat recording is disabled.
+[previews.vars]
+DAIWA_CSV_EXPERIMENT = "false"
+HEARTBEAT_ENABLED = "false"
+
+[[previews.d1_databases]]
+binding = "DB"
+database_name = "kakebo_preview"
+database_id = "b1c73b65-9530-468a-b9a3-49554f8a9264"

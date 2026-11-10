@@ -225,3 +225,29 @@ test('orphaned legacy recurring request IDs still prevent a second automatic deb
   assert.equal((await postScheduledRecurring(db,{today:'2026-11-27'})).created,0)
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,1)
 })
+
+
+test('real SQLite worker posts Friday and Saturday as separate idempotent entries',async()=>{
+  const {sqlite,db}=memoryDb()
+  const p=insertPlan(sqlite,{name:'週末サブスク',day:1,posting_mode:'auto'})
+  sqlite.prepare("UPDATE recurring_plans SET schedule_type='weekly',weekday=5,weekdays_json='[5,6]',month_days_json='[1]' WHERE id=?").run(p.id)
+  const friday=await postScheduledRecurring(db,{today:'2026-11-06'})
+  const saturday=await postScheduledRecurring(db,{today:'2026-11-07'})
+  const repeat=await postScheduledRecurring(db,{today:'2026-11-07'})
+  assert.deepEqual([friday.created,saturday.created,repeat.created],[1,1,0])
+  assert.deepEqual(sqlite.prepare('SELECT date FROM entries ORDER BY date').all().map(x=>x.date),
+    ['2026-11-06','2026-11-07'])
+})
+test('real SQLite worker respects three-month anchor and posts two dates in due month',async()=>{
+  const {sqlite,db}=memoryDb()
+  const p=insertPlan(sqlite,{name:'季節契約',day:1,posting_mode:'auto'})
+  sqlite.prepare("UPDATE recurring_plans SET schedule_type='monthly',day=1,month_days_json='[1,15]',interval_months=3 WHERE id=?").run(p.id)
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-01'})).created,1)
+  assert.equal((await postScheduledRecurring(db,{today:'2026-11-15'})).created,1)
+  assert.equal((await postScheduledRecurring(db,{today:'2026-12-01'})).created,0)
+  assert.equal((await postScheduledRecurring(db,{today:'2027-01-01'})).created,0)
+  assert.equal((await postScheduledRecurring(db,{today:'2027-02-01'})).created,1)
+  const rows=sqlite.prepare('SELECT date,client_request_id FROM entries ORDER BY date').all()
+  assert.equal(rows.length,3)
+  assert.ok(rows.every(x=>x.client_request_id.endsWith(x.date.replace(/-/g,''))))
+})

@@ -19,6 +19,8 @@ import { nextCivilDay } from './stats-period-comparison.js'
 import { countReceiptImages, clearAllReceiptImages, deleteReceiptImagesByIds, listReceiptImagesForExport, getReceiptImage, saveReceiptImage } from './receipt-store.js'
 import { planReceiptPeriodDeletion } from './receipt-period.js'
 import { receiptZip, ledgerAndReceiptsZip } from './receipt-export.js'
+import { listR2Receipts, getR2Receipt, uploadR2Receipt, deleteR2ReceiptsByIds, receiptInventory, listReceiptsForBackup } from './receipt-cloud.js'
+import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
 const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
@@ -54,6 +56,9 @@ async function refreshEverything() {
   }
 }
 const localReceiptCount = ref(null)
+const deviceReceiptCount = ref(null)
+const receiptStorageBytes = ref(null)
+const receiptMigrationStatus = ref('')
 const receiptImagesBusy = ref(false)
 const receiptImagePrivacyMessage = ref('')
 const receiptExportMessage = ref('')
@@ -61,7 +66,10 @@ async function refreshLocalReceiptCount() {
   if (receiptImagesBusy.value) return
   receiptImagesBusy.value = true
   try {
-    localReceiptCount.value = await countReceiptImages()
+    const inventory=await receiptInventory(await listReceiptImagesForExport(),{fresh:true})
+    localReceiptCount.value = inventory.length
+    deviceReceiptCount.value = inventory.filter(item=>item.local).length
+    receiptStorageBytes.value = inventory.reduce((sum,item)=>sum+Number(item.size||0),0)
     receiptImagePrivacyMessage.value = ''
   } catch (e) {
     localReceiptCount.value = null
@@ -72,7 +80,7 @@ async function downloadReceiptImages() {
   if(receiptImagesBusy.value)return
   receiptImagesBusy.value=true
   try {
-    const records=await listReceiptImagesForExport()
+    const records=await listReceiptsForBackup(await listReceiptImagesForExport())
     if(!records.length){receiptExportMessage.value='保存対象のレシート画像はありません';return}
     const blob=await receiptZip(records)
     const url=URL.createObjectURL(blob),a=document.createElement('a')
@@ -88,25 +96,43 @@ async function clearLocalReceiptImages() {
   if (receiptImagesBusy.value || !localReceiptCount.value) return
   receiptImagesBusy.value = true
   try {
-    // Recount immediately before a destructive operation to avoid a stale confirmation.
-    const latest = await countReceiptImages()
+    const inventory=await receiptInventory(await listReceiptImagesForExport(),{fresh:true})
+    const latest=inventory.length
     if (latest !== localReceiptCount.value) {
       localReceiptCount.value = latest
       receiptImagePrivacyMessage.value = '画像の件数が変わりました。再確認してください。'
       return
     }
     if (!latest) return
-    if (!confirm('レシート画像 ' + latest +
-      '件を削除しますか？画像は復元できません。明細・SBI評価額は残ります。')) return
-    // This only clears the local IndexedDB receipt-image store. Never call D1 APIs.
+    if (!confirm('R2と端末のレシート画像 '+latest+
+      '件を削除しますか？画像はZIPバックアップがないと復元できません。明細・SBI評価額は残ります。')) return
+    // Cloud tombstones are committed before any device copy is erased.
+    await deleteR2ReceiptsByIds(inventory.map(item=>item.entryId))
     await clearAllReceiptImages()
     localReceiptCount.value = 0
-    receiptImagePrivacyMessage.value = '画像を削除しました（明細は保持）'
+    deviceReceiptCount.value = 0
+    receiptStorageBytes.value = 0
+    receiptImagePrivacyMessage.value = 'R2と端末の画像を削除しました（明細は保持）'
     emit('receipt-images-cleared')
   } catch (e) {
     receiptImagePrivacyMessage.value = '画像の削除に失敗しました：' + e.message
   } finally {
     receiptImagesBusy.value = false
+  }
+}
+async function syncLegacyReceiptImages() {
+  if(receiptImagesBusy.value || receiptPeriodBusy.value)return
+  receiptImagesBusy.value=true
+  receiptMigrationStatus.value='端末の旧画像をR2へ同期しています'
+  try{
+    const result=await migrateLegacyReceipts()
+    receiptMigrationStatus.value='同期 '+(result.migrated+result.removedAlreadyCloud)+'件 · 端末から削除 '+
+      (result.migrated+result.removedAlreadyCloud+result.removedDeleted)+'件 · 未完了 '+(result.failed+result.conflicts)+'件'
+  }catch(error){receiptMigrationStatus.value='同期できません：'+error.message}
+  finally{
+    receiptImagesBusy.value=false
+    await refreshLocalReceiptCount()
+    emit('ledger-updated')
   }
 }
 watch([() => props.active, managementTab], ([active,tab]) => {
@@ -138,7 +164,7 @@ async function freshReceiptPeriodPlan() {
   // Reload all dated rows rather than trusting a stale management-page snapshot.
   if (!(await loadAll())) throw Error('全明細を更新できません。通信を確認してください')
   const [trash,images] = await Promise.all([
-    props.api('trash-items?full=1'),listReceiptImagesForExport()
+    props.api('trash-items?full=1'),receiptInventory(await listReceiptImagesForExport(),{fresh:true})
   ])
   if (!Array.isArray(trash) || trash.length >= 10000)
     throw Error('削除済み明細の確認が完了しませんでした')
@@ -178,8 +204,13 @@ async function deleteSelectedReceiptPeriod() {
     }
     if(!confirm(receiptPeriodLabel.value+'のレシート画像 '+fresh.ids.length+'件（約'+
       receiptPeriodSize(fresh.bytes)+'）を削除しますか？削除後はZIPバックアップがないと復元できません。記帳済み明細・回収箱・統計は残ります。'))return
+    // Server commits deletion markers first, so another device cannot re-upload stale photos.
+    await deleteR2ReceiptsByIds(fresh.ids)
     await deleteReceiptImagesByIds(fresh.ids)
-    localReceiptCount.value=await countReceiptImages()
+    const inventory=await receiptInventory(await listReceiptImagesForExport(),{fresh:true})
+    localReceiptCount.value=inventory.length
+    deviceReceiptCount.value=inventory.filter(item=>item.local).length
+    receiptStorageBytes.value=inventory.reduce((sum,item)=>sum+Number(item.size||0),0)
     receiptPeriodPreview.value=null
     receiptImagePrivacyMessage.value=receiptPeriodLabel.value+'の画像 '+fresh.ids.length+'件を削除しました（記帳明細は保持）'
     emit('receipt-images-removed',fresh.ids)
@@ -676,14 +707,14 @@ async function downloadBackup(){
 }
 // Optional single-file recovery bundle. Signed v4 JSON remains compatible
 // with the existing restore dialog after extracting it from the ZIP.
-// Receipt files are exported locally; never upload photos to Pages or D1.
+// Receipt files are downloaded privately from R2 for ZIP; never upload photos to D1.
 async function downloadFullBackup(){
   if(busy.value || backupBusy.value || receiptImagesBusy.value)return
   backupBusy.value=true
   try{
     const ledger=validateBackup(await props.api('backup-snapshot'))
     const sealed=await sealBackup(ledger)
-    const images=await listReceiptImagesForExport()
+    const images=await listReceiptsForBackup(await listReceiptImagesForExport())
     const archive=await ledgerAndReceiptsZip(sealed,images)
     const url=URL.createObjectURL(archive),a=document.createElement('a')
     a.href=url;a.download='kakeibo-complete-backup-'+new Date().toISOString().slice(0,10)+'.zip'
@@ -815,10 +846,11 @@ async function restore(){
       if(await loadAll()){
         const planned=planReceiptRestoration(backup.entries,images,rows.value,preparedRows)
         let written=0,existing=0,failed=0
+        const cloudIds=new Set((await listR2Receipts({fresh:true})).map(item=>item.entryId))
         for(const item of planned.items){
           try{
-            if(await getReceiptImage(item.id)){existing++;continue}
-            await saveReceiptImage(item.id,item.blob)
+            if(cloudIds.has(item.id) || await getReceiptImage(item.id)){existing++;continue}
+            await uploadR2Receipt(item.id,item.blob)
             written++
           }catch{failed++}
         }
@@ -1653,10 +1685,10 @@ async function removeCardBill(record) {
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure device-privacy-panel">
     <summary>端末のプライバシー設定</summary>
     <div class="device-privacy-section">
-      <label class="device-login-field"><span>ログイン・レシート画像の保存</span>
-        <select :value="props.rememberDevice ? 'remember' : 'session'" aria-label="ログインとレシート画像の保存方法" @change="emit('change-remember-device', $event.target.value === 'remember'); $event.target.value = props.rememberDevice ? 'remember' : 'session'">
-          <option value="remember">この端末に保存（画像は手動削除まで保持）</option>
-          <option value="session">このセッション内のみ保存</option>
+      <label class="device-login-field"><span>ログイン状態の保存</span>
+        <select :value="props.rememberDevice ? 'remember' : 'session'" aria-label="ログイン状態の保存方法" @change="emit('change-remember-device', $event.target.value === 'remember'); $event.target.value = props.rememberDevice ? 'remember' : 'session'">
+          <option value="remember">ログイン状態を保持（最長30日）</option>
+          <option value="session">ログイン状態をセッション内のみ保持</option>
         </select>
       </label>
       
@@ -1666,7 +1698,12 @@ async function removeCardBill(record) {
         <strong>保存済みレシート画像</strong>
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
       </div>
-      <p>{{props.rememberDevice ? '端末保存・自動削除なし' : 'セッション内のみ保存'}}（明細は保持）</p>
+      <p>非公開R2で保管・自動削除なし（明細はD1で保持）</p>
+      <p class="device-receipt-period-note" v-if="receiptStorageBytes !== null">R2＋端末の合計：約{{receiptPeriodSize(receiptStorageBytes)}} · 端末の旧画像：{{deviceReceiptCount ?? '確認中'}}件</p>
+      <div class="device-receipt-actions">
+        <button type="button" :disabled="receiptImagesBusy || receiptPeriodBusy" @click="syncLegacyReceiptImages">端末の旧画像をR2へ同期</button>
+      </div>
+      <p v-if="receiptMigrationStatus" role="status" class="device-receipt-period-note">{{receiptMigrationStatus}}</p>
       <div class="device-receipt-period">
         <strong>期間を選んで画像を削除</strong>
         <div class="device-receipt-period-fields">
@@ -1688,17 +1725,17 @@ async function removeCardBill(record) {
           <span v-if="receiptPeriodPreview.unmatched">（日付を確認できない{{receiptPeriodPreview.unmatched}}件は対象外）</span>
         </p>
         <button v-if="receiptPeriodPreview?.ids.length" type="button" class="device-receipt-period-delete" :disabled="receiptPeriodBusy || receiptImagesBusy || busy" @click="deleteSelectedReceiptPeriod">この期間の画像{{receiptPeriodPreview.ids.length}}件を削除</button>
-        <p class="device-receipt-period-note">画像だけを削除します。記帳済み明細は残ります。大切な画像は先にZIP保存してください。</p>
+        <p class="device-receipt-period-note">R2と端末の画像だけを削除します。記帳済み明細は残ります。大切な画像は先にZIP保存してください。</p>
       </div>
       <div class="device-receipt-actions">
-        <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || receiptPeriodBusy || !localReceiptCount" @click="clearLocalReceiptImages">画像をすべて削除</button>
+        <button type="button" class="device-receipt-clear" :disabled="receiptImagesBusy || receiptPeriodBusy || !localReceiptCount" @click="clearLocalReceiptImages">R2・端末の画像をすべて削除</button>
       </div>
       
     </div>
   </details>
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="$event.target.open && refreshLocalReceiptCount()">
     <summary>バックアップ・復元</summary>
-    <p>JSONは帳簿のみ。家計簿の一括ZIPなら帳簿とこの端末の画像をまとめて確認・復元できます。既存の画像は上書きしません。</p>
+    <p>JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます。画像は非公開R2に保存し、既存画像は上書きしません。</p>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,.zip,application/json,application/zip" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
       <button type="button" :disabled="busy || backupBusy || receiptImagesBusy || !loaded" @click="downloadFullBackup">{{backupBusy ? '作成中…' : '帳簿＋画像をまとめてZIP保存'}}</button>

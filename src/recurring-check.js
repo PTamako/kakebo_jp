@@ -1,4 +1,4 @@
-import { recurringDatesInMonth, recurringRequestId } from './recurring-posting.js'
+import { recurringDatesForPlanInMonth, recurringRequestId, recurringOccurrencePeriod, recurringIsPerDate, recurringMonthDays, recurringWeekdays, recurringIntervalMonths } from './recurring-posting.js'
 
 // Read-only schedule preview. All writes require explicit confirmation.
 export function previewRecurringEntries(plans,entries,{today=new Date(),historicalMonths=0,excluded=[],previewDaysAhead=0}={}) {
@@ -18,7 +18,7 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
     // with the same merchant name. Direct manual entries can claim one slot.
     if(String(entry.client_request_id||'').startsWith('recurring_')){
       const ownedByActivePlan=(plans||[]).some(plan => plan.enabled &&
-        recurringRequestId(plan.id,(plan.scheduleType||'monthly')==='monthly'?date.slice(0,7):date)===entry.client_request_id)
+        recurringRequestId(plan.id,recurringOccurrencePeriod(plan,date))===entry.client_request_id)
       if(ownedByActivePlan)continue
       // Legacy/orphaned recurring references have no active plan owner; retain
       // their manual-priority conflict instead of silently booking again.
@@ -41,14 +41,17 @@ export function previewRecurringEntries(plans,entries,{today=new Date(),historic
       i++,month++){
       if(month===13){month=1;year++}
       const m=year+'-'+String(month).padStart(2,'0')
-      for(const date of recurringDatesInMonth(m,{scheduleType,day:Number(plan.day),weekday:Number(plan.weekday||0)})){
+      for(const date of recurringDatesForPlanInMonth(plan,m)){
         if(date>endKey || excludedKeys.has(plan.id+':'+m) || excludedKeys.has(plan.id+':'+date))continue
-        const requestId=recurringRequestId(plan.id,scheduleType==='monthly'?m:date)
+        const perDate=recurringIsPerDate(plan)
+        const requestId=recurringRequestId(plan.id,perDate?date:m)
         if(idempotency.has(requestId))continue
         const base=[plan.name,plan.paymentSource||''].join('|')
-        const conflictKey=(scheduleType==='monthly'?m:date)+'|'+base
+        const conflictKey=(perDate?date:m)+'|'+base
         candidates.push({planId:plan.id,month:m,date,name:plan.name,amount:Number(plan.amount),
           paymentSource:plan.paymentSource,day:Number(plan.day),scheduleType,weekday:Number(plan.weekday||0),
+          monthDays:recurringMonthDays(plan),weekdays:recurringWeekdays(plan),
+          intervalMonths:recurringIntervalMonths(plan),perDate,
           category:plan.category,startMonth:plan.startMonth,conflictKey,conflict:false,upcoming:date>currentKey})
       }
     }
@@ -70,7 +73,8 @@ export async function postApprovedRecurringEntries(api,approved,onConflict=()=>{
       planId:row.planId,month:row.month,
       expected:{name:row.name,amount:row.amount,day:row.day,category:row.category,
         paymentSource:row.paymentSource||'',startMonth:row.startMonth,date:row.date,
-        scheduleType:row.scheduleType||'monthly',weekday:row.weekday||0}
+        scheduleType:row.scheduleType||'monthly',weekday:row.weekday||0,
+        monthDays:row.monthDays,weekdays:row.weekdays,intervalMonths:row.intervalMonths}
     })})
     if(result.created)created++
     if(result.conflict)conflicts++

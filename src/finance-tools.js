@@ -157,7 +157,8 @@ export async function prepareLinkedRestoreRows(selectedRows, archiveEntries, exi
       const prefix = 'recurring_' + String(plan.id || '').replace(/-/g,'') + '_'
       const suffix = original.startsWith(prefix) ? original.slice(prefix.length) : ''
       return /^\d{6}(?:\d{2})?$/.test(suffix) &&
-        suffix.length === (plan.scheduleType === 'monthly' || !plan.scheduleType ? 6 : 8)
+        suffix.length === ((plan.scheduleType === 'monthly' || !plan.scheduleType) &&
+          (!Array.isArray(plan.monthDays)||plan.monthDays.length<=1) ? 6 : 8)
     })) id = original
     idByOriginalEntry.set(Number(entry.id), id)
   }
@@ -232,7 +233,13 @@ export function validateBackup(value) {
     (x.autoFromMonth == null || x.autoFromMonth === '' || month(x.autoFromMonth)) &&
     (x.postingMode !== 'auto' || month(x.autoFromMonth)) &&
     (x.scheduleType == null || ['monthly','weekly','workday'].includes(x.scheduleType)) &&
-    (x.weekday == null || (Number.isInteger(x.weekday) && x.weekday>=0 && x.weekday<=6))
+    (x.weekday == null || (Number.isInteger(x.weekday) && x.weekday>=0 && x.weekday<=6)) &&
+    (x.weekdays == null || (Array.isArray(x.weekdays) && x.weekdays.length>=1 && x.weekdays.length<=7 &&
+      x.weekdays.every(n=>Number.isInteger(n)&&n>=0&&n<=6) && new Set(x.weekdays).size===x.weekdays.length)) &&
+    (x.monthDays == null || (Array.isArray(x.monthDays) && x.monthDays.length>=1 && x.monthDays.length<=31 &&
+      x.monthDays.every(n=>Number.isInteger(n)&&n>=1&&n<=31) && new Set(x.monthDays).size===x.monthDays.length)) &&
+    (x.intervalMonths == null || (Number.isInteger(x.intervalMonths) && x.intervalMonths>=1 && x.intervalMonths<=24)) &&
+    ((x.scheduleType||'monthly')==='monthly' || (x.intervalMonths??1)===1)
   const validExclusion = x => x && typeof x.planId==='string' &&
     /^[a-zA-Z0-9-]{8,80}$/.test(x.planId) && month(x.month)
   const validDateExclusion = x => x && typeof x.planId==='string' && /^[a-zA-Z0-9-]{8,80}$/.test(x.planId) && validDate(x.date)

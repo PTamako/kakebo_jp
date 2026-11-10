@@ -1,4 +1,4 @@
-import { recurringDatesInMonth, recurringRequestId, recurringScheduleType } from './recurring-posting.js'
+import { recurringDatesForPlanInMonth, recurringRequestId, recurringScheduleType, recurringOccurrencePeriod } from './recurring-posting.js'
 
 // Compact schedule status is scoped to this month and future dates.
 // Older omissions remain discoverable in the separate "未記帳分を確認" review.
@@ -25,13 +25,13 @@ export function recurringPlanNextStatus(plan, entries=[], exclusions=[], {
   }
   const expenseRows=(entries||[]).filter(e=>e.type==='expense' && typeof e.date==='string')
   const wasRecorded = (date,month) => {
-    const period=type==='monthly'?month:date
+    const period=recurringOccurrencePeriod(plan,date)
     const id=planId?recurringRequestId(planId,period):''
     return expenseRows.some(e=>{
       if(e.client_request_id && id && e.client_request_id===id)return true
       return e.merchant===plan.name &&
         String(e.payment_source||'')===String(source) &&
-        (type==='monthly' ? e.date.slice(0,7)===month : e.date===date)
+        (period===month ? e.date.slice(0,7)===month : e.date===date)
     })
   }
   const [startYear,startNumber]=startMonth.split('-').map(Number)
@@ -40,9 +40,7 @@ export function recurringPlanNextStatus(plan, entries=[], exclusions=[], {
     const number=(startNumber-1+offset)%12+1
     const month=y+'-'+String(number).padStart(2,'0')
     if(month<start || excludeMonths.has(month))continue
-    const dates=recurringDatesInMonth(month,{
-      scheduleType:type,day:Number(plan.day),weekday:Number(plan.weekday||0)
-    })
+    const dates=recurringDatesForPlanInMonth(plan,month)
     for(const date of dates){
       if(excludeDates.has(date)||wasRecorded(date,month))continue
       if(date<today)return {state:'missing',date}

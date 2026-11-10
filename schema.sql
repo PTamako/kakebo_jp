@@ -68,7 +68,10 @@ CREATE TABLE IF NOT EXISTS recurring_plans (
   auto_from_month TEXT NOT NULL DEFAULT '' CHECK(auto_from_month='' OR (length(auto_from_month)=7 AND substr(auto_from_month,5,1)='-')),
   schedule_type TEXT NOT NULL DEFAULT 'monthly' CHECK(schedule_type IN ('monthly','weekly')),
   weekday INTEGER NOT NULL DEFAULT 0 CHECK(weekday BETWEEN 0 AND 6),
-  workday_only INTEGER NOT NULL DEFAULT 0 CHECK(workday_only IN (0,1))
+  workday_only INTEGER NOT NULL DEFAULT 0 CHECK(workday_only IN (0,1)),
+  weekdays_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(weekdays_json)),
+  month_days_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(month_days_json)),
+  interval_months INTEGER NOT NULL DEFAULT 1 CHECK(interval_months BETWEEN 1 AND 24)
 );
 
 -- One logical trash table for recoverable recurring plans and deleted ledger entries.

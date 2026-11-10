@@ -7,6 +7,7 @@ import { findLedgerDuplicateGroups, duplicateReviewSignature } from './duplicate
 import { duplicateTrashKey, recurringTrashKey, transferTrashKey, visibleReviewedTrash } from './review-trash.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
+import MobileMultiChoiceSheet from './MobileMultiChoiceSheet.vue'
 import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
@@ -16,7 +17,7 @@ import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, 
 import { isCardBilledEntry, cardBilledAmount, billingPeriodForMonth } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
-import { recurringDatesInMonth, recurringFrequencyLabel, tokyoDateAt, WEEKDAYS_JA } from './recurring-posting.js'
+import { recurringDatesForPlanInMonth, recurringFrequencyLabel, tokyoDateAt, WEEKDAYS_JA } from './recurring-posting.js'
 import { recurringPlanNextStatus, recurringPlanNextLabel } from './recurring-next-status.js'
 import { recurringReviewWindow, validRecurringMonth } from './recurring-review-window.js'
 import { nextCivilDay } from './stats-period-comparison.js'
@@ -519,7 +520,7 @@ const expandedRecurringPlanId = ref('')
 const activeRecurringPlans = computed(() => plans.value.filter(item => item.enabled))
 const currentEligiblePlans = computed(() => activeRecurringPlans.value.filter(item =>
   validRecurringMonth(item.startMonth) && item.startMonth <= currentRecurringMonth()))
-const recurringMonthlyTotal = computed(() => currentEligiblePlans.value.reduce((sum,item) => sum + Number(item.amount||0)*recurringDatesInMonth(currentRecurringMonth(),{scheduleType:item.scheduleType||'monthly',day:item.day,weekday:item.weekday}).length,0))
+const recurringMonthlyTotal = computed(() => currentEligiblePlans.value.reduce((sum,item) => sum + Number(item.amount||0)*recurringDatesForPlanInMonth(item,currentRecurringMonth()).length,0))
 const filteredRecurringPlans = computed(() => {
   const query = recurringListQuery.value.trim().toLocaleLowerCase('ja-JP')
   return plans.value.filter(item =>
@@ -537,8 +538,31 @@ const bills = ref([])
 // Keep the management screen in sync with ledger/statistics without a second hard-coded map.
 const categoryLabel = category => props.categoryDisplayNames[category] || category
 const currentRecurringMonth = () => new Date().toLocaleDateString('sv-SE').slice(0,7)
-const blankPlan = () => ({name:'',amount:'',day:1,weekday:1,scheduleType:'monthly',category:'',paymentSource:'現金',startMonth:currentRecurringMonth(),postingMode:'manual'})
+const blankPlan = () => ({name:'',amount:'',day:1,weekday:1,weekdays:[1],monthDays:[1],intervalMonths:1,scheduleType:'monthly',category:'',paymentSource:'現金',startMonth:currentRecurringMonth(),postingMode:'manual'})
 const plan = ref(blankPlan())
+const planCycleChoice=computed({
+  get(){
+    if(plan.value.scheduleType==='weekly')return 'weekly'
+    if(plan.value.scheduleType==='workday')return 'workday'
+    return 'monthly-'+Number(plan.value.intervalMonths||1)
+  },
+  set(value){
+    if(value==='weekly'||value==='workday'){plan.value.scheduleType=value;plan.value.intervalMonths=1}
+    else if(/^monthly-(1|2|3|6|12)$/.test(value)){
+      plan.value.scheduleType='monthly'
+      plan.value.intervalMonths=Number(value.slice(8))
+    }
+  }
+})
+const planCycleOptions=[
+  {value:'monthly-1',label:'毎月'},
+  {value:'weekly',label:'毎週'},
+  {value:'workday',label:'平日（土日祝を除く）'},
+  {value:'monthly-2',label:'2か月ごと'},
+  {value:'monthly-3',label:'3か月ごと'},
+  {value:'monthly-6',label:'6か月ごと'},
+  {value:'monthly-12',label:'毎年'}
+]
 const editingPlanId = ref('')
 // Default to the earliest effective month among enabled plans, with an
 // explicit 119-month safety limit. Manual lookback options remain available.
@@ -571,7 +595,7 @@ const recurringExcludedRows = computed(() => recurringExclusions.value.map(item 
   ...item,name:plans.value.find(plan => plan.id === item.planId)?.name ||
     trashedRecurringPlans.value.find(plan => plan.id === item.planId)?.name || '固定費'
 })))
-const recurringKey = row => row.planId + ':' + (row.date && (row.scheduleType!=='monthly'||!('scheduleType' in row)) ? row.date : row.month)
+const recurringKey = row => row.planId + ':' + (row.date && (row.perDate||row.scheduleType!=='monthly'||!('scheduleType' in row)) ? row.date : row.month)
 const selectedRecurring = computed(() => recurringDueEntries.value.filter(row => !row.conflict && recurringSelected.value.has(recurringKey(row))))
 function toggleRecurringSelection(row, checked) {
   const next = new Set(recurringSelected.value)
@@ -582,7 +606,11 @@ function toggleRecurringSelection(row, checked) {
 const recurringPreviewTotal = computed(() => selectedRecurring.value.reduce((sum,row) => sum + row.amount,0))
 function beginEditPlan(item) {
   editingPlanId.value = item.id
-  plan.value = {...item, paymentSource:item.paymentSource || '現金',startMonth:item.startMonth || currentRecurringMonth(),postingMode:item.postingMode || 'manual',scheduleType:item.scheduleType||'monthly',weekday:Number(item.weekday??1)}
+  plan.value = {...item, paymentSource:item.paymentSource || '現金',startMonth:item.startMonth || currentRecurringMonth(),
+    postingMode:item.postingMode || 'manual',scheduleType:item.scheduleType||'monthly',weekday:Number(item.weekday??1),
+    weekdays:Array.isArray(item.weekdays)&&item.weekdays.length?[...item.weekdays]:[Number(item.weekday??1)],
+    monthDays:Array.isArray(item.monthDays)&&item.monthDays.length?[...item.monthDays]:[Number(item.day??1)],
+    intervalMonths:Number(item.intervalMonths||1)}
   recurringPreview.value = []
   recurringSelected.value = new Set()
   recurringListOpen.value=false
@@ -1186,7 +1214,12 @@ function onReviewTrashToggle(event) {
 async function addPlan(){
   if(!plan.value.name.trim() || !Number.isSafeInteger(Number(plan.value.amount)) || Number(plan.value.amount)<=0 ||
     !Number.isInteger(Number(plan.value.day)) || Number(plan.value.day)<1 || Number(plan.value.day)>31 ||
-    !['monthly','weekly','workday'].includes(plan.value.scheduleType) || !Number.isInteger(plan.value.weekday) || plan.value.weekday<0 || plan.value.weekday>6 ||
+    !['monthly','weekly','workday'].includes(plan.value.scheduleType) ||
+    ![1,2,3,6,12].includes(Number(plan.value.intervalMonths)) ||
+    !Array.isArray(plan.value.weekdays) || !plan.value.weekdays.length ||
+    plan.value.weekdays.some(x=>!Number.isInteger(x)||x<0||x>6) ||
+    !Array.isArray(plan.value.monthDays) || !plan.value.monthDays.length ||
+    plan.value.monthDays.some(x=>!Number.isInteger(x)||x<1||x>31) ||
     !validRecurringMonth(plan.value.startMonth) ||
     !props.categories.includes(plan.value.category) || !props.paymentSources.includes(plan.value.paymentSource)) {
     message.value='名称・金額・記帳日・開始月・カテゴリ・支払方法を確認してください';return
@@ -1195,8 +1228,13 @@ async function addPlan(){
   recurringBusy.value=true
   try {
     const existing=plans.value.find(row=>row.id===editingPlanId.value)
-    const item={...plan.value,id:existing?.id || crypto.randomUUID(),amount:Number(plan.value.amount),day:Number(plan.value.day),
-      startMonth:plan.value.startMonth,enabled:existing ? !!existing.enabled : true,postingMode:plan.value.postingMode,scheduleType:plan.value.scheduleType,weekday:plan.value.weekday}
+    const item={...plan.value,id:existing?.id || crypto.randomUUID(),amount:Number(plan.value.amount),
+      day:plan.value.monthDays[0],weekday:plan.value.weekdays[0],
+      weekdays:[...new Set(plan.value.weekdays)].sort((a,b)=>a-b),
+      monthDays:[...new Set(plan.value.monthDays)].sort((a,b)=>a-b),
+      intervalMonths:Number(plan.value.intervalMonths),
+      startMonth:plan.value.startMonth,enabled:existing ? !!existing.enabled : true,
+      postingMode:plan.value.postingMode,scheduleType:plan.value.scheduleType}
     const updated=Boolean(existing)
     const saved=await props.api(updated?'recurring-plans/'+encodeURIComponent(item.id):'recurring-plans',
       {method:updated?'PUT':'POST',body:JSON.stringify(item)})
@@ -1268,10 +1306,10 @@ async function dismissRecurring(row) {
   if(recurringBusy.value || !recurringListOpen.value)return
   recurringBusy.value=true
   try {
-    const result=await props.api('recurring-exclusions',{method:'POST',body:JSON.stringify({planId:row.planId,month:row.month,...(row.scheduleType!=='monthly'?{date:row.date}:{})})})
+    const result=await props.api('recurring-exclusions',{method:'POST',body:JSON.stringify({planId:row.planId,month:row.month,...(row.perDate||row.scheduleType!=='monthly'?{date:row.date}:{})})})
     if(!result.ok)throw Error('除外できませんでした')
     const key=recurringKey(row)
-    recurringExclusions.value=[...recurringExclusions.value.filter(item=>recurringKey(item)!==key),{planId:row.planId,month:row.month,...(row.scheduleType!=='monthly'?{date:row.date}:{})}]
+    recurringExclusions.value=[...recurringExclusions.value.filter(item=>recurringKey(item)!==key),{planId:row.planId,month:row.month,...(row.perDate||row.scheduleType!=='monthly'?{date:row.date}:{})}]
     // A new exclusion is reviewable even if an older notice was cleared.
     const archivedKey = recurringTrashKey(row)
     if (archivedTrashKeys.value.has(archivedKey)) {
@@ -1533,7 +1571,21 @@ async function removeCardBill(record) {
     <div class="recurring-form-layout">
       <label class="recurring-form-field recurring-form-name"><span>名称</span><input v-model="plan.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120" /></label>
       <div class="recurring-form-field recurring-form-amount"><span>金額</span><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
-      <label class="recurring-form-field recurring-form-schedule"><span>周期</span><span class="recurring-day-picker"><MobileChoiceSegments v-model="plan.scheduleType" label="記帳周期" :options="[{value:'monthly',label:'毎月'},{value:'weekly',label:'毎週'},{value:'workday',label:'平日（土日祝を除く）'}]" /><MobileChoiceSheet v-if="plan.scheduleType==='monthly'" v-model="plan.day" label="毎月の記帳日" :searchable="false" :options="Array.from({length:31},(_,i)=>({value:i+1,label:(i+1)+'日'}))" /><MobileChoiceSheet v-else-if="plan.scheduleType==='weekly'" v-model="plan.weekday" label="毎週の曜日" :searchable="false" :options="WEEKDAYS_JA.map((name,index)=>({value:index,label:name+'曜日'}))" /></span></label>
+      <div class="recurring-form-field recurring-form-schedule">
+        <span>周期</span>
+        <MobileChoiceSheet v-model="planCycleChoice" label="記帳周期" :searchable="false" :options="planCycleOptions" />
+      </div>
+      <div v-if="plan.scheduleType==='monthly'" class="recurring-form-field recurring-form-schedule">
+        <span>{{plan.intervalMonths===12?'毎年の記帳日':'記帳日（複数選択可）'}}</span>
+        <MobileMultiChoiceSheet v-model="plan.monthDays" label="記帳する日付" :columns="5"
+          :options="Array.from({length:31},(_,i)=>({value:i+1,label:(i+1)+'日'}))" />
+        <small v-if="plan.intervalMonths>1">開始月を基準に{{plan.intervalMonths}}か月ごとに記帳します。</small>
+      </div>
+      <div v-else-if="plan.scheduleType==='weekly'" class="recurring-form-field recurring-form-schedule">
+        <span>曜日（複数選択可）</span>
+        <MobileMultiChoiceSheet v-model="plan.weekdays" label="記帳する曜日" :columns="4"
+          :options="WEEKDAYS_JA.map((name,index)=>({value:index,label:name+'曜日'}))" />
+      </div>
       <label class="recurring-form-field"><span>カテゴリ</span><MobileChoiceSheet v-model="plan.category" label="固定費カテゴリ" :options="[{value:'',label:'選択してください'},...orderedCategories.map(category=>({value:category,label:categoryLabel(category)}))]" /></label>
       <label class="recurring-form-field"><span>支払方法</span><MobileChoiceSheet v-model="plan.paymentSource" label="固定費支払方法" :options="[...orderedPayments.map(source=>({value:source,label:source})),...(plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)?[{value:plan.paymentSource,label:plan.paymentSource+'（既存の設定）'}]:[])]" /></label>
       <label class="recurring-form-field recurring-start-month"><span>開始月</span><input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>

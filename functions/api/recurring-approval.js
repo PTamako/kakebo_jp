@@ -1,4 +1,4 @@
-import { recurringDatesInMonth } from '../../src/recurring-posting.js'
+import { recurringDatesForPlanInMonth, recurringMonthDays, recurringWeekdays, recurringIntervalMonths } from '../../src/recurring-posting.js'
 
 // Validate exact schedule and date against the current D1 plan before posting.
 export function resolveRecurringApproval(body,plan) {
@@ -13,11 +13,15 @@ export function resolveRecurringApproval(body,plan) {
   if ((expected.scheduleType||'monthly')!==scheduleType ||
       Number(expected.weekday||0)!==weekday)
     return {error:'周期が変更されました。再確認してください',code:'plan_changed',status:409}
+  if(JSON.stringify(expected.monthDays||[Number(plan.day)])!==JSON.stringify(recurringMonthDays(plan)) ||
+      JSON.stringify(expected.weekdays||[Number(plan.weekday||0)])!==JSON.stringify(recurringWeekdays(plan)) ||
+      Number(expected.intervalMonths||1)!==recurringIntervalMonths(plan))
+    return {error:'周期の詳細が変更されました。再確認してください',code:'plan_changed',status:409}
   const month=body.month
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))return {error:'対象月を確認してください',status:400}
   if(month<plan.start_month)
     return {error:'開始月より前の支出は登録できません',code:'before_start',status:400}
-  const dates=recurringDatesInMonth(month,{scheduleType,day:Number(plan.day),weekday})
+  const dates=recurringDatesForPlanInMonth(plan,month)
   if(!dates.includes(expected.date))return {error:'予定日が確認時と異なります',code:'plan_changed',status:409}
   return {date:expected.date}
 }

@@ -242,7 +242,7 @@ onBeforeUnmount(()=>{
 
 <style scoped>
 .card-editor-backdrop{position:fixed;inset:0;z-index:2147483500;display:flex;align-items:flex-end;justify-content:center;background:rgba(18,21,29,.5);overscroll-behavior:contain}
-.card-editor-sheet{box-sizing:border-box;display:flex;flex-direction:column;width:min(100%,600px);max-height:min(90dvh,760px);overflow:hidden;background:var(--card,#fff);color:var(--ink,#242830);border-radius:22px 22px 0 0;box-shadow:0 -14px 48px #0002;padding-bottom:env(safe-area-inset-bottom,0px)}
+.card-editor-sheet{box-sizing:border-box;display:flex;flex-direction:column;width:min(100%,600px);max-height:min(90dvh,760px);overflow:hidden;background:var(--card,#fff);color:var(--ink,#242830);border-radius:22px 22px 0 0;box-shadow:0 -14px 48px #0002;padding-bottom:0}
 .card-editor-grab-area{display:flex;align-items:center;justify-content:center;width:100%;height:23px;flex:none;touch-action:pan-y}
 .card-editor-grab{width:38px;height:5px;background:var(--line,#dce1e9);border-radius:99px}
 .card-editor-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:3px 16px 12px;flex:none}

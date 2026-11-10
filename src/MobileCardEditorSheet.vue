@@ -222,7 +222,7 @@ onBeforeUnmount(()=>{
               <details v-if="isEdit&&cardName!=='現金'" class="card-editor-danger">
                 <summary>その他の操作</summary>
                 <div class="card-editor-danger-actions">
-                  <button type="button" :disabled="saving||busy" @click="danger('archive')">アーカイブ</button>
+                  <button v-if="!['その他','其他'].includes(cardName)" type="button" :disabled="saving||busy" @click="danger('archive')">アーカイブ</button>
                   <button type="button" class="card-editor-delete" :disabled="saving||busy" @click="danger('delete')">完全削除</button>
                 </div>
               </details>

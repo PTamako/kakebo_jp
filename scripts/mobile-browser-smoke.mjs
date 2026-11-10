@@ -67,7 +67,8 @@ try{
       if(p==='app-state')data={}
       else if(p==='payment-sources')data=[
         {name:'現金',is_default:1,is_archived:0,source_type:'standard',closing_day:null},
-        {name:'テストカード',is_default:0,is_archived:0,source_type:'standard',closing_day:10}
+        {name:'テストカード',is_default:0,is_archived:0,source_type:'standard',closing_day:10},
+        ...Array.from({length:12},(_,i)=>({name:'サンプルカード'+(i+1),is_default:0,is_archived:0,source_type:'standard',closing_day:10}))
       ]
       else if(p==='category-source')data=[
         {category:'日用品',display_name:'日用品',entry_type:'expense',is_default:1,icon:'daily',sort_order:1},
@@ -95,7 +96,18 @@ try{
     await page.locator('.stats-page').waitFor()
     await page.getByRole('navigation',{name:'メインメニュー'}).getByRole('button',{name:'管理'}).click()
     await page.locator('.finance-tools').waitFor()
-    await page.getByRole('button',{name:'カードを追加'}).click()
+    // A long card list opens upward from the iPhone bottom edge and filters
+    // Japanese half-width katakana against the full-width displayed label.
+    const cardPicker=page.locator('.card-main-controls .mobile-choice-trigger')
+    await cardPicker.click()
+    const choiceSheet=page.getByRole('dialog',{name:'管理するカード'})
+    await choiceSheet.waitFor()
+    await choiceSheet.getByRole('searchbox',{name:'管理するカードを日本語で検索'}).fill('ﾃｽﾄ')
+    assert.equal(await choiceSheet.getByRole('option').count(),1,'Japanese search must filter card names')
+    await choiceSheet.getByRole('option',{name:'テストカード'}).click()
+    assert.ok((await cardPicker.innerText()).includes('テストカード'))
+    assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Closing sheet must unlock page scroll')
+        await page.getByRole('button',{name:'カードを追加'}).click()
     await page.locator('.card-add-editor').waitFor()
     const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)
     assert.ok(overflow<=2,'Authenticated '+width+'px layout overflows by '+overflow+'px')

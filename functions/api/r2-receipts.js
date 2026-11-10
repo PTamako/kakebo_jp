@@ -107,8 +107,13 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
         "SELECT 1 AS found FROM entries WHERE id=?1 UNION ALL SELECT 1 AS found FROM trash_items WHERE item_type='entry' AND item_id=?2 LIMIT 1"
       ).bind(id,String(id)).first()
       if(!found)return json({error:'対象の記帳明細が見つかりません'},404)
-      if(request.headers.get('x-receipt-migration')==='1' && (await deletedRow(id))?.deleted===1)
+      if(request.headers.get('x-receipt-migration')==='1' && (await deletedRow(id))?.deleted===1){
+        // A failed delete or interrupted explicit re-attachment may leave an
+        // R2 blob behind. In that case, NEVER discard the old local copy.
+        if(await bucket.head(objectKey))
+          return json({error:'R2の削除または保存を確認できません。端末画像を保持してください',code:'receipt_deletion_pending'},409)
         return json({error:'以前に削除された画像です。端末の旧画像も削除してください',code:'receipt_previously_deleted'},410)
+      }
       const hash=await digestHex(image)
       const before=await bucket.head(objectKey)
       if(before && request.headers.get('x-receipt-replace')!=='1'){

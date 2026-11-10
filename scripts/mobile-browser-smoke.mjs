@@ -17,7 +17,10 @@ async function assertNativeTemporalLayout(input,label,width) {
     return {display:style.display,top:parseFloat(style.paddingTop),
       bottom:parseFloat(style.paddingBottom),height:rect.height,width:rect.width}
   })
-  assert.equal(metrics.display,'inline-flex',label+' must keep Safari native inline-flex at '+width+'px')
+  // WebKit may report computed display:flex for an input declared inline-flex.
+  // Either flex layout is valid; block layout is the top-aligned regression.
+  assert.ok(['flex','inline-flex'].includes(metrics.display),
+    label+' must keep Safari native flex layout at '+width+'px (got '+metrics.display+')')
   assert.equal(metrics.top,0,label+' must have zero top padding at '+width+'px')
   assert.equal(metrics.bottom,0,label+' must have zero bottom padding at '+width+'px')
   assert.ok(metrics.height>=44 && metrics.width>0,label+' must remain touch-sized at '+width+'px')

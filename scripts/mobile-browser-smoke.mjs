@@ -59,17 +59,37 @@ try{
     const page=await context.newPage()
     page.setDefaultTimeout(10000)
     const errors=[]
+    const cardEdits=[],cardAdds=[]
+    const cards=[
+      {name:'現金',is_default:1,is_archived:0,source_type:'standard',stat_group:'card',closing_day:null},
+      {name:'テストカード',is_default:0,is_archived:0,source_type:'standard',stat_group:'card',closing_day:10},
+      ...Array.from({length:12},(_,i)=>({name:'サンプルカード'+(i+1),is_default:0,is_archived:0,source_type:'standard',stat_group:'card',closing_day:10}))
+    ]
     page.on('pageerror',error=>errors.push(String(error)))
     await page.route('**/api/**',async route=>{
       const u=new URL(route.request().url())
       const p=u.pathname.replace(/^\/api\//,'')
       let data=[]
       if(p==='app-state')data={}
-      else if(p==='payment-sources')data=[
-        {name:'現金',is_default:1,is_archived:0,source_type:'standard',closing_day:null},
-        {name:'テストカード',is_default:0,is_archived:0,source_type:'standard',closing_day:10},
-        ...Array.from({length:12},(_,i)=>({name:'サンプルカード'+(i+1),is_default:0,is_archived:0,source_type:'standard',closing_day:10}))
-      ]
+      else if(p==='payment-sources'&&route.request().method()==='GET')data=cards
+      else if(p==='payment-sources'&&route.request().method()==='POST'){
+        const body=route.request().postDataJSON()
+        cardAdds.push(body)
+        cards.push({name:body.name,is_default:0,is_archived:0,source_type:body.sourceType,stat_group:body.statGroup,closing_day:null})
+        data={ok:true}
+      }
+      else if(p==='payment-sources/update'&&route.request().method()==='POST'){
+        const body=route.request().postDataJSON()
+        cardEdits.push(body)
+        const card=cards.find(c=>c.name===body.oldName)
+        if(card){
+          card.name=body.name
+          card.source_type=body.sourceType
+          card.stat_group=body.statGroup
+          if(body.closingDay!==undefined)card.closing_day=body.closingDay
+        }
+        data={ok:true,changed:true,name:body.name}
+      }
       else if(p==='category-source')data=[
         {category:'日用品',display_name:'日用品',entry_type:'expense',is_default:1,icon:'daily',sort_order:1},
         {category:'工资',display_name:'給与',entry_type:'income',is_default:1,icon:'work',sort_order:2},
@@ -109,8 +129,54 @@ try{
     await choiceSheet.getByRole('option',{name:'テストカード'}).click()
     assert.ok((await cardPicker.innerText()).includes('テストカード'))
     assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Closing sheet must unlock page scroll')
-        await page.getByRole('button',{name:'カードを追加'}).click()
-    await page.locator('.card-add-editor').waitFor()
+    // Adding/editing is a true bottom sheet, never an expanding inline form.
+    const panel=page.locator('.finance-panel').filter({hasText:'支払方法・カード管理'}).first()
+    const heightBefore=await panel.evaluate(el=>el.getBoundingClientRect().height)
+    await page.getByRole('button',{name:'カードを編集'}).click()
+    const cardEditor=page.getByRole('dialog',{name:'カードを編集',exact:true})
+    await cardEditor.waitFor()
+    assert.equal(await page.locator('.card-add-editor').count(),0,'legacy inline add form must be removed')
+    assert.ok(Math.abs((await panel.evaluate(el=>el.getBoundingClientRect().height))-heightBefore)<2,
+      'opening card sheet must not expand the management page')
+    assert.equal(await cardEditor.getByRole('textbox',{name:'カード名'}).inputValue(),'テストカード')
+    assert.equal(await page.evaluate(()=>document.body.style.overflow),'hidden')
+
+    // An unsaved edit cannot disappear from a backdrop/close press.
+    await cardEditor.getByRole('textbox',{name:'カード名'}).fill('一時的な名前')
+    await cardEditor.getByRole('button',{name:'閉じる'}).click()
+    assert.equal(await cardEditor.isVisible(),true,'dirty editor should ask before discarding')
+    await page.evaluate(()=>{window.confirm=()=>true})
+    await cardEditor.getByRole('button',{name:'閉じる'}).click()
+    await cardEditor.waitFor({state:'hidden'})
+    assert.equal(await cardPicker.innerText().then(x=>x.includes('テストカード')),true)
+
+    // One explicit edit Save changes all draft fields in a single request.
+    await page.getByRole('button',{name:'カードを編集'}).click()
+    await cardEditor.getByRole('textbox',{name:'カード名'}).fill('テストカード修正')
+    await cardEditor.getByRole('button',{name:'ポイント払い'}).click()
+    await cardEditor.getByRole('button',{name:/カードの締め日/}).click()
+    const closingChoices=page.getByRole('dialog',{name:'カードの締め日'})
+    await closingChoices.getByRole('option',{name:'15日'}).click()
+    await cardEditor.getByRole('button',{name:'保存',exact:true}).click()
+    await cardEditor.waitFor({state:'hidden'})
+    assert.equal(cardEdits.length,1,'one Save must issue only one atomic card edit')
+    assert.equal(cardEdits[0].name,'テストカード修正')
+    assert.equal(cardEdits[0].statGroup,'points')
+    assert.equal(cardEdits[0].closingDay,15)
+    assert.deepEqual(cardEdits[0].expected,{sourceType:'standard',statGroup:'card',closingDay:10,isArchived:0})
+    await page.getByRole('button',{name:'カードを追加'}).click()
+    const addEditor=page.getByRole('dialog',{name:'カードを追加',exact:true})
+    await addEditor.waitFor()
+    await addEditor.getByRole('textbox',{name:'カード名'}).fill('新しいカード')
+    await addEditor.getByRole('button',{name:'プリペイドカード'}).click()
+    await addEditor.getByRole('button',{name:'保存',exact:true}).click()
+    await addEditor.waitFor({state:'hidden'})
+    assert.equal(cardAdds.length,1)
+    assert.equal(cardAdds[0].name,'新しいカード')
+    assert.equal(cardAdds[0].sourceType,'prepaid')
+    assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Card sheets must unlock scroll after save')
+    assert.ok(Math.abs((await panel.evaluate(el=>el.getBoundingClientRect().height))-heightBefore)<2)
+
     // Management opens a full bottom panel, not a long inline accordion.
     await page.locator('.finance-section-tabs').getByRole('button',{name:'その他'}).click()
     const appearance=await page.evaluate(()=>{

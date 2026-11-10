@@ -219,7 +219,7 @@ onBeforeUnmount(()=>{
               </div>
               <p v-if="isEdit" class="card-editor-hint">名称を変更しても過去の明細と保存済み請求は引き継がれます。</p>
               <p v-if="error" class="card-editor-error" role="alert">{{error}}</p>
-              <details v-if="isEdit&&!isSpecial" class="card-editor-danger">
+              <details v-if="isEdit&&cardName!=='現金'" class="card-editor-danger">
                 <summary>その他の操作</summary>
                 <div class="card-editor-danger-actions">
                   <button type="button" :disabled="saving||busy" @click="danger('archive')">アーカイブ</button>

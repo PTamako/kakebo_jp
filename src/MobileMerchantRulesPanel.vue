@@ -53,11 +53,16 @@ function clearPanelDraft(){
   payment.value=''
   error.value=''
 }
-function closePanel(force=false){
-  if(saving.value&&!force)return
+function finishClosePanel(){
   open.value=false
   clearPanelDraft()
   nextTick(()=>trigger.value?.focus({preventScroll:true}))
+}
+function closePanel(){
+  // Vue passes a MouseEvent to @click handlers. It must never act as an
+  // accidental "force" flag while the save request is still in progress.
+  if(saving.value)return
+  finishClosePanel()
 }
 function edit(rule){
   activeKeyword.value=rule.keyword
@@ -81,7 +86,7 @@ async function save(){
       oldPayment:selected.value.payment_source||'',category:category.value,paymentSource:payment.value})
     // A successful save finishes the operation; do not leave the full sheet
     // open on its list or keep an edited category/payment in component memory.
-    closePanel(true)
+    finishClosePanel()
   }catch(e){error.value='保存できませんでした：'+(e?.message||'通信を確認してください')}
   finally{saving.value=false}
 }

@@ -60,10 +60,10 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
         const keys=ids.map(key)
         // Tombstone first: an offline iPhone may have an older local photo.
         await tombstone(ids)
+        // Awaiting R2.delete is the authoritative completion signal. Additional
+        // per-object HEAD checks waste one Class B operation per deleted photo.
+        // The D1 tombstones already protect other devices after any failure.
         await bucket.delete(keys)
-        // R2 delete is idempotent; verify that objects are actually absent.
-        const heads=await Promise.all(keys.map(k=>bucket.head(k)))
-        if(heads.some(Boolean)) return json({error:'R2に画像が残っています。再確認してください'},503)
         return json({ok:true,deleted:ids})
       }
       return json({error:'操作を確認してください'},405)
@@ -83,7 +83,6 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
     if(method==='DELETE') {
       await tombstone([id])
       await bucket.delete(objectKey)
-      if(await bucket.head(objectKey)) return json({error:'画像の削除を確認できません'},503)
       return json({ok:true,deleted:id})
     }
     if(method==='PUT') {
@@ -107,25 +106,30 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
         return json({error:'以前に削除された画像です。端末の旧画像も削除してください',code:'receipt_previously_deleted'},410)
       }
       const hash=await digestHex(image)
-      const before=await bucket.head(objectKey)
-      if(before && request.headers.get('x-receipt-replace')!=='1'){
+      // Explicit edits overwrite directly (0 preflight Class B calls).
+      // New photos still check for an existing object to avoid overwrites.
+      const before=request.headers.get('x-receipt-replace')==='1'
+        ? null : await bucket.head(objectKey)
+      if(before){
         if(before.size===image.byteLength && before.customMetadata?.sha256===hash){
           await activate(id,before.size)
           return json({ok:true,id,size:before.size,sha256:hash,already:true})
         }
         return json({error:'R2に別の画像があります。元画像は端末に保持します'},409)
       }
-      await bucket.put(objectKey,image,{
+      // The R2 binding returns committed object metadata after a successful
+      // PUT, so avoid a redundant Class B HEAD request. Legacy iPhone migration
+      // separately GETs and hashes the image before deleting its original.
+      const stored=await bucket.put(objectKey,image,{
         httpMetadata:{contentType:type},
         customMetadata:{sha256:hash}
       })
-      const verified=await bucket.head(objectKey)
-      if(!verified || verified.size!==image.byteLength ||
-        verified.customMetadata?.sha256!==hash ||
-        verified.httpMetadata?.contentType!==type)
-        return json({error:'R2保存の検証が完了しませんでした。端末の画像を保持してください'},503)
-      await activate(id,verified.size)
-      return json({ok:true,id,size:verified.size,sha256:hash,already:false})
+      if(!stored || stored.size!==image.byteLength ||
+        stored.customMetadata?.sha256!==hash ||
+        stored.httpMetadata?.contentType!==type)
+        return json({error:'R2保存の検証が完了しませんでした。元の写真を保持してください'},503)
+      await activate(id,stored.size)
+      return json({ok:true,id,size:stored.size,sha256:hash,already:false})
     }
     return json({error:'操作を確認してください'},405)
   }catch(error){

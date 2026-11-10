@@ -18,12 +18,13 @@ test('device privacy belongs only to management Other; not a separate panel belo
   assert.match(management, /@change="emit\('change-remember-device',/)
 })
 
-test('image clearing is explicitly confirmed, local only, and synchronizes the visible receipt indicators', () => {
+test('image clearing confirms R2 and device deletion without touching financial D1 records', () => {
   const management = source('src/FinanceTools.vue')
   const store = source('src/receipt-store.js')
-  assert.match(management, /await countReceiptImages\(\)/)
+  assert.match(management, /await receiptInventory\(await listReceiptImagesForExport\(\),\{fresh:true\}\)/)
   assert.match(management, /if \(latest !== localReceiptCount\.value\)/)
-  assert.match(management, /if \(!confirm\('レシート画像 /)
+  assert.match(management, /if \(!confirm\('R2と端末のレシート画像 /)
+  assert.match(management, /await deleteR2ReceiptsByIds\(inventory\.map\(item=>item\.entryId\)\)/)
   assert.match(management, /await clearAllReceiptImages\(\)/)
   assert.match(management, /emit\('receipt-images-cleared'\)/)
   assert.doesNotMatch(management.slice(management.indexOf('async function clearLocalReceiptImages()'),management.indexOf('watch([() => props.active')), /props\.api\(/)

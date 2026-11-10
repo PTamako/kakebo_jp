@@ -109,6 +109,16 @@ async function clearLocalReceiptImages() {
     receiptImagesBusy.value = false
   }
 }
+watch([() => props.active, managementTab], ([active,tab]) => {
+  if(active && tab === 'tools') {
+    void refreshLocalReceiptCount()
+    // Prefetch all bin sources when entering その他, not only after tapping
+    // ゴミ箱. Otherwise the collapsed header shows a misleading partial count.
+    void loadTransferTrash()
+    void loadDeletedPlans()
+    void loadDeletedEntries()
+  }
+})
 const receiptPeriodYear = ref(new Intl.DateTimeFormat('en',{timeZone:'Asia/Tokyo',year:'numeric'}).format(new Date()))
 const receiptPeriodMonth = ref('')
 const receiptPeriodPreview = ref(null)
@@ -178,16 +188,6 @@ async function deleteSelectedReceiptPeriod() {
     receiptImagePrivacyMessage.value='期間指定の削除に失敗しました：'+e.message
   } finally { receiptPeriodBusy.value=false }
 }
-watch([() => props.active, managementTab], ([active,tab]) => {
-  if(active && tab === 'tools') {
-    void refreshLocalReceiptCount()
-    // Prefetch all bin sources when entering その他, not only after tapping
-    // ゴミ箱. Otherwise the collapsed header shows a misleading partial count.
-    void loadTransferTrash()
-    void loadDeletedPlans()
-    void loadDeletedEntries()
-  }
-})
 watch(() => props.rememberDevice, () => {
   if(props.active && managementTab.value==='tools')void refreshLocalReceiptCount()
 })

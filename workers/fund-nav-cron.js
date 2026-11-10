@@ -51,7 +51,7 @@ export default {
     // Keep the SBI task independent from recurring, NAV and their failures.
     ctx.waitUntil((async () => {
       try {
-        const result=await applyDueSbiTransfers(env.DB,today)
+        const result=await applyDueSbiTransfers(env.DB, today)
         console.log('SBI due-transfer sync',JSON.stringify(result))
         await heartbeat('sbi','success',result)
       }catch(error){

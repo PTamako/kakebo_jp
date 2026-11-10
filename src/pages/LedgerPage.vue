@@ -78,7 +78,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
         <div class="edit-dialog" role="dialog" aria-modal="true" aria-label="レシート画像">
           <div class="edit-dialog-heading"><h2>レシート画像</h2><button type="button" class="icon-button" @click="closeReceipt" aria-label="閉じる">×</button></div>
           <img :src="viewedReceiptUrl" alt="保存したレシート" style="width:100%;max-height:65vh;object-fit:contain" />
-          <p class="microcopy">画像は端末内に保存（手動削除まで）</p>
+          <p class="microcopy">画像は非公開R2に保存（手動削除まで）</p>
           <button type="button" class="button-secondary" @click="removeReceiptImage">画像のみ削除</button>
         </div>
       </div>

@@ -32,6 +32,7 @@ import { matchesPrepaidHistoryEntry, matchedUnassignedPointIncomeIds } from './p
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
+import MobileLoginSheet from './MobileLoginSheet.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
@@ -354,7 +355,34 @@ async function setRememberDevice(remember) {
   }catch(error){flash('ログイン保存設定を変更できませんでした：'+error.message)}
 }
 const locked = ref(sessionStorage.getItem('kakeibo-logged-out') === '1')
+const PENDING_LOGOUT_KEY='kakeibo-server-logout-pending-v1'
+const serverLogoutPending=ref((()=>{try{return localStorage.getItem(PENDING_LOGOUT_KEY)==='1'}catch{return false}})())
+let logoutRevocationPromise=null
+async function completeServerLogout(oldSession=''){
+  if(logoutRevocationPromise)return logoutRevocationPromise
+  logoutRevocationPromise=(async()=>{
+    try{
+      const response=await fetch('/api/auth/logout',{
+        method:'POST',credentials:'same-origin',headers:oldSession?{'x-session':oldSession}:{}
+      })
+      if(!response.ok)throw Error('HTTP '+response.status)
+      localStorage.removeItem(PENDING_LOGOUT_KEY)
+      serverLogoutPending.value=false
+      return true
+    }catch{
+      serverLogoutPending.value=true
+      return false
+    }
+  })()
+  try{return await logoutRevocationPromise}finally{logoutRevocationPromise=null}
+}
+function onConnectionRestored(){
+  if(serverLogoutPending.value)void completeServerLogout()
+}
 async function signIn(code) {
+  // Never replace a still-live cookie before its prior logout has been confirmed.
+  if(serverLogoutPending.value && !await completeServerLogout())
+    throw Error('前回のサーバーログアウトが未完了です。通信回復後にもう一度お試しください')
   const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, remember: rememberDevice.value }) })
   const result = await response.json()
   if (!response.ok) throw new Error(result.error || 'アクセスコードを確認してください')
@@ -377,27 +405,42 @@ async function logout() {
   sessionStorage.removeItem('kakeibo-token')
   sessionStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
-  // Cookie-only sessions must also be revoked, even with no in-tab token.
-  // Do not leave a valid persistent HttpOnly cookie after an explicit logout.
-  try {
-    await fetch('/api/auth/logout', {
-      method: 'POST',
-      headers: oldSession ? { 'x-session': oldSession } : {}
-    })
-  } catch {
-    flash('サーバー側のログアウトを確認できませんでした。接続を確認してください')
-  }
+  // Persist only a revocation marker (never credentials), then retry on reconnect.
+  serverLogoutPending.value=true
+  try{localStorage.setItem(PENDING_LOGOUT_KEY,'1')}
+  catch{flash('端末にログアウト再確認の状態を保存できません。接続を確認してください')}
+  if(!await completeServerLogout(oldSession))
+    flash('端末はログアウトしましたが、サーバー側は未確認です。通信回復時に再試行します')
 }
-let loginPromise = null
-let rejectedSession = ''
-async function ensureLogin() {
-  if (loginPromise) return loginPromise
-  loginPromise = (async () => {
-    const code = prompt('アクセスコードを入力してください')
-    if (!code) throw new Error('アクセスコードが必要です')
-    await signIn(code)
-  })()
-  try { await loginPromise } finally { loginPromise = null }
+const loginSheetOpen=ref(false)
+const loginSheetBusy=ref(false)
+const loginSheetError=ref('')
+let loginPromise=null
+let loginResolver=null
+let rejectedSession=''
+async function ensureLogin(){
+  if(loginPromise)return loginPromise
+  loginSheetOpen.value=true
+  loginSheetError.value=''
+  loginPromise=new Promise((resolve,reject)=>{loginResolver={resolve,reject}}).finally(()=>{
+    loginPromise=null
+    loginResolver=null
+    loginSheetOpen.value=false
+    loginSheetBusy.value=false
+  })
+  return loginPromise
+}
+async function submitLoginSheet(code){
+  if(loginSheetBusy.value)return
+  loginSheetBusy.value=true
+  loginSheetError.value=''
+  try{await signIn(code);loginResolver?.resolve()}
+  catch(error){loginSheetError.value=error.message||'ログインできません'}
+  finally{loginSheetBusy.value=false}
+}
+function cancelLoginSheet(){
+  if(loginSheetBusy.value)return
+  loginResolver?.reject(Error('ログインをキャンセルしました'))
 }
 async function unlock() {
   try { await ensureLogin(); await restoreAppState(); await Promise.all([load(), loadYear(), loadTransfers()]) }
@@ -504,6 +547,8 @@ async function loadYear() {
   }
 }
 onMounted(async () => {
+  window.addEventListener('online',onConnectionRestored)
+  if(serverLogoutPending.value)await completeServerLogout()
   cleanupReceiptImages().catch(() => {}) // Legacy photos are never deleted automatically.
   if (!locked.value) {
     // Recover D1 preferences and drafts before loading the ledger.
@@ -1688,7 +1733,10 @@ const liveClockIso = computed(() => {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 })
 onMounted(() => { liveNow.value = new Date(); clockTimer = setInterval(() => { liveNow.value = new Date() }, 1000) })
-onUnmounted(() => { if (clockTimer) clearInterval(clockTimer) })
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer)
+  window.removeEventListener('online',onConnectionRestored)
+})
 const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
   return `${y}年${Number(m)}月`
@@ -1781,7 +1829,12 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
 
 <template>
   <GlobalToast />
-  <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong><p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
+  <MobileLoginSheet :open="loginSheetOpen" :busy="loginSheetBusy" :error="loginSheetError"
+    @submit="submitLoginSheet" @cancel="cancelLoginSheet" />
+  <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong>
+    <p v-if="serverLogoutPending" role="alert">サーバー側のログアウトはまだ確認できません。通信回復後に再試行します。</p>
+    <button v-if="serverLogoutPending" type="button" class="button-secondary" @click="completeServerLogout()">サーバーのログアウトを再確認</button>
+    <p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
   <main v-else :class="`theme-${theme}`">
     <div v-if="receiptSaveError || pendingReceiptUploads.length || pendingReceiptMarkers.length" role="alert" class="receipt-error-banner">
       <span>{{ receiptSaveError || (pendingReceiptMarkers.length

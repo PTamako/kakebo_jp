@@ -52,9 +52,23 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
     }
     if (!idSegment) {
       if (method==='GET') {
-        // Only D1 is read for badge/index/count/period views. Never call
-        // bucket.list() or bucket.head() during app launch or management.
-        // The primary key of receipt_r2_state is the verified ledger entry ID.
+        // Ledger reads a bounded D1 index for its own entries only.
+        // Full inventory is reserved for explicit backup and management.
+        const selected=new URL(request.url).searchParams.get('ids')
+        if(selected!==null){
+          const values=selected.split(',')
+          const ids=values.map(Number)
+          if(!values.length||values.length>250||values.some((raw,i)=>
+            !/^[1-9]\d{0,14}$/.test(raw)||!validId(raw)||!Number.isSafeInteger(ids[i]))||
+            new Set(ids).size!==ids.length)
+            return json({error:'画像の検索対象を確認してください（最大250件）'},400)
+          const marks=ids.map((_,i)=>'?'+(i+1)).join(',')
+          const {results=[]}=await db.prepare(
+            'SELECT entry_id AS id,size_bytes AS size FROM receipt_r2_state WHERE deleted=0 AND entry_id IN ('+marks+') ORDER BY entry_id'
+          ).bind(...ids).all()
+          return json({ok:true,items:results.map(row=>({id:Number(row.id),size:row.size===null?null:Number(row.size)}))})
+        }
+        // Neither query performs an R2 operation.
         const {results}=await db.prepare(
           'SELECT entry_id AS id,size_bytes AS size FROM receipt_r2_state WHERE deleted=0 ORDER BY entry_id LIMIT 10001'
         ).all()
@@ -90,8 +104,8 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
       // A version request happens only when the user selects a replacement
       // image. Ordinary ledger views never HEAD each receipt.
       const removed=(await deletedRow(id))?.deleted===1
+      if(removed)return new Response(null,{status:410,headers:cacheHeaders('text/plain')})
       const metadata=await bucket.head(objectKey)
-      if(removed)return new Response(null,{status:metadata?410:404,headers:cacheHeaders('text/plain')})
       if(!metadata)return new Response(null,{status:404,headers:cacheHeaders('text/plain')})
       return new Response(null,{status:200,headers:{...cacheHeaders('text/plain'),etag:metadata.httpEtag}})
     }

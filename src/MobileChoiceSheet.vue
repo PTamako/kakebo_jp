@@ -29,7 +29,20 @@ const visible=computed(()=>filterJapaneseChoices(items.value,query.value))
 const showSearch=computed(()=>props.searchable===null?items.value.length>10:props.searchable)
 const themeVars=ref({})
 let previousOverflow=''
-function keydown(event){if(event.key==='Escape'&&open.value){event.preventDefault();close()}}
+function keydown(event){
+  if(!open.value)return
+  if(event.key==='Escape'){event.preventDefault();close();return}
+  if(event.key!=='Tab')return
+  // Keep keyboard and VoiceOver navigation inside the active bottom-sheet.
+  const root=document.getElementById(sheetId)
+  const controls=[...(root?.querySelectorAll('button:not(:disabled),input:not(:disabled)')||[])]
+    .filter(el=>el.getClientRects().length)
+  if(!controls.length){event.preventDefault();return}
+  const first=controls[0],last=controls.at(-1)
+  if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+  else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+  else if(!root?.contains(document.activeElement)){event.preventDefault();first.focus()}
+}
 function begin(){
   if(props.disabled||open.value)return
   query.value=''

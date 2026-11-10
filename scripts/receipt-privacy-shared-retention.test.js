@@ -15,7 +15,7 @@ test('privacy and backup no longer repeat receipt count, expiry or refresh contr
   assert.doesNotMatch(privacy,/非公開R2で保管・自動削除なし/)
   assert.doesNotMatch(privacy,/件数を更新/)
   assert.match(privacy,/画像をすべて削除/)
-  assert.match(backup,/レシート画像をZIP保存/)
+  assert.match(backup,/全画像を分割ZIP保存/)
   assert.doesNotMatch(backup,/device-privacy-count|30日間保存|帳簿JSONとは別に保存/)
   assert.match(finance,/if\(managementTab.value==='tools'\)await refreshLocalReceiptCount\(\)/)
   assert.match(app,/await uploadR2Receipt\(entryId, blob, \{ replace, expectedVersion \}\)/)

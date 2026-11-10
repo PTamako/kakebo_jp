@@ -32,14 +32,16 @@ import { matchesPrepaidHistoryEntry, matchedUnassignedPointIncomeIds } from './p
 import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
+import MobileLoginSheet from './MobileLoginSheet.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
 import { peakTransferDates } from './calendar-transfer-peaks.js'
 import { getReceiptImage, deleteReceiptImage, cleanupReceiptImages, listReceiptImageIds } from './receipt-store.js'
-import { uploadR2Receipt, getR2Receipt, getR2ReceiptVersion, deleteR2Receipt, listR2Receipts } from './receipt-cloud.js'
+import { uploadR2Receipt, getR2Receipt, getR2ReceiptVersion, deleteR2Receipt, listR2ReceiptsByIds } from './receipt-cloud.js'
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readDeviceDraft, writeDeviceDraft } from './draft-store.js'
+import { readPendingReceiptMarkers, markPendingReceipt, clearPendingReceipt } from './pending-receipts.js'
 
 const tab = ref('add')
 // Route the wallet's add-card action to the actual Cards subtab, even when
@@ -150,14 +152,24 @@ const receiptSaveError = ref('')
 // Failed uploads are retained in page memory only. They are never written
 // into IndexedDB, sessionStorage, localStorage, or the D1 draft.
 const pendingReceiptUploads = ref([])
+const pendingReceiptMarkers=ref(readPendingReceiptMarkers())
 const receiptRetryBusy = ref(false)
-function queueReceiptRetry(entryId,blob,{replace=false,expectedVersion=null}={}){
+function queueReceiptRetry(entryId,blob,{replace=false,expectedVersion=null,date=''}={}){
   const id=Number(entryId)
   if(!Number.isSafeInteger(id)||id<=0||!blob)return
   pendingReceiptUploads.value=[
     ...pendingReceiptUploads.value.filter(row=>row.entryId!==id),
     {entryId:id,blob,replace,expectedVersion}
   ]
+  try{pendingReceiptMarkers.value=markPendingReceipt(id,date)}
+  catch{receiptSaveError.value='画像を再送するか、元の写真を保管してください。端末の再添付メモは保存できませんでした。'}
+}
+function openPendingReceiptMonth(){
+  const pending=pendingReceiptMarkers.value[0]
+  if(!pending)return
+  if(pending.month)month.value=pending.month
+  tab.value='list'
+  flash('画像の保存が未完了の記録 ID '+pending.id+' を開き、元の写真を再添付してください')
 }
 async function retryPendingReceipts(){
   if(receiptRetryBusy.value || !pendingReceiptUploads.value.length)return
@@ -210,6 +222,8 @@ async function persistReceipt(id, blob, replace = false, expectedVersion = null)
     await uploadR2Receipt(entryId, blob, { replace, expectedVersion })
     // A stale local copy is erased ONLY after the R2 server verifies size and SHA-256.
     try { await deleteReceiptImage(entryId) } catch { /* Retried by migration. */ }
+    try{pendingReceiptMarkers.value=clearPendingReceipt(entryId)}catch{}
+    pendingReceiptUploads.value=pendingReceiptUploads.value.filter(row=>row.entryId!==entryId)
   } catch (error) {
     // Strict cloud-only policy: NEVER create an IndexedDB/sessionStorage
     // receipt fallback. The selected photo must be kept by its owner until
@@ -235,15 +249,22 @@ async function migrateReceiptsNow() {
 }
 const viewedReceiptUrl = ref('')
 const viewedReceiptId = ref(null)
-async function refreshReceiptImageIds({fresh=false}={}) {
+let receiptIndexRequest=0
+async function refreshReceiptImageIds() {
+  const requestId=++receiptIndexRequest
+  const ids=[...new Set([...entries.value,...detailSourceEntries.value]
+    .map(row=>Number(row.id)).filter(id=>Number.isSafeInteger(id)&&id>0))]
+  if(!ids.length){receiptImageIds.value=new Set();return}
   try {
-    const [remote,localIds]=await Promise.all([listR2Receipts({fresh}),listReceiptImageIds()])
-    receiptImageIds.value=new Set([...remote.map(item=>item.entryId),...localIds])
+    const [remote,localIds]=await Promise.all([listR2ReceiptsByIds(ids),listReceiptImageIds()])
+    if(requestId!==receiptIndexRequest)return
+    const wanted=new Set(ids)
+    receiptImageIds.value=new Set([...remote.map(item=>item.entryId),...localIds.filter(id=>wanted.has(id))])
   } catch(error) {
-    // Cloud errors are not evidence that cloud receipts have disappeared.
+    if(requestId!==receiptIndexRequest)return
     const localIds=await listReceiptImageIds().catch(()=>[])
     receiptImageIds.value=new Set([...receiptImageIds.value,...localIds])
-    flash('R2の画像一覧を確認できません：'+error.message)
+    flash('レシート画像の表示状態を確認できません：'+error.message)
   }
 }
 async function viewReceipt(entryId) {
@@ -278,6 +299,7 @@ async function removeReceiptImage() {
   try {
     await deleteR2Receipt(id)
     await deleteReceiptImage(id)
+    try{pendingReceiptMarkers.value=clearPendingReceipt(id)}catch{}
     receiptImageIds.value=new Set([...receiptImageIds.value].filter(item=>item!==id))
     closeReceipt()
     flash('R2と端末の画像を削除しました。記帳済み明細は保持しています')
@@ -333,7 +355,34 @@ async function setRememberDevice(remember) {
   }catch(error){flash('ログイン保存設定を変更できませんでした：'+error.message)}
 }
 const locked = ref(sessionStorage.getItem('kakeibo-logged-out') === '1')
+const PENDING_LOGOUT_KEY='kakeibo-server-logout-pending-v1'
+const serverLogoutPending=ref((()=>{try{return localStorage.getItem(PENDING_LOGOUT_KEY)==='1'}catch{return false}})())
+let logoutRevocationPromise=null
+async function completeServerLogout(oldSession=''){
+  if(logoutRevocationPromise)return logoutRevocationPromise
+  logoutRevocationPromise=(async()=>{
+    try{
+      const response=await fetch('/api/auth/logout',{
+        method:'POST',credentials:'same-origin',headers:oldSession?{'x-session':oldSession}:{}
+      })
+      if(!response.ok)throw Error('HTTP '+response.status)
+      localStorage.removeItem(PENDING_LOGOUT_KEY)
+      serverLogoutPending.value=false
+      return true
+    }catch{
+      serverLogoutPending.value=true
+      return false
+    }
+  })()
+  try{return await logoutRevocationPromise}finally{logoutRevocationPromise=null}
+}
+function onConnectionRestored(){
+  if(serverLogoutPending.value)void completeServerLogout()
+}
 async function signIn(code) {
+  // Never replace a still-live cookie before its prior logout has been confirmed.
+  if(serverLogoutPending.value && !await completeServerLogout())
+    throw Error('前回のサーバーログアウトが未完了です。通信回復後にもう一度お試しください')
   const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, remember: rememberDevice.value }) })
   const result = await response.json()
   if (!response.ok) throw new Error(result.error || 'アクセスコードを確認してください')
@@ -356,27 +405,42 @@ async function logout() {
   sessionStorage.removeItem('kakeibo-token')
   sessionStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
-  // Cookie-only sessions must also be revoked, even with no in-tab token.
-  // Do not leave a valid persistent HttpOnly cookie after an explicit logout.
-  try {
-    await fetch('/api/auth/logout', {
-      method: 'POST',
-      headers: oldSession ? { 'x-session': oldSession } : {}
-    })
-  } catch {
-    flash('サーバー側のログアウトを確認できませんでした。接続を確認してください')
-  }
+  // Persist only a revocation marker (never credentials), then retry on reconnect.
+  serverLogoutPending.value=true
+  try{localStorage.setItem(PENDING_LOGOUT_KEY,'1')}
+  catch{flash('端末にログアウト再確認の状態を保存できません。接続を確認してください')}
+  if(!await completeServerLogout(oldSession))
+    flash('端末はログアウトしましたが、サーバー側は未確認です。通信回復時に再試行します')
 }
-let loginPromise = null
-let rejectedSession = ''
-async function ensureLogin() {
-  if (loginPromise) return loginPromise
-  loginPromise = (async () => {
-    const code = prompt('アクセスコードを入力してください')
-    if (!code) throw new Error('アクセスコードが必要です')
-    await signIn(code)
-  })()
-  try { await loginPromise } finally { loginPromise = null }
+const loginSheetOpen=ref(false)
+const loginSheetBusy=ref(false)
+const loginSheetError=ref('')
+let loginPromise=null
+let loginResolver=null
+let rejectedSession=''
+async function ensureLogin(){
+  if(loginPromise)return loginPromise
+  loginSheetOpen.value=true
+  loginSheetError.value=''
+  loginPromise=new Promise((resolve,reject)=>{loginResolver={resolve,reject}}).finally(()=>{
+    loginPromise=null
+    loginResolver=null
+    loginSheetOpen.value=false
+    loginSheetBusy.value=false
+  })
+  return loginPromise
+}
+async function submitLoginSheet(code){
+  if(loginSheetBusy.value)return
+  loginSheetBusy.value=true
+  loginSheetError.value=''
+  try{await signIn(code);loginResolver?.resolve()}
+  catch(error){loginSheetError.value=error.message||'ログインできません'}
+  finally{loginSheetBusy.value=false}
+}
+function cancelLoginSheet(){
+  if(loginSheetBusy.value)return
+  loginResolver?.reject(Error('ログインをキャンセルしました'))
 }
 async function unlock() {
   try { await ensureLogin(); await restoreAppState(); await Promise.all([load(), loadYear(), loadTransfers()]) }
@@ -483,6 +547,8 @@ async function loadYear() {
   }
 }
 onMounted(async () => {
+  window.addEventListener('online',onConnectionRestored)
+  if(serverLogoutPending.value)await completeServerLogout()
   cleanupReceiptImages().catch(() => {}) // Legacy photos are never deleted automatically.
   if (!locked.value) {
     // Recover D1 preferences and drafts before loading the ledger.
@@ -966,7 +1032,7 @@ async function saveAll() {
       const receiptBlob = f.type === 'expense' ? f.receiptImage : null
       if (receiptBlob) {
         try { await persistReceipt(result?.id, receiptBlob) }
-        catch { queueReceiptRetry(result?.id,receiptBlob); receiptImageWarning = ' レシート画像の送信が保留中です。'; receiptSaveError.value = '記帳は保存済みです。画像のみ再送できます。アプリを閉じる前に再送するか、元の写真を保管してください。' }
+        catch { queueReceiptRetry(result?.id,receiptBlob,{date:f.date}); receiptImageWarning = ' レシート画像の送信が保留中です。'; receiptSaveError.value = '記帳は保存済みです。画像のみ再送できます。アプリを閉じる前に再送するか、元の写真を保管してください。' }
       }
       if (forms.value.length === 1) pendingReceiptImage.value = null
       forms.value.shift()
@@ -1074,7 +1140,7 @@ async function saveEdit() {
     ledgerRevision.value++
     if (editReceiptImage.value) {
       try { await persistReceipt(e.id, editReceiptImage.value, true, editReceiptVersion.value); editReceiptImage.value = null; editReceiptVersion.value = null }
-      catch { queueReceiptRetry(e.id,editReceiptImage.value,{replace:true,expectedVersion:editReceiptVersion.value}); editReceiptImage.value=null; editReceiptVersion.value=null; receiptSaveError.value = '記録は更新済みです。画像のみ再送できます。元の写真を保管してください。' }
+      catch { queueReceiptRetry(e.id,editReceiptImage.value,{replace:true,expectedVersion:editReceiptVersion.value,date:e.date}); editReceiptImage.value=null; editReceiptVersion.value=null; receiptSaveError.value = '記録は更新済みです。画像のみ再送できます。元の写真を保管してください。' }
     }
     const editedDay = e.date.slice(0, 10)
     const destinationMonth = editedEntryMonth(e.date)
@@ -1455,7 +1521,7 @@ async function openCardBillDetails(details) {
   const requestId = ++detailRequestId
   try {
     const rows = await fetchCardBillDetailRows(detailFilter.value)
-    if (requestId === detailRequestId) detailSourceEntries.value = rows
+    if (requestId === detailRequestId) { detailSourceEntries.value = rows; void refreshReceiptImageIds() }
   } catch (e) {
     if (requestId === detailRequestId) flash('カード明細の読み込みに失敗しました：' + e.message)
   } finally {
@@ -1475,7 +1541,7 @@ async function openCategoryDetails(category, type, period, paymentMethod = '', p
   const requestId = ++detailRequestId
   try {
     const rows = await fetchPeriodDetailRows(period, requestId)
-    if (requestId === detailRequestId) detailSourceEntries.value = rows
+    if (requestId === detailRequestId) { detailSourceEntries.value = rows; void refreshReceiptImageIds() }
   } catch (e) {
     if (requestId === detailRequestId) flash('明細の読み込みに失敗しました：' + e.message)
   } finally {
@@ -1488,8 +1554,10 @@ async function refreshDetailSource() {
   try {
     const requestId = detailRequestId
     const rows = await fetchPeriodDetailRows(filter.period, requestId)
-    if (requestId === detailRequestId && filter === detailFilter.value)
+    if (requestId === detailRequestId && filter === detailFilter.value) {
       detailSourceEntries.value = rows
+      void refreshReceiptImageIds()
+    }
   } catch (e) { flash('明細の再読み込みに失敗しました：' + e.message) }
 }
 function clearDetailFilter() {
@@ -1665,7 +1733,10 @@ const liveClockIso = computed(() => {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 })
 onMounted(() => { liveNow.value = new Date(); clockTimer = setInterval(() => { liveNow.value = new Date() }, 1000) })
-onUnmounted(() => { if (clockTimer) clearInterval(clockTimer) })
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer)
+  window.removeEventListener('online',onConnectionRestored)
+})
 const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
   return `${y}年${Number(m)}月`
@@ -1758,12 +1829,20 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
 
 <template>
   <GlobalToast />
-  <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong><p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
+  <MobileLoginSheet :open="loginSheetOpen" :busy="loginSheetBusy" :error="loginSheetError"
+    @submit="submitLoginSheet" @cancel="cancelLoginSheet" />
+  <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong>
+    <p v-if="serverLogoutPending" role="alert">サーバー側のログアウトはまだ確認できません。通信回復後に再試行します。</p>
+    <button v-if="serverLogoutPending" type="button" class="button-secondary" @click="completeServerLogout()">サーバーのログアウトを再確認</button>
+    <p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
   <main v-else :class="`theme-${theme}`">
-    <div v-if="receiptSaveError || pendingReceiptUploads.length" role="alert" class="receipt-error-banner">
-      <span>{{ receiptSaveError || '未送信のレシート画像があります。元の写真を保管してください。' }}</span>
+    <div v-if="receiptSaveError || pendingReceiptUploads.length || pendingReceiptMarkers.length" role="alert" class="receipt-error-banner">
+      <span>{{ receiptSaveError || (pendingReceiptMarkers.length
+        ? '画像未保存の記録が'+pendingReceiptMarkers.length+'件あります。元の写真を再添付してください（端末に画像は保存していません）。'
+        : '未送信のレシート画像があります。元の写真を保管してください。') }}</span>
       <button v-if="pendingReceiptUploads.length" type="button" :disabled="receiptRetryBusy"
         @click="retryPendingReceipts">{{ receiptRetryBusy ? '送信中…' : '画像を再送（'+pendingReceiptUploads.length+'件）' }}</button>
+      <button v-else-if="pendingReceiptMarkers.length" type="button" @click="openPendingReceiptMonth">該当する記録を確認</button>
       <button v-else type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button>
     </div>
     <header class="topbar">

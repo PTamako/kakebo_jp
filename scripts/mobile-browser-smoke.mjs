@@ -71,6 +71,7 @@ try{
       const p=u.pathname.replace(/^\/api\//,'')
       let data=[]
       if(p==='app-state')data={}
+      else if(p==='receipts'&&route.request().method()==='GET')data={ok:true,items:[]}
       else if(p==='payment-sources'&&route.request().method()==='GET')data=cards
       else if(p==='payment-sources'&&route.request().method()==='POST'){
         const body=route.request().postDataJSON()

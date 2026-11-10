@@ -23,7 +23,7 @@ test('blank billing selections do not show redundant instructions or large disab
   assert.doesNotMatch(billing,/<strong>\{\{yen\(cardTotal\)\}\}<\/strong>/)
 })
 test('image ZIP save is beside ledger JSON backup; local-only privacy controls retain deletion',()=>{
-  assert.match(backups,/レシート画像をZIP保存/)
+  assert.match(backups,/全画像を分割ZIP保存/)
   assert.match(backups,/@click="downloadReceiptImages"/)
   assert.match(backups,/@click="downloadBackup"/)
   assert.match(privacy,/@click="clearLocalReceiptImages"/)

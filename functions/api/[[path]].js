@@ -24,8 +24,10 @@ const validRecurringDetails=item=>
   Number.isInteger(item?.intervalMonths??1) && (item?.intervalMonths??1)>=1 && (item?.intervalMonths??1)<=24 &&
   ((item?.scheduleType||'monthly')==='monthly' || (item?.intervalMonths??1)===1)
 const planScheduleFields=(item,prior=null)=>{
-  const monthDays=(item.monthDays??(prior?recurringMonthDays(prior):[Number(item.day)])).slice().sort((a,b)=>a-b)
-  const weekdays=(item.weekdays??(prior?recurringWeekdays(prior):[Number(item.weekday??0)])).slice().sort((a,b)=>a-b)
+  const monthDays=(item.monthDays??
+    (prior && Number(item.day)===Number(prior.day)?recurringMonthDays(prior):[Number(item.day)])).slice().sort((a,b)=>a-b)
+  const weekdays=(item.weekdays??
+    (prior && Number(item.weekday??0)===Number(prior.weekday||0)?recurringWeekdays(prior):[Number(item.weekday??0)])).slice().sort((a,b)=>a-b)
   const intervalMonths=Number(item.intervalMonths??(prior?recurringIntervalMonths(prior):1))
   return {monthDays,weekdays,intervalMonths}
 }

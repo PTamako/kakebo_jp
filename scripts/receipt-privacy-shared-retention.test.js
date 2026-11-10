@@ -10,16 +10,16 @@ const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'u
 test('privacy and backup no longer repeat receipt count, expiry or refresh controls',()=>{
   const privacy=finance.split('<summary>端末のプライバシー設定</summary>')[1].split('</details>')[0]
   const backup=finance.split('<summary>バックアップ・復元</summary>')[1].split('</details>')[0]
-  assert.match(privacy,/ログイン・レシート画像の保存/)
+  assert.match(privacy,/ログイン状態の保存/)
   assert.match(privacy,/保存済みレシート画像/)
-  assert.match(privacy,/props.rememberDevice \? '端末保存・自動削除なし' : 'セッション内のみ保存'/)
+  assert.match(privacy,/非公開R2で保管・自動削除なし/)
   assert.doesNotMatch(privacy,/件数を更新/)
   assert.match(privacy,/画像をすべて削除/)
   assert.match(backup,/レシート画像をZIP保存/)
   assert.doesNotMatch(backup,/device-privacy-count|30日間保存|帳簿JSONとは別に保存/)
   assert.match(finance,/if\(managementTab.value==='tools'\)await refreshLocalReceiptCount\(\)/)
-  assert.match(app,/await setReceiptStorageMode\(remember\)/)
-  assert.match(app,/if\(!rememberDevice.value\)clearSessionReceiptImages\(\)/)
+  assert.match(app,/await uploadR2Receipt\(entryId, blob, \{ replace \}\)/)
+  assert.doesNotMatch(app,/if\(!rememberDevice.value\)clearSessionReceiptImages\(\)/)
 })
 function fakeStorage(){
   const map=new Map()

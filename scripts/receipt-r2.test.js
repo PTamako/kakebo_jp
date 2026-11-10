@@ -182,3 +182,20 @@ test('delete does not use costly per-image HEAD checks',async()=>{
   assert.equal(b.calls.list,0)
   assert.equal(b.calls.head,0)
 })
+
+test('app startup never migrates old images or reads R2 and a click fetches one receipt',()=>{
+  const app=source('src/App.vue')
+  const migration=source('src/receipt-migration.js')
+  const server=source('functions/api/r2-receipts.js')
+  const mounted=app.split('onMounted(async () => {')[1]?.split('// Only a successful cross-month edit')[0]
+  const unlock=app.split('async function unlock() {')[1]?.slice(0,240)
+  assert.ok(mounted)
+  assert.ok(unlock)
+  assert.doesNotMatch(mounted,/migrateReceiptsNow\(\)/)
+  assert.doesNotMatch(unlock,/migrateReceiptsNow\(\)/)
+  assert.match(app,/async function refreshReceiptImageIds\(\)[\s\S]*?listR2Receipts\(\{fresh:true\}\)/)
+  assert.match(app,/async function viewReceipt\(entryId\)[\s\S]*?getR2Receipt\(entryId\)/)
+  assert.match(migration,/if\(!local\.length\)return result[\s\S]*?await listR2Receipts\(\{fresh:true\}\)/)
+  assert.doesNotMatch(server,/await bucket\.list\(/)
+  assert.match(server,/await bucket\.get\(objectKey\)/)
+})

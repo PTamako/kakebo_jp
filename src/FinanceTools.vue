@@ -2096,7 +2096,7 @@ async function removeCardBill(record) {
 .recurring-manager-panel .recurring-name-amount > *,
 .recurring-manager-panel .recurring-details > *{min-width:0;max-width:100%;box-sizing:border-box}
 .recurring-manager-panel .recurring-start-month{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;min-width:0;max-width:100%;width:100%;box-sizing:border-box;overflow:hidden}
-.finance-panel .recurring-start-month input[type=month]{display:block;width:100%!important;max-width:100%!important;min-width:0!important;min-inline-size:0!important;box-sizing:border-box!important;overflow:hidden;padding-inline:10px!important;-webkit-appearance:none;appearance:none}
+.finance-panel .recurring-start-month input[type=month]{display:inline-flex;align-items:center;width:100%!important;max-width:100%!important;min-width:0!important;min-inline-size:0!important;box-sizing:border-box!important;overflow:hidden;padding-inline:10px!important;-webkit-appearance:none;appearance:none}
 .finance-panel .recurring-start-month input[type=month]::-webkit-date-and-time-value{min-width:0;text-align:left}
 .finance-panel .recurring-start-month input[type=month]::-webkit-datetime-edit{min-width:0;padding:0}
 .finance-panel .recurring-start-month input[type=month]::-webkit-calendar-picker-indicator{flex:none;max-width:24px}

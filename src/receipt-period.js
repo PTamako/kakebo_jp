@@ -40,7 +40,7 @@ export function planReceiptPeriodDeletion(images, entries, trashedItems, year, m
     const date = dated.get(id)
     if (date.slice(0, 4) !== String(year) || (month && date.slice(5, 7) !== month)) continue
     ids.push(id)
-    bytes += Number(image?.blob?.size) || 0
+    bytes += Number(image?.size ?? image?.blob?.size) || 0
   }
   ids.sort((a, b) => a - b)
   return {ids, bytes, unmatched, total: images.length}

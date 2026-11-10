@@ -197,13 +197,14 @@ async function deleteSelectedReceiptPeriod() {
     const fresh=await freshReceiptPeriodPlan()
     if (preview.year!==receiptPeriodYear.value || preview.month!==receiptPeriodMonth.value) return
     if (JSON.stringify(preview.ids)!==JSON.stringify(fresh.ids) || preview.bytes!==fresh.bytes ||
-        preview.unmatched!==fresh.unmatched) {
+        preview.unmatched!==fresh.unmatched || preview.unknownSizes!==fresh.unknownSizes) {
       receiptPeriodPreview.value={...fresh,year:preview.year,month:preview.month}
       receiptImagePrivacyMessage.value='画像または明細が変更されました。対象を再確認してください'
       return
     }
-    if(!confirm(receiptPeriodLabel.value+'のレシート画像 '+fresh.ids.length+'件（約'+
-      receiptPeriodSize(fresh.bytes)+'）を削除しますか？削除後はZIPバックアップがないと復元できません。記帳済み明細・回収箱・統計は残ります。'))return
+    if(!confirm(receiptPeriodLabel.value+'のレシート画像 '+fresh.ids.length+'件（'+
+      (fresh.unknownSizes ? '一部の画像サイズは未取得' : '約'+receiptPeriodSize(fresh.bytes))+
+      '）を削除しますか？削除後はZIPバックアップがないと復元できません。記帳済み明細・回収箱・統計は残ります。'))return
     // Server commits deletion markers first, so another device cannot re-upload stale photos.
     await deleteR2ReceiptsByIds(fresh.ids)
     await deleteReceiptImagesByIds(fresh.ids)
@@ -1723,7 +1724,7 @@ async function removeCardBill(record) {
         </div>
         <button type="button" :disabled="receiptPeriodBusy || receiptImagesBusy || busy || !localReceiptCount" @click="previewReceiptPeriodDeletion">{{receiptPeriodBusy?'確認中…':'削除対象を確認'}}</button>
         <p v-if="receiptPeriodPreview" class="device-receipt-period-status" role="status">
-          {{receiptPeriodLabel}}：{{receiptPeriodPreview.ids.length}}件 · 約{{receiptPeriodSize(receiptPeriodPreview.bytes)}}
+          {{receiptPeriodLabel}}：{{receiptPeriodPreview.ids.length}}件 · {{receiptPeriodPreview.unknownSizes ? '一部サイズ未取得' : '約'+receiptPeriodSize(receiptPeriodPreview.bytes)}}
           <span v-if="receiptPeriodPreview.unmatched">（日付を確認できない{{receiptPeriodPreview.unmatched}}件は対象外）</span>
         </p>
         <button v-if="receiptPeriodPreview?.ids.length" type="button" class="device-receipt-period-delete" :disabled="receiptPeriodBusy || receiptImagesBusy || busy" @click="deleteSelectedReceiptPeriod">この期間の画像{{receiptPeriodPreview.ids.length}}件を削除</button>

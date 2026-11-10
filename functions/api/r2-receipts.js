@@ -29,34 +29,26 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
   const method=request.method
   const deletedRow=async id=>db.prepare('SELECT deleted FROM receipt_r2_state WHERE entry_id=?1').bind(id).first()
   const tombstone=ids=>db.batch(ids.map(id=>db.prepare(
-    'INSERT INTO receipt_r2_state(entry_id,deleted,updated_at) VALUES(?1,1,CURRENT_TIMESTAMP) ON CONFLICT(entry_id) DO UPDATE SET deleted=1,updated_at=CURRENT_TIMESTAMP'
+    'INSERT INTO receipt_r2_state(entry_id,deleted,size_bytes,updated_at) VALUES(?1,1,NULL,CURRENT_TIMESTAMP) ON CONFLICT(entry_id) DO UPDATE SET deleted=1,size_bytes=NULL,updated_at=CURRENT_TIMESTAMP'
   ).bind(id)))
-  const activate=id=>db.prepare(
-    'INSERT INTO receipt_r2_state(entry_id,deleted,updated_at) VALUES(?1,0,CURRENT_TIMESTAMP) ON CONFLICT(entry_id) DO UPDATE SET deleted=0,updated_at=CURRENT_TIMESTAMP'
-  ).bind(id).run()
+  const activate=(id,size)=>db.prepare(
+    'INSERT INTO receipt_r2_state(entry_id,deleted,size_bytes,updated_at) VALUES(?1,0,?2,CURRENT_TIMESTAMP) ON CONFLICT(entry_id) DO UPDATE SET deleted=0,size_bytes=excluded.size_bytes,updated_at=CURRENT_TIMESTAMP'
+  ).bind(id,size).run()
   const idSegment=segments[0] || ''
   try {
     if (!idSegment) {
       if (method==='GET') {
-        let cursor
-        const items=[]
-        do {
-          const page=await bucket.list({prefix:PREFIX,limit:1000,...(cursor?{cursor}:{})})
-          if (!page || !Array.isArray(page.objects)) return json({error:'R2画像一覧を確認できません'},503)
-          for(const object of page.objects){
-            const idString=object.key.startsWith(PREFIX)?object.key.slice(PREFIX.length):''
-            if(!validId(idString))continue
-            items.push({id:Number(idString),size:Number(object.size)||0})
-            if(items.length>10000) return json({error:'画像が多いため一覧を確認できません'},413)
-          }
-          if(!page.truncated)break
-          if(!page.cursor || page.cursor===cursor) return json({error:'R2画像一覧を最後まで読み込めません'},503)
-          cursor=page.cursor
-        }while(true)
-        // A retryable failed R2 deletion must not re-expose a tombstoned photo.
-        const deleted=await db.prepare('SELECT entry_id FROM receipt_r2_state WHERE deleted=1 LIMIT 10001').all()
-        const banned=new Set((deleted.results||[]).map(x=>Number(x.entry_id)))
-        return json({ok:true,items:items.filter(x=>!banned.has(x.id))})
+        // Only D1 is read for badge/index/count/period views. Never call
+        // bucket.list() or bucket.head() during app launch or management.
+        // The primary key of receipt_r2_state is the verified ledger entry ID.
+        const {results}=await db.prepare(
+          'SELECT entry_id AS id,size_bytes AS size FROM receipt_r2_state WHERE deleted=0 ORDER BY entry_id LIMIT 10001'
+        ).all()
+        if(results.length>10000)return json({error:'画像が多いため一覧を確認できません'},413)
+        return json({ok:true,items:results.map(row=>({
+          id:Number(row.id),
+          size:row.size===null ? null : Number(row.size)
+        }))})
       }
       if(method==='DELETE') {
         const payload=await request.json().catch(()=>null)
@@ -68,10 +60,10 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
         const keys=ids.map(key)
         // Tombstone first: an offline iPhone may have an older local photo.
         await tombstone(ids)
+        // Awaiting R2.delete is the authoritative completion signal. Additional
+        // per-object HEAD checks waste one Class B operation per deleted photo.
+        // The D1 tombstones already protect other devices after any failure.
         await bucket.delete(keys)
-        // R2 delete is idempotent; verify that objects are actually absent.
-        const heads=await Promise.all(keys.map(k=>bucket.head(k)))
-        if(heads.some(Boolean)) return json({error:'R2に画像が残っています。再確認してください'},503)
         return json({ok:true,deleted:ids})
       }
       return json({error:'操作を確認してください'},405)
@@ -91,7 +83,6 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
     if(method==='DELETE') {
       await tombstone([id])
       await bucket.delete(objectKey)
-      if(await bucket.head(objectKey)) return json({error:'画像の削除を確認できません'},503)
       return json({ok:true,deleted:id})
     }
     if(method==='PUT') {
@@ -115,25 +106,36 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
         return json({error:'以前に削除された画像です。端末の旧画像も削除してください',code:'receipt_previously_deleted'},410)
       }
       const hash=await digestHex(image)
-      const before=await bucket.head(objectKey)
-      if(before && request.headers.get('x-receipt-replace')!=='1'){
-        if(before.size===image.byteLength && before.customMetadata?.sha256===hash){
-          await activate(id)
-          return json({ok:true,id,size:before.size,sha256:hash,already:true})
+      const replace=request.headers.get('x-receipt-replace')==='1'
+      // A conditional PUT protects existing images without a separate HEAD.
+      // If the key already exists, R2 returns null and only that collision
+      // needs one Class B HEAD to distinguish idempotent retries from conflicts.
+      // Explicit image editing intentionally overwrites this same entry ID.
+      const stored=await bucket.put(objectKey,image,{
+        ...(!replace ? {onlyIf:new Headers({'If-None-Match':'*'})} : {}),
+        httpMetadata:{contentType:type},
+        customMetadata:{sha256:hash},
+        // R2 validates this checksum as part of the same PUT (no extra read).
+        sha256:hash
+      })
+      if(!stored){
+        const existing=await bucket.head(objectKey)
+        if(existing && existing.size===image.byteLength &&
+          existing.customMetadata?.sha256===hash){
+          await activate(id,existing.size)
+          return json({ok:true,id,size:existing.size,sha256:hash,already:true})
         }
         return json({error:'R2に別の画像があります。元画像は端末に保持します'},409)
       }
-      await bucket.put(objectKey,image,{
-        httpMetadata:{contentType:type},
-        customMetadata:{sha256:hash}
-      })
-      const verified=await bucket.head(objectKey)
-      if(!verified || verified.size!==image.byteLength ||
-        verified.customMetadata?.sha256!==hash ||
-        verified.httpMetadata?.contentType!==type)
-        return json({error:'R2保存の検証が完了しませんでした。端末の画像を保持してください'},503)
-      await activate(id)
-      return json({ok:true,id,size:verified.size,sha256:hash,already:false})
+      // R2 returns committed object metadata; no post-upload HEAD needed.
+      // Existing iPhone photos are still GET+SHA-verified during migration
+      // before their local copies are erased.
+      if(stored.size!==image.byteLength ||
+        stored.customMetadata?.sha256!==hash ||
+        stored.httpMetadata?.contentType!==type)
+        return json({error:'R2保存の検証が完了しませんでした。元の写真を保持してください'},503)
+      await activate(id,stored.size)
+      return json({ok:true,id,size:stored.size,sha256:hash,already:false})
     }
     return json({error:'操作を確認してください'},405)
   }catch(error){

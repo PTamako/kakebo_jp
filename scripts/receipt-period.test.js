@@ -15,11 +15,11 @@ const trash = [
 ]
 test('month deletes only dated receipts in that month, including linked trash records', () => {
   assert.deepEqual(planReceiptPeriodDeletion([photo(1),photo(2),photo(3),photo(5),photo(99)],ledger,trash,'2025','01'),
-    {ids:[1,5],bytes:2400,unmatched:1,total:5})
+    {ids:[1,5],bytes:2400,unmatched:1,unknownSizes:0,total:5})
 })
 test('year deletes all months for that year, preserving other years and unknown records', () => {
   assert.deepEqual(planReceiptPeriodDeletion([photo(2),photo(1),photo(5),photo(6)],ledger,trash,'2025'),
-    {ids:[1,2,5],bytes:3600,unmatched:0,total:4})
+    {ids:[1,2,5],bytes:3600,unmatched:0,unknownSizes:0,total:4})
 })
 test('an ID collision between two dates is excluded regardless of period', () => {
   const collision=[{item_id:'4',payload_json:JSON.stringify({entry:{id:4,date:'2026-01-07'}})}]
@@ -33,7 +33,11 @@ test('malformed or mismatched trash records do not authorize deletion', () => {
     {item_id:'10',payload_json:JSON.stringify({entry:{id:10,date:'unknown'}})}
   ]
   assert.deepEqual(planReceiptPeriodDeletion([photo(8),photo(10)],[],corrupt,'2024','02'),
-    {ids:[],bytes:0,unmatched:2,total:2})
+    {ids:[],bytes:0,unmatched:2,unknownSizes:0,total:2})
+})
+test('legacy R2 photos with unknown size are counted without inventing bytes',()=>{
+  assert.deepEqual(planReceiptPeriodDeletion([{entryId:1,size:null},{entryId:5,size:1300}],ledger,trash,'2025','01'),
+    {ids:[1,5],bytes:1300,unmatched:0,unknownSizes:1,total:2})
 })
 test('reject invalid year or month before any deletion is permitted', () => {
   assert.throws(() => planReceiptPeriodDeletion([],[],[],'2026','13'))

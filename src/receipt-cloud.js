@@ -33,7 +33,7 @@ export async function listR2Receipts({fresh=false}={}) {
     const id=Number(item.id)
     if(!Number.isSafeInteger(id)||id<=0||ids.has(id))continue
     ids.add(id)
-    entries.push({entryId:id,size:Number(item.size)||0})
+    entries.push({entryId:id,size:item.size===null ? null : Number(item.size)||0})
   }
   cachedIndex=entries
   return entries.map(item=>({...item}))

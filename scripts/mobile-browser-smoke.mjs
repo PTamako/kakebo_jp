@@ -178,6 +178,30 @@ try{
     assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Card sheets must unlock scroll after save')
     assert.ok(Math.abs((await panel.evaluate(el=>el.getBoundingClientRect().height))-heightBefore)<2)
 
+    // Fixed-expense search spans the panel width and all three statuses stay on one row.
+    await page.locator('.finance-section-tabs').getByRole('button',{name:'固定費'}).click()
+    const recurringPanel=page.locator('.recurring-plans-panel')
+    await recurringPanel.locator('.recurring-list-summary').click()
+    const recurringFilters=recurringPanel.locator('.recurring-list-filters')
+    await recurringFilters.locator('input[type=search]').waitFor({state:'visible'})
+    const filterLayout=await recurringFilters.evaluate(node=>{
+      const search=node.querySelector('input[type=search]').getBoundingClientRect()
+      const buttons=[...node.querySelectorAll('.mobile-choice-segments > button')]
+        .map(el=>el.getBoundingClientRect())
+      return {search:{x:search.x,y:search.y,width:search.width,bottom:search.bottom},
+        buttons:buttons.map(b=>({x:b.x,y:b.y,width:b.width,height:b.height,right:b.right})),
+        panelWidth:node.getBoundingClientRect().width}
+    })
+    assert.equal(filterLayout.buttons.length,3)
+    assert.ok(filterLayout.search.width>=filterLayout.panelWidth-2,
+      'Fixed-expense search must fill the width at '+width+'px')
+    assert.ok(filterLayout.buttons.every(b=>Math.abs(b.y-filterLayout.buttons[0].y)<2),
+      'Fixed-expense statuses must stay on one line at '+width+'px')
+    assert.ok(filterLayout.buttons.every(b=>b.y>=filterLayout.search.bottom-1&&b.height>=44),
+      'Status buttons must sit below search and be touch safe at '+width+'px')
+    assert.ok(filterLayout.buttons[2].right<=filterLayout.search.x+filterLayout.search.width+2,
+      'Status filters must fit without horizontal overflow at '+width+'px')
+
     // Management opens a full bottom panel, not a long inline accordion.
     await page.locator('.finance-section-tabs').getByRole('button',{name:'その他'}).click()
     const appearance=await page.evaluate(()=>{

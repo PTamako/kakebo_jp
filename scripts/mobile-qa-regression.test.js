@@ -115,7 +115,7 @@ test('changing cards while editing refreshes the name and cannot rename the prev
   const sync = finance.match(/watch\(selectedCard,\s*\(name\)\s*=>\s*\{([\s\S]*?)\n\}\)/)?.[1]
   assert.ok(sync, 'card selection has its own editor synchronization watcher')
   assert.match(sync, /editedCardName\.value\s*=\s*name\s*\|\|\s*''/)
-  const picker = finance.match(/<select v-model="selectedCard"[^>]*>/)?.[0]
+  const picker = finance.match(/<MobileChoiceSheet v-model="selectedCard"[^>]*\/>/)?.[0]
   assert.ok(picker)
   assert.match(picker, /:disabled="busy"/)
   const editor = finance.match(/<div v-if="cardMode === 'edit' && selectedCard"[\s\S]*?<\/div>/)?.[0]

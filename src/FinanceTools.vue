@@ -24,7 +24,7 @@ import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
 const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
-const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared', 'receipt-images-removed'])
+const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared', 'receipt-images-removed', 'receipt-images-updated'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
 const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
@@ -132,7 +132,7 @@ async function syncLegacyReceiptImages() {
   finally{
     receiptImagesBusy.value=false
     await refreshLocalReceiptCount()
-    emit('ledger-updated')
+    emit('receipt-images-updated')
   }
 }
 watch([() => props.active, managementTab], ([active,tab]) => {

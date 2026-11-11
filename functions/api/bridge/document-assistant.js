@@ -50,10 +50,13 @@ export async function onRequestPost({request,env}){
   try{
     const result=await env.DB.prepare(`INSERT INTO entries
       (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
-      VALUES(?1,'',?2,?3,?4,?5,'',?6,NULL,0,NULL,?7,?8)
+      SELECT ?1,'',?2,?3,?4,?5,'',?6,NULL,0,NULL,?7,?8
+      WHERE NOT EXISTS (SELECT 1 FROM entries
+        WHERE date=?1 AND amount=?2 AND type=?6 AND COALESCE(payment_source,'')=?8)
       ON CONFLICT(client_request_id) DO NOTHING`)
       .bind(date,amount,field.category,field.merchant,field.note,field.type,requestId,field.paymentSource).run()
     const row=await env.DB.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(requestId).first()
+    if(!row?.id && result.meta?.changes===0)return json({ok:false,error:'duplicate_candidate',message:'同日同金额与付款来源的记录可能已存在，请先核对家計簿并手动关联'},409)
     if(!row?.id)return json({ok:false,error:'idempotency_lookup_failed'},503)
     return json({ok:true,remote_id:String(row.id),reused:result.meta?.changes===0})
   }catch{return json({ok:false,error:'ledger_write_failed'},503)}

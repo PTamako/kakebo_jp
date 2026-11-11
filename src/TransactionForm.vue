@@ -45,7 +45,8 @@ const transferOptions = computed(()=> [
   <div class="field-grid">
     <label class="form-field"><span>日付</span><input v-model="record.date" type="date" required /><small v-if="!record.date" class="amount-warning">日付を確認してください</small></label>
     <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><MobileChoiceSheet v-model="record.category" :options="categoryOptions" label="カテゴリ" /></label>
-    <label v-if="record.type==='income' && record.category==='ポイント還元'" class="form-field reward-destination-field"><span>還元先（任意）</span><MobileChoiceSheet v-model="record.rewardDestination" :options="rewardOptions" label="還元先" /><small>プリペイドは資産移動を自動作成、クレジットカードは利用額から差し引きます。</small></label>
+    <label v-if="record.type==='income' && record.category==='ポイント還元'" class="form-field reward-destination-field"><span>還元先（任意）</span><MobileChoiceSheet v-model="record.rewardDestination" :options="rewardOptions" label="還元先" /><small>プリペイド・SBI証券は資産移動を自動作成、クレジットカードは利用額から差し引きます。</small></label>
+    <label v-if="record.type==='income' && record.category==='ポイント還元' && record.rewardDestination==='sbi'" class="form-field sbi-reward-date-field"><span>SBI証券への適用日（必須）</span><input v-model="record.transferDate" type="date" required /><small>収入の日付とは別に、投資への反映日を選択してください。未来の日付は当日まで未反映です。</small></label>
     <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
     <label v-if="record.type==='expense'" class="form-field"><span>支払方法・カード</span><MobileChoiceSheet :model-value="record.paymentSource" :options="paymentOptions" label="支払方法・カード" @change="emit('payment-change',$event)" /></label>
   </div>

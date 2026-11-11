@@ -143,7 +143,8 @@ test('R2 absent binding is fail closed and preview never shares production R2',a
   const config=source('wrangler.toml')
   assert.match(config,/bucket_name = "kakeibo-receipts"/)
   assert.doesNotMatch(config,/kakeibo-receipts-preview/)
-  assert.match(config,/# Preview has no R2 binding/)
+  assert.doesNotMatch(config,/\[\[env\.preview\.r2_buckets\]\]/)
+  assert.match(config,/Preview has no D1/)
 })
 
 test('interrupted deletion or re-attachment never destroys a residual local receipt',async()=>{

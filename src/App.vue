@@ -91,6 +91,7 @@ const paymentSourceMeta = ref({})
 const prepaidSources = computed(() => paymentSources.value.filter(name=>paymentSourceMeta.value[name]?.source_type==='prepaid'))
 const transferDestinations = computed(() => prepaidSources.value.map(name=>({value:prepaidTarget(name),name})))
 const rewardDestinations = computed(() => [
+  {value:'sbi',name:'SBI証券（投資信託）'},
   ...prepaidSources.value.map(name => ({value:prepaidTarget(name),name:name+'（プリペイド）'})),
   ...paymentSources.value.filter(name => paymentSourceMeta.value[name]?.source_type==='standard' && !['現金','その他','其他','ポイント還元'].includes(name)).map(name => ({value:'credit:'+name,name:name+'（クレジットカード）'}))
 ])
@@ -930,7 +931,7 @@ function addBlank(type = 'expense') {
   const now = new Date()
   const today = now.toLocaleDateString('sv-SE')
   const category = categoryDefaults.value[type] || ''
-  forms.value.push({ date: today, transferDate: today, transferTarget: '', rewardDestination: '', time: localHHMM(now), amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  forms.value.push({ date: today, transferDate: type === 'transfer' ? today : '', transferTarget: '', rewardDestination: '', time: localHHMM(now), amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   if (form.type !== type) {
@@ -945,6 +946,7 @@ function setEntryType(form, type) {
     }
     if (type !== 'transfer') form.transferTarget = ''
     if (type !== 'income') form.rewardDestination = ''
+    if (type === 'income' && form.type === 'transfer') form.transferDate = ''
     if (type === 'transfer') form.transferDate = form.transferDate || form.date
   }
   form.type = type
@@ -980,6 +982,9 @@ async function saveAll() {
   if (!forms.value.length) return flash('保存する記録がありません')
   const invalidTransfer = forms.value.findIndex(f => f.type === 'transfer' && (!f.transferTarget || !/^\d{4}-\d{2}-\d{2}$/.test(f.transferDate || '')))
   if (invalidTransfer >= 0) return flash(`${invalidTransfer + 1}件目の振替先と適用日を確認してください`)
+  const invalidSbiReward = forms.value.findIndex(f => f.type === 'income' && f.category === 'ポイント還元' &&
+    f.rewardDestination === 'sbi' && !/^\d{4}-\d{2}-\d{2}$/.test(f.transferDate || ''))
+  if (invalidSbiReward >= 0) return flash(`${invalidSbiReward + 1}件目のSBI証券への適用日を選択してください`)
   const invalid = forms.value.findIndex(f => !(Number(f.amount) > 0))
   if (invalid >= 0) return flash(`${invalid + 1}件目の金額が正しくありません。確認してください`)
   const uncertain = forms.value.filter(f => /要確認|不明瞭|読み取れません|確認してください/.test(f.note || ''))
@@ -1120,7 +1125,7 @@ function startEdit(entry) {
       .map(key=>[key,entry[key]??null])),
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
-    transferTarget: entry.transfer_target || '', rewardDestination: entry.type==='income' && entry.category==='ポイント還元' ? (entry.transfer_target || '') : '', transferDate: entry.transfer_date || entry.date,
+    transferTarget: entry.transfer_target || '', rewardDestination: entry.type==='income' && entry.category==='ポイント還元' ? (entry.transfer_target || '') : '', transferDate: entry.transfer_date || (entry.type === 'transfer' ? entry.date : ''),
     category: entry.category || '日用品', paymentSource: entry.payment_source || '', merchant: entry.merchant || '',
     note: entry.note || '', raw: entry.raw || ''
   }
@@ -1137,6 +1142,11 @@ async function saveEdit() {
   }
   if (e.type === 'transfer' && (!e.transferTarget || !/^\d{4}-\d{2}-\d{2}$/.test(e.transferDate || ''))) {
     flash('振替先と適用日を確認してください')
+    return
+  }
+  if (e.type === 'income' && e.category === 'ポイント還元' && e.rewardDestination === 'sbi' &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(e.transferDate || '')) {
+    flash('SBI証券への適用日を選択してください')
     return
   }
   editSaving.value = true

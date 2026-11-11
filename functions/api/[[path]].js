@@ -1251,13 +1251,19 @@ export async function onRequest({ request, env, params }) {
           return json({ error: '日付または金額が正しくありません' }, 400)
         const previous = await db.prepare('SELECT amount, type, category, client_request_id, transfer_target, transfer_applied, transfer_date, date, payment_source FROM entries WHERE id = ?1').bind(id).first()
         if (!previous) return json({ error: '明細が見つかりません' }, 404)
-        if(isPointCharge(previous))return json({error:'自動チャージは元のポイント還元収入から編集してください'},409)
+        if(isPointCharge(previous))return json({error:'自動振替は元のポイント還元収入から編集してください'},409)
         const reward=await rewardDestination(db,{...e,rewardDestination:e.rewardDestination??(previous.type==='income' && previous.category==='ポイント還元' ? previous.transfer_target : '')},previous.transfer_target||'')
         if(reward.error)return json({error:reward.error},400)
         const linkedId=pointChargeId(previous.client_request_id,id)
         const paymentSource = e.paymentSource == null ? (previous.payment_source || '') : String(e.paymentSource).trim()
         if (paymentSource.length > 80) return json({ error: '支払方法は80文字以内にしてください' }, 400)
-        const sourceProblem=await validateRegisteredPaymentSource(db,paymentSource,{currentSource:previous.payment_source})
+        // Internal cashback funding has a synthetic source; it need not be a
+        // user-managed payment card when the same income row is edited.
+        const autoPointSource=previous.type==='income' && previous.category==='ポイント還元' &&
+          (previous.transfer_target==='sbi' || previous.transfer_target?.startsWith('prepaid:')) &&
+          e.type==='income' && e.category==='ポイント還元' && paymentSource==='ポイント還元'
+        const sourceProblem=autoPointSource ? null
+          : await validateRegisteredPaymentSource(db,paymentSource,{currentSource:previous.payment_source})
         if(sourceProblem)return json({error:sourceProblem.error,code:sourceProblem.code},sourceProblem.status)
         const rawTarget=transfer?String(e.transferTarget||''):''
         if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
@@ -1305,7 +1311,15 @@ export async function onRequest({ request, env, params }) {
               .bind(linkedId)
         const needsPairUpdate=(previous.type==='income' && previous.category==='ポイント還元') ||
           reward.target?.startsWith('prepaid:') || reward.target==='sbi'
-        const [result]=needsPairUpdate ? await db.batch([entryUpdate,pairedWrite]) : [await entryUpdate.run()]
+        // An explicit SBI purchase-month override belongs only to the SBI
+        // transfer, not a later conversion of that same linked row to prepaid.
+        const switchedFromSbi=previous.transfer_target==='sbi' && reward.target?.startsWith('prepaid:')
+        const linkedStatements=switchedFromSbi
+          ? [entryUpdate,pairedWrite,
+              db.prepare("DELETE FROM sbi_transfer_links WHERE entry_id=(SELECT id FROM entries WHERE client_request_id=?1 AND transfer_target LIKE 'prepaid:%')")
+                .bind(linkedId)]
+          : [entryUpdate,pairedWrite]
+        const [result]=needsPairUpdate ? await db.batch(linkedStatements) : [await entryUpdate.run()]
         if(optimistic && !result.meta?.changes)
           return json({error:'別の端末で明細が変更されました。最新の明細を再読込してください',code:'stale_entry'},409)
         return json({ok:true,changes:result.meta?.changes??null})
@@ -1325,7 +1339,7 @@ export async function onRequest({ request, env, params }) {
           'type','transfer_target','transfer_applied','transfer_date','client_request_id','payment_source']
         const entry=await db.prepare('SELECT * FROM entries WHERE id=?1').bind(id).first()
         if (!entry) return json({error:'明細が見つかりません'},404)
-        if(isPointCharge(entry))return json({error:'自動チャージは元のポイント還元収入を削除してください'},409)
+        if(isPointCharge(entry))return json({error:'自動振替は元のポイント還元収入を削除してください'},409)
         const supplied=requestPayload?.expected
         if(supplied!==undefined && (!supplied || Array.isArray(supplied) ||
             typeof supplied!=='object' || !expectedKeys.every(k=>Object.hasOwn(supplied,k))))

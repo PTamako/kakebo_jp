@@ -15,25 +15,12 @@ binding = "AI"
 binding = "RECEIPTS_R2"
 bucket_name = "kakeibo-receipts"
 
-# Pages Git integration reads this file as the source of truth. Do not rely on
-# dashboard-only Preview overrides: preview builds can reset those bindings.
-# Production above keeps the existing real D1; preview always uses test D1.
-[[env.preview.d1_databases]]
-binding = "DB"
-database_name = "kakebo_preview"
-database_id = "b1c73b65-9530-468a-b9a3-49554f8a9264"
-
+# Pages Git integration reads this file as the source of truth.
+# Cloudflare Pages automatic Preview builds are disabled. Preview has no D1
+# or R2 bindings; never point previews at the production finance database.
+# Re-enable only after provisioning and reviewing a NEW isolated test D1.
 [env.preview.ai]
 binding = "AI"
 
-# Preview has no R2 binding. Receipt API is disabled on all preview URLs.
-
 [env.preview.vars]
 APP_ENV = "preview"
-PREVIEW_D1_ISOLATED = "true"
-PREVIEW_D1_ID = "b1c73b65-9530-468a-b9a3-49554f8a9264"
-PRODUCTION_D1_ID = "4d790915-fc06-4073-b660-bbb51dc74463"
-
-# The preview DB contains a matching environment_identity record and NO
-# production ledger. Set AUTH_TOKEN separately as a Preview-only secret to use
-# read-only QA; do not copy production credentials. Until then API fails closed.

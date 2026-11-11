@@ -24,7 +24,7 @@ npm run verify:release
 
 `verify:release` は回帰テスト（`node --test scripts/*.test.js`）、本番依存のセキュリティ監査、Vite ビルドを実行します。
 
-ローカル確認：`npm run cf:dev`。PR マージ前には [リリース前チェック](.github/PULL_REQUEST_TEMPLATE.md) に従い、最新コミットと Cloudflare Pages Preview のビルド成功が一致することを確認します。GitHub Actions は PR ごとに Validate を自動起動し、画面変更を含む PR では Mobile WebKit Smoke も起動します。Cloudflare Pages Preview の成功と GitHub CI の成功を両方確認してからマージしてください。非公開リポジトリの強制ブランチ保護は契約上有効化できない場合があり、手動チェックリストだけでは直接 push を防げません。静的ビルド成功だけで、実機 Safari や本番 Cron の稼働まで保証されるわけではありません。
+ローカル確認：`npm run cf:dev`。PR マージ前には [リリース前チェック](.github/PULL_REQUEST_TEMPLATE.md) に従い、GitHub Actions の Validate と必要な Mobile WebKit Smoke、およびローカルの回帰テストを確認します。Cloudflare Pages と NAV Worker の自動 Preview は無効化済みで、テスト用 D1 も廃止しました。静的ビルド成功だけで、実機 Safari や本番 Cron の稼働まで保証されるわけではありません。
 
 ## D1 無料枠を守る開発方針
 
@@ -32,7 +32,7 @@ npm run verify:release
 
 ## Cloudflare の構成
 
-- `wrangler.toml`：Pages 用設定。D1 の `DB`、非公開R2 `RECEIPTS_R2`、必要に応じた `AI` バインディング。R2は本番専用で Preview にバインドしない
+- `wrangler.toml`：Pages 用設定。本番 D1 の `DB`、非公開 R2 `RECEIPTS_R2`、必要に応じた `AI` バインディング。Preview の D1/R2 は無効
 - `wrangler.nav.toml`：**既存の1つの Worker** `kakeibo-nav-sync`。固定費を日本時間 00:30 と 09:30 に D1 へ自動記帳し、基準価額を 19:30 と 23:15 に同期。NAV と固定費の処理は Cron ごとに独立。新規 Worker は不要
 - NAV 同期の操作・取得可能な基金については [scripts/deploy-nav-worker.md](scripts/deploy-nav-worker.md) を参照
 
@@ -40,7 +40,9 @@ npm run verify:release
 
 ## プレビュー環境とデータ保護
 
-本番とプレビューには異なる D1 が必要です。プレビューの D1 ID と内部 ID が検証できなければ API は停止し、検証済みプレビューでも財務データの更新は禁止します。Cloudflare Dashboard の Pages Preview 設定・D1 バインディングを確認してください。独自ドメインの場合は `APP_ENV=preview` も設定します。**本番 D1 をプレビューで共有しないでください。** Preview のログイン検証は本番と異なる Preview 専用 `AUTH_TOKEN` が必要です。認証できても Preview での財務データ更新は HTTP 403 で拒否されます。
+2026-11-12 に `kakebo_preview` D1 を廃止し、Cloudflare Pages の自動 Preview デプロイと `kakeibo-nav-sync` の Worker Previews を停止しました。Pages Preview および NAV Worker Preview に D1 をバインドしません。既存プレビューのデータベース API は利用対象外です。
+
+**本番 D1（`kakebo`）をプレビューで共有しないでください。** 将来プレビューを再有効化する場合は、本番と完全に分離された新しいテスト用 D1・認証情報を作成し、環境分離の安全性を検証してから有効化してください。通常の PR 検証は GitHub Actions とローカルテストで行います。
 
 ログインには `AUTH_TOKEN` を使用します。端末セッションは取り消し可能で有効期限は最大 30 日です。アクセストークンを公開リポジトリやログに貼り付けないでください。
 

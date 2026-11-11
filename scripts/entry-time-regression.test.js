@@ -14,7 +14,7 @@ test('new manual expense gets local HH:mm once when the draft is created', () =>
   assert.ok(add, 'manual add handler exists')
   assert.match(add, /const now = new Date\(\)/)
   assert.match(add, /time: localHHMM\(now\)/, 'all manual entries default to the current time')
-  assert.match(add, /date: today, transferDate: today/)
+  assert.match(add, /date: today, transferDate: type === 'transfer' \? today : ''/, 'only ordinary transfers default to today; SBI cashback requires an explicit effective date')
   assert.match(app, /function startEdit\(entry\)[\s\S]*?time: entry\.time \|\| ''/, 'existing entry time is preserved')
   assert.doesNotMatch(app, /function startEdit\(entry\)[\s\S]{0,180}localHHMM/, 'do not overwrite edit time')
 })

@@ -43,7 +43,7 @@ test('reward destination is selected from D1 cards and prepaid rewards create a 
   assert.match(api,/db\.prepare\(pointTopUpSql\)/)
   assert.match(api,/credit:'\|\|\?1/)
   assert.match(finance,/cardBilledAmount\(e\)/)
-  assert.match(api,/const \[result\]=needsPairUpdate \? await db\.batch\(\[entryUpdate,pairedWrite\]\)/)
+  assert.match(api,/const \[result\]=needsPairUpdate \? await db\.batch\(linkedStatements\)/)
   assert.match(api,/pairedEntryId:paired\?\.id\|\|null/)
 })
 

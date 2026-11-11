@@ -151,7 +151,7 @@ test('trash and restore keep linked SBI transfers and their explicit purchase mo
     assert.equal(removed.status,200,JSON.stringify(removed.body))
     assert.equal(db.rows().length,0)
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM trash_items WHERE item_type=\'entry\'').get().n,2)
-    const restored=await api(db,'trash/'+income.id+'/restore','POST')
+    const restored=await api(db,'trash-items/'+income.id+'/restore','POST')
     assert.equal(restored.status,200,JSON.stringify(restored.body))
     const rows=db.rows()
     assert.equal(rows.length,2)

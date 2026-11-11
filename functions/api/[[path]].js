@@ -1101,7 +1101,7 @@ export async function onRequest({ request, env, params }) {
               (pairedEntry.transfer_target?.startsWith('prepaid:') ? pairedEntry.transfer_target.slice(8)+'チャージ' : pairedEntry.merchant),pairedEntry.note,pairedEntry.raw,pairedEntry.type,pairedEntry.transfer_target??null,
               pairedEntry.transfer_applied??0,pairedEntry.transfer_date??null,pairedEntry.client_request_id,
               pairedEntry.payment_source||'',pairedEntry.created_at||new Date().toISOString()))
-          if(pairedEntry.transfer_target==='sbi' && /^\\d{4}-(0[1-9]|1[0-2])$/.test(pairedSaved?.purchaseMonth || ''))
+          if(pairedEntry.transfer_target==='sbi' && /^\d{4}-(0[1-9]|1[0-2])$/.test(pairedSaved?.purchaseMonth || ''))
             statements.push(db.prepare('INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) VALUES(?1,?2)')
               .bind(pairedEntry.id,pairedSaved.purchaseMonth))
           statements.push(db.prepare("DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(pairedEntry.id)))
@@ -1293,8 +1293,8 @@ export async function onRequest({ request, env, params }) {
         // If a stale optimistic edit updates zero rows, no auto-charge mutation.
         const pairedWrite=reward.target==='sbi'
           ? db.prepare(pointSbiTransferSql.replace('client_request_id=?1 AND type=', 'id=?1 AND type=')
-              .replace('AND transfer_date IS NOT NULL\\n  ON CONFLICT',
-                'AND transfer_date IS NOT NULL AND changes()>0\\n  ON CONFLICT'))
+              .replace('AND transfer_date IS NOT NULL\n  ON CONFLICT',
+                'AND transfer_date IS NOT NULL AND changes()>0\n  ON CONFLICT'))
               .bind(id,linkedId,today)
           : reward.target?.startsWith('prepaid:')
           ? db.prepare(pointTopUpSql.replace('client_request_id=?1 AND type=', 'id=?1 AND type=')

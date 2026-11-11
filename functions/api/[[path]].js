@@ -80,7 +80,7 @@ const pointTopUpSql = `INSERT INTO entries
 // generated transfer in the same D1 batch as its parent income.
 const pointSbiTransferSql = `INSERT INTO entries
   (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
-  SELECT transfer_date,time,amount,'投資・資産移動','SBI証券（ポイント還元）','ポイント還元の自動振替','','transfer',
+  SELECT date,time,amount,'投資・資産移動','SBI証券（ポイント還元）','ポイント還元の自動振替','','transfer',
     'sbi',CASE WHEN transfer_date<=?3 THEN 1 ELSE 0 END,transfer_date,?2,'ポイント還元'
   FROM entries WHERE client_request_id=?1 AND type='income' AND category='ポイント還元'
     AND transfer_target='sbi' AND transfer_date IS NOT NULL

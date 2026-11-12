@@ -26,8 +26,15 @@ export function paymentForDraft({ merchant = '', recognized = '', importSource =
   const paypayCards = registeredSources.filter(name =>
     /^paypay/i.test(String(name).normalize('NFKC').replace(/[\s　・]/g, '')) &&
     /(?:カード|card|visa|クレジット|credit)/i.test(String(name).normalize('NFKC')))
+  // Olive is SMBC's credit-card product: resolve to a registered SMBC card
+  // only when the user has exactly one compatible card, never invent a source.
+  const isOlive=/^(?:olive|oliveクレジット|olivecredit)$/i.test(
+    String(recognized||'').normalize('NFKC').replace(/[\s　・/／]/g,''))
+  const smbcCards=registeredSources.filter(name=>
+    /^(?:三井住友カード|SMBCカード)/i.test(String(name).normalize('NFKC').trim()))
   const ocrCard = recognized && allowed(recognized) ? recognized :
-    paypayCredit && paypayCards.length === 1 ? paypayCards[0] : ''
+    paypayCredit && paypayCards.length === 1 ? paypayCards[0] :
+    isOlive && smbcCards.length === 1 ? smbcCards[0] : ''
   return savedRule || ocrCard || (suica && isStationMerchant(merchant) ? suica : '') ||
     (allowed(defaultSource) ? defaultSource : '')
 }

@@ -1202,18 +1202,21 @@ export async function onRequest({ request, env, params }) {
         if (clientRequestId && !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
           return json({ error: '記録IDの形式が正しくありません' }, 400)
         const requestedSbiPurpose=transfer && target==='sbi' && e.sbiPurpose!=null ? String(e.sbiPurpose) : null
-        if(requestedSbiPurpose && !['auto','monthly','purchase','funding'].includes(requestedSbiPurpose))
+        if(requestedSbiPurpose && !['auto','monthly','purchase'].includes(requestedSbiPurpose))
           return json({error:'SBI証券の取引区分を確認してください'},400)
         // For new imports, text is authoritative only when a user hasn't
         // chosen an explicit purpose. Point buys can never be monthly.
         const autoKind=transfer&&target==='sbi'?inferredSbiEntryKind(e):''
-        const sbiPurpose=transfer && target==='sbi'
+        const sbiPurpose=transfer && target==='sbi' && clientRequestId
           ? autoKind==='point'?'purchase'
             : requestedSbiPurpose && requestedSbiPurpose!=='auto'
               ? requestedSbiPurpose
               : autoKind==='monthly'?'monthly':autoKind==='purchase'||requestedSbiPurpose==='auto'?'purchase':null
           : null
-        if(sbiPurpose && !clientRequestId)
+        // Implicit classification for old/imported entries without a request ID
+        // stays read-time inferred. Only a human-selected override needs an ID.
+        if(transfer && target==='sbi' && !clientRequestId &&
+            requestedSbiPurpose && requestedSbiPurpose!=='auto')
           return json({error:'SBI証券の記録IDを確認してください'},400)
         // Advisory prechecks in the browser can race with another device. Make
         // the final duplicate decision in ONE SQL insert on D1. Explicitly

@@ -72,3 +72,38 @@ test('invalid period summaries do not touch D1',async()=>{
   }
   assert.equal(queries,0)
 })
+
+test('existing private D1 bridge keeps HomeFlow GET read-only and handles signed JPDA separately',async()=>{
+ const secret='tests-only-private-bridge-secret-abcdef0123456789'
+ const env={DB:db,JPDA_BRIDGE_SECRET:secret}
+ const raw=JSON.stringify({source:'jp-document-assistant',actor_user_id:'approved-jpda-mapping',payload:{operation:'options',entryType:'expense'}})
+ const stamp=String(Date.now())
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign'])
+ const bits=new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(stamp+'\n'+raw)))
+ const signature=Array.from(bits,n=>n.toString(16).padStart(2,'0')).join('')
+ const request=(overrideSignature=signature)=>new Request('https://internal.invalid/api/bridge/document-assistant',{
+  method:'POST',headers:{'Content-Type':'application/json','X-DA-Timestamp':stamp,'X-DA-Signature':overrideSignature},body:raw
+ })
+ const malformed=await bridge.fetch(request('0'.repeat(64)),env)
+ assert.equal(malformed.status,401)
+ const noDb={...env,DB:null}
+ assert.equal((await bridge.fetch(request(),noDb)).status,503)
+ const records=[]
+ const source={prepare(sql){
+  records.push(sql)
+  return {bind(){return this}}
+ },async batch(){
+   return [{results:[{category:'饮食料品',display_name:'飲食料品'}]},{results:[{name:'三井住友カード'}]}]
+ }}
+ const reply=await bridge.fetch(request(),{...env,DB:source})
+ assert.equal(reply.status,200,await reply.text().catch(()=>''))
+ // Do not read the consumed response twice.
+ const reply2=await bridge.fetch(request(),{...env,DB:source})
+ const result=await reply2.json()
+ assert.equal(result.ok,true)
+ assert.equal(result.categories[0].value,'饮食料品')
+ assert.equal(result.payment_sources.at(-1).value,'三井住友カード')
+ assert.equal(records.every(query=>/^SELECT/i.test(query)),true)
+ // The HomeFlow route still rejects POST with a uniform 404.
+ assert.equal((await bridge.fetch(req('','POST'),env)).status,404)
+})

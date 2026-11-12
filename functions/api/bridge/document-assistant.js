@@ -28,7 +28,14 @@ export async function onRequestPost({request,env}){
   let body;try{body=JSON.parse(raw)}catch{return json({ok:false,error:'invalid_json'},400)}
   if(body?.source!=='jp-document-assistant')return json({ok:false,error:'invalid_source'},400)
   const actor=body.actor_user_id
-  if(!env.JPDA_BRIDGE_ALLOWED_USER||actor!==env.JPDA_BRIDGE_ALLOWED_USER)return json({ok:false,error:'actor_not_allowed'},403)
+  const internalOnly=env.JPDA_PRIVATE_BRIDGE==='true'
+  // The private Worker has no public route, is reached only by a service
+  // binding, and verifies HMAC above; caller must also provide a mapped actor.
+  // Pages keeps its original strict, configured per-user allowlist.
+  if(internalOnly){
+    if(typeof actor!=='string'||actor.length<1||actor.length>100)return json({ok:false,error:'actor_not_allowed'},403)
+  }else if(!env.JPDA_BRIDGE_ALLOWED_USER||actor!==env.JPDA_BRIDGE_ALLOWED_USER)
+    return json({ok:false,error:'actor_not_allowed'},403)
   // A signed, explicitly authorized, read-only catalogue for the document
   // assistant picker. Never return transactions, user IDs or account balances.
   if(body?.payload?.operation==='options'){

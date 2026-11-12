@@ -1,7 +1,9 @@
-// Internal-only, read-only D1 projection for HomeFlow via Cloudflare Service Binding.
+// Private D1 service for HomeFlow read-only projection and a separately HMAC-authenticated
+// document-assistant bridge. No public routes, no preview and no new Worker.
 // SECURITY: deploy with workers_dev=false, preview_urls=false and no public routes.
 // Only HomeFlow's owner-authenticated Worker may bind this service.
 // No INSERT/UPDATE/DELETE, no full ledger export, no OCR/raw notes or credentials.
+import { onRequestPost as documentAssistantPost } from '../functions/api/bridge/document-assistant.js'
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{
   'content-type':'application/json; charset=utf-8','cache-control':'no-store',
   'x-content-type-options':'nosniff','referrer-policy':'no-referrer'
@@ -79,7 +81,17 @@ export async function readLedger(request,db){
 
 export default {
   async fetch(request,env){
-    if(request.method!=='GET'||new URL(request.url).pathname!=='/api/homeflow-ledger')
+    const path=new URL(request.url).pathname
+    if(request.method==='POST'&&path==='/api/bridge/document-assistant'){
+      // The internal Worker is reachable through Cloudflare Service Bindings
+      // only. Its handler still requires a valid shared HMAC and mapped actor.
+      if(!env.DB)return json({ok:false,error:'ledger_unavailable'},503)
+      // Internal-only capability is supplied here, never by an HTTP header.
+      // A valid shared HMAC is still mandatory for every operation.
+      return documentAssistantPost({request,env:{...env,
+        JPDA_BRIDGE_ENABLED:'true',JPDA_PRIVATE_BRIDGE:'true'}})
+    }
+    if(request.method!=='GET'||path!=='/api/homeflow-ledger')
       return json({error:'not_found'},404)
     if(!env.DB)return json({error:'ledger_read_unavailable'},503)
     return readLedger(request,env.DB)

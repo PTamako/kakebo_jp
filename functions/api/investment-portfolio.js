@@ -1,5 +1,6 @@
 // SBI bookkeeping only; NEVER sends bank transfers or securities orders.
 import { probeFundNavSupport } from './fund-nav-sync.js'
+import { validateRegisteredPaymentSource } from './payment-source-validation.js'
 // D1 stores explicit holdings and a monthly funding-to-plan reconciliation.
 const respond=(value,status=200)=>new Response(JSON.stringify(value),{
   status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}
@@ -28,14 +29,20 @@ export function isPointRewardSbiTransfer(item) {
   return item.payment_source==='ポイント還元' ||
     String(item.client_request_id||'').startsWith('point_charge_');
 }
+// Missing metadata means a legacy monthly transfer. Explicitly classified
+// purchases / extra funding never satisfy a recurring savings plan.
+export function investmentRecordKind(item) {
+  if(isPointRewardSbiTransfer(item))return 'point';
+  return item.purpose==='purchase'||item.purpose==='funding'?item.purpose:'monthly';
+}
 export function fundingStatus(transfers,month,orderDay=9) {
   return transfers.reduce((total,item)=>{
     if(Number(item.transfer_applied)!==1)return total;
     const effective=String(item.transfer_date||item.date);
-    const pointReward=isPointRewardSbiTransfer(item);
-    const target=pointReward?inferredPurchaseMonth(effective):(item.purchase_month||inferredPurchaseMonth(effective));
-    if(target!==month)return total;
-    if(pointReward){
+    const kind=investmentRecordKind(item);
+    const target=kind==='point'?inferredPurchaseMonth(effective):(item.purchase_month||inferredPurchaseMonth(effective));
+    if(target!==month || (kind!=='point'&&kind!=='monthly'))return total;
+    if(kind==='point'){
       total.point_funded+=Number(item.amount);
       total.point_count++;
     }else{
@@ -55,13 +62,63 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const result=await probeFundNavSupport(fundCode)
       return respond({fundCode,...result})
     }
+    // Manually confirmed spot buys and additional transfers are one ledger
+    // entry plus one purpose link in a single D1 transaction.
+    if(sub==='activity'&&method==='POST'){
+      const x=await request.json().catch(()=>null);
+      const purpose=x?.purpose;
+      const date=x?.date, effectiveDate=x?.effectiveDate;
+      const amount=Number(x?.amount);
+      const paymentSource=String(x?.paymentSource||'').trim();
+      const fundName=String(x?.fundName||'').trim();
+      const memo=String(x?.note||'').trim();
+      const clientRequestId=String(x?.clientRequestId||'').trim();
+      if(!['purchase','funding'].includes(purpose)||!dayOk(date)||!dayOk(effectiveDate)||
+         !Number.isSafeInteger(amount)||amount<=0||amount>1000000000||
+         fundName.length>120||memo.length>500||paymentSource.length>80||
+         !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
+        return respond({error:'買付・振替の入力内容を確認してください'},400);
+      const sourceProblem=await validateRegisteredPaymentSource(db,paymentSource);
+      if(sourceProblem)return respond({error:sourceProblem.error,code:sourceProblem.code},sourceProblem.status);
+      const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+      const month=effectiveDate.slice(0,7);
+      const posted=effectiveDate<=today?1:0;
+      const merchant=purpose==='purchase'?(fundName||'SBI証券（追加買付）'):'SBI証券（追加振替）';
+      await db.batch([
+        db.prepare(`INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
+          VALUES(?1,'',?2,'投資・資産移動',?3,?4,'','transfer','sbi',?5,?6,?7,?8)
+          ON CONFLICT(client_request_id) DO NOTHING`)
+          .bind(date,amount,merchant,memo,posted,effectiveDate,clientRequestId,paymentSource),
+        db.prepare(`INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month,purpose)
+          SELECT id,?2,?3 FROM entries WHERE client_request_id=?1 AND type='transfer' AND transfer_target='sbi'`)
+          .bind(clientRequestId,month,purpose)
+      ]);
+      const entry=await db.prepare("SELECT e.id,l.purpose FROM entries e JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.client_request_id=?1 AND e.type='transfer' AND e.transfer_target='sbi'").bind(clientRequestId).first();
+      if(!entry||entry.purpose!==purpose)return respond({error:'記録の重複を確認してください'},409);
+      return respond({ok:true,id:entry.id});
+    }
+    if(sub==='transfer-purpose'&&method==='PUT'){
+      const x=await request.json().catch(()=>null);
+      if(!Number.isSafeInteger(x?.entryId)||x.entryId<=0||
+         !['monthly','purchase','funding'].includes(x?.purpose))
+        return respond({error:'振替の用途を確認してください'},400);
+      const entry=await db.prepare("SELECT e.id,e.date,e.transfer_date,e.payment_source,e.client_request_id,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.id=?1 AND e.type='transfer' AND e.transfer_target='sbi'").bind(x.entryId).first();
+      if(!entry)return respond({error:'振替が見つかりません'},404);
+      if(isPointRewardSbiTransfer(entry))return respond({error:'ポイント還元の用途は変更できません'},409);
+      const targetMonth=entry.purchase_month||inferredPurchaseMonth(entry.transfer_date||entry.date);
+      await db.prepare(`INSERT INTO sbi_transfer_links(entry_id,purchase_month,purpose)
+        VALUES(?1,?2,?3)
+        ON CONFLICT(entry_id) DO UPDATE SET purpose=excluded.purpose,updated_at=CURRENT_TIMESTAMP`)
+        .bind(x.entryId,targetMonth,x.purpose).run();
+      return respond({ok:true});
+    }
     if(method==='GET'&&sub==='export'){
       const rows=await db.batch([
         db.prepare('SELECT fund_code,account_type,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plans'),
         db.prepare('SELECT fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plan_history'),
         db.prepare('SELECT fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at FROM investment_holdings'),
         db.prepare('SELECT fund_code,nav_per_10000,price_date,source,updated_at FROM fund_prices'),
-        db.prepare('SELECT entry_id,purchase_month FROM sbi_transfer_links')
+        db.prepare('SELECT entry_id,purchase_month,purpose FROM sbi_transfer_links')
       ]);
       return respond({investmentPlans:rows[0].results,investmentPlanHistory:rows[1].results,
         investmentHoldings:rows[2].results,fundPrices:rows[3].results,transferLinks:rows[4].results});
@@ -76,23 +133,23 @@ export async function handlePortfolio({db,request,method,sub,url}) {
           WHERE h.fund_code=p.fund_code AND h.account_type=p.account_type AND h.effective_month<=?1)
         ORDER BY p.monthly_amount DESC,p.fund_code,p.account_type`).bind(month).all(),
         db.prepare('SELECT h.fund_code,h.account_type,h.fund_name,h.units,h.acquisition_cost,h.reported_value,h.reported_at,h.updated_at,p.nav_per_10000,p.price_date,p.source FROM investment_holdings h LEFT JOIN fund_prices p ON p.fund_code=h.fund_code ORDER BY h.fund_code,h.account_type').all(),
-        db.prepare("SELECT e.id,e.date,e.transfer_date,e.amount,e.transfer_applied,e.payment_source,e.client_request_id,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.type='transfer' AND e.transfer_target='sbi' ORDER BY e.id DESC LIMIT 1000").all()
+        db.prepare("SELECT e.id,e.date,e.transfer_date,e.amount,e.transfer_applied,e.payment_source,e.client_request_id,e.merchant,e.note,l.purchase_month,l.purpose FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.type='transfer' AND e.transfer_target='sbi' ORDER BY e.id DESC LIMIT 1000").all()
       ]);
       const active=plans.filter(p=>p.enabled===1);
       const monthlyAmount=active.reduce((sum,p)=>sum+Number(p.monthly_amount),0);
       const normalizedTransfers=transfers.map(t=>{
-        const isPointReward=isPointRewardSbiTransfer(t);
+        const kind=investmentRecordKind(t);
         const appliedMonth=inferredPurchaseMonth(t.transfer_date||t.date);
-        return {...t,
-          effective_month:isPointReward?appliedMonth:(t.purchase_month||appliedMonth),
-          inferred:isPointReward||!t.purchase_month,is_point_reward:isPointReward
+        return {...t,kind,
+          effective_month:kind==='point'?appliedMonth:(t.purchase_month||appliedMonth),
+          inferred:kind==='point'||!t.purchase_month,is_point_reward:kind==='point'
         };
       });
       const status=fundingStatus(normalizedTransfers,month);
-      const scheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1&&!t.is_point_reward).reduce((n,t)=>n+Number(t.amount),0);
+      const scheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1&&t.kind==='monthly').reduce((n,t)=>n+Number(t.amount),0);
       const pointScheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1&&t.is_point_reward).reduce((n,t)=>n+Number(t.amount),0);
       const registered=status.funded+scheduled;
-      const relevant=normalizedTransfers.filter(t=>t.effective_month===month).slice(0,20);
+      const relevant=normalizedTransfers.filter(t=>t.effective_month===month).slice(0,100);
       const positions=holdings.map(h=>{
         const nav=h.nav_per_10000==null?null:Number(h.nav_per_10000);
         // SBI displays each NISA account's investment trust valuation after

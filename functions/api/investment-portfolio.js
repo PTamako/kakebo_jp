@@ -20,15 +20,27 @@ export function inferredPurchaseMonth(date,orderDay=9) {
   const month=String(date||'').slice(0,7);
   return monthOk(month) ? (day>orderDay?nextMonth(month):month) : '';
 }
+// Point redemption is additional investment capital, not a monthly cash savings
+// contribution. Keep its real SBI transfer in the ledger and portfolio totals.
+export function isPointRewardSbiTransfer(item) {
+  return item.payment_source==='ポイント還元' ||
+    String(item.client_request_id||'').startsWith('point_charge_');
+}
 export function fundingStatus(transfers,month,orderDay=9) {
   return transfers.reduce((total,item)=>{
     if(Number(item.transfer_applied)!==1)return total;
     const effective=String(item.transfer_date||item.date);
     const target=item.purchase_month||inferredPurchaseMonth(effective,orderDay);
-    if(target===month)total.funded+=Number(item.amount);
-    if(target===month)total.count++;
+    if(target!==month)return total;
+    if(isPointRewardSbiTransfer(item)){
+      total.point_funded+=Number(item.amount);
+      total.point_count++;
+    }else{
+      total.funded+=Number(item.amount);
+      total.count++;
+    }
     return total;
-  },{funded:0,count:0});
+  },{funded:0,count:0,point_funded:0,point_count:0});
 }
 export async function handlePortfolio({db,request,method,sub,url}) {
   try{
@@ -61,17 +73,18 @@ export async function handlePortfolio({db,request,method,sub,url}) {
           WHERE h.fund_code=p.fund_code AND h.account_type=p.account_type AND h.effective_month<=?1)
         ORDER BY p.monthly_amount DESC,p.fund_code,p.account_type`).bind(month).all(),
         db.prepare('SELECT h.fund_code,h.account_type,h.fund_name,h.units,h.acquisition_cost,h.reported_value,h.reported_at,h.updated_at,p.nav_per_10000,p.price_date,p.source FROM investment_holdings h LEFT JOIN fund_prices p ON p.fund_code=h.fund_code ORDER BY h.fund_code,h.account_type').all(),
-        db.prepare("SELECT e.id,e.date,e.transfer_date,e.amount,e.transfer_applied,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.type='transfer' AND e.transfer_target='sbi' ORDER BY e.id DESC LIMIT 1000").all()
+        db.prepare("SELECT e.id,e.date,e.transfer_date,e.amount,e.transfer_applied,e.payment_source,e.client_request_id,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.type='transfer' AND e.transfer_target='sbi' ORDER BY e.id DESC LIMIT 1000").all()
       ]);
       const active=plans.filter(p=>p.enabled===1);
       const monthlyAmount=active.reduce((sum,p)=>sum+Number(p.monthly_amount),0);
       const day=active.length?Math.min(...active.map(p=>p.order_day)):9;
       const normalizedTransfers=transfers.map(t=>({
         ...t, effective_month:t.purchase_month||inferredPurchaseMonth(t.transfer_date||t.date,day),
-        inferred:!t.purchase_month
+        inferred:!t.purchase_month, is_point_reward:isPointRewardSbiTransfer(t)
       }));
       const status=fundingStatus(normalizedTransfers,month,day);
-      const scheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1).reduce((n,t)=>n+Number(t.amount),0);
+      const scheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1&&!t.is_point_reward).reduce((n,t)=>n+Number(t.amount),0);
+      const pointScheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1&&t.is_point_reward).reduce((n,t)=>n+Number(t.amount),0);
       const relevant=normalizedTransfers.filter(t=>t.effective_month===month||t.purchase_month===month).slice(0,20);
       const positions=holdings.map(h=>{
         const nav=h.nav_per_10000==null?null:Number(h.nav_per_10000);
@@ -93,6 +106,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       return respond({
         month,plans,holdings:positions,transfers:relevant,
         reconciliation:{monthly_amount:monthlyAmount,funded:status.funded,pending:scheduled,
+          point_funded:status.point_funded,point_pending:pointScheduled,
           difference:status.funded-monthlyAmount,linked_count:status.count},
         valuation:{valued_count:valued.length,holdings_count:positions.length,
           value:valued.length===positions.length&&positions.length?valued.reduce((n,p)=>n+p.market_value,0):null,

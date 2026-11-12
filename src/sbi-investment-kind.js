@@ -17,6 +17,7 @@ export function isSbiPointInvestmentText(value){
 export function inferSbiInvestmentKind(value){
   const text=normalize(value);
   if(!text || /(?:払戻|返金|キャンセル|取消|配当|手数料)/.test(text))return '';
+  if(/(?:ポイント獲得|积分获得|付与|ポイント還元)/.test(text))return '';
   if(isSbiPointInvestmentText(text))return 'point';
   const hasBroker=/(?:sbi証券|sbi证券|sbi)/.test(text);
   const hasFund=/(?:投信|投資信託|投资信托)/.test(text);

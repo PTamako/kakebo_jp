@@ -575,6 +575,39 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(fundGroups.length-2)+'銘柄を表示'}}</button>
         </div>
       </details>
+
+      <details class="panel sbi-card sbi-investment-activity" open>
+        <summary class="sbi-disclosure-summary">
+          <span class="sbi-manage-title"><strong>買付・資金振替の記録</strong><small>追加買付・資金振替・ポイント還元</small></span>
+          <span class="sbi-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="sbi-section-body sbi-activity-body">
+          <div class="sbi-activity-actions">
+            <button type="button" class="sbi-activity-main" @click="openActivity('purchase')">＋ 買付を記録</button>
+            <button type="button" class="sbi-activity-secondary" @click="openActivity('funding')">資金振替</button>
+            <a class="sbi-activity-external" href="https://www.sbisec.co.jp/" target="_blank" rel="noopener noreferrer" aria-label="SBI証券の公式サイトで買付を操作">SBIで買付 ↗</a>
+          </div>
+          <div class="sbi-activity-month">
+            <span>対象月</span>
+            <input v-model="month" type="month" aria-label="買付・資金振替の対象月" @change="load" />
+          </div>
+          <div v-if="!investmentActivities.length" class="sbi-empty">この月の買付・資金振替・ポイント還元はありません</div>
+          <div v-for="t in (showAllActivity ? investmentActivities : investmentActivities.slice(0,5))" :key="'activity-'+t.id" class="sbi-activity-row">
+            <div class="sbi-row-main">
+              <strong>{{purposeLabel(t.kind)}}</strong>
+              <small>{{t.transfer_date||t.date}} · {{Number(t.transfer_applied)===1?'帳簿反映済み':'期日待ち'}}</small>
+              <small v-if="t.merchant && t.kind==='purchase'">{{t.merchant}}</small>
+              <small v-if="t.payment_source && t.kind!=='point'">{{t.payment_source}}</small>
+            </div>
+            <div class="sbi-activity-side">
+              <strong>{{yen(t.amount)}}</strong>
+              <button v-if="t.kind!=='point'" type="button" class="sbi-row-edit" @click="editPurpose(t)">区分変更</button>
+            </div>
+          </div>
+          <button v-if="investmentActivities.length>5" type="button" class="sbi-show-more" :aria-expanded="showAllActivity" @click="showAllActivity=!showAllActivity">{{showAllActivity?'閉じる':'あと'+(investmentActivities.length-5)+'件を表示'}}</button>
+          <details class="sbi-footnote"><summary>記録について</summary><p>買付・振替の記録は帳簿用です。証券会社での注文・約定や保有口数の更新は行いません。クレジットカードの支払元はカード請求の再計算対象です。</p></details>
+        </div>
+      </details>
     </template>
     </div>
 
@@ -605,12 +638,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             <span v-if="data.reconciliation.funded">帳簿反映済み {{yen(data.reconciliation.funded)}}</span>
             <span v-if="data.reconciliation.pending">期日待ち {{yen(data.reconciliation.pending)}}</span>
           </div>
-          <div v-if="data.reconciliation.point_funded || data.reconciliation.point_pending" class="sbi-point-funding">
-            <span>ポイント還元（積立対象外）</span>
-            <strong>{{yen(data.reconciliation.point_funded)}}</strong>
-            <small v-if="data.reconciliation.point_pending">期日待ち {{yen(data.reconciliation.point_pending)}}</small>
-          </div>
-          <div class="sbi-manage-subhead">
+           <div class="sbi-manage-subhead">
             <strong>積立設定</strong>
             <button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button>
           </div>
@@ -624,16 +652,16 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           <details class="sbi-transfer-disclosure">
             <summary class="sbi-transfer-summary">
               <strong>振替記録・対象月</strong>
-              <small>{{data.transfers.length}}件</small>
+              <small>{{monthlyTransfers.length}}件</small>
               <span class="sbi-detail-chevron" aria-hidden="true">⌄</span>
             </summary>
             <div class="sbi-transfer-content">
-              <p v-if="!data.transfers.length" class="sbi-empty">この月の振替記録はありません</p>
-              <div v-for="t in (showAllTransfers ? data.transfers : data.transfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
+              <p v-if="!monthlyTransfers.length" class="sbi-empty">この月の積立振替はありません</p>
+              <div v-for="t in (showAllTransfers ? monthlyTransfers : monthlyTransfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
                 <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>適用日 {{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '帳簿反映済み' : '期日待ち'}}{{t.is_point_reward ? ' · ポイント還元' : ''}}</small><small v-if="t.transfer_date && t.transfer_date !== t.date">取引日 {{t.date}}</small></div>
-                <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button v-if="!t.is_point_reward" type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の対象月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">変更</button></div>
+                <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の対象月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">月変更</button><button type="button" class="sbi-row-edit" @click="editPurpose(t)">区分変更</button></div>
               </div>
-              <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
+              <button v-if="monthlyTransfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(monthlyTransfers.length-2)+'件を表示'}}</button>
               <details class="sbi-footnote"><summary>振替の確認について</summary><p>登録済みには期日待ちも含みます。対象月は適用日の月です。ポイント還元は適用日の月で集計します。期日反映は証券口座への入金・買付完了を保証しません。買付月が異なる場合は変更できます。</p></details>
             </div>
           </details>

@@ -43,7 +43,7 @@ test('prepaid and holdings default open, while monthly plans and purchase months
   assert.match(portfolio, /fundGroups\.length-2/)
   assert.doesNotMatch(portfolio, /fundGroups\.value\.slice\(0,4\)|fundGroups\.length>4|fundGroups\.length-4/)
   assert.match(portfolio, /data\.plans\.slice\(0,2\)/)
-  assert.match(portfolio, /data\.transfers\.slice\(0,2\)/)
+  assert.match(portfolio, /monthlyTransfers\.slice\(0,2\)/)
 })
 
 test('balance edit and transfer adjustment remain available without changing D1 schemas', () => {

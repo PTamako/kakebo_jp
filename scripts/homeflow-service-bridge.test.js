@@ -93,7 +93,11 @@ test('existing private D1 bridge keeps HomeFlow GET read-only and handles signed
   records.push(sql)
   return {bind(){return this}}
  },async batch(){
-   return [{results:[{category:'饮食料品',display_name:'飲食料品'}]},{results:[{name:'三井住友カード'}]}]
+   return [
+     {results:[{category:'饮食料品',display_name:'飲食料品',is_default:1}]},
+     {results:[{name:'三井住友カード',is_default:1}]},
+     {results:[]},{results:[]},{results:[]}
+   ]
  }}
  const reply=await bridge.fetch(request(),{...env,DB:source})
  assert.equal(reply.status,200,await reply.text().catch(()=>''))

@@ -2,6 +2,8 @@
 // The bridge never consumes browser cookies; enable only with scoped secrets and an explicit actor allowlist.
 import { validateRegisteredPaymentSource } from '../payment-source-validation.js'
 import { validateLedgerTextFields } from '../ledger-input-validation.js'
+import { classify } from '../../../src/parse.js'
+import { paymentForDraft, normalizeMerchant } from '../../../src/payment-rules.js'
 const enc=new TextEncoder()
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})
 async function verified(secret,raw,stamp,signature){
@@ -41,16 +43,63 @@ export async function onRequestPost({request,env}){
   if(body?.payload?.operation==='options'){
     const type=body.payload.entryType
     if(!['income','expense'].includes(type))return json({ok:false,error:'invalid_entry_type'},400)
+    // This query is read-only. Match using the same Kakebo classifier and
+    // card-selection function as ordinary receipt and manual imports.
+    const merchant=body.payload.merchant??''
+    const recognized=body.payload.recognizedPayment??''
+    if(typeof merchant!=='string'||merchant.length>100||
+      typeof recognized!=='string'||recognized.length>80)
+      return json({ok:false,error:'invalid_merchant_lookup'},400)
     try{
-      const [categories,methods]=await env.DB.batch([
-        env.DB.prepare("SELECT category,COALESCE(NULLIF(display_name,''),category) AS display_name FROM category_source WHERE entry_type=?1 ORDER BY COALESCE(sort_order,10000),category LIMIT 120").bind(type),
-        env.DB.prepare("SELECT name FROM payment_sources WHERE is_archived=0 ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name LIMIT 120")
+      const [categories,methods,builtIn,custom,paymentRules]=await env.DB.batch([
+        env.DB.prepare("SELECT category,COALESCE(NULLIF(display_name,''),category) AS display_name,is_default FROM category_source WHERE entry_type=?1 ORDER BY COALESCE(sort_order,10000),category LIMIT 120").bind(type),
+        env.DB.prepare("SELECT name,is_default FROM payment_sources WHERE is_archived=0 ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name LIMIT 120"),
+        env.DB.prepare("SELECT keyword,category FROM rules WHERE category IS NOT NULL"),
+        env.DB.prepare("SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL"),
+        env.DB.prepare("SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL")
       ])
-      const names=(methods.results||[]).map(row=>String(row.name||'')).filter(Boolean)
+      const categoryRows=categories.results||[]
+      const methodRows=methods.results||[]
+      const names=methodRows.map(row=>String(row.name||'')).filter(Boolean)
       if(!names.includes('現金'))names.unshift('現金')
-      return json({ok:true,categories:(categories.results||[]).map(row=>({
+      const choices=categoryRows.map(row=>({
         value:String(row.category||''),label:String(row.display_name||row.category||'')
-      })).filter(row=>row.value&&row.label),payment_sources:names.map(value=>({value,label:value}))})
+      })).filter(row=>row.value&&row.label)
+      const availableCategories=new Set(choices.map(c=>c.value))
+      const categoryDefault=categoryRows.find(row=>Number(row.is_default)===1)?.category||categoryRows[0]?.category||''
+      const registered=names
+      const paymentDefault=methodRows.find(row=>Number(row.is_default)===1)?.name||''
+      let recommendedCategory=categoryDefault,recommendedPayment=''
+      let categoryOrigin='default',paymentOrigin='default'
+      if(type==='expense'){
+        const customRules=(custom.results||[]).map(row=>({...row,is_custom:true}))
+        const defaults=(builtIn.results||[]).map(row=>({...row,is_custom:false}))
+        // Custom overrides replace the same built-in keyword, just like GET /api/rules.
+        const byKeyword=new Map(defaults.map(row=>[row.keyword,row]))
+        for(const row of customRules)byKeyword.set(row.keyword,row)
+        const classified=merchant?classify(merchant,[...byKeyword.values()]):null
+        if(classified?.keyword&&availableCategories.has(classified.category)){
+          recommendedCategory=classified.category;categoryOrigin='merchant_rule'
+        }
+        const payment=paymentForDraft({
+          merchant,recognized,rules:paymentRules.results||[],
+          registeredSources:registered,defaultSource:paymentDefault,type:'expense'
+        })
+        recommendedPayment=payment
+        const normalized=normalizeMerchant(merchant)
+        const matchedPayment=(paymentRules.results||[]).filter(row=>row.keyword&&row.payment_source)
+          .sort((a,b)=>normalizeMerchant(b.keyword).length-normalizeMerchant(a.keyword).length)
+          .find(row=>normalized&&normalized.includes(normalizeMerchant(row.keyword))&&registered.includes(row.payment_source))
+        if(matchedPayment&&payment===matchedPayment.payment_source)paymentOrigin='merchant_rule'
+        else if(payment&&recognized&&payment!==paymentDefault)paymentOrigin='recognized'
+      }
+      const suggested={
+        category:availableCategories.has(recommendedCategory)?recommendedCategory:'',
+        payment_source:registered.includes(recommendedPayment)?recommendedPayment:'',
+        category_origin:categoryOrigin,payment_origin:paymentOrigin
+      }
+      return json({ok:true,categories:choices,payment_sources:names.map(value=>({value,label:value})),
+        suggested})
     }catch{return json({ok:false,error:'catalog_unavailable'},503)}
   }
   const key=body?.idempotency_key
@@ -71,6 +120,9 @@ export async function onRequestPost({request,env}){
     request.headers.get('Idempotency-Key')!==key)return json({ok:false,error:'invalid_source'},400)
   const p=body.payload
   const date=p.date,amount=p.amount,source=p.paymentSource
+  const transactionTime=p.time===undefined?'':p.time
+  if(typeof transactionTime!=='string'||(transactionTime!==''&&!/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(transactionTime)))
+    return json({ok:false,error:'invalid_entry_time'},400)
   if(!['income','expense'].includes(p.type)||!Number.isSafeInteger(amount)||amount<=0||
     typeof date!=='string'||!/^\d{4}-\d\d-\d\d$/.test(date)||
     !Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date||
@@ -81,7 +133,7 @@ export async function onRequestPost({request,env}){
   // Store the source document's merchant as the actual ledger display name.
   // Never replace a known store with the importing application's name.
   const merchant=typeof p.merchant==='string'?p.merchant.trim():''
-  const field={type:p.type,date,amount,category:p.category.trim(),paymentSource:source.trim(),
+  const field={type:p.type,date,time:transactionTime,amount,category:p.category.trim(),paymentSource:source.trim(),
     note:typeof p.note==='string'?p.note.slice(0,180):'',merchant:merchant||'文书助手'}
   const fieldErr=validateLedgerTextFields(field)
   if(fieldErr)return json({ok:false,error:'invalid_text'},400)
@@ -92,11 +144,11 @@ export async function onRequestPost({request,env}){
   try{
     const result=await env.DB.prepare(`INSERT INTO entries
       (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
-      SELECT ?1,'',?2,?3,?4,?5,'',?6,NULL,0,NULL,?7,?8
+      SELECT ?1,?9,?2,?3,?4,?5,'',?6,NULL,0,NULL,?7,?8
       WHERE NOT EXISTS (SELECT 1 FROM entries
         WHERE date=?1 AND amount=?2 AND type=?6 AND COALESCE(payment_source,'')=?8)
       ON CONFLICT(client_request_id) DO NOTHING`)
-      .bind(date,amount,field.category,field.merchant,field.note,field.type,requestId,field.paymentSource).run()
+      .bind(date,amount,field.category,field.merchant,field.note,field.type,requestId,field.paymentSource,field.time).run()
     const row=await env.DB.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(requestId).first()
     if(!row?.id && result.meta?.changes===0)return json({ok:false,error:'duplicate_candidate',message:'同日同金额与付款来源的记录可能已存在，请先核对家計簿并手动关联'},409)
     if(!row?.id)return json({ok:false,error:'idempotency_lookup_failed'},503)

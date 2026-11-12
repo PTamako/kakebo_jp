@@ -32,3 +32,9 @@ test('no recognized or merchant card uses configured default',()=>{
 test('QUICPay OCR label does not override a user store-specific card',()=>{
   assert.equal(paymentForDraft({...base,merchant:'まいばすけっと南小岩8丁目店',recognized:''}),'三井住友カード')
 })
+
+test('Olive resolves only to a unique registered SMBC credit card after store rules',()=>{
+ assert.equal(paymentForDraft({...base,merchant:'初めての店',recognized:'Olive',registeredSources:['セゾンカード','三井住友カード'],defaultSource:'セゾンカード'}),'三井住友カード')
+ assert.equal(paymentForDraft({...base,merchant:'初めての店',recognized:'Olive',registeredSources:['セゾンカード'],defaultSource:'セゾンカード'}),'セゾンカード')
+ assert.equal(paymentForDraft({...base,merchant:'まいばすけっと南小岩8丁目店',recognized:'Olive'}),'三井住友カード')
+})

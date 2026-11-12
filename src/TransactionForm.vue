@@ -27,6 +27,11 @@ const rewardOptions = computed(()=> [
   ...(record.value.rewardDestination && !props.rewardDestinations.some(dest=>dest.value===record.value.rewardDestination)
     ? [{value:record.value.rewardDestination,label:'既存の還元先：'+record.value.rewardDestination}] : [])
 ])
+const sbiPurposeOptions = [
+  {value:'monthly',label:'毎月の積立'},
+  {value:'purchase',label:'追加買付'},
+  {value:'funding',label:'資金振替（買付前）'}
+]
 const transferOptions = computed(()=> [
   {value:'',label:'選択してください'},
   {value:'sbi',label:'SBI証券（投資信託）'},
@@ -51,6 +56,10 @@ const transferOptions = computed(()=> [
     <label v-if="record.type==='expense'" class="form-field"><span>支払方法・カード</span><MobileChoiceSheet :model-value="record.paymentSource" :options="paymentOptions" label="支払方法・カード" @change="emit('payment-change',$event)" /></label>
   </div>
   <div v-if="record.type==='transfer'" class="field-grid transfer-schedule-fields"><label class="form-field"><span>振替先</span><MobileChoiceSheet v-model="record.transferTarget" :options="transferOptions" label="振替先" /></label><label class="form-field"><span>反映日</span><input v-model="record.transferDate" type="date" required /></label></div>
+  <label v-if="record.type==='transfer' && record.transferTarget==='sbi' && !editMode" class="form-field">
+    <span>SBIの取引区分</span>
+    <MobileChoiceSheet v-model="record.sbiPurpose" :options="sbiPurposeOptions" label="SBIの取引区分" />
+  </label>
   <label v-if="record.type==='transfer'" class="form-field">
     <span>{{record.transferTarget?.startsWith('prepaid:') ? 'チャージ元（任意）' : '振替元（任意）'}}</span>
     <MobileChoiceSheet v-model="record.paymentSource" :options="transferSourceOptions" label="振替元" />

@@ -27,7 +27,7 @@ export function inferredPurchaseMonth(date) {
 // Match a distinctive brokerage transaction description, not a loose
 // occurrence of 'ポイント' (which also appears in reward *earnings*).
 export function isSbiPointInvestmentText(value) {
-  const text=String(value||'').normalize('NFKC').replace(/[\\s　()[\\]（）・:_-]/g,'').toLowerCase();
+  const text=String(value||'').normalize('NFKC').replace(/\s/g,'').replace(/[()・:_-]/g,'').toLowerCase();
   return /(?:sbi証券|sbi证券|sbi)/.test(text) &&
     /(?:ポイント|积分|vpoint|vポイント)/.test(text) &&
     /(?:投資|投资|買付|购买|購買)/.test(text) &&

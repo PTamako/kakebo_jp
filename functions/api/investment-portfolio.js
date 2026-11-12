@@ -72,8 +72,9 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const result=await probeFundNavSupport(fundCode)
       return respond({fundCode,...result})
     }
-    // Manually confirmed spot buys and additional transfers are one ledger
-    // entry plus one purpose link in a single D1 transaction.
+    // Spot buys create one ledger entry plus one purpose link in a single D1
+    // transaction. Historic funding rows remain readable, but new funding
+    // records are retired from the SBI purchase workflow.
     if(sub==='activity'&&method==='POST'){
       const x=await request.json().catch(()=>null);
       const purpose=x?.purpose;
@@ -83,7 +84,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const fundName=String(x?.fundName||'').trim();
       const memo=String(x?.note||'').trim();
       const clientRequestId=String(x?.clientRequestId||'').trim();
-      if(!['purchase','funding'].includes(purpose)||!dayOk(date)||!dayOk(effectiveDate)||
+      if(purpose!=='purchase'||!dayOk(date)||!dayOk(effectiveDate)||
          !Number.isSafeInteger(amount)||amount<=0||amount>1000000000||
          fundName.length>120||memo.length>500||paymentSource.length>80||
          !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
@@ -93,7 +94,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
       const month=effectiveDate.slice(0,7);
       const posted=effectiveDate<=today?1:0;
-      const merchant=purpose==='purchase'?(fundName||'SBI証券（追加買付）'):'SBI証券（追加振替）';
+      const merchant=fundName||'SBI証券（追加買付）';
       await db.batch([
         db.prepare(`INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
           VALUES(?1,'',?2,'投資・資産移動',?3,?4,'','transfer','sbi',?5,?6,?7,?8)
@@ -110,7 +111,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
     if(sub==='transfer-purpose'&&method==='PUT'){
       const x=await request.json().catch(()=>null);
       if(!Number.isSafeInteger(x?.entryId)||x.entryId<=0||
-         !['monthly','purchase','funding'].includes(x?.purpose))
+         !['monthly','purchase'].includes(x?.purpose))
         return respond({error:'振替の用途を確認してください'},400);
       const entry=await db.prepare("SELECT e.id,e.date,e.transfer_date,e.payment_source,e.client_request_id,e.merchant,e.note,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.id=?1 AND e.type='transfer' AND e.transfer_target='sbi'").bind(x.entryId).first();
       if(!entry)return respond({error:'振替が見つかりません'},404);

@@ -120,7 +120,7 @@ export async function onRequestPost({request,env}){
     request.headers.get('Idempotency-Key')!==key)return json({ok:false,error:'invalid_source'},400)
   const p=body.payload
   const date=p.date,amount=p.amount,source=p.paymentSource
-  const transactionTime=p.time??''
+  const transactionTime=p.time===undefined?'':p.time
   if(typeof transactionTime!=='string'||(transactionTime!==''&&!/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(transactionTime)))
     return json({ok:false,error:'invalid_entry_time'},400)
   if(!['income','expense'].includes(p.type)||!Number.isSafeInteger(amount)||amount<=0||

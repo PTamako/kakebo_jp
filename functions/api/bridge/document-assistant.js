@@ -26,12 +26,30 @@ export async function onRequestPost({request,env}){
   if(!await verified(env.JPDA_BRIDGE_SECRET,raw,stamp,request.headers.get('X-DA-Signature')))
     return json({ok:false,error:'invalid_signature'},401)
   let body;try{body=JSON.parse(raw)}catch{return json({ok:false,error:'invalid_json'},400)}
-  const key=body?.idempotency_key
-  if(body?.source!=='jp-document-assistant'||body?.payload?.operation!=='entry'||
-    typeof key!=='string'||!/^jda:kakebo:[a-f0-9]{16,64}$/i.test(key)||
-    request.headers.get('Idempotency-Key')!==key)return json({ok:false,error:'invalid_source'},400)
+  if(body?.source!=='jp-document-assistant')return json({ok:false,error:'invalid_source'},400)
   const actor=body.actor_user_id
   if(!env.JPDA_BRIDGE_ALLOWED_USER||actor!==env.JPDA_BRIDGE_ALLOWED_USER)return json({ok:false,error:'actor_not_allowed'},403)
+  // A signed, explicitly authorized, read-only catalogue for the document
+  // assistant picker. Never return transactions, user IDs or account balances.
+  if(body?.payload?.operation==='options'){
+    const type=body.payload.entryType
+    if(!['income','expense'].includes(type))return json({ok:false,error:'invalid_entry_type'},400)
+    try{
+      const [categories,methods]=await env.DB.batch([
+        env.DB.prepare("SELECT category,COALESCE(NULLIF(display_name,''),category) AS display_name FROM category_source WHERE entry_type=?1 ORDER BY COALESCE(sort_order,10000),category LIMIT 120").bind(type),
+        env.DB.prepare("SELECT name FROM payment_sources WHERE is_archived=0 ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name LIMIT 120")
+      ])
+      const names=(methods.results||[]).map(row=>String(row.name||'')).filter(Boolean)
+      if(!names.includes('現金'))names.unshift('現金')
+      return json({ok:true,categories:(categories.results||[]).map(row=>({
+        value:String(row.category||''),label:String(row.display_name||row.category||'')
+      })).filter(row=>row.value&&row.label),payment_sources:names.map(value=>({value,label:value}))})
+    }catch{return json({ok:false,error:'catalog_unavailable'},503)}
+  }
+  const key=body?.idempotency_key
+  if(body?.payload?.operation!=='entry'||
+    typeof key!=='string'||!/^jda:kakebo:[a-f0-9]{16,64}$/i.test(key)||
+    request.headers.get('Idempotency-Key')!==key)return json({ok:false,error:'invalid_source'},400)
   const p=body.payload
   const date=p.date,amount=p.amount,source=p.paymentSource
   if(!['income','expense'].includes(p.type)||!Number.isSafeInteger(amount)||amount<=0||

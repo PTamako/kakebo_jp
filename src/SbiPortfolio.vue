@@ -669,7 +669,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
       </details>
     </template>
     </div>
-    <div v-if="editing || editingTransfer!==null" class="sbi-overlay" @click.self="closeEditor">
+    <div v-if="editing || editingTransfer!==null || purposeEntryId!==null" class="sbi-overlay" @click.self="closeEditor">
       <form v-if="editing==='plan'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="積立設定の編集" @submit.prevent="submit('plan',{...plan,monthlyAmount:Number(plan.monthlyAmount),orderDay:Number(plan.orderDay)},'積立設定を保存しました')">
         <div class="sbi-line-heading"><h3>積立設定</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
         <label>銘柄コード<input v-model.trim="plan.fundCode" maxlength="8" required :disabled="existingIdentity" placeholder="03311187" @input="plan.fundCode=plan.fundCode.toUpperCase();fillFund(plan)"/></label>
@@ -777,9 +777,27 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <label>基準日<input v-model="price.priceDate" type="date" required /></label>
         <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
       </form>
+      <form v-else-if="editing==='activity'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付・資金振替の記録" @submit.prevent="submitActivity">
+        <div class="sbi-line-heading"><h3>買付・資金振替を記録</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
+        <label>記録の種類<MobileChoiceSheet v-model="activity.purpose" label="記録の種類" :options="activityOptions.filter(x=>x.value!=='monthly')" /></label>
+        <label>金額（円）<input v-model.number="activity.amount" type="number" min="1" max="1000000000" step="1" required /></label>
+        <label>取引日（カード利用日・資金移動日）<input v-model="activity.date" type="date" required /></label>
+        <label>適用日（この月に表示）<input v-model="activity.effectiveDate" type="date" required /></label>
+        <label>支払元（任意）<MobileChoiceSheet v-model="activity.paymentSource" label="支払元" :options="activePaymentOptions" /></label>
+        <label v-if="activity.purpose==='purchase'">銘柄名（任意）<input v-model.trim="activity.fundName" type="text" maxlength="120" placeholder="オール・カントリー" /></label>
+        <label>メモ（任意）<input v-model.trim="activity.note" maxlength="500" /></label>
+        <p class="sbi-activity-notice">これは家計簿への記録です。証券注文や保有残高の変更は行いません。</p>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button type="submit" class="button-primary" :disabled="saving">保存</button></div>
+      </form>
       <form v-else-if="editingTransfer!==null" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付月の編集" @submit.prevent="submitTransfer">
         <div class="sbi-line-heading"><h3>振替の買付月</h3><button class="sbi-close" type="button" :disabled="saving" @click="closeEditor">×</button></div>
         <label>対象月<input v-model="newPurchaseMonth" type="month" required /></label>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button type="submit" class="button-primary" :disabled="saving">保存</button></div>
+      </form>
+      <form v-else-if="purposeEntryId!==null" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="投資の区分変更" @submit.prevent="savePurpose">
+        <div class="sbi-line-heading"><h3>投資の区分</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
+        <label>区分<MobileChoiceSheet v-model="chosenPurpose" label="投資の区分" :options="activityOptions" /></label>
+        <p class="sbi-activity-notice">区分を変えても元の記帳は削除されません。</p>
         <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button type="submit" class="button-primary" :disabled="saving">保存</button></div>
       </form>
     </div>
@@ -1081,4 +1099,22 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-nav-links a{display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:5px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--blue-dark);font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap}
 .sbi-nav-links a:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .sbi-nav-links a span{font-size:10px;opacity:.75}
+.sbi-activity-body{display:grid;gap:9px}
+.sbi-activity-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.sbi-activity-actions button,.sbi-activity-actions a{display:flex;align-items:center;justify-content:center;min-width:0;min-height:44px;padding:8px;border-radius:11px;font-size:12px;font-weight:750;text-align:center;text-decoration:none;box-sizing:border-box}
+.sbi-activity-main{background:var(--blue);color:#fff;border:1px solid var(--blue)}
+.sbi-activity-secondary,.sbi-activity-external{background:var(--paper);color:var(--blue-dark);border:1px solid var(--line)}
+.sbi-activity-external{grid-column:1/-1}
+.sbi-activity-month{display:flex;align-items:center;justify-content:space-between;gap:9px;color:var(--muted);font-size:11px;font-weight:700}
+.sbi-activity-month input{min-width:0;max-width:170px;padding:8px 9px;min-height:40px;box-sizing:border-box;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:13px}
+.sbi-activity-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.sbi-activity-row .sbi-row-main{display:grid;gap:2px;min-width:0}
+.sbi-activity-row .sbi-row-main strong{font-size:12px}
+.sbi-activity-row .sbi-row-main small{color:var(--muted);font-size:10px;overflow-wrap:anywhere}
+.sbi-activity-side{display:grid;justify-items:end;gap:4px}
+.sbi-activity-side strong{font-size:14px;font-variant-numeric:tabular-nums}
+.sbi-activity-side .sbi-row-edit{min-width:52px;padding:5px;border:1px solid var(--line);border-radius:9px;font-size:11px}
+.sbi-activity-notice{font-size:11px;line-height:1.45;color:var(--muted);margin:0}
+.sbi-transfer-side{flex-wrap:wrap}
+@media(min-width:650px){.sbi-activity-actions{grid-template-columns:repeat(3,minmax(0,1fr))}.sbi-activity-external{grid-column:auto}}
 </style>

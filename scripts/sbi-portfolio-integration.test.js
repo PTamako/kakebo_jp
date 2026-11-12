@@ -478,7 +478,7 @@ test('November 11 point reward and December 15 scheduled savings are never group
 })
 
 
-test('SBI spot buys, extra funding and point redemptions do not inflate monthly 15,000 yen savings',async()=>{
+test('SBI spot buys and point redemptions do not inflate monthly 15,000 yen savings',async()=>{
   const {db,call}=await client()
   try{
     seedPortfolioInTest(db)
@@ -509,17 +509,22 @@ test('SBI spot buys, extra funding and point redemptions do not inflate monthly 
     assert.equal(retry.status,200)
     assert.equal(retry.body.id,added.body.id,'idempotent retry is the same ledger entry')
     const extra=await call('investment-portfolio/activity','POST',{
-      date:applied,effectiveDate:applied,amount:2000,purpose:'funding',
-      clientRequestId:'sbi_funding_test_unique_001'
+      date:applied,effectiveDate:applied,amount:2000,purpose:'purchase',
+      clientRequestId:'sbi_second_buy_test_unique_001'
     })
     assert.equal(extra.status,200,JSON.stringify(extra.body))
+    // This retired purpose is never offered or accepted for new records.
+    assert.equal((await call('investment-portfolio/activity','POST',{
+      date:applied,effectiveDate:applied,amount:1000,purpose:'funding',
+      clientRequestId:'sbi_funding_retired_001'
+    })).status,400)
 
     let snapshot=(await call('investment-portfolio?month='+currentMonth)).body
     assert.equal(snapshot.reconciliation.monthly_amount,15000)
-    assert.equal(snapshot.reconciliation.registered,15000,'buy and transfer do not satisfy monthly savings')
+    assert.equal(snapshot.reconciliation.registered,15000,'additional buys do not satisfy monthly savings')
     assert.equal(snapshot.reconciliation.unregistered,0)
     assert.equal(snapshot.reconciliation.point_funded,1751)
-    assert.deepEqual(snapshot.transfers.map(t=>t.kind).sort(),['funding','monthly','point','purchase'])
+    assert.deepEqual(snapshot.transfers.map(t=>t.kind).sort(),['monthly','point','purchase','purchase'])
     assert.equal(snapshot.transfers.find(t=>t.kind==='purchase').payment_source,'楽天カード')
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE type='transfer' AND transfer_target='sbi'").get().n,4)
     assert.equal(db.db.prepare("SELECT SUM(amount) AS total FROM entries WHERE type='transfer' AND payment_source='楽天カード' AND transfer_target='sbi'").get().total,5000)
@@ -532,10 +537,13 @@ test('SBI spot buys, extra funding and point redemptions do not inflate monthly 
     snapshot=(await call('investment-portfolio?month='+currentMonth)).body
     assert.equal(snapshot.reconciliation.registered,17000,'user may explicitly relabel the same original entry')
     const reset=await call('investment-portfolio/transfer-purpose','PUT',{
-      entryId:extra.body.id,purpose:'funding'
+      entryId:extra.body.id,purpose:'purchase'
     })
     assert.equal(reset.status,200)
     assert.equal((await call('investment-portfolio?month='+currentMonth)).body.reconciliation.registered,15000)
+    assert.equal((await call('investment-portfolio/transfer-purpose','PUT',{
+      entryId:extra.body.id,purpose:'funding'
+    })).status,400)
 
     const pointId=snapshot.transfers.find(t=>t.kind==='point').id
     assert.equal((await call('investment-portfolio/transfer-purpose','PUT',{

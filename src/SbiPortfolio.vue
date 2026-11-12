@@ -640,7 +640,10 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           </div>
            <div class="sbi-manage-subhead">
             <strong>積立設定</strong>
-            <button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button>
+            <div class="sbi-manage-action-links">
+              <a class="sbi-text-action" href="https://www.sbisec.co.jp/" target="_blank" rel="noopener noreferrer" aria-label="SBI証券の公式サイトで積立を設定">SBIで設定 ↗</a>
+              <button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button>
+            </div>
           </div>
           <p v-if="!data.plans.length" class="sbi-empty">積立設定はまだありません</p>
           <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.fund_code+':'+p.account_type" class="sbi-plan-row">
@@ -1099,6 +1102,9 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-nav-links a{display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:5px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--blue-dark);font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap}
 .sbi-nav-links a:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .sbi-nav-links a span{font-size:10px;opacity:.75}
+.sbi-manage-action-links{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px;min-width:0}
+.sbi-manage-action-links a.sbi-text-action{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:6px 9px;border-radius:9px;border:1px solid var(--line);background:var(--paper);color:var(--blue-dark);text-decoration:none;white-space:nowrap;font-size:11px;font-weight:750}
+.sbi-manage-action-links button{white-space:nowrap}
 .sbi-activity-body{display:grid;gap:9px}
 .sbi-activity-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
 .sbi-activity-actions button,.sbi-activity-actions a{display:flex;align-items:center;justify-content:center;min-width:0;min-height:44px;padding:8px;border-radius:11px;font-size:12px;font-weight:750;text-align:center;text-decoration:none;box-sizing:border-box}

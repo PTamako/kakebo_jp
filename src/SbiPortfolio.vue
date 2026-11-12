@@ -537,6 +537,11 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             <span v-else-if="data.reconciliation.difference > 0" class="sbi-hint">超過 {{yen(data.reconciliation.difference)}}</span>
             <span v-if="data.reconciliation.pending">反映待ち {{yen(data.reconciliation.pending)}}</span>
           </div>
+          <div v-if="data.reconciliation.point_funded || data.reconciliation.point_pending" class="sbi-point-funding">
+            <span>ポイント還元（積立対象外）</span>
+            <strong>{{yen(data.reconciliation.point_funded)}}</strong>
+            <small v-if="data.reconciliation.point_pending">反映待ち {{yen(data.reconciliation.point_pending)}}</small>
+          </div>
           <div class="sbi-manage-subhead">
             <strong>積立設定</strong>
             <button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button>
@@ -557,7 +562,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             <div class="sbi-transfer-content">
               <p v-if="!data.transfers.length" class="sbi-empty">この月の振替記録はありません</p>
               <div v-for="t in (showAllTransfers ? data.transfers : data.transfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
-                <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>{{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '記帳済' : '反映待ち'}}</small></div>
+                <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>{{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '記帳済' : '反映待ち'}}{{t.is_point_reward ? ' · ポイント還元' : ''}}</small></div>
                 <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の買付月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">変更</button></div>
               </div>
               <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
@@ -871,6 +876,9 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-month-pulse>div{display:grid;gap:3px;padding:12px;border-radius:12px;background:var(--paper);min-width:0}
 .sbi-month-pulse span{font-size:10px;color:var(--muted)}
 .sbi-month-pulse strong{font-size:clamp(15px,4.5vw,19px);font-weight:850;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.sbi-point-funding{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:3px 9px;margin-top:9px;padding:7px 10px;border-radius:9px;background:var(--paper);font-size:11px;color:var(--muted)}
+.sbi-point-funding strong{font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
+.sbi-point-funding small{width:100%;font-size:10px}
 .sbi-manage-subhead{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;margin-top:8px;padding:8px 0 2px;border-top:1px solid var(--line);box-sizing:border-box}
 .sbi-manage-subhead>strong{display:flex;align-items:center;min-height:40px;font-size:13px;line-height:1.3}
 .sbi-manage-subhead .sbi-text-action{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-size:12px;line-height:1.3}

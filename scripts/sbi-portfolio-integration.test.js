@@ -566,3 +566,32 @@ test('SBI purchase type survives portable v4 backup and restore',async()=>{
     assert.equal((await target.call('investment-portfolio/export')).body.transferLinks.length,1)
   }finally{source.db.close();target.db.close()}
 })
+
+
+test('manual plus-entry SBI purpose is atomic and does not silently become recurring savings',async()=>{
+  const {db,call}=await client()
+  try{
+    seedPortfolioInTest(db)
+    const date=currentMonth+'-01'
+    const buy={date,type:'transfer',amount:5000,category:'投資・資産移動',
+      merchant:'追加投信',transferTarget:'sbi',transferDate:date,
+      sbiPurpose:'purchase',clientRequestId:'sbi_manual_buy_unique_001'}
+    const added=await call('entries','POST',buy)
+    assert.equal(added.status,200,JSON.stringify(added.body))
+    const again=await call('entries','POST',buy)
+    assert.equal(again.status,200)
+    assert.equal(again.body.id,added.body.id)
+    let snapshot=(await call('investment-portfolio?month='+currentMonth)).body
+    assert.equal(snapshot.reconciliation.registered,0)
+    assert.equal(snapshot.transfers.filter(t=>t.kind==='purchase').length,1)
+    assert.equal(db.db.prepare("SELECT COUNT(*) n FROM entries WHERE client_request_id='sbi_manual_buy_unique_001'").get().n,1)
+    const regular=await call('entries','POST',{...buy,amount:15000,sbiPurpose:'monthly',
+      clientRequestId:'sbi_manual_monthly_unique_001'})
+    assert.equal(regular.status,200)
+    snapshot=(await call('investment-portfolio?month='+currentMonth)).body
+    assert.equal(snapshot.reconciliation.registered,15000)
+    assert.equal(snapshot.transfers.filter(t=>t.kind==='monthly').length,1)
+    assert.equal((await call('entries','POST',{...buy,sbiPurpose:'bad',
+      clientRequestId:'sbi_manual_bad_kind_001'})).status,400)
+  }finally{db.close()}
+})

@@ -31,8 +31,7 @@ const rewardOptions = computed(()=> [
 const sbiPurposeOptions = [
   {value:'auto',label:'自動判定'},
   {value:'monthly',label:'毎月の積立'},
-  {value:'purchase',label:'追加買付'},
-  {value:'funding',label:'資金振替（買付前）'}
+  {value:'purchase',label:'追加買付'}
 ]
 const autoSbiKind = computed(()=>inferredSbiEntryKind(record.value))
 const autoSbiLabel = computed(()=>({

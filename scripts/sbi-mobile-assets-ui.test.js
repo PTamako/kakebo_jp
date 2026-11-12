@@ -105,3 +105,23 @@ test('UI never changes the existing authenticated portfolio API or DB tables', (
   assert.match(api,/SELECT h\.fund_code,h\.account_type,h\.fund_name/)
   assert.doesNotMatch(page,/DROP TABLE|DELETE FROM|CREATE TABLE/)
 })
+
+
+test('spot purchases and points live under balance; management tracks recurring savings only',()=>{
+  const funds=portfolio.split('<div v-show="activeView===\'funds\'"')[1]?.split('<div v-show="activeView===\'wallets\'"')[0]
+  const plans=portfolio.split('<div v-show="activeView===\'plans\'"')[1]
+  assert.ok(funds&&plans,'funds and plans remain separate views')
+  assert.match(funds,/class="panel sbi-card sbi-investment-activity"/)
+  assert.match(funds,/買付を記録/)
+  assert.match(funds,/資金振替/)
+  assert.match(funds,/SBIで買付/)
+  assert.match(funds,/investmentActivities\.slice\(0,5\)/)
+  assert.match(funds,/purposeLabel\(t\.kind\)/)
+  assert.match(plans,/monthlyTransfers\.slice\(0,2\)/)
+  assert.doesNotMatch(plans,/sbi-point-funding|ポイント還元（積立対象外）/)
+  assert.match(portfolio,/function submitActivity\(/)
+  assert.match(portfolio,/function savePurpose\(/)
+  assert.match(portfolio,/class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付・資金振替の記録"/)
+  assert.match(portfolio,/clientRequestId=crypto\.randomUUID\(\)/)
+  assert.match(page,/:refresh-key="ledgerRevision"/)
+})

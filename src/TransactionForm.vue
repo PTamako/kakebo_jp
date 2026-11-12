@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { sortOtherLast } from './category-sort.js'
+import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false } })
@@ -28,10 +29,15 @@ const rewardOptions = computed(()=> [
     ? [{value:record.value.rewardDestination,label:'既存の還元先：'+record.value.rewardDestination}] : [])
 ])
 const sbiPurposeOptions = [
+  {value:'auto',label:'自動判定'},
   {value:'monthly',label:'毎月の積立'},
   {value:'purchase',label:'追加買付'},
   {value:'funding',label:'資金振替（買付前）'}
 ]
+const autoSbiKind = computed(()=>inferredSbiEntryKind(record.value))
+const autoSbiLabel = computed(()=>({
+  point:'ポイント買付',monthly:'毎月の積立',purchase:'追加買付'
+})[autoSbiKind.value]||'追加買付')
 const transferOptions = computed(()=> [
   {value:'',label:'選択してください'},
   {value:'sbi',label:'SBI証券（投資信託）'},
@@ -59,6 +65,11 @@ const transferOptions = computed(()=> [
   <label v-if="record.type==='transfer' && record.transferTarget==='sbi' && !editMode" class="form-field">
     <span>SBIの取引区分</span>
     <MobileChoiceSheet v-model="record.sbiPurpose" :options="sbiPurposeOptions" label="SBIの取引区分" />
+    <small v-if="!record.sbiPurpose || record.sbiPurpose==='auto'">自動判定：{{autoSbiLabel}}（「積立」の文字があるときだけ定投）</small>
+  </label>
+  <label v-if="record.type==='transfer' && record.transferTarget==='sbi' && !editMode" class="form-field">
+    <span>取引名（任意）</span>
+    <input v-model="record.merchant" maxlength="500" placeholder="SBI証券 投信積立サービス" />
   </label>
   <label v-if="record.type==='transfer'" class="form-field">
     <span>{{record.transferTarget?.startsWith('prepaid:') ? 'チャージ元（任意）' : '振替元（任意）'}}</span>

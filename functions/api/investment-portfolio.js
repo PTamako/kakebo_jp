@@ -1,6 +1,7 @@
 // SBI bookkeeping only; NEVER sends bank transfers or securities orders.
 import { probeFundNavSupport } from './fund-nav-sync.js'
 import { validateRegisteredPaymentSource } from './payment-source-validation.js'
+import { isSbiPointInvestmentText, inferredSbiEntryKind } from '../../src/sbi-investment-kind.js'
 // D1 stores explicit holdings and a monthly funding-to-plan reconciliation.
 const respond=(value,status=200)=>new Response(JSON.stringify(value),{
   status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}
@@ -26,13 +27,6 @@ export function inferredPurchaseMonth(date) {
 // Point investment is neither recurring savings nor a credit-card charge.
 // Match a distinctive brokerage transaction description, not a loose
 // occurrence of 'ポイント' (which also appears in reward *earnings*).
-export function isSbiPointInvestmentText(value) {
-  const text=String(value||'').normalize('NFKC').replace(/\s/g,'').replace(/[()・:_-]/g,'').toLowerCase();
-  return /(?:sbi証券|sbi证券|sbi)/.test(text) &&
-    /(?:ポイント|积分|vpoint|vポイント)/.test(text) &&
-    /(?:投資|投资|買付|购买|購買)/.test(text) &&
-    !/(?:ポイント獲得|积分获得|付与|ポイント還元)/.test(text);
-}
 // Existing automated point redemptions retain their ledger, and recognizable
 // SBI point-buy transactions are grouped into the same point investment view.
 export function isPointRewardSbiTransfer(item) {
@@ -45,7 +39,11 @@ export function isPointRewardSbiTransfer(item) {
 // purchases / extra funding never satisfy a recurring savings plan.
 export function investmentRecordKind(item) {
   if(isPointRewardSbiTransfer(item))return 'point';
-  return item.purpose==='purchase'||item.purpose==='funding'?item.purpose:'monthly';
+  // Preserve explicitly confirmed purposes (including historic plans).
+  if(['monthly','purchase','funding'].includes(item.purpose))return item.purpose;
+  // New or imported SBI 投信 entries require 積立 to qualify as recurring.
+  // Unknown legacy entries keep their former behavior until reclassified.
+  return inferredSbiEntryKind(item)||'monthly';
 }
 export function fundingStatus(transfers,month,orderDay=9) {
   return transfers.reduce((total,item)=>{

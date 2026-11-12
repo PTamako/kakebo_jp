@@ -69,5 +69,5 @@ test('management plan and transfer records use compact same-line actions',()=>{
   assert.match(ui,/sbi-management-body \.sbi-plan-row,\.sbi-management-body \.sbi-transfer-row\{display:grid/)
   assert.match(ui,/min-height:40px;padding:6px 7px/)
   assert.match(ui,/data\.plans\.slice\(0,2\)/)
-  assert.match(ui,/data\.transfers\.slice\(0,2\)/)
+  assert.match(ui,/monthlyTransfers\.slice\(0,2\)/)
 })

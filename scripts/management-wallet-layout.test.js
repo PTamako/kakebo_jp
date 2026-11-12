@@ -10,7 +10,7 @@ const api = read('functions/api/prepaid-assets.js')
 
 test('investment plan title and add button share one centered row and only one section divider',()=>{
   assert.match(portfolio,/class="sbi-manage-subhead"/)
-  assert.match(portfolio,/class="sbi-manage-subhead">\s*<strong>積立設定<\/strong>\s*<button[^>]*@click="editPlan\(null\)"/)
+  assert.match(portfolio,/class="sbi-manage-subhead">\s*<strong>積立設定<\/strong>\s*<div class="sbi-manage-action-links">[\s\S]*?<button[^>]*@click="editPlan\(null\)"/)
   assert.match(portfolio,/\.sbi-manage-subhead\{display:flex;align-items:center;justify-content:space-between;/)
   assert.match(portfolio,/\.sbi-manage-subhead>strong\{display:flex;align-items:center;/)
   assert.match(portfolio,/\.sbi-manage-subhead \.sbi-text-action\{display:inline-flex;align-items:center;justify-content:center;/)

@@ -9,6 +9,7 @@ import { parseSbiFundDetailText, applySbiFundDetailUpdates } from './sbi-fund-de
 import { ocrImage } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
+import MobileChoiceSheet from './MobileChoiceSheet.vue'
 
 const props = defineProps({
   api: { type: Function, required: true },
@@ -28,7 +29,7 @@ const changeAiMode = enabled => {
   aiContext?.setAiOcrEnabled?.(enabled)
 }
 const aiExhausted = computed(() => quota.value !== null && quota.value.remaining <= 0)
-const showAllHoldings = ref(false), showAllPlans = ref(false), showAllTransfers = ref(false)
+const showAllHoldings = ref(false), showAllPlans = ref(false), showAllTransfers = ref(false), showAllActivity = ref(false)
 const expandedHolding = ref('')
 const navSupport = ref({})
 const holdingKey = h => h.fund_code + ':' + h.account_type
@@ -60,6 +61,27 @@ const price = ref(emptyPrice())
 const priceFundName = ref('')
 const editingTransfer = ref(null)
 const newPurchaseMonth = ref('')
+const purposeEntryId = ref(null)
+const chosenPurpose = ref('monthly')
+const emptyActivity = (purpose='purchase') => ({
+  purpose, date:today(), effectiveDate:today(), amount:0, paymentSource:'',
+  fundName:'', note:'', clientRequestId:''
+})
+const activity = ref(emptyActivity())
+const activePaymentOptions = computed(() => [
+  {value:'',label:'未設定'},
+  ...(aiContext?.paymentSources?.value||[]).filter(name=>name!=='ポイント還元').map(name=>({value:name,label:name}))
+])
+const activityOptions = [
+  {value:'purchase',label:'追加買付'},
+  {value:'funding',label:'資金振替'},
+  {value:'monthly',label:'毎月の積立'}
+]
+const monthlyTransfers = computed(() => (data.value?.transfers||[]).filter(t=>t.kind==='monthly'))
+const investmentActivities = computed(() => (data.value?.transfers||[]).filter(t=>t.kind!=='monthly'))
+const purposeLabel = purpose => ({
+  purchase:'追加買付',funding:'資金振替',point:'ポイント還元',monthly:'毎月の積立'
+})[purpose]||'資産移動'
 const yen = value => '¥' + Number(value || 0).toLocaleString('ja-JP')
 const signYen = value => (Number(value) >= 0 ? '+' : '−') + yen(Math.abs(Number(value) || 0))
 const accountLabel = code => code === 'growth' ? '成長投資枠' : code === 'combined' ? '成長＋つみたて（合算）' : 'つみたて投資枠'
@@ -292,17 +314,20 @@ function closeEditor() {
   if(saving.value || bulkBusy.value)return
   editing.value=''
   editingTransfer.value=null
+  purposeEntryId.value=null
 }
 // Closing any SBI bottom sheet (successful Save, Cancel, X, backdrop or
 // Escape) discards its temporary editor. Failed saves leave it open.
-watch([editing,editingTransfer],([mode,transfer])=>{
-  if(mode || transfer!==null)return
+watch([editing,editingTransfer,purposeEntryId],([mode,transfer,purpose])=>{
+  if(mode || transfer!==null || purpose!==null)return
   existingIdentity.value=false
   plan.value=emptyPlan()
   holding.value=emptyHolding()
   price.value=emptyPrice()
   priceFundName.value=''
   newPurchaseMonth.value=''
+  chosenPurpose.value='monthly'
+  activity.value=emptyActivity()
   bulkRows.value=[]
   bulkText.value=''
   importedScreenshotKeys.value=[]
@@ -396,7 +421,49 @@ async function submit(path, body, message) {
   finally{ saving.value=false }
 }
 async function submitTransfer() {
-  await submit('transfer-month',{entryId:Number(editingTransfer.value),purchaseMonth:newPurchaseMonth.value},'買付月を更新しました')
+  await submit('transfer-month',{entryId:Number(editingTransfer.value),purchaseMonth:newPurchaseMonth.value},'対象月を更新しました')
+}
+function openActivity(purpose='purchase') {
+  error.value=''
+  activity.value=emptyActivity(purpose)
+  editing.value='activity'
+}
+async function submitActivity(){
+  if(saving.value)return
+  saving.value=true
+  error.value=''
+  const draft=activity.value
+  if(!draft.clientRequestId)draft.clientRequestId=crypto.randomUUID()
+  try{
+    await props.api('investment-portfolio/activity',{method:'POST',body:JSON.stringify({
+      ...draft,amount:Number(draft.amount)
+    })})
+    editing.value=''
+    const targetMonth=draft.effectiveDate.slice(0,7)
+    month.value=targetMonth
+    await load()
+    notice.value=draft.purpose==='purchase'?'買付を記録しました':'資金振替を記録しました'
+  }catch(e){error.value=e.message}
+  finally{saving.value=false}
+}
+function editPurpose(t) {
+  error.value=''
+  purposeEntryId.value=t.id
+  chosenPurpose.value=t.kind
+}
+async function savePurpose(){
+  if(purposeEntryId.value===null)return
+  saving.value=true
+  error.value=''
+  try {
+    await props.api('investment-portfolio/transfer-purpose',{
+      method:'PUT',body:JSON.stringify({entryId:Number(purposeEntryId.value),purpose:chosenPurpose.value})
+    })
+    purposeEntryId.value=null
+    await load()
+    notice.value='投資の用途を更新しました'
+  }catch(e){error.value=e.message}
+  finally{saving.value=false}
 }
 // Refresh after existing due-transfer processing completes, so the asset
 // reconciliation cannot be stale if it raced the automatic due-date update.
@@ -508,6 +575,39 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             @click="showAllHoldings=!showAllHoldings">{{showAllHoldings?'閉じる':'あと'+(fundGroups.length-2)+'銘柄を表示'}}</button>
         </div>
       </details>
+
+      <details class="panel sbi-card sbi-investment-activity" open>
+        <summary class="sbi-disclosure-summary">
+          <span class="sbi-manage-title"><strong>買付・資金振替の記録</strong><small>追加買付・資金振替・ポイント還元</small></span>
+          <span class="sbi-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="sbi-section-body sbi-activity-body">
+          <div class="sbi-activity-actions">
+            <button type="button" class="sbi-activity-main" @click="openActivity('purchase')">＋ 買付を記録</button>
+            <button type="button" class="sbi-activity-secondary" @click="openActivity('funding')">資金振替</button>
+            <a class="sbi-activity-external" href="https://www.sbisec.co.jp/" target="_blank" rel="noopener noreferrer" aria-label="SBI証券の公式サイトで買付を操作">SBIで買付 ↗</a>
+          </div>
+          <div class="sbi-activity-month">
+            <span>対象月</span>
+            <input v-model="month" type="month" aria-label="買付・資金振替の対象月" @change="load" />
+          </div>
+          <div v-if="!investmentActivities.length" class="sbi-empty">この月の買付・資金振替・ポイント還元はありません</div>
+          <div v-for="t in (showAllActivity ? investmentActivities : investmentActivities.slice(0,5))" :key="'activity-'+t.id" class="sbi-activity-row">
+            <div class="sbi-row-main">
+              <strong>{{purposeLabel(t.kind)}}</strong>
+              <small>{{t.transfer_date||t.date}} · {{Number(t.transfer_applied)===1?'帳簿反映済み':'期日待ち'}}</small>
+              <small v-if="t.merchant && t.kind==='purchase'">{{t.merchant}}</small>
+              <small v-if="t.payment_source && t.kind!=='point'">{{t.payment_source}}</small>
+            </div>
+            <div class="sbi-activity-side">
+              <strong>{{yen(t.amount)}}</strong>
+              <button v-if="t.kind!=='point'" type="button" class="sbi-row-edit" @click="editPurpose(t)">区分変更</button>
+            </div>
+          </div>
+          <button v-if="investmentActivities.length>5" type="button" class="sbi-show-more" :aria-expanded="showAllActivity" @click="showAllActivity=!showAllActivity">{{showAllActivity?'閉じる':'あと'+(investmentActivities.length-5)+'件を表示'}}</button>
+          <details class="sbi-footnote"><summary>記録について</summary><p>買付・振替の記録は帳簿用です。証券会社での注文・約定や保有口数の更新は行いません。クレジットカードの支払元はカード請求の再計算対象です。</p></details>
+        </div>
+      </details>
     </template>
     </div>
 
@@ -538,14 +638,12 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             <span v-if="data.reconciliation.funded">帳簿反映済み {{yen(data.reconciliation.funded)}}</span>
             <span v-if="data.reconciliation.pending">期日待ち {{yen(data.reconciliation.pending)}}</span>
           </div>
-          <div v-if="data.reconciliation.point_funded || data.reconciliation.point_pending" class="sbi-point-funding">
-            <span>ポイント還元（積立対象外）</span>
-            <strong>{{yen(data.reconciliation.point_funded)}}</strong>
-            <small v-if="data.reconciliation.point_pending">期日待ち {{yen(data.reconciliation.point_pending)}}</small>
-          </div>
-          <div class="sbi-manage-subhead">
+           <div class="sbi-manage-subhead">
             <strong>積立設定</strong>
-            <button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button>
+            <div class="sbi-manage-action-links">
+              <a class="sbi-text-action" href="https://www.sbisec.co.jp/" target="_blank" rel="noopener noreferrer" aria-label="SBI証券の公式サイトで積立を設定">SBIで設定 ↗</a>
+              <button type="button" class="sbi-text-action" @click="editPlan(null)">＋ 追加</button>
+            </div>
           </div>
           <p v-if="!data.plans.length" class="sbi-empty">積立設定はまだありません</p>
           <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.fund_code+':'+p.account_type" class="sbi-plan-row">
@@ -557,16 +655,16 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           <details class="sbi-transfer-disclosure">
             <summary class="sbi-transfer-summary">
               <strong>振替記録・対象月</strong>
-              <small>{{data.transfers.length}}件</small>
+              <small>{{monthlyTransfers.length}}件</small>
               <span class="sbi-detail-chevron" aria-hidden="true">⌄</span>
             </summary>
             <div class="sbi-transfer-content">
-              <p v-if="!data.transfers.length" class="sbi-empty">この月の振替記録はありません</p>
-              <div v-for="t in (showAllTransfers ? data.transfers : data.transfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
+              <p v-if="!monthlyTransfers.length" class="sbi-empty">この月の積立振替はありません</p>
+              <div v-for="t in (showAllTransfers ? monthlyTransfers : monthlyTransfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
                 <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>適用日 {{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '帳簿反映済み' : '期日待ち'}}{{t.is_point_reward ? ' · ポイント還元' : ''}}</small><small v-if="t.transfer_date && t.transfer_date !== t.date">取引日 {{t.date}}</small></div>
-                <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button v-if="!t.is_point_reward" type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の対象月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">変更</button></div>
+                <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の対象月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">月変更</button><button type="button" class="sbi-row-edit" @click="editPurpose(t)">区分変更</button></div>
               </div>
-              <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
+              <button v-if="monthlyTransfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(monthlyTransfers.length-2)+'件を表示'}}</button>
               <details class="sbi-footnote"><summary>振替の確認について</summary><p>登録済みには期日待ちも含みます。対象月は適用日の月です。ポイント還元は適用日の月で集計します。期日反映は証券口座への入金・買付完了を保証しません。買付月が異なる場合は変更できます。</p></details>
             </div>
           </details>
@@ -574,7 +672,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
       </details>
     </template>
     </div>
-    <div v-if="editing || editingTransfer!==null" class="sbi-overlay" @click.self="closeEditor">
+    <div v-if="editing || editingTransfer!==null || purposeEntryId!==null" class="sbi-overlay" @click.self="closeEditor">
       <form v-if="editing==='plan'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="積立設定の編集" @submit.prevent="submit('plan',{...plan,monthlyAmount:Number(plan.monthlyAmount),orderDay:Number(plan.orderDay)},'積立設定を保存しました')">
         <div class="sbi-line-heading"><h3>積立設定</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
         <label>銘柄コード<input v-model.trim="plan.fundCode" maxlength="8" required :disabled="existingIdentity" placeholder="03311187" @input="plan.fundCode=plan.fundCode.toUpperCase();fillFund(plan)"/></label>
@@ -682,9 +780,27 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <label>基準日<input v-model="price.priceDate" type="date" required /></label>
         <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
       </form>
+      <form v-else-if="editing==='activity'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付・資金振替の記録" @submit.prevent="submitActivity">
+        <div class="sbi-line-heading"><h3>買付・資金振替を記録</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
+        <label>記録の種類<MobileChoiceSheet v-model="activity.purpose" label="記録の種類" :options="activityOptions.filter(x=>x.value!=='monthly')" /></label>
+        <label>金額（円）<input v-model.number="activity.amount" type="number" min="1" max="1000000000" step="1" required /></label>
+        <label>取引日（カード利用日・資金移動日）<input v-model="activity.date" type="date" required /></label>
+        <label>適用日（この月に表示）<input v-model="activity.effectiveDate" type="date" required /></label>
+        <label>支払元（任意）<MobileChoiceSheet v-model="activity.paymentSource" label="支払元" :options="activePaymentOptions" /></label>
+        <label v-if="activity.purpose==='purchase'">銘柄名（任意）<input v-model.trim="activity.fundName" type="text" maxlength="120" placeholder="オール・カントリー" /></label>
+        <label>メモ（任意）<input v-model.trim="activity.note" maxlength="500" /></label>
+        <p class="sbi-activity-notice">これは家計簿への記録です。証券注文や保有残高の変更は行いません。</p>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button type="submit" class="button-primary" :disabled="saving">保存</button></div>
+      </form>
       <form v-else-if="editingTransfer!==null" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付月の編集" @submit.prevent="submitTransfer">
         <div class="sbi-line-heading"><h3>振替の買付月</h3><button class="sbi-close" type="button" :disabled="saving" @click="closeEditor">×</button></div>
         <label>対象月<input v-model="newPurchaseMonth" type="month" required /></label>
+        <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button type="submit" class="button-primary" :disabled="saving">保存</button></div>
+      </form>
+      <form v-else-if="purposeEntryId!==null" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="投資の区分変更" @submit.prevent="savePurpose">
+        <div class="sbi-line-heading"><h3>投資の区分</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
+        <label>区分<MobileChoiceSheet v-model="chosenPurpose" label="投資の区分" :options="activityOptions" /></label>
+        <p class="sbi-activity-notice">区分を変えても元の記帳は削除されません。</p>
         <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button type="submit" class="button-primary" :disabled="saving">保存</button></div>
       </form>
     </div>
@@ -877,9 +993,6 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-month-pulse>div{display:grid;gap:3px;padding:12px;border-radius:12px;background:var(--paper);min-width:0}
 .sbi-month-pulse span{font-size:10px;color:var(--muted)}
 .sbi-month-pulse strong{font-size:clamp(15px,4.5vw,19px);font-weight:850;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.sbi-point-funding{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:3px 9px;margin-top:9px;padding:7px 10px;border-radius:9px;background:var(--paper);font-size:11px;color:var(--muted)}
-.sbi-point-funding strong{font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
-.sbi-point-funding small{width:100%;font-size:10px}
 .sbi-manage-subhead{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;margin-top:8px;padding:8px 0 2px;border-top:1px solid var(--line);box-sizing:border-box}
 .sbi-manage-subhead>strong{display:flex;align-items:center;min-height:40px;font-size:13px;line-height:1.3}
 .sbi-manage-subhead .sbi-text-action{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-size:12px;line-height:1.3}
@@ -986,4 +1099,25 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-nav-links a{display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:5px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--blue-dark);font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap}
 .sbi-nav-links a:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .sbi-nav-links a span{font-size:10px;opacity:.75}
+.sbi-manage-action-links{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px;min-width:0}
+.sbi-manage-action-links a.sbi-text-action{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:6px 9px;border-radius:9px;border:1px solid var(--line);background:var(--paper);color:var(--blue-dark);text-decoration:none;white-space:nowrap;font-size:11px;font-weight:750}
+.sbi-manage-action-links button{white-space:nowrap}
+.sbi-activity-body{display:grid;gap:9px}
+.sbi-activity-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.sbi-activity-actions button,.sbi-activity-actions a{display:flex;align-items:center;justify-content:center;min-width:0;min-height:44px;padding:8px;border-radius:11px;font-size:12px;font-weight:750;text-align:center;text-decoration:none;box-sizing:border-box}
+.sbi-activity-main{background:var(--blue);color:#fff;border:1px solid var(--blue)}
+.sbi-activity-secondary,.sbi-activity-external{background:var(--paper);color:var(--blue-dark);border:1px solid var(--line)}
+.sbi-activity-external{grid-column:1/-1}
+.sbi-activity-month{display:flex;align-items:center;justify-content:space-between;gap:9px;color:var(--muted);font-size:11px;font-weight:700}
+.sbi-activity-month input{min-width:0;max-width:170px;padding:8px 9px;min-height:40px;box-sizing:border-box;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:13px}
+.sbi-activity-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.sbi-activity-row .sbi-row-main{display:grid;gap:2px;min-width:0}
+.sbi-activity-row .sbi-row-main strong{font-size:12px}
+.sbi-activity-row .sbi-row-main small{color:var(--muted);font-size:10px;overflow-wrap:anywhere}
+.sbi-activity-side{display:grid;justify-items:end;gap:4px}
+.sbi-activity-side strong{font-size:14px;font-variant-numeric:tabular-nums}
+.sbi-activity-side .sbi-row-edit{min-width:52px;padding:5px;border:1px solid var(--line);border-radius:9px;font-size:11px}
+.sbi-activity-notice{font-size:11px;line-height:1.45;color:var(--muted);margin:0}
+.sbi-transfer-side{flex-wrap:wrap}
+@media(min-width:650px){.sbi-activity-actions{grid-template-columns:repeat(3,minmax(0,1fr))}.sbi-activity-external{grid-column:auto}}
 </style>

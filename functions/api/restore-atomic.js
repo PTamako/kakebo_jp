@@ -144,8 +144,8 @@ export async function restoreAtomic(db, archive) {
   const oldTransfers=new Map(allEntries.filter(e=>e.type==='transfer'&&e.transfer_target==='sbi'&&Number.isSafeInteger(Number(e.id))).map(e=>[Number(e.id),e]))
   for(const link of archive.transferLinks||[]){
     const e=oldTransfers.get(Number(link.entry_id))
-    if(e)add("INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) SELECT id,?1 FROM entries WHERE client_request_id=?2 AND type='transfer' AND transfer_target='sbi'",
-      link.purchase_month,e.clientRequestId)
+    if(e)add("INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month,purpose) SELECT id,?1,?2 FROM entries WHERE client_request_id=?3 AND type='transfer' AND transfer_target='sbi'",
+      link.purchase_month,['purchase','funding'].includes(link.purpose)?link.purpose:'monthly',e.clientRequestId)
   }
   for(const plan of archive.plans||[])add('INSERT OR IGNORE INTO recurring_plans(id,name,amount,day,category,payment_source,start_month,enabled,posting_mode,auto_from_month,schedule_type,weekday,workday_only,weekdays_json,month_days_json,interval_months) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)',
     plan.id,plan.name,plan.amount,plan.day,plan.category,plan.paymentSource,plan.startMonth,plan.enabled?1:0,plan.postingMode||'manual',plan.postingMode==='auto'?(plan.autoFromMonth||''):'',plan.scheduleType==='workday'?'weekly':(plan.scheduleType||'monthly'),plan.weekday??0,plan.scheduleType==='workday'?1:0,JSON.stringify(plan.weekdays??[plan.weekday??0]),JSON.stringify(plan.monthDays??[plan.day]),Number(plan.intervalMonths??1))

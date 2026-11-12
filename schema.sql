@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS fund_prices (
 CREATE TABLE IF NOT EXISTS sbi_transfer_links (
   entry_id INTEGER PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
   purchase_month TEXT NOT NULL CHECK(length(purchase_month) = 7),
+  purpose TEXT NOT NULL DEFAULT 'monthly' CHECK(purpose IN ('monthly','purchase','funding')),
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_sbi_transfer_links_month ON sbi_transfer_links(purchase_month);

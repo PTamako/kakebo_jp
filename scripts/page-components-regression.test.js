@@ -23,7 +23,7 @@ test('App only coordinates tabs; all four pages own their templates',()=>{
   assert.match(ledger,/class="edit-dialog"/)
   assert.match(stats,/statsPeriod === 'month'/)
   assert.match(stats,/class="page-section stats-page annual-page"/)
-  assert.match(assets,/<SbiPortfolio :api="api" :transfer-loading="transferLoading" :active-view="activeView" @summary="onPortfolioSummary">/)
+  assert.match(assets,/<SbiPortfolio :api="api" :transfer-loading="transferLoading" :active-view="activeView" :refresh-key="ledgerRevision" @summary="onPortfolioSummary">/)
   assert.match(assets,/<PrepaidAssets :api="api" :active="true" :revision="ledgerRevision"/)
   assert.match(assets,/@summary="onPrepaidSummary"/)
   assert.doesNotMatch(assets,/旧評価額|旧評価損益|legacy-investment-details/)

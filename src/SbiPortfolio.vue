@@ -9,6 +9,7 @@ import { parseSbiFundDetailText, applySbiFundDetailUpdates } from './sbi-fund-de
 import { ocrImage } from './parse.js'
 import { compressReceiptImage } from './receipt-image.js'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
+import MobileChoiceSheet from './MobileChoiceSheet.vue'
 
 const props = defineProps({
   api: { type: Function, required: true },
@@ -28,7 +29,7 @@ const changeAiMode = enabled => {
   aiContext?.setAiOcrEnabled?.(enabled)
 }
 const aiExhausted = computed(() => quota.value !== null && quota.value.remaining <= 0)
-const showAllHoldings = ref(false), showAllPlans = ref(false), showAllTransfers = ref(false)
+const showAllHoldings = ref(false), showAllPlans = ref(false), showAllTransfers = ref(false), showAllActivity = ref(false)
 const expandedHolding = ref('')
 const navSupport = ref({})
 const holdingKey = h => h.fund_code + ':' + h.account_type
@@ -60,6 +61,27 @@ const price = ref(emptyPrice())
 const priceFundName = ref('')
 const editingTransfer = ref(null)
 const newPurchaseMonth = ref('')
+const purposeEntryId = ref(null)
+const chosenPurpose = ref('monthly')
+const emptyActivity = (purpose='purchase') => ({
+  purpose, date:today(), effectiveDate:today(), amount:0, paymentSource:'',
+  fundName:'', note:'', clientRequestId:''
+})
+const activity = ref(emptyActivity())
+const activePaymentOptions = computed(() => [
+  {value:'',label:'未設定'},
+  ...(aiContext?.paymentSources?.value||[]).filter(name=>name!=='ポイント還元').map(name=>({value:name,label:name}))
+])
+const activityOptions = [
+  {value:'purchase',label:'追加買付'},
+  {value:'funding',label:'資金振替'},
+  {value:'monthly',label:'毎月の積立'}
+]
+const monthlyTransfers = computed(() => (data.value?.transfers||[]).filter(t=>t.kind==='monthly'))
+const investmentActivities = computed(() => (data.value?.transfers||[]).filter(t=>t.kind!=='monthly'))
+const purposeLabel = purpose => ({
+  purchase:'追加買付',funding:'資金振替',point:'ポイント還元',monthly:'毎月の積立'
+})[purpose]||'資産移動'
 const yen = value => '¥' + Number(value || 0).toLocaleString('ja-JP')
 const signYen = value => (Number(value) >= 0 ? '+' : '−') + yen(Math.abs(Number(value) || 0))
 const accountLabel = code => code === 'growth' ? '成長投資枠' : code === 'combined' ? '成長＋つみたて（合算）' : 'つみたて投資枠'
@@ -292,17 +314,20 @@ function closeEditor() {
   if(saving.value || bulkBusy.value)return
   editing.value=''
   editingTransfer.value=null
+  purposeEntryId.value=null
 }
 // Closing any SBI bottom sheet (successful Save, Cancel, X, backdrop or
 // Escape) discards its temporary editor. Failed saves leave it open.
-watch([editing,editingTransfer],([mode,transfer])=>{
-  if(mode || transfer!==null)return
+watch([editing,editingTransfer,purposeEntryId],([mode,transfer,purpose])=>{
+  if(mode || transfer!==null || purpose!==null)return
   existingIdentity.value=false
   plan.value=emptyPlan()
   holding.value=emptyHolding()
   price.value=emptyPrice()
   priceFundName.value=''
   newPurchaseMonth.value=''
+  chosenPurpose.value='monthly'
+  activity.value=emptyActivity()
   bulkRows.value=[]
   bulkText.value=''
   importedScreenshotKeys.value=[]
@@ -396,7 +421,49 @@ async function submit(path, body, message) {
   finally{ saving.value=false }
 }
 async function submitTransfer() {
-  await submit('transfer-month',{entryId:Number(editingTransfer.value),purchaseMonth:newPurchaseMonth.value},'買付月を更新しました')
+  await submit('transfer-month',{entryId:Number(editingTransfer.value),purchaseMonth:newPurchaseMonth.value},'対象月を更新しました')
+}
+function openActivity(purpose='purchase') {
+  error.value=''
+  activity.value=emptyActivity(purpose)
+  editing.value='activity'
+}
+async function submitActivity(){
+  if(saving.value)return
+  saving.value=true
+  error.value=''
+  const draft=activity.value
+  if(!draft.clientRequestId)draft.clientRequestId=crypto.randomUUID()
+  try{
+    await props.api('investment-portfolio/activity',{method:'POST',body:JSON.stringify({
+      ...draft,amount:Number(draft.amount)
+    })})
+    editing.value=''
+    const targetMonth=draft.effectiveDate.slice(0,7)
+    month.value=targetMonth
+    await load()
+    notice.value=draft.purpose==='purchase'?'買付を記録しました':'資金振替を記録しました'
+  }catch(e){error.value=e.message}
+  finally{saving.value=false}
+}
+function editPurpose(t) {
+  error.value=''
+  purposeEntryId.value=t.id
+  chosenPurpose.value=t.kind
+}
+async function savePurpose(){
+  if(purposeEntryId.value===null)return
+  saving.value=true
+  error.value=''
+  try {
+    await props.api('investment-portfolio/transfer-purpose',{
+      method:'PUT',body:JSON.stringify({entryId:Number(purposeEntryId.value),purpose:chosenPurpose.value})
+    })
+    purposeEntryId.value=null
+    await load()
+    notice.value='投資の用途を更新しました'
+  }catch(e){error.value=e.message}
+  finally{saving.value=false}
 }
 // Refresh after existing due-transfer processing completes, so the asset
 // reconciliation cannot be stale if it raced the automatic due-date update.

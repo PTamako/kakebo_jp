@@ -90,3 +90,32 @@ test('signed recovery lookup is read-only and returns idempotent transaction sta
  assert.equal(forged.status,400);
  assert.equal(lookups.length,2);
 });
+
+test('signed card purchase stores verified 7-Eleven merchant rather than document assistant',async()=>{
+ const binds=[]
+ let changes=0
+ const db={prepare(sql){
+  return {bind(...args){
+    binds.push({sql,args})
+    return {
+      async run(){changes++;return {meta:{changes:1}}},
+      async first(){return {id:417}}
+    }
+  }}
+ }}
+ const payload=body({merchant:'セブン-イレブン',date:'2026-05-28',
+   amount:151,category:'饮食料品',paymentSource:'現金',note:''})
+ const response=await onRequestPost({request:await signed(payload),env:env({DB:db})})
+ assert.equal(response.status,200,JSON.stringify(await response.clone().json()))
+ assert.equal((await response.json()).remote_id,'417')
+ assert.equal(changes,1)
+ const insertion=binds.find(x=>x.sql.includes('INSERT INTO entries'))
+ assert.ok(insertion)
+ assert.equal(insertion.args[3],'セブン-イレブン')
+ assert.equal(insertion.args[4],'')
+ const unsafe=body({merchant:{unexpected:'object'}})
+ const rejected=await onRequestPost({request:await signed(unsafe),env:env({DB:db})})
+ assert.equal(rejected.status,400)
+ assert.equal((await rejected.json()).error,'invalid_entry')
+ assert.equal(changes,1)
+});

@@ -356,3 +356,66 @@ test('SBI account-level NAV valuation truncates fractional yen before summing fu
     assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM entries').get().n,0,'no ledger entries are touched')
   }finally{db.close()}
 })
+
+
+test('SBI point redemption contributes to extra capital, never to 15,000 yen monthly savings progress',async()=>{
+  const {db,call}=await client()
+  try{
+    seedPortfolioInTest(db)
+    const date=currentMonth+'-01'
+    const redeemed=await call('entries','POST',{
+      date,time:'10:00',type:'income',amount:1751,category:'ポイント還元',
+      merchant:'',note:'',raw:'',paymentSource:'',rewardDestination:'sbi',
+      transferDate:date,clientRequestId:'sbi-point-reconciliation-applied'
+    })
+    assert.equal(redeemed.status,200,JSON.stringify(redeemed.body))
+    const pointOnly=await call('investment-portfolio?month='+currentMonth)
+    assert.equal(pointOnly.status,200)
+    assert.equal(pointOnly.body.reconciliation.monthly_amount,15000)
+    assert.equal(pointOnly.body.reconciliation.funded,0,'point rewards do not satisfy monthly deposits')
+    assert.equal(pointOnly.body.reconciliation.point_funded,1751)
+    assert.equal(pointOnly.body.reconciliation.difference,-15000)
+    assert.equal(pointOnly.body.reconciliation.linked_count,0)
+    assert.equal(pointOnly.body.transfers.filter(t=>t.is_point_reward).length,1)
+
+    const deposit=await call('entries','POST',{
+      date,type:'transfer',amount:15000,category:'投資・資産移動',
+      merchant:'SBI証券',transferTarget:'sbi',transferDate:date
+    })
+    assert.equal(deposit.status,200,JSON.stringify(deposit.body))
+    const reconciled=await call('investment-portfolio?month='+currentMonth)
+    assert.equal(reconciled.body.reconciliation.funded,15000)
+    assert.equal(reconciled.body.reconciliation.point_funded,1751)
+    assert.equal(reconciled.body.reconciliation.difference,0)
+    assert.equal(reconciled.body.reconciliation.linked_count,1)
+    assert.equal(db.db.prepare("SELECT COUNT(*) n FROM entries WHERE type='transfer' AND transfer_target='sbi'").get().n,2,
+      'both transfers remain in the financial ledger')
+  }finally{db.close()}
+})
+
+test('scheduled point redemption does not consume pending planned SBI funding',async()=>{
+  const {db,call}=await client()
+  try{
+    seedPortfolioInTest(db)
+    const futureMonth=nextMonth(currentMonth)
+    const futureDate=futureMonth+'-01'
+    const point=await call('entries','POST',{
+      date:currentMonth+'-01',time:'10:00',type:'income',amount:1751,category:'ポイント還元',
+      merchant:'',note:'',raw:'',paymentSource:'',rewardDestination:'sbi',
+      transferDate:futureDate,clientRequestId:'sbi-point-reconciliation-pending'
+    })
+    assert.equal(point.status,200,JSON.stringify(point.body))
+    const deposit=await call('entries','POST',{
+      date:currentMonth+'-01',type:'transfer',amount:15000,category:'投資・資産移動',
+      merchant:'SBI証券',transferTarget:'sbi',transferDate:futureDate
+    })
+    assert.equal(deposit.status,200,JSON.stringify(deposit.body))
+    const snapshot=await call('investment-portfolio?month='+futureMonth)
+    assert.equal(snapshot.status,200)
+    assert.equal(snapshot.body.reconciliation.monthly_amount,15000)
+    assert.equal(snapshot.body.reconciliation.funded,0)
+    assert.equal(snapshot.body.reconciliation.point_funded,0)
+    assert.equal(snapshot.body.reconciliation.pending,15000)
+    assert.equal(snapshot.body.reconciliation.point_pending,1751)
+  }finally{db.close()}
+})

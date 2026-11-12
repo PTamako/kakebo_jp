@@ -75,9 +75,14 @@ export async function onRequestPost({request,env}){
     typeof date!=='string'||!/^\d{4}-\d\d-\d\d$/.test(date)||
     !Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date||
     typeof p.category!=='string'||!p.category.trim()||p.category.length>80||
-    typeof source!=='string'||source.length>80)return json({ok:false,error:'invalid_entry'},400)
+    typeof source!=='string'||source.length>80||
+    (p.merchant!==undefined&&(typeof p.merchant!=='string'||p.merchant.length>100)))
+    return json({ok:false,error:'invalid_entry'},400)
+  // Store the source document's merchant as the actual ledger display name.
+  // Never replace a known store with the importing application's name.
+  const merchant=typeof p.merchant==='string'?p.merchant.trim():''
   const field={type:p.type,date,amount,category:p.category.trim(),paymentSource:source.trim(),
-    note:typeof p.note==='string'?p.note.slice(0,180):'',merchant:'文书助手'}
+    note:typeof p.note==='string'?p.note.slice(0,180):'',merchant:merchant||'文书助手'}
   const fieldErr=validateLedgerTextFields(field)
   if(fieldErr)return json({ok:false,error:'invalid_text'},400)
   const paymentErr=await validateRegisteredPaymentSource(env.DB,field.paymentSource)

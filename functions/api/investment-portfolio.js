@@ -15,10 +15,12 @@ const nextMonth=month=>{
   const d=new Date(Date.UTC(y,m,1));
   return d.toISOString().slice(0,7);
 };
-export function inferredPurchaseMonth(date,orderDay=9) {
-  const day=Number(String(date||'').slice(8,10));
+// A recorded transfer's effective date determines its calendar month.
+ // Purchase-month overrides remain available when the broker explicitly
+ // confirms a different month. The plan's order day is NOT a transfer cutoff.
+export function inferredPurchaseMonth(date) {
   const month=String(date||'').slice(0,7);
-  return monthOk(month) ? (day>orderDay?nextMonth(month):month) : '';
+  return monthOk(month) ? month : '';
 }
 // Point redemption is additional investment capital, not a monthly cash savings
 // contribution. Keep its real SBI transfer in the ledger and portfolio totals.
@@ -30,7 +32,7 @@ export function fundingStatus(transfers,month,orderDay=9) {
   return transfers.reduce((total,item)=>{
     if(Number(item.transfer_applied)!==1)return total;
     const effective=String(item.transfer_date||item.date);
-    const target=item.purchase_month||inferredPurchaseMonth(effective,orderDay);
+    const target=item.purchase_month||inferredPurchaseMonth(effective);
     if(target!==month)return total;
     if(isPointRewardSbiTransfer(item)){
       total.point_funded+=Number(item.amount);
@@ -77,15 +79,15 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       ]);
       const active=plans.filter(p=>p.enabled===1);
       const monthlyAmount=active.reduce((sum,p)=>sum+Number(p.monthly_amount),0);
-      const day=active.length?Math.min(...active.map(p=>p.order_day)):9;
       const normalizedTransfers=transfers.map(t=>({
-        ...t, effective_month:t.purchase_month||inferredPurchaseMonth(t.transfer_date||t.date,day),
+        ...t, effective_month:t.purchase_month||inferredPurchaseMonth(t.transfer_date||t.date),
         inferred:!t.purchase_month, is_point_reward:isPointRewardSbiTransfer(t)
       }));
-      const status=fundingStatus(normalizedTransfers,month,day);
+      const status=fundingStatus(normalizedTransfers,month);
       const scheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1&&!t.is_point_reward).reduce((n,t)=>n+Number(t.amount),0);
       const pointScheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1&&t.is_point_reward).reduce((n,t)=>n+Number(t.amount),0);
-      const relevant=normalizedTransfers.filter(t=>t.effective_month===month||t.purchase_month===month).slice(0,20);
+      const registered=status.funded+scheduled;
+      const relevant=normalizedTransfers.filter(t=>t.effective_month===month).slice(0,20);
       const positions=holdings.map(h=>{
         const nav=h.nav_per_10000==null?null:Number(h.nav_per_10000);
         // SBI displays each NISA account's investment trust valuation after
@@ -106,12 +108,14 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       return respond({
         month,plans,holdings:positions,transfers:relevant,
         reconciliation:{monthly_amount:monthlyAmount,funded:status.funded,pending:scheduled,
+          registered,unregistered:Math.max(0,monthlyAmount-registered),
+          planned_difference:registered-monthlyAmount,
           point_funded:status.point_funded,point_pending:pointScheduled,
           difference:status.funded-monthlyAmount,linked_count:status.count},
         valuation:{valued_count:valued.length,holdings_count:positions.length,
           value:valued.length===positions.length&&positions.length?valued.reduce((n,p)=>n+p.market_value,0):null,
           pnl:valued.length===positions.length&&positions.length?valued.reduce((n,p)=>n+p.pnl,0):null},
-        note:'資産移動の期日処理は帳簿上の反映であり、SBI口座への着金や約定を保証しません。自動紐付け月は推定です。'
+        note:'振替の登録と期日の帳簿反映は異なります。帳簿反映は証券口座への着金や約定を保証しません。対象月は振替の適用日から推定し、変更できます。'
       });
     }
     // One-time historical SBI snapshot bootstrap has been retired.

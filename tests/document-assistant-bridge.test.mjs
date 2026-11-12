@@ -70,3 +70,23 @@ test('signed read-only ledger options list real categories and active payment so
  assert.equal(bad.status,400);
  assert.equal(calls,1);
 });
+
+test('signed recovery lookup is read-only and returns idempotent transaction state',async()=>{
+ const priorRequestId=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(id));
+ const expected='jda_'+Array.from(new Uint8Array(priorRequestId),x=>x.toString(16).padStart(2,'0')).join('').slice(0,60);
+ const lookups=[];
+ const d1={prepare(sql){
+  assert.match(sql,/^SELECT id FROM entries WHERE client_request_id=\?1$/);
+  return {bind(value){lookups.push(value);return {async first(){return lookups.length===1?{id:42}:null}}}}
+ }};
+ const payload={source:'jp-document-assistant',actor_user_id:actor,idempotency_key:id,payload:{operation:'lookup'}};
+ const found=await onRequestPost({request:await signed(payload),env:env({DB:d1})});
+ assert.equal(found.status,200);
+ assert.deepEqual(await found.json(),{ok:true,exists:true,remote_id:'42'});
+ const missing=await onRequestPost({request:await signed(payload),env:env({DB:d1})});
+ assert.deepEqual(await missing.json(),{ok:true,exists:false,remote_id:null});
+ assert.deepEqual(lookups,[expected,expected]);
+ const forged=await onRequestPost({request:await signed({...payload,idempotency_key:'arbitrary-1234'}),env:env({DB:d1})});
+ assert.equal(forged.status,400);
+ assert.equal(lookups.length,2);
+});

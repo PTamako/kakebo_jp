@@ -993,9 +993,6 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-month-pulse>div{display:grid;gap:3px;padding:12px;border-radius:12px;background:var(--paper);min-width:0}
 .sbi-month-pulse span{font-size:10px;color:var(--muted)}
 .sbi-month-pulse strong{font-size:clamp(15px,4.5vw,19px);font-weight:850;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.sbi-point-funding{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:3px 9px;margin-top:9px;padding:7px 10px;border-radius:9px;background:var(--paper);font-size:11px;color:var(--muted)}
-.sbi-point-funding strong{font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
-.sbi-point-funding small{width:100%;font-size:10px}
 .sbi-manage-subhead{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;margin-top:8px;padding:8px 0 2px;border-top:1px solid var(--line);box-sizing:border-box}
 .sbi-manage-subhead>strong{display:flex;align-items:center;min-height:40px;font-size:13px;line-height:1.3}
 .sbi-manage-subhead .sbi-text-action{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-size:12px;line-height:1.3}

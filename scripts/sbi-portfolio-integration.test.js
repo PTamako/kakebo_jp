@@ -4,6 +4,8 @@ import {DatabaseSync} from 'node:sqlite'
 import {readFileSync} from 'node:fs'
 import {onRequest} from '../functions/api/[[path]].js'
 import {inferredPurchaseMonth} from '../functions/api/investment-portfolio.js'
+import { inferSbiInvestmentKind } from '../src/sbi-investment-kind.js'
+import { recognizeAssetTransfer } from '../src/transfer-recognition.js'
 import {sbiInitialHoldings, SBI_SNAPSHOT_DAY, SBI_SNAPSHOT_OBSERVED_AT} from './fixtures/sbi-initial-holdings.js'
 
 // This harness runs real SQLite (the D1 SQL dialect), never production D1.
@@ -593,5 +595,58 @@ test('manual plus-entry SBI purpose is atomic and does not silently become recur
     assert.equal(snapshot.transfers.filter(t=>t.kind==='monthly').length,1)
     assert.equal((await call('entries','POST',{...buy,sbiPurpose:'bad',
       clientRequestId:'sbi_manual_bad_kind_001'})).status,400)
+  }finally{db.close()}
+})
+
+
+test('SBI 投信 recognition requires 積立 for monthly; point investment takes precedence',()=>{
+  assert.equal(inferSbiInvestmentKind('SBI証券投信積立サービス（翌月買付分）'),'monthly')
+  assert.equal(inferSbiInvestmentKind('SBI証券　投信 積立'),'monthly')
+  assert.equal(inferSbiInvestmentKind('SBI証券 投信'),'purchase')
+  assert.equal(inferSbiInvestmentKind('SBI証券 投信 買付'),'purchase')
+  assert.equal(inferSbiInvestmentKind('ＳＢＩ証券ポイント投資（投信）'),'point')
+  assert.equal(inferSbiInvestmentKind('SBI证券积分投资 投信'),'point')
+  assert.equal(inferSbiInvestmentKind('三井住友カード ポイント獲得'),'')
+  assert.equal(inferSbiInvestmentKind('SBI証券 ポイント獲得 投信'),'')
+  assert.equal(inferSbiInvestmentKind('SBI銀行 利息'),'')
+  assert.deepEqual(recognizeAssetTransfer({merchant:'ＳＢＩ証券ポイント投資（投信）'}).transferTarget,'sbi')
+  assert.deepEqual(recognizeAssetTransfer({merchant:'SBI証券 投信'}).transferTarget,'sbi')
+})
+
+test('SBI manual and imported transfers use keyword-based classification consistently',async()=>{
+  const {db,call}=await client()
+  try{
+    seedPortfolioInTest(db)
+    const date=currentMonth+'-01'
+    const make=(merchant,amount,id,extra={})=>({
+      date,type:'transfer',amount,merchant,category:'投資・資産移動',
+      transferTarget:'sbi',transferDate:date,clientRequestId:id,sbiPurpose:'auto',...extra
+    })
+    const a=await call('entries','POST',make('SBI証券 投信積立サービス',15000,'sbi_auto_monthly_001'))
+    const b=await call('entries','POST',make('SBI証券 投信 買付',2000,'sbi_auto_purchase_001'))
+    const p=await call('entries','POST',make('SBI証券ポイント投資（投信）',1751,'sbi_auto_point_001'))
+    assert.deepEqual([a.status,b.status,p.status],[200,200,200])
+    let snapshot=(await call('investment-portfolio?month='+currentMonth)).body
+    assert.equal(snapshot.reconciliation.registered,15000)
+    assert.equal(snapshot.reconciliation.point_funded,1751)
+    assert.equal(snapshot.transfers.find(t=>t.id===a.body.id).kind,'monthly')
+    assert.equal(snapshot.transfers.find(t=>t.id===b.body.id).kind,'purchase')
+    assert.equal(snapshot.transfers.find(t=>t.id===p.body.id).kind,'point')
+    assert.equal((await call('investment-portfolio/transfer-purpose','PUT',{
+      entryId:p.body.id,purpose:'monthly'
+    })).status,409)
+    // An explicit human classification remains authoritative for non-point rows.
+    const explicit=await call('entries','POST',make('SBI証券 投信',1000,'sbi_explicit_monthly_001',{sbiPurpose:'monthly'}))
+    assert.equal(explicit.status,200)
+    snapshot=(await call('investment-portfolio?month='+currentMonth)).body
+    assert.equal(snapshot.reconciliation.registered,16000)
+
+    // Older unlinked entries with a recognizable "SBI 投信" name are still
+    // classified correctly without rewriting their original transactions.
+    const legacy=await call('entries','POST',make('SBI証券 投信',3000,'sbi_legacy_extra_001',{sbiPurpose:undefined}))
+    assert.equal(legacy.status,200)
+    snapshot=(await call('investment-portfolio?month='+currentMonth)).body
+    assert.equal(snapshot.transfers.find(t=>t.id===legacy.body.id).kind,'purchase')
+    assert.equal(snapshot.reconciliation.registered,16000)
   }finally{db.close()}
 })

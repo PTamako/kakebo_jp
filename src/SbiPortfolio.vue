@@ -780,7 +780,6 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
       </form>
       <form v-else-if="editing==='activity'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付の記録" @submit.prevent="submitActivity">
         <div class="sbi-line-heading"><h3>買付を記録</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
-        <label>取引の種類<input type="text" value="追加買付" disabled /></label>
         <label>金額（円）<input v-model.number="activity.amount" type="number" min="1" max="1000000000" step="1" required /></label>
         <label>取引日（カード利用日・資金移動日）<input v-model="activity.date" type="date" required /></label>
         <label>適用日（この月に表示）<input v-model="activity.effectiveDate" type="date" required /></label>

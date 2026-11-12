@@ -142,6 +142,9 @@ test('SBI 15,000 yen transfer reconciles with four monthly allocations without d
     assert.equal(transfer.status,200)
     const first=await call('investment-portfolio?month='+currentMonth)
     assert.equal(first.body.reconciliation.funded,15000)
+    assert.equal(first.body.reconciliation.registered,15000)
+    assert.equal(first.body.reconciliation.unregistered,0)
+    assert.equal(first.body.reconciliation.planned_difference,0)
     assert.equal(first.body.reconciliation.difference,0)
     assert.equal(first.body.reconciliation.linked_count,1)
     assert.equal((await call('transfers/process-due','POST')).status,200)
@@ -303,10 +306,11 @@ test('NAV accepts real ISO dates but rejects impossible calendar days',async()=>
   }finally{db.close()}
 })
 
-test('purchase month estimates are explicit, not an assertion that a buy was filled',()=>{
+test('purchase month estimates use the recorded effective month regardless of fund order day',()=>{
   assert.equal(inferredPurchaseMonth('2026-10-05',9),'2026-10')
-  assert.equal(inferredPurchaseMonth('2026-10-27',9),'2026-11')
-  assert.equal(inferredPurchaseMonth('2026-12-27',9),'2027-01')
+  assert.equal(inferredPurchaseMonth('2026-10-27',9),'2026-10')
+  assert.equal(inferredPurchaseMonth('2026-12-15',9),'2026-12')
+  assert.equal(inferredPurchaseMonth('2026-12-27',9),'2026-12')
 })
 
 
@@ -373,6 +377,8 @@ test('SBI point redemption contributes to extra capital, never to 15,000 yen mon
     assert.equal(pointOnly.status,200)
     assert.equal(pointOnly.body.reconciliation.monthly_amount,15000)
     assert.equal(pointOnly.body.reconciliation.funded,0,'point rewards do not satisfy monthly deposits')
+    assert.equal(pointOnly.body.reconciliation.registered,0)
+    assert.equal(pointOnly.body.reconciliation.unregistered,15000)
     assert.equal(pointOnly.body.reconciliation.point_funded,1751)
     assert.equal(pointOnly.body.reconciliation.difference,-15000)
     assert.equal(pointOnly.body.reconciliation.linked_count,0)
@@ -385,6 +391,7 @@ test('SBI point redemption contributes to extra capital, never to 15,000 yen mon
     assert.equal(deposit.status,200,JSON.stringify(deposit.body))
     const reconciled=await call('investment-portfolio?month='+currentMonth)
     assert.equal(reconciled.body.reconciliation.funded,15000)
+    assert.equal(reconciled.body.reconciliation.registered,15000)
     assert.equal(reconciled.body.reconciliation.point_funded,1751)
     assert.equal(reconciled.body.reconciliation.difference,0)
     assert.equal(reconciled.body.reconciliation.linked_count,1)
@@ -416,6 +423,54 @@ test('scheduled point redemption does not consume pending planned SBI funding',a
     assert.equal(snapshot.body.reconciliation.funded,0)
     assert.equal(snapshot.body.reconciliation.point_funded,0)
     assert.equal(snapshot.body.reconciliation.pending,15000)
+    assert.equal(snapshot.body.reconciliation.registered,15000)
+    assert.equal(snapshot.body.reconciliation.unregistered,0)
+    assert.equal(snapshot.body.reconciliation.planned_difference,0)
     assert.equal(snapshot.body.reconciliation.point_pending,1751)
+  }finally{db.close()}
+})
+
+
+test('November 11 point reward and December 15 scheduled savings are never grouped into the wrong month',async()=>{
+  const {db,call}=await client()
+  try{
+    seedPortfolioInTest(db)
+    const insert=db.db.prepare(`INSERT INTO entries
+      (date,amount,type,transfer_target,transfer_date,transfer_applied,client_request_id,payment_source)
+      VALUES (?1,?2,'transfer','sbi',?3,?4,?5,?6)`)
+    // A point reward belongs to November 11 even if a legacy link says December.
+    const point=insert.run('2026-11-11',1751,'2026-11-11',1,'point_charge_november_11','ポイント還元')
+    db.db.prepare('INSERT INTO sbi_transfer_links(entry_id,purchase_month) VALUES (?1,?2)')
+      .run(Number(point.lastInsertRowid),'2026-12')
+    // Two independent recurring deposits are recorded in advance.
+    // A December 15 effective date must NOT be reclassified into January.
+    insert.run('2026-11-12',15000,'2026-11-16',0,'sbi_november_16','')
+    insert.run('2026-11-12',15000,'2026-12-15',0,'sbi_december_15','')
+
+    const november=(await call('investment-portfolio?month=2026-11')).body
+    assert.equal(november.reconciliation.point_funded,1751)
+    assert.equal(november.reconciliation.registered,15000)
+    assert.equal(november.reconciliation.funded,0)
+    assert.equal(november.reconciliation.pending,15000)
+    assert.equal(november.reconciliation.unregistered,0)
+    assert.equal(november.transfers.filter(t=>t.is_point_reward).length,1)
+
+    const december=(await call('investment-portfolio?month=2026-12')).body
+    assert.equal(december.reconciliation.monthly_amount,15000)
+    assert.equal(december.reconciliation.registered,15000)
+    assert.equal(december.reconciliation.pending,15000)
+    assert.equal(december.reconciliation.funded,0)
+    assert.equal(december.reconciliation.unregistered,0)
+    assert.equal(december.reconciliation.planned_difference,0)
+    assert.equal(december.reconciliation.point_funded,0)
+    assert.equal(december.transfers.length,1)
+    assert.equal(december.transfers[0].transfer_date,'2026-12-15')
+    assert.equal(december.transfers[0].date,'2026-11-12',
+      'booking date is preserved separately from effective date')
+    assert.equal(december.transfers[0].effective_month,'2026-12')
+
+    const january=(await call('investment-portfolio?month=2027-01')).body
+    assert.equal(january.reconciliation.registered,0)
+    assert.equal(january.reconciliation.point_funded,0)
   }finally{db.close()}
 })

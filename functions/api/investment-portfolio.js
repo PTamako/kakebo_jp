@@ -32,9 +32,10 @@ export function fundingStatus(transfers,month,orderDay=9) {
   return transfers.reduce((total,item)=>{
     if(Number(item.transfer_applied)!==1)return total;
     const effective=String(item.transfer_date||item.date);
-    const target=item.purchase_month||inferredPurchaseMonth(effective);
+    const pointReward=isPointRewardSbiTransfer(item);
+    const target=pointReward?inferredPurchaseMonth(effective):(item.purchase_month||inferredPurchaseMonth(effective));
     if(target!==month)return total;
-    if(isPointRewardSbiTransfer(item)){
+    if(pointReward){
       total.point_funded+=Number(item.amount);
       total.point_count++;
     }else{
@@ -79,10 +80,14 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       ]);
       const active=plans.filter(p=>p.enabled===1);
       const monthlyAmount=active.reduce((sum,p)=>sum+Number(p.monthly_amount),0);
-      const normalizedTransfers=transfers.map(t=>({
-        ...t, effective_month:t.purchase_month||inferredPurchaseMonth(t.transfer_date||t.date),
-        inferred:!t.purchase_month, is_point_reward:isPointRewardSbiTransfer(t)
-      }));
+      const normalizedTransfers=transfers.map(t=>{
+        const isPointReward=isPointRewardSbiTransfer(t);
+        const appliedMonth=inferredPurchaseMonth(t.transfer_date||t.date);
+        return {...t,
+          effective_month:isPointReward?appliedMonth:(t.purchase_month||appliedMonth),
+          inferred:isPointReward||!t.purchase_month,is_point_reward:isPointReward
+        };
+      });
       const status=fundingStatus(normalizedTransfers,month);
       const scheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1&&!t.is_point_reward).reduce((n,t)=>n+Number(t.amount),0);
       const pointScheduled=normalizedTransfers.filter(t=>t.effective_month===month&&Number(t.transfer_applied)!==1&&t.is_point_reward).reduce((n,t)=>n+Number(t.amount),0);

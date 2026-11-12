@@ -74,13 +74,12 @@ const activePaymentOptions = computed(() => [
 ])
 const activityOptions = [
   {value:'purchase',label:'追加買付'},
-  {value:'funding',label:'資金振替'},
   {value:'monthly',label:'毎月の積立'}
 ]
 const monthlyTransfers = computed(() => (data.value?.transfers||[]).filter(t=>t.kind==='monthly'))
-const investmentActivities = computed(() => (data.value?.transfers||[]).filter(t=>t.kind!=='monthly'))
+const investmentActivities = computed(() => (data.value?.transfers||[]).filter(t=>t.kind==='purchase'||t.kind==='point'))
 const purposeLabel = purpose => ({
-  purchase:'追加買付',funding:'資金振替',point:'ポイント買付',monthly:'毎月の積立'
+  purchase:'追加買付',point:'ポイント買付',monthly:'毎月の積立'
 })[purpose]||'資産移動'
 const yen = value => '¥' + Number(value || 0).toLocaleString('ja-JP')
 const signYen = value => (Number(value) >= 0 ? '+' : '−') + yen(Math.abs(Number(value) || 0))
@@ -442,7 +441,7 @@ async function submitActivity(){
     const targetMonth=draft.effectiveDate.slice(0,7)
     month.value=targetMonth
     await load()
-    notice.value=draft.purpose==='purchase'?'買付を記録しました':'資金振替を記録しました'
+    notice.value='買付を記録しました'
   }catch(e){error.value=e.message}
   finally{saving.value=false}
 }
@@ -781,7 +780,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
       </form>
       <form v-else-if="editing==='activity'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付の記録" @submit.prevent="submitActivity">
         <div class="sbi-line-heading"><h3>買付を記録</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
-        <label>取引の種類<MobileChoiceSheet v-model="activity.purpose" label="取引の種類" :options="activityOptions.filter(x=>x.value!=='monthly')" /></label>
+        <label>取引の種類<input type="text" value="追加買付" disabled /></label>
         <label>金額（円）<input v-model.number="activity.amount" type="number" min="1" max="1000000000" step="1" required /></label>
         <label>取引日（カード利用日・資金移動日）<input v-model="activity.date" type="date" required /></label>
         <label>適用日（この月に表示）<input v-model="activity.effectiveDate" type="date" required /></label>

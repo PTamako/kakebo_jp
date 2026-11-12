@@ -525,7 +525,7 @@ test('SBI spot buys and point redemptions do not inflate monthly 15,000 yen savi
     assert.equal(snapshot.reconciliation.unregistered,0)
     assert.equal(snapshot.reconciliation.point_funded,1751)
     assert.deepEqual(snapshot.transfers.map(t=>t.kind).sort(),['monthly','point','purchase','purchase'])
-    assert.equal(snapshot.transfers.find(t=>t.kind==='purchase').payment_source,'楽天カード')
+    assert.equal(snapshot.transfers.find(t=>t.kind==='purchase' && Number(t.amount)===5000).payment_source,'楽天カード')
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE type='transfer' AND transfer_target='sbi'").get().n,4)
     assert.equal(db.db.prepare("SELECT SUM(amount) AS total FROM entries WHERE type='transfer' AND payment_source='楽天カード' AND transfer_target='sbi'").get().total,5000)
     assert.equal(snapshot.valuation.value,71560,'recording purchase never fabricates holdings valuation')

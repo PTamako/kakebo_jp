@@ -1388,7 +1388,7 @@ export async function onRequest({ request, env, params }) {
             ? 'SELECT 1 FROM recurring_date_exclusions WHERE plan_id=?1 AND date=?2'
             : 'SELECT 1 FROM recurring_candidate_exclusions WHERE plan_id=?1 AND month=?2'
         ).bind(recurringSkip.planId,recurringSkip.date||recurringSkip.month).first() : null
-        const snapshot=JSON.stringify({entry,purchaseMonth:link?.purchase_month||null,dismissed:!!dismissal,
+        const snapshot=JSON.stringify({entry,purchaseMonth:link?.purchase_month||null,purchasePurpose:link?.purpose||'monthly',dismissed:!!dismissal,
           recurringSkip:alreadySkipped?null:recurringSkip,pairedEntryId:paired?.id||null})
         const statements=[
           db.prepare("INSERT INTO trash_items(item_type,item_id,payload_json) SELECT 'entry',?1,?2 WHERE "+

@@ -1208,9 +1208,10 @@ export async function onRequest({ request, env, params }) {
         // chosen an explicit purpose. Point buys can never be monthly.
         const autoKind=transfer&&target==='sbi'?inferredSbiEntryKind(e):''
         const sbiPurpose=transfer && target==='sbi'
-          ? requestedSbiPurpose && requestedSbiPurpose!=='auto'
-            ? requestedSbiPurpose
-            : autoKind==='monthly'?'monthly':autoKind?'purchase':requestedSbiPurpose==='auto'?'purchase':null
+          ? autoKind==='point'?'purchase'
+            : requestedSbiPurpose && requestedSbiPurpose!=='auto'
+              ? requestedSbiPurpose
+              : autoKind==='monthly'?'monthly':autoKind==='purchase'||requestedSbiPurpose==='auto'?'purchase':null
           : null
         if(sbiPurpose && !clientRequestId)
           return json({error:'SBI証券の記録IDを確認してください'},400)

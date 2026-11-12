@@ -1,6 +1,7 @@
 import { isAppliedSbiTransfer, applyDueSbiTransfers } from './investment-transfer.js'
 import { handlePrepaid, validPrepaidTarget, prepaidSchemaReady } from './prepaid-assets.js'
 import { handlePortfolio } from './investment-portfolio.js'
+import { inferredSbiEntryKind } from '../../src/sbi-investment-kind.js'
 import { recognizeWithGemma } from './gemma-ocr.js'
 import { resolveRecurringApproval } from './recurring-approval.js'
 import { nextAutomaticStartMonth, recurringRequestId, recurringIsPerDate, recurringOccurrencePeriod, recurringDatesForPlanInMonth, recurringMonthDays, recurringWeekdays, recurringIntervalMonths, scheduledRecurringOnDate } from '../../src/recurring-posting.js'
@@ -1200,9 +1201,17 @@ export async function onRequest({ request, env, params }) {
         const clientRequestId = e.clientRequestId == null ? null : String(e.clientRequestId).trim()
         if (clientRequestId && !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
           return json({ error: '記録IDの形式が正しくありません' }, 400)
-        const sbiPurpose=transfer && target==='sbi' && e.sbiPurpose!=null ? String(e.sbiPurpose) : null
-        if(sbiPurpose && !['monthly','purchase','funding'].includes(sbiPurpose))
+        const requestedSbiPurpose=transfer && target==='sbi' && e.sbiPurpose!=null ? String(e.sbiPurpose) : null
+        if(requestedSbiPurpose && !['auto','monthly','purchase','funding'].includes(requestedSbiPurpose))
           return json({error:'SBI証券の取引区分を確認してください'},400)
+        // For new imports, text is authoritative only when a user hasn't
+        // chosen an explicit purpose. Point buys can never be monthly.
+        const autoKind=transfer&&target==='sbi'?inferredSbiEntryKind(e):''
+        const sbiPurpose=transfer && target==='sbi'
+          ? requestedSbiPurpose && requestedSbiPurpose!=='auto'
+            ? requestedSbiPurpose
+            : autoKind==='monthly'?'monthly':autoKind?'purchase':requestedSbiPurpose==='auto'?'purchase':null
+          : null
         if(sbiPurpose && !clientRequestId)
           return json({error:'SBI証券の記録IDを確認してください'},400)
         // Advisory prechecks in the browser can race with another device. Make

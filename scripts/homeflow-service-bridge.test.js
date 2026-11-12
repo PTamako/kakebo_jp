@@ -75,7 +75,7 @@ test('invalid period summaries do not touch D1',async()=>{
 
 test('existing private D1 bridge keeps HomeFlow GET read-only and handles signed JPDA separately',async()=>{
  const secret='tests-only-private-bridge-secret-abcdef0123456789'
- const env={DB:db,JPDA_BRIDGE_ENABLED:'true',JPDA_PRIVATE_BRIDGE:'true',JPDA_BRIDGE_SECRET:secret}
+ const env={DB:db,JPDA_BRIDGE_SECRET:secret}
  const raw=JSON.stringify({source:'jp-document-assistant',actor_user_id:'approved-jpda-mapping',payload:{operation:'options',entryType:'expense'}})
  const stamp=String(Date.now())
  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign'])

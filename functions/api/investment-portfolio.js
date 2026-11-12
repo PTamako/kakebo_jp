@@ -23,11 +23,23 @@ export function inferredPurchaseMonth(date) {
   const month=String(date||'').slice(0,7);
   return monthOk(month) ? month : '';
 }
-// Point redemption is additional investment capital, not a monthly cash savings
-// contribution. Keep its real SBI transfer in the ledger and portfolio totals.
+// Point investment is neither recurring savings nor a credit-card charge.
+// Match a distinctive brokerage transaction description, not a loose
+// occurrence of 'ポイント' (which also appears in reward *earnings*).
+export function isSbiPointInvestmentText(value) {
+  const text=String(value||'').normalize('NFKC').replace(/[\\s　()[\\]（）・:_-]/g,'').toLowerCase();
+  return /(?:sbi証券|sbi证券|sbi)/.test(text) &&
+    /(?:ポイント|积分|vpoint|vポイント)/.test(text) &&
+    /(?:投資|投资|買付|购买|購買)/.test(text) &&
+    !/(?:ポイント獲得|积分获得|付与|ポイント還元)/.test(text);
+}
+// Existing automated point redemptions retain their ledger, and recognizable
+// SBI point-buy transactions are grouped into the same point investment view.
 export function isPointRewardSbiTransfer(item) {
   return item.payment_source==='ポイント還元' ||
-    String(item.client_request_id||'').startsWith('point_charge_');
+    String(item.client_request_id||'').startsWith('point_charge_') ||
+    isSbiPointInvestmentText(item.merchant) ||
+    isSbiPointInvestmentText(item.note);
 }
 // Missing metadata means a legacy monthly transfer. Explicitly classified
 // purchases / extra funding never satisfy a recurring savings plan.
@@ -102,7 +114,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       if(!Number.isSafeInteger(x?.entryId)||x.entryId<=0||
          !['monthly','purchase','funding'].includes(x?.purpose))
         return respond({error:'振替の用途を確認してください'},400);
-      const entry=await db.prepare("SELECT e.id,e.date,e.transfer_date,e.payment_source,e.client_request_id,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.id=?1 AND e.type='transfer' AND e.transfer_target='sbi'").bind(x.entryId).first();
+      const entry=await db.prepare("SELECT e.id,e.date,e.transfer_date,e.payment_source,e.client_request_id,e.merchant,e.note,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.id=?1 AND e.type='transfer' AND e.transfer_target='sbi'").bind(x.entryId).first();
       if(!entry)return respond({error:'振替が見つかりません'},404);
       if(isPointRewardSbiTransfer(entry))return respond({error:'ポイント還元の用途は変更できません'},409);
       const targetMonth=entry.purchase_month||inferredPurchaseMonth(entry.transfer_date||entry.date);

@@ -563,11 +563,11 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             <div class="sbi-transfer-content">
               <p v-if="!data.transfers.length" class="sbi-empty">この月の振替記録はありません</p>
               <div v-for="t in (showAllTransfers ? data.transfers : data.transfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
-                <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>{{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '帳簿反映済み' : '期日待ち'}}{{t.is_point_reward ? ' · ポイント還元' : ''}}</small></div>
-                <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の買付月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">変更</button></div>
+                <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>適用日 {{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '帳簿反映済み' : '期日待ち'}}{{t.is_point_reward ? ' · ポイント還元' : ''}}</small><small v-if="t.transfer_date && t.transfer_date !== t.date">取引日 {{t.date}}</small></div>
+                <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button v-if="!t.is_point_reward" type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の対象月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">変更</button></div>
               </div>
               <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
-              <details class="sbi-footnote"><summary>振替の確認について</summary><p>登録済みには期日待ちの振替を含みます。対象月は振替の適用日から推定し、変更できます。帳簿反映は実際の着金・買付完了を保証しません。</p></details>
+              <details class="sbi-footnote"><summary>振替の確認について</summary><p>登録済みには期日待ちも含みます。対象月は適用日の月です。通常の振替は変更できますが、ポイント還元は適用日の月で集計します。帳簿反映は実際の着金・買付完了を保証しません。</p></details>
             </div>
           </details>
         </div>

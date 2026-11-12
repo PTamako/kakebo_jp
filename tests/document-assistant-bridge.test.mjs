@@ -68,7 +68,7 @@ test('signed read-only ledger options list real categories and active payment so
  assert.equal(result.suggested.payment_source,'三井住友カード');
  assert.equal(result.suggested.category_origin,'merchant_rule');
  assert.equal(result.suggested.payment_origin,'merchant_rule');
- assert.deepEqual(result.categories.map(x=>x.label),['飲食料品','外食']);
+ assert.deepEqual(result.categories.map(x=>x.label),['飲食料品','外食','日用品']);
  assert.deepEqual(result.payment_sources.map(x=>x.value),['現金','三井住友カード','楽天カード']);
  assert.equal(calls,1);
  assert.equal(queries.length,5);

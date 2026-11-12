@@ -303,7 +303,8 @@ export function validateBackup(value) {
     ['fundPrices',p=>p && fundCode(p.fund_code) && safeAmount(p.nav_per_10000) &&
       p.nav_per_10000>0 && p.nav_per_10000<=1000000000 && validDate(p.price_date) &&
       isText(p.source,80)],
-    ['transferLinks',p=>p && Number.isSafeInteger(p.entry_id) && p.entry_id>0 && month(p.purchase_month)]
+    ['transferLinks',p=>p && Number.isSafeInteger(p.entry_id) && p.entry_id>0 && month(p.purchase_month) &&
+      (p.purpose==null || ['monthly','purchase','funding'].includes(p.purpose))]
   ]
   for(const [name,check] of checks)
     if(Array.isArray(value[name]) && value[name].some(x=>!check(x)))

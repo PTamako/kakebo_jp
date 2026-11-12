@@ -47,6 +47,18 @@ export async function onRequestPost({request,env}){
     }catch{return json({ok:false,error:'catalog_unavailable'},503)}
   }
   const key=body?.idempotency_key
+  // Read-only recovery check for a previously failed/uncertain signed request.
+  // Reuse the original idempotency key and do not accept arbitrary ledger queries.
+  if(body?.payload?.operation==='lookup'){
+    if(typeof key!=='string'||!/^jda:kakebo:[a-f0-9]{16,64}$/i.test(key)||
+       request.headers.get('Idempotency-Key')!==key)
+      return json({ok:false,error:'invalid_source'},400)
+    const requestId=await stableRequestId(key)
+    try{
+      const row=await env.DB.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(requestId).first()
+      return json({ok:true,exists:!!row?.id,remote_id:row?.id?String(row.id):null})
+    }catch{return json({ok:false,error:'ledger_lookup_failed'},503)}
+  }
   if(body?.payload?.operation!=='entry'||
     typeof key!=='string'||!/^jda:kakebo:[a-f0-9]{16,64}$/i.test(key)||
     request.headers.get('Idempotency-Key')!==key)return json({ok:false,error:'invalid_source'},400)

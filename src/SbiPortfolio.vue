@@ -74,13 +74,12 @@ const activePaymentOptions = computed(() => [
 ])
 const activityOptions = [
   {value:'purchase',label:'追加買付'},
-  {value:'funding',label:'資金振替'},
   {value:'monthly',label:'毎月の積立'}
 ]
 const monthlyTransfers = computed(() => (data.value?.transfers||[]).filter(t=>t.kind==='monthly'))
-const investmentActivities = computed(() => (data.value?.transfers||[]).filter(t=>t.kind!=='monthly'))
+const investmentActivities = computed(() => (data.value?.transfers||[]).filter(t=>t.kind==='purchase'||t.kind==='point'))
 const purposeLabel = purpose => ({
-  purchase:'追加買付',funding:'資金振替',point:'ポイント還元',monthly:'毎月の積立'
+  purchase:'追加買付',point:'ポイント買付',monthly:'毎月の積立'
 })[purpose]||'資産移動'
 const yen = value => '¥' + Number(value || 0).toLocaleString('ja-JP')
 const signYen = value => (Number(value) >= 0 ? '+' : '−') + yen(Math.abs(Number(value) || 0))
@@ -442,7 +441,7 @@ async function submitActivity(){
     const targetMonth=draft.effectiveDate.slice(0,7)
     month.value=targetMonth
     await load()
-    notice.value=draft.purpose==='purchase'?'買付を記録しました':'資金振替を記録しました'
+    notice.value='買付を記録しました'
   }catch(e){error.value=e.message}
   finally{saving.value=false}
 }
@@ -578,20 +577,19 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 
       <details class="panel sbi-card sbi-investment-activity" open>
         <summary class="sbi-disclosure-summary">
-          <span class="sbi-manage-title"><strong>買付・資金振替の記録</strong><small>追加買付・資金振替・ポイント還元</small></span>
+          <span class="sbi-manage-title"><strong>買付履歴</strong><small>追加買付・ポイント買付</small></span>
           <span class="sbi-chevron" aria-hidden="true">⌄</span>
         </summary>
         <div class="sbi-section-body sbi-activity-body">
           <div class="sbi-activity-actions">
             <button type="button" class="sbi-activity-main" @click="openActivity('purchase')">＋ 買付を記録</button>
-            <button type="button" class="sbi-activity-secondary" @click="openActivity('funding')">資金振替</button>
             <a class="sbi-activity-external" href="https://www.sbisec.co.jp/" target="_blank" rel="noopener noreferrer" aria-label="SBI証券の公式サイトで買付を操作">SBIで買付 ↗</a>
           </div>
           <div class="sbi-activity-month">
             <span>対象月</span>
-            <input v-model="month" type="month" aria-label="買付・資金振替の対象月" @change="load" />
+            <input v-model="month" type="month" aria-label="買付履歴の対象月" @change="load" />
           </div>
-          <div v-if="!investmentActivities.length" class="sbi-empty">この月の買付・資金振替・ポイント還元はありません</div>
+          <div v-if="!investmentActivities.length" class="sbi-empty">この月の買付履歴はありません</div>
           <div v-for="t in (showAllActivity ? investmentActivities : investmentActivities.slice(0,5))" :key="'activity-'+t.id" class="sbi-activity-row">
             <div class="sbi-row-main">
               <strong>{{purposeLabel(t.kind)}}</strong>
@@ -780,9 +778,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <label>基準日<input v-model="price.priceDate" type="date" required /></label>
         <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
       </form>
-      <form v-else-if="editing==='activity'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付・資金振替の記録" @submit.prevent="submitActivity">
-        <div class="sbi-line-heading"><h3>買付・資金振替を記録</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
-        <label>記録の種類<MobileChoiceSheet v-model="activity.purpose" label="記録の種類" :options="activityOptions.filter(x=>x.value!=='monthly')" /></label>
+      <form v-else-if="editing==='activity'" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付の記録" @submit.prevent="submitActivity">
+        <div class="sbi-line-heading"><h3>買付を記録</h3><button type="button" class="sbi-close" :disabled="saving" @click="closeEditor">×</button></div>
         <label>金額（円）<input v-model.number="activity.amount" type="number" min="1" max="1000000000" step="1" required /></label>
         <label>取引日（カード利用日・資金移動日）<input v-model="activity.date" type="date" required /></label>
         <label>適用日（この月に表示）<input v-model="activity.effectiveDate" type="date" required /></label>
@@ -1107,7 +1104,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-activity-actions button,.sbi-activity-actions a{display:flex;align-items:center;justify-content:center;min-width:0;min-height:44px;padding:8px;border-radius:11px;font-size:12px;font-weight:750;text-align:center;text-decoration:none;box-sizing:border-box}
 .sbi-activity-main{background:var(--blue);color:#fff;border:1px solid var(--blue)}
 .sbi-activity-secondary,.sbi-activity-external{background:var(--paper);color:var(--blue-dark);border:1px solid var(--line)}
-.sbi-activity-external{grid-column:1/-1}
+.sbi-activity-external{grid-column:auto}
 .sbi-activity-month{display:flex;align-items:center;justify-content:space-between;gap:9px;color:var(--muted);font-size:11px;font-weight:700}
 .sbi-activity-month input{min-width:0;max-width:170px;padding:8px 9px;min-height:40px;box-sizing:border-box;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:13px}
 .sbi-activity-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
@@ -1119,5 +1116,5 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-activity-side .sbi-row-edit{min-width:52px;padding:5px;border:1px solid var(--line);border-radius:9px;font-size:11px}
 .sbi-activity-notice{font-size:11px;line-height:1.45;color:var(--muted);margin:0}
 .sbi-transfer-side{flex-wrap:wrap}
-@media(min-width:650px){.sbi-activity-actions{grid-template-columns:repeat(3,minmax(0,1fr))}.sbi-activity-external{grid-column:auto}}
+@media(min-width:650px){.sbi-activity-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.sbi-activity-external{grid-column:auto}}
 </style>

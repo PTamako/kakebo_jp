@@ -851,7 +851,7 @@ function recognize(mode = recognitionMode.value, append = false, referenceTime =
     const icFare=!!icContext?.municipalityFares?.has(f)
     const chosenCategory=type==='transfer'?categoryDefaults.value.transfer:icFare?'交通':f.category
     const extraNote=icFare?'交通系ICの利用履歴から推定した交通費（登録前に確認）':''
-    return { ...f, type, category: chosenCategory, note:[f.note,extraNote].filter(Boolean).join(' / '), transferTarget: detectedTransfer.transferTarget || f.transferTarget || '', transferDate: f.transferDate || f.date, paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && type === 'expense' ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && type === 'expense' && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
+    return { ...f, type, category: chosenCategory, note:[f.note,extraNote].filter(Boolean).join(' / '), transferTarget: detectedTransfer.transferTarget || f.transferTarget || '', transferDate: f.transferDate || f.date, sbiPurpose:(type==='transfer' && detectedTransfer.transferTarget==='sbi')?'auto':(f.sbiPurpose||''), paymentSource: chosenPayment, recognizedPayment, importPaymentLocked: !!imported, paymentManuallySelected: false, bindPaymentRule: false, receiptImage: effectiveMode === 'receipt' && type === 'expense' ? pendingReceiptImage.value : null, receiptFileName: effectiveMode === 'receipt' && type === 'expense' && pendingReceiptImage.value ? pendingReceiptFileName.value : '', showReceiptAttachment: effectiveMode === 'receipt', bindRule: false }
   })
   forms.value = append ? [...forms.value, ...parsedForms] : parsedForms
   // Preserve the current input tab: pasted text stays in 手入力. Only the
@@ -931,7 +931,7 @@ function addBlank(type = 'expense') {
   const now = new Date()
   const today = now.toLocaleDateString('sv-SE')
   const category = categoryDefaults.value[type] || ''
-  forms.value.push({ date: today, transferDate: type === 'transfer' ? today : '', transferTarget: '', sbiPurpose: type === 'transfer' ? 'funding' : '', rewardDestination: '', time: localHHMM(now), amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
+  forms.value.push({ date: today, transferDate: type === 'transfer' ? today : '', transferTarget: '', sbiPurpose: type === 'transfer' ? 'auto' : '', rewardDestination: '', time: localHHMM(now), amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
 function setEntryType(form, type) {
   if (form.type !== type) {
@@ -947,7 +947,7 @@ function setEntryType(form, type) {
     if (type !== 'transfer') form.transferTarget = ''
     if (type !== 'income') form.rewardDestination = ''
     if (type === 'income' && form.type === 'transfer') form.transferDate = ''
-    if (type === 'transfer') { form.transferDate = form.transferDate || form.date; form.sbiPurpose = 'funding' }
+    if (type === 'transfer') { form.transferDate = form.transferDate || form.date; form.sbiPurpose = 'auto' }
   }
   form.type = type
   if (type === 'income') form.category = INCOME_CATEGORIES.value.includes(form.category) ? form.category : categoryDefaults.value.income

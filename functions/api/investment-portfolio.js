@@ -1,6 +1,7 @@
 // SBI bookkeeping only; NEVER sends bank transfers or securities orders.
 import { probeFundNavSupport } from './fund-nav-sync.js'
 import { validateRegisteredPaymentSource } from './payment-source-validation.js'
+import { isSbiPointInvestmentText, inferredSbiEntryKind } from '../../src/sbi-investment-kind.js'
 // D1 stores explicit holdings and a monthly funding-to-plan reconciliation.
 const respond=(value,status=200)=>new Response(JSON.stringify(value),{
   status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}
@@ -23,17 +24,26 @@ export function inferredPurchaseMonth(date) {
   const month=String(date||'').slice(0,7);
   return monthOk(month) ? month : '';
 }
-// Point redemption is additional investment capital, not a monthly cash savings
-// contribution. Keep its real SBI transfer in the ledger and portfolio totals.
+// Point investment is neither recurring savings nor a credit-card charge.
+// Match a distinctive brokerage transaction description, not a loose
+// occurrence of 'ポイント' (which also appears in reward *earnings*).
+// Existing automated point redemptions retain their ledger, and recognizable
+// SBI point-buy transactions are grouped into the same point investment view.
 export function isPointRewardSbiTransfer(item) {
   return item.payment_source==='ポイント還元' ||
-    String(item.client_request_id||'').startsWith('point_charge_');
+    String(item.client_request_id||'').startsWith('point_charge_') ||
+    isSbiPointInvestmentText(item.merchant) ||
+    isSbiPointInvestmentText(item.note);
 }
 // Missing metadata means a legacy monthly transfer. Explicitly classified
 // purchases / extra funding never satisfy a recurring savings plan.
 export function investmentRecordKind(item) {
   if(isPointRewardSbiTransfer(item))return 'point';
-  return item.purpose==='purchase'||item.purpose==='funding'?item.purpose:'monthly';
+  // Preserve explicitly confirmed purposes (including historic plans).
+  if(['monthly','purchase','funding'].includes(item.purpose))return item.purpose;
+  // New or imported SBI 投信 entries require 積立 to qualify as recurring.
+  // Unknown legacy entries keep their former behavior until reclassified.
+  return inferredSbiEntryKind(item)||'monthly';
 }
 export function fundingStatus(transfers,month,orderDay=9) {
   return transfers.reduce((total,item)=>{
@@ -62,8 +72,9 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const result=await probeFundNavSupport(fundCode)
       return respond({fundCode,...result})
     }
-    // Manually confirmed spot buys and additional transfers are one ledger
-    // entry plus one purpose link in a single D1 transaction.
+    // Spot buys create one ledger entry plus one purpose link in a single D1
+    // transaction. Historic funding rows remain readable, but new funding
+    // records are retired from the SBI purchase workflow.
     if(sub==='activity'&&method==='POST'){
       const x=await request.json().catch(()=>null);
       const purpose=x?.purpose;
@@ -73,7 +84,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const fundName=String(x?.fundName||'').trim();
       const memo=String(x?.note||'').trim();
       const clientRequestId=String(x?.clientRequestId||'').trim();
-      if(!['purchase','funding'].includes(purpose)||!dayOk(date)||!dayOk(effectiveDate)||
+      if(purpose!=='purchase'||!dayOk(date)||!dayOk(effectiveDate)||
          !Number.isSafeInteger(amount)||amount<=0||amount>1000000000||
          fundName.length>120||memo.length>500||paymentSource.length>80||
          !/^[a-zA-Z0-9_-]{8,128}$/.test(clientRequestId))
@@ -83,7 +94,7 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
       const month=effectiveDate.slice(0,7);
       const posted=effectiveDate<=today?1:0;
-      const merchant=purpose==='purchase'?(fundName||'SBI証券（追加買付）'):'SBI証券（追加振替）';
+      const merchant=fundName||'SBI証券（追加買付）';
       await db.batch([
         db.prepare(`INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
           VALUES(?1,'',?2,'投資・資産移動',?3,?4,'','transfer','sbi',?5,?6,?7,?8)
@@ -100,9 +111,9 @@ export async function handlePortfolio({db,request,method,sub,url}) {
     if(sub==='transfer-purpose'&&method==='PUT'){
       const x=await request.json().catch(()=>null);
       if(!Number.isSafeInteger(x?.entryId)||x.entryId<=0||
-         !['monthly','purchase','funding'].includes(x?.purpose))
+         !['monthly','purchase'].includes(x?.purpose))
         return respond({error:'振替の用途を確認してください'},400);
-      const entry=await db.prepare("SELECT e.id,e.date,e.transfer_date,e.payment_source,e.client_request_id,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.id=?1 AND e.type='transfer' AND e.transfer_target='sbi'").bind(x.entryId).first();
+      const entry=await db.prepare("SELECT e.id,e.date,e.transfer_date,e.payment_source,e.client_request_id,e.merchant,e.note,l.purchase_month FROM entries e LEFT JOIN sbi_transfer_links l ON l.entry_id=e.id WHERE e.id=?1 AND e.type='transfer' AND e.transfer_target='sbi'").bind(x.entryId).first();
       if(!entry)return respond({error:'振替が見つかりません'},404);
       if(isPointRewardSbiTransfer(entry))return respond({error:'ポイント還元の用途は変更できません'},409);
       const targetMonth=entry.purchase_month||inferredPurchaseMonth(entry.transfer_date||entry.date);

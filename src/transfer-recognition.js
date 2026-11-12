@@ -1,4 +1,5 @@
 import { detectPrepaidRecharge, prepaidTarget } from './prepaid-card.js'
+import { inferSbiInvestmentKind } from './sbi-investment-kind.js'
 
 // Auto-classify only a single parsed entry, never a whole batch of unrelated rows.
 // Recognition creates an editable draft, not a transaction or a new payment card.
@@ -11,6 +12,8 @@ export function detectInvestmentFunding(text) {
   const value = normalizeText(text)
   if (!value || reversal(value) || /手数料|年会費|配当|利息|税金/.test(value)) return false
   // Japanese card statements may omit "SBI" or wrap the buy-month label.
+  // A recognized SBI point buy is a transfer, never a normal expense.
+  if(inferSbiInvestmentKind(value)) return true
   if (/証券投信|投信積立|投資信託(?:の)?積立|(?:投信|投資信託)買付|翌月買付分/.test(value)) return true
   if (/^sbi証券(?:口座)?$/.test(value)) return true
   // "SBI" alone can refer to banking, insurance and ordinary merchants.

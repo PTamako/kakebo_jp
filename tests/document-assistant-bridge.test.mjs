@@ -48,23 +48,30 @@ test('signed read-only ledger options list real categories and active payment so
  const database={
   prepare(sql){queries.push(sql);return {bind(){return this}}},
   async batch(){calls++;return [
-   {results:[{category:'饮食料品',display_name:'飲食料品'},{category:'餐饮',display_name:'外食'}]},
-   {results:[{name:'三井住友カード'},{name:'楽天カード'}]}
+   {results:[{category:'饮食料品',display_name:'飲食料品',is_default:0},{category:'餐饮',display_name:'外食',is_default:0},{category:'日用品',display_name:'日用品',is_default:1}]},
+   {results:[{name:'三井住友カード',is_default:0},{name:'楽天カード',is_default:1}]},
+   {results:[{keyword:'セブン-イレブン',category:'饮食料品'}]},
+   {results:[]},
+   {results:[{keyword:'セブン',payment_source:'三井住友カード'}]}
   ]}
  };
  const options={
   source:'jp-document-assistant',actor_user_id:actor,
-  payload:{operation:'options',entryType:'expense'}
+  payload:{operation:'options',entryType:'expense',merchant:'セブン-イレブン',recognizedPayment:'Olive'}
  };
  const response=await onRequestPost({request:await signed(options),env:env({DB:database})});
  assert.equal(response.status,200);
  const result=await response.json();
  assert.equal(result.ok,true);
- assert.deepEqual(result.categories.map(x=>x.value),['饮食料品','餐饮']);
+ assert.deepEqual(result.categories.map(x=>x.value),['饮食料品','餐饮','日用品']);
+ assert.equal(result.suggested.category,'饮食料品');
+ assert.equal(result.suggested.payment_source,'三井住友カード');
+ assert.equal(result.suggested.category_origin,'merchant_rule');
+ assert.equal(result.suggested.payment_origin,'merchant_rule');
  assert.deepEqual(result.categories.map(x=>x.label),['飲食料品','外食']);
  assert.deepEqual(result.payment_sources.map(x=>x.value),['現金','三井住友カード','楽天カード']);
  assert.equal(calls,1);
- assert.equal(queries.length,2);
+ assert.equal(queries.length,5);
  assert.ok(queries.every(sql=>/^\s*SELECT/i.test(sql)));
  const bad=await onRequestPost({request:await signed({...options,payload:{operation:'options',entryType:'transfer'}}),env:env({DB:database})});
  assert.equal(bad.status,400);
@@ -118,4 +125,74 @@ test('signed card purchase stores verified 7-Eleven merchant rather than documen
  assert.equal(rejected.status,400)
  assert.equal((await rejected.json()).error,'invalid_entry')
  assert.equal(changes,1)
+});
+
+test('finance picker matches Kakebo merchant rules and configured defaults without any writes',async()=>{
+ const batches=[],mock={
+  prepare(sql){batches.push(sql);return {bind(){return this}}},
+  async batch(){return [
+   {results:[{category:'日用品',display_name:'日用品',is_default:1},{category:'饮食料品',display_name:'飲食料品',is_default:0},{category:'餐饮',display_name:'外食',is_default:0}]},
+   {results:[{name:'三井住友カード',is_default:0},{name:'セゾンカード',is_default:1}]},
+   {results:[{keyword:'セブン',category:'餐饮'},{keyword:'セブン-イレブン',category:'饮食料品'}]},
+   {results:[]},
+   {results:[{keyword:'セブン-イレブン',payment_source:'三井住友カード'}]}
+  ]}
+ };
+ const payload={source:'jp-document-assistant',actor_user_id:actor,payload:{
+  operation:'options',entryType:'expense',merchant:'セブン－イレブン',recognizedPayment:'Olive'
+ }};
+ const result=await onRequestPost({request:await signed(payload),env:env({DB:mock})});
+ assert.equal(result.status,200);
+ const suggested=(await result.json()).suggested;
+ assert.equal(suggested.category,'饮食料品');
+ assert.equal(suggested.payment_source,'三井住友カード');
+ assert.equal(suggested.category_origin,'merchant_rule');
+ const unknown=await onRequestPost({request:await signed({...payload,payload:{
+  operation:'options',entryType:'expense',merchant:'未知新商店',recognizedPayment:''
+ }}),env:env({DB:mock})});
+ assert.equal(unknown.status,200);
+ assert.deepEqual((await unknown.json()).suggested,{
+  category:'日用品',payment_source:'セゾンカード',category_origin:'default',payment_origin:'default'
+ });
+ const recognized=await onRequestPost({request:await signed({...payload,payload:{
+  operation:'options',entryType:'expense',merchant:'未知新商店',recognizedPayment:'Olive'
+ }}),env:env({DB:mock})});
+ assert.equal((await recognized.json()).suggested.payment_source,'三井住友カード');
+ assert.ok(batches.every(sql=>/^\s*SELECT/i.test(sql)));
+});
+test('merchant suggestions use user category override before Kakebo built-in merchant rule',async()=>{
+ const mock={prepare(sql){return {bind(){return this}}},
+  async batch(){return [
+   {results:[{category:'日用品',is_default:1},{category:'饮食料品',is_default:0},{category:'餐饮',is_default:0}]},
+   {results:[{name:'セゾンカード',is_default:1}]},
+   {results:[{keyword:'セブン-イレブン',category:'饮食料品'}]},
+   {results:[{keyword:'セブン',category:'餐饮'}]},
+   {results:[]}
+  ]}
+ };
+ const result=await onRequestPost({request:await signed({
+  source:'jp-document-assistant',actor_user_id:actor,
+  payload:{operation:'options',entryType:'expense',merchant:'セブン-イレブン'}
+ }),env:env({DB:mock})});
+ assert.equal(result.status,200);
+ assert.equal((await result.json()).suggested.category,'餐饮');
+});
+test('signed finance bridge writes exact reviewed clock and rejects invalid time without DB operations',async()=>{
+ const writes=[]
+ const db={prepare(sql){return {bind(...args){
+  return {async run(){writes.push({sql,args});return {meta:{changes:1}}},
+   async first(){return {id:921}}}
+ }}}}
+ const payload=body({merchant:'セブン-イレブン',date:'2026-05-28',time:'19:06',
+  amount:151,category:'饮食料品',paymentSource:'現金',note:''});
+ const accepted=await onRequestPost({request:await signed(payload),env:env({DB:db})});
+ assert.equal(accepted.status,200,JSON.stringify(await accepted.clone().json()));
+ assert.equal(writes.length,1);
+ assert.equal(writes[0].args[8],'19:06');
+ assert.match(writes[0].sql,/SELECT \?1,\?9,\?2/);
+ for(const invalid of ['25:06','19:75','19:06:03','9:06',null,{},'19:06abc']){
+  const response=await onRequestPost({request:await signed(body({time:invalid})),env:env({DB:db})});
+  assert.equal(response.status,400,JSON.stringify(invalid));
+ }
+ assert.equal(writes.length,1);
 });

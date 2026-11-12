@@ -567,7 +567,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
                 <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button v-if="!t.is_point_reward" type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の対象月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">変更</button></div>
               </div>
               <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
-              <details class="sbi-footnote"><summary>振替の確認について</summary><p>登録済みには期日待ちも含みます。対象月は適用日の月です。通常の振替は変更できますが、ポイント還元は適用日の月で集計します。帳簿反映は実際の着金・買付完了を保証しません。</p></details>
+              <details class="sbi-footnote"><summary>振替の確認について</summary><p>登録済みには期日待ちも含みます。対象月は適用日の月です。ポイント還元は適用日の月で集計します。期日反映は証券口座への入金・買付完了を保証しません。買付月が異なる場合は変更できます。</p></details>
             </div>
           </details>
         </div>

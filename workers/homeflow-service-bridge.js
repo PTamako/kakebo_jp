@@ -86,7 +86,10 @@ export default {
       // The internal Worker is reachable through Cloudflare Service Bindings
       // only. Its handler still requires a valid shared HMAC and mapped actor.
       if(!env.DB)return json({ok:false,error:'ledger_unavailable'},503)
-      return documentAssistantPost({request,env})
+      // Internal-only capability is supplied here, never by an HTTP header.
+      // A valid shared HMAC is still mandatory for every operation.
+      return documentAssistantPost({request,env:{...env,
+        JPDA_BRIDGE_ENABLED:'true',JPDA_PRIVATE_BRIDGE:'true'}})
     }
     if(request.method!=='GET'||path!=='/api/homeflow-ledger')
       return json({error:'not_found'},404)

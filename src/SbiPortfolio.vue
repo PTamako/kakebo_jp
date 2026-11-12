@@ -526,16 +526,22 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <div class="sbi-section-body sbi-management-body">
           <div class="sbi-month-pulse">
             <div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}}</strong></div>
-            <div><span>振替記帳</span><strong>{{yen(data.reconciliation.funded)}}</strong></div>
+            <div><span>振替登録済み</span><strong>{{yen(data.reconciliation.registered)}}</strong></div>
           </div>
-          <div class="sbi-progress" role="progressbar" aria-label="積立予定に対する振替記帳額" :aria-valuemax="Math.max(1,data.reconciliation.monthly_amount)" :aria-valuenow="Math.max(0,Math.min(data.reconciliation.monthly_amount,data.reconciliation.funded))">
-            <span :style="{width:Math.min(100,100*data.reconciliation.funded/Math.max(1,data.reconciliation.monthly_amount))+'%'}"></span>
+          <div class="sbi-progress" role="progressbar" aria-label="積立予定に対する振替登録済みの割合" :aria-valuemax="Math.max(1,data.reconciliation.monthly_amount)" :aria-valuenow="Math.max(0,Math.min(data.reconciliation.monthly_amount,data.reconciliation.registered))">
+            <span :style="{width:Math.min(100,100*data.reconciliation.registered/Math.max(1,data.reconciliation.monthly_amount))+'%'}"></span>
           </div>
           <div class="sbi-reconcile-state">
-            <span v-if="data.reconciliation.difference === 0 && data.reconciliation.funded > 0" class="sbi-positive">予定額と一致</span>
-            <span v-else-if="data.reconciliation.difference < 0 && data.reconciliation.funded > 0" class="sbi-hint">差額 {{yen(Math.abs(data.reconciliation.difference))}}</span>
-            <span v-else-if="data.reconciliation.difference > 0" class="sbi-hint">超過 {{yen(data.reconciliation.difference)}}</span>
-            <span v-if="data.reconciliation.pending">反映待ち {{yen(data.reconciliation.pending)}}</span>
+            <span v-if="data.reconciliation.planned_difference === 0 && data.reconciliation.monthly_amount > 0" class="sbi-positive">登録完了</span>
+            <span v-else-if="data.reconciliation.unregistered > 0" class="sbi-hint">未登録 {{yen(data.reconciliation.unregistered)}}</span>
+            <span v-else-if="data.reconciliation.planned_difference > 0" class="sbi-hint">超過登録 {{yen(data.reconciliation.planned_difference)}}</span>
+            <span v-if="data.reconciliation.funded">帳簿反映済み {{yen(data.reconciliation.funded)}}</span>
+            <span v-if="data.reconciliation.pending">期日待ち {{yen(data.reconciliation.pending)}}</span>
+          </div>
+          <div v-if="data.reconciliation.point_funded || data.reconciliation.point_pending" class="sbi-point-funding">
+            <span>ポイント還元（積立対象外）</span>
+            <strong>{{yen(data.reconciliation.point_funded)}}</strong>
+            <small v-if="data.reconciliation.point_pending">期日待ち {{yen(data.reconciliation.point_pending)}}</small>
           </div>
           <div class="sbi-manage-subhead">
             <strong>積立設定</strong>
@@ -550,18 +556,18 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 
           <details class="sbi-transfer-disclosure">
             <summary class="sbi-transfer-summary">
-              <strong>振替記録・買付月</strong>
+              <strong>振替記録・対象月</strong>
               <small>{{data.transfers.length}}件</small>
               <span class="sbi-detail-chevron" aria-hidden="true">⌄</span>
             </summary>
             <div class="sbi-transfer-content">
               <p v-if="!data.transfers.length" class="sbi-empty">この月の振替記録はありません</p>
               <div v-for="t in (showAllTransfers ? data.transfers : data.transfers.slice(0,2))" :key="t.id" class="sbi-transfer-row">
-                <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>{{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '記帳済' : '反映待ち'}}</small></div>
-                <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の買付月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">変更</button></div>
+                <div class="sbi-row-main"><strong>{{yen(t.amount)}}</strong><small>適用日 {{t.transfer_date || t.date}} · {{Number(t.transfer_applied) === 1 ? '帳簿反映済み' : '期日待ち'}}{{t.is_point_reward ? ' · ポイント還元' : ''}}</small><small v-if="t.transfer_date && t.transfer_date !== t.date">取引日 {{t.date}}</small></div>
+                <div class="sbi-transfer-side"><small>{{t.effective_month}} {{t.inferred ? '（推定）' : ''}}</small><button v-if="!t.is_point_reward" type="button" class="sbi-row-edit" :aria-label="yen(t.amount)+'の対象月を変更'" @click="editingTransfer=t.id;newPurchaseMonth=t.effective_month">変更</button></div>
               </div>
               <button v-if="data.transfers.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllTransfers" @click="showAllTransfers=!showAllTransfers">{{showAllTransfers?'閉じる':'あと'+(data.transfers.length-2)+'件を表示'}}</button>
-              <details class="sbi-footnote"><summary>振替の確認について</summary><p>期日反映は証券口座への入金・買付完了を保証しません。買付月が異なる場合は変更できます。</p></details>
+              <details class="sbi-footnote"><summary>振替の確認について</summary><p>登録済みには期日待ちも含みます。対象月は適用日の月です。ポイント還元は適用日の月で集計します。期日反映は証券口座への入金・買付完了を保証しません。買付月が異なる場合は変更できます。</p></details>
             </div>
           </details>
         </div>
@@ -871,6 +877,9 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
 .sbi-month-pulse>div{display:grid;gap:3px;padding:12px;border-radius:12px;background:var(--paper);min-width:0}
 .sbi-month-pulse span{font-size:10px;color:var(--muted)}
 .sbi-month-pulse strong{font-size:clamp(15px,4.5vw,19px);font-weight:850;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.sbi-point-funding{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:3px 9px;margin-top:9px;padding:7px 10px;border-radius:9px;background:var(--paper);font-size:11px;color:var(--muted)}
+.sbi-point-funding strong{font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
+.sbi-point-funding small{width:100%;font-size:10px}
 .sbi-manage-subhead{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;margin-top:8px;padding:8px 0 2px;border-top:1px solid var(--line);box-sizing:border-box}
 .sbi-manage-subhead>strong{display:flex;align-items:center;min-height:40px;font-size:13px;line-height:1.3}
 .sbi-manage-subhead .sbi-text-action{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-size:12px;line-height:1.3}

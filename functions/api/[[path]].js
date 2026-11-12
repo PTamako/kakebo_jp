@@ -600,7 +600,7 @@ export async function onRequest({ request, env, params }) {
           'SELECT fund_code,account_type,effective_month,fund_name,monthly_amount,order_day,enabled,updated_at FROM investment_plan_history ORDER BY fund_code,account_type,effective_month',
           'SELECT fund_code,account_type,fund_name,units,acquisition_cost,reported_value,reported_at,updated_at FROM investment_holdings ORDER BY fund_code,account_type',
           'SELECT fund_code,nav_per_10000,price_date,source,updated_at FROM fund_prices ORDER BY fund_code',
-          'SELECT entry_id,purchase_month FROM sbi_transfer_links ORDER BY entry_id'
+          'SELECT entry_id,purchase_month,purpose FROM sbi_transfer_links ORDER BY entry_id'
         ] : []),
         'SELECT plan_id,month FROM recurring_candidate_exclusions ORDER BY plan_id,month',
         ...(recurringArchiveReady ? [`SELECT p.id,p.name,p.amount,p.day,p.category,p.payment_source,p.start_month,p.enabled,p.posting_mode,p.auto_from_month,p.schedule_type,p.weekday,p.workday_only,p.weekdays_json,p.month_days_json,p.interval_months
@@ -1088,8 +1088,8 @@ export async function onRequest({ request, env, params }) {
               e.payment_source||'',e.created_at||new Date().toISOString())
         ]
         if(saved.purchaseMonth)statements.push(db.prepare(
-          'INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) VALUES(?1,?2)'
-        ).bind(id,saved.purchaseMonth))
+          'INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month,purpose) VALUES(?1,?2,?3)'
+        ).bind(id,saved.purchaseMonth,['purchase','funding'].includes(saved.purchasePurpose)?saved.purchasePurpose:'monthly'))
         if(saved.dismissed)statements.push(db.prepare(
           'INSERT OR IGNORE INTO dismissed_transfer_reminders(entry_id) VALUES(?1)'
         ).bind(id))
@@ -1102,8 +1102,8 @@ export async function onRequest({ request, env, params }) {
               pairedEntry.transfer_applied??0,pairedEntry.transfer_date??null,pairedEntry.client_request_id,
               pairedEntry.payment_source||'',pairedEntry.created_at||new Date().toISOString()))
           if(pairedEntry.transfer_target==='sbi' && /^\d{4}-(0[1-9]|1[0-2])$/.test(pairedSaved?.purchaseMonth || ''))
-            statements.push(db.prepare('INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month) VALUES(?1,?2)')
-              .bind(pairedEntry.id,pairedSaved.purchaseMonth))
+            statements.push(db.prepare('INSERT OR IGNORE INTO sbi_transfer_links(entry_id,purchase_month,purpose) VALUES(?1,?2,?3)')
+              .bind(pairedEntry.id,pairedSaved.purchaseMonth,['purchase','funding'].includes(pairedSaved?.purchasePurpose)?pairedSaved.purchasePurpose:'monthly'))
           statements.push(db.prepare("DELETE FROM trash_items WHERE item_type='entry' AND item_id=?1").bind(String(pairedEntry.id)))
         } else if(e.type==='income' && e.category==='ポイント還元' &&
                   (e.transfer_target?.startsWith('prepaid:') || e.transfer_target==='sbi')){
@@ -1355,7 +1355,7 @@ export async function onRequest({ request, env, params }) {
         const paired=entry.type==='income' ? await db.prepare('SELECT * FROM entries WHERE client_request_id=?1')
           .bind(pointChargeId(entry.client_request_id,id)).first() : null
         const [link,dismissal]=await Promise.all([
-          db.prepare('SELECT purchase_month FROM sbi_transfer_links WHERE entry_id=?1').bind(id).first(),
+          db.prepare('SELECT purchase_month,purpose FROM sbi_transfer_links WHERE entry_id=?1').bind(id).first(),
           db.prepare('SELECT 1 AS found FROM dismissed_transfer_reminders WHERE entry_id=?1').bind(id).first()
         ])
         // An explicitly deleted recurring entry must NOT be re-created by the
@@ -1397,9 +1397,9 @@ export async function onRequest({ request, env, params }) {
         ]
         if(paired){
           const pairedLink=paired.transfer_target==='sbi'
-            ? await db.prepare('SELECT purchase_month FROM sbi_transfer_links WHERE entry_id=?1').bind(paired.id).first()
+            ? await db.prepare('SELECT purchase_month,purpose FROM sbi_transfer_links WHERE entry_id=?1').bind(paired.id).first()
             : null
-          const pairedSnapshot=JSON.stringify({entry:paired,purchaseMonth:pairedLink?.purchase_month||null,dismissed:false,recurringSkip:null})
+          const pairedSnapshot=JSON.stringify({entry:paired,purchaseMonth:pairedLink?.purchase_month||null,purchasePurpose:pairedLink?.purpose||'monthly',dismissed:false,recurringSkip:null})
           statements.push(db.prepare(
             "INSERT INTO trash_items(item_type,item_id,payload_json) SELECT 'entry',?1,?2 WHERE "+
             guard(3)+" ON CONFLICT(item_type,item_id) DO NOTHING"

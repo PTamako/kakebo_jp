@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS family_finance_events (
   resource_id TEXT NOT NULL,
   action TEXT NOT NULL CHECK(action IN
     ('legacy_accounts_adopted','personal_account_created','personal_account_updated',
-     'personal_account_archived','finance_entry_prepared','finance_entry_cancelled','finance_entry_submitted',
+     'personal_account_archived','finance_entry_prepared','finance_entry_cancelled','finance_entry_submitted','finance_entry_applied',
      'legacy_resource_owners_adopted')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

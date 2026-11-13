@@ -124,7 +124,9 @@ async function verifyHomeFlow(env,code,verifier){
  if(!tokenResponse?.ok||tokenResponse.status!==200||tokenResponse.headers.get('Location'))return null;
  const token=await tokenResponse.json().catch(()=>null);
  if(token?.token_type!=='Bearer'||!safeHex(token.access_token)||
-   !Number.isInteger(token.expires_in)||token.expires_in<1||token.expires_in>180)return null;
+   !Number.isInteger(token.expires_in)||token.expires_in<1||token.expires_in>180||
+   !safeHex(token.session_assertion)||!Number.isInteger(token.session_assertion_expires_in)||
+   token.session_assertion_expires_in<1||token.session_assertion_expires_in>900)return null;
  const userRequest=new Request(new URL('/api/oauth/userinfo',env.HOMEFLOW_OAUTH_ORIGIN),{
   method:'GET',redirect:'manual',
   headers:{Authorization:'Bearer '+token.access_token,Accept:'application/json'}});
@@ -139,7 +141,9 @@ async function verifyHomeFlow(env,code,verifier){
   typeof value.nickname!=='string'||!value.nickname.trim()||value.nickname.length>80)
    return null;
  return {userId:value.user_id,householdId:value.household_id,
-  role:value.role,nickname:value.nickname.trim().slice(0,50)};
+  role:value.role,nickname:value.nickname.trim().slice(0,50),
+  sessionAssertion:token.session_assertion,
+  sessionAssertionSeconds:token.session_assertion_expires_in};
 }
 async function finish(request,env,url){
  if(request.method!=='POST')return json({code:'METHOD_NOT_ALLOWED'},405);
@@ -187,6 +191,8 @@ async function finish(request,env,url){
   }
   if(hf.role==='member'&&!own)return fail('SSO_OWNER_FIRST');
   const stamp=now(),rawSession=random(),id=random();
+  const proof=await seal(env,stateHash,hf.sessionAssertion);
+  const expires=stamp+Math.min(SESSION_MS,hf.sessionAssertionSeconds*1000);
   const statements=[];
   if(!old)statements.push(db.prepare('INSERT INTO homeflow_identity_links '+
     '(user_id,household_id,role,display_name,linked_at) VALUES(?,?,?,?,?)')
@@ -195,8 +201,8 @@ async function finish(request,env,url){
     "WHERE user_id=? AND household_id=? AND role=? AND state='active'")
     .bind(hf.nickname,hf.userId,hf.householdId,hf.role));
   statements.push(db.prepare('INSERT INTO homeflow_sso_sessions '+
-   '(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)')
-   .bind(await sha(rawSession),hf.userId,stamp+SESSION_MS,stamp));
+   '(token_hash,user_id,proof_cipher,proof_iv,proof_scope,expires_at,created_at) VALUES(?,?,?,?,?,?,?)')
+   .bind(await sha(rawSession),hf.userId,proof.cipher,proof.iv,stateHash,expires,stamp));
   statements.push(db.prepare('INSERT INTO homeflow_identity_events '+
    '(id,actor_user_id,event,created_at) VALUES(?,?,?,?)')
    .bind(id,hf.userId,old?'sso_login':'account_linked',stamp));
@@ -214,13 +220,34 @@ async function finish(request,env,url){
 async function currentUser(request,env){
  const secret=cookieValue(request,'__Host-kakeibo_hf');
  if(!safeHex(secret))return json({code:'SSO_NOT_AUTHENTICATED'},401);
- const row=await first(env.DB,"SELECT l.user_id,l.household_id,l.role,l.display_name "+
+ const row=await first(env.DB,"SELECT l.user_id,l.household_id,l.role,l.display_name, "+
+  "s.proof_cipher,s.proof_iv,s.proof_scope "+
   "FROM homeflow_sso_sessions s JOIN homeflow_identity_links l ON s.user_id=l.user_id "+
   "WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND l.state='active'",
   await sha(secret),now());
  if(!row)return json({code:'SSO_NOT_AUTHENTICATED'},401);
- // This is a Stage B identity-only status endpoint: never a finance API grant.
- return json({ok:true,identity:row,ledger_access:false,requires_stage_c:true});
+ const proof=await unseal(env,row.proof_scope,row.proof_cipher,row.proof_iv);
+ if(!safeHex(proof))return json({code:'SSO_NOT_AUTHENTICATED'},401);
+ const requestToHomeflow=new Request(new URL('/api/oauth/session-introspect',env.HOMEFLOW_OAUTH_ORIGIN),{
+  method:'POST',redirect:'manual',
+  headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},
+  body:new URLSearchParams({client_id:CLIENT,session_assertion:proof}).toString()
+ });
+ let result;
+ try{result=await env.HOMEFLOW_IDENTITY_SERVICE.fetch(requestToHomeflow);}
+ catch{return json({code:'SSO_NOT_AUTHENTICATED'},401);}
+ if(result?.status!==200||!result.ok||result.headers.get('Location'))
+  return json({code:'SSO_NOT_AUTHENTICATED'},401);
+ const live=await result.json().catch(()=>null);
+ if(live?.active!==true||live.audience!==CLIENT||live.sub!==live.user_id||
+    live.user_id!==row.user_id||live.household_id!==row.household_id||
+    live.role!==row.role||!['owner','member'].includes(live.role)||
+    typeof live.nickname!=='string'||!live.nickname.trim()||live.nickname.length>80)
+   return json({code:'SSO_NOT_AUTHENTICATED'},401);
+ // An identity-only response cannot grant access to legacy ledger endpoints.
+ const identity={user_id:row.user_id,household_id:row.household_id,
+   role:row.role,display_name:live.nickname.trim().slice(0,50)};
+ return json({ok:true,identity,ledger_access:false,requires_stage_c:true});
 }
 async function logout(request,env,url){
  if(request.method!=='POST')return json({code:'METHOD_NOT_ALLOWED'},405);

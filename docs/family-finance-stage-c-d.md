@@ -62,3 +62,17 @@
 - 提交：`e6de15c1647e2bcfdb8ff08b231d54ed9b602ccc`（API）、`3d0fab90474346b81c96a93eb81037e7ac3b7873`（年份解析修正）、`58e33ca6c8a851136cfbe6a6a2d5be7bc145f957`（真实 D1 回归）、`07a4c3b49252a9aebbb7b0794a7e251997951127`（UI）、`02d6c693c3c842f9d0d1933c63cf70433d097f2a`（UI 回归）。
 - [Validate #43439421706](https://github.com/PTamako/kakebo_jp/actions/runs/43439421706) **success**；[Mobile WebKit #43439421705](https://github.com/PTamako/kakebo_jp/actions/runs/43439421705) **本轮原增量已通过**。追加未知交易类型回归后，最终 [Validate #43439846672](https://github.com/PTamako/kakebo_jp/actions/runs/43439846672) **success**、[Mobile WebKit #43439846696](https://github.com/PTamako/kakebo_jp/actions/runs/43439846696) **success**。
 - 剩余：真实旧账本完整统计/余额/卡账单/SBI/固定费的逐资源 stable ID 和权限迁移，以及前端家計簿正式全家可操作功能、HomeFlow 审批执行全类型、断网重试、两人 iPhone PWA 真机验收。
+
+
+## 2026-11-14 阶段 C：个人金融账户原始 HomeFlow actor 栅栏（Draft）
+
+> **纠正本文件早期 A 阶段状态**：用户已在 2026-11-14 自行完成四个生产 D1、三个 R2 Bucket（总计六个对象）的加密备份、Mac 本地 SQLite 隔离恢复、哈希一致性和私人 Google Drive 回下载校验，且全部通过。**A 不再是待用户完成。** Cloudflare 隔离恢复及正式回滚演练、生产迁移、合并与部署仍未获许可。完整唯一交接以 HomeFlow main 的 `docs/four-app-development-handoff.md` 为准。
+
+本轮延续 `feature/homeflow-sso-isolated-foundation-20261113` / [Draft #309](https://github.com/PTamako/kakebo_jp/pull/309)，不动原有旧账本 `entries`、`payment_sources`、信用卡/SBI/储值余额或正式迁移。
+
+- `functions/api/family-finance/[[path]].js` 的 `POST /accounts`、`PATCH /accounts/:id` 新增强制 `data.expected_user_id===user.user_id`；`user` 仍来自真实线上 HomeFlow source-session introspection，客户端的 ID **仅用于原操作身份一致性校验**，不能覆盖用户身份/owner 权限。错误或缺失的原 ID，403 `ACTOR_CHANGED`，发生在账户查表、D1 实际写入和 actor audit 之前。
+- `src/FamilyFinanceAccess.vue` 读取当前已验证 `person.user_id`，创建和修改账户时在请求 body 明确附上 `expected_user_id:actor`。原有 `epoch`/account ID CAS、成员只能管理本人账户、owner 可管理双方、legacy 账户禁止新接口改写等约束保留；PWA 前台重新核验与退出先清空旧个人账户/余额/编辑表单的逻辑保留。
+- `tests/homeflow-sso-isolated.test.mjs` 继续沿用双用户真实 SQLite/原认证 Cookie，补充旧成员操作在另一个 Cookie 下被提交、原 ID 缺失拒绝、拒绝后账户与审计行数不变、合法成员新增/修改正常、旧 `entries` 行原样完整保存。原有测试 helper 只在账户 POST/PATCH 补入真实发起用户，不修改其他审批提案/真正受限 cash 入账测试路径。
+- `tests/family-finance-ui.test.mjs` 核验原 actor 被真实请求携带、服务端有两道 fence、退出或前台恢复清空旧身份。精确提交：`1ee723f340c8f9d6e6835f95169f85b538978cd2`、`394a153db39eaebdd126419ebd22268dfc672048`、`6acddcc98878da8734370c7c2c04d44815239b63`、`e18323576a3b8f67fcdc9599563f215e31daab9e`、`6b66a66536ac238d620968f37324f59e7cbaf0cb`。
+- **真实 [家計簿 Validate #43491760323](https://github.com/PTamako/kakebo_jp/actions/runs/43491760323) `completed/success`**，精确代码 HEAD `6b66a66536ac238d620968f37324f59e7cbaf0cb`。先前中间 CI 使用旧的 PWA 静态断言而失败，已随变更修复；最终正常。Mobile WebKit Smoke 另独立跑，不等同真实双真人 E2E。
+- 本轮不是完整 C 阶段：旧信用卡/储值卡/SBI/固定费/账户 ID 的历史无损迁移、所有旧业务写入入口的身份隔离、家庭资产/结算口径与双 iPhone 验收都仍未完成。继续**Draft/flags OFF/SQL 未执行/无生产部署/不新建 Preview**。

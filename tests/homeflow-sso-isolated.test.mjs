@@ -59,7 +59,8 @@ async function setup(){
    assert.equal(data.get('redirect_uri'),app+'/api/homeflow-sso/callback');
    assert.equal(data.get('code'),'f'.repeat(64));
    return Response.json({access_token:'e'.repeat(64),token_type:'Bearer',expires_in:180,
-    session_assertion:'d'.repeat(64),session_assertion_expires_in:900});
+    session_assertion:state.user===owner?'d'.repeat(64):'c'.repeat(64),
+    session_assertion_expires_in:900});
   }
   if(u.pathname==='/api/oauth/userinfo'){
    assert.equal(request.headers.get('Authorization'),'Bearer '+'e'.repeat(64));
@@ -68,12 +69,20 @@ async function setup(){
   }
   if(u.pathname==='/api/oauth/session-introspect'){
    const body=new URLSearchParams(await request.text());
-   assert.equal(body.get('session_assertion'),'d'.repeat(64));
    assert.equal(body.get('client_id'),'kakeibo');
-   if(!state.homeflowActive)return Response.json({error:'invalid_assertion'},{status:401});
-   return Response.json({active:true,user_id:state.user,sub:state.user,
-    household_id:state.household,role:state.role,nickname:state.nickname,
-    audience:state.audience});
+   const assertion=body.get('session_assertion');
+   const who=assertion==='d'.repeat(64)?owner:
+     assertion==='c'.repeat(64)?member:null;
+   if(!who||!state.homeflowActive)
+    return Response.json({error:'invalid_assertion'},{status:401});
+   // Two simultaneous HomeFlow logins keep distinct source sessions.
+   // Changing our currently selected mock account does not revoke the other
+   // person's assertion; real HomeFlow resolves identity from its token hash.
+   const selected=who===state.user;
+   const role=selected?state.role:(who===owner?'owner':'member');
+   const nickname=selected?state.nickname:(who===owner?'小白':'鸡毛');
+   return Response.json({active:true,user_id:who,sub:who,
+    household_id:state.household,role,nickname,audience:state.audience});
   }
   throw Error('wrong service endpoint');
  }};

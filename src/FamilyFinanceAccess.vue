@@ -142,7 +142,7 @@ async function createAccount(){
  try{
   const data=await call('/api/family-finance/accounts',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({label,account_kind:newKind.value})
+   body:JSON.stringify({label,account_kind:newKind.value,expected_user_id:actor})
   })
   if(revision!==epoch||person.value?.user_id!==actor)return
   if(data.ledger_changed!==false)throw Error('账户状态需要复核')
@@ -159,7 +159,7 @@ async function mutate(a,change){
  try{
   const data=await call('/api/family-finance/accounts/'+encodeURIComponent(a.account_id),{
    method:'PATCH',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({version:a.version,...change})
+   body:JSON.stringify({version:a.version,...change,expected_user_id:actor})
   })
   if(revision!==epoch||person.value?.user_id!==actor)return
   if(data.ledger_changed!==false)throw Error('账户修改结果需要复核')

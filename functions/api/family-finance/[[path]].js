@@ -21,7 +21,12 @@ function enabled(env,url){
   /^[A-Za-z0-9_-]{1,128}$/.test(env.KAKEIBO_FAMILY_HOUSEHOLD_ID);
 }
 async function identity(request,env){
- const response=await homeflowIdentity({request,env,params:{path:['me']}});
+ // The SSO status probe accepts GET only. Reconstruct a GET with the same
+ // origin and cookie; never forward a business POST body to authentication.
+ const proofRequest=new Request(request.url,{
+  method:'GET',headers:{Cookie:request.headers.get('cookie')||''}
+ });
+ const response=await homeflowIdentity({request:proofRequest,env,params:{path:['me']}});
  if(response.status!==200)return null;
  const data=await response.json().catch(()=>null);
  const person=data?.identity;

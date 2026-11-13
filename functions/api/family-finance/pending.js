@@ -1,3 +1,4 @@
+import {verifyPreparedApproval} from './approval-proof.js';
 // Stage C/D member-created finance intents, NOT household approvals.
 // Private encrypted storage only. This module NEVER modifies entries,
 // card bills, investment tables, balance statistics or R2 objects.
@@ -166,6 +167,8 @@ export async function financePending(req,env,url,user,parts){
  if(user.role!=='member')return json({code:'ONLY_MEMBER_CAN_PREPARE'},403);
  if(parts.length===1&&req.method==='POST')return prepare(req,env,url,user);
  if(parts.length===1&&req.method==='GET')return list(env.DB,user,url);
+ if(parts.length===3&&parts[2]==='approval-proof'&&safeId(parts[1])&&req.method==='POST')
+  return verifyPreparedApproval(req,env,url,user,parts[1]);
  if(parts.length===3&&parts[2]==='cancel'&&safeId(parts[1])&&req.method==='POST')
   return cancel(req,env,url,user,parts[1]);
  return json({code:'NOT_FOUND'},404);

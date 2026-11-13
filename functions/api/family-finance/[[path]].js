@@ -227,6 +227,67 @@ async function totals(env,user,url){
   ledger_scope:'household',totals:byType,counts:count,
   net_income_expense:byType.income-byType.expense});
 }
+// Whole-household historical year statistics. Never filter by owner_user_id:
+// financial resource ownership controls settings, not family ledger visibility.
+// Aggregate in D1 instead of reading all individual entries to the browser.
+async function yearSummary(env,user,url){
+ const year=url.searchParams.get('year');
+ if(!/^20\\d{2}$/.test(year||''))return json({code:'INVALID_YEAR'},400);
+ const start=year+'-01-01',end=String(Number(year)+1)+'-01-01';
+ const types=['income','expense','transfer'];
+ const empty=()=>({income:0,expense:0,transfer:0});
+ const emptyCounts=()=>({income:0,expense:0,transfer:0});
+ const months=Array.from({length:12},(_,i)=>({
+  month:year+'-'+String(i+1).padStart(2,'0'),
+  totals:empty(),counts:emptyCounts(),net_income_expense:0
+ }));
+ // Three small grouped reads, rather than a per-row scan in the client.
+ // Transfer values remain separate and never inflate income/expense net.
+ const [monthly,byCategory,byPayment]=await Promise.all([
+  all(env.DB,`SELECT substr(date,1,7) month,type,
+    COALESCE(SUM(amount),0) amount,COUNT(*) count
+    FROM entries WHERE date>=? AND date<? AND type IN ('income','expense','transfer')
+    GROUP BY substr(date,1,7),type ORDER BY month,type`,start,end),
+  all(env.DB,`SELECT type,COALESCE(category,'') category,
+    COALESCE(SUM(amount),0) amount,COUNT(*) count
+    FROM entries WHERE date>=? AND date<? AND type IN ('income','expense')
+    GROUP BY type,category ORDER BY type,category`,start,end),
+  all(env.DB,`SELECT type,COALESCE(payment_source,'') payment_source,
+    COALESCE(SUM(amount),0) amount,COUNT(*) count
+    FROM entries WHERE date>=? AND date<? AND type IN ('income','expense')
+    GROUP BY type,payment_source ORDER BY type,payment_source`,start,end)
+ ]);
+ const safeValue=v=>{
+  const n=Number(v);
+  return Number.isSafeInteger(n)&&n>=0?n:null;
+ };
+ const totals=empty(),counts=emptyCounts();
+ for(const row of monthly){
+  if(!types.includes(row.type))return json({code:'LEDGER_TYPE_UNSUPPORTED'},409);
+  const m=months.find(x=>x.month===row.month);
+  const n=safeValue(row.amount),c=safeValue(row.count);
+  if(!m||n===null||c===null)return json({code:'LEDGER_TOTAL_REVIEW_REQUIRED'},409);
+  m.totals[row.type]+=n;m.counts[row.type]+=c;
+  totals[row.type]+=n;counts[row.type]+=c;
+ }
+ for(const m of months)m.net_income_expense=m.totals.income-m.totals.expense;
+ const group=(rows,key)=>rows.map(row=>{
+  const amount=safeValue(row.amount),count=safeValue(row.count);
+  if(!['income','expense'].includes(row.type)||amount===null||count===null||
+    typeof row[key]!=='string')return null;
+  return {type:row.type,[key]:row[key]||'未分类',amount,count};
+ });
+ const categories=group(byCategory,'category');
+ const paymentSources=group(byPayment,'payment_source');
+ if(categories.includes(null)||paymentSources.includes(null))
+  return json({code:'LEDGER_TOTAL_REVIEW_REQUIRED'},409);
+ categories.sort((a,b)=>b.amount-a.amount||a.category.localeCompare(b.category));
+ paymentSources.sort((a,b)=>b.amount-a.amount||a.payment_source.localeCompare(b.payment_source));
+ return json({ok:true,year,household_id:user.household_id,ledger_scope:'household',
+  computed_from:'entries',complete:true,ledger_changed:false,
+  totals,counts,net_income_expense:totals.income-totals.expense,
+  months,categories,payment_sources:paymentSources});
+}
 export async function onRequest({request,env,params}){
  const url=new URL(request.url),parts=params.path||[];
  if(parts.length===1&&parts[0]==='status'&&request.method==='GET')
@@ -248,6 +309,9 @@ export async function onRequest({request,env,params}){
    return entries(env,user,url);
   if(request.method==='GET'&&parts[0]==='shared'&&parts[1]==='ledger-totals')
    return totals(env,user,url);
+  if(request.method==='GET'&&parts.length===2&&parts[0]==='shared'&&
+     parts[1]==='year-summary')
+   return yearSummary(env,user,url);
   return json({code:'NOT_FOUND'},404);
  }catch{return json({code:'FAMILY_FINANCE_UNAVAILABLE'},503);}
 }

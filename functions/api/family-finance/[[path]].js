@@ -4,6 +4,7 @@
 // IMPORTANT: migration 0023 is unexecuted; do not enable before full backup.
 import {onRequest as homeflowIdentity, ssoReady} from '../homeflow-sso/[[path]].js';
 import {financePending} from './pending.js';
+import {familyAssetSummary} from './assets.js';
 
 const json=(data,status=200)=>Response.json(data,{status,headers:{
  'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
@@ -232,6 +233,9 @@ export async function onRequest({request,env,params}){
   if(parts[0]==='accounts')return accounts(request,env,url,user,parts);
   if(parts[0]==='legacy'&&parts[1]==='adopt')
    return adoptLegacy(request,env,url,user);
+  if(request.method==='GET'&&parts.length===2&&parts[0]==='shared'&&
+     parts[1]==='asset-summary')
+   return familyAssetSummary(env,url,user,request);
   if(request.method==='GET'&&parts[0]==='shared'&&parts[1]==='entries')
    return entries(env,user,url);
   if(request.method==='GET'&&parts[0]==='shared'&&parts[1]==='ledger-totals')

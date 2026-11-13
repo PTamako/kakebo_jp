@@ -64,7 +64,8 @@ test('SBI monthly investment is a transfer, with effective date, purpose and dup
     assert.equal(row.transfer_applied,0);
     assert.equal(row.payment_source,'三井住友カード');
     const link=sqlite.prepare('SELECT purchase_month,purpose FROM sbi_transfer_links WHERE entry_id=?1').get(row.id);
-    assert.deepEqual(link,{purchase_month:'2026-12',purpose:'monthly'});
+    assert.equal(link.purchase_month,'2026-12');
+    assert.equal(link.purpose,'monthly');
     const repeat=await send('jda:kakebo:1000000000000001');
     assert.equal(repeat.status,200);
     assert.equal(repeat.body.remote_id,first.body.remote_id);

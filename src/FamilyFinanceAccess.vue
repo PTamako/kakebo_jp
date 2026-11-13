@@ -166,7 +166,14 @@ function openRename(a){
  editing.value=a.account_id;rename.value=a.label
 }
 function foreground(){
- if(document.visibilityState==='visible'&&person.value&&!busy.value)void check()
+ if(document.visibilityState!=='visible'||busy.value)return
+ // iPhone Safari/PWA may resume after a HomeFlow account switch in another
+ // app. Hide all private finance data before the next source-session check.
+ if(person.value){
+  person.value=null;accounts.value=[];totals.value=null;annual.value=null
+  editing.value=null;rename.value=''
+ }
+ void check()
 }
 onMounted(()=>{void check();document.addEventListener('visibilitychange',foreground)})
 onUnmounted(()=>{epoch++;document.removeEventListener('visibilitychange',foreground)})

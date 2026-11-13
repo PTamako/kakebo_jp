@@ -38,11 +38,15 @@ function d1(){
   "INSERT INTO investment_holdings VALUES('ABC12345','tsumitate','SBI 投資信託',10000,18000,NULL,NULL,CURRENT_TIMESTAMP);"+
   "INSERT INTO fund_prices VALUES('ABC12345',20000,'2026-11-12','official',CURRENT_TIMESTAMP);"+
   "INSERT INTO card_bills VALUES('PayPay Visa','2026-11','2026-11-01','2026-11-30',1234,1)");
- const wrap=sql=>({bind(...values){const statement=()=>sqlite.prepare(sql);
-  return {first:async()=>statement().get(...values)||null,
-   all:async()=>({results:statement().all(...values)}),
-   run:async()=>({meta:{changes:statement().run(...values).changes}}),
-   runSync:()=>({meta:{changes:statement().run(...values).changes}})};}});
+ const wrap=sql=>{
+  const statement=(values=[])=>({
+    first:async()=>sqlite.prepare(sql).get(...values)||null,
+    all:async()=>({results:sqlite.prepare(sql).all(...values)}),
+    run:async()=>({meta:{changes:sqlite.prepare(sql).run(...values).changes}}),
+    runSync:()=>({meta:{changes:sqlite.prepare(sql).run(...values).changes}})
+  });
+  return {...statement(),bind:(...values)=>statement(values)};
+ };
  return {sqlite,prepare:wrap,async batch(items){
   sqlite.exec('BEGIN');
   try{const out=items.map(v=>v.runSync());sqlite.exec('COMMIT');return out;}

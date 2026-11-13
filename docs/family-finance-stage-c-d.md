@@ -36,7 +36,17 @@
 - `migrations/0025_family_financial_resource_owners.sql`：**未执行**的纯追加映射。对旧固定费 `recurring_plans`、SBI `investment_plans`、`investment_plan_history`、`investment_holdings`、信用卡 `card_bills` 保存资源原 ID 与**已验证管理员**的不可变 `owner_user_id` 和真实 `assigned_by_user_id`，不回填伪 actor，不改变任何旧金额/历史字段；SQL Trigger 拒绝转移/删除映射。后续才可将具体设置编辑路由切换为个人 ID。
 - `POST /api/family-finance/legacy/resource-owners`：明确 `confirm:true`、`resource_kind`、可选 `cursor`，每页最多 50 条，拒绝非 owner/伪造目标/跨户/无本人链接；同 key 唯一、重复页不追加事件、真实导入写入与审计在一个 D1 事务。`GET` 返回映射数量，不泄漏私人详细字段。该 API 只影响新 sidecar，**不改旧 `recurring_plans`、SBI、card_bills 内容**。
 - `POST /api/family-finance/proposals/{id}/approval-proof`：**只读核实** `homeflow_request_id` 是否由 HomeFlow 管理员批准。新开关 `KAKEIBO_APPROVAL_PROOF_ENABLED='true'` + 私有 `KAKEIBO_APPROVAL_VERIFICATION_SECRET`（32-byte hex）+ `APP_ENV='production'`；经 `HOMEFLOW_IDENTITY_SERVICE` 调用 `POST /api/internal/approvals/verify`，用 HMAC-SHA256(client、毫秒时间戳、原始 JSON)；HomeFlow 端需要相同 Secret `APPROVAL_VERIFICATION_SECRET` 和 `APPROVAL_VERIFICATION_ENABLED`。**此 Secret 现在不需要配置，不得写入仓库。**
-- HomeFlow 验证目标请求的 immutable `request_id/resource_id/household_id/requester_user_id/payload_sha256/idempotency_key/expected_version`、实际双方仍有效、审核者仍为 owner、申请未过期。家計簿的 `idempotency_key` 固定生成 `kakeibo:finance:{pending.request_id}`，签名 payload 不从浏览器接受。成功仅返回 `approved_not_applied`、`applied:false`、`ledger_changed:false`；**没有真正审批提交，没有家计簿事务执行器**，也没有通知/界面。
+- HomeFlow 验证目标请求的 immutable `request_id/resource_id/household_id/requester_user_id/payload_sha256/idempotency_key/expected_version`、实际双方仍有效、审核者仍为 owner、申请未过期。家計簿的 `idempotency_key` 固定生成 `kakeibo:finance:{pending.request_id}`，签名 payload 不从浏览器接受。成功仅返回 `approved_not_applied`、`applied:false`、`ledger_changed:false`；**本轮已补真实后端申请提交与 D1 回执，仍没有家計簿正式账务执行器**，也没有通知/界面。
 - 回归测试覆盖：配偶读同一资产汇总及不完整估值、真实旧业务表行原样保留、固定费等资源归属不可重指派、50 条分页重复不生成假审计、签名失配/待审批/错摘要/身份撤销、审批核验前后 ledger 行完全一致。
 
 **必须保持的门槛**：四 D1/R2 加密持久备份与隔离恢复仍由用户之后用电脑执行。0022～0025 均未执行；HomeFlow 0053/0054 未执行；所有功能开关 OFF；禁止合并 Draft、开启生产、重建 Preview。审批确认绝不代表真正入账，后续仍需 HomeFlow 可信提交、单次执行、结果回报及断网恢复。
+
+
+## 2026-11-13 Stage D：加密草稿 → HomeFlow 真正待审批申请（**未入账**）
+
+- `migrations/0024_family_finance_pending_actions.sql`（**未执行**）从 `prepared/cancelled` 扩展出不可逆 `prepared→submitted`，记录只可首次写入且不能换绑的 `homeflow_approval_id` / `submitted_at`，同时持久保留原加密草稿快照。此前的 `prepared→cancelled` 仍只处理未提交草稿；已提交必须通过 HomeFlow 工单管理，不能只在家計簿本地取消并谎称审批失效。事件 `finance_entry_submitted` 记录真实 member ID。
+- 新 `POST /api/family-finance/proposals/{id}/submit` 只能由加密草稿请求人且账号仍有效、未归档时触发。新 `KAKEIBO_APPROVAL_SUBMISSION_ENABLED='true'` 与服务器 Secret `KAKEIBO_APPROVAL_VERIFICATION_SECRET` 默认关闭/未配置；真实服务通过已有 `HOMEFLOW_IDENTITY_SERVICE` Service Binding 用 HMAC-SHA256 将固定的 household/member/digest/pending id 发给 HomeFlow `/api/internal/approvals/submit`，**不会携带金额、商家、原文、卡号或私有密文**。
+- HomeFlow 创建 pending 后，家計簿验证相同 `resource_id/payload_sha256/household_id/requester_user_id/idempotency_key` 及合法 `approval_id`，以 D1 batch **原子**写入 `state='submitted'` 和 actor 审计。重复 POST 若已有回执立即重用。**远端已保存但本地回执丢失**时返回 `safe_to_retry:true`；下一次重发同一确定性 `kakeibo:finance:{id}` 幂等键会拿到 HomeFlow 同一个工单，不会重复创建审批或写任何账本行。
+- `POST /proposals/{id}/approval-proof` 现要求**数据库已持久保存** `state='submitted'` 且 `homeflow_approval_id` 与传入 request id 完全一致；仍独立向 HomeFlow 短期签名核实 digest、最新角色及原 owner 决定，成功仅 `approved_not_applied`，绝不发起 `entries` INSERT/UPDATE。
+- 家計簿 [Validate #43423823312](https://github.com/PTamako/kakebo_jp/actions/runs/43423823312) success；覆盖丢失回执后重新提交、重复 ID、签名和外部摘要不一致、取消后拒绝审核、未验活成员、以及提交与核验前后正式 ledger 和余额完全不变。HomeFlow [#43423671632](https://github.com/PTamako/homeflow/actions/runs/43423671632) success。
+- **剩余 Stage D**：管理员审核后的 target Service Binding 幂等执行器、真实正式账务写入/回报 `executing→applied`、冲突/重试恢复、通知、PWA 状态交互和真实跨仓/真机端到端验收。缺阶段 A 的用户备份与隔离恢复时，本轮 0022～0025 和 HomeFlow 0053/0054 仍不能生产迁移，所有新开关 OFF。

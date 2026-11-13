@@ -37,7 +37,7 @@ async function setup(){
  DB.sqlite.prepare('INSERT INTO device_sessions(token_hash,expires_at) VALUES(?,?)')
   .run(oldHash,Date.now()+3600000);
  const state={user:owner,role:'owner',household:'primary',nickname:'小白',
-  audience:'kakeibo',serviceCalls:0};
+  audience:'kakeibo',serviceCalls:0,homeflowActive:true};
  const env={DB,AUTH_TOKEN:'legacy-code',KAKEIBO_HOMEFLOW_SSO_ENABLED:'true',
   KAKEIBO_PUBLIC_ORIGIN:app,HOMEFLOW_OAUTH_ORIGIN:home,
   KAKEIBO_SSO_ENCRYPTION_KEY:'a'.repeat(64)};
@@ -51,12 +51,22 @@ async function setup(){
    assert.equal(data.get('client_id'),'kakeibo');
    assert.equal(data.get('redirect_uri'),app+'/api/homeflow-sso/callback');
    assert.equal(data.get('code'),'f'.repeat(64));
-   return Response.json({access_token:'e'.repeat(64),token_type:'Bearer',expires_in:180});
+   return Response.json({access_token:'e'.repeat(64),token_type:'Bearer',expires_in:180,
+    session_assertion:'d'.repeat(64),session_assertion_expires_in:900});
   }
   if(u.pathname==='/api/oauth/userinfo'){
    assert.equal(request.headers.get('Authorization'),'Bearer '+'e'.repeat(64));
    return Response.json({user_id:state.user,sub:state.user,household_id:state.household,
     role:state.role,nickname:state.nickname,audience:state.audience});
+  }
+  if(u.pathname==='/api/oauth/session-introspect'){
+   const body=new URLSearchParams(await request.text());
+   assert.equal(body.get('session_assertion'),'d'.repeat(64));
+   assert.equal(body.get('client_id'),'kakeibo');
+   if(!state.homeflowActive)return Response.json({error:'invalid_assertion'},{status:401});
+   return Response.json({active:true,user_id:state.user,sub:state.user,
+    household_id:state.household,role:state.role,nickname:state.nickname,
+    audience:state.audience});
   }
   throw Error('wrong service endpoint');
  }};
@@ -169,6 +179,14 @@ test('member starts empty in independent identity; never receives legacy ledger 
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) c FROM homeflow_identity_links').get().c,2);
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) c FROM device_sessions').get().c,1);
   const hfCookie=resp.headers.get('set-cookie').match(/__Host-kakeibo_hf=([0-9a-f]{64})/)[1];
+  assert.equal((await f.call('me','GET',null,{hfCookie})).status,200);
+  f.state.homeflowActive=false;
+  assert.equal((await f.call('me','GET',null,{hfCookie})).status,401,
+    'HomeFlow logout must revoke the next identity request');
+  f.state.homeflowActive=true;f.state.role='owner';
+  assert.equal((await f.call('me','GET',null,{hfCookie})).status,401,
+    'role mismatch cannot keep member session');
+  f.state.role='member';
   assert.equal((await f.call('me','GET',null,{hfCookie})).status,200);
   const r=await legacyApi({request:new Request(app+'/api/entries',{
    headers:{Cookie:'__Host-kakeibo_hf='+hfCookie}}),env:f.env,params:{path:['entries']}});

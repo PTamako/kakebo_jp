@@ -28,3 +28,15 @@
 1. 阶段 C：**不可用现有旧 `payment_sources.name` 主键直接实现两位家庭成员**。需一次无损引入 stable `account_id` 至旧账本、支付规则、卡账单/储值余额/信用卡/SBI/定投/固定费，保留历史原名语义，旧 owner 数据只归 owner；完整统计页面家庭共享，私人账户编辑只给所属人和 owner。
 2. 阶段 D：HomeFlow Draft #306 的审批申请与审核只有意图，需要服务间 Actor 授权、目标 App 密文取得/哈希校验、HomeFlow 真实 `approved` 证明、版本冲突控制、幂等事务（网络超时先查目标记账结果）、`executing→applied` 状态和审计，最后接 PWA 审批 UI；提交审批前和未获批准时均不得写家账。
 3. 阶段 F：四 D1/R2 备份与隔离恢复、正式迁移顺序、双人 iPhone/Safari/PWA 切号、登出撤权、故障重试与旧登录回收验证完成后才部署；任何线上开关先保持 OFF。
+
+
+## 2026-11-13 继续开发增量：家庭资产汇总 / 旧金融资源归属 / HomeFlow 审批证明（全部 Draft，生产 OFF）
+
+- `GET /api/family-finance/shared/asset-summary?month=YYYY-MM`：已验证的两位 HomeFlow 成员读取完全相同的家庭储值卡余额、SBI 持仓估值与信用卡账单快照。复用 `prepaid-assets.js` 的充值/积分/适用日期算法与 `investment-portfolio.js` 的实际持仓估值；账单为**负债快照**，不从资产重复扣款。返回 `tracked_assets_jpy`、`tracked_assets_complete`、`excluded_from_assets`；没有可信银行/现金余额及未报价持仓时明确为部分统计，**不得宣传为全家总净资产**。响应 `ledger_changed:false`，每次只读。
+- `migrations/0025_family_financial_resource_owners.sql`：**未执行**的纯追加映射。对旧固定费 `recurring_plans`、SBI `investment_plans`、`investment_plan_history`、`investment_holdings`、信用卡 `card_bills` 保存资源原 ID 与**已验证管理员**的不可变 `owner_user_id` 和真实 `assigned_by_user_id`，不回填伪 actor，不改变任何旧金额/历史字段；SQL Trigger 拒绝转移/删除映射。后续才可将具体设置编辑路由切换为个人 ID。
+- `POST /api/family-finance/legacy/resource-owners`：明确 `confirm:true`、`resource_kind`、可选 `cursor`，每页最多 50 条，拒绝非 owner/伪造目标/跨户/无本人链接；同 key 唯一、重复页不追加事件、真实导入写入与审计在一个 D1 事务。`GET` 返回映射数量，不泄漏私人详细字段。该 API 只影响新 sidecar，**不改旧 `recurring_plans`、SBI、card_bills 内容**。
+- `POST /api/family-finance/proposals/{id}/approval-proof`：**只读核实** `homeflow_request_id` 是否由 HomeFlow 管理员批准。新开关 `KAKEIBO_APPROVAL_PROOF_ENABLED='true'` + 私有 `KAKEIBO_APPROVAL_VERIFICATION_SECRET`（32-byte hex）+ `APP_ENV='production'`；经 `HOMEFLOW_IDENTITY_SERVICE` 调用 `POST /api/internal/approvals/verify`，用 HMAC-SHA256(client、毫秒时间戳、原始 JSON)；HomeFlow 端需要相同 Secret `APPROVAL_VERIFICATION_SECRET` 和 `APPROVAL_VERIFICATION_ENABLED`。**此 Secret 现在不需要配置，不得写入仓库。**
+- HomeFlow 验证目标请求的 immutable `request_id/resource_id/household_id/requester_user_id/payload_sha256/idempotency_key/expected_version`、实际双方仍有效、审核者仍为 owner、申请未过期。家計簿的 `idempotency_key` 固定生成 `kakeibo:finance:{pending.request_id}`，签名 payload 不从浏览器接受。成功仅返回 `approved_not_applied`、`applied:false`、`ledger_changed:false`；**没有真正审批提交，没有家计簿事务执行器**，也没有通知/界面。
+- 回归测试覆盖：配偶读同一资产汇总及不完整估值、真实旧业务表行原样保留、固定费等资源归属不可重指派、50 条分页重复不生成假审计、签名失配/待审批/错摘要/身份撤销、审批核验前后 ledger 行完全一致。
+
+**必须保持的门槛**：四 D1/R2 加密持久备份与隔离恢复仍由用户之后用电脑执行。0022～0025 均未执行；HomeFlow 0053/0054 未执行；所有功能开关 OFF；禁止合并 Draft、开启生产、重建 Preview。审批确认绝不代表真正入账，后续仍需 HomeFlow 可信提交、单次执行、结果回报及断网恢复。

@@ -35,7 +35,7 @@ function restorePending(){
 }
 function resetIdentity(){
  epoch++;person.value=null;accounts.value=[];totals.value=null;annual.value=null
- editing.value=null;rename.value=''
+ editing.value=null;rename.value='';newLabel.value='';newKind.value='credit_card'
 }
 async function call(path,options={}){
  const response=await fetch(path,{cache:'no-store',credentials:'same-origin',...options})
@@ -148,7 +148,7 @@ async function createAccount(){
   if(data.ledger_changed!==false)throw Error('账户状态需要复核')
   newLabel.value=''
   await refresh()
- }catch(e){error.value=e.message}
+ }catch(e){if(revision===epoch)error.value=e.message}
  finally{busy.value=false}
 }
 async function mutate(a,change){
@@ -165,7 +165,7 @@ async function mutate(a,change){
   if(data.ledger_changed!==false)throw Error('账户修改结果需要复核')
   editing.value=null;rename.value=''
   await refresh()
- }catch(e){error.value=e.message}
+ }catch(e){if(revision===epoch)error.value=e.message}
  finally{busy.value=false}
 }
 function openRename(a){

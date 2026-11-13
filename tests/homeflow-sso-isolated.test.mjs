@@ -291,7 +291,7 @@ function finance(f,path,method='GET',body,secret='',origin=app){
  return familyFinance({env:f.env,
   request:new Request(app+'/api/family-finance/'+path,{method,headers,
    body:method==='GET'?undefined:JSON.stringify(body??{})}),
-  params:{path:path.split('/')}});
+  params:{path:path.split('?')[0].split('/')}});
 }
 test('family-finance stays off without explicit flag and family-bound audience',async()=>{
  const f=await setup();

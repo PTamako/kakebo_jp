@@ -27,6 +27,17 @@ function d1(){
    "CREATE TABLE payment_sources(name TEXT PRIMARY KEY,sort_order INTEGER,is_default INTEGER,closing_day INTEGER,source_type TEXT,stat_group TEXT,is_archived INTEGER,opening_balance INTEGER,opening_date TEXT);"+
    "INSERT INTO payment_sources VALUES('PayPay Visa',0,1,15,'standard','card',0,15000,'2026-11-01');"+
    "INSERT INTO payment_sources VALUES('nanaco',1,0,NULL,'prepaid','card',0,2400,'2026-11-01')");
+ sqlite.exec("ALTER TABLE payment_sources ADD COLUMN opening_entry_id INTEGER NOT NULL DEFAULT 0;"+
+  "ALTER TABLE entries ADD COLUMN client_request_id TEXT;"+
+  "CREATE TABLE investment_plans(fund_code TEXT,account_type TEXT,fund_name TEXT,monthly_amount INTEGER,order_day INTEGER,enabled INTEGER);"+
+  "CREATE TABLE investment_plan_history(fund_code TEXT,account_type TEXT,fund_name TEXT,monthly_amount INTEGER,order_day INTEGER,enabled INTEGER,effective_month TEXT,updated_at TEXT);"+
+  "CREATE TABLE investment_holdings(fund_code TEXT,account_type TEXT,fund_name TEXT,units INTEGER,acquisition_cost INTEGER,reported_value INTEGER,reported_at TEXT,updated_at TEXT);"+
+  "CREATE TABLE fund_prices(fund_code TEXT,nav_per_10000 INTEGER,price_date TEXT,source TEXT,updated_at TEXT);"+
+  "CREATE TABLE sbi_transfer_links(entry_id INTEGER,purchase_month TEXT,purpose TEXT);"+
+  "CREATE TABLE card_bills(payment_source TEXT,bill_month TEXT,period_start TEXT,period_end TEXT,total_amount INTEGER,transaction_count INTEGER);"+
+  "INSERT INTO investment_holdings VALUES('ABC12345','tsumitate','SBI 投資信託',10000,18000,NULL,NULL,CURRENT_TIMESTAMP);"+
+  "INSERT INTO fund_prices VALUES('ABC12345',20000,'2026-11-12','official',CURRENT_TIMESTAMP);"+
+  "INSERT INTO card_bills VALUES('PayPay Visa','2026-11','2026-11-01','2026-11-30',1234,1)");
  const wrap=sql=>({bind(...values){const statement=()=>sqlite.prepare(sql);
   return {first:async()=>statement().get(...values)||null,
    all:async()=>({results:statement().all(...values)}),
@@ -472,5 +483,61 @@ test('financial pending encryption and account identity fail closed on CSRF, cro
   assert.equal(prepared.status,201,await prepared.clone().text());
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_pending_actions').get().n,1);
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries').get().n,2);
+ }finally{f.DB.sqlite.close();}
+});
+
+
+test('both members see identical read-only actual prepaid/SBI assets and card bill snapshots',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const beforeEntries=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  const beforeSources=f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all();
+  const beforeHoldings=f.DB.sqlite.prepare('SELECT * FROM investment_holdings').all();
+  const beforeBills=f.DB.sqlite.prepare('SELECT * FROM card_bills').all();
+  const read=async secret=>{
+   const response=await finance(f,'shared/asset-summary','GET',null,secret);
+   assert.equal(response.status,200,await response.clone().text());
+   return response.json();
+  };
+  const admin=await read(ownerCookie),spouse=await read(memberCookie);
+  assert.deepEqual(admin,spouse,'all tracked assets/bills are household visible without an owner filter');
+  assert.equal(admin.household_id,'primary');
+  assert.equal(admin.scope,'household');
+  assert.equal(admin.prepaid.cards.length,1);
+  assert.equal(admin.prepaid.cards[0].name,'nanaco');
+  assert.equal(admin.prepaid.total_jpy,2400);
+  assert.equal(admin.securities.holdings.length,1);
+  assert.equal(admin.securities.holdings[0].fund_name,'SBI 投資信託');
+  assert.equal(admin.securities.total_market_value_jpy,20000);
+  assert.equal(admin.tracked_assets_jpy,22400);
+  assert.equal(admin.tracked_assets_complete,true);
+  assert.equal(admin.credit_card_bills.length,1);
+  assert.equal(admin.credit_card_bills[0].current_total_jpy,1234);
+  assert.ok(admin.excluded_from_assets.includes('untracked_bank_cash_balances'));
+  assert.equal(admin.ledger_changed,false);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),beforeEntries);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all(),beforeSources);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM investment_holdings').all(),beforeHoldings);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM card_bills').all(),beforeBills);
+ }finally{f.DB.sqlite.close();}
+});
+test('an unvalued SBI position never masquerades as complete household assets',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  f.DB.sqlite.prepare('DELETE FROM fund_prices').run();
+  const response=await finance(f,'shared/asset-summary','GET',null,ownerCookie);
+  assert.equal(response.status,200,await response.clone().text());
+  const data=await response.json();
+  assert.equal(data.tracked_assets_jpy,2400,'known prepaid balance remains visible');
+  assert.equal(data.tracked_assets_complete,false);
+  assert.equal(data.securities.total_market_value_jpy,null);
+  assert.equal(data.securities.missing_valuations,1);
+  const malformed=await finance(f,'shared/asset-summary?month=2026-13','GET',null,ownerCookie);
+  assert.equal(malformed.status,400);
+  f.state.homeflowActive=false;
+  assert.equal((await finance(f,'shared/asset-summary','GET',null,ownerCookie)).status,401);
  }finally{f.DB.sqlite.close();}
 });

@@ -42,7 +42,7 @@ export async function onRequestPost({request,env}){
   // assistant picker. Never return transactions, user IDs or account balances.
   if(body?.payload?.operation==='options'){
     const type=body.payload.entryType
-    if(!['income','expense'].includes(type))return json({ok:false,error:'invalid_entry_type'},400)
+    if(!['income','expense','transfer'].includes(type))return json({ok:false,error:'invalid_entry_type'},400)
     // This query is read-only. Match using the same Kakebo classifier and
     // card-selection function as ordinary receipt and manual imports.
     const merchant=body.payload.merchant??''
@@ -62,22 +62,22 @@ export async function onRequestPost({request,env}){
       const methodRows=methods.results||[]
       const names=methodRows.map(row=>String(row.name||'')).filter(Boolean)
       if(!names.includes('現金'))names.unshift('現金')
-      const choices=categoryRows.map(row=>({
+      const choices=type==='transfer'?[{value:'投資・資産移動',label:'资产转移'}]:categoryRows.map(row=>({
         value:String(row.category||''),label:String(row.display_name||row.category||'')
       })).filter(row=>row.value&&row.label)
       const availableCategories=new Set(choices.map(c=>c.value))
-      const categoryDefault=categoryRows.find(row=>Number(row.is_default)===1)?.category||categoryRows[0]?.category||''
+      const categoryDefault=type==='transfer'?'投資・資産移動':categoryRows.find(row=>Number(row.is_default)===1)?.category||categoryRows[0]?.category||''
       const registered=names
       const paymentDefault=methodRows.find(row=>Number(row.is_default)===1)?.name||''
       let recommendedCategory=categoryDefault,recommendedPayment=''
       let categoryOrigin='default',paymentOrigin='default'
-      if(type==='expense'){
+      if(type==='expense'||type==='transfer'){
         const customRules=(custom.results||[]).map(row=>({...row,is_custom:true}))
         const defaults=(builtIn.results||[]).map(row=>({...row,is_custom:false}))
         // Custom overrides replace the same built-in keyword, just like GET /api/rules.
         const byKeyword=new Map(defaults.map(row=>[row.keyword,row]))
         for(const row of customRules)byKeyword.set(row.keyword,row)
-        const classified=merchant?classify(merchant,[...byKeyword.values()]):null
+        const classified=type==='expense'&&merchant?classify(merchant,[...byKeyword.values()]):null
         if(classified?.keyword&&availableCategories.has(classified.category)){
           recommendedCategory=classified.category;categoryOrigin='merchant_rule'
         }
@@ -132,13 +132,25 @@ export async function onRequestPost({request,env}){
   const transactionTime=p.time===undefined?'':p.time
   if(typeof transactionTime!=='string'||(transactionTime!==''&&!/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(transactionTime)))
     return json({ok:false,error:'invalid_entry_time'},400)
-  if(!['income','expense'].includes(p.type)||!Number.isSafeInteger(amount)||amount<=0||
+  if(!['income','expense','transfer'].includes(p.type)||!Number.isSafeInteger(amount)||amount<=0||
     typeof date!=='string'||!/^\d{4}-\d\d-\d\d$/.test(date)||
     !Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date||
     typeof p.category!=='string'||!p.category.trim()||p.category.length>80||
     typeof source!=='string'||source.length>80||
     (p.merchant!==undefined&&(typeof p.merchant!=='string'||p.merchant.length>100)))
     return json({ok:false,error:'invalid_entry'},400)
+  // Asset transfer is a transaction type, not a spending category.
+  const transfer=p.type==='transfer'
+  const validDate=value=>typeof value==='string'&&/^\d{4}-\d\d-\d\d$/.test(value)&&
+    Number.isFinite(Date.parse(value+'T00:00:00Z'))&&
+    new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value
+  if(transfer){
+    if(p.category!=='投資・資産移動'||p.transferTarget!=='sbi'||!validDate(p.transferDate)||
+      !['monthly','purchase'].includes(p.sbiPurpose))
+      return json({ok:false,error:'invalid_transfer'},400)
+  }else if(p.transferTarget!==undefined||p.transferDate!==undefined||p.sbiPurpose!==undefined){
+    return json({ok:false,error:'invalid_transfer'},400)
+  }
   // Store the source document's merchant as the actual ledger display name.
   // Never replace a known store with the importing application's name.
   const merchant=typeof p.merchant==='string'?p.merchant.trim():''
@@ -147,28 +159,41 @@ export async function onRequestPost({request,env}){
     note:typeof p.note==='string'?p.note.slice(0,180):'',merchant}
   const fieldErr=validateLedgerTextFields(field)
   if(fieldErr)return json({ok:false,error:'invalid_text'},400)
-  // Only a registered category of the correct income/expense type is writable.
-  try{
-    const row=await env.DB.prepare('SELECT category FROM category_source WHERE category=?1 AND entry_type=?2')
-      .bind(field.category,field.type).first()
-    if(!row)return json({ok:false,error:'category_not_registered'},400)
-  }catch{return json({ok:false,error:'catalog_unavailable'},503)}
+  // Transfers use the exact fixed category used by Kakebo's transfer form.
+  if(!transfer){
+    try{
+      const row=await env.DB.prepare('SELECT category FROM category_source WHERE category=?1 AND entry_type=?2')
+        .bind(field.category,field.type).first()
+      if(!row)return json({ok:false,error:'category_not_registered'},400)
+    }catch{return json({ok:false,error:'catalog_unavailable'},503)}
+  }
   const paymentErr=await validateRegisteredPaymentSource(env.DB,field.paymentSource)
   if(paymentErr)return json({ok:false,error:paymentErr.code||'invalid_source'},paymentErr.status||400)
   const requestId=await stableRequestId(key)
   // One D1 unique index ensures a lost response never creates a second transaction.
   try{
-    const result=await env.DB.prepare(`INSERT INTO entries
+    const tokyoToday=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10)
+    const applied=transfer&&p.transferDate<=tokyoToday?1:0
+    const insert=env.DB.prepare(`INSERT INTO entries
       (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
-      SELECT ?1,?9,?2,?3,?4,?5,'',?6,NULL,0,NULL,?7,?8
+      SELECT ?1,?9,?2,?3,?4,?5,'',?6,?10,?11,?12,?7,?8
       WHERE NOT EXISTS (SELECT 1 FROM entries
         WHERE date=?1 AND amount=?2 AND type=?6 AND COALESCE(payment_source,'')=?8
           AND TRIM(COALESCE(merchant,''))=TRIM(?4)
+          AND (type<>'transfer' OR COALESCE(transfer_target,'')=COALESCE(?10,''))
           AND (COALESCE(time,'')='' OR COALESCE(?9,'')=''
             OR ABS((CAST(SUBSTR(time,1,2) AS INTEGER)*60 + CAST(SUBSTR(time,4,2) AS INTEGER))
               -(CAST(SUBSTR(?9,1,2) AS INTEGER)*60 + CAST(SUBSTR(?9,4,2) AS INTEGER)))<=5))
       ON CONFLICT(client_request_id) DO NOTHING`)
-      .bind(date,amount,field.category,field.merchant,field.note,field.type,requestId,field.paymentSource,field.time).run()
+      .bind(date,amount,field.category,field.merchant,field.note,field.type,requestId,
+        field.paymentSource,field.time,transfer?'sbi':null,applied,transfer?p.transferDate:null)
+    const result=transfer
+      ? (await env.DB.batch([insert,env.DB.prepare(`INSERT OR IGNORE INTO sbi_transfer_links
+          (entry_id,purchase_month,purpose)
+          SELECT id,?2,?3 FROM entries WHERE client_request_id=?1
+            AND type='transfer' AND transfer_target='sbi'`)
+          .bind(requestId,p.transferDate.slice(0,7),p.sbiPurpose)]))[0]
+      : await insert.run()
     const row=await env.DB.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(requestId).first()
     if(!row?.id && result.meta?.changes===0)return json({ok:false,error:'duplicate_candidate',message:'同日同金额与付款来源的记录可能已存在，请先核对家計簿并手动关联'},409)
     if(!row?.id)return json({ok:false,error:'idempotency_lookup_failed'},503)

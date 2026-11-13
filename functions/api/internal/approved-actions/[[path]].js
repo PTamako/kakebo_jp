@@ -208,16 +208,16 @@ export async function approvedActionRoute(request,env,parts){
    db.prepare('INSERT INTO family_finance_applied_actions '+
     '(homeflow_request_id,proposal_id,household_id,requester_user_id,'+
     'approver_user_id,account_id,payload_sha256,client_request_id,entry_id,applied_at) '+
-    'SELECT ?,?,?,?,?,?,?,?,e.id,? FROM entries e '+
-    'WHERE e.client_request_id=? AND e.family_account_id=? AND '+
-    'e.date=? AND e.amount=? AND e.category=? AND e.merchant=? AND '+
-    'e.note=? AND e.type=? AND e.payment_source=? '+
-    'ON CONFLICT(homeflow_request_id) DO NOTHING')
+    'VALUES(?,?,?,?,?,?,?,?,('+
+    'SELECT e.id FROM entries e WHERE e.client_request_id=? '+
+    'AND e.family_account_id=? AND e.date=? AND e.amount=? '+
+    'AND e.category=? AND e.merchant=? AND e.note=? '+
+    'AND e.type=? AND e.payment_source=? LIMIT 1),?)')
     .bind(body.request_id,body.resource_id,body.household_id,
      body.requester_user_id,proof.approver_user_id,
-     payload.account_id,body.payload_sha256,clientRequest,appliedAt,
+     payload.account_id,body.payload_sha256,clientRequest,
      clientRequest,payload.account_id,payload.date,payload.amount_jpy,
-     payload.category,payload.merchant,payload.note,payload.type,''),
+     payload.category,payload.merchant,payload.note,payload.type,'',appliedAt),
    db.prepare('INSERT INTO family_finance_events '+
     '(event_id,household_id,actor_user_id,resource_id,action,created_at) '+
     "SELECT ?,?,?,?,'finance_entry_applied',? "+
@@ -231,7 +231,14 @@ export async function approvedActionRoute(request,env,parts){
    return exact(raced,body)?reply(publicResult(raced,true)):
     refuse('LEDGER_IDEMPOTENCY_CONFLICT',409)
   }
- }catch{return refuse('LEDGER_TRANSACTION_RETRY',503)}
+ }catch{
+  // Unique-key races may mean another Worker already committed this exact
+  // approval. Reconcile from durable target journal; never post twice.
+  const raced=await db.prepare('SELECT * FROM family_finance_applied_actions '+
+   'WHERE homeflow_request_id=?').bind(body.request_id).first().catch(()=>null)
+  return exact(raced,body)?reply(publicResult(raced,true)):
+   refuse('LEDGER_TRANSACTION_RETRY',503)
+ }
  const applied=await db.prepare('SELECT * FROM family_finance_applied_actions '+
   'WHERE homeflow_request_id=?').bind(body.request_id).first()
  return applied&&exact(applied,body)?reply(publicResult(applied,false)):

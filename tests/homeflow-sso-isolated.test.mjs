@@ -5,6 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {webcrypto} from 'node:crypto';
 import {onRequest,ssoReady} from '../functions/api/homeflow-sso/[[path]].js';
 import {onRequest as legacyApi} from '../functions/api/[[path]].js';
+import {onRequest as familyFinance} from '../functions/api/family-finance/[[path]].js';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const app='https://kakeibo-f17.pages.dev',home='https://homeflow.example.test';
 const owner='11111111-1111-4111-8111-111111111111';
@@ -18,8 +19,13 @@ function d1(){
  migration('0001_support_tables.sql');
  migration('0002_versioned_migration_tracking.sql');
  migration('0022_homeflow_identity_foundation.sql');
- sqlite.exec("CREATE TABLE entries (id INTEGER PRIMARY KEY,merchant TEXT,amount INTEGER);"+
-   "INSERT INTO entries VALUES(1,'既存の個人明細',1234)");
+ migration('0023_family_financial_account_identities.sql');
+ sqlite.exec("CREATE TABLE entries (id INTEGER PRIMARY KEY,date TEXT,time TEXT,type TEXT,merchant TEXT,amount INTEGER,category TEXT,note TEXT,payment_source TEXT,transfer_target TEXT,transfer_applied INTEGER,transfer_date TEXT);"+
+   "INSERT INTO entries VALUES(1,'2026-11-10','','expense','既存の個人明細',1234,'生活','旧账保留','PayPay Visa',NULL,0,NULL);"+
+   "INSERT INTO entries VALUES(2,'2026-11-10','','income','工资到账',100000,'工资','工资保留','银行',NULL,0,NULL);"+
+   "CREATE TABLE payment_sources(name TEXT PRIMARY KEY,sort_order INTEGER,is_default INTEGER,closing_day INTEGER,source_type TEXT,stat_group TEXT,is_archived INTEGER,opening_balance INTEGER,opening_date TEXT);"+
+   "INSERT INTO payment_sources VALUES('PayPay Visa',0,1,15,'standard','card',0,15000,'2026-11-01');"+
+   "INSERT INTO payment_sources VALUES('nanaco',1,0,NULL,'prepaid','card',0,2400,'2026-11-01')");
  const wrap=sql=>({bind(...values){const statement=()=>sqlite.prepare(sql);
   return {first:async()=>statement().get(...values)||null,
    all:async()=>({results:statement().all(...values)}),
@@ -40,6 +46,7 @@ async function setup(){
   audience:'kakeibo',serviceCalls:0,homeflowActive:true};
  const env={DB,AUTH_TOKEN:'legacy-code',KAKEIBO_HOMEFLOW_SSO_ENABLED:'true',
   KAKEIBO_PUBLIC_ORIGIN:app,HOMEFLOW_OAUTH_ORIGIN:home,
+  KAKEIBO_FAMILY_FINANCE_ENABLED:'true',KAKEIBO_FAMILY_HOUSEHOLD_ID:'primary',
   KAKEIBO_SSO_ENCRYPTION_KEY:'a'.repeat(64)};
  env.HOMEFLOW_IDENTITY_SERVICE={async fetch(request){
   state.serviceCalls++;
@@ -232,5 +239,141 @@ test('logged-out original legacy owner cannot bind with stale Safari callback',a
   assert.equal(r.status,403);
   assert.equal(f.state.serviceCalls,0);
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) c FROM homeflow_identity_links').get().c,0);
+ }finally{f.DB.sqlite.close();}
+});
+
+
+async function loginOwner(f){
+ const flow=await f.start(true);
+ assert.equal((await f.callback(flow)).status,200);
+ const res=await f.complete(flow,{legacy:true});
+ assert.equal(res.status,200);
+ return res.headers.get('set-cookie').match(/__Host-kakeibo_hf=([a-f0-9]{64})/)[1];
+}
+async function loginMember(f){
+ f.state.user=member;f.state.role='member';f.state.nickname='鸡毛';
+ const flow=await f.start(false);
+ assert.equal((await f.callback(flow)).status,200);
+ const res=await f.complete(flow);
+ assert.equal(res.status,200);
+ return res.headers.get('set-cookie').match(/__Host-kakeibo_hf=([a-f0-9]{64})/)[1];
+}
+function finance(f,path,method='GET',body,secret='',origin=app){
+ const headers={};
+ if(secret)headers.Cookie='__Host-kakeibo_hf='+secret;
+ if(!['GET','HEAD'].includes(method)){headers.Origin=origin;headers['content-type']='application/json';}
+ return familyFinance({env:f.env,
+  request:new Request(app+'/api/family-finance/'+path,{method,headers,
+   body:method==='GET'?undefined:JSON.stringify(body??{})}),
+  params:{path:path.split('/')}});
+}
+test('family-finance stays off without explicit flag and family-bound audience',async()=>{
+ const f=await setup();
+ try{
+  assert.equal((await finance(f,'status')).status,200);
+  assert.equal((await finance(f,'shared/entries')).status,401);
+  f.env.KAKEIBO_FAMILY_FINANCE_ENABLED='false';
+  assert.equal((await finance(f,'shared/entries')).status,503);
+  f.env.KAKEIBO_FAMILY_FINANCE_ENABLED='true';
+  const ownerCookie=await loginOwner(f);
+  f.env.KAKEIBO_FAMILY_HOUSEHOLD_ID='different-family';
+  assert.equal((await finance(f,'shared/entries','GET',null,ownerCookie)).status,401);
+  f.env.KAKEIBO_FAMILY_HOUSEHOLD_ID='primary';
+  assert.equal((await finance(f,'shared/entries','GET',null,ownerCookie)).status,200);
+ }finally{f.DB.sqlite.close();}
+});
+test('legacy card and prepaid settings adopt to owner only, ledger untouched and idempotent',async()=>{
+ const f=await setup();
+ try{
+  const original=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  const source=f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all();
+  const ownerCookie=await loginOwner(f);
+  const denied=await finance(f,'legacy/adopt','POST',{confirm:false},ownerCookie);
+  assert.equal(denied.status,403);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_financial_accounts').get().n,0);
+  const adoption=await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie);
+  assert.equal(adoption.status,200,await adoption.clone().text());
+  assert.equal((await adoption.json()).adopted,2);
+  const replay=await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie);
+  assert.equal((await replay.json()).already_adopted,true);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_financial_accounts').get().n,2);
+  const kinds=f.DB.sqlite.prepare('SELECT label,owner_user_id,origin,opening_balance FROM family_financial_accounts ORDER BY label').all();
+  assert.deepEqual(kinds.map(x=>x.owner_user_id),[owner,owner]);
+  assert.ok(kinds.every(x=>x.origin==='legacy'));
+  assert.equal(kinds.find(x=>x.label==='PayPay Visa').opening_balance,15000);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),original);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all(),source);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n,1);
+  const memberCookie=await loginMember(f);
+  assert.equal((await finance(f,'legacy/adopt','POST',{confirm:true},memberCookie)).status,403);
+  assert.equal((await finance(f,'accounts','GET',null,memberCookie)).status,200,
+    'member can view all household account summaries');
+  const oldAccount=f.DB.sqlite.prepare("SELECT account_id FROM family_financial_accounts WHERE label='nanaco'").get().account_id;
+  assert.equal((await finance(f,'accounts/'+oldAccount,'PATCH',
+    {label:'owner card hijack',version:1},memberCookie)).status,403);
+  assert.equal((await finance(f,'accounts/'+oldAccount,'PATCH',
+    {label:'legacy old-name mutation',version:1},ownerCookie)).status,409);
+ }finally{f.DB.sqlite.close();}
+});
+test('both members see identical family ledger/statistics, no member direct ledger mutation',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const fetch=async(secret,path)=>await (await finance(f,path,'GET',null,secret)).json();
+  assert.deepEqual((await fetch(ownerCookie,'shared/entries')).items,
+   (await fetch(memberCookie,'shared/entries')).items);
+  const path='shared/ledger-totals?month=2026-11';
+  const familyRoute=async(secret)=>familyFinance({env:f.env,
+    request:new Request(app+'/api/family-finance/'+path,{headers:{
+      Cookie:'__Host-kakeibo_hf='+secret}}),
+    params:{path:['shared','ledger-totals']}});
+  const a=(await (await familyRoute(ownerCookie)).json());
+  const b=(await (await familyRoute(memberCookie)).json());
+  assert.deepEqual(a,b);
+  assert.equal(a.net_income_expense,100000-1234);
+  assert.equal(a.totals.expense,1234);
+  assert.equal((await finance(f,'shared/entries','POST',{amount:999},memberCookie)).status,404);
+  const r=await legacyApi({request:new Request(app+'/api/entries',{
+    method:'POST',headers:{Cookie:'__Host-kakeibo_hf='+memberCookie,
+     Origin:app,'Content-Type':'application/json'},body:JSON.stringify({amount:999})}),
+    env:f.env,params:{path:['entries']}});
+  assert.equal(r.status,401);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries').get().n,2);
+ }finally{f.DB.sqlite.close();}
+});
+test('member can configure own identically named card, cannot edit spouse, owner can manage all',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie);
+  const memberCookie=await loginMember(f);
+  const created=await finance(f,'accounts','POST',{
+    label:'PayPay Visa',account_kind:'credit_card',closing_day:10,opening_balance:2000
+  },memberCookie);
+  assert.equal(created.status,201,await created.clone().text());
+  const accountId=(await created.json()).account_id;
+  const accounts=await (await finance(f,'accounts','GET',null,memberCookie)).json();
+  assert.equal(accounts.items.filter(a=>a.label==='PayPay Visa').length,2);
+  const owned=accounts.items.find(a=>a.account_id===accountId);
+  assert.equal(owned.owner_user_id,member);
+  const updated=await finance(f,'accounts/'+accountId,'PATCH',{
+    label:'我的信用卡',version:1,opening_balance:3000
+  },memberCookie);
+  assert.equal(updated.status,200,await updated.clone().text());
+  assert.equal((await finance(f,'accounts/'+accountId,'PATCH',{
+    label:'stale',version:1},memberCookie)).status,409);
+  const ownerUpdated=await finance(f,'accounts/'+accountId,'PATCH',{
+    label:'管理员协助修改',version:2},ownerCookie);
+  assert.equal(ownerUpdated.status,200);
+  const audit=f.DB.sqlite.prepare("SELECT actor_user_id,action FROM family_finance_events WHERE resource_id=? ORDER BY created_at,action").all(accountId);
+  assert.equal(audit.length,3);
+  assert.ok(audit.some(v=>v.actor_user_id===owner));
+  assert.ok(audit.some(v=>v.actor_user_id===member));
+  assert.equal(f.DB.sqlite.prepare('SELECT amount FROM entries WHERE id=1').get().amount,1234);
+  assert.equal(f.DB.sqlite.prepare('SELECT name FROM payment_sources WHERE name=?').get('PayPay Visa').name,'PayPay Visa');
+  f.state.homeflowActive=false;
+  assert.equal((await finance(f,'accounts','GET',null,memberCookie)).status,401,
+    'HomeFlow logout invalidates private financial settings immediately');
  }finally{f.DB.sqlite.close();}
 });

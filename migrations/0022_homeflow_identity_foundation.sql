@@ -35,6 +35,10 @@ CREATE INDEX IF NOT EXISTS idx_kakeibo_hf_pending_expiry ON homeflow_sso_pending
 CREATE TABLE IF NOT EXISTS homeflow_sso_sessions (
   token_hash TEXT PRIMARY KEY NOT NULL,
   user_id TEXT NOT NULL REFERENCES homeflow_identity_links(user_id),
+  -- Backend-only HomeFlow source-session assertion; raw value never persisted.
+  proof_cipher TEXT NOT NULL,
+  proof_iv TEXT NOT NULL,
+  proof_scope TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL,
   revoked_at INTEGER

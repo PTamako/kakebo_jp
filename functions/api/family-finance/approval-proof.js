@@ -16,7 +16,7 @@ function enabled(env){
   hex.test(env.KAKEIBO_APPROVAL_VERIFICATION_SECRET)&&
   typeof env.HOMEFLOW_IDENTITY_SERVICE?.fetch==='function';
 }
-async function sign(env,stamp,raw){
+export async function signApprovalRequest(env,stamp,raw){
  const bytes=Uint8Array.from(env.KAKEIBO_APPROVAL_VERIFICATION_SECRET.match(/.{2}/g),
   x=>parseInt(x,16));
  const key=await crypto.subtle.importKey('raw',bytes,
@@ -63,7 +63,7 @@ export async function verifyPreparedApproval(request,env,url,user,id){
   method:'POST',redirect:'manual',
   headers:{'content-type':'application/json','accept':'application/json',
    'x-approval-client':'kakeibo','x-approval-timestamp':stamp,
-   'x-approval-signature':await sign(env,stamp,raw)},body:raw
+   'x-approval-signature':await signApprovalRequest(env,stamp,raw)},body:raw
  });
  let outcome;
  try{

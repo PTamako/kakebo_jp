@@ -34,6 +34,7 @@ import { ICON_LIBRARY } from './icon-library.js'
 import { sortOtherLast } from './category-sort.js'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileLoginSheet from './MobileLoginSheet.vue'
+import FamilyFinanceAccess from './FamilyFinanceAccess.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
@@ -1855,7 +1856,9 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
   <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong>
     <p v-if="serverLogoutPending" role="alert">サーバー側のログアウトはまだ確認できません。通信回復後に再試行します。</p>
     <button v-if="serverLogoutPending" type="button" class="button-secondary" @click="completeServerLogout()">サーバーのログアウトを再確認</button>
-    <p>再開するにはアクセスコードが必要です。</p><button type="button" class="button-primary" @click="unlock">ログイン</button></div></main>
+    <p>旧账户需要原访问码；家庭成员请使用下方 HomeFlow 入口。</p><button type="button" class="button-primary" @click="unlock">旧账户登录</button></div>
+    <FamilyFinanceAccess />
+   </main>
   <main v-else :class="`theme-${theme}`">
     <div v-if="receiptSaveError || pendingReceiptUploads.length || pendingReceiptMarkers.length" role="alert" class="receipt-error-banner">
       <span>{{ receiptSaveError || (pendingReceiptMarkers.length
@@ -1976,6 +1979,7 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
     <LedgerPage v-else-if="tab === 'list'" />
     <StatisticsPage v-else-if="tab === 'stat'" />
     <AssetsPage v-else-if="tab === 'investments'" />
+    <FamilyFinanceAccess v-if="tab === 'finance'" />
     <ManagementPage :card-settings-request="cardSettingsRequest" :payment-source-meta="paymentSourceMeta" v-show="tab === 'finance'" :active="tab === 'finance'" :ledger-revision="ledgerRevision" :api="api" :categories="categories" :category-display-names="categoryDisplayNames" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @receipt-images-removed="onReceiptImagesRemoved" @receipt-images-updated="refreshReceiptImageIds" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @open-card-bill-details="openCardBillDetails" @ledger-updated="ledgerRevision++; load(); loadYear()" />
     <nav class="bottom-nav" aria-label="メインメニュー">
       <button type="button" :class="{ active: tab === 'list' }" :aria-current="tab === 'list' ? 'page' : undefined" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>

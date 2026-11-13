@@ -4,8 +4,9 @@ import {readFileSync} from 'node:fs'
 const source=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')
 test('the backup chooser accepts complete ZIP and JSON without routing photos to D1',()=>{
   const ui=source('src/FinanceTools.vue')
-  assert.match(ui,/accept="\.json,\.zip,application\/json,application\/zip"/)
-  assert.match(ui,/readCompleteBackupZip\(file\)/)
+  assert.match(ui,/accept="\.json,\.zip,\.kbe,application\/json,application\/zip,application\/octet-stream"/)
+  assert.match(ui,/decryptBackupBlob\(file,backupPassword\.value\)/)
+  assert.match(ui,/readCompleteBackupZip\(selectedFile\)/)
   assert.match(ui,/verifyBackupIntegrity\(backup\)/)
   assert.match(ui,/planReceiptRestoration\(backup\.entries,images,rows\.value,preparedRows\)/)
   assert.match(ui,/if\(cloudIds\.has\(item\.id\) \|\| await getReceiptImage\(item\.id\)\)/)

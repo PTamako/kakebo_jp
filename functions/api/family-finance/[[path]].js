@@ -232,7 +232,7 @@ async function totals(env,user,url){
 // Aggregate in D1 instead of reading all individual entries to the browser.
 async function yearSummary(env,user,url){
  const year=url.searchParams.get('year');
- if(!/^20\\d{2}$/.test(year||''))return json({code:'INVALID_YEAR'},400);
+ if(!/^20[0-9]{2}$/.test(year||''))return json({code:'INVALID_YEAR'},400);
  const start=year+'-01-01',end=String(Number(year)+1)+'-01-01';
  const types=['income','expense','transfer'];
  const empty=()=>({income:0,expense:0,transfer:0});

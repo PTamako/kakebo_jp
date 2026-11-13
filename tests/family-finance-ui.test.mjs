@@ -88,3 +88,15 @@ test('member approval submission and cancellation only act on the authenticated 
  assert.match(proposals,/@click="action\(item,'cancel'\)"/);
  assert.doesNotMatch(proposals,/setInterval\(|setTimeout\(/);
 });
+
+test('Safari foreground hides previous account finance and private proposals before a new verified login',()=>{
+ assert.match(source,/function foreground\(\)\{/);
+ assert.match(source,/if\(document.visibilityState!=='visible'\|\|busy.value\)return/);
+ assert.match(source,/person.value=null;accounts.value=\[\];totals.value=null;annual.value=null/);
+ assert.match(source,/editing.value=null;rename.value=''/);
+ assert.match(source,/void check\(\)/);
+ assert.match(source,/:key="'proposals:'\+person.user_id"/);
+ assert.match(proposals,/onUnmounted\(\(\)=>\{/);
+ assert.match(proposals,/alive=false;revision\+\+;open.value=false;items.value=\[\]/);
+ assert.doesNotMatch(proposals,/localStorage\.getItem|indexedDB\.open|sessionStorage/);
+});

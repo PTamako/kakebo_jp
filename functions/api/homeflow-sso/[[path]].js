@@ -80,7 +80,7 @@ async function begin(request,env,url){
  const legacy=await legacySessionHash(request,env.DB);
  await run(env.DB,'INSERT INTO homeflow_sso_pending '+
    '(state_hash,resume_hash,verifier_cipher,verifier_iv,origin,legacy_session_hash,status,expires_at,created_at) '+
-   'VALUES(?,?,?,?,?,?,"pending",?,?)',
+   'VALUES(?,?,?,?,?,?,\'pending\',?,?)',
    stateHash,await sha(resume),sealed.cipher,sealed.iv,url.origin,legacy,now()+MS,now());
  const auth=new URL('/authorize',env.HOMEFLOW_OAUTH_ORIGIN);
  const values={response_type:'code',client_id:CLIENT,redirect_uri:callbackUrl(env),
@@ -96,12 +96,12 @@ async function parkCallback(request,env,url){
    return json({code:'SSO_INVALID_CALLBACK'},403);
  const hash=await sha(state);
  const found=await first(env.DB,'SELECT state_hash FROM homeflow_sso_pending '+
-   'WHERE state_hash=? AND origin=? AND status="pending" AND code_cipher IS NULL AND expires_at>?',
+   'WHERE state_hash=? AND origin=? AND status=\'pending\' AND code_cipher IS NULL AND expires_at>?',
    hash,url.origin,now());
  if(!found)return json({code:'SSO_REPLAY_OR_EXPIRED'},403);
  const sealed=await seal(env,hash,code);
  const r=await run(env.DB,'UPDATE homeflow_sso_pending SET code_cipher=?,code_iv=? '+
-   'WHERE state_hash=? AND origin=? AND status="pending" AND code_cipher IS NULL AND expires_at>?',
+   'WHERE state_hash=? AND origin=? AND status=\'pending\' AND code_cipher IS NULL AND expires_at>?',
    sealed.cipher,sealed.iv,hash,url.origin,now());
  if(Number(r?.meta?.changes)!==1)return json({code:'SSO_REPLAY_OR_EXPIRED'},403);
  // Do not issue a login cookie in Safari. It is not the originating PWA.
@@ -148,7 +148,7 @@ async function finish(request,env,url){
    return json({code:'SSO_INVALID_PROOF'},403);
  const stateHash=await sha(data.state);
  const pending=await first(env.DB,'SELECT * FROM homeflow_sso_pending WHERE '+
-  'state_hash=? AND origin=? AND status="pending" AND code_cipher IS NOT NULL AND expires_at>?',
+  'state_hash=? AND origin=? AND status=\'pending\' AND code_cipher IS NOT NULL AND expires_at>?',
   stateHash,url.origin,now());
  if(!pending||await sha(data.resume_secret)!==pending.resume_hash)
    return json({code:'SSO_INVALID_PROOF'},403);
@@ -157,13 +157,13 @@ async function finish(request,env,url){
  if(pending.legacy_session_hash!==null&&
     await legacySessionHash(request,env.DB)!==pending.legacy_session_hash)
    return json({code:'SSO_LEGACY_SESSION_EXPIRED'},403);
- const claimed=await run(env.DB,'UPDATE homeflow_sso_pending SET status="processing" '+
-   'WHERE state_hash=? AND status="pending" AND code_cipher IS NOT NULL AND expires_at>?',
+ const claimed=await run(env.DB,'UPDATE homeflow_sso_pending SET status=\'processing\' '+
+   'WHERE state_hash=? AND status=\'pending\' AND code_cipher IS NOT NULL AND expires_at>?',
    stateHash,now());
  if(Number(claimed?.meta?.changes)!==1)return json({code:'SSO_REPLAY'},403);
  const fail=async code=>{
-  await run(env.DB,'UPDATE homeflow_sso_pending SET status="failed",code_cipher=NULL,code_iv=NULL,completed_at=? '+
-    'WHERE state_hash=? AND status="processing"',now(),stateHash).catch(()=>{});
+  await run(env.DB,'UPDATE homeflow_sso_pending SET status=\'failed\',code_cipher=NULL,code_iv=NULL,completed_at=? '+
+    'WHERE state_hash=? AND status=\'processing\'',now(),stateHash).catch(()=>{});
   return json({code},403);
  };
  const verifier=await unseal(env,stateHash,pending.verifier_cipher,pending.verifier_iv);
@@ -201,8 +201,8 @@ async function finish(request,env,url){
    '(id,actor_user_id,event,created_at) VALUES(?,?,?,?)')
    .bind(id,hf.userId,old?'sso_login':'account_linked',stamp));
   statements.push(db.prepare('UPDATE homeflow_sso_pending SET '+
-   'status="consumed",completed_at=?,code_cipher=NULL,code_iv=NULL '+
-   'WHERE state_hash=? AND status="processing"')
+   'status=\'consumed\',completed_at=?,code_cipher=NULL,code_iv=NULL '+
+   'WHERE state_hash=? AND status=\'processing\'')
    .bind(stamp,stateHash));
   await db.batch(statements);
   return json({ok:true,user_id:hf.userId,household_id:hf.householdId,
@@ -231,7 +231,7 @@ async function logout(request,env,url){
   const row=await first(env.DB,'SELECT user_id FROM homeflow_sso_sessions WHERE token_hash=?',digest);
   if(row)await env.DB.batch([
    env.DB.prepare('UPDATE homeflow_sso_sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL').bind(stamp,digest),
-   env.DB.prepare('INSERT INTO homeflow_identity_events(id,actor_user_id,event,created_at) VALUES(?,?,"sso_logout",?)')
+   env.DB.prepare('INSERT INTO homeflow_identity_events(id,actor_user_id,event,created_at) VALUES(?,?,\'sso_logout\',?)')
      .bind(random(),row.user_id,stamp)
   ]).catch(()=>{});
  }

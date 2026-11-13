@@ -80,7 +80,7 @@ test('member approval submission and cancellation only act on the authenticated 
  assert.match(proposals,/item.status!=='prepared_not_submitted'/);
  assert.match(proposals,/!\['submit','cancel'\]\.includes\(kind\)/);
  assert.match(proposals,/window.confirm\(question\)/);
- assert.match(proposals,/家計簿.+?管理员批准后仍需单独执行/);
+ assert.match(proposals,/提交不代表入账，管理员批准后仍需单独执行/);
  assert.match(proposals,/encodeURIComponent\(item.request_id\)\+'\/'\+kind/);
  assert.match(proposals,/result.applied===true\|\|result.ledger_changed!==false/);
  assert.match(proposals,/await load\(offset.value\)/);

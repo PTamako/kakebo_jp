@@ -16,6 +16,7 @@ import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
 import { isCardBilledEntry, cardBilledAmount, billingPeriodForMonth } from './card-billing.js'
 import { sealBackup, verifyBackupIntegrity } from './backup-integrity.js'
+import { encryptBackupBlob, decryptBackupBlob } from './backup-encryption.js'
 import { previewRecurringEntries, postApprovedRecurringEntries } from './recurring-check.js'
 import { recurringDatesForPlanInMonth, recurringFrequencyLabel, tokyoDateAt, WEEKDAYS_JA } from './recurring-posting.js'
 import { recurringPlanNextStatus, recurringPlanNextLabel } from './recurring-next-status.js'
@@ -512,6 +513,8 @@ function unrelatedLedgerFingerprint(items) {
 }
 const ledgerFingerprint = items => items.map(x=>[x.id,transactionKey(x),x.raw||'',x.transfer_applied||0].join('|')).sort().join('\n')
 const backupBusy = ref(false)
+// Never persist backup passwords in D1, cookies, or browser storage.
+const backupPassword = ref('')
 const plans = ref([])
 const recurringListQuery = ref('')
 const recurringListFilter = ref('all')
@@ -776,11 +779,15 @@ async function downloadBackup(){
   backupBusy.value=true
   try{
     const sealed=await createVerifiedLedgerBackup()
-    const url=URL.createObjectURL(new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'}))
+    const encrypted=backupPassword.value.length>0
+    const plain=new Blob([JSON.stringify(sealed,null,2)],{type:'application/json'})
+    const output=encrypted?await encryptBackupBlob(plain,backupPassword.value):plain
+    const url=URL.createObjectURL(output)
     const a=document.createElement('a')
-    a.href=url;a.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+'.json';a.click()
+    a.href=url;a.download='kakeibo-ledger-settings-'+new Date().toISOString().slice(0,10)+(encrypted?'.kbe':'.json');a.click()
     setTimeout(()=>URL.revokeObjectURL(url),30000)
-    message.value='帳簿と設定を保存しました'
+    backupPassword.value=''
+    message.value=encrypted?'暗号化した帳簿と設定を保存しました':'帳簿と設定を保存しました'
   }catch(e){message.value='バックアップを作成できませんでした：'+e.message}
   finally{backupBusy.value=false}
 }
@@ -794,11 +801,14 @@ async function downloadFullBackup(){
     const sealed=await createVerifiedLedgerBackup()
     const images=await listReceiptsForBackup(await listReceiptImagesForExport())
     const archive=await ledgerAndReceiptsZip(sealed,images)
-    const url=URL.createObjectURL(archive),a=document.createElement('a')
-    a.href=url;a.download='kakeibo-complete-backup-'+new Date().toISOString().slice(0,10)+'.zip'
+    const encrypted=backupPassword.value.length>0
+    const output=encrypted?await encryptBackupBlob(archive,backupPassword.value):archive
+    const url=URL.createObjectURL(output),a=document.createElement('a')
+    a.href=url;a.download='kakeibo-complete-backup-'+new Date().toISOString().slice(0,10)+(encrypted?'.kbe':'.zip')
     document.body.appendChild(a);a.click();a.remove()
     setTimeout(()=>URL.revokeObjectURL(url),60000)
-    message.value='帳簿JSONとレシート画像 '+images.length+'件をZIP保存しました。このZIPはバックアップ選択画面から復元できます'
+    backupPassword.value=''
+    message.value=(encrypted?'暗号化した帳簿と画像 ':'帳簿JSONとレシート画像 ')+images.length+'件を保存しました'
   }catch(e){
     message.value='一括ZIP保存に失敗しました：'+e.message+'。帳簿JSONを保存し、画像は200件ずつ分割ZIP保存してください'
   }finally{backupBusy.value=false}
@@ -810,9 +820,13 @@ async function preview(event){
   if(!file)return
   try{
     if(!loaded.value)throw Error('先に全明細を読み込んでください')
-    const zipped=/\.zip$/i.test(file.name)
-    if(file.size>(zipped?75:25)*1024*1024)throw Error('ファイルが大きすぎます')
-    const selected=zipped?await readCompleteBackupZip(file):{ledger:JSON.parse(await file.text()),images:new Map()}
+    const encrypted=/\.kbe$/i.test(file.name)
+    if(file.size>(75*1024*1024+64))throw Error('ファイルが大きすぎます')
+    const decrypted=encrypted?await decryptBackupBlob(file,backupPassword.value):null
+    const selectedFile=decrypted?.blob||file
+    const zipped=encrypted?decrypted.format==='zip':/\.zip$/i.test(file.name)
+    if(selectedFile.size>(zipped?75:25)*1024*1024)throw Error('ファイルが大きすぎます')
+    const selected=zipped?await readCompleteBackupZip(selectedFile):{ledger:JSON.parse(await selectedFile.text()),images:new Map()}
     const backup=validateBackup(selected.ledger)
     await verifyBackupIntegrity(backup)
     const result=prepareRestoreRows(rows.value,backup.entries)
@@ -821,6 +835,7 @@ async function preview(event){
     restoreConflicts.value=result.conflicts
     backupPreview.value=backup
     backupReceiptImages.value=selected.images
+    backupPassword.value=''
     const settingsCount=(backup.recurringExclusions?.length||0)+(backup.plans?.length||0)+(backup.archivedPlans?.length||0)+(backup.trashedEntries?.length||0)+(backup.bills?.length||0)+(backup.paymentSources?.length||0)+(backup.customRules?.length||0)
     message.value=backup.entries.length+'件 · 追加 '+restoreRows.value.length+'件 · 重複 '+restoreConflicts.value.length+'件 · 設定 '+settingsCount+'件 · 画像 '+selected.images.size+'件'
   }catch(e){backupPreview.value=null;message.value='確認失敗：'+e.message}
@@ -1783,7 +1798,8 @@ async function removeCardBill(record) {
   <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="$event.target.open && refreshLocalReceiptCount()">
     <summary>バックアップ・復元</summary>
     <p>JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます。画像は非公開R2に保存し、既存画像は上書きしません。</p>
-    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,.zip,application/json,application/zip" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
+    <label class="backup-password-label">暗号化パスワード（任意）<input v-model="backupPassword" type="password" autocomplete="off" minlength="10" maxlength="128" placeholder="10文字以上・端末に保存しません" /></label>
+    <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,.zip,.kbe,application/json,application/zip,application/octet-stream" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
       <button type="button" :disabled="busy || backupBusy || receiptImagesBusy || !loaded" @click="downloadFullBackup">{{backupBusy ? '作成中…' : '帳簿＋画像をまとめてZIP保存'}}</button>
       <button type="button" :disabled="receiptImagesBusy || !localReceiptCount" @click="downloadReceiptImages">全画像を分割ZIP保存（200件ずつ）</button>

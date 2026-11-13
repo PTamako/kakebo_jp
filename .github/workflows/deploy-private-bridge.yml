@@ -1,0 +1,52 @@
+name: Deploy Private Kakeibo Bridge
+# The receiver must be deployed when ANY imported module changes.
+# This workflow intentionally fails if production credentials are not configured.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workers/homeflow-service-bridge.js'
+      - 'functions/api/bridge/document-assistant.js'
+      - 'functions/api/payment-source-validation.js'
+      - 'functions/api/ledger-input-validation.js'
+      - 'src/parse.js'
+      - 'src/payment-rules.js'
+      - 'src/entry-time.js'
+      - 'src/relative-entry-time.js'
+      - 'src/station-merchant.js'
+      - 'wrangler.homeflow-bridge.toml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-private-bridge.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-private-kakeibo-bridge
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate ledger logic and production dependencies before deployment
+        run: npm run verify:release
+      - name: Verify Cloudflare production credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN repository/environment secret"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID repository/environment secret"; exit 1; }
+      - name: Deploy existing private Worker (never creates Preview resources)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config wrangler.homeflow-bridge.toml

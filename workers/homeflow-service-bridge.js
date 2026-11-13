@@ -2,7 +2,8 @@
 // document-assistant bridge. No public routes, no preview and no new Worker.
 // SECURITY: deploy with workers_dev=false, preview_urls=false and no public routes.
 // Only HomeFlow's owner-authenticated Worker may bind this service.
-// No INSERT/UPDATE/DELETE, no full ledger export, no OCR/raw notes or credentials.
+// HomeFlow GET endpoints are read-only; the separate signed JPDA POST can insert
+// strictly validated entries. Neither path exports raw notes, OCR, or credentials.
 import { onRequestPost as documentAssistantPost } from '../functions/api/bridge/document-assistant.js'
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{
   'content-type':'application/json; charset=utf-8','cache-control':'no-store',

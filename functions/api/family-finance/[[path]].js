@@ -72,6 +72,9 @@ async function accounts(request,env,url,user,parts){
  if(request.method==='POST'&&parts.length===1){
   const data=await bodyForMutation(request,url);
   if(!data)return json({code:'BAD_ORIGIN_OR_BODY'},403);
+  // A queued iPhone PWA mutation must remain bound to its original
+  // HomeFlow user. The actor itself is still the freshly introspected user.
+  if(data.expected_user_id!==user.user_id)return json({code:'ACTOR_CHANGED'},403);
   if(!legalLabel(data.label)||!kinds.has(data.account_kind))
    return json({code:'INVALID_ACCOUNT'},400);
   const target=typeof data.owner_user_id==='string'?data.owner_user_id:user.user_id;
@@ -114,6 +117,7 @@ async function accounts(request,env,url,user,parts){
  if(request.method==='PATCH'&&parts.length===2&&validId(parts[1])){
   const data=await bodyForMutation(request,url);
   if(!data)return json({code:'BAD_ORIGIN_OR_BODY'},403);
+  if(data.expected_user_id!==user.user_id)return json({code:'ACTOR_CHANGED'},403);
   const account=await first(db,'SELECT '+accountFields+
    ' FROM family_financial_accounts WHERE account_id=? AND household_id=?',
    parts[1],user.household_id);

@@ -3,6 +3,7 @@
 // Requires explicit flag, verified HomeFlow login and matching household.
 // IMPORTANT: migration 0023 is unexecuted; do not enable before full backup.
 import {onRequest as homeflowIdentity, ssoReady} from '../homeflow-sso/[[path]].js';
+import {financePending} from './pending.js';
 
 const json=(data,status=200)=>Response.json(data,{status,headers:{
  'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
@@ -227,6 +228,7 @@ export async function onRequest({request,env,params}){
  try{
   const user=await identity(request,env);
   if(!user)return json({code:'SSO_NOT_AUTHENTICATED'},401);
+  if(parts[0]==='proposals')return financePending(request,env,url,user,parts);
   if(parts[0]==='accounts')return accounts(request,env,url,user,parts);
   if(parts[0]==='legacy'&&parts[1]==='adopt')
    return adoptLegacy(request,env,url,user);

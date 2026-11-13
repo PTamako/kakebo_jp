@@ -556,11 +556,24 @@ async function loadYear() {
     }
   }
 }
+// When the HomeFlow pilot is enabled, a new family member has no legacy
+// access code. An old-ledger 401 should show the isolated HomeFlow entry
+// instead of trapping their first PWA launch in the legacy login dialog.
+// No new identity cookie is ever accepted by the old ledger endpoint.
+async function routeNewFamilyMemberToIsolatedLogin(){
+  try{
+    const status=await fetch('/api/homeflow-sso/status',{credentials:'same-origin',cache:'no-store'})
+    if(!status.ok||(await status.json()).enabled!==true)return false
+    const old=await fetch('/api/payment-sources',{credentials:'same-origin',cache:'no-store'})
+    if(old.status===401){locked.value=true;return true}
+  }catch{/* Keep the previous legacy login flow on service errors. */}
+  return false
+}
 onMounted(async () => {
   window.addEventListener('online',onConnectionRestored)
   if(serverLogoutPending.value)await completeServerLogout()
   cleanupReceiptImages().catch(() => {}) // Legacy photos are never deleted automatically.
-  if (!locked.value) {
+  if (!locked.value && !await routeNewFamilyMemberToIsolatedLogin()) {
     // Recover D1 preferences and drafts before loading the ledger.
     await restoreAppState()
     await load()

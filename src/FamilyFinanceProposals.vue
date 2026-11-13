@@ -65,6 +65,7 @@ async function action(item,kind){
  if(!window.confirm(question))return
  if(ticket!==revision||user!==props.userId||!alive||!open.value)return
  busy.value=item.request_id;error.value=''
+ let mutationError=''
  try{
   const result=await call('/api/family-finance/proposals/'+
    encodeURIComponent(item.request_id)+'/'+kind,{
@@ -73,11 +74,12 @@ async function action(item,kind){
   if(!alive||user!==props.userId||!open.value)return
   if(result.applied===true||result.ledger_changed!==false)
    throw Error('审批结果不是正式账本回执，请刷新后核验')
- }catch(e){if(alive&&user===props.userId)error.value=e.message}
+ }catch(e){if(alive&&user===props.userId)mutationError=e.message}
  finally{
   if(alive&&user===props.userId){
    busy.value=''
    await load(offset.value)
+   if(alive&&user===props.userId&&mutationError)error.value=mutationError
   }
  }
 }

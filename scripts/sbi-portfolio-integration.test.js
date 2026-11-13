@@ -53,6 +53,8 @@ async function client(){
 const currentMonth=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,7)
 const nextMonth=month=>{const [y,m]=month.split('-').map(Number);return new Date(Date.UTC(y,m,1)).toISOString().slice(0,7)}
 
+const fixtureValuation=sbiInitialHoldings.reduce((sum,h)=>sum+h.reportedValue,0)
+const fixturePnl=sbiInitialHoldings.reduce((sum,h)=>sum+h.reportedValue-h.acquisitionCost,0)
 // Historical portfolio fixtures exist only in a disposable in-memory test DB.
 // Production has no import/initialization endpoint after migration completion.
 function seedPortfolioInTest(db){
@@ -130,8 +132,8 @@ test('SBI 15,000 yen transfer reconciles with four monthly allocations without d
     const initial=await call('investment-portfolio?month='+currentMonth)
     assert.equal(initial.body.plans.length,4)
     assert.equal(initial.body.holdings.length,4)
-    assert.equal(initial.body.valuation.value,71560)
-    assert.equal(initial.body.valuation.pnl,121)
+    assert.equal(initial.body.valuation.value,fixtureValuation)
+    assert.equal(initial.body.valuation.pnl,fixturePnl)
     assert.deepEqual(initial.body.holdings.map(h=>h.fund_code).sort(),
       ['03311187','0331418A','0331A172','04317188'])
     assert.equal(initial.body.holdings.filter(h=>h.account_type==='combined').length,3)
@@ -153,7 +155,7 @@ test('SBI 15,000 yen transfer reconciles with four monthly allocations without d
     assert.equal((await call('transfers/process-due','POST')).status,200)
     const second=await call('investment-portfolio?month='+currentMonth)
     assert.equal(second.body.reconciliation.funded,15000,'repeat processing never doubles capital')
-    assert.equal(second.body.valuation.value,71560,'transfer leaves existing screenshot-confirmed holdings unchanged')
+    assert.equal(second.body.valuation.value,fixtureValuation,'transfer leaves existing screenshot-confirmed holdings unchanged')
     const entry=(await call('entries?month='+currentMonth)).body.find(x=>x.type==='transfer')
     assert.ok(entry)
     const linked=await call('investment-portfolio/transfer-month','PUT',{
@@ -252,13 +254,15 @@ test('saved SBI screenshot valuations survive retired bootstrap attempts and pre
   try{
     seedPortfolioInTest(db)
     const first=await call('investment-portfolio?month='+currentMonth)
-    assert.equal(first.body.valuation.value,71560)
+    assert.equal(first.body.valuation.value,fixtureValuation)
     const h=first.body.holdings.find(x=>x.fund_code==='04317188')
-    assert.equal(h.units,2651)
-    assert.equal(h.acquisition_cost,14880)
-    assert.equal(h.reported_value,14885)
+    const fixtureFund=sbiInitialHoldings.find(x=>x.fundCode===h.fund_code)
+    assert.ok(fixtureFund)
+    assert.equal(h.units,fixtureFund.units)
+    assert.equal(h.acquisition_cost,fixtureFund.acquisitionCost)
+    assert.equal(h.reported_value,fixtureFund.reportedValue)
     assert.equal(h.account_type,'combined')
-    assert.equal(h.nav_per_10000,56153)
+    assert.equal(h.nav_per_10000,fixtureFund.screenshotNav)
     assert.equal(h.valuation_source,'sbi_screenshot')
     const firstOfficial=await call('investment-portfolio/price','PUT',{
       fundCode:'04317188',navPer10000:56153,priceDate:'2026-10-29'
@@ -272,7 +276,7 @@ test('saved SBI screenshot valuations survive retired bootstrap attempts and pre
     })
     assert.equal(rollback.status,409,'real NAV must not roll back to an older day')
     const modified=await call('investment-portfolio/holding','PUT',{
-      fundCode:'04317188',accountType:'combined',fundName:h.fund_name,units:2800,acquisitionCost:15600
+      fundCode:'04317188',accountType:'combined',fundName:h.fund_name,units:h.units+321,acquisitionCost:h.acquisition_cost+456
     })
     assert.equal(modified.status,200)
     // The completed migration must not be replayed. A stale initialization
@@ -283,8 +287,8 @@ test('saved SBI screenshot valuations survive retired bootstrap attempts and pre
     assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM investment_holdings').get().n,holdingsBefore)
     assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM investment_plans').get().n,plansBefore)
     const final=(await call('investment-portfolio?month='+currentMonth)).body.holdings.find(x=>x.fund_code==='04317188')
-    assert.equal(final.units,2800)
-    assert.equal(final.acquisition_cost,15600)
+    assert.equal(final.units,fixtureFund.units+321)
+    assert.equal(final.acquisition_cost,fixtureFund.acquisitionCost+456)
     assert.equal(final.reported_value,null)
   }finally{db.close()}
 })
@@ -528,7 +532,7 @@ test('SBI spot buys and point redemptions do not inflate monthly 15,000 yen savi
     assert.equal(snapshot.transfers.find(t=>t.kind==='purchase' && Number(t.amount)===5000).payment_source,'楽天カード')
     assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM entries WHERE type='transfer' AND transfer_target='sbi'").get().n,4)
     assert.equal(db.db.prepare("SELECT SUM(amount) AS total FROM entries WHERE type='transfer' AND payment_source='楽天カード' AND transfer_target='sbi'").get().total,5000)
-    assert.equal(snapshot.valuation.value,71560,'recording purchase never fabricates holdings valuation')
+    assert.equal(snapshot.valuation.value,fixtureValuation,'recording purchase never fabricates holdings valuation')
 
     const update=await call('investment-portfolio/transfer-purpose','PUT',{
       entryId:extra.body.id,purpose:'monthly'

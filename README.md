@@ -33,7 +33,7 @@ npm run verify:release
 ## Cloudflare の構成
 
 - `wrangler.toml`：Pages 用設定。本番 D1 の `DB`、非公開 R2 `RECEIPTS_R2`、必要に応じた `AI` バインディング。Preview の D1/R2 は無効
-- `wrangler.nav.toml`：**既存の1つの Worker** `kakeibo-nav-sync`。固定費を日本時間 00:30 と 09:30 に D1 へ自動記帳し、基準価額を 19:30 と 23:15 に同期。NAV と固定費の処理は Cron ごとに独立。新規 Worker は不要
+- `wrangler.nav.toml`：**既存の1つの Worker** `kakeibo-nav-sync`。日本時間 **00:30 / 19:30** の2回のみ起動し、固定費・SBI資産移動の主処理／補完およびNAV同期を独立して実行。旧09:30 / 23:15トリガーは廃止。新規 Worker は不要
 - NAV 同期の操作・取得可能な基金については [scripts/deploy-nav-worker.md](scripts/deploy-nav-worker.md) を参照
 
 新規環境では D1 のスキーマ移行手順を [migrations/README.md](migrations/README.md) で確認してください。**運用中の D1 に `schema.sql` を再実行して初期化しないでください。** マイグレーションは明示的なレビュー後に適用し、通常の API 呼び出しで旧テーブルやテストデータを再作成しません。
@@ -44,7 +44,7 @@ npm run verify:release
 
 **本番 D1（`kakebo`）をプレビューで共有しないでください。** 将来プレビューを再有効化する場合は、本番と完全に分離された新しいテスト用 D1・認証情報を作成し、環境分離の安全性を検証してから有効化してください。通常の PR 検証は GitHub Actions とローカルテストで行います。
 
-ログインには `AUTH_TOKEN` を使用します。端末セッションは取り消し可能で有効期限は最大 30 日です。アクセストークンを公開リポジトリやログに貼り付けないでください。
+ログインには `AUTH_TOKEN` を使用します。端末セッションは取り消し可能で有効期限は最大 30 日です。HttpOnly Cookieで継続認証し、JSトークンはメモリのみに保管します（旧Session Storageを起動時に清掃）。アクセストークンを公開リポジトリやログに貼り付けないでください。
 
 ## バックアップ・復元
 

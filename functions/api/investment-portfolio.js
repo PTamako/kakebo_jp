@@ -43,7 +43,7 @@ export function investmentRecordKind(item) {
   if(['monthly','purchase','funding'].includes(item.purpose))return item.purpose;
   // New or imported SBI 投信 entries require 積立 to qualify as recurring.
   // Unknown legacy entries keep their former behavior until reclassified.
-  return inferredSbiEntryKind(item)||'monthly';
+  return inferredSbiEntryKind(item)||'purchase';
 }
 export function fundingStatus(transfers,month,orderDay=9) {
   return transfers.reduce((total,item)=>{
@@ -308,12 +308,16 @@ export async function handlePortfolio({db,request,method,sub,url}) {
       const x=await request.json();
       if(!Number.isSafeInteger(x.entryId)||x.entryId<=0||!monthOk(x.purchaseMonth))
         return respond({error:'振替記録と買付月を確認してください'},400);
-      const entry=await db.prepare("SELECT id FROM entries WHERE id=?1 AND type='transfer' AND transfer_target='sbi'").bind(x.entryId).first();
+      const entry=await db.prepare("SELECT id,merchant,note,payment_source,client_request_id FROM entries WHERE id=?1 AND type='transfer' AND transfer_target='sbi'").bind(x.entryId).first();
       if(!entry)return respond({error:'SBIへの資産移動が見つかりません'},404);
-      await db.prepare(`INSERT INTO sbi_transfer_links(entry_id,purchase_month,updated_at)
-        VALUES(?1,?2,?3)
+      // The historical SQL default is monthly, but a new purchase-month link
+      // must use the actual purpose. Updates preserve an existing purpose.
+      const purpose=isPointRewardSbiTransfer(entry)?'purchase':
+        inferredSbiEntryKind(entry)==='monthly'?'monthly':'purchase';
+      await db.prepare(`INSERT INTO sbi_transfer_links(entry_id,purchase_month,purpose,updated_at)
+        VALUES(?1,?2,?3,?4)
         ON CONFLICT(entry_id) DO UPDATE SET purchase_month=excluded.purchase_month,updated_at=excluded.updated_at`)
-        .bind(x.entryId,x.purchaseMonth,new Date().toISOString()).run();
+        .bind(x.entryId,x.purchaseMonth,purpose,new Date().toISOString()).run();
       return respond({ok:true});
     }
     return respond({error:'未対応の操作です'},405);

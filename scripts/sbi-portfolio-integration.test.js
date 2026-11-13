@@ -658,3 +658,31 @@ test('SBI manual and imported transfers use keyword-based classification consist
     assert.equal(snapshot.reconciliation.registered,16000)
   }finally{db.close()}
 })
+
+// A missing link must not inherit the old D1 migration's monthly default when
+// a user changes the effective month of a spot purchase.
+test('unlinked SBI spot purchase remains purchase when effective month is edited',async()=>{
+  const {db,call}=await client();
+  try{
+    seedPortfolioInTest(db);
+    const date=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+    const next=nextMonth(date.slice(0,7));
+    const buy=await call('entries','POST',{
+      type:'transfer',date,time:'',amount:2750,category:'投資・資産移動',
+      merchant:'SBI証券 投信 買付',note:'',raw:'',transferTarget:'sbi',
+      transferDate:date,paymentSource:'現金',clientRequestId:'sbi_audit_purchase_month_01'
+    });
+    assert.equal(buy.status,200,JSON.stringify(buy.body));
+    db.db.prepare('DELETE FROM sbi_transfer_links WHERE entry_id=?').run(buy.body.id);
+    const changed=await call('investment-portfolio/transfer-month','PUT',{
+      entryId:buy.body.id,purchaseMonth:next
+    });
+    assert.equal(changed.status,200,JSON.stringify(changed.body));
+    const link=db.db.prepare('SELECT purpose,purchase_month FROM sbi_transfer_links WHERE entry_id=?')
+      .get(buy.body.id);
+    assert.equal(link.purpose,'purchase');assert.equal(link.purchase_month,next);
+    const snapshot=(await call('investment-portfolio?month='+next)).body;
+    assert.equal(snapshot.reconciliation.funded,0);
+    assert.equal(snapshot.transfers.find(t=>t.id===buy.body.id).kind,'purchase');
+  }finally{db.close()}
+});

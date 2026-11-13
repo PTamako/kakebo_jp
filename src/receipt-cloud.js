@@ -9,12 +9,10 @@ let indexGeneration=0
 const INDEX_TTL_MS=5*60*1000
 
 async function requestR2(path='',options={}) {
-  let token=''
-  try { token=sessionStorage.getItem('kakeibo-device-session')||'' } catch {}
-  const headers=new Headers(options.headers||{})
-  if(token)headers.set('x-session',token)
+  // Cookies are HttpOnly: never retrieve or forward a JS-readable session.
   const response=await fetch(ENDPOINT+path,{
-    ...options,credentials:'same-origin',cache:'no-store',headers
+    ...options,credentials:'same-origin',cache:'no-store',
+    headers:new Headers(options.headers||{})
   })
   if(!response.ok) {
     let errorBody={}

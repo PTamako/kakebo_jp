@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { webcrypto } from 'node:crypto'
+import { DatabaseSync } from 'node:sqlite'
+import { readFileSync } from 'node:fs'
 import { onRequestPost } from '../functions/api/bridge/document-assistant.js'
 if (!globalThis.crypto) globalThis.crypto=webcrypto
 
@@ -15,14 +17,14 @@ const body=(changes={})=>({
 })
 const env=(overrides={})=>({JPDA_BRIDGE_ENABLED:'true',JPDA_BRIDGE_SECRET:secret,
  JPDA_BRIDGE_ALLOWED_USER:actor,...overrides})
-async function signed(payload=body(),time=Date.now()){
+async function signed(payload=body(),time=Date.now(),requestId=id){
  const raw=JSON.stringify(payload),stamp=String(time)
  const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),
   {name:'HMAC',hash:'SHA-256'},false,['sign'])
  const digest=new Uint8Array(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(stamp+'\n'+raw)))
  const hex=Array.from(digest,x=>x.toString(16).padStart(2,'0')).join('')
  return new Request(url,{method:'POST',headers:{'Content-Type':'application/json',
-   'X-DA-Timestamp':stamp,'X-DA-Signature':hex,'Idempotency-Key':id},body:raw})
+   'X-DA-Timestamp':stamp,'X-DA-Signature':hex,'Idempotency-Key':requestId},body:raw})
 }
 test('financial bridge is disabled by default',async()=>{
  const r=await onRequestPost({request:new Request(url,{method:'POST'}),env:env({JPDA_BRIDGE_ENABLED:'false'})})
@@ -195,4 +197,40 @@ test('signed finance bridge writes exact reviewed clock and rejects invalid time
   assert.equal(response.status,400,JSON.stringify(invalid));
  }
  assert.equal(writes.length,1);
+});
+
+// Real SQLite regression: the SQL duplicate predicate must distinguish merchants
+// and independently confirmed transaction times, even for equal amounts.
+test('signed bridge rejects only true duplicate candidates and validates category and merchant',async()=>{
+  const sqlite=new DatabaseSync(':memory:');
+  sqlite.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+  sqlite.prepare("INSERT INTO category_source(category,entry_type) VALUES('日用品','expense')").run();
+  const db={prepare(sql){return {
+    args:[],bind(...args){this.args=args;return this},
+    async first(){return sqlite.prepare(sql).get(...this.args)||null},
+    async run(){const r=sqlite.prepare(sql).run(...this.args);
+      return {meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}}
+    }
+  }}};
+  async function save(key,merchant,clock='12:00',category='日用品'){
+    const requestId='jda:kakebo:'+key.padStart(16,'0');
+    const record=body({merchant,time:clock,category,amount:1000,date:'2026-11-12'});
+    record.idempotency_key=requestId;
+    const response=await onRequestPost({request:await signed(record,Date.now(),requestId),env:env({DB:db})});
+    return {status:response.status,body:await response.json()};
+  }
+  try{
+    const first=await save('a1','セブン-イレブン');
+    assert.equal(first.status,200,JSON.stringify(first.body));
+    const retry=await save('a1','セブン-イレブン');
+    assert.equal(retry.status,200);assert.equal(retry.body.remote_id,first.body.remote_id);
+    assert.equal((await save('b2','ファミリーマート')).status,200);
+    assert.equal((await save('c3','セブン-イレブン','12:03')).status,409);
+    assert.equal((await save('d4','セブン-イレブン','12:35')).status,200);
+    const invalid=await save('e5','セブン-イレブン','13:00','未登録');
+    assert.equal(invalid.status,400);assert.equal(invalid.body.error,'category_not_registered');
+    const missing=await save('f6','');
+    assert.equal(missing.status,400);assert.equal(missing.body.error,'merchant_confirmation_required');
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,3);
+  }finally{sqlite.close()}
 });

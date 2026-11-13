@@ -348,10 +348,12 @@ async function loadCategoryMetadata() {
   categoryDisplayNames.value = Object.fromEntries(rows.filter(row => row.display_name).map(row => [row.category, row.display_name]))
 }
 
-// Financial data and preferences live in D1. SessionStorage holds only the
-// current tab's revocable credential; an HttpOnly cookie retains signed-in state.
+// Financial data and preferences live in D1. The token stays in memory;
+// the HttpOnly cookie restores sessions across PWA reloads.
 const rememberDevice = ref(true)
-const token = ref(sessionStorage.getItem('kakeibo-device-session') || '')
+const token = ref('')
+// Purge credentials from previously installed PWA versions at startup.
+try{sessionStorage.removeItem('kakeibo-device-session');sessionStorage.removeItem('kakeibo-token')}catch{}
 async function setRememberDevice(remember) {
   if(rememberDevice.value===remember)return
   try {
@@ -394,7 +396,7 @@ async function signIn(code) {
   const result = await response.json()
   if (!response.ok) throw new Error(result.error || 'アクセスコードを確認してください')
   token.value = result.session
-  sessionStorage.setItem('kakeibo-device-session', result.session)
+  sessionStorage.removeItem('kakeibo-device-session') // purge legacy JS-readable sessions
   sessionStorage.removeItem('kakeibo-logged-out')
   sessionStorage.removeItem('kakeibo-token')
   locked.value = false
@@ -454,7 +456,7 @@ async function unlock() {
   catch (error) { flash(error.message) }
 }
 async function api(path, opt = {}) {
-  // Authenticated API first tries the HttpOnly cookie if the tab session ended.
+  // The HttpOnly cookie authenticates requests after a PWA reload.
   // On 401, ensureLogin requests the access code once for concurrent calls.
   const requestToken = token.value
   const r = await fetch('/api/' + path, {

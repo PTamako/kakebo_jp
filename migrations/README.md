@@ -1,6 +1,14 @@
+## 移行ファイルの識別（2026-11-13）
+
+- 旧履歴には `0013_receipt_r2_state.sql` と `0013_recurring_posting_mode.sql`、`0014_receipt_r2_size.sql` と `0014_recurring_business_days.sql` が併存します。移行の識別は **番号ではなく完全ファイル名** に統一してください。
+- 番号をキーとした自動適用は禁止。各ファイルのカラム・テーブルと既存本番スキーマを照合し、実行前にはTime Travel bookmarkを取得します。旧ファイルの番号変更や再適用は行いません。
+- 以前のSBIスクリーンショット由来の試験データは架空の数値に置換済みです。過去のコミット履歴の公開状態はリポジトリ所有者の管理が必要です。
+
+---
+
 ## 0021: SBI 投資用途の分離（2026-11-12）
 
-- 本番 D1 の `sbi_transfer_links` に `purpose` を **1列だけ追加**。値は `monthly`（定投）、`purchase`（追加買付）、`funding`（資金振替）。過去の紐付けは既定 `monthly`、未紐付け振替も旧動作のまま定投として扱う。ポイント還元は既存の `payment_source` / 自動振替IDから判定する。
+- 本番 D1 の `sbi_transfer_links` に `purpose` を **1列だけ追加**。値は `monthly`（定投）、`purchase`（追加買付）、`funding`（資金振替）。過去の紐付けのDB既定値 `monthly` は互換性のため維持。アプリの未紐付け明細は明示的な「積立」記載がなければ `purchase`（追加買付）として読み、ポイント還元は `point` として別集計。対象月の初回登録時には目的も同時に明示し、月変更では目的を変更しない。
 - 本番適用前に `kakebo` D1 の Time Travel bookmark と `PRAGMA table_info(sbi_transfer_links)`、`entries` 件数を読み取り確認。目的列が存在しないことを確認してから `migrations/0021_sbi_transfer_purpose.sql` だけを **1回** 実行する。以降、列を再追加しない。
 - 既存の入出金・投資計画・保有数量・カード請求額は修正しない。買付記録は SBI での実際の買付注文・約定・持株更新を行わない。
 - Preview Worker / D1 / R2 は新規作成しない。GitHub の Validate とモバイル WebKit 検証の成功後に既存 Pages の main をリリースし、デプロイの commit SHA を照合する。

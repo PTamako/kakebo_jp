@@ -133,10 +133,17 @@ export async function onRequestPost({request,env}){
   // Store the source document's merchant as the actual ledger display name.
   // Never replace a known store with the importing application's name.
   const merchant=typeof p.merchant==='string'?p.merchant.trim():''
+  if(!merchant)return json({ok:false,error:'merchant_confirmation_required'},400)
   const field={type:p.type,date,time:transactionTime,amount,category:p.category.trim(),paymentSource:source.trim(),
-    note:typeof p.note==='string'?p.note.slice(0,180):'',merchant:merchant||'文书助手'}
+    note:typeof p.note==='string'?p.note.slice(0,180):'',merchant}
   const fieldErr=validateLedgerTextFields(field)
   if(fieldErr)return json({ok:false,error:'invalid_text'},400)
+  // Only a registered category of the correct income/expense type is writable.
+  try{
+    const row=await env.DB.prepare('SELECT category FROM category_source WHERE category=?1 AND entry_type=?2')
+      .bind(field.category,field.type).first()
+    if(!row)return json({ok:false,error:'category_not_registered'},400)
+  }catch{return json({ok:false,error:'catalog_unavailable'},503)}
   const paymentErr=await validateRegisteredPaymentSource(env.DB,field.paymentSource)
   if(paymentErr)return json({ok:false,error:paymentErr.code||'invalid_source'},paymentErr.status||400)
   const requestId=await stableRequestId(key)
@@ -146,7 +153,11 @@ export async function onRequestPost({request,env}){
       (date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source)
       SELECT ?1,?9,?2,?3,?4,?5,'',?6,NULL,0,NULL,?7,?8
       WHERE NOT EXISTS (SELECT 1 FROM entries
-        WHERE date=?1 AND amount=?2 AND type=?6 AND COALESCE(payment_source,'')=?8)
+        WHERE date=?1 AND amount=?2 AND type=?6 AND COALESCE(payment_source,'')=?8
+          AND TRIM(COALESCE(merchant,''))=TRIM(?4)
+          AND (COALESCE(time,'')='' OR COALESCE(?9,'')=''
+            OR ABS((CAST(SUBSTR(time,1,2) AS INTEGER)*60 + CAST(SUBSTR(time,4,2) AS INTEGER))
+              -(CAST(SUBSTR(?9,1,2) AS INTEGER)*60 + CAST(SUBSTR(?9,4,2) AS INTEGER)))<=5))
       ON CONFLICT(client_request_id) DO NOTHING`)
       .bind(date,amount,field.category,field.merchant,field.note,field.type,requestId,field.paymentSource,field.time).run()
     const row=await env.DB.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(requestId).first()

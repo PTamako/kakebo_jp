@@ -13,14 +13,25 @@ CREATE TABLE IF NOT EXISTS family_finance_pending_actions (
   payload_cipher TEXT NOT NULL,
   payload_iv TEXT NOT NULL,
   state TEXT NOT NULL DEFAULT 'prepared'
-    CHECK(state IN ('prepared','cancelled')),
-  homeflow_approval_id TEXT,
+    CHECK(state IN ('prepared','submitted','cancelled')),
+  homeflow_approval_id TEXT
+    CHECK(homeflow_approval_id IS NULL OR
+      (length(homeflow_approval_id)=36 AND
+       substr(homeflow_approval_id,9,1)='-' AND
+       substr(homeflow_approval_id,14,1)='-' AND
+       substr(homeflow_approval_id,19,1)='-' AND
+       substr(homeflow_approval_id,24,1)='-')),
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL CHECK(expires_at>created_at),
+  submitted_at INTEGER,
   cancelled_at INTEGER,
-  CHECK(homeflow_approval_id IS NULL),
-  CHECK((state='prepared' AND cancelled_at IS NULL)
-    OR (state='cancelled' AND cancelled_at IS NOT NULL))
+  CHECK(
+    (state='prepared' AND homeflow_approval_id IS NULL
+      AND submitted_at IS NULL AND cancelled_at IS NULL)
+    OR (state='submitted' AND homeflow_approval_id IS NOT NULL
+      AND submitted_at IS NOT NULL AND cancelled_at IS NULL)
+    OR (state='cancelled' AND homeflow_approval_id IS NULL
+      AND submitted_at IS NULL AND cancelled_at IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_family_fin_pending_requester
  ON family_finance_pending_actions(requester_user_id,state,created_at DESC);
@@ -44,8 +55,13 @@ ON family_finance_pending_actions
 BEGIN SELECT RAISE(ABORT,'IMMUTABLE_PENDING_ACTION'); END;
 CREATE TRIGGER IF NOT EXISTS trg_family_fin_pending_state
 BEFORE UPDATE OF state ON family_finance_pending_actions
-WHEN NOT (OLD.state='prepared' AND NEW.state='cancelled')
+WHEN NOT (OLD.state='prepared' AND NEW.state IN ('cancelled','submitted'))
 BEGIN SELECT RAISE(ABORT,'INVALID_PENDING_TRANSITION'); END;
+CREATE TRIGGER IF NOT EXISTS trg_family_fin_pending_submission_immutable
+BEFORE UPDATE OF homeflow_approval_id,submitted_at
+ON family_finance_pending_actions
+WHEN OLD.state!='prepared'
+BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HOMEFLOW_APPROVAL_RECEIPT'); END;
 INSERT OR IGNORE INTO schema_migrations(version,description)
 VALUES('schema-0024-finance-approval-preparation',
  'Unexecuted encrypted member financial proposals without posting ledger entries');

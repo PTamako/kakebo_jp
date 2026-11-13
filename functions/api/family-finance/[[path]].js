@@ -5,6 +5,7 @@
 import {onRequest as homeflowIdentity, ssoReady} from '../homeflow-sso/[[path]].js';
 import {financePending} from './pending.js';
 import {familyAssetSummary} from './assets.js';
+import {familyLegacyResourceOwners} from './resource-owners.js';
 
 const json=(data,status=200)=>Response.json(data,{status,headers:{
  'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
@@ -231,6 +232,8 @@ export async function onRequest({request,env,params}){
   if(!user)return json({code:'SSO_NOT_AUTHENTICATED'},401);
   if(parts[0]==='proposals')return financePending(request,env,url,user,parts);
   if(parts[0]==='accounts')return accounts(request,env,url,user,parts);
+  if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='resource-owners')
+    return familyLegacyResourceOwners(request,env,url,user);
   if(parts[0]==='legacy'&&parts[1]==='adopt')
    return adoptLegacy(request,env,url,user);
   if(request.method==='GET'&&parts.length===2&&parts[0]==='shared'&&

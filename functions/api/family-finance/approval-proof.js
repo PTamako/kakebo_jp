@@ -42,14 +42,15 @@ export async function verifyPreparedApproval(request,env,url,user,id){
   return respond({code:'INVALID_APPROVAL_ID'},400);
  const row=await env.DB.prepare(
   "SELECT p.request_id,p.household_id,p.requester_user_id,p.account_id,"+
-  "p.payload_sha256,p.state,p.expires_at "+
+  "p.payload_sha256,p.state,p.expires_at,p.homeflow_approval_id "+
   "FROM family_finance_pending_actions p "+
   "JOIN family_financial_accounts a ON a.account_id=p.account_id "+
   "WHERE p.request_id=? AND p.household_id=? AND p.requester_user_id=? "+
   "AND a.owner_user_id=? AND a.household_id=? AND a.is_archived=0"
  ).bind(id,user.household_id,user.user_id,user.user_id,user.household_id).first();
  if(!row)return respond({code:'PROPOSAL_NOT_FOUND'},404);
- if(row.state!=='prepared'||Number(row.expires_at)<=Date.now())
+ if(row.state!=='submitted'||Number(row.expires_at)<=Date.now()||
+  row.homeflow_approval_id!==form.homeflow_request_id)
   return respond({code:'PROPOSAL_NOT_EXECUTABLE'},409);
  // The only valid future HomeFlow approval idempotency key is deterministic
  // from the immutable Kakeibo pending resource ID. No client-generated key.

@@ -1086,3 +1086,50 @@ test('yearly family statistics are identical for spouses and exclude asset trans
    'ordinary family statistics GET must not write actor audit');
  }finally{f.DB.sqlite.close();}
 });
+
+test('Stage C account writes reject an old HomeFlow actor after PWA cookie switch',async()=>{
+ const f=await setup();
+ try{
+  const oldEntries=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const beforeAccounts=f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_financial_accounts').get().n;
+  const beforeEvents=f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n;
+  const draft={label:'我的备用现金',account_kind:'cash'};
+  const crossed=await finance(f,'accounts','POST',
+   {...draft,expected_user_id:owner},memberCookie);
+  assert.equal(crossed.status,403,await crossed.clone().text());
+  assert.equal((await crossed.json()).code,'ACTOR_CHANGED');
+  assert.equal((await finance(f,'accounts','POST',
+   {...draft,expected_user_id:undefined},memberCookie)).status,403);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_financial_accounts').get().n,
+   beforeAccounts);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n,
+   beforeEvents);
+  const created=await finance(f,'accounts','POST',draft,memberCookie);
+  assert.equal(created.status,201,await created.clone().text());
+  const id=(await created.json()).account_id;
+  const ownerBefore=f.DB.sqlite.prepare('SELECT version,label,owner_user_id FROM family_financial_accounts WHERE account_id=?').get(id);
+  assert.equal(ownerBefore.owner_user_id,member);
+  assert.equal(ownerBefore.version,1);
+  const failed=await finance(f,'accounts/'+id,'PATCH',
+   {label:'错号更新',version:1,expected_user_id:owner},memberCookie);
+  assert.equal(failed.status,403);
+  assert.equal((await failed.json()).code,'ACTOR_CHANGED');
+  assert.equal((await finance(f,'accounts/'+id,'PATCH',
+   {label:'无原始用户',version:1,expected_user_id:undefined},memberCookie)).status,403);
+  assert.equal(f.DB.sqlite.prepare('SELECT version,label FROM family_financial_accounts WHERE account_id=?').get(id).label,
+   draft.label);
+  const changed=await finance(f,'accounts/'+id,'PATCH',{label:'本人现金',version:1},memberCookie);
+  assert.equal(changed.status,200,await changed.clone().text());
+  assert.equal(f.DB.sqlite.prepare('SELECT label,version FROM family_financial_accounts WHERE account_id=?').get(id).label,'本人现金');
+  const staleCookie=await finance(f,'accounts/'+id,'PATCH',
+   {label:'切号后保存',version:2,expected_user_id:member},ownerCookie);
+  assert.equal(staleCookie.status,403);
+  assert.equal(f.DB.sqlite.prepare('SELECT label,version FROM family_financial_accounts WHERE account_id=?').get(id).version,2);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n,
+   beforeEvents+2,'only the valid create and edit receive actor audit rows');
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),oldEntries,
+   'account setup never edits household ledger');
+ }finally{f.DB.sqlite.close();}
+});

@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS family_finance_events (
   actor_user_id TEXT NOT NULL REFERENCES homeflow_identity_links(user_id),
   resource_id TEXT NOT NULL,
   action TEXT NOT NULL CHECK(action IN
-    ('legacy_accounts_adopted','personal_account_created','personal_account_updated','personal_account_archived')),
+    ('legacy_accounts_adopted','personal_account_created','personal_account_updated',
+     'personal_account_archived','finance_entry_prepared','finance_entry_cancelled')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_family_fin_events_actor

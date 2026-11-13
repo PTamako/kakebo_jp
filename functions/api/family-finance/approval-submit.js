@@ -25,7 +25,9 @@ export async function submitPreparedApproval(request,env,url,user,id){
   return json({code:'BAD_ORIGIN_OR_METHOD'},403)
  try{
   const raw=await request.text()
-  if(raw.length>128||Object.keys(JSON.parse(raw)).length!==0)
+  const input=raw.length<=128?JSON.parse(raw):null
+  if(!input||typeof input!=='object'||Array.isArray(input)||
+    Object.keys(input).length!==0)
    return json({code:'INVALID_SUBMISSION_INPUT'},400)
  }catch{return json({code:'INVALID_SUBMISSION_INPUT'},400)}
  const db=env.DB

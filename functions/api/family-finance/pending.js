@@ -65,14 +65,19 @@ function validIntent(x){
   'amount_jpy','date','merchant','category','note'].includes(k)))return false;
  return true;
 }
-const shape=row=>({request_id:row.request_id,
- operation:'finance.entry.create',
- status:row.state==='cancelled'?'cancelled':
-   row.expires_at<=Date.now()?'expired':
-   row.state==='submitted'?'submitted_status_unknown':'prepared_not_submitted',
- payload_sha256:row.payload_sha256,expires_at:row.expires_at,
- created_at:row.created_at,account_id:row.account_id,
- homeflow_approval_id:row.homeflow_approval_id||null,ledger_changed:false});
+const shape=row=>{
+ const applied=Number.isSafeInteger(Number(row.applied_entry_id))&&
+   Number(row.applied_entry_id)>0;
+ return {request_id:row.request_id,operation:'finance.entry.create',
+  status:applied?'applied':row.state==='cancelled'?'cancelled':
+    row.expires_at<=Date.now()?'expired':
+    row.state==='submitted'?'submitted_status_unknown':'prepared_not_submitted',
+  payload_sha256:row.payload_sha256,expires_at:row.expires_at,
+  created_at:row.created_at,account_id:row.account_id,
+  homeflow_approval_id:row.homeflow_approval_id||null,
+  entry_id:applied?Number(row.applied_entry_id):null,
+  ledger_changed:applied};
+};
 async function prepare(req,env,url,user){
  const data=await readMutation(req,url);
  if(!data)return json({code:'BAD_ORIGIN_OR_BODY'},403);
@@ -130,10 +135,12 @@ async function prepare(req,env,url,user){
 }
 async function list(db,user,url){
  const offset=Math.max(0,Math.min(500,Number(url.searchParams.get('offset'))||0));
- const rows=(await db.prepare('SELECT request_id,account_id,payload_sha256,state,'+
-  'created_at,expires_at FROM family_finance_pending_actions '+
-  'WHERE household_id=? AND requester_user_id=? '+
-  'ORDER BY created_at DESC,request_id DESC LIMIT 6 OFFSET ?')
+ const rows=(await db.prepare('SELECT p.request_id,p.account_id,p.payload_sha256,p.state,'+
+  'p.homeflow_approval_id,p.created_at,p.expires_at,'+
+  'a.entry_id AS applied_entry_id FROM family_finance_pending_actions p '+
+  'LEFT JOIN family_finance_applied_actions a ON a.proposal_id=p.request_id '+
+  'WHERE p.household_id=? AND p.requester_user_id=? '+
+  'ORDER BY p.created_at DESC,p.request_id DESC LIMIT 6 OFFSET ?')
   .bind(user.household_id,user.user_id,offset).all()).results||[];
  return json({ok:true,items:rows.slice(0,5).map(shape),
   next_offset:rows.length>5?offset+5:null,ledger_changed:false});
@@ -164,12 +171,24 @@ async function cancel(req,env,url,user,requestId){
   return json({ok:true,status:'cancelled',ledger_changed:false});
  }catch{return json({code:'PROPOSAL_CONFLICT'},409);}
 }
+async function status(db,user,id){
+ const row=await db.prepare('SELECT p.request_id,p.account_id,p.payload_sha256,'+
+  'p.state,p.homeflow_approval_id,p.created_at,p.expires_at,'+
+  'a.entry_id AS applied_entry_id '+
+  'FROM family_finance_pending_actions p LEFT JOIN family_finance_applied_actions a '+
+  'ON a.proposal_id=p.request_id WHERE p.request_id=? '+
+  'AND p.household_id=? AND p.requester_user_id=?')
+  .bind(id,user.household_id,user.user_id).first();
+ return row?json({ok:true,prepared:shape(row)}):json({code:'NOT_FOUND'},404);
+}
 export async function financePending(req,env,url,user,parts){
  // An unconfigured encryption key means absolutely NO new proposal writes.
  if(!ready(env))return json({code:'PENDING_ENCRYPTION_NOT_CONFIGURED'},503);
  if(user.role!=='member')return json({code:'ONLY_MEMBER_CAN_PREPARE'},403);
  if(parts.length===1&&req.method==='POST')return prepare(req,env,url,user);
  if(parts.length===1&&req.method==='GET')return list(env.DB,user,url);
+ if(parts.length===3&&parts[2]==='status'&&safeId(parts[1])&&req.method==='GET')
+  return status(env.DB,user,parts[1]);
  if(parts.length===3&&parts[2]==='submit'&&safeId(parts[1])&&req.method==='POST')
   return submitPreparedApproval(req,env,url,user,parts[1]);
  if(parts.length===3&&parts[2]==='approval-proof'&&safeId(parts[1])&&req.method==='POST')

@@ -139,7 +139,7 @@ test('SBI 15,000 yen transfer reconciles with four monthly allocations without d
     assert.equal(initial.body.reconciliation.monthly_amount,15000)
     const transfer=await call('entries','POST',{
       date:currentMonth+'-01',type:'transfer',amount:15000,category:'投資・資産移動',
-      merchant:'SBI証券',transferTarget:'sbi',transferDate:currentMonth+'-01'
+      merchant:'SBI証券 投信積立サービス',transferTarget:'sbi',transferDate:currentMonth+'-01'
     })
     assert.equal(transfer.status,200)
     const first=await call('investment-portfolio?month='+currentMonth)
@@ -225,7 +225,7 @@ test('v4 export and restore preserve portfolio settings and mapped transfer link
     })
     await source.call('investment-portfolio/price','PUT',{fundCode:'03311187',navPer10000:35000,priceDate:'2026-10-30'})
     await source.call('entries','POST',{
-      date:currentMonth+'-01',type:'transfer',amount:15000,transferTarget:'sbi',transferDate:currentMonth+'-01'
+      date:currentMonth+'-01',type:'transfer',amount:15000,merchant:'SBI証券 投信積立サービス',transferTarget:'sbi',transferDate:currentMonth+'-01'
     })
     const old=(await source.call('entries?month='+currentMonth)).body.find(x=>x.type==='transfer')
     await source.call('investment-portfolio/transfer-month','PUT',{entryId:old.id,purchaseMonth:nextMonth(currentMonth)})
@@ -388,7 +388,7 @@ test('SBI point redemption contributes to extra capital, never to 15,000 yen mon
 
     const deposit=await call('entries','POST',{
       date,type:'transfer',amount:15000,category:'投資・資産移動',
-      merchant:'SBI証券',transferTarget:'sbi',transferDate:date
+      merchant:'SBI証券 投信積立サービス',transferTarget:'sbi',transferDate:date
     })
     assert.equal(deposit.status,200,JSON.stringify(deposit.body))
     const reconciled=await call('investment-portfolio?month='+currentMonth)
@@ -416,7 +416,7 @@ test('scheduled point redemption does not consume pending planned SBI funding',a
     assert.equal(point.status,200,JSON.stringify(point.body))
     const deposit=await call('entries','POST',{
       date:currentMonth+'-01',type:'transfer',amount:15000,category:'投資・資産移動',
-      merchant:'SBI証券',transferTarget:'sbi',transferDate:futureDate
+      merchant:'SBI証券 投信積立サービス',transferTarget:'sbi',transferDate:futureDate
     })
     assert.equal(deposit.status,200,JSON.stringify(deposit.body))
     const snapshot=await call('investment-portfolio?month='+futureMonth)
@@ -438,8 +438,8 @@ test('November 11 point reward and December 15 scheduled savings are never group
   try{
     seedPortfolioInTest(db)
     const insert=db.db.prepare(`INSERT INTO entries
-      (date,amount,type,transfer_target,transfer_date,transfer_applied,client_request_id,payment_source)
-      VALUES (?1,?2,'transfer','sbi',?3,?4,?5,?6)`)
+      (date,amount,type,transfer_target,transfer_date,transfer_applied,client_request_id,payment_source,merchant)
+      VALUES (?1,?2,'transfer','sbi',?3,?4,?5,?6,'SBI証券 投信積立サービス')`)
     // A point reward belongs to November 11 even if a legacy link says December.
     const point=insert.run('2026-11-11',1751,'2026-11-11',1,'point_charge_november_11','ポイント還元')
     db.db.prepare('INSERT INTO sbi_transfer_links(entry_id,purchase_month) VALUES (?1,?2)')

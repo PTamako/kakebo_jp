@@ -85,6 +85,7 @@ test('signed recovery lookup is read-only and returns idempotent transaction sta
  const expected='jda_'+Array.from(new Uint8Array(priorRequestId),x=>x.toString(16).padStart(2,'0')).join('').slice(0,60);
  const lookups=[];
  const d1={prepare(sql){
+  if(sql.includes('FROM trash_items'))return {bind(){return {async first(){return null}}}};
   assert.match(sql,/^SELECT id FROM entries WHERE client_request_id=\?1$/);
   return {bind(value){lookups.push(value);return {async first(){return lookups.length===1?{id:42}:null}}}}
  }};
@@ -232,5 +233,33 @@ test('signed bridge rejects only true duplicate candidates and validates categor
     const missing=await save('f6','');
     assert.equal(missing.status,400);assert.equal(missing.body.error,'merchant_confirmation_required');
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,3);
+  }finally{sqlite.close()}
+});
+
+test('signed status detects a deleted Kakebo entry without re-creating it',async()=>{
+  const sqlite=new DatabaseSync(':memory:');
+  sqlite.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(id));
+  const requestId='jda_'+Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('').slice(0,60);
+  const itemId=905;
+  sqlite.prepare('INSERT INTO trash_items(item_type,item_id,payload_json,deleted_at) VALUES(?,?,?,?)')
+    .run('entry',String(itemId),JSON.stringify({entry:{id:itemId,client_request_id:requestId}}),new Date().toISOString());
+  let reads=0,writes=0;
+  const db={prepare(sql){return {bind(...args){return {
+    async first(){reads++;return sqlite.prepare(sql).get(...args)||null},
+    async run(){writes++;throw Error('read-only status attempted a write')}
+  }}}}};
+  const payload={source:'jp-document-assistant',actor_user_id:actor,
+    idempotency_key:id,payload:{operation:'status'}};
+  try{
+    const status=await onRequestPost({request:await signed(payload),env:env({DB:db})});
+    assert.equal(status.status,200);
+    assert.deepEqual(await status.json(),{ok:true,exists:true,remote_id:String(itemId),record_state:'trashed'});
+    const legacy=await onRequestPost({request:await signed({...payload,payload:{operation:'lookup'}}),env:env({DB:db})});
+    assert.equal(legacy.status,200);
+    assert.deepEqual(await legacy.json(),{ok:true,exists:true,remote_id:String(itemId)});
+    assert.equal(writes,0);assert.equal(reads,4);
+    const invalid=await onRequestPost({request:await signed({...payload,idempotency_key:'forged'}),env:env({DB:db})});
+    assert.equal(invalid.status,400);
   }finally{sqlite.close()}
 });

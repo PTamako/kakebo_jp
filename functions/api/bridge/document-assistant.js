@@ -105,14 +105,23 @@ export async function onRequestPost({request,env}){
   const key=body?.idempotency_key
   // Read-only recovery check for a previously failed/uncertain signed request.
   // Reuse the original idempotency key and do not accept arbitrary ledger queries.
-  if(body?.payload?.operation==='lookup'){
+  if(['lookup','status'].includes(body?.payload?.operation)){
     if(typeof key!=='string'||!/^jda:kakebo:[a-f0-9]{16,64}$/i.test(key)||
        request.headers.get('Idempotency-Key')!==key)
       return json({ok:false,error:'invalid_source'},400)
     const requestId=await stableRequestId(key)
     try{
       const row=await env.DB.prepare('SELECT id FROM entries WHERE client_request_id=?1').bind(requestId).first()
-      return json({ok:true,exists:!!row?.id,remote_id:row?.id?String(row.id):null})
+      // The original request ID survives in the trash: never treat a deleted
+      // synchronized entry as a missing request eligible for re-insertion.
+      const tombstone=row?.id?null:await env.DB.prepare(`SELECT item_id FROM trash_items
+        WHERE item_type='entry' AND json_valid(payload_json)
+          AND json_extract(payload_json,'$.entry.client_request_id')=?1 LIMIT 1`)
+        .bind(requestId).first()
+      const remoteId=row?.id??tombstone?.item_id??null
+      const result={ok:true,exists:remoteId!==null,remote_id:remoteId!==null?String(remoteId):null}
+      if(body.payload.operation==='status')result.record_state=row?.id?'active':tombstone?'trashed':'missing'
+      return json(result)
     }catch{return json({ok:false,error:'ledger_lookup_failed'},503)}
   }
   if(body?.payload?.operation!=='entry'||

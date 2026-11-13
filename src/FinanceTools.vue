@@ -2265,6 +2265,8 @@ async function removeCardBill(record) {
 .card-billing-panel .card-billing-actions button{min-width:0;width:100%;min-height:44px;padding:10px 6px;font-size:clamp(11px,3.3vw,13px);font-weight:700;white-space:nowrap;border-radius:10px}
 .card-billing-panel .card-billing-actions .card-billing-detail{background:var(--card);color:var(--blue-dark);border:1px solid var(--line)}
 .card-billing-panel .card-billing-actions .card-billing-save{background:var(--blue);color:white;border:1px solid transparent}
+.finance-panel .backup-password-label{display:grid;gap:6px;min-width:0;color:var(--muted)}
+.finance-panel .backup-password-label input{display:block;width:100%;min-width:0;box-sizing:border-box;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
 .backup-receipt-group{display:grid;gap:8px;min-width:0;padding-top:12px;border-top:1px solid var(--line)}
 .backup-receipt-group .device-privacy-row{align-items:center}
 .backup-receipt-group>button{width:100%;min-height:44px}

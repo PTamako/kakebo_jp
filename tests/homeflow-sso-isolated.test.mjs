@@ -770,3 +770,68 @@ test('cancelled or archived member proposal cannot obtain executable approval pr
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries').get().n,2);
  }finally{f.DB.sqlite.close()}
 });
+
+
+test('lost HomeFlow acknowledgement retries the same pending approval without double-write',async()=>{
+ const f=await setup();
+ try{
+  const memberCookie=await loginMemberAfterOwner(f);
+  const accountId=(await (await finance(f,'accounts','POST',{
+   label:'家族支出用の私有カード',account_kind:'credit_card'
+  },memberCookie)).json()).account_id;
+  const proposal=(await (await finance(f,'proposals','POST',{
+   idempotency_key:'retrying-remote-approval-00001',account_id:accountId,
+   type:'expense',amount_jpy:2500,date:'2026-11-13',
+   merchant:'テスト購入',category:'生活'
+  },memberCookie)).json()).prepared;
+  const ledgerBefore=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  f.env.APP_ENV='production';
+  f.env.KAKEIBO_APPROVAL_SUBMISSION_ENABLED='true';
+  f.env.KAKEIBO_APPROVAL_VERIFICATION_SECRET='c'.repeat(64);
+  const original=f.env.HOMEFLOW_IDENTITY_SERVICE.fetch;
+  let accepted=0;
+  const remoteId='55555555-5555-4555-8555-555555555555';
+  f.env.HOMEFLOW_IDENTITY_SERVICE.fetch=async req=>{
+   if(new URL(req.url).pathname!=='/api/internal/approvals/submit')
+    return original(req);
+   accepted++;
+   const body=JSON.parse(await req.text());
+   assert.equal(Object.keys(body).length,4);
+   assert.equal(body.resource_id,proposal.request_id);
+   assert.equal(body.payload_sha256,proposal.payload_sha256);
+   assert.equal(body.requester_user_id,member);
+   assert.equal(JSON.stringify(body).includes('テスト購入'),false);
+   if(accepted===1)throw Error('HomeFlow committed, connection broke before reply');
+   return Response.json({ok:true,approval_id:remoteId,status:'pending',
+    resource_id:body.resource_id,payload_sha256:body.payload_sha256,
+    household_id:body.household_id,requester_user_id:body.requester_user_id,
+    idempotency_key:'kakeibo:finance:'+proposal.request_id,
+    replayed:true,applied:false,ledger_changed:false},{status:200});
+  };
+  const submit=()=>finance(f,'proposals/'+proposal.request_id+'/submit',
+   'POST',{},memberCookie);
+  const broken=await submit();
+  assert.equal(broken.status,503);
+  assert.equal((await broken.json()).safe_to_retry,true);
+  let state=f.DB.sqlite.prepare(
+   'SELECT state,homeflow_approval_id FROM family_finance_pending_actions WHERE request_id=?')
+   .get(proposal.request_id);
+  assert.equal(state.state,'prepared');
+  assert.equal(state.homeflow_approval_id,null);
+  assert.equal(f.DB.sqlite.prepare("SELECT COUNT(*) n FROM family_finance_events WHERE action='finance_entry_submitted'").get().n,0);
+  const restored=await submit();
+  assert.equal(restored.status,201,await restored.clone().text());
+  assert.equal((await restored.json()).homeflow_approval_id,remoteId);
+  assert.equal((await submit()).status,200);
+  assert.equal(accepted,2,'local replay never sends a duplicate backend request');
+  state=f.DB.sqlite.prepare(
+   'SELECT state,homeflow_approval_id FROM family_finance_pending_actions WHERE request_id=?')
+   .get(proposal.request_id);
+  assert.equal(state.state,'submitted');
+  assert.equal(state.homeflow_approval_id,remoteId);
+  assert.equal(f.DB.sqlite.prepare("SELECT COUNT(*) n FROM family_finance_events WHERE action='finance_entry_submitted'").get().n,1);
+  assert.equal((await finance(f,'proposals/'+proposal.request_id+'/cancel','POST',{},memberCookie)).status,409,
+   'an already submitted approval must be cancelled in HomeFlow, not just hidden locally');
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),ledgerBefore);
+ }finally{f.DB.sqlite.close()}
+});

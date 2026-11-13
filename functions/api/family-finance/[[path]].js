@@ -246,7 +246,7 @@ async function yearSummary(env,user,url){
  const [monthly,byCategory,byPayment]=await Promise.all([
   all(env.DB,`SELECT substr(date,1,7) month,type,
     COALESCE(SUM(amount),0) amount,COUNT(*) count
-    FROM entries WHERE date>=? AND date<? AND type IN ('income','expense','transfer')
+    FROM entries WHERE date>=? AND date<?
     GROUP BY substr(date,1,7),type ORDER BY month,type`,start,end),
   all(env.DB,`SELECT type,COALESCE(category,'') category,
     COALESCE(SUM(amount),0) amount,COUNT(*) count

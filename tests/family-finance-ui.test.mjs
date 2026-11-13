@@ -36,3 +36,11 @@ test('member account management respects server actor and version; no direct led
  assert.match(source,/\/api\/family-finance\/shared\/ledger-totals\?month=/);
  assert.doesNotMatch(source,/\/api\/family-finance\/shared\/entries.{0,60}POST/);
 });
+
+test('new family-member PWA does not get stuck in legacy code modal, with original path preserved while SSO OFF',()=>{
+ assert.match(app,/async function routeNewFamilyMemberToIsolatedLogin\(\)/);
+ assert.match(app,/status\.ok\|\|\(await status\.json\(\)\)\.enabled!==true\)return false/);
+ assert.match(app,/if\(old\.status===401\)\{locked\.value=true;return true\}/);
+ assert.match(app,/if \(!locked\.value && !await routeNewFamilyMemberToIsolatedLogin\(\)\)/);
+ assert.match(app,/const old=await fetch\('\/api\/payment-sources',\{credentials:'same-origin',cache:'no-store'\}\)/);
+});

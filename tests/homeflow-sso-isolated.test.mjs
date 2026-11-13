@@ -282,7 +282,9 @@ async function loginOwner(f){
  assert.equal((await f.callback(flow)).status,200);
  const res=await f.complete(flow,{legacy:true});
  assert.equal(res.status,200);
- return res.headers.get('set-cookie').match(/__Host-kakeibo_hf=([a-f0-9]{64})/)[1];
+ const cookie=res.headers.get('set-cookie').match(/__Host-kakeibo_hf=([a-f0-9]{64})/)[1];
+ (f.accountActors??=new Map()).set(cookie,owner);
+ return cookie;
 }
 async function loginMember(f){
  f.state.user=member;f.state.role='member';f.state.nickname='鸡毛';
@@ -290,15 +292,20 @@ async function loginMember(f){
  assert.equal((await f.callback(flow)).status,200);
  const res=await f.complete(flow);
  assert.equal(res.status,200);
- return res.headers.get('set-cookie').match(/__Host-kakeibo_hf=([a-f0-9]{64})/)[1];
+ const cookie=res.headers.get('set-cookie').match(/__Host-kakeibo_hf=([a-f0-9]{64})/)[1];
+ (f.accountActors??=new Map()).set(cookie,member);
+ return cookie;
 }
 function finance(f,path,method='GET',body,secret='',origin=app){
  const headers={};
  if(secret)headers.Cookie='__Host-kakeibo_hf='+secret;
  if(!['GET','HEAD'].includes(method)){headers.Origin=origin;headers['content-type']='application/json';}
+ const scoped=['POST','PATCH'].includes(method)&&
+  /^accounts(?:\/|$)/.test(path)&&body&&f.accountActors?.has(secret)
+   ?{expected_user_id:f.accountActors.get(secret),...body}:body;
  return familyFinance({env:f.env,
   request:new Request(app+'/api/family-finance/'+path,{method,headers,
-   body:method==='GET'?undefined:JSON.stringify(body??{})}),
+   body:method==='GET'?undefined:JSON.stringify(scoped??{})}),
   params:{path:path.split('?')[0].split('/')}});
 }
 test('family-finance stays off without explicit flag and family-bound audience',async()=>{

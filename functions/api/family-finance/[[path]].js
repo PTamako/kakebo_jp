@@ -201,9 +201,14 @@ async function adoptLegacy(request,env,url,user){
 async function entries(env,user,url){
  const limit=Math.max(1,Math.min(20,Number(url.searchParams.get('limit'))||5));
  const offset=Math.max(0,Math.min(10000,Number(url.searchParams.get('offset'))||0));
- const rows=await all(env.DB,'SELECT id,date,time,type,amount,category,merchant,note,'+
-  'payment_source,transfer_target,transfer_applied,transfer_date '+
-  'FROM entries ORDER BY date DESC,id DESC LIMIT ? OFFSET ?',limit+1,offset);
+ const rows=await all(env.DB,'SELECT e.id,e.date,e.time,e.type,e.amount,'+
+  'e.category,e.merchant,e.note,e.payment_source,e.transfer_target,'+
+  'e.transfer_applied,e.transfer_date,e.family_account_id,'+
+  'COALESCE(a.label,e.payment_source) AS payment_source_display,'+
+  'a.owner_user_id AS payment_account_owner_user_id '+
+  'FROM entries e LEFT JOIN family_financial_accounts a '+
+  'ON a.account_id=e.family_account_id '+
+  'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',limit+1,offset);
  return json({ok:true,household_id:user.household_id,items:rows.slice(0,limit),
   next_offset:rows.length>limit?offset+limit:null,ledger_scope:'household'});
 }

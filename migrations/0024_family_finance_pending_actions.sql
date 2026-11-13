@@ -34,6 +34,7 @@ WHEN NOT EXISTS(
  WHERE u.user_id=NEW.requester_user_id AND u.role='member'
  AND u.household_id=NEW.household_id AND u.state='active'
  AND a.account_id=NEW.account_id AND a.household_id=NEW.household_id
+ AND a.origin='member_created' AND a.is_archived=0
 )
 BEGIN SELECT RAISE(ABORT,'PENDING_ACCOUNT_OWNER_MISMATCH'); END;
 CREATE TRIGGER IF NOT EXISTS trg_family_fin_pending_immutable

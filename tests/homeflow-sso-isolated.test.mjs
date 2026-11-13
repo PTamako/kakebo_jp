@@ -6,6 +6,7 @@ import {webcrypto,createHmac} from 'node:crypto';
 import {onRequest,ssoReady} from '../functions/api/homeflow-sso/[[path]].js';
 import {onRequest as legacyApi} from '../functions/api/[[path]].js';
 import {onRequest as familyFinance} from '../functions/api/family-finance/[[path]].js';
+import {approvedActionRoute} from '../functions/api/internal/approved-actions/[[path]].js';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const app='https://kakeibo-f17.pages.dev',home='https://homeflow.example.test';
 const owner='11111111-1111-4111-8111-111111111111';
@@ -43,6 +44,7 @@ function d1(){
   "INSERT INTO recurring_plans VALUES('rent-legacy','家賃');"+
   "INSERT INTO investment_plans VALUES('ABC12345','tsumitate','SBI 投資信託',15000,15,1);"+
   "INSERT INTO investment_plan_history VALUES('ABC12345','tsumitate','SBI 投資信託',15000,15,1,'2026-11',CURRENT_TIMESTAMP)");
+ migration('0026_family_finance_execution.sql');
  const wrap=sql=>{
   const statement=(values=[])=>({
     first:async()=>sqlite.prepare(sql).get(...values)||null,
@@ -835,3 +837,169 @@ test('lost HomeFlow acknowledgement retries the same pending approval without do
   assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),ledgerBefore);
  }finally{f.DB.sqlite.close()}
 });
+
+
+test('approved CASH draft posts once through signed executor and persists immutable real actors',async()=>{
+ const f=await setup()
+ try{
+  const memberCookie=await loginMemberAfterOwner(f)
+  const accountResponse=await finance(f,'accounts','POST',{
+   label:'本人現金',account_kind:'cash',opening_balance:5000
+  },memberCookie)
+  assert.equal(accountResponse.status,201)
+  const accountId=(await accountResponse.json()).account_id
+  const pending=(await (await finance(f,'proposals','POST',{
+   idempotency_key:'approved-cash-once-test-001',account_id:accountId,
+   type:'expense',amount_jpy:1520,date:'2026-11-13',
+   merchant:'マクドナルド',category:'食費',note:'合法记账'
+  },memberCookie)).json()).prepared
+  const approval='55555555-5555-4555-8555-555555555555'
+  const stmt=f.DB.sqlite.prepare("UPDATE family_finance_pending_actions SET state='submitted',homeflow_approval_id=?,submitted_at=? WHERE request_id=?")
+  stmt.run(approval,Date.now(),pending.request_id)
+  const ledgerBefore=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  const secret='c'.repeat(64)
+  f.env.APP_ENV='production'
+  f.env.KAKEIBO_FAMILY_EXECUTION_ENABLED='true'
+  f.env.KAKEIBO_APPROVAL_PROOF_ENABLED='true'
+  f.env.KAKEIBO_APPROVAL_VERIFICATION_SECRET=secret
+  let homeflowProofCalls=0
+  const original=f.env.HOMEFLOW_IDENTITY_SERVICE.fetch
+  f.env.HOMEFLOW_IDENTITY_SERVICE.fetch=async request=>{
+   if(new URL(request.url).pathname!=='/api/internal/approvals/verify')
+    return original(request)
+   homeflowProofCalls++
+   const stamp=request.headers.get('x-approval-timestamp'),raw=await request.text()
+   const sig=createHmac('sha256',Buffer.from(secret,'hex'))
+    .update('kakeibo\n'+stamp+'\n'+raw).digest('hex')
+   assert.equal(request.headers.get('x-approval-signature'),sig)
+   const body=JSON.parse(raw)
+   assert.equal(body.purpose,'execute')
+   assert.equal(body.request_id,approval)
+   assert.equal(body.resource_id,pending.request_id)
+   assert.equal(body.payload_sha256,pending.payload_sha256)
+   assert.equal(body.idempotency_key,'kakeibo:finance:'+pending.request_id)
+   assert.equal(body.expected_version,null)
+   assert.equal(body.execution_nonce,'d'.repeat(64))
+   return Response.json({ok:true,verified:true,request_id:approval,
+    resource_id:pending.request_id,household_id:'primary',
+    requester_user_id:member,approver_user_id:owner,
+    payload_sha256:pending.payload_sha256,
+    idempotency_key:'kakeibo:finance:'+pending.request_id,
+    expected_version:null,execution_status:'executing',
+    execution_authorized:true,applied:false,
+    approved_at:Date.now()-1000,expires_at:Date.now()+3600000})
+  }
+  const call=async (overrides={},headers={})=>{
+   const body={request_id:approval,resource_id:pending.request_id,
+    requester_user_id:member,household_id:'primary',
+    payload_sha256:pending.payload_sha256,execution_nonce:'d'.repeat(64),
+    ...overrides}
+   const raw=JSON.stringify(body),timestamp=String(Date.now())
+   const mac=createHmac('sha256',Buffer.from(secret,'hex'))
+    .update('homeflow\n'+timestamp+'\n'+raw).digest('hex')
+   return approvedActionRoute(new Request(app+'/api/internal/approved-actions/execute',{
+    method:'POST',headers:{'content-type':'application/json',
+     'x-approval-client':'homeflow','x-approval-timestamp':timestamp,
+     'x-approval-signature':mac,...headers},body:raw
+   }),f.env,['execute'])
+  }
+  assert.equal((await call({}, {cookie:'__Host-hf_session=bad'})).status,403)
+  assert.equal((await call({}, {origin:app})).status,403)
+  const forged=await call({payload_sha256:'b'.repeat(64)})
+  assert.equal(forged.status,409)
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_applied_actions').get().n,0)
+  const result=await call()
+  assert.equal(result.status,200,await result.clone().text())
+  const posted=await result.json()
+  assert.equal(posted.applied,true)
+  assert.equal(posted.already_applied,false)
+  assert.equal(posted.approval_id,approval)
+  assert.equal(posted.payload_sha256,pending.payload_sha256)
+  assert.equal(homeflowProofCalls,1)
+  const ledger=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  assert.equal(ledger.length,ledgerBefore.length+1)
+  assert.deepEqual(ledger.slice(0,ledgerBefore.length).map(x=>({...x,family_account_id:null})),
+   ledgerBefore.map(x=>({...x,family_account_id:null})),
+   'historic entries must remain exactly unchanged')
+  const created=ledger.at(-1)
+  assert.equal(created.amount,1520)
+  assert.equal(created.type,'expense')
+  assert.equal(created.category,'食費')
+  assert.equal(created.merchant,'マクドナルド')
+  assert.equal(created.family_account_id,accountId)
+  assert.equal(created.payment_source,'','duplicate labels never imply a legacy credit card')
+  assert.equal(created.client_request_id,'hf:'+approval)
+  assert.equal(created.raw,'','private source text is not disclosed')
+  assert.equal(posted.entry_id,created.id)
+  const repeated=await call()
+  assert.equal(repeated.status,200)
+  assert.equal((await repeated.json()).already_applied,true)
+  assert.equal(homeflowProofCalls,1,'once applied no further remote proof lookups')
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries').get().n,ledger.length)
+  const audit=f.DB.sqlite.prepare("SELECT * FROM family_finance_events WHERE action='finance_entry_applied'").all()
+  assert.equal(audit.length,1)
+  assert.equal(audit[0].actor_user_id,member)
+  const sidecar=f.DB.sqlite.prepare('SELECT * FROM family_finance_applied_actions').get()
+  assert.equal(sidecar.approver_user_id,owner)
+  assert.equal(sidecar.actor_type,'integration')
+  assert.equal(sidecar.requester_user_id,member)
+  assert.equal(sidecar.entry_id,created.id)
+  assert.throws(()=>f.DB.sqlite.prepare('DELETE FROM family_finance_applied_actions').run(),/APPLIED_RESULT_IMMUTABLE/)
+ }finally{f.DB.sqlite.close()}
+})
+test('ledger + receipt + actor audit roll back together on failed result journaling',async()=>{
+ const f=await setup()
+ try{
+  const memberCookie=await loginMemberAfterOwner(f)
+  const accountId=(await (await finance(f,'accounts','POST',{
+   label:'新现金',account_kind:'cash'
+  },memberCookie)).json()).account_id
+  const pending=(await (await finance(f,'proposals','POST',{
+   idempotency_key:'rollback-cash-posting-00001',account_id:accountId,
+   type:'income',amount_jpy:8000,date:'2026-11-13',
+   merchant:'家族补贴',category:'生活'
+  },memberCookie)).json()).prepared
+  const approval='66666666-6666-4666-8666-666666666666'
+  f.DB.sqlite.prepare("UPDATE family_finance_pending_actions SET state='submitted',homeflow_approval_id=?,submitted_at=? WHERE request_id=?")
+   .run(approval,Date.now(),pending.request_id)
+  f.env.APP_ENV='production'
+  f.env.KAKEIBO_FAMILY_EXECUTION_ENABLED='true'
+  f.env.KAKEIBO_APPROVAL_PROOF_ENABLED='true'
+  const secret='c'.repeat(64)
+  f.env.KAKEIBO_APPROVAL_VERIFICATION_SECRET=secret
+  const orig=f.env.HOMEFLOW_IDENTITY_SERVICE.fetch
+  f.env.HOMEFLOW_IDENTITY_SERVICE.fetch=async req=>{
+   if(new URL(req.url).pathname!=='/api/internal/approvals/verify')
+    return orig(req)
+   return Response.json({ok:true,verified:true,request_id:approval,
+    resource_id:pending.request_id,household_id:'primary',
+    requester_user_id:member,approver_user_id:owner,
+    payload_sha256:pending.payload_sha256,idempotency_key:'kakeibo:finance:'+pending.request_id,
+    expected_version:null,execution_status:'executing',execution_authorized:true,
+    applied:false,approved_at:Date.now()-1000,expires_at:Date.now()+3600000})
+  }
+  const submit=()=>{const body=JSON.stringify({
+   request_id:approval,resource_id:pending.request_id,household_id:'primary',
+   requester_user_id:member,payload_sha256:pending.payload_sha256,
+   execution_nonce:'e'.repeat(64)})
+   const timestamp=String(Date.now())
+   const signature=createHmac('sha256',Buffer.from(secret,'hex'))
+    .update('homeflow\n'+timestamp+'\n'+body).digest('hex')
+   return approvedActionRoute(new Request(app+'/api/internal/approved-actions/execute',{
+    method:'POST',headers:{'content-type':'application/json','x-approval-client':'homeflow',
+     'x-approval-timestamp':timestamp,'x-approval-signature':signature},body
+   }),f.env,['execute'])}
+  const before=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  f.DB.sqlite.exec("CREATE TRIGGER inject_audit_fail BEFORE INSERT ON family_finance_applied_actions BEGIN SELECT RAISE(ABORT,'FAULT_INJECTED'); END")
+  assert.equal((await submit()).status,503)
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),before,
+   'failed result journal must never strand a financial entry')
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_applied_actions').get().n,0)
+  f.DB.sqlite.exec('DROP TRIGGER inject_audit_fail')
+  const fixed=await submit()
+  assert.equal(fixed.status,200,await fixed.clone().text())
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries').get().n,before.length+1)
+  assert.equal((await submit()).status,200)
+  assert.equal(f.DB.sqlite.prepare("SELECT COUNT(*) n FROM family_finance_events WHERE action='finance_entry_applied'").get().n,1)
+ }finally{f.DB.sqlite.close()}
+})

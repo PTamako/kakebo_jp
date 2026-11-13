@@ -21,6 +21,7 @@ function d1(){
  migration('0022_homeflow_identity_foundation.sql');
  migration('0023_family_financial_account_identities.sql');
  migration('0024_family_finance_pending_actions.sql');
+ migration('0025_family_financial_resource_owners.sql');
  sqlite.exec("CREATE TABLE entries (id INTEGER PRIMARY KEY,date TEXT,time TEXT,type TEXT,merchant TEXT,amount INTEGER,category TEXT,note TEXT,payment_source TEXT,transfer_target TEXT,transfer_applied INTEGER,transfer_date TEXT);"+
    "INSERT INTO entries VALUES(1,'2026-11-10','','expense','既存の個人明細',1234,'生活','旧账保留','PayPay Visa',NULL,0,NULL);"+
    "INSERT INTO entries VALUES(2,'2026-11-10','','income','工资到账',100000,'工资','工资保留','银行',NULL,0,NULL);"+
@@ -38,6 +39,10 @@ function d1(){
   "INSERT INTO investment_holdings VALUES('ABC12345','tsumitate','SBI 投資信託',10000,18000,NULL,NULL,CURRENT_TIMESTAMP);"+
   "INSERT INTO fund_prices VALUES('ABC12345',20000,'2026-11-12','official',CURRENT_TIMESTAMP);"+
   "INSERT INTO card_bills VALUES('PayPay Visa','2026-11','2026-11-01','2026-11-30',1234,1)");
+ sqlite.exec("CREATE TABLE recurring_plans(id TEXT PRIMARY KEY,name TEXT);"+
+  "INSERT INTO recurring_plans VALUES('rent-legacy','家賃');"+
+  "INSERT INTO investment_plans VALUES('ABC12345','tsumitate','SBI 投資信託',15000,15,1);"+
+  "INSERT INTO investment_plan_history VALUES('ABC12345','tsumitate','SBI 投資信託',15000,15,1,'2026-11',CURRENT_TIMESTAMP)");
  const wrap=sql=>{
   const statement=(values=[])=>({
     first:async()=>sqlite.prepare(sql).get(...values)||null,
@@ -544,4 +549,89 @@ test('an unvalued SBI position never masquerades as complete household assets',a
   f.state.homeflowActive=false;
   assert.equal((await finance(f,'shared/asset-summary','GET',null,ownerCookie)).status,401);
  }finally{f.DB.sqlite.close();}
+});
+
+
+test('verified HomeFlow owner alone can attach old fixed expenses, SBI and bills without altering source rows',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const tables=['recurring_plans','investment_plans','investment_plan_history',
+   'investment_holdings','card_bills'];
+  const source=Object.fromEntries(tables.map(t=>[t,
+   f.DB.sqlite.prepare('SELECT * FROM '+t+' ORDER BY 1').all()]));
+  assert.equal((await finance(f,'legacy/resource-owners','POST',{
+   confirm:true,resource_kind:'recurring_plan'
+  },memberCookie)).status,403);
+  assert.equal((await finance(f,'legacy/resource-owners','POST',{
+   confirm:false,resource_kind:'recurring_plan'
+  },ownerCookie)).status,403);
+  assert.equal((await finance(f,'legacy/resource-owners','POST',{
+   confirm:true,resource_kind:'__proto__'
+  },ownerCookie)).status,403);
+  for(const kind of ['recurring_plan','investment_plan','investment_plan_history',
+   'investment_holding','card_bill']){
+   const outcome=await finance(f,'legacy/resource-owners','POST',{
+    confirm:true,resource_kind:kind
+   },ownerCookie);
+   assert.equal(outcome.status,200,await outcome.clone().text());
+   assert.equal((await outcome.json()).mapped,1);
+   const replay=await finance(f,'legacy/resource-owners','POST',{
+    confirm:true,resource_kind:kind
+   },ownerCookie);
+   assert.equal(replay.status,200);
+   assert.equal((await replay.json()).mapped,0);
+  }
+  const current=await (await finance(f,'legacy/resource-owners','GET',null,memberCookie)).json();
+  assert.equal(current.items.length,5);
+  assert.ok(current.items.every(x=>x.owner_user_id===owner&&x.mapped_count===1));
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_financial_resource_owners').get().n,5);
+  for(const t of tables)
+   assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM '+t+' ORDER BY 1').all(),source[t],
+    'legacy table '+t+' must remain byte-for-byte equivalent in every row');
+  const audited=f.DB.sqlite.prepare("SELECT actor_user_id,action FROM family_finance_events WHERE action='legacy_resource_owners_adopted'").all();
+  assert.equal(audited.length,5);
+  assert.ok(audited.every(x=>x.actor_user_id===owner));
+  const saved=f.DB.sqlite.prepare('SELECT * FROM family_financial_resource_owners LIMIT 1').get();
+  assert.throws(()=>f.DB.sqlite.prepare('UPDATE family_financial_resource_owners SET owner_user_id=? WHERE resource_kind=? AND legacy_key=?')
+   .run(member,saved.resource_kind,saved.legacy_key),/RESOURCE_OWNER_IMMUTABLE/);
+  assert.throws(()=>f.DB.sqlite.prepare('DELETE FROM family_financial_resource_owners WHERE resource_kind=? AND legacy_key=?')
+   .run(saved.resource_kind,saved.legacy_key),/RESOURCE_OWNER_IMMUTABLE/);
+  assert.throws(()=>f.DB.sqlite.prepare('INSERT INTO family_financial_resource_owners(resource_kind,legacy_key,household_id,owner_user_id,assigned_by_user_id) VALUES(?,?,?,?,?)')
+   .run('recurring_plan','malicious-member','primary',member,member),/LEGACY_RESOURCE_OWNER_PROOF_REQUIRED/);
+  f.state.homeflowActive=false;
+  assert.equal((await finance(f,'legacy/resource-owners','GET',null,memberCookie)).status,401);
+ }finally{f.DB.sqlite.close()}
+});
+test('legacy mapping paginates bounded batches and retry does not create fake actor events',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const statement=f.DB.sqlite.prepare('INSERT INTO recurring_plans(id,name) VALUES(?,?)');
+  for(let i=0;i<52;i++)statement.run('fixed-'+String(i).padStart(3,'0'),'旧固定费');
+  const initial=f.DB.sqlite.prepare('SELECT * FROM recurring_plans ORDER BY id').all();
+  const call=async cursor=>{
+   const res=await finance(f,'legacy/resource-owners','POST',{
+    confirm:true,resource_kind:'recurring_plan',...(cursor?{cursor}:{})
+   },ownerCookie);
+   assert.equal(res.status,200,await res.clone().text());
+   return res.json();
+  };
+  const first=await call();
+  assert.equal(first.mapped,50);
+  assert.equal(first.has_more,true);
+  assert.ok(typeof first.next_cursor==='string');
+  const next=await call(first.next_cursor);
+  assert.equal(next.mapped,3);
+  assert.equal(next.next_cursor,null);
+  assert.equal(next.has_more,false);
+  const again=await call();
+  assert.equal(again.mapped,0);
+  assert.equal(again.already_mapped,50);
+  assert.equal(again.next_cursor,first.next_cursor);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_financial_resource_owners WHERE resource_kind=?').get('recurring_plan').n,53);
+  assert.equal(f.DB.sqlite.prepare("SELECT COUNT(*) n FROM family_finance_events WHERE action='legacy_resource_owners_adopted'").get().n,2);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM recurring_plans ORDER BY id').all(),initial);
+ }finally{f.DB.sqlite.close()}
 });

@@ -232,7 +232,7 @@ test('signed bridge rejects only true duplicate candidates and validates categor
     const missing=await save('f6','');
     assert.equal(missing.status,400);assert.equal(missing.body.error,'merchant_confirmation_required');
     // A new shop need not exist in historical entries or merchant rules.
-    const newShop=await save('g7','はじめてのお店','13:15');
+    const newShop=await save('a7','はじめてのお店','13:15');
     assert.equal(newShop.status,200,JSON.stringify(newShop.body));
     assert.equal(sqlite.prepare('SELECT merchant FROM entries WHERE id=?1').get(Number(newShop.body.remote_id)).merchant,'はじめてのお店');
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,4);

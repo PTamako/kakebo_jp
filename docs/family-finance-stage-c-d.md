@@ -60,5 +60,5 @@
 - `src/FamilyFinanceAccess.vue` 新增年度选择、年收支结余、月度收支列表、全部年度支出分类，仍是**全家同一份统计**；没有“我的/他的/全家”切换。旧单人统计主页面不被本 Draft 改写，用户尚无法使用新家庭身份访问旧全量统计功能。
 - 回归：`tests/homeflow-sso-isolated.test.mjs` 用真实临时 SQLite 验证夫妻两身份返回完全相同、年边界（2025/2026/2027）、12 个月、分类与支付方式、转账独立、不写正式 entries、不增加普通 GET 审计。 `tests/family-finance-ui.test.mjs` 校验 UI 归属与接口。
 - 提交：`e6de15c1647e2bcfdb8ff08b231d54ed9b602ccc`（API）、`3d0fab90474346b81c96a93eb81037e7ac3b7873`（年份解析修正）、`58e33ca6c8a851136cfbe6a6a2d5be7bc145f957`（真实 D1 回归）、`07a4c3b49252a9aebbb7b0794a7e251997951127`（UI）、`02d6c693c3c842f9d0d1933c63cf70433d097f2a`（UI 回归）。
-- [Validate #43439421706](https://github.com/PTamako/kakebo_jp/actions/runs/43439421706) **success**；[Mobile WebKit #43439421705](https://github.com/PTamako/kakebo_jp/actions/runs/43439421705) **本文件写入时 in_progress**，待后续核验最终结论。
+- [Validate #43439421706](https://github.com/PTamako/kakebo_jp/actions/runs/43439421706) **success**；[Mobile WebKit #43439421705](https://github.com/PTamako/kakebo_jp/actions/runs/43439421705) **本轮原增量已通过**。追加未知交易类型回归后，最终 [Validate #43439846672](https://github.com/PTamako/kakebo_jp/actions/runs/43439846672) **success**、[Mobile WebKit #43439846696](https://github.com/PTamako/kakebo_jp/actions/runs/43439846696) **success**。
 - 剩余：真实旧账本完整统计/余额/卡账单/SBI/固定费的逐资源 stable ID 和权限迁移，以及前端家計簿正式全家可操作功能、HomeFlow 审批执行全类型、断网重试、两人 iPhone PWA 真机验收。

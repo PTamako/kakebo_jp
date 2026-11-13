@@ -44,3 +44,17 @@ test('new family-member PWA does not get stuck in legacy code modal, with origin
  assert.match(app,/if \(!locked\.value && !await routeNewFamilyMemberToIsolatedLogin\(\)\)/);
  assert.match(app,/const old=await fetch\('\/api\/payment-sources',\{credentials:'same-origin',cache:'no-store'\}\)/);
 });
+
+
+test('household annual statistics are shared and do not expose a per-person summary selector',()=>{
+ assert.match(source,/\/api\/family-finance\/shared\/year-summary\?year=/);
+ assert.match(source,/yearly\.ledger_scope==='household'&&yearly\.complete===true/);
+ assert.match(source,/selectedYear=ref\(month\.slice\(0,4\)\)/);
+ assert.match(source,/@change="refresh"/);
+ assert.match(source,/annual\.totals\.income/);
+ assert.match(source,/annual\.totals\.expense/);
+ assert.match(source,/annual\.net_income_expense/);
+ assert.match(source,/annual\.totals\.transfer/);
+ assert.match(source,/annual\.categories\.filter\(c=>c\.type==='expense'\)/);
+ assert.doesNotMatch(source,/selectedAccountOwner|myStats|spouseStats/);
+});

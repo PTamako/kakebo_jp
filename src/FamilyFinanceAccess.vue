@@ -123,15 +123,19 @@ async function complete(){
 }
 async function logout(){
  if(busy.value)return
+ // Hide the former account immediately and invalidate any pending finance
+ // responses. A failed logout still reports failure; it is not success.
+ resetIdentity()
  busy.value=true;error.value=''
  try{
   await call('/api/homeflow-sso/logout',{method:'POST'})
-  resetIdentity();clearPending()
+  clearPending()
  }catch(e){error.value=e.message}
  finally{busy.value=false}
 }
 async function createAccount(){
  if(busy.value||!person.value||!financeEnabled.value)return
+ const revision=epoch,actor=person.value.user_id
  const label=newLabel.value.trim()
  if(!label||label.length>80){error.value='账户名称需为 1～80 个字符';return}
  busy.value=true;error.value=''
@@ -140,6 +144,7 @@ async function createAccount(){
    method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({label,account_kind:newKind.value})
   })
+  if(revision!==epoch||person.value?.user_id!==actor)return
   if(data.ledger_changed!==false)throw Error('账户状态需要复核')
   newLabel.value=''
   await refresh()
@@ -148,6 +153,7 @@ async function createAccount(){
 }
 async function mutate(a,change){
  if(busy.value||!canManage(a)||a.origin==='legacy'||!financeEnabled.value)return
+ const revision=epoch,actor=person.value.user_id
  if(change.is_archived===true&&!window.confirm('确认归档此账户？不会删除家庭账务记录。'))return
  busy.value=true;error.value=''
  try{
@@ -155,6 +161,7 @@ async function mutate(a,change){
    method:'PATCH',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({version:a.version,...change})
   })
+  if(revision!==epoch||person.value?.user_id!==actor)return
   if(data.ledger_changed!==false)throw Error('账户修改结果需要复核')
   editing.value=null;rename.value=''
   await refresh()
@@ -166,17 +173,14 @@ function openRename(a){
  editing.value=a.account_id;rename.value=a.label
 }
 function foreground(){
- if(document.visibilityState!=='visible'||busy.value)return
- // iPhone Safari/PWA may resume after a HomeFlow account switch in another
- // app. Hide all private finance data before the next source-session check.
- if(person.value){
-  person.value=null;accounts.value=[];totals.value=null;annual.value=null
-  editing.value=null;rename.value=''
- }
+ if(document.visibilityState!=='visible')return
+ // Account switching may happen while a prior fetch/mutation is still busy.
+ // Always hide the prior person's private assets before introspection.
+ resetIdentity()
  void check()
 }
 onMounted(()=>{void check();document.addEventListener('visibilitychange',foreground)})
-onUnmounted(()=>{epoch++;document.removeEventListener('visibilitychange',foreground)})
+onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange',foreground)})
 </script>
 
 <template>

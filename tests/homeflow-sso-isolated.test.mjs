@@ -659,15 +659,31 @@ test('signed HomeFlow decision proof can be checked for an encrypted member prop
   const prepared=(await preparedResponse.json()).prepared;
   const approvedId='33333333-3333-4333-8333-333333333333';
   const firstLedger=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
-  const originalEvents=f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all();
+  let originalEvents=f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all();
   const stub=f.env.HOMEFLOW_IDENTITY_SERVICE.fetch;
   const secret='c'.repeat(64);
   f.env.APP_ENV='production';
   f.env.KAKEIBO_APPROVAL_VERIFICATION_SECRET=secret;
   let replyMode='approved',checked=0;
   f.env.HOMEFLOW_IDENTITY_SERVICE.fetch=async request=>{
-   if(new URL(request.url).pathname!=='/api/internal/approvals/verify')
-    return stub(request);
+   const path=new URL(request.url).pathname;
+   if(path==='/api/internal/approvals/submit'){
+    const raw=await request.text(),stamp=request.headers.get('x-approval-timestamp');
+    const mac=createHmac('sha256',Buffer.from(secret,'hex'))
+     .update('kakeibo\n'+stamp+'\n'+raw).digest('hex');
+    assert.equal(request.headers.get('x-approval-signature'),mac);
+    const submitted=JSON.parse(raw);
+    assert.equal(submitted.resource_id,prepared.request_id);
+    assert.equal(submitted.payload_sha256,prepared.payload_sha256);
+    assert.equal(submitted.requester_user_id,member);
+    assert.equal(Object.keys(submitted).length,4);
+    return Response.json({ok:true,approval_id:approvedId,status:'pending',
+     resource_id:submitted.resource_id,payload_sha256:submitted.payload_sha256,
+     requester_user_id:member,household_id:'primary',
+     idempotency_key:'kakeibo:finance:'+prepared.request_id,
+     replayed:false,applied:false,ledger_changed:false},{status:201});
+   }
+   if(path!=='/api/internal/approvals/verify')return stub(request);
    checked++;
    assert.equal(request.method,'POST');
    assert.equal(request.redirect,'manual');
@@ -692,6 +708,17 @@ test('signed HomeFlow decision proof can be checked for an encrypted member prop
    if(replyMode==='wrong_digest')response.payload_sha256='b'.repeat(64);
    return Response.json(response);
   };
+  f.env.KAKEIBO_APPROVAL_SUBMISSION_ENABLED='true';
+  const sent=await finance(f,'proposals/'+prepared.request_id+'/submit',
+   'POST',{},memberCookie);
+  assert.equal(sent.status,201,await sent.clone().text());
+  const receipt=await sent.json();
+  assert.equal(receipt.homeflow_approval_id,approvedId);
+  assert.equal(receipt.status,'submitted_status_unknown');
+  assert.equal(receipt.applied,false);
+  assert.equal((await finance(f,'proposals/'+prepared.request_id+'/submit',
+   'POST',{},memberCookie)).status,200,'local retry is idempotent');
+  originalEvents=f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all();
   const ask=(homeflow_request_id=approvedId)=>finance(f,
    'proposals/'+prepared.request_id+'/approval-proof','POST',
    {homeflow_request_id},memberCookie);

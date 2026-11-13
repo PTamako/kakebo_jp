@@ -31,6 +31,7 @@ function d1(){
    "INSERT INTO payment_sources VALUES('nanaco',1,0,NULL,'prepaid','card',0,2400,'2026-11-01')");
  sqlite.exec("ALTER TABLE payment_sources ADD COLUMN opening_entry_id INTEGER NOT NULL DEFAULT 0;"+
   "ALTER TABLE entries ADD COLUMN client_request_id TEXT;"+
+  "ALTER TABLE entries ADD COLUMN raw TEXT NOT NULL DEFAULT '';"+
   "CREATE TABLE investment_plans(fund_code TEXT,account_type TEXT,fund_name TEXT,monthly_amount INTEGER,order_day INTEGER,enabled INTEGER);"+
   "CREATE TABLE investment_plan_history(fund_code TEXT,account_type TEXT,fund_name TEXT,monthly_amount INTEGER,order_day INTEGER,enabled INTEGER,effective_month TEXT,updated_at TEXT);"+
   "CREATE TABLE investment_holdings(fund_code TEXT,account_type TEXT,fund_name TEXT,units INTEGER,acquisition_cost INTEGER,reported_value INTEGER,reported_at TEXT,updated_at TEXT);"+

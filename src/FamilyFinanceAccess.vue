@@ -4,7 +4,7 @@ import {computed,onMounted,onUnmounted,ref} from 'vue'
 const STORAGE='kakeibo:homeflow-resume-v1'
 const hex=/^[a-f0-9]{64}$/i
 const enabled=ref(false),financeEnabled=ref(false),busy=ref(false),error=ref('')
-const person=ref(null),pending=ref(null),accounts=ref([]),totals=ref(null)
+const person=ref(null),pending=ref(null),accounts=ref([]),totals=ref(null),annual=ref(null)
 const newLabel=ref(''),newKind=ref('credit_card'),editing=ref(null),rename=ref('')
 const kinds=[
  {value:'credit_card',label:'信用卡'},{value:'prepaid',label:'储值卡'},
@@ -14,6 +14,8 @@ const kinds=[
 ]
 let epoch=0
 const month=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).slice(0,7)
+const selectedYear=ref(month.slice(0,4))
+const yearOptions=Array.from({length:6},(_,i)=>String(Number(month.slice(0,4))+1-i))
 const canManage=a=>!!person.value&&(person.value.role==='owner'||a.owner_user_id===person.value.user_id)
 const amount=value=>new Intl.NumberFormat('ja-JP',{style:'currency',currency:'JPY',
  maximumFractionDigits:0}).format(Number(value||0))
@@ -31,7 +33,7 @@ function restorePending(){
  }catch{clearPending()}
 }
 function resetIdentity(){
- epoch++;person.value=null;accounts.value=[];totals.value=null
+ epoch++;person.value=null;accounts.value=[];totals.value=null;annual.value=null
  editing.value=null;rename.value=''
 }
 async function call(path,options={}){
@@ -41,18 +43,20 @@ async function call(path,options={}){
  return data
 }
 async function refresh(){
- const revision=epoch
+ const revision=epoch,year=selectedYear.value
  if(!person.value||!financeEnabled.value)return
  try{
-  const [list,summary]=await Promise.all([
+  const [list,summary,yearly]=await Promise.all([
    call('/api/family-finance/accounts'),
-   call('/api/family-finance/shared/ledger-totals?month='+encodeURIComponent(month))
+   call('/api/family-finance/shared/ledger-totals?month='+encodeURIComponent(month)),
+   call('/api/family-finance/shared/year-summary?year='+encodeURIComponent(year))
   ])
-  if(revision!==epoch)return
+  if(revision!==epoch||year!==selectedYear.value)return
   accounts.value=Array.isArray(list.items)?list.items:[]
   totals.value=summary.ledger_scope==='household'?summary:null
+  annual.value=yearly.ledger_scope==='household'&&yearly.complete===true?yearly:null
  }catch(e){
-  if(revision===epoch){error.value=e.message;accounts.value=[];totals.value=null}
+  if(revision===epoch&&year===selectedYear.value){error.value=e.message;accounts.value=[];totals.value=null;annual.value=null}
  }
 }
 async function check(){
@@ -190,6 +194,35 @@ onUnmounted(()=>{epoch++;document.removeEventListener('visibilitychange',foregro
      <small>{{month}} 家庭账务（双方相同统计）</small>
      <div><span>收入 {{amount(totals.totals.income)}}</span><span>支出 {{amount(totals.totals.expense)}}</span></div>
     </div>
+    <div class="hf-year-head"><strong>家庭年度统计</strong>
+     <label>年度
+      <select v-model="selectedYear" aria-label="统计年度" @change="refresh">
+       <option v-for="y in yearOptions" :key="y" :value="y">{{y}} 年</option>
+      </select>
+     </label>
+    </div>
+    <div v-if="annual" class="hf-annual">
+     <div class="hf-annual-totals">
+      <span>收入 <b>{{amount(annual.totals.income)}}</b></span>
+      <span>支出 <b>{{amount(annual.totals.expense)}}</b></span>
+      <span>结余 <b>{{amount(annual.net_income_expense)}}</b></span>
+     </div>
+     <small class="hf-note">资产转移 {{amount(annual.totals.transfer)}} 单独列示，不计入收支结余</small>
+     <div class="hf-year-list" aria-label="家庭每月收支">
+      <div v-for="m in annual.months" :key="m.month" class="hf-year-row">
+       <span>{{m.month.slice(5)}}月</span>
+       <span>收入 {{amount(m.totals.income)}}</span>
+       <span>支出 {{amount(m.totals.expense)}}</span>
+      </div>
+     </div>
+     <div v-if="annual.categories.some(c=>c.type==='expense')" class="hf-category">
+      <strong>年度支出分类</strong>
+      <div v-for="c in annual.categories.filter(c=>c.type==='expense')" :key="c.category">
+       <span>{{c.category}}</span><b>{{amount(c.amount)}}</b>
+      </div>
+     </div>
+    </div>
+    <p v-else class="hf-note">年度统计尚未读取成功</p>
     <div class="hf-subhead"><strong>家庭账户</strong>
      <button type="button" :disabled="busy" @click="refresh">刷新</button>
     </div>
@@ -247,6 +280,19 @@ onUnmounted(()=>{epoch++;document.removeEventListener('visibilitychange',foregro
 .hf-list li>div:first-child{display:grid;gap:3px}
 .hf-summary{padding:9px;border-radius:10px;background:var(--bg,#f7f7f7);display:grid;gap:6px}
 .hf-summary div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:13px}
+.hf-year-head{display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid var(--line,#ddd);padding-top:12px}
+.hf-year-head label{display:flex;align-items:center;gap:5px;font-size:12px}
+.hf-year-head select{min-height:40px;border:1px solid var(--line,#ddd);border-radius:9px;padding:5px;background:var(--card,#fff)}
+.hf-annual{display:grid;gap:10px;min-width:0}
+.hf-annual-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.hf-annual-totals span{display:grid;gap:5px;padding:9px;background:var(--bg,#f7f7f7);border-radius:9px;font-size:11px}
+.hf-annual-totals b{font-size:clamp(12px,3vw,15px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.hf-year-list,.hf-category{display:grid;gap:0;border:1px solid var(--line,#ddd);border-radius:10px;overflow:hidden}
+.hf-year-row{display:grid;grid-template-columns:42px minmax(0,1fr) minmax(0,1fr);gap:6px;align-items:center;padding:7px 9px;font-size:11px}
+.hf-year-row:nth-child(even){background:var(--bg,#f7f7f7)}
+.hf-year-row span:not(:first-child){text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.hf-category{padding:7px 10px;gap:6px;font-size:12px}
+.hf-category>div{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--line,#ddd);padding-top:6px}
 .hf-create{display:grid;gap:7px;border-top:1px solid var(--line,#ddd);padding-top:12px}
 .hf-create input,.hf-create select,.hf-inline input{min-width:0;width:100%;box-sizing:border-box;
  min-height:42px;border:1px solid var(--line,#ddd);border-radius:10px;padding:7px}

@@ -32,7 +32,7 @@ test('member account management respects server actor and version; no direct led
  assert.match(source,/person\.value\.role==='owner'\|\|a\.owner_user_id===person\.value\.user_id/);
  assert.match(source,/a\.origin==='legacy'/);
  assert.match(source,/\/api\/family-finance\/accounts/);
- assert.match(source,/body:JSON\.stringify\(\{version:a\.version,\.\.\.change\}\)/);
+ assert.match(source,/body:JSON\.stringify\(\{version:a\.version,\.\.\.change,expected_user_id:actor\}\)/);
  assert.match(source,/ledger_changed!==false/);
  assert.match(source,/\/api\/family-finance\/shared\/ledger-totals\?month=/);
  assert.doesNotMatch(source,/\/api\/family-finance\/shared\/entries.{0,60}POST/);
@@ -113,3 +113,15 @@ test('switching HomeFlow users while a finance mutation is in flight never reope
  // No saved financial form, private account lists or ledger caches across users.
  assert.doesNotMatch(source,/localStorage\.setItem\([^\n]*(?:account|ledger|totals)/i);
 })
+
+test('personal financial account mutation uses originating HomeFlow user, not stale session cookie',()=>{
+ const api=readFileSync(new URL('../functions/api/family-finance/[[path]].js',import.meta.url),'utf8');
+ assert.equal((api.match(/data.expected_user_id!==user.user_id/g)||[]).length,2);
+ assert.equal((api.match(/code:'ACTOR_CHANGED'/g)||[]).length,2);
+ assert.match(source,/body:JSON.stringify\(\{label,account_kind:newKind.value,expected_user_id:actor\}\)/);
+ assert.match(source,/body:JSON.stringify\(\{version:a.version,\.\.\.change,expected_user_id:actor\}\)/);
+ assert.match(source,/const revision=epoch,actor=person.value.user_id/);
+ assert.match(source,/revision!==epoch\|\|person.value\?\.user_id!==actor/);
+ assert.match(source,/function foreground\(\)\{[\s\S]*?resetIdentity\(\)[\s\S]*?void check\(\)/);
+ assert.doesNotMatch(source,/localStorage.setItem\([^\n]*(?:ledger|account|balance)/i);
+});

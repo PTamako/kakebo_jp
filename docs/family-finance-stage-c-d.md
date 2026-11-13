@@ -50,3 +50,15 @@
 - `POST /proposals/{id}/approval-proof` 现要求**数据库已持久保存** `state='submitted'` 且 `homeflow_approval_id` 与传入 request id 完全一致；仍独立向 HomeFlow 短期签名核实 digest、最新角色及原 owner 决定，成功仅 `approved_not_applied`，绝不发起 `entries` INSERT/UPDATE。
 - 家計簿 [Validate #43423823312](https://github.com/PTamako/kakebo_jp/actions/runs/43423823312) success；覆盖丢失回执后重新提交、重复 ID、签名和外部摘要不一致、取消后拒绝审核、未验活成员、以及提交与核验前后正式 ledger 和余额完全不变。HomeFlow [#43423671632](https://github.com/PTamako/homeflow/actions/runs/43423671632) success。
 - **剩余 Stage D**：管理员审核后的 target Service Binding 幂等执行器、真实正式账务写入/回报 `executing→applied`、冲突/重试恢复、通知、PWA 状态交互和真实跨仓/真机端到端验收。缺阶段 A 的用户备份与隔离恢复时，本轮 0022～0025 和 HomeFlow 0053/0054 仍不能生产迁移，所有新开关 OFF。
+
+
+## 2026-11-13 阶段 C：家庭年度分组统计（继续开发，Draft）
+
+- 原分支/PR：`feature/homeflow-sso-isolated-foundation-20261113` / [#309](https://github.com/PTamako/kakebo_jp/pull/309)，**仅 Draft 代码及自动测试**，A 备份与隔离恢复仍由用户本人待完成。没有合并、生产 D1 迁移、功能开关、Cloudflare 部署或 Preview。
+- 新只读 `GET /api/family-finance/shared/year-summary?year=YYYY`：需实际 HomeFlow source-session 有效、固定本家庭/正式生产配置与 `KAKEIBO_FAMILY_FINANCE_ENABLED`。用 D1 grouped SQL 分别按月份+类型、年度分类、年度支付账户名称汇总现有 **同一张家庭 entries**；不按 `owner_user_id` 分割收入/支出、不暴露私有票据 OCR 原文、普通 GET 不写操作审计。
+- 响应含 12 个月含零金额月份、家庭年度 `income/expense/transfer` 金额和笔数、收入减支出结余、全部分类和支付方式金额/笔数、`ledger_scope:'household'`、`complete:true`、`ledger_changed:false`。**转账不参与收入/支出结余**；非法年份直接 400，金额或记录异常返回 409 而非静默省略。
+- `src/FamilyFinanceAccess.vue` 新增年度选择、年收支结余、月度收支列表、全部年度支出分类，仍是**全家同一份统计**；没有“我的/他的/全家”切换。旧单人统计主页面不被本 Draft 改写，用户尚无法使用新家庭身份访问旧全量统计功能。
+- 回归：`tests/homeflow-sso-isolated.test.mjs` 用真实临时 SQLite 验证夫妻两身份返回完全相同、年边界（2025/2026/2027）、12 个月、分类与支付方式、转账独立、不写正式 entries、不增加普通 GET 审计。 `tests/family-finance-ui.test.mjs` 校验 UI 归属与接口。
+- 提交：`e6de15c1647e2bcfdb8ff08b231d54ed9b602ccc`（API）、`3d0fab90474346b81c96a93eb81037e7ac3b7873`（年份解析修正）、`58e33ca6c8a851136cfbe6a6a2d5be7bc145f957`（真实 D1 回归）、`07a4c3b49252a9aebbb7b0794a7e251997951127`（UI）、`02d6c693c3c842f9d0d1933c63cf70433d097f2a`（UI 回归）。
+- [Validate #43439421706](https://github.com/PTamako/kakebo_jp/actions/runs/43439421706) **success**；[Mobile WebKit #43439421705](https://github.com/PTamako/kakebo_jp/actions/runs/43439421705) **本文件写入时 in_progress**，待后续核验最终结论。
+- 剩余：真实旧账本完整统计/余额/卡账单/SBI/固定费的逐资源 stable ID 和权限迁移，以及前端家計簿正式全家可操作功能、HomeFlow 审批执行全类型、断网重试、两人 iPhone PWA 真机验收。

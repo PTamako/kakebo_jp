@@ -1019,3 +1019,55 @@ test('ledger + receipt + actor audit roll back together on failed result journal
   assert.equal(f.DB.sqlite.prepare("SELECT COUNT(*) n FROM family_finance_events WHERE action='finance_entry_applied'").get().n,1)
  }finally{f.DB.sqlite.close()}
 })
+
+
+test('yearly family statistics are identical for spouses and exclude asset transfers from net spending',async()=>{
+ const f=await setup();
+ try{
+  f.DB.sqlite.exec(`INSERT INTO entries(id,date,time,type,merchant,amount,category,note,payment_source,transfer_applied)
+    VALUES
+     (3,'2026-01-15','','expense','便利店',400,'食品','','nanaco',0),
+     (4,'2026-12-15','','transfer','资产转移',5000,'资产转移','','银行',1),
+     (5,'2026-12-20','','income','奖励',50,'奖励','','银行',0),
+     (6,'2025-12-30','','income','过去的收入',999,'工资','','银行',0),
+     (7,'2027-01-01','','expense','明年的消费',2000,'食品','','nanaco',0);`);
+  const before=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const read=async(token,year='2026')=>{
+   const r=await finance(f,'shared/year-summary?year='+year,'GET',null,token);
+   return {status:r.status,body:await r.json()};
+  };
+  const a=await read(ownerCookie),b=await read(memberCookie);
+  assert.equal(a.status,200,JSON.stringify(a.body));
+  assert.deepEqual(a,b,'household statistics must not vary by account ownership');
+  assert.equal(a.body.ledger_scope,'household');
+  assert.equal(a.body.complete,true);
+  assert.equal(a.body.ledger_changed,false);
+  assert.equal(a.body.totals.income,100050);
+  assert.equal(a.body.totals.expense,1634);
+  assert.equal(a.body.totals.transfer,5000);
+  assert.equal(a.body.net_income_expense,98416);
+  assert.equal(a.body.counts.transfer,1);
+  assert.equal(a.body.months.length,12);
+  assert.equal(a.body.months[0].month,'2026-01');
+  assert.equal(a.body.months[0].totals.expense,400);
+  assert.equal(a.body.months[10].totals.expense,1234);
+  assert.equal(a.body.months[10].totals.income,100000);
+  assert.equal(a.body.months[11].totals.transfer,5000);
+  assert.deepEqual(a.body.categories.filter(x=>x.type==='expense')
+   .map(x=>[x.category,x.amount]),[['生活',1234],['食品',400]]);
+  assert.deepEqual(a.body.payment_sources.filter(x=>x.type==='expense')
+   .map(x=>[x.payment_source,x.amount]),[['PayPay Visa',1234],['nanaco',400]]);
+  assert.equal((await read(memberCookie,'2025')).body.totals.income,999);
+  assert.equal((await read(memberCookie,'2027')).body.totals.expense,2000);
+  assert.equal((await read(memberCookie,'2026-11')).status,400);
+  assert.equal((await read(memberCookie,'1999')).status,400);
+  assert.equal((await read(memberCookie,'abc')).status,400);
+  assert.equal((await read('')).status,401);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),before,
+   'yearly statistics must not modify ledger or source records');
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n,0,
+   'ordinary family statistics GET must not write actor audit');
+ }finally{f.DB.sqlite.close();}
+});

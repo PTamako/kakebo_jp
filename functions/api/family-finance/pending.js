@@ -1,4 +1,5 @@
 import {verifyPreparedApproval} from './approval-proof.js';
+import {submitPreparedApproval} from './approval-submit.js';
 // Stage C/D member-created finance intents, NOT household approvals.
 // Private encrypted storage only. This module NEVER modifies entries,
 // card bills, investment tables, balance statistics or R2 objects.
@@ -67,10 +68,11 @@ function validIntent(x){
 const shape=row=>({request_id:row.request_id,
  operation:'finance.entry.create',
  status:row.state==='cancelled'?'cancelled':
-   row.expires_at<=Date.now()?'expired':'prepared_not_submitted',
+   row.expires_at<=Date.now()?'expired':
+   row.state==='submitted'?'submitted_status_unknown':'prepared_not_submitted',
  payload_sha256:row.payload_sha256,expires_at:row.expires_at,
  created_at:row.created_at,account_id:row.account_id,
- homeflow_approval_id:null,ledger_changed:false});
+ homeflow_approval_id:row.homeflow_approval_id||null,ledger_changed:false});
 async function prepare(req,env,url,user){
  const data=await readMutation(req,url);
  if(!data)return json({code:'BAD_ORIGIN_OR_BODY'},403);
@@ -145,6 +147,7 @@ async function cancel(req,env,url,user,requestId){
   .bind(requestId,user.user_id,user.household_id).first();
  if(!row)return json({code:'NOT_FOUND'},404);
  if(row.state==='cancelled')return json({ok:true,prepared:shape(row),replayed:true});
+ if(row.state==='submitted')return json({code:'SUBMITTED_MANAGE_IN_HOMEFLOW'},409);
  if(row.expires_at<=Date.now())return json({code:'PROPOSAL_EXPIRED'},409);
  const stamp=Date.now();
  try{
@@ -167,6 +170,8 @@ export async function financePending(req,env,url,user,parts){
  if(user.role!=='member')return json({code:'ONLY_MEMBER_CAN_PREPARE'},403);
  if(parts.length===1&&req.method==='POST')return prepare(req,env,url,user);
  if(parts.length===1&&req.method==='GET')return list(env.DB,user,url);
+ if(parts.length===3&&parts[2]==='submit'&&safeId(parts[1])&&req.method==='POST')
+  return submitPreparedApproval(req,env,url,user,parts[1]);
  if(parts.length===3&&parts[2]==='approval-proof'&&safeId(parts[1])&&req.method==='POST')
   return verifyPreparedApproval(req,env,url,user,parts[1]);
  if(parts.length===3&&parts[2]==='cancel'&&safeId(parts[1])&&req.method==='POST')

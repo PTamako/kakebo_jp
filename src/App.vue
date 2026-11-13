@@ -352,6 +352,8 @@ async function loadCategoryMetadata() {
 // the HttpOnly cookie restores sessions across PWA reloads.
 const rememberDevice = ref(true)
 const token = ref('')
+// Purge credentials from previously installed PWA versions at startup.
+try{sessionStorage.removeItem('kakeibo-device-session');sessionStorage.removeItem('kakeibo-token')}catch{}
 async function setRememberDevice(remember) {
   if(rememberDevice.value===remember)return
   try {

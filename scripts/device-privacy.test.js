@@ -75,3 +75,14 @@ test('actual local IndexedDB adapter: count reads and clear removes images only'
     else globalThis.indexedDB = original
   }
 })
+
+test('PWA finance credentials remain in memory or an HttpOnly cookie',()=>{
+  const app=source('src/App.vue')
+  const r2=source('src/receipt-cloud.js')
+  const server=source('functions/api/[[path]].js')
+  assert.match(app,/const token = ref\(''\)/)
+  assert.doesNotMatch(app,/sessionStorage\.setItem\('kakeibo-device-session'/)
+  assert.doesNotMatch(r2,/sessionStorage|getItem\('kakeibo-device-session'/)
+  assert.match(r2,/credentials:'same-origin'/)
+  assert.match(server,/HttpOnly; Secure; SameSite=Strict/)
+})

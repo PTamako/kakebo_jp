@@ -20,6 +20,7 @@ function d1(){
  migration('0002_versioned_migration_tracking.sql');
  migration('0022_homeflow_identity_foundation.sql');
  migration('0023_family_financial_account_identities.sql');
+ migration('0024_family_finance_pending_actions.sql');
  sqlite.exec("CREATE TABLE entries (id INTEGER PRIMARY KEY,date TEXT,time TEXT,type TEXT,merchant TEXT,amount INTEGER,category TEXT,note TEXT,payment_source TEXT,transfer_target TEXT,transfer_applied INTEGER,transfer_date TEXT);"+
    "INSERT INTO entries VALUES(1,'2026-11-10','','expense','既存の個人明細',1234,'生活','旧账保留','PayPay Visa',NULL,0,NULL);"+
    "INSERT INTO entries VALUES(2,'2026-11-10','','income','工资到账',100000,'工资','工资保留','银行',NULL,0,NULL);"+
@@ -47,6 +48,7 @@ async function setup(){
  const env={DB,AUTH_TOKEN:'legacy-code',KAKEIBO_HOMEFLOW_SSO_ENABLED:'true',
   KAKEIBO_PUBLIC_ORIGIN:app,HOMEFLOW_OAUTH_ORIGIN:home,
   KAKEIBO_FAMILY_FINANCE_ENABLED:'true',KAKEIBO_FAMILY_HOUSEHOLD_ID:'primary',
+  KAKEIBO_FAMILY_PENDING_KEY:'f'.repeat(64),
   KAKEIBO_SSO_ENCRYPTION_KEY:'a'.repeat(64)};
  env.HOMEFLOW_IDENTITY_SERVICE={async fetch(request){
   state.serviceCalls++;
@@ -384,5 +386,91 @@ test('member can configure own identically named card, cannot edit spouse, owner
   f.state.homeflowActive=false;
   assert.equal((await finance(f,'accounts','GET',null,memberCookie)).status,401,
     'HomeFlow logout invalidates private financial settings immediately');
+ }finally{f.DB.sqlite.close();}
+});
+
+
+test('member prepares AES-GCM encrypted finance intent, not an entry or HomeFlow approval',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const created=await finance(f,'accounts','POST',{
+   label:'nanaco',account_kind:'prepaid',opening_balance:1000
+  },memberCookie);
+  assert.equal(created.status,201);
+  const accountId=(await created.json()).account_id;
+  const oldLedger=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  const oldCards=f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all();
+  const payload={idempotency_key:'member-first-nanaco-001',
+   account_id:accountId,type:'expense',amount_jpy:1520,date:'2026-11-13',
+   merchant:'マクドナルド',category:'食費',note:'需要管理员审批'};
+  const prepared=await finance(f,'proposals','POST',payload,memberCookie);
+  assert.equal(prepared.status,201,await prepared.clone().text());
+  const body=await prepared.json();
+  assert.equal(body.prepared.status,'prepared_not_submitted');
+  assert.equal(body.prepared.homeflow_approval_id,null);
+  assert.equal(body.prepared.ledger_changed,false);
+  assert.match(body.prepared.payload_sha256,/^[0-9a-f]{64}$/);
+  const id=body.prepared.request_id;
+  const saved=f.DB.sqlite.prepare('SELECT * FROM family_finance_pending_actions WHERE request_id=?').get(id);
+  assert.ok(saved.payload_cipher&&saved.payload_iv);
+  assert.equal(saved.payload_cipher.includes('マクドナルド'),false);
+  assert.equal(saved.payload_cipher.includes('1520'),false);
+  assert.equal(saved.state,'prepared');
+  assert.equal(saved.requester_user_id,member);
+  assert.equal(saved.account_id,accountId);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_pending_actions').get().n,1);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),oldLedger);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all(),oldCards);
+  assert.equal((await finance(f,'proposals','GET',null,ownerCookie)).status,403,
+    'owner must not implicitly get the member private pending details via this endpoint');
+  const listing=await (await finance(f,'proposals','GET',null,memberCookie)).json();
+  assert.equal(listing.items.length,1);
+  assert.equal(listing.items[0].request_id,id);
+  assert.equal(JSON.stringify(listing).includes('マクドナルド'),false,
+    'private payload is not exposed in proposal list');
+  const repeated=await finance(f,'proposals','POST',payload,memberCookie);
+  assert.equal(repeated.status,200,await repeated.clone().text());
+  assert.equal((await repeated.json()).replayed,true);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_pending_actions').get().n,1);
+  const modified=await finance(f,'proposals','POST',{...payload,amount_jpy:5000},memberCookie);
+  assert.equal(modified.status,409);
+  const rejected=await finance(f,'proposals','POST',{...payload,
+   idempotency_key:'member-first-nanaco-002',type:'transfer',amount_jpy:1000},memberCookie);
+  assert.equal(rejected.status,400,'SBI and transfer should not silently use the normal expense workflow');
+  const cancel=await finance(f,'proposals/'+id+'/cancel','POST',{},memberCookie);
+  assert.equal(cancel.status,200,await cancel.clone().text());
+  const replayCancel=await finance(f,'proposals/'+id+'/cancel','POST',{},memberCookie);
+  assert.equal(replayCancel.status,200);
+  assert.equal(f.DB.sqlite.prepare("SELECT state FROM family_finance_pending_actions WHERE request_id=?").get(id).state,'cancelled');
+  const audit=f.DB.sqlite.prepare("SELECT actor_user_id,action FROM family_finance_events WHERE resource_id=? ORDER BY created_at").all(id);
+  assert.equal(audit.length,2);
+  assert.ok(audit.every(x=>x.actor_user_id===member));
+  assert.deepEqual(audit.map(x=>x.action).sort(),['finance_entry_cancelled','finance_entry_prepared']);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),oldLedger);
+ }finally{f.DB.sqlite.close();}
+});
+test('financial pending encryption and account identity fail closed on CSRF, cross-member and missing key',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const made=await (await finance(f,'accounts','POST',{
+   label:'成员信用卡',account_kind:'credit_card'
+  },memberCookie)).json();
+  const payload={idempotency_key:'test-fail-closed-prepare',
+   account_id:made.account_id,type:'expense',
+   amount_jpy:2000,date:'2026-11-13',merchant:'店铺',category:'食費'};
+  assert.equal((await finance(f,'proposals','POST',payload,memberCookie,'https://attacker.invalid')).status,403);
+  assert.equal((await finance(f,'proposals','POST',payload,ownerCookie)).status,403);
+  const bad=f.env.KAKEIBO_FAMILY_PENDING_KEY;
+  f.env.KAKEIBO_FAMILY_PENDING_KEY=undefined;
+  assert.equal((await finance(f,'proposals','POST',payload,memberCookie)).status,503);
+  f.env.KAKEIBO_FAMILY_PENDING_KEY=bad;
+  const prepared=await finance(f,'proposals','POST',payload,memberCookie);
+  assert.equal(prepared.status,201,await prepared.clone().text());
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_pending_actions').get().n,1);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries').get().n,2);
  }finally{f.DB.sqlite.close();}
 });

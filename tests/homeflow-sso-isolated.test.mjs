@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
-import {webcrypto} from 'node:crypto';
+import {webcrypto,createHmac} from 'node:crypto';
 import {onRequest,ssoReady} from '../functions/api/homeflow-sso/[[path]].js';
 import {onRequest as legacyApi} from '../functions/api/[[path]].js';
 import {onRequest as familyFinance} from '../functions/api/family-finance/[[path]].js';
@@ -633,5 +633,113 @@ test('legacy mapping paginates bounded batches and retry does not create fake ac
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_financial_resource_owners WHERE resource_kind=?').get('recurring_plan').n,53);
   assert.equal(f.DB.sqlite.prepare("SELECT COUNT(*) n FROM family_finance_events WHERE action='legacy_resource_owners_adopted'").get().n,2);
   assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM recurring_plans ORDER BY id').all(),initial);
+ }finally{f.DB.sqlite.close()}
+});
+
+async function loginMemberAfterOwner(f){
+  await loginOwner(f);
+  return loginMember(f);
+}
+
+
+test('signed HomeFlow decision proof can be checked for an encrypted member proposal but cannot post ledger',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const created=await (await finance(f,'accounts','POST',{
+   label:'我的 PayPay Visa',account_kind:'credit_card'
+  },memberCookie)).json();
+  const preparedResponse=await finance(f,'proposals','POST',{
+   idempotency_key:'finance-homeflow-proof-test-0001',account_id:created.account_id,
+   type:'expense',amount_jpy:1520,date:'2026-11-13',
+   merchant:'マクドナルド',category:'食費'
+  },memberCookie);
+  assert.equal(preparedResponse.status,201);
+  const prepared=(await preparedResponse.json()).prepared;
+  const approvedId='33333333-3333-4333-8333-333333333333';
+  const firstLedger=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  const originalEvents=f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all();
+  const stub=f.env.HOMEFLOW_IDENTITY_SERVICE.fetch;
+  const secret='c'.repeat(64);
+  f.env.APP_ENV='production';
+  f.env.KAKEIBO_APPROVAL_VERIFICATION_SECRET=secret;
+  let replyMode='approved',checked=0;
+  f.env.HOMEFLOW_IDENTITY_SERVICE.fetch=async request=>{
+   if(new URL(request.url).pathname!=='/api/internal/approvals/verify')
+    return stub(request);
+   checked++;
+   assert.equal(request.method,'POST');
+   assert.equal(request.redirect,'manual');
+   assert.equal(request.headers.get('origin'),null);
+   assert.equal(request.headers.get('cookie'),null);
+   assert.equal(request.headers.get('x-approval-client'),'kakeibo');
+   const raw=await request.text(),stamp=request.headers.get('x-approval-timestamp');
+   const mac=createHmac('sha256',Buffer.from(secret,'hex'))
+    .update('kakeibo\n'+stamp+'\n'+raw).digest('hex');
+   assert.equal(request.headers.get('x-approval-signature'),mac);
+   const query=JSON.parse(raw);
+   assert.equal(query.resource_id,prepared.request_id);
+   assert.equal(query.payload_sha256,prepared.payload_sha256);
+   assert.equal(query.household_id,'primary');
+   assert.equal(query.requester_user_id,member);
+   assert.equal(query.idempotency_key,'kakeibo:finance:'+prepared.request_id);
+   assert.equal(query.expected_version,null);
+   if(query.request_id!==approvedId||replyMode==='pending')
+    return Response.json({code:'approval_not_executable'},{status:409});
+   const response={ok:true,verified:true,...query,approved_at:Date.now()-1000,
+    expires_at:Date.now()+100000,applied:false,ledger_changed:false};
+   if(replyMode==='wrong_digest')response.payload_sha256='b'.repeat(64);
+   return Response.json(response);
+  };
+  const ask=(homeflow_request_id=approvedId)=>finance(f,
+   'proposals/'+prepared.request_id+'/approval-proof','POST',
+   {homeflow_request_id},memberCookie);
+  assert.equal((await ask()).status,503,'explicit proof flag required');
+  f.env.KAKEIBO_APPROVAL_PROOF_ENABLED='true';
+  let verified=await ask();
+  assert.equal(verified.status,200,await verified.clone().text());
+  let result=await verified.json();
+  assert.equal(result.status,'approved_not_applied');
+  assert.equal(result.approval_confirmed,true);
+  assert.equal(result.applied,false);
+  assert.equal(result.ledger_changed,false);
+  assert.equal(checked,1);
+  replyMode='pending';
+  assert.equal((await ask()).status,409);
+  replyMode='wrong_digest';
+  assert.equal((await ask()).status,503);
+  replyMode='approved';
+  assert.equal((await ask('44444444-4444-4444-8444-444444444444')).status,409);
+  assert.equal((await finance(f,'proposals/'+prepared.request_id+'/approval-proof',
+   'POST',{homeflow_request_id:approvedId},memberCookie,'https://attacker.invalid')).status,403);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),firstLedger,
+   'even a successful approval proof never writes entries');
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all(),
+   originalEvents,'the verify call never writes per-read audit events');
+  f.state.homeflowActive=false;
+  assert.equal((await ask()).status,401,'a revoked HomeFlow session cannot poll verification');
+ }finally{f.DB.sqlite.close()}
+});
+test('cancelled or archived member proposal cannot obtain executable approval proof',async()=>{
+ const f=await setup();
+ try{
+  const memberCookie=await loginMemberAfterOwner(f);
+  const created=(await (await finance(f,'accounts','POST',{
+   label:'我的 nanaco',account_kind:'prepaid'
+  },memberCookie)).json()).account_id;
+  const pending=(await (await finance(f,'proposals','POST',{
+   idempotency_key:'finance-homeflow-proof-test-0002',account_id:created,
+   type:'expense',amount_jpy:100,date:'2026-11-13',
+   merchant:'コンビニ',category:'食費'
+  },memberCookie)).json()).prepared;
+  f.env.APP_ENV='production';
+  f.env.KAKEIBO_APPROVAL_PROOF_ENABLED='true';
+  f.env.KAKEIBO_APPROVAL_VERIFICATION_SECRET='c'.repeat(64);
+  const proof=()=>finance(f,'proposals/'+pending.request_id+'/approval-proof',
+   'POST',{homeflow_request_id:'33333333-3333-4333-8333-333333333333'},memberCookie);
+  assert.equal((await finance(f,'proposals/'+pending.request_id+'/cancel','POST',{},memberCookie)).status,200);
+  assert.equal((await proof()).status,409);
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries').get().n,2);
  }finally{f.DB.sqlite.close()}
 });

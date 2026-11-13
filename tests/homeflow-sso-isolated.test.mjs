@@ -1065,6 +1065,14 @@ test('yearly family statistics are identical for spouses and exclude asset trans
   assert.equal((await read(memberCookie,'1999')).status,400);
   assert.equal((await read(memberCookie,'abc')).status,400);
   assert.equal((await read('')).status,401);
+  // A legacy row with a new/unknown type must trigger review, not vanish
+  // from the household statement while complete=true is being claimed.
+  f.DB.sqlite.prepare('INSERT INTO entries(id,date,type,amount,category) VALUES(?,?,?,?,?)')
+   .run(8,'2026-03-01','adjustment',42,'待核验');
+  const unexpected=await read(memberCookie);
+  assert.equal(unexpected.status,409);
+  assert.equal(unexpected.body.code,'LEDGER_TYPE_UNSUPPORTED');
+  f.DB.sqlite.prepare('DELETE FROM entries WHERE id=?').run(8);
   assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),before,
    'yearly statistics must not modify ledger or source records');
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n,0,

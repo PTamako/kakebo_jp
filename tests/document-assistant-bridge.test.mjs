@@ -75,9 +75,15 @@ test('signed read-only ledger options list real categories and active payment so
  assert.equal(calls,1);
  assert.equal(queries.length,5);
  assert.ok(queries.every(sql=>/^\s*SELECT/i.test(sql)));
- const bad=await onRequestPost({request:await signed({...options,payload:{operation:'options',entryType:'transfer'}}),env:env({DB:database})});
- assert.equal(bad.status,400);
- assert.equal(calls,1);
+ const transfer=await onRequestPost({request:await signed({...options,payload:{
+   operation:'options',entryType:'transfer',merchant:'SBI証券投信積立サービス（翌月買付分）',
+   recognizedPayment:'三井住友カード'}}),env:env({DB:database})});
+ assert.equal(transfer.status,200);
+ const transferData=await transfer.json();
+ assert.deepEqual(transferData.categories,[{value:'投資・資産移動',label:'资产转移'}]);
+ assert.equal(transferData.suggested.category,'投資・資産移動');
+ assert.equal(transferData.suggested.payment_source,'三井住友カード');
+ assert.equal(calls,2);
 });
 
 test('signed recovery lookup is read-only and returns idempotent transaction state',async()=>{

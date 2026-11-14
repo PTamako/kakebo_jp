@@ -45,6 +45,7 @@ function fixture(){
  sql.exec(readFileSync(new URL('../migrations/0038_points_earn_expiry_reversals.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0040_points_sbi_lots.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0041_points_transfer_atomic_refund.sql',import.meta.url),'utf8'));
+ sql.exec(readFileSync(new URL('../migrations/0042_points_prepaid_refund.sql',import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,hh,role,role,'active',Date.now());
@@ -691,5 +692,96 @@ test('transfer refund target account version drift and injected reversal audit f
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_refunds').n,0);
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal WHERE reversed_request_id=?',orig).n,0);
  assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,2);
+});
+
+function originalPrepaidSpend(f,amount,balanceAfter){
+ const stamp=Date.now(),approval='77777777-7777-4777-8777-777777777771',intentId='8'.repeat(32);
+ stmt(f.sql,"INSERT INTO family_prepaid_action_intents(request_id,household_id,requester_user_id,prepaid_account_id,prepaid_version,action,payload_sha256,payload_cipher,payload_iv,idempotency_hash,status,homeflow_approval_id,created_at,expires_at,submitted_at) VALUES(?,?,?,?,?,'spend',?,?,?,?,'submitted',?,?,?,?)",
+  intentId,hh,member,prepaid,1,'1'.repeat(64),'cipher','iv','2'.repeat(64),approval,stamp-1000,stamp+86400000,stamp);
+ const entry=stmt(f.sql,"INSERT INTO entries(date,amount,type,client_request_id,family_account_id,payment_source) VALUES('2026-11-14',?,'expense',?,?,?)",
+  amount,'hfprepaid:'+approval,prepaid,'prepaid:'+prepaid).lastInsertRowid;
+ stmt(f.sql,'INSERT INTO family_prepaid_actions_applied(homeflow_request_id,proposal_id,household_id,requester_user_id,approver_user_id,actor_user_id,prepaid_account_id,prepaid_version,action,bank_account_id,bank_version,bank_reference_hash,payload_sha256,entry_id,amount_jpy,date,balance_after_jpy,applied_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+  approval,intentId,hh,member,owner,owner,prepaid,1,'spend',null,null,null,
+  '1'.repeat(64),Number(entry),amount,'2026-11-14',balanceAfter,stamp);
+ stmt(f.sql,'INSERT INTO family_prepaid_balance_journal(homeflow_request_id,household_id,prepaid_account_id,delta_jpy,balance_after_jpy,effective_date,created_at) VALUES(?,?,?,?,?,?,?)',
+  approval,hh,prepaid,-amount,balanceAfter,'2026-11-14',stamp);
+ stmt(f.sql,'INSERT INTO family_prepaid_action_audit(event_id,homeflow_request_id,requester_user_id,approver_user_id,actor_user_id,action,created_at) VALUES(?,?,?,?,?,?,?)',
+  '3'.repeat(32),approval,member,owner,owner,'prepaid_spend_applied',stamp);
+}
+test('point-to-prepaid refund restores points and debits prepaid JPY atomically without rewriting original credit',async()=>{
+ const f=fixture(),entryCount=get(f.sql,'SELECT COUNT(*) n FROM entries').n;
+ const funding=await f.prepare('earn_campaign','prepaid-refund-fund',{units:500,yen_value:500});
+ assert.equal((await f.execute(await f.submit(funding))).status,200);
+ const credit=await f.prepare('transfer_prepaid','prepaid-refund-original',{units:150,yen_value:150});
+ const original=await f.submit(credit);
+ assert.equal((await f.execute(original)).status,200);
+ const reverse=await f.prepare('reversal','prepaid-refund-approved',
+  {units:150,yen_value:150,original_request_id:original});
+ const revApproval=await f.submit(reverse);
+ const done=await f.execute(revApproval);
+ assert.equal(done.status,200,JSON.stringify(done));
+ assert.equal(done.data.delta_units,150);
+ assert.equal(done.data.refunded_prepaid_account_id,prepaid);
+ assert.equal(done.data.refunded_prepaid_jpy,150);
+ assert.equal(done.data.refunded_prepaid_balance_after_jpy,0);
+ assert.equal(done.data.refunded_prepaid_version,1);
+ assert.equal((await memberPrepaidBalances(f.db,hh)).accounts.find(x=>x.account_id===prepaid).balance_jpy,0);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,500);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_credits').n,1);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_refunds').n,1);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries').n,entryCount);
+ assert.equal((await f.execute(revApproval,'receipt')).data.already_applied,true);
+ assert.throws(()=>stmt(f.sql,'DELETE FROM family_points_prepaid_refunds'),/POINTS_PREPAID_REFUND_IMMUTABLE/);
+ const repeated=await f.call(['points-actions'],f.action('reversal','prepaid-refund-repeated',
+  {units:150,yen_value:150,original_request_id:original}));
+ assert.equal(repeated.status,409);
+});
+test('points prepaid refund cannot reclaim spent prepaid balance; correct replenishment can reauthorize',async()=>{
+ const f=fixture();
+ const grant=await f.prepare('earn_campaign','prepaid-spent-fund',{units:500,yen_value:500});
+ assert.equal((await f.execute(await f.submit(grant))).status,200);
+ const credit=await f.prepare('transfer_prepaid','prepaid-spent-original',{units:150,yen_value:150});
+ const original=await f.submit(credit);
+ assert.equal((await f.execute(original)).status,200);
+ originalPrepaidSpend(f,60,90);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries WHERE type=\'expense\'').n,4);
+ const denied=await f.call(['points-actions'],f.action('reversal','prepaid-spent-deny',
+  {units:150,yen_value:150,original_request_id:original}));
+ assert.equal(denied.status,409);
+ assert.equal(denied.data.code,'POINTS_REVERSAL_ORIGINAL_CHANGED');
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_refunds').n,0);
+ const refill=await f.prepare('transfer_prepaid','prepaid-spent-refill',
+  {units:80,yen_value:80});
+ assert.equal((await f.execute(await f.submit(refill))).status,200);
+ const reverse=await f.prepare('reversal','prepaid-spent-retry',
+  {units:150,yen_value:150,original_request_id:original});
+ const result=await f.execute(await f.submit(reverse));
+ assert.equal(result.status,200,JSON.stringify(result));
+ assert.equal(result.data.refunded_prepaid_jpy,150);
+ assert.equal(result.data.refunded_prepaid_balance_after_jpy,20);
+ assert.equal((await memberPrepaidBalances(f.db,hh)).accounts.find(x=>x.account_id===prepaid).balance_jpy,20);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries WHERE type=\'expense\'').n,4);
+});
+test('prepaid refund version drift and injected debit failure keep original points debit and prepaid credit untouched',async()=>{
+ const f=fixture();
+ const grant=await f.prepare('earn_campaign','prepaid-fault-fund',{units:350,yen_value:350});
+ assert.equal((await f.execute(await f.submit(grant))).status,200);
+ const credit=await f.prepare('transfer_prepaid','prepaid-fault-original',{units:120,yen_value:120});
+ const original=await f.submit(credit);
+ assert.equal((await f.execute(original)).status,200);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=2 WHERE account_id=?',prepaid);
+ const stale=await f.call(['points-actions'],f.action('reversal','prepaid-fault-version',
+  {units:120,yen_value:120,original_request_id:original}));
+ assert.equal(stale.status,409);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=1 WHERE account_id=?',prepaid);
+ const reverse=await f.prepare('reversal','prepaid-fault-approved',
+  {units:120,yen_value:120,original_request_id:original});
+ const approval=await f.submit(reverse);
+ f.sql.exec("CREATE TRIGGER fail_prepaid_refund BEFORE INSERT ON family_points_prepaid_refunds BEGIN SELECT RAISE(ABORT,'PREPAID_REFUND_TARGET_FAILURE'); END;");
+ assert.notEqual((await f.execute(approval)).status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_refunds').n,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal WHERE reversed_request_id=?',original).n,0);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,230);
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,2);
 });

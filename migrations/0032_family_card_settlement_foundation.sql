@@ -174,6 +174,7 @@ CREATE TRIGGER IF NOT EXISTS trg_family_card_allocation_balance
  JOIN family_card_settlements_applied s ON s.homeflow_request_id=NEW.homeflow_request_id
  WHERE p.homeflow_request_id=NEW.purchase_request_id
  AND p.household_id=s.household_id AND p.account_id=s.card_account_id
+ AND p.purchase_date<=s.debit_date
  AND NEW.amount_jpy<=p.amount_jpy-COALESCE((
   SELECT SUM(a.amount_jpy) FROM family_card_settlement_allocations a
   WHERE a.purchase_request_id=NEW.purchase_request_id),0))

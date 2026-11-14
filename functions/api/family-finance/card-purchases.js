@@ -9,6 +9,7 @@ const newid=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toStr
 const hash=async x=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(x))),x=>x.toString(16).padStart(2,'0')).join('');
 const b64=x=>btoa(String.fromCharCode(...x));
 const validDate=v=>typeof v==='string'&&/^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v)&&
+ Number.isFinite(Date.parse(v+'T00:00:00.000Z'))&&
  new Date(v+'T00:00:00.000Z').toISOString().slice(0,10)===v;
 const validMoney=v=>Number.isSafeInteger(v)&&v>=1&&v<=10000000;
 const exact=(o,k)=>o&&typeof o==='object'&&!Array.isArray(o)&&

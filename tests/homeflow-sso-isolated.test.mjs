@@ -1135,3 +1135,71 @@ test('Stage C account writes reject an old HomeFlow actor after PWA cookie switc
    'account setup never edits household ledger');
  }finally{f.DB.sqlite.close();}
 });
+
+
+test('member finance prepare/submit/cancel/proof rejects a stale originating HomeFlow actor before D1 effects',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const created=await finance(f,'accounts','POST',{
+   label:'本人の現金',account_kind:'cash'
+  },memberCookie);
+  assert.equal(created.status,201,await created.clone().text());
+  const accountId=(await created.json()).account_id;
+  const record={idempotency_key:'original-member-epoch-test-0001',
+   account_id:accountId,type:'expense',amount_jpy:1520,
+   date:'2026-11-14',merchant:'マクドナルド',category:'食費'};
+  const untouchedLedger=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  const oldAudit=f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all();
+  const badPrepare=await finance(f,'proposals','POST',
+   {...record,expected_user_id:owner},memberCookie);
+  assert.equal(badPrepare.status,403);
+  assert.equal((await badPrepare.json()).code,'ACTOR_CHANGED');
+  const missingPrepare=await finance(f,'proposals','POST',
+   {...record,expected_user_id:undefined},memberCookie);
+  assert.equal(missingPrepare.status,403);
+  assert.equal((await missingPrepare.json()).code,'ACTOR_CHANGED');
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_pending_actions').get().n,0);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all(),oldAudit);
+
+  const prepared=await finance(f,'proposals','POST',record,memberCookie);
+  assert.equal(prepared.status,201,await prepared.clone().text());
+  const proposalId=(await prepared.json()).prepared.request_id;
+  const receipt=f.DB.sqlite.prepare(
+   'SELECT state,homeflow_approval_id FROM family_finance_pending_actions WHERE request_id=?'
+  ).get(proposalId);
+  const auditNow=f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all();
+
+  f.env.APP_ENV='production';
+  f.env.KAKEIBO_APPROVAL_SUBMISSION_ENABLED='true';
+  f.env.KAKEIBO_APPROVAL_PROOF_ENABLED='true';
+  f.env.KAKEIBO_APPROVAL_VERIFICATION_SECRET='c'.repeat(64);
+  const badSubmit=await finance(f,'proposals/'+proposalId+'/submit','POST',
+   {expected_user_id:owner},memberCookie);
+  assert.equal(badSubmit.status,403);
+  assert.equal((await badSubmit.json()).code,'ACTOR_CHANGED');
+  const missingSubmit=await finance(f,'proposals/'+proposalId+'/submit','POST',
+   {expected_user_id:undefined},memberCookie);
+  assert.equal(missingSubmit.status,403);
+  const badProof=await finance(f,'proposals/'+proposalId+'/approval-proof','POST',
+   {homeflow_request_id:'33333333-3333-4333-8333-333333333333',
+    expected_user_id:owner},memberCookie);
+  assert.equal(badProof.status,403);
+  assert.equal((await badProof.json()).code,'ACTOR_CHANGED');
+  const badCancel=await finance(f,'proposals/'+proposalId+'/cancel','POST',
+   {expected_user_id:owner},memberCookie);
+  assert.equal(badCancel.status,403);
+  assert.equal((await badCancel.json()).code,'ACTOR_CHANGED');
+  const missingCancel=await finance(f,'proposals/'+proposalId+'/cancel','POST',
+   {expected_user_id:undefined},memberCookie);
+  assert.equal(missingCancel.status,403);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT state,homeflow_approval_id FROM family_finance_pending_actions WHERE request_id=?').get(proposalId),receipt);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all(),auditNow);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),untouchedLedger);
+  // Original member can still withdraw the exact same prepared request.
+  const cancelled=await finance(f,'proposals/'+proposalId+'/cancel','POST',{},memberCookie);
+  assert.equal(cancelled.status,200,await cancelled.clone().text());
+  assert.equal((await finance(f,'proposals','GET',null,ownerCookie)).status,403);
+ }finally{f.DB.sqlite.close()}
+});

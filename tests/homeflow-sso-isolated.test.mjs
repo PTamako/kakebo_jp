@@ -1203,3 +1203,62 @@ test('member finance prepare/submit/cancel/proof rejects a stale originating Hom
   assert.equal((await finance(f,'proposals','GET',null,ownerCookie)).status,403);
  }finally{f.DB.sqlite.close()}
 });
+
+
+test('legacy stable-account coverage audits old payment and transfer names without altering original ledger',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  // Display labels need not be unique between members. Never infer a
+  // legacy financial owner from a same-named member-created account.
+  const memberAccount=await finance(f,'accounts','POST',
+   {label:'PayPay Visa',account_kind:'credit_card'},memberCookie);
+  assert.equal(memberAccount.status,201,await memberAccount.clone().text());
+  const wrongAccountId=(await memberAccount.json()).account_id;
+  f.DB.sqlite.prepare(
+   "INSERT INTO entries(date,type,merchant,amount,category,note,payment_source,transfer_target,transfer_applied) "+
+   "VALUES('2026-11-14','transfer','内部资金移动',800,'转移','原业务保留','PayPay Visa','nanaco',0)"
+  ).run();
+  const entriesBefore=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  const sourcesBefore=f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all();
+  const auditBefore=f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all();
+  assert.equal((await finance(f,'legacy/mapping-audit','GET',null,memberCookie)).status,403,
+   'only the verified original HomeFlow owner may inspect old payment identity');
+  const first=await finance(f,'legacy/mapping-audit','GET',null,ownerCookie);
+  assert.equal(first.status,200,await first.clone().text());
+  const before=await first.json();
+  assert.equal(before.read_only,true);
+  assert.equal(before.ledger_changed,false);
+  assert.equal(before.requires_manual_review,true);
+  const card=before.items.find(x=>x.legacy_name==='PayPay Visa');
+  assert.equal(card.status,'legacy_account_not_adopted');
+  assert.equal(card.entry_source_count,2);
+  assert.equal(card.stable_account_id,null);
+  const prepaid=before.items.find(x=>x.legacy_name==='nanaco');
+  assert.equal(prepaid.transfer_target_count,1);
+  const unmatched=before.items.find(x=>x.legacy_name==='银行');
+  assert.equal(unmatched.status,'historical_source_missing');
+  assert.equal(unmatched.stable_account_id,null);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all(),auditBefore,
+   'audit reads must not append a fake financial actor event');
+
+  const adopt=await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie);
+  assert.equal(adopt.status,200,await adopt.clone().text());
+  const after=(await (await finance(f,'legacy/mapping-audit','GET',null,ownerCookie)).json());
+  assert.equal(after.mapped_source_count,2);
+  const mapped=after.items.find(x=>x.legacy_name==='PayPay Visa');
+  assert.equal(mapped.status,'adopted_to_original_owner');
+  assert.notEqual(mapped.stable_account_id,wrongAccountId,
+   'a member account with identical label must never inherit the original owner ledger');
+  const ownerStable=f.DB.sqlite.prepare(
+   "SELECT account_id FROM family_financial_accounts WHERE origin='legacy' AND legacy_source_name='PayPay Visa'"
+  ).get();
+  assert.equal(mapped.stable_account_id,ownerStable.account_id);
+  assert.equal(after.items.find(x=>x.legacy_name==='银行').status,'historical_source_missing');
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),entriesBefore);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all(),sourcesBefore);
+  assert.equal((await finance(f,'legacy/mapping-audit','POST',{},ownerCookie)).status,405,
+   'mapping audit is not an implicit write action');
+ }finally{f.DB.sqlite.close()}
+});

@@ -44,6 +44,7 @@ function fixture(){
  sql.exec(readFileSync(new URL('../migrations/0037_points_transfer_exchange.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0038_points_earn_expiry_reversals.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0040_points_sbi_lots.sql',import.meta.url),'utf8'));
+ sql.exec(readFileSync(new URL('../migrations/0041_points_transfer_atomic_refund.sql',import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,hh,role,role,'active',Date.now());
@@ -598,4 +599,96 @@ test('SBI point target audit fault aborts the source debit and fund lot together
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal').n,1);
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,1);
  assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,200);
+});
+
+test('real SQLite dual refund: point-to-point transfer returns original source and removes target units, originals immutable',async()=>{
+ const f=fixture(),originalEntries=get(f.sql,'SELECT COUNT(*) n FROM entries').n;
+ const initial=await f.prepare('earn_campaign','refund-transfer-fund',{units:500,yen_value:500});
+ assert.equal((await f.execute(await f.submit(initial))).status,200);
+ const sent=await f.prepare('transfer_out','refund-transfer-original',
+  {units:160,yen_value:160,target_units:160});
+ const sentApproval=await f.submit(sent);
+ assert.equal((await f.execute(sentApproval)).status,200);
+ const reversed=await f.prepare('reversal','refund-transfer-approved',
+  {units:160,yen_value:160,original_request_id:sentApproval});
+ const newApproval=await f.submit(reversed);
+ const returned=await f.execute(newApproval);
+ assert.equal(returned.status,200,JSON.stringify(returned));
+ assert.equal(returned.data.delta_units,160);
+ assert.equal(returned.data.reversed_request_id,sentApproval);
+ assert.equal(returned.data.refunded_target_units,160);
+ assert.equal(returned.data.refunded_target_balance_after_units,0);
+ assert.equal(returned.data.refunded_target_account_id,receivePoints);
+ assert.equal(returned.data.refunded_target_version,1);
+ const source=get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n;
+ assert.equal(source,500);
+ const recv=(await memberPointsBalances(f.db,hh)).accounts.find(x=>x.account_id===receivePoints);
+ assert.equal(recv.balance_units,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_credits').n,1);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_refunds').n,1);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,3);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries').n,originalEntries);
+ assert.equal((await f.execute(newApproval,'receipt')).data.already_applied,true);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_refunds').n,1);
+ assert.throws(()=>stmt(f.sql,'DELETE FROM family_points_transfer_refunds'),/POINTS_TRANSFER_REFUND_IMMUTABLE/);
+ const repeated=await f.call(['points-actions'],f.action('reversal','refund-transfer-repeated',
+  {units:160,yen_value:160,original_request_id:sentApproval}));
+ assert.equal(repeated.status,409);
+});
+test('exchange refund refuses spent recipient units and succeeds after recipient balance restored',async()=>{
+ const f=fixture();
+ const funded=await f.prepare('earn_campaign','refund-exchange-fund',{units:500,yen_value:500});
+ assert.equal((await f.execute(await f.submit(funded))).status,200);
+ const x=await f.prepare('exchange_out','refund-exchange-original',
+  {units:100,yen_value:200,rate_numerator:2,rate_denominator:1,
+   target_units:50,target_rate_numerator:4,target_rate_denominator:1});
+ const original=await f.submit(x);
+ assert.equal((await f.execute(original)).status,200);
+ const spend=await f.prepare('expire','refund-exchange-spend-target',
+  {points_account_id:receivePoints,units:20,yen_value:20});
+ assert.equal((await f.execute(await f.submit(spend))).status,200);
+ const refused=await f.call(['points-actions'],f.action('reversal','refund-exchange-no-funds',
+  {units:100,yen_value:200,rate_numerator:2,rate_denominator:1,
+   original_request_id:original}));
+ assert.equal(refused.status,409);
+ assert.equal(refused.data.code,'POINTS_REVERSAL_ORIGINAL_CHANGED');
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_refunds').n,0);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,400);
+ const refill=await f.prepare('earn_campaign','refund-exchange-received-extra',
+  {points_account_id:receivePoints,units:30,yen_value:30});
+ assert.equal((await f.execute(await f.submit(refill))).status,200);
+ const r=await f.prepare('reversal','refund-exchange-final',
+  {units:100,yen_value:200,rate_numerator:2,rate_denominator:1,
+   original_request_id:original});
+ const done=await f.execute(await f.submit(r));
+ assert.equal(done.status,200,JSON.stringify(done));
+ assert.equal(done.data.refunded_target_units,50);
+ assert.equal(done.data.refunded_target_balance_after_units,10);
+ const read=await memberPointsBalances(f.db,hh);
+ assert.equal(read.accounts.find(x=>x.account_id===points).balance_units,500);
+ assert.equal(read.accounts.find(x=>x.account_id===receivePoints).balance_units,10);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_refunds').n,1);
+});
+test('transfer refund target account version drift and injected reversal audit fault never leave one sided credit',async()=>{
+ const f=fixture();
+ const funded=await f.prepare('earn_campaign','refund-fault-funding',{units:300,yen_value:300});
+ assert.equal((await f.execute(await f.submit(funded))).status,200);
+ const transfer=await f.prepare('transfer_out','refund-fault-transfer',
+  {units:100,yen_value:100,target_units:100});
+ const orig=await f.submit(transfer);
+ assert.equal((await f.execute(orig)).status,200);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=2 WHERE account_id=?',receivePoints);
+ const failVersion=await f.call(['points-actions'],f.action('reversal','refund-stale-cas',
+  {units:100,yen_value:100,original_request_id:orig}));
+ assert.equal(failVersion.status,409);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=1 WHERE account_id=?',receivePoints);
+ const reverse=await f.prepare('reversal','refund-fault-approved',
+  {units:100,yen_value:100,original_request_id:orig});
+ const app=await f.submit(reverse);
+ f.sql.exec("CREATE TRIGGER fail_refund_counterpart BEFORE INSERT ON family_points_transfer_refunds BEGIN SELECT RAISE(ABORT,'REFUND_TARGET_FAILURE'); END;");
+ assert.notEqual((await f.execute(app)).status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_refunds').n,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal WHERE reversed_request_id=?',orig).n,0);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,2);
 });

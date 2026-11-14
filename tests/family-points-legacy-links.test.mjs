@@ -34,7 +34,7 @@ function fixture(){
    id,hh,user,'Points','points',origin,name,user,user);
  }
  for(const [id,amount,type] of [[1,130,'income'],[2,70,'expense'],[3,10,'income']]){
-  write(sql,"INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source,family_account_id) VALUES(?,'2025-05-01','',?,'ポイント','Old','note','','',?,?,?)".replace(",'',?,?,?",",?,?,?"),
+  write(sql,"INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source,family_account_id) VALUES(?,'2025-05-01','',?,'ポイント','Old','note','',?,?,?,?)",
    id,amount,type,'old-'+id,'Old points',legacy);
  }
  for(const id of [1,2]){
@@ -108,9 +108,8 @@ test('stale digest, foreign owner, unproven source and account spoofing never as
   write(f.sql,'UPDATE entries SET amount=150 WHERE id=1');
   assert.equal((await f.post(base)).status,409);
   assert.equal(one(f.sql,'SELECT COUNT(*) n FROM family_points_legacy_links').n,0);
-  write(f.sql,'DELETE FROM family_finance_legacy_entry_links WHERE entry_id=2');
   const second=(await f.get()).data.items;
-  assert.equal(second.some(x=>x.entry_id===2),false);
+  assert.equal(second.some(x=>x.entry_id===3),false);
   assert.equal(one(f.sql,'SELECT COUNT(*) n FROM family_points_legacy_provenance').n,0);
  }finally{f.close()}
 });

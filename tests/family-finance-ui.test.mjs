@@ -290,3 +290,22 @@ test('dual legacy transfer owner mapping stays opt-in and accepts only two indep
  assert.doesNotMatch(ui,/localStorage|sessionStorage|indexedDB|\/api\/entries/)
  assert.doesNotMatch(api,/UPDATE entries SET (?:amount|type|payment_source|transfer_target|category)/)
 })
+
+
+test('owner mapping dashboard separates ordinary entries and verified dual transfer progress, warning on partial links',()=>{
+ const ui=readFileSync(new URL('../src/FamilyFinanceMappingAudit.vue',import.meta.url),'utf8')
+ const backend=readFileSync(new URL('../functions/api/family-finance/legacy-mapping-audit.js',import.meta.url),'utf8')
+ assert.match(backend,/type IN \('income','expense'\)/)
+ assert.match(backend,/linked_legacy_transfer_count:confirmed/)
+ assert.match(backend,/remaining_legacy_transfer_count:stats\[0\]/)
+ assert.match(backend,/partial_legacy_transfer_count:stats\[1\]/)
+ assert.match(backend,/unverified_linked_transfer_count:stats\[2\]-confirmed/)
+ assert.match(backend,/family_finance_legacy_transfer_links l/)
+ assert.match(backend,/e.family_account_id=l.source_account_id/)
+ assert.match(backend,/e.family_transfer_target_account_id=l.target_account_id/)
+ assert.match(ui,/历史转账：双向已关联/)
+ assert.match(ui,/summary.remaining_legacy_transfer_count/)
+ assert.match(ui,/summary.partial_legacy_transfer_count\|\|summary.unverified_linked_transfer_count/)
+ assert.match(ui,/需人工核验，禁止自动补写/)
+ assert.doesNotMatch(backend,/UPDATE entries|DELETE FROM entries|INSERT INTO entries|\.run\(/)
+})

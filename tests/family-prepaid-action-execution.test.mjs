@@ -222,3 +222,49 @@ test('new stable-ID prepaid balance is household-shared and never aliases unowne
   assert.equal(query(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='expense'").n,0);
  }finally{f.close()}
 });
+
+test('real prepaid spend consumes points-funded balance exactly once, never second cash income',async()=>{
+ const f=fixture();try{
+  const points='c'.repeat(32),now=Date.now(),date='2026-11-14';
+  stmt(f.sql,"INSERT INTO family_financial_accounts(account_id,household_id,owner_user_id,label,account_kind,origin,created_by_user_id,updated_by_user_id) VALUES(?,?,?,?,?,'member_created',?,?)",
+   points,household,member,'Points','points',member,member);
+  const add=(proposal,approval,operation,delta,after,target,tag)=>{
+   const digest=tag.repeat(64);
+   stmt(f.sql,'INSERT INTO family_points_intents '+
+    '(request_id,household_id,requester_user_id,points_account_id,expected_version,operation,'+
+    'payload_sha256,payload_cipher,payload_iv,idempotency_hash,status,homeflow_approval_id,'+
+    'created_at,expires_at,submitted_at,target_account_id,target_version) '+
+    "VALUES(?,?,?,?,?,?,?,?,?,?,'submitted',?,?,?,?,?,?)",
+    proposal,household,member,points,1,operation,digest,'sealed','iv',tag.repeat(64),
+    approval,now-2000,now+86400000,now-1000,target,target?1:null);
+   stmt(f.sql,'INSERT INTO family_points_journal '+
+    '(homeflow_request_id,proposal_id,household_id,requester_user_id,approver_user_id,'+
+    'actor_user_id,points_account_id,account_version,operation,delta_units,'+
+    'balance_after_units,yen_value,yen_per_unit_numerator,yen_per_unit_denominator,'+
+    'target_account_id,linked_entry_id,legacy_entry_id,source_reference_hash,'+
+    'reversed_request_id,payload_sha256,effective_date,applied_at) '+
+    'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    approval,proposal,household,member,owner,owner,points,1,operation,delta,after,
+    300,1,1,target,null,null,tag.repeat(64),null,digest,date,now);
+  };
+  add('d'.repeat(32),'550e8400-e29b-41d4-a716-446655440000','earn_campaign',300,300,null,'8');
+  add('e'.repeat(32),'550e8400-e29b-41d4-a716-446655440001','transfer_prepaid',-300,0,prepaid,'9');
+  assert.equal(query(f.sql,'SELECT COUNT(*) n FROM entries').n,0);
+  assert.equal(query(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,0);
+  assert.equal(query(f.sql,'SELECT SUM(amount_jpy) n FROM family_points_prepaid_credits').n,300);
+  const before=await memberPrepaidBalances(f.env.DB,household);
+  assert.equal(before.accounts[0].balance_jpy,300);
+  const spend=await f.submit(f.spend(200));
+  const executed=await f.execute(spend);
+  assert.equal(executed.status,200,JSON.stringify(executed));
+  assert.equal(executed.data.balance_after_jpy,100);
+  assert.equal(query(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='income'").n,0);
+  assert.equal(query(f.sql,"SELECT SUM(amount) n FROM entries WHERE type='expense'").n,200);
+  assert.equal(query(f.sql,'SELECT SUM(delta_jpy) n FROM family_prepaid_balance_journal').n,-200);
+  assert.equal((await memberPrepaidBalances(f.env.DB,household)).total_jpy,100);
+  const over=await f.call(['prepaid-actions'],f.spend(101));
+  assert.equal(over.data.code,'PREPAID_INSUFFICIENT_BALANCE');
+  assert.throws(()=>stmt(f.sql,'UPDATE family_points_prepaid_credits SET amount_jpy=999'));
+  assert.throws(()=>stmt(f.sql,'DELETE FROM family_points_prepaid_credits'));
+ }finally{f.close()}
+});

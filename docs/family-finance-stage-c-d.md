@@ -76,3 +76,12 @@
 - `tests/family-finance-ui.test.mjs` 核验原 actor 被真实请求携带、服务端有两道 fence、退出或前台恢复清空旧身份。精确提交：`1ee723f340c8f9d6e6835f95169f85b538978cd2`、`394a153db39eaebdd126419ebd22268dfc672048`、`6acddcc98878da8734370c7c2c04d44815239b63`、`e18323576a3b8f67fcdc9599563f215e31daab9e`、`6b66a66536ac238d620968f37324f59e7cbaf0cb`。
 - **真实 [家計簿 Validate #43491760323](https://github.com/PTamako/kakebo_jp/actions/runs/43491760323) `completed/success`**，精确代码 HEAD `6b66a66536ac238d620968f37324f59e7cbaf0cb`。先前中间 CI 使用旧的 PWA 静态断言而失败，已随变更修复；最终正常。Mobile WebKit Smoke 另独立跑，不等同真实双真人 E2E。
 - 本轮不是完整 C 阶段：旧信用卡/储值卡/SBI/固定费/账户 ID 的历史无损迁移、所有旧业务写入入口的身份隔离、家庭资产/结算口径与双 iPhone 验收都仍未完成。继续**Draft/flags OFF/SQL 未执行/无生产部署/不新建 Preview**。
+
+
+## 2026-11-14 Stage C/D：普通成员发起加密财务草稿的 PWA 入口（仍 Draft）
+
+- 原 `src/FamilyFinanceProposals.vue` 已能分页查看自己草稿并提交/撤回；本增量补齐 **本人新建加密草稿**。只有真实 HomeFlow member 的面板会出现该组件；账户选择仅列 `owner_user_id===userId`、`origin=member_created`、`is_archived=0` 的本人稳定账户，不允许从旧管理员历史账户或其他家庭成员账户发起。
+- 表单只收取类型 `expense/income`、金额（円）、日期、商家/来源、分类和可选备注。确认后 POST 原有 `/api/family-finance/proposals`，复用原后端 AES-GCM 私有待审库、账号所有权校验、HomeFlow source-session、SHA-256、十四天有效期、D1 审计和确定的客户端幂等键；**本轮未修改正式 `entries`、SBI、卡账单、固定费或余额的任何写入路径**。
+- 初次提交使用 128-bit UUID 作为本草稿 idempotency key；网络回执不确定时保留组件内 `frozenDraft` 的原 key/字段，只允许原样重试，修改内容会拒绝而非生成第二份；源 user 变更、组件卸载或迟到响应时不把旧成员表单内容带给另一账号。不写 localStorage。成功回执还必须明确 `prepared_not_submitted`、`ledger_changed:false`、合法 request ID；界面提示继续提交 HomeFlow 审批，而不是“记账成功/已入账”。
+- 在 `tests/family-finance-ui.test.mjs` 增权限/幂等/未入账语义静态验收。**本模块仅能创建待审核草稿，仍没有审批批准后全类型稳定目标执行器，不等于会员本人可以直接正式记账。**
+- 本段提交仍位于原 Draft #309、旗标默认关闭，正式 D1 0022～0026 不执行，生产 Worker/Pages/R2 不改，绝不创建 Preview。CI 以当时最新 HEAD 为准，必要时查失败日志再修复。

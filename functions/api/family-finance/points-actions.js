@@ -4,7 +4,7 @@
 import {pointAccountingPlan} from './point-accounting.js';
 const te=new TextEncoder(), id=/^[a-f0-9]{32}$/i, hex=/^[a-f0-9]{64}$/i,
  uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
-const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire','transfer_prepaid','offset_card','transfer_out','exchange_out']);
+const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire','transfer_prepaid','offset_card','transfer_out','exchange_out','reversal']);
 const json=(x,status=200)=>Response.json(x,{status,headers:{'cache-control':'no-store'}});
 const fail=(code,status=409)=>json({ok:false,code,applied:false},status);
 const unique=()=>[...crypto.getRandomValues(new Uint8Array(16))].map(n=>n.toString(16).padStart(2,'0')).join('');
@@ -86,15 +86,32 @@ async function linkedPurchase(db,user,entryId,pointFundedId=null){
  return l?.owner_user_id===user.user_id&&l.household_id===user.household_id;
 }
 const moveCheck=operation=>operation==='transfer_out'||operation==='exchange_out';
+async function reversibleOriginal(db,user,x){
+ const id=x.original_request_id;
+ if(!uuid.test(id))return false;
+ const old=await db.prepare('SELECT old.operation,old.delta_units,old.yen_value,'+
+  'old.yen_per_unit_numerator AS numerator,old.yen_per_unit_denominator AS denominator,'+
+  'old.effective_date,old.points_account_id,old.linked_entry_id FROM family_points_journal old '+
+  'WHERE old.homeflow_request_id=? AND old.household_id=? AND old.requester_user_id=? '+
+  "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire') "+
+  'AND old.target_account_id IS NULL AND NOT EXISTS('+
+   'SELECT 1 FROM family_points_journal previous WHERE previous.reversed_request_id=old.homeflow_request_id)')
+  .bind(id,user.household_id,user.user_id,x.points_account_id).first();
+ return !!old&&x.effective_date>=old.effective_date&&
+  x.units===Math.abs(old.delta_units)&&x.yen_value===old.yen_value&&
+  x.rate_numerator===old.numerator&&x.rate_denominator===old.denominator;
+}
 function valid(x,user){
  const transfer=x?.operation==='transfer_prepaid';
  const offset=x?.operation==='offset_card';
  const move=x?.operation==='transfer_out'||x?.operation==='exchange_out';
+ const reversal=x?.operation==='reversal';
  const keys=['expected_user_id','idempotency_key','points_account_id','points_version','operation',
   'effective_date','units','yen_value','rate_numerator','rate_denominator',
   'source_reference','linked_entry_id','expense_net_confirmed',...(transfer||offset||move?['target_account_id','target_version']:[]),
   ...(offset?['target_purchase_request_id']:[]),
-  ...(move?['target_units','target_rate_numerator','target_rate_denominator']:[])];
+  ...(move?['target_units','target_rate_numerator','target_rate_denominator']:[]),
+  ...(reversal?['original_request_id']:[])];
  if(!exact(x,keys)||x.expected_user_id!==user.user_id||!supported.has(x.operation)||
   !id.test(x.points_account_id)||!Number.isSafeInteger(x.points_version)||x.points_version<1||
   typeof x.idempotency_key!=='string'||!/^[a-z0-9._:-]{12,128}$/i.test(x.idempotency_key)||
@@ -121,6 +138,15 @@ function valid(x,user){
    x.target_rate_numerator!==x.rate_numerator||
    x.target_rate_denominator!==x.rate_denominator))))return false;
  if(offset&&!uuid.test(x.target_purchase_request_id))return false;
+ if(reversal){
+  if(!uuid.test(x.original_request_id))return false;
+  return none||(
+   Number.isSafeInteger(x.yen_value)&&x.yen_value>=0&&x.yen_value<=1000000000&&
+   Number.isSafeInteger(x.rate_numerator)&&x.rate_numerator>=1&&x.rate_numerator<=1000000000&&
+   Number.isSafeInteger(x.rate_denominator)&&x.rate_denominator>=1&&x.rate_denominator<=1000000000&&
+   BigInt(x.units)*BigInt(x.rate_numerator)===
+    BigInt(x.yen_value)*BigInt(x.rate_denominator));
+ }
  return none||pointAccountingPlan({operation:x.operation,units:x.units,yen_value:x.yen_value,
   rate_numerator:x.rate_numerator,rate_denominator:x.rate_denominator,
   linked_entry_id:x.linked_entry_id,source_reference_hash:'a'.repeat(64),
@@ -141,6 +167,8 @@ async function prepare(req,e,url,user){
  const x=await read(req,url);
  if(!valid(x,user))return fail('POINTS_INVALID_INTENT',400);
  if(!await account(e.DB,user,x.points_account_id,x.points_version))return fail('POINTS_ACCOUNT_CHANGED');
+ if(x.operation==='reversal'&&!await reversibleOriginal(e.DB,user,x))
+  return fail('POINTS_REVERSAL_ORIGINAL_CHANGED');
  if(x.operation==='transfer_prepaid'&&
   !await prepaidTarget(e.DB,user,x.target_account_id,x.target_version))return fail('POINTS_PREPAID_TARGET_CHANGED');
  if(moveCheck(x.operation)&&!await financialTarget(e.DB,user,x.target_account_id,x.target_version,'points'))
@@ -161,7 +189,8 @@ async function prepare(req,e,url,user){
    ...(x.operation==='offset_card'?{target_purchase_request_id:x.target_purchase_request_id}:{}),
    ...(moveCheck(x.operation)?{target_units:x.target_units,
     target_rate_numerator:x.target_rate_numerator,
-    target_rate_denominator:x.target_rate_denominator}:{})}:{})});
+    target_rate_denominator:x.target_rate_denominator}:{})}:{}),
+  ...(x.operation==='reversal'?{original_request_id:x.original_request_id}:{})});
  const digest=await hash(raw);
  const idem=await hash(user.household_id+'\0'+user.user_id+'\0points\0'+x.idempotency_key);
  const prior=await e.DB.prepare('SELECT request_id,payload_sha256 FROM family_points_intents WHERE idempotency_hash=?')
@@ -175,8 +204,8 @@ async function prepare(req,e,url,user){
    '(request_id,household_id,requester_user_id,points_account_id,expected_version,operation,'+
    'payload_sha256,payload_cipher,payload_iv,idempotency_hash,status,created_at,expires_at,'+
    'target_account_id,target_version,target_purchase_request_id,'+
-   'target_units,target_rate_numerator,target_rate_denominator) '+
-   "VALUES(?,?,?,?,?,?,?,?,?,?,'prepared',?,?,?,?,?,?,?,?)")
+   'target_units,target_rate_numerator,target_rate_denominator,original_request_id) '+
+   "VALUES(?,?,?,?,?,?,?,?,?,?,'prepared',?,?,?,?,?,?,?,?,?)")
    .bind(requestId,user.household_id,user.user_id,x.points_account_id,x.points_version,
     x.operation,digest,secret.payload_cipher,secret.payload_iv,idem,now,now+14*86400000,
     ['transfer_prepaid','offset_card','transfer_out','exchange_out'].includes(x.operation)?x.target_account_id:null,
@@ -184,7 +213,8 @@ async function prepare(req,e,url,user){
     x.operation==='offset_card'?x.target_purchase_request_id:null,
     moveCheck(x.operation)?x.target_units:null,
     moveCheck(x.operation)?x.target_rate_numerator:null,
-    moveCheck(x.operation)?x.target_rate_denominator:null).run();
+    moveCheck(x.operation)?x.target_rate_denominator:null,
+    x.operation==='reversal'?x.original_request_id:null).run();
   if(result.meta?.changes!==1)return fail('POINTS_PREPARE_CONFLICT');
   return json({ok:true,replayed:false,prepared:visible(await one(e.DB,requestId,user))},201);
  }catch{return fail('POINTS_PREPARE_FAILED',503)}
@@ -198,6 +228,15 @@ async function submit(req,e,url,user,requestId){
   status:'submitted_status_unknown',applied:!!p.homeflow_request_id,replayed:true});
  if(p.status!=='prepared'||p.expires_at<=Date.now())return fail('POINTS_NOT_SUBMITTABLE');
  if(!await account(e.DB,user,p.points_account_id,p.expected_version))return fail('POINTS_ACCOUNT_CHANGED');
+ if(p.operation==='reversal'){
+  const old=await e.DB.prepare('SELECT homeflow_request_id FROM family_points_journal '+
+   'WHERE homeflow_request_id=? AND points_account_id=? AND household_id=? '+
+   'AND requester_user_id=? AND operation IN (\'earn_campaign\',\'earn_purchase\',\'expire\') '+
+   'AND NOT EXISTS(SELECT 1 FROM family_points_journal r '+
+    'WHERE r.reversed_request_id=family_points_journal.homeflow_request_id)')
+   .bind(p.original_request_id,p.points_account_id,user.household_id,user.user_id).first();
+  if(!old)return fail('POINTS_REVERSAL_ORIGINAL_CHANGED');
+ }
  if(p.operation==='transfer_prepaid'&&
   !await prepaidTarget(e.DB,user,p.target_account_id,p.target_version))return fail('POINTS_PREPAID_TARGET_CHANGED');
  if(moveCheck(p.operation)&&!await financialTarget(e.DB,user,p.target_account_id,p.target_version,'points'))

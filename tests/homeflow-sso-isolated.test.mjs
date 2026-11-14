@@ -547,6 +547,77 @@ test('both members see identical read-only actual prepaid/SBI assets and card bi
   assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM card_bills').all(),beforeBills);
  }finally{f.DB.sqlite.close();}
 });
+
+test('both members see verified old financial asset ownership; missing proofs stay unknown, same-name new account does not steal history',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  const memberCookie=await loginMember(f)
+  const read=async secret=>{
+   const response=await finance(f,'shared/asset-summary','GET',null,secret)
+   assert.equal(response.status,200,await response.clone().text())
+   return response.json()
+  }
+  const originalEntries=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  const originalHoldings=f.DB.sqlite.prepare('SELECT * FROM investment_holdings').all()
+  const originalBills=f.DB.sqlite.prepare('SELECT * FROM card_bills').all()
+  const initial=await read(ownerCookie)
+  assert.equal(initial.prepaid.cards[0].identity_status,'unverified')
+  assert.equal(initial.prepaid.cards[0].owner_user_id,null)
+  assert.equal(initial.securities.holdings[0].owner_user_id,null)
+  assert.equal(initial.credit_card_bills[0].account_id,null)
+  assert.equal(initial.ownership_verification.card_bills_unverified,1)
+  const adoption=await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)
+  assert.equal(adoption.status,200,await adoption.clone().text())
+  const adopted=await read(memberCookie)
+  assert.equal(adopted.prepaid.cards[0].owner_user_id,owner)
+  assert.equal(adopted.prepaid.cards[0].identity_status,'verified_legacy')
+  assert.match(adopted.prepaid.cards[0].account_id,/^[a-f0-9]{32}$/)
+  assert.equal(adopted.credit_card_bills[0].owner_user_id,null,
+   'a matching legacy card name alone does not establish verified bill ownership')
+  assert.equal(adopted.securities.holdings[0].owner_user_id,null)
+  for(const kind of ['investment_holding','card_bill']){
+   const proof=await finance(f,'legacy/resource-owners','POST',{
+    confirm:true,resource_kind:kind
+   },ownerCookie)
+   assert.equal(proof.status,200,await proof.clone().text())
+   assert.equal((await proof.json()).mapped,1)
+  }
+  const duplicate=await finance(f,'accounts','POST',{
+   label:'nanaco',account_kind:'prepaid'
+  },memberCookie)
+  assert.equal(duplicate.status,201)
+  const memberAccount=(await duplicate.json()).account_id
+  const admin=await read(ownerCookie),spouse=await read(memberCookie)
+  assert.deepEqual(admin,spouse,'family assets and ownership are identically visible to both members')
+  assert.equal(admin.scope,'household')
+  assert.equal(admin.tracked_assets_jpy,22400)
+  assert.equal(admin.prepaid.total_jpy,2400)
+  assert.equal(admin.securities.total_market_value_jpy,20000)
+  assert.equal(admin.credit_card_bills[0].current_total_jpy,1234)
+  assert.equal(admin.securities.holdings[0].owner_user_id,owner)
+  assert.equal(admin.securities.holdings[0].identity_status,'verified_legacy')
+  assert.equal(admin.credit_card_bills[0].owner_user_id,owner)
+  assert.equal(admin.credit_card_bills[0].identity_status,'verified_legacy')
+  assert.equal(admin.credit_card_bills[0].account_id,
+   f.DB.sqlite.prepare("SELECT account_id FROM family_financial_accounts WHERE legacy_source_name='PayPay Visa'").get().account_id)
+  assert.notEqual(admin.prepaid.cards[0].account_id,memberAccount,
+   'new member account with identical label never inherits original-owner balance')
+  assert.deepEqual(admin.ownership_verification,{
+   prepaid_verified:1,prepaid_unverified:0,holdings_verified:1,holdings_unverified:0,
+   card_bills_verified:1,card_bills_unverified:0,
+   proof:'immutable_legacy_owner_mapping',read_only:true
+  })
+  const eventsBefore=f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n
+  await read(memberCookie);await read(ownerCookie)
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n,eventsBefore,
+   'normal asset GETs must never write audit events')
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),originalEntries)
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM investment_holdings').all(),originalHoldings)
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM card_bills').all(),originalBills)
+ }finally{f.DB.sqlite.close()}
+})
+
 test('an unvalued SBI position never masquerades as complete household assets',async()=>{
  const f=await setup();
  try{

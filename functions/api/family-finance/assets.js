@@ -6,6 +6,7 @@
 import {handlePrepaid} from '../prepaid-assets.js'
 import {handlePortfolio} from '../investment-portfolio.js'
 import {getCardBillSnapshots} from '../card-bill-snapshots.js'
+import {verifiedFamilyAssetOwners} from './asset-owner-projection.js'
 
 const reply=(body,status=200)=>Response.json(body,{status,headers:{
  'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
@@ -79,6 +80,8 @@ export async function familyAssetSummary(env,url,user,request){
     snapshot_total_jpy:snapshot,current_total_jpy:current,
     stale:bill.stale})
   }
+  const ownership=await verifiedFamilyAssetOwners(env.DB,user.household_id,{cards,holdings,bills:items})
+  if(!ownership)return reply({code:'ASSET_IDENTITY_REVIEW_REQUIRED',ledger_changed:false},409)
   // Bills are liabilities/snapshots and must NOT be subtracted from asset
   // total here (they may already be reflected in prepaid funding transfers).
   // No bank/cash balance is available in the legacy D1; return a partial
@@ -86,11 +89,12 @@ export async function familyAssetSummary(env,url,user,request){
   return reply({ok:true,household_id:user.household_id,
    scope:'household',month,as_of_jst:
     new Date(Date.now()+9*3600000).toISOString().slice(0,10),
-   prepaid:{cards,total_jpy:prepaidTotal},
-   securities:{holdings,total_market_value_jpy:sbiTotal,
+   prepaid:{cards:ownership.prepaid,total_jpy:prepaidTotal},
+   securities:{holdings:ownership.securities,total_market_value_jpy:sbiTotal,
     missing_valuations:holdings.filter(x=>x.market_value_jpy===null).length,
     count:holdings.length},
-   credit_card_bills:items,
+   credit_card_bills:ownership.creditCardBills,
+   ownership_verification:ownership.verification,
    tracked_assets_jpy:knownAssets,
    tracked_assets_complete:allValued||holdings.length===0,
    excluded_from_assets:['untracked_bank_cash_balances',

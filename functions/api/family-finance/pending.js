@@ -61,7 +61,7 @@ function validIntent(x){
   return false;
  if(x.note!==undefined&&(typeof x.note!=='string'||x.note.length>300))
   return false;
- if(Object.keys(x).some(k=>!['idempotency_key','account_id','type',
+ if(Object.keys(x).some(k=>!['idempotency_key','expected_user_id','account_id','type',
   'amount_jpy','date','merchant','category','note'].includes(k)))return false;
  return true;
 }
@@ -81,6 +81,10 @@ const shape=row=>{
 async function prepare(req,env,url,user){
  const data=await readMutation(req,url);
  if(!data)return json({code:'BAD_ORIGIN_OR_BODY'},403);
+ // The cookie identifies the current actor, but a stale installed PWA may
+ // send a request prepared before the couple switched HomeFlow accounts.
+ // Reject the original actor mismatch BEFORE any account lookup or D1 writes.
+ if(data.expected_user_id!==user.user_id)return json({code:'ACTOR_CHANGED'},403);
  if(!validIntent(data))return json({code:'INVALID_FINANCE_PROPOSAL'},400);
  const db=env.DB;
  const account=await db.prepare('SELECT owner_user_id,household_id,is_archived,origin '+
@@ -147,7 +151,9 @@ async function list(db,user,url){
 }
 async function cancel(req,env,url,user,requestId){
  const body=await readMutation(req,url);
- if(!body||Object.keys(body).length!==0)return json({code:'BAD_ORIGIN_OR_BODY'},403);
+ if(!body)return json({code:'BAD_ORIGIN_OR_BODY'},403);
+ if(body.expected_user_id!==user.user_id)return json({code:'ACTOR_CHANGED'},403);
+ if(Object.keys(body).length!==1)return json({code:'BAD_ORIGIN_OR_BODY'},403);
  const db=env.DB;
  const row=await db.prepare('SELECT * FROM family_finance_pending_actions '+
   'WHERE request_id=? AND requester_user_id=? AND household_id=?')

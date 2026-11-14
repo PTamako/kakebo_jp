@@ -40,6 +40,7 @@ function fixture(){
  sql.exec(p35);
  sql.exec(readFileSync(new URL('../migrations/0036_points_card_offset.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0037_points_transfer_exchange.sql',import.meta.url),'utf8'));
+ sql.exec(readFileSync(new URL('../migrations/0038_points_earn_expiry_reversals.sql',import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,hh,role,role,'active',Date.now());
@@ -127,6 +128,7 @@ function fixture(){
   ...(['transfer_out','exchange_out'].includes(operation)?{
    target_account_id:receivePoints,target_version:1,target_units:100,
    target_rate_numerator:1,target_rate_denominator:1}:{}),
+  ...(operation==='reversal'?{original_request_id:'11111111-1111-4111-8111-111111111111'}:{}),
   ...overrides
  });
  const prepare=async(operation,key,overrides={})=>{
@@ -422,4 +424,80 @@ test('point transfer denies foreign account, stale target CAS, invalid conversio
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_credits').n,0);
  assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,300);
  assert.equal(get(f.sql,"SELECT COUNT(*) n FROM family_points_journal WHERE operation IN ('transfer_out','exchange_out')").n,0);
+});
+
+test('owner-approved immutable reversal restores an expired credit and cancels an incorrect point award exactly once',async()=>{
+ const f=fixture(),entries=get(f.sql,'SELECT COUNT(*) n FROM entries').n;
+ const earned=await f.prepare('earn_campaign','award-to-reverse',{units:150,yen_value:150});
+ const earnApproval=await f.submit(earned);
+ assert.equal((await f.execute(earnApproval)).status,200);
+ const expired=await f.prepare('expire','expire-to-reverse',{units:40,yen_value:40});
+ const expireApproval=await f.submit(expired);
+ assert.equal((await f.execute(expireApproval)).status,200);
+ const refund=await f.prepare('reversal','restore-expiration',
+  {units:40,yen_value:40,original_request_id:expireApproval});
+ const refundApproval=await f.submit(refund);
+ const result=await f.execute(refundApproval);
+ assert.equal(result.status,200,JSON.stringify(result));
+ assert.equal(result.data.delta_units,40);
+ assert.equal(result.data.reversed_request_id,expireApproval);
+ assert.equal(result.data.balance_after_units,150);
+ assert.equal((await f.execute(refundApproval,'receipt')).data.already_applied,true);
+ const revert=await f.prepare('reversal','cancel-award',
+  {units:150,yen_value:150,original_request_id:earnApproval});
+ const reversed=await f.execute(await f.submit(revert));
+ assert.equal(reversed.status,200,JSON.stringify(reversed));
+ assert.equal(reversed.data.delta_units,-150);
+ assert.equal(reversed.data.balance_after_units,0);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal WHERE operation=\'reversal\'').n,2);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,4);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries').n,entries);
+ assert.equal(get(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='income'").n,0);
+ assert.throws(()=>stmt(f.sql,"UPDATE family_points_journal SET delta_units=1 WHERE operation='reversal'"),/POINTS_JOURNAL_IMMUTABLE/);
+ const duplicate=await f.call(['points-actions'],f.action('reversal','duplicate-reverse',
+  {units:150,yen_value:150,original_request_id:earnApproval}));
+ assert.equal(duplicate.status,409);
+ assert.equal(duplicate.data.code,'POINTS_REVERSAL_ORIGINAL_CHANGED');
+});
+test('reversal blocks changed amount, cross-member source, linked counterpart and spent award overdraft',async()=>{
+ const f=fixture();
+ const earned=await f.prepare('earn_campaign','award-funding',{units:100,yen_value:100});
+ const earnApproval=await f.submit(earned);
+ assert.equal((await f.execute(earnApproval)).status,200);
+ const wrong=await f.call(['points-actions'],f.action('reversal','wrong-units',
+  {units:60,yen_value:60,original_request_id:earnApproval}));
+ assert.equal(wrong.status,409);
+ const foreign=await f.call(['points-actions'],f.action('reversal','foreign-account-reversal',
+  {points_account_id:receivePoints,original_request_id:earnApproval}));
+ assert.equal(foreign.status,409);
+ const exchanged=await f.prepare('transfer_out','cannot-revert-counterpart',
+  {units:60,yen_value:60,target_units:60});
+ const moveApproval=await f.submit(exchanged);
+ assert.equal((await f.execute(moveApproval)).status,200);
+ const blocked=await f.call(['points-actions'],f.action('reversal','unsafe-original',
+  {units:60,yen_value:60,original_request_id:moveApproval}));
+ assert.equal(blocked.status,409);
+ const proposal=await f.prepare('reversal','award-spent',
+  {units:100,yen_value:100,original_request_id:earnApproval});
+ const approval=await f.submit(proposal);
+ const rejected=await f.execute(approval);
+ assert.equal(rejected.status,409);
+ assert.equal(rejected.data.code,'POINTS_INSUFFICIENT_BALANCE');
+ assert.equal(get(f.sql,"SELECT COUNT(*) n FROM family_points_journal WHERE operation='reversal'").n,0);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,40);
+});
+test('target actor-audit failure rolls back reversal without erasing original journal',async()=>{
+ const f=fixture();
+ const award=await f.prepare('earn_campaign','award-protect',{units:100,yen_value:100});
+ const awardApproval=await f.submit(award);
+ assert.equal((await f.execute(awardApproval)).status,200);
+ const reverse=await f.prepare('reversal','audit-fail',
+  {units:100,yen_value:100,original_request_id:awardApproval});
+ const reversalApproval=await f.submit(reverse);
+ f.sql.exec("CREATE TRIGGER fail_reversal_audit BEFORE INSERT ON family_points_actor_audit WHEN NEW.operation='reversal' BEGIN SELECT RAISE(ABORT,'REVERSAL_AUDIT_FAILURE'); END;");
+ assert.notEqual((await f.execute(reversalApproval)).status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal').n,1);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,1);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,100);
 });

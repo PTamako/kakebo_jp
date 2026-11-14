@@ -26,7 +26,7 @@ function fixture(){
  const migration=readFileSync(new URL('../migrations/0034_family_points_foundation.sql',import.meta.url),'utf8');
  s.exec(migration);s.exec(migration);
  for(const name of ['0035_points_prepaid_atomic.sql','0036_points_card_offset.sql',
-  '0037_points_transfer_exchange.sql'])
+  '0037_points_transfer_exchange.sql','0038_points_earn_expiry_reversals.sql'])
   s.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
  for(const [id,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   run(s,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',

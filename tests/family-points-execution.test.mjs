@@ -295,7 +295,7 @@ test('point-to-prepaid refuses target version drift, cross-owner, false exchange
   assert.equal(get(f.sql,"SELECT COUNT(*) n FROM family_points_journal WHERE operation='transfer_prepaid'").n,0);
  }
  const foreign=fixture();
- const foreignId='e'.repeat(32);
+ const foreignId='8'.repeat(32);
  stmt(foreign.sql,"INSERT INTO family_financial_accounts(account_id,household_id,owner_user_id,label,account_kind,origin,created_by_user_id,updated_by_user_id) VALUES(?,?,?,?,?,'member_created',?,?)",
   foreignId,hh,other,'Other prepaid','prepaid',other,other);
  const ownerDenied=await foreign.call(['points-actions'],foreign.action('transfer_prepaid','other-owned',{target_account_id:foreignId}));

@@ -87,8 +87,8 @@ async function linkedPurchase(db,user,entryId,pointFundedId=null){
 }
 const moveCheck=operation=>operation==='transfer_out'||operation==='exchange_out';
 async function reversibleOriginal(db,user,x){
- const id=x.original_request_id;
- if(!uuid.test(id))return false;
+ const originalId=x.original_request_id;
+ if(!uuid.test(originalId))return false;
  const old=await db.prepare('SELECT old.operation,old.delta_units,old.yen_value,'+
   'old.yen_per_unit_numerator AS numerator,old.yen_per_unit_denominator AS denominator,'+
   'old.effective_date,old.points_account_id,old.linked_entry_id,old.target_account_id,'+
@@ -99,7 +99,7 @@ async function reversibleOriginal(db,user,x){
   'AND (old.target_account_id IS NULL OR credit.target_account_id=old.target_account_id) '+
   'AND NOT EXISTS('+
    'SELECT 1 FROM family_points_journal previous WHERE previous.reversed_request_id=old.homeflow_request_id)')
-  .bind(id,user.household_id,user.user_id,x.points_account_id).first();
+  .bind(originalId,user.household_id,user.user_id,x.points_account_id).first();
  if(!old||x.effective_date<old.effective_date||
   x.units!==Math.abs(old.delta_units)||x.yen_value!==old.yen_value||
   x.rate_numerator!==old.numerator||x.rate_denominator!==old.denominator)return false;

@@ -125,3 +125,24 @@ test('personal financial account mutation uses originating HomeFlow user, not st
  assert.match(source,/function foreground\(\)\{[\s\S]*?resetIdentity\(\)[\s\S]*?void check\(\)/);
  assert.doesNotMatch(source,/localStorage.setItem\([^\n]*(?:ledger|account|balance)/i);
 });
+
+
+test('member can compose a private encrypted proposal only for her own stable account, never directly post a ledger row',()=>{
+ assert.match(proposals,/const myAccounts=computed\(\(\)=>props.accounts.filter/);
+ assert.match(proposals,/a\?\.owner_user_id===props.userId&&a.origin==='member_created'/);
+ assert.match(proposals,/Number\(a.is_archived\)===0/);
+ assert.match(proposals,/@submit.prevent="createProposal"/);
+ assert.match(proposals,/!myAccounts.value.some\(a=>a.account_id===record.account_id\)/);
+ assert.match(proposals,/!Number.isSafeInteger\(record.amount_jpy\)/);
+ assert.match(proposals,/crypto.randomUUID\(\).replace\(\/-\/g,''\)/);
+ assert.match(proposals,/if\(frozenDraft\)\{/);
+ assert.match(proposals,/body:JSON.stringify\(frozenDraft\)/);
+ assert.match(proposals,/idempotency_key:crypto.randomUUID/);
+ assert.match(proposals,/result.prepared\?\.status!=='prepared_not_submitted'/);
+ assert.match(proposals,/result.prepared\?\.ledger_changed!==false/);
+ assert.match(proposals,/user!==props.userId\|\|!open.value/);
+ assert.match(proposals,/加密草稿已保存，仍需在下方点击/);
+ assert.match(proposals,/form class="hf-new-request"/);
+ assert.doesNotMatch(proposals,/\/api\/entries\b|\/api\/internal\/approved-actions/);
+ assert.doesNotMatch(proposals,/localStorage|sessionStorage|indexedDB/);
+});

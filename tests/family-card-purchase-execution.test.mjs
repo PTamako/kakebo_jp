@@ -170,7 +170,7 @@ test('forged browser, wrong user, stale version and revoked membership produce z
    }
    const {b}=await f.flow();
    if(type==='version')f.sql.prepare("UPDATE family_financial_accounts SET version=2 WHERE account_id=?").run(account);
-   if(type==='revoked')f.sql.prepare("UPDATE homeflow_identity_links SET state='revoked' WHERE user_id=?").run(member);
+   if(type==='revoked')f.sql.prepare("UPDATE homeflow_identity_links SET state='disabled' WHERE user_id=?").run(member);
    if(type==='proof')f.disableProof();
    if(type==='flag')f.env.KAKEIBO_CARD_PURCHASES_ENABLED='false';
    const r=await f.send('execute',b,{invalid:type==='invalid-hmac',browser:type==='browser'});

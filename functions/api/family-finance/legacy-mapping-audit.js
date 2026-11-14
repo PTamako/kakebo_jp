@@ -40,7 +40,7 @@ export async function auditLegacyFinanceMappings(request,env,user){
   payments.results||[],transfers.results||[],linkedLegacy.results||[]]
  if(collections.some(x=>x.length>300))
   return json({code:'LEGACY_SOURCE_COUNT_REVIEW_REQUIRED',ledger_changed:false},409)
- const [adopted,original,pays,dests,linked]=collections
+ const [adopted,original,pays,dests,linkedRows]=collections
  if(adopted.some(x=>x.owner_user_id!==user.user_id||x.household_id!==user.household_id))
   return json({code:'LEGACY_ACCOUNT_OWNER_CONFLICT',ledger_changed:false},409)
  const sourceSet=new Set(original.map(x=>x.name))
@@ -50,12 +50,12 @@ export async function auditLegacyFinanceMappings(request,env,user){
   return json({code:'LEGACY_NAME_AMBIGUOUS',ledger_changed:false},409)
  const paymentCounts=new Map(pays.map(x=>[x.legacy_name,Number(x.row_count)]))
  const transferCounts=new Map(dests.map(x=>[x.legacy_name,Number(x.row_count)]))
- const linkedCounts=new Map(linked.map(x=>[x.legacy_name,Number(x.row_count)]))
+ const linkedCounts=new Map(linkedRows.map(x=>[x.legacy_name,Number(x.row_count)]))
  const names=[...new Set([...sourceSet,...paymentCounts.keys(),...transferCounts.keys(),
   ...linkedCounts.keys()])].sort()
  if(names.length>300||names.some(n=>typeof n!=='string'||!n.trim()||n.length>240))
   return json({code:'LEGACY_NAME_REVIEW_REQUIRED',ledger_changed:false},409)
- if([...pays,...dests,...linked].some(x=>!Number.isSafeInteger(Number(x.row_count))||
+ if([...pays,...dests,...linkedRows].some(x=>!Number.isSafeInteger(Number(x.row_count))||
    Number(x.row_count)<0)||
    !Number.isSafeInteger(Number(linkedEntries?.n))||Number(linkedEntries.n)<0)
   return json({code:'LEGACY_COUNTS_INVALID',ledger_changed:false},409)

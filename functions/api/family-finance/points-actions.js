@@ -1,10 +1,10 @@
 // Draft: source-side independent point intent. NEVER writes legacy entries.
 // Only the atomically self-contained actions are enabled in this increment.
-// Card/prepaid/SBI/exchange counterparts require separately verified executors.
+// Prepaid/card/exchange/SBI counterparts are verified by same-D1 immutable triggers.
 import {pointAccountingPlan} from './point-accounting.js';
 const te=new TextEncoder(), id=/^[a-f0-9]{32}$/i, hex=/^[a-f0-9]{64}$/i,
  uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
-const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire','transfer_prepaid','offset_card','transfer_out','exchange_out','reversal']);
+const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire','transfer_prepaid','offset_card','transfer_out','exchange_out','reversal','redeem_asset']);
 const json=(x,status=200)=>Response.json(x,{status,headers:{'cache-control':'no-store'}});
 const fail=(code,status=409)=>json({ok:false,code,applied:false},status);
 const unique=()=>[...crypto.getRandomValues(new Uint8Array(16))].map(n=>n.toString(16).padStart(2,'0')).join('');
@@ -106,12 +106,15 @@ function valid(x,user){
  const offset=x?.operation==='offset_card';
  const move=x?.operation==='transfer_out'||x?.operation==='exchange_out';
  const reversal=x?.operation==='reversal';
+ const asset=x?.operation==='redeem_asset';
  const keys=['expected_user_id','idempotency_key','points_account_id','points_version','operation',
   'effective_date','units','yen_value','rate_numerator','rate_denominator',
-  'source_reference','linked_entry_id','expense_net_confirmed',...(transfer||offset||move?['target_account_id','target_version']:[]),
+  'source_reference','linked_entry_id','expense_net_confirmed', ...(transfer||offset||move||asset?['target_account_id','target_version']:[]),
   ...(offset?['target_purchase_request_id']:[]),
   ...(move?['target_units','target_rate_numerator','target_rate_denominator']:[]),
-  ...(reversal?['original_request_id']:[])];
+  ...(reversal?['original_request_id']:[]),
+  ...(asset?['sbi_fund_code','sbi_account_type','sbi_confirmed_units',
+   'broker_trade_reference','broker_execution_confirmed']:[])];
  if(!exact(x,keys)||x.expected_user_id!==user.user_id||!supported.has(x.operation)||
   !id.test(x.points_account_id)||!Number.isSafeInteger(x.points_version)||x.points_version<1||
   typeof x.idempotency_key!=='string'||!/^[a-z0-9._:-]{12,128}$/i.test(x.idempotency_key)||
@@ -124,11 +127,11 @@ function valid(x,user){
     (!withEntry&&x.linked_entry_id!==null)||
     (x.operation==='redeem_discount'&&x.expense_net_confirmed!==true)||
     (x.operation!=='redeem_discount'&&x.expense_net_confirmed!==false))return false;
- if((transfer||offset||move)&&(!id.test(x.target_account_id)||x.target_account_id===x.points_account_id||
+ if((transfer||offset||move||asset)&&(!id.test(x.target_account_id)||x.target_account_id===x.points_account_id||
    !Number.isSafeInteger(x.target_version)||x.target_version<1||
    !Number.isSafeInteger(x.yen_value)||x.yen_value<1||x.yen_value>10000000))return false;
  const none=x.yen_value===null&&x.rate_numerator===null&&x.rate_denominator===null;
- if((transfer||offset||move)&&none)return false;
+ if((transfer||offset||move||asset)&&none)return false;
  if(move&&(!Number.isSafeInteger(x.target_units)||x.target_units<1||x.target_units>1000000000||
   !Number.isSafeInteger(x.target_rate_numerator)||x.target_rate_numerator<1||x.target_rate_numerator>1000000000||
   !Number.isSafeInteger(x.target_rate_denominator)||x.target_rate_denominator<1||x.target_rate_denominator>1000000000||
@@ -138,6 +141,13 @@ function valid(x,user){
    x.target_rate_numerator!==x.rate_numerator||
    x.target_rate_denominator!==x.rate_denominator))))return false;
  if(offset&&!uuid.test(x.target_purchase_request_id))return false;
+ if(asset&&(!/^[A-Z0-9]{8}$/.test(x.sbi_fund_code||'')||
+  !['growth','tsumitate'].includes(x.sbi_account_type)||
+  !Number.isSafeInteger(x.sbi_confirmed_units)||x.sbi_confirmed_units<1||
+  x.sbi_confirmed_units>1000000000000||
+  typeof x.broker_trade_reference!=='string'||
+  !/^[A-Za-z0-9._:-]{8,128}$/.test(x.broker_trade_reference)||
+  x.broker_execution_confirmed!==true))return false;
  if(reversal){
   if(!uuid.test(x.original_request_id))return false;
   return none||(
@@ -150,8 +160,8 @@ function valid(x,user){
  return none||pointAccountingPlan({operation:x.operation,units:x.units,yen_value:x.yen_value,
   rate_numerator:x.rate_numerator,rate_denominator:x.rate_denominator,
   linked_entry_id:x.linked_entry_id,source_reference_hash:'a'.repeat(64),
-  ...(transfer||offset||move?{points_account_id:x.points_account_id,target_account_id:x.target_account_id,
-   target_account_kind:transfer?'prepaid':offset?'credit_card':'points'}:{})}).ok===true;
+  ...(transfer||offset||move||asset?{points_account_id:x.points_account_id,target_account_id:x.target_account_id,
+   target_account_kind:transfer?'prepaid':offset?'credit_card':asset?'securities':'points'}:{})}).ok===true;
 }
 async function seal(e,requestId,raw){
  const key=await crypto.subtle.importKey('raw',
@@ -171,6 +181,9 @@ async function prepare(req,e,url,user){
   return fail('POINTS_REVERSAL_ORIGINAL_CHANGED');
  if(x.operation==='transfer_prepaid'&&
   !await prepaidTarget(e.DB,user,x.target_account_id,x.target_version))return fail('POINTS_PREPAID_TARGET_CHANGED');
+ if(x.operation==='redeem_asset'&&
+  !await financialTarget(e.DB,user,x.target_account_id,x.target_version,'securities'))
+  return fail('POINTS_SBI_ACCOUNT_CHANGED');
  if(moveCheck(x.operation)&&!await financialTarget(e.DB,user,x.target_account_id,x.target_version,'points'))
   return fail('POINTS_TRANSFER_TARGET_CHANGED');
  if(x.operation==='offset_card'&&(
@@ -180,17 +193,24 @@ async function prepare(req,e,url,user){
  if(x.linked_entry_id&&!await linkedPurchase(e.DB,user,x.linked_entry_id,
    x.operation==='redeem_purchase'?x.points_account_id:null))return fail('POINTS_ENTRY_OWNER_UNVERIFIED');
  const reference_hash=await hash(user.household_id+'\0'+x.points_account_id+'\0'+x.source_reference.trim());
+ const brokerReferenceHash=x.operation==='redeem_asset'?
+  await hash(user.household_id+'\0sbi-confirmed-trade\0'+x.broker_trade_reference):null;
  const raw=JSON.stringify({operation:x.operation,points_account_id:x.points_account_id,
   points_version:x.points_version,units:x.units,effective_date:x.effective_date,
   yen_value:x.yen_value,rate_numerator:x.rate_numerator,rate_denominator:x.rate_denominator,
   reference_hash,linked_entry_id:x.linked_entry_id,expense_net_confirmed:x.expense_net_confirmed,
-  ...(['transfer_prepaid','offset_card','transfer_out','exchange_out'].includes(x.operation)?{
+  ...(['transfer_prepaid','offset_card','transfer_out','exchange_out','redeem_asset'].includes(x.operation)?{
    target_account_id:x.target_account_id,target_version:x.target_version,
    ...(x.operation==='offset_card'?{target_purchase_request_id:x.target_purchase_request_id}:{}),
    ...(moveCheck(x.operation)?{target_units:x.target_units,
     target_rate_numerator:x.target_rate_numerator,
     target_rate_denominator:x.target_rate_denominator}:{})}:{}),
-  ...(x.operation==='reversal'?{original_request_id:x.original_request_id}:{})});
+  ...(x.operation==='reversal'?{original_request_id:x.original_request_id}:{}),
+  ...(x.operation==='redeem_asset'?{
+   sbi_fund_code:x.sbi_fund_code,sbi_account_type:x.sbi_account_type,
+   sbi_confirmed_units:x.sbi_confirmed_units,
+   sbi_broker_reference_hash:brokerReferenceHash,
+   sbi_broker_execution_attested:true}:{})});
  const digest=await hash(raw);
  const idem=await hash(user.household_id+'\0'+user.user_id+'\0points\0'+x.idempotency_key);
  const prior=await e.DB.prepare('SELECT request_id,payload_sha256 FROM family_points_intents WHERE idempotency_hash=?')
@@ -204,17 +224,22 @@ async function prepare(req,e,url,user){
    '(request_id,household_id,requester_user_id,points_account_id,expected_version,operation,'+
    'payload_sha256,payload_cipher,payload_iv,idempotency_hash,status,created_at,expires_at,'+
    'target_account_id,target_version,target_purchase_request_id,'+
-   'target_units,target_rate_numerator,target_rate_denominator,original_request_id) '+
-   "VALUES(?,?,?,?,?,?,?,?,?,?,'prepared',?,?,?,?,?,?,?,?,?)")
+   'target_units,target_rate_numerator,target_rate_denominator,original_request_id,'+
+   'sbi_fund_code,sbi_account_type,sbi_confirmed_units,sbi_broker_reference_hash) '+
+   "VALUES(?,?,?,?,?,?,?,?,?,?,'prepared',?,?,?,?,?,?,?,?,?,?,?,?,?)")
    .bind(requestId,user.household_id,user.user_id,x.points_account_id,x.points_version,
     x.operation,digest,secret.payload_cipher,secret.payload_iv,idem,now,now+14*86400000,
-    ['transfer_prepaid','offset_card','transfer_out','exchange_out'].includes(x.operation)?x.target_account_id:null,
-    ['transfer_prepaid','offset_card','transfer_out','exchange_out'].includes(x.operation)?x.target_version:null,
+    ['transfer_prepaid','offset_card','transfer_out','exchange_out','redeem_asset'].includes(x.operation)?x.target_account_id:null,
+    ['transfer_prepaid','offset_card','transfer_out','exchange_out','redeem_asset'].includes(x.operation)?x.target_version:null,
     x.operation==='offset_card'?x.target_purchase_request_id:null,
     moveCheck(x.operation)?x.target_units:null,
     moveCheck(x.operation)?x.target_rate_numerator:null,
     moveCheck(x.operation)?x.target_rate_denominator:null,
-    x.operation==='reversal'?x.original_request_id:null).run();
+    x.operation==='reversal'?x.original_request_id:null,
+    x.operation==='redeem_asset'?x.sbi_fund_code:null,
+    x.operation==='redeem_asset'?x.sbi_account_type:null,
+    x.operation==='redeem_asset'?x.sbi_confirmed_units:null,
+    brokerReferenceHash).run();
   if(result.meta?.changes!==1)return fail('POINTS_PREPARE_CONFLICT');
   return json({ok:true,replayed:false,prepared:visible(await one(e.DB,requestId,user))},201);
  }catch{return fail('POINTS_PREPARE_FAILED',503)}
@@ -239,6 +264,9 @@ async function submit(req,e,url,user,requestId){
  }
  if(p.operation==='transfer_prepaid'&&
   !await prepaidTarget(e.DB,user,p.target_account_id,p.target_version))return fail('POINTS_PREPAID_TARGET_CHANGED');
+ if(p.operation==='redeem_asset'&&
+  !await financialTarget(e.DB,user,p.target_account_id,p.target_version,'securities'))
+  return fail('POINTS_SBI_ACCOUNT_CHANGED');
  if(moveCheck(p.operation)&&!await financialTarget(e.DB,user,p.target_account_id,p.target_version,'points'))
   return fail('POINTS_TRANSFER_TARGET_CHANGED');
  if(p.operation==='offset_card'&&

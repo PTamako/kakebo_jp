@@ -46,13 +46,32 @@ const entryDateBounds = period => {
 const pointChargeId = (requestId, entryId) =>
   requestId && requestId.length <= 100 ? 'point_charge_' + requestId : 'point_charge_entry_' + entryId
 const isPointCharge = e => typeof e?.client_request_id === 'string' && e.client_request_id.startsWith('point_charge_')
-const isClaimedLegacySource = async (db,name) => !!(name&&await db.prepare(
-  "SELECT 1 FROM family_financial_accounts WHERE origin='legacy' AND legacy_source_name=?1 LIMIT 1"
-).bind(name).first())
+// These guards must work during the safe staged rollout, including historical
+// databases that have not installed the new 0023/0027/0028 migrations yet.
+const legacyIdentityTables = async db => {
+  const {results=[]}=await db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name IN "+
+    "('family_financial_accounts','family_finance_legacy_entry_links',"+
+    "'family_finance_legacy_transfer_links')"
+  ).all()
+  return new Set(results.map(row=>row.name))
+}
+const isClaimedLegacySource = async (db,name) => {
+  if(!name||(await legacyIdentityTables(db)).has('family_financial_accounts')===false)
+    return false
+  return !!await db.prepare(
+    "SELECT 1 FROM family_financial_accounts WHERE origin='legacy' AND legacy_source_name=?1 LIMIT 1"
+  ).bind(name).first()
+}
 const lockedLegacyEntryIdentity = async (db,id) => {
+  const tables=await legacyIdentityTables(db)
   const [normal,transfer]=await Promise.all([
-    db.prepare('SELECT 1 FROM family_finance_legacy_entry_links WHERE entry_id=?1').bind(id).first(),
-    db.prepare('SELECT 1 FROM family_finance_legacy_transfer_links WHERE entry_id=?1').bind(id).first()
+    tables.has('family_finance_legacy_entry_links')
+      ?db.prepare('SELECT 1 FROM family_finance_legacy_entry_links WHERE entry_id=?1').bind(id).first()
+      :null,
+    tables.has('family_finance_legacy_transfer_links')
+      ?db.prepare('SELECT 1 FROM family_finance_legacy_transfer_links WHERE entry_id=?1').bind(id).first()
+      :null
   ])
   return {normal:!!normal,transfer:!!transfer}
 }

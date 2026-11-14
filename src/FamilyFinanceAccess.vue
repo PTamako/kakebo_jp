@@ -6,6 +6,7 @@ import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
 import FamilyFinanceLegacyTransferLink from './FamilyFinanceLegacyTransferLink.vue'
 import FamilyFinanceAssetOwnership from './FamilyFinanceAssetOwnership.vue'
 import FamilyFinancePlanOwnership from './FamilyFinancePlanOwnership.vue'
+import FamilyFinanceOwnerAdoption from './FamilyFinanceOwnerAdoption.vue'
 
 const STORAGE='kakeibo:homeflow-resume-v1'
 const hex=/^[a-f0-9]{64}$/i
@@ -266,6 +267,9 @@ onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange'
       </form>
      </li>
     </ul>
+    <FamilyFinanceOwnerAdoption v-if="person.role==='owner'"
+     :key="'resource-adoption:'+person.user_id" :user-id="person.user_id"
+     :household-id="person.household_id" />
     <FamilyFinanceMappingAudit v-if="person.role==='owner'"
      :key="'mapping-audit:'+person.user_id" :user-id="person.user_id"
      :household-id="person.household_id" />

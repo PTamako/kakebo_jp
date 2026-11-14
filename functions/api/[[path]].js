@@ -46,6 +46,16 @@ const entryDateBounds = period => {
 const pointChargeId = (requestId, entryId) =>
   requestId && requestId.length <= 100 ? 'point_charge_' + requestId : 'point_charge_entry_' + entryId
 const isPointCharge = e => typeof e?.client_request_id === 'string' && e.client_request_id.startsWith('point_charge_')
+const isClaimedLegacySource = async (db,name) => !!(name&&await db.prepare(
+  "SELECT 1 FROM family_financial_accounts WHERE origin='legacy' AND legacy_source_name=?1 LIMIT 1"
+).bind(name).first())
+const lockedLegacyEntryIdentity = async (db,id) => {
+  const [normal,transfer]=await Promise.all([
+    db.prepare('SELECT 1 FROM family_finance_legacy_entry_links WHERE entry_id=?1').bind(id).first(),
+    db.prepare('SELECT 1 FROM family_finance_legacy_transfer_links WHERE entry_id=?1').bind(id).first()
+  ])
+  return {normal:!!normal,transfer:!!transfer}
+}
 async function rewardDestination(db, e, existingTarget = '') {
   if (e.type !== 'income' || e.category !== 'ポイント還元') return {target:null,source:null}
   const target = String(e.rewardDestination || '').trim()
@@ -785,6 +795,8 @@ export async function onRequest({ request, env, params }) {
       const body = await request.json()
       const name = typeof body?.name === 'string' ? body.name.trim() : ''
       if (!name || name === '現金') return json({ error: 'カード名を確認してください' }, 400)
+      if(await isClaimedLegacySource(db,name))
+        return json({error:'旧账本已认领该支付方式，不能删除历史来源；请使用归档',code:'legacy_source_identity_locked'},409)
       // Do not remove a card that is still used by an enabled automatic charge.
       const activePlan = await db.prepare('SELECT id FROM recurring_plans WHERE payment_source=?1 AND enabled=1 LIMIT 1').bind(name).first()
       if (activePlan) return json({error:'このカードを利用する固定支出が残っています。先に固定支出の設定を整理してください'},409)
@@ -867,6 +879,8 @@ export async function onRequest({ request, env, params }) {
         Number(current.is_archived||0)!==expected.isArchived)
         return json({error:'カード設定が別の端末で変更されました。再読み込みしてください'},409)
       if(current.is_archived)return json({error:'アーカイブ済みのカードは編集できません'},409)
+      if(oldName!==newName&&await isClaimedLegacySource(db,oldName))
+        return json({error:'旧账本已认领该支付方式，不能直接更改历史来源名称。可在家庭账户中修改显示名称。',code:'legacy_source_identity_locked'},409)
       if(oldName!==newName&&await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1').bind(newName).first())
         return json({error:'同じカード名が登録されています'},409)
       if(current.source_type==='prepaid'&&kind==='standard'&&
@@ -931,6 +945,8 @@ export async function onRequest({ request, env, params }) {
       if (!(await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(oldName).first()))
         return json({error:'元のカードが見つかりません。明細は変更していません',code:'payment_source_not_found'},404)
       if (oldName === newName) return json({ ok: true, changes: 0 })
+      if (await isClaimedLegacySource(db,oldName))
+        return json({error:'旧账本已认领该支付方式，请修改账户显示名称而非更改原始来源',code:'legacy_source_identity_locked'},409)
       if (await db.prepare('SELECT name FROM payment_sources WHERE name=?1').bind(newName).first()) return json({ error: '同じカード名が登録されています' }, 409)
       // Schema is provisioned by explicit migrations, never by business requests.
       // D1 batch keeps ledger, card and normalized finance references consistent.
@@ -1298,6 +1314,16 @@ export async function onRequest({ request, env, params }) {
           await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(rawTarget.slice(8)).first())
           return json({error:'アーカイブ済みのプリペイドカードへ変更できません',code:'payment_source_archived'},409)
         const target=transfer?(rawTarget||null):null
+        const identity=await lockedLegacyEntryIdentity(db,id)
+        const nextType=transfer?'transfer':(e.type==='income'?'income':'expense')
+        const nextSource=reward.source||paymentSource
+        const nextTarget=reward.target||target
+        if((identity.normal&&(nextType!==previous.type||
+              nextSource!==previous.payment_source))||
+           (identity.transfer&&(nextType!=='transfer'||
+              nextSource!==previous.payment_source||
+              nextTarget!==previous.transfer_target)))
+          return json({error:'历史明细已关联稳定账户，不能直接更改来源、转入目标或收支类型。请先核对账户归属。',code:'legacy_entry_identity_locked'},409)
          if(transfer&&target?.startsWith('prepaid:')&&paymentSource===target.slice('prepaid:'.length))
            return json({error:'同じプリペイドカードへの振替は登録できません'},400)
         const transferDate = transfer ? (e.transferDate || previous.transfer_date || e.date)

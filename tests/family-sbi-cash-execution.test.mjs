@@ -85,7 +85,8 @@ function fixture(){
   assert.equal(b.execution_nonce,'f'.repeat(64));
   return Response.json({ok:true,verified:true,execution_authorized:true,
    execution_status:'executing',source_app:'kakebo',target_app:'kakebo',
-   operation:'finance.sbi_cash.tsumitate',resource_type:'sbi_cash_action',
+   operation:'finance.sbi_cash.'+read(sql,'SELECT kind FROM family_sbi_cash_intents WHERE request_id=?',b.resource_id).kind,
+   resource_type:'sbi_cash_action',
    request_id:b.request_id,resource_id:b.resource_id,household_id:b.household_id,
    requester_user_id:b.requester_user_id,payload_sha256:b.payload_sha256,
    idempotency_key:b.idempotency_key,expected_version:1,approver_user_id:owner,
@@ -193,5 +194,29 @@ test('one bank debit and one broker execution can only create one cash lot; no n
   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM entries').n,1);
   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_lots').n,0);
+ }finally{f.close();}
+});
+
+test('confirmed SBI additional buy is NOT auto-classified as regular 積立 and keeps actual effective date',async()=>{
+ const f=fixture();try{
+  const input={...f.input,kind:'additional',account_type:'growth',
+   idempotency_key:'cash-sbi-additional-20261115-004'};
+  const prepared=await f.source(undefined,input);
+  assert.equal(prepared.status,201,JSON.stringify(prepared));
+  const submitted=await f.source(['sbi-cash-actions',prepared.data.prepared.request_id,'submit'],
+   {expected_user_id:member});
+  assert.equal(submitted.status,200,JSON.stringify(submitted));
+  const b={request_id:approval,resource_id:prepared.data.prepared.request_id,household_id:household,
+   requester_user_id:member,payload_sha256:prepared.data.prepared.payload_sha256};
+  const done=await f.target('execute',b);
+  assert.equal(done.status,200,JSON.stringify(done));
+  assert.equal(done.data.kind,'additional');
+  assert.equal(done.data.account_type,'growth');
+  const row=read(f.sql,"SELECT note,category,date,transfer_date FROM entries WHERE type='transfer'");
+  assert.equal(row.note,'追加買付');
+  assert.equal(row.date,'2026-11-12');
+  assert.equal(row.transfer_date,'2026-11-14');
+  assert.equal(read(f.sql,'SELECT kind FROM family_sbi_cash_lots').kind,'additional');
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
  }finally{f.close();}
 });

@@ -1590,8 +1590,8 @@ test('legacy transfer dual-sided mapping attaches both original-owner IDs once a
   assert.equal(audit.remaining_legacy_transfer_count,0)
   assert.equal(audit.partial_legacy_transfer_count,0)
   assert.equal(audit.unverified_linked_transfer_count,0)
-  assert.equal(audit.remaining_legacy_entry_count,1,
-   'unmatched historical bank income remains separate from transfers')
+  assert.equal(audit.remaining_legacy_entry_count,2,
+   'the untouched legacy PayPay Visa expense and unmatched bank income are separate from transfers')
   assert.equal((await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json()).items.length,0)
   assert.throws(()=>f.DB.sqlite.prepare(
    'UPDATE family_finance_legacy_transfer_links SET target_name=? WHERE entry_id=3'

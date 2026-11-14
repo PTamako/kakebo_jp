@@ -23,10 +23,16 @@ function fixture(){
   'category TEXT,merchant TEXT,note TEXT,raw TEXT,type TEXT,transfer_target TEXT,'+
   'transfer_applied INTEGER,transfer_date TEXT,client_request_id TEXT UNIQUE,'+
   'payment_source TEXT,family_account_id TEXT,family_transfer_target_account_id TEXT);');
+ for(const prior of ['0031_family_card_purchase_execution.sql','0032_family_card_settlement_foundation.sql'])
+  sql.exec(readFileSync(new URL('../migrations/'+prior,import.meta.url),'utf8'));
  const migration=readFileSync(new URL('../migrations/0033_member_prepaid_actions.sql',import.meta.url),'utf8');
  sql.exec(migration);sql.exec(migration);
  sql.exec(readFileSync(new URL('../migrations/0034_family_points_foundation.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0035_points_prepaid_atomic.sql',import.meta.url),'utf8'));
+ for(const current of ['0036_points_card_offset.sql','0037_points_transfer_exchange.sql',
+  '0038_points_earn_expiry_reversals.sql','0040_points_sbi_lots.sql',
+  '0041_points_transfer_atomic_refund.sql','0042_points_prepaid_refund.sql'])
+  sql.exec(readFileSync(new URL('../migrations/'+current,import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,household,role,role,'active',Date.now());

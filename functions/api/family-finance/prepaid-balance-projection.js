@@ -7,7 +7,9 @@ export async function memberPrepaidBalances(db,household){
   'COALESCE((SELECT SUM(j.delta_jpy) FROM family_prepaid_balance_journal j '+
   'WHERE j.prepaid_account_id=a.account_id AND j.household_id=a.household_id),0) '+
   '+COALESCE((SELECT SUM(c.amount_jpy) FROM family_points_prepaid_credits c '+
-  'WHERE c.prepaid_account_id=a.account_id AND c.household_id=a.household_id),0) balance_jpy '+
+  'WHERE c.prepaid_account_id=a.account_id AND c.household_id=a.household_id),0) '+
+  '-COALESCE((SELECT SUM(r.debited_prepaid_jpy) FROM family_points_prepaid_refunds r '+
+  'WHERE r.prepaid_account_id=a.account_id AND r.household_id=a.household_id),0) balance_jpy '+
   'FROM family_financial_accounts a WHERE a.household_id=? '+
   "AND a.account_kind='prepaid' AND a.origin='member_created' AND a.is_archived=0 "+
   'ORDER BY a.created_at DESC,a.account_id LIMIT 200';

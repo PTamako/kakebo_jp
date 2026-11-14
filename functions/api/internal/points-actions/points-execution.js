@@ -42,7 +42,7 @@ async function signed(req,e,mode){
  const expected=await hmac(e.KAKEIBO_POINTS_EXECUTION_SECRET,'homeflow:points-'+mode,stamp,raw);
  return eq(tag,expected)?b:null;
 }
-const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null)=>({ok:true,applied:true,approval_id:r.homeflow_request_id,
+const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null,transferRefund=null)=>({ok:true,applied:true,approval_id:r.homeflow_request_id,
  proposal_id:r.proposal_id,household_id:r.household_id,requester_user_id:r.requester_user_id,
  payload_sha256:r.payload_sha256,approver_user_id:r.approver_user_id,
  actor_user_id:r.actor_user_id,points_account_id:r.points_account_id,
@@ -69,8 +69,24 @@ const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null)=>({ok:true,a
  sbi_total_cost_after_jpy:sbi?.total_cost_after_jpy??null,
  sbi_trade_date:sbi?.trade_date??null,
  sbi_reference_hash:sbi?.broker_reference_hash??null,
- sbi_evidence_kind:sbi?.evidence_kind??null});
+ sbi_evidence_kind:sbi?.evidence_kind??null,
+ refunded_target_account_id:transferRefund?.target_account_id??null,
+ refunded_target_units:transferRefund?.debited_target_units??null,
+ refunded_target_balance_after_units:transferRefund?.target_balance_after_units??null,
+ refunded_target_version:transferRefund?.target_version??null});
 async function receiptFor(db,r,replayed){
+ if(r.operation==='reversal'&&r.target_account_id){
+  const compensating=await db.prepare('SELECT * FROM family_points_transfer_refunds '+
+   'WHERE homeflow_request_id=?').bind(r.homeflow_request_id).first();
+  if(!compensating||compensating.original_request_id!==r.reversed_request_id||
+   compensating.source_account_id!==r.points_account_id||
+   compensating.target_account_id!==r.target_account_id||
+   compensating.household_id!==r.household_id||
+   compensating.requester_user_id!==r.requester_user_id||
+   compensating.yen_value!==r.yen_value)
+   return fail('POINTS_TRANSFER_REFUND_COUNTERPART_MISSING',503);
+  return json(receipt(r,replayed,null,null,null,null,compensating));
+ }
  if(r.operation==='redeem_asset'){
   const lot=await db.prepare('SELECT * FROM family_sbi_point_lots WHERE homeflow_request_id=?')
    .bind(r.homeflow_request_id).first();
@@ -289,8 +305,10 @@ export async function approvedPointsRoute(request,e,parts){
   if(row.original_request_id!==x.original_request_id)return fail('POINTS_REVERSAL_ORIGINAL_CHANGED');
   original=await db.prepare('SELECT old.* FROM family_points_journal old WHERE '+
    'old.homeflow_request_id=? AND old.household_id=? AND old.requester_user_id=? '+
-   "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire') "+
-   'AND old.target_account_id IS NULL AND NOT EXISTS ('+
+   "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire','transfer_out','exchange_out') "+
+   'AND (old.target_account_id IS NULL OR EXISTS (SELECT 1 FROM family_points_transfer_credits c '+
+   'WHERE c.homeflow_request_id=old.homeflow_request_id AND c.target_account_id=old.target_account_id)) '+
+   'AND NOT EXISTS ('+
     'SELECT 1 FROM family_points_journal other WHERE other.reversed_request_id=old.homeflow_request_id)')
    .bind(x.original_request_id,row.household_id,row.requester_user_id,row.points_account_id).first();
   if(!original||x.effective_date<original.effective_date||
@@ -303,8 +321,9 @@ export async function approvedPointsRoute(request,e,parts){
  const approved=await proof(e,b,row);
  if(!approved)return fail('POINTS_APPROVAL_OR_LEASE_INVALID');
  const priorBalance=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_units) FROM family_points_journal WHERE points_account_id=?),0) '+
-  '+COALESCE((SELECT SUM(target_units) FROM family_points_transfer_credits WHERE target_account_id=?),0)) AS units')
-  .bind(row.points_account_id,row.points_account_id).first();
+  '+COALESCE((SELECT SUM(target_units) FROM family_points_transfer_credits WHERE target_account_id=?),0)'+
+  '-COALESCE((SELECT SUM(debited_target_units) FROM family_points_transfer_refunds WHERE target_account_id=?),0)) AS units')
+  .bind(row.points_account_id,row.points_account_id,row.points_account_id).first();
  if(!Number.isSafeInteger(priorBalance?.units)||priorBalance.units<0)
   return fail('POINTS_BALANCE_CORRUPT');
  const positive=x.operation==='earn_campaign'||x.operation==='earn_purchase';
@@ -326,7 +345,8 @@ export async function approvedPointsRoute(request,e,parts){
    .bind(b.request_id,b.resource_id,row.household_id,row.requester_user_id,
     approved.approver_user_id,approved.approver_user_id,row.points_account_id,
     row.expected_version,row.operation,delta,after,x.yen_value,x.rate_numerator,
-    x.rate_denominator,['transfer_prepaid','offset_card','transfer_out','exchange_out','redeem_asset'].includes(x.operation)?x.target_account_id:null,
+    x.rate_denominator,['transfer_prepaid','offset_card','transfer_out','exchange_out','redeem_asset'].includes(x.operation)?x.target_account_id:
+    x.operation==='reversal'?original.target_account_id:null,
     x.operation==='reversal'?original.linked_entry_id:x.linked_entry_id,
     null,x.reference_hash,x.operation==='reversal'?original.homeflow_request_id:null,
     row.payload_sha256,x.effective_date,at).run();

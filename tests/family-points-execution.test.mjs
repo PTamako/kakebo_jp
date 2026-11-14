@@ -7,12 +7,14 @@ import {familyPointsActions} from '../functions/api/family-finance/points-action
 import {approvedPointsRoute} from '../functions/api/internal/points-actions/points-execution.js';
 import {memberCardLiabilities} from '../functions/api/family-finance/card-settlement-summary.js';
 import {memberPointsBalances} from '../functions/api/family-finance/points-balance-projection.js';
+import {memberSbiPointPositions} from '../functions/api/family-finance/sbi-point-lot-projection.js';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const hh='primary',owner='11111111-1111-4111-8111-111111111111',
  member='22222222-2222-4222-8222-222222222222',
  other='33333333-3333-4333-8333-333333333333',
  points='a'.repeat(32),memberCard='b'.repeat(32),otherCard='c'.repeat(32),prepaid='d'.repeat(32),
- receivePoints='e'.repeat(32),foreignPoints='9'.repeat(32);
+ receivePoints='e'.repeat(32),foreignPoints='9'.repeat(32),
+ securities='6'.repeat(32),foreignSecurities='7'.repeat(32);
 const cardPurchaseApproval='11111111-1111-4111-8111-111111111114';
 const secrets={pending:'1'.repeat(64),submit:'2'.repeat(64),proof:'3'.repeat(64),execute:'4'.repeat(64)};
 const sign=(domain,key,stamp,raw)=>createHmac('sha256',Buffer.from(key,'hex'))
@@ -41,10 +43,11 @@ function fixture(){
  sql.exec(readFileSync(new URL('../migrations/0036_points_card_offset.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0037_points_transfer_exchange.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0038_points_earn_expiry_reversals.sql',import.meta.url),'utf8'));
+ sql.exec(readFileSync(new URL('../migrations/0040_points_sbi_lots.sql',import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,hh,role,role,'active',Date.now());
- for(const [aid,kind,u] of [[points,'points',member],[memberCard,'credit_card',member],[otherCard,'credit_card',other],[prepaid,'prepaid',member],[receivePoints,'points',member],[foreignPoints,'points',other]])
+ for(const [aid,kind,u] of [[points,'points',member],[memberCard,'credit_card',member],[otherCard,'credit_card',other],[prepaid,'prepaid',member],[receivePoints,'points',member],[foreignPoints,'points',other],[securities,'securities',member],[foreignSecurities,'securities',other]])
   stmt(sql,"INSERT INTO family_financial_accounts(account_id,household_id,owner_user_id,label,account_kind,origin,created_by_user_id,updated_by_user_id) VALUES(?,?,?,?,?,'member_created',?,?)",
    aid,hh,u,kind,kind,u,u);
  for(const [entry,card] of [[1,memberCard],[2,otherCard]])
@@ -129,6 +132,11 @@ function fixture(){
    target_account_id:receivePoints,target_version:1,target_units:100,
    target_rate_numerator:1,target_rate_denominator:1}:{}),
   ...(operation==='reversal'?{original_request_id:'11111111-1111-4111-8111-111111111111'}:{}),
+  ...(operation==='redeem_asset'?{
+   target_account_id:securities,target_version:1,sbi_fund_code:'JP123456',
+   sbi_account_type:'growth',sbi_confirmed_units:1000,
+   broker_trade_reference:'SBI-EXEC-'+requestId,
+   broker_execution_confirmed:true}:{}),
   ...overrides
  });
  const prepare=async(operation,key,overrides={})=>{
@@ -500,4 +508,94 @@ test('target actor-audit failure rolls back reversal without erasing original jo
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal').n,1);
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,1);
  assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,100);
+});
+
+test('real SQLite SBI point buy: approved points debit atomically mints exact broker-confirmed units and cost, never cash or plan',async()=>{
+ const f=fixture(),before=get(f.sql,'SELECT COUNT(*) n FROM entries').n;
+ const grant=await f.prepare('earn_campaign','sbi-funding-points',{units:600,yen_value:600});
+ assert.equal((await f.execute(await f.submit(grant))).status,200);
+ const p1=await f.prepare('redeem_asset','sbi-point-buy-a',
+  {units:250,yen_value:250,sbi_confirmed_units:1234});
+ const approval1=await f.submit(p1),first=await f.execute(approval1);
+ assert.equal(first.status,200,JSON.stringify(first));
+ assert.equal(first.data.operation,'redeem_asset');
+ assert.equal(first.data.delta_units,-250);
+ assert.equal(first.data.balance_after_units,350);
+ assert.equal(first.data.sbi_confirmed_units,1234);
+ assert.equal(first.data.sbi_acquisition_cost_jpy,250);
+ assert.equal(first.data.sbi_total_units_after,1234);
+ assert.equal(first.data.sbi_total_cost_after_jpy,250);
+ assert.equal(first.data.sbi_fund_code,'JP123456');
+ assert.equal(first.data.sbi_account_type,'growth');
+ assert.equal(first.data.sbi_securities_version,1);
+ assert.equal(first.data.sbi_evidence_kind,'user_attested_broker_execution');
+ const replay=await f.execute(approval1,'receipt');
+ assert.equal(replay.status,200);assert.equal(replay.data.already_applied,true);
+ const p2=await f.prepare('redeem_asset','sbi-point-buy-b',
+  {units:100,yen_value:100,sbi_confirmed_units:400});
+ const second=await f.execute(await f.submit(p2));
+ assert.equal(second.status,200,JSON.stringify(second));
+ assert.equal(second.data.sbi_total_units_after,1634);
+ assert.equal(second.data.sbi_total_cost_after_jpy,350);
+ assert.equal(second.data.balance_after_units,250);
+ const projection=await memberSbiPointPositions(f.db,hh);
+ const p=projection.positions.find(x=>x.securities_account_id===securities);
+ assert.equal(p.confirmed_units,1634);assert.equal(p.acquisition_cost_jpy,350);
+ assert.equal(p.executed_trade_count,2);
+ assert.equal(p.market_value_jpy,null);
+ assert.equal(p.broker_reconciled,false);
+ assert.equal(projection.included_in_legacy_investment_holdings,false);
+ assert.equal(projection.included_in_tracked_assets_jpy,false);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_lots').n,2);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries').n,before);
+ assert.equal(get(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='income'").n,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,3);
+ assert.throws(()=>stmt(f.sql,'UPDATE family_sbi_point_lots SET confirmed_units=1'),/POINTS_SBI_LOT_IMMUTABLE/);
+ assert.throws(()=>stmt(f.sql,'DELETE FROM family_sbi_point_lots'),/POINTS_SBI_LOT_IMMUTABLE/);
+});
+test('SBI purchase rejects forged broker evidence, foreign assets, stale CAS, duplicate trade and insufficient point units',async()=>{
+ const f=fixture();
+ const noBroker=await f.call(['points-actions'],f.action('redeem_asset','sbi-unattested',
+  {broker_execution_confirmed:false}));
+ assert.equal(noBroker.status,400);
+ const foreign=await f.call(['points-actions'],f.action('redeem_asset','sbi-foreign-target',
+  {target_account_id:foreignSecurities}));
+ assert.equal(foreign.status,409);
+ assert.equal(foreign.data.code,'POINTS_SBI_ACCOUNT_CHANGED');
+ const invalidUnits=await f.call(['points-actions'],f.action('redeem_asset','sbi-zero-units',
+  {sbi_confirmed_units:0}));
+ assert.equal(invalidUnits.status,400);
+ const funded=await f.prepare('earn_campaign','sbi-guard-funding',{units:300,yen_value:300});
+ assert.equal((await f.execute(await f.submit(funded))).status,200);
+ const stale=await f.prepare('redeem_asset','sbi-stale-cas',{units:90,yen_value:90});
+ const staleApproval=await f.submit(stale);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=2 WHERE account_id=?',securities);
+ assert.notEqual((await f.execute(staleApproval)).status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_lots').n,0);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=1 WHERE account_id=?',securities);
+ const p1=await f.prepare('redeem_asset','sbi-no-duplicate-a',
+  {units:80,yen_value:80,broker_trade_reference:'CONFIRMED-SBI-TRADE-0123'});
+ assert.equal((await f.execute(await f.submit(p1))).status,200);
+ const p2=await f.prepare('redeem_asset','sbi-no-duplicate-b',
+  {units:80,yen_value:80,broker_trade_reference:'CONFIRMED-SBI-TRADE-0123'});
+ assert.notEqual((await f.execute(await f.submit(p2))).status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_lots').n,1);
+ assert.equal(get(f.sql,"SELECT COUNT(*) n FROM family_points_journal WHERE operation='redeem_asset'").n,1);
+ const over=await f.prepare('redeem_asset','sbi-overdraft',{units:300,yen_value:300});
+ const no=await f.execute(await f.submit(over));
+ assert.equal(no.status,409);assert.equal(no.data.code,'POINTS_INSUFFICIENT_BALANCE');
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,220);
+});
+test('SBI point target audit fault aborts the source debit and fund lot together',async()=>{
+ const f=fixture();
+ const fund=await f.prepare('earn_campaign','sbi-fault-funding',{units:200,yen_value:200});
+ assert.equal((await f.execute(await f.submit(fund))).status,200);
+ const buy=await f.prepare('redeem_asset','sbi-fault-broker',{units:100,yen_value:100});
+ const approval=await f.submit(buy);
+ f.sql.exec("CREATE TRIGGER fail_sbi_point_lot BEFORE INSERT ON family_sbi_point_lots BEGIN SELECT RAISE(ABORT,'INJECTED_SBI_LOT_FAILURE'); END;");
+ assert.notEqual((await f.execute(approval)).status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_lots').n,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal').n,1);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,1);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,200);
 });

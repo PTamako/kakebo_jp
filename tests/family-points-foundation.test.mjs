@@ -16,9 +16,18 @@ function fixture(){
  for(const f of ['0001_support_tables.sql','0002_versioned_migration_tracking.sql',
   '0022_homeflow_identity_foundation.sql','0023_family_financial_account_identities.sql'])
   s.exec(readFileSync(new URL('../migrations/'+f,import.meta.url),'utf8'));
- s.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,amount INTEGER,type TEXT,client_request_id TEXT UNIQUE)');
+ s.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,amount INTEGER,'+
+  'category TEXT,merchant TEXT,note TEXT,raw TEXT,type TEXT,transfer_target TEXT,'+
+  'transfer_applied INTEGER,transfer_date TEXT,client_request_id TEXT UNIQUE,'+
+  'payment_source TEXT,family_account_id TEXT,family_transfer_target_account_id TEXT);');
+ for(const name of ['0031_family_card_purchase_execution.sql','0032_family_card_settlement_foundation.sql',
+  '0033_member_prepaid_actions.sql'])
+  s.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
  const migration=readFileSync(new URL('../migrations/0034_family_points_foundation.sql',import.meta.url),'utf8');
  s.exec(migration);s.exec(migration);
+ for(const name of ['0035_points_prepaid_atomic.sql','0036_points_card_offset.sql',
+  '0037_points_transfer_exchange.sql'])
+  s.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
  for(const [id,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   run(s,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    id,household,role,role,'active',date);

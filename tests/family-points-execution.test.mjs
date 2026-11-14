@@ -6,11 +6,13 @@ import {createHmac,webcrypto} from 'node:crypto';
 import {familyPointsActions} from '../functions/api/family-finance/points-actions.js';
 import {approvedPointsRoute} from '../functions/api/internal/points-actions/points-execution.js';
 import {memberCardLiabilities} from '../functions/api/family-finance/card-settlement-summary.js';
+import {memberPointsBalances} from '../functions/api/family-finance/points-balance-projection.js';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const hh='primary',owner='11111111-1111-4111-8111-111111111111',
  member='22222222-2222-4222-8222-222222222222',
  other='33333333-3333-4333-8333-333333333333',
- points='a'.repeat(32),memberCard='b'.repeat(32),otherCard='c'.repeat(32),prepaid='d'.repeat(32);
+ points='a'.repeat(32),memberCard='b'.repeat(32),otherCard='c'.repeat(32),prepaid='d'.repeat(32),
+ receivePoints='e'.repeat(32),foreignPoints='9'.repeat(32);
 const cardPurchaseApproval='11111111-1111-4111-8111-111111111114';
 const secrets={pending:'1'.repeat(64),submit:'2'.repeat(64),proof:'3'.repeat(64),execute:'4'.repeat(64)};
 const sign=(domain,key,stamp,raw)=>createHmac('sha256',Buffer.from(key,'hex'))
@@ -37,10 +39,11 @@ function fixture(){
  const p35=readFileSync(new URL('../migrations/0035_points_prepaid_atomic.sql',import.meta.url),'utf8');
  sql.exec(p35);
  sql.exec(readFileSync(new URL('../migrations/0036_points_card_offset.sql',import.meta.url),'utf8'));
+ sql.exec(readFileSync(new URL('../migrations/0037_points_transfer_exchange.sql',import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,hh,role,role,'active',Date.now());
- for(const [aid,kind,u] of [[points,'points',member],[memberCard,'credit_card',member],[otherCard,'credit_card',other],[prepaid,'prepaid',member]])
+ for(const [aid,kind,u] of [[points,'points',member],[memberCard,'credit_card',member],[otherCard,'credit_card',other],[prepaid,'prepaid',member],[receivePoints,'points',member],[foreignPoints,'points',other]])
   stmt(sql,"INSERT INTO family_financial_accounts(account_id,household_id,owner_user_id,label,account_kind,origin,created_by_user_id,updated_by_user_id) VALUES(?,?,?,?,?,'member_created',?,?)",
    aid,hh,u,kind,kind,u,u);
  for(const [entry,card] of [[1,memberCard],[2,otherCard]])
@@ -121,6 +124,9 @@ function fixture(){
   ...(operation==='transfer_prepaid'?{target_account_id:prepaid,target_version:1}:{}),
   ...(operation==='offset_card'?{target_account_id:memberCard,target_version:1,
    target_purchase_request_id:cardPurchaseApproval}:{}),
+  ...(['transfer_out','exchange_out'].includes(operation)?{
+   target_account_id:receivePoints,target_version:1,target_units:100,
+   target_rate_numerator:1,target_rate_denominator:1}:{}),
   ...overrides
  });
  const prepare=async(operation,key,overrides={})=>{
@@ -346,4 +352,74 @@ test('points card offset cannot cross card owners, bypass CAS or survive counter
  assert.equal(get(f.sql,"SELECT COUNT(*) n FROM family_points_journal WHERE operation='offset_card'").n,0);
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_card_offsets').n,0);
  assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,400);
+});
+
+test('two point accounts: transfer and changed-rate exchange both post an immutable counterpart, no cash',async()=>{
+ const f=fixture(),initial=get(f.sql,'SELECT COUNT(*) n FROM entries').n;
+ const earn=await f.prepare('earn_campaign','source-fund-300',{units:300,yen_value:300});
+ assert.equal((await f.execute(await f.submit(earn))).status,200);
+ const transfer=await f.prepare('transfer_out','move-80',
+  {units:80,yen_value:80,target_units:80});
+ const approved=await f.submit(transfer);
+ const posted=await f.execute(approved);
+ assert.equal(posted.status,200,JSON.stringify(posted));
+ assert.equal(posted.data.delta_units,-80);
+ assert.equal(posted.data.transfer_target_units,80);
+ assert.equal(posted.data.transfer_target_balance_after_units,80);
+ assert.equal(posted.data.transfer_target_version,1);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,220);
+ assert.equal(get(f.sql,'SELECT SUM(target_units) n FROM family_points_transfer_credits WHERE target_account_id=?',receivePoints).n,80);
+ assert.equal((await f.execute(approved,'receipt')).data.already_applied,true);
+ const ex=await f.prepare('exchange_out','convert-60-to-30',
+  {units:60,yen_value:120,rate_numerator:2,rate_denominator:1,
+   target_units:30,target_rate_numerator:4,target_rate_denominator:1});
+ const exchanged=await f.execute(await f.submit(ex));
+ assert.equal(exchanged.status,200,JSON.stringify(exchanged));
+ assert.equal(exchanged.data.transfer_target_units,30);
+ assert.equal(exchanged.data.transfer_target_balance_after_units,110);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,160);
+ assert.equal(get(f.sql,'SELECT SUM(target_units) n FROM family_points_transfer_credits WHERE target_account_id=?',receivePoints).n,110);
+ const projection=await memberPointsBalances(f.db,hh);
+ assert.equal(projection.accounts.find(x=>x.account_id===receivePoints).balance_units,110);
+ assert.equal(projection.accounts.find(x=>x.account_id===points).balance_units,160);
+ const consume=await f.prepare('expire','use-received-points',
+  {points_account_id:receivePoints,units:40,yen_value:40});
+ const spent=await f.execute(await f.submit(consume));
+ assert.equal(spent.status,200,JSON.stringify(spent));
+ assert.equal(spent.data.balance_after_units,70);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries').n,initial);
+ assert.equal(get(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='income'").n,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,4);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_credits').n,2);
+ assert.throws(()=>stmt(f.sql,'DELETE FROM family_points_transfer_credits'),/IMMUTABLE/);
+ assert.throws(()=>stmt(f.sql,'UPDATE family_points_transfer_credits SET target_units=100'),/IMMUTABLE/);
+});
+test('point transfer denies foreign account, stale target CAS, invalid conversion rate, and atomic target failure',async()=>{
+ const f=fixture();
+ const foreign=await f.call(['points-actions'],f.action('transfer_out','foreign-points',
+  {target_account_id:foreignPoints}));
+ assert.equal(foreign.status,409);assert.equal(foreign.data.code,'POINTS_TRANSFER_TARGET_CHANGED');
+ const wrong=await f.call(['points-actions'],f.action('exchange_out','wrong-ratio',
+  {units:100,yen_value:100,target_units:20,target_rate_numerator:3,target_rate_denominator:1}));
+ assert.equal(wrong.status,400);
+ const mismatch=await f.call(['points-actions'],f.action('transfer_out','alter-transfer',
+  {target_units:80}));
+ assert.equal(mismatch.status,400);
+ const earned=await f.prepare('earn_campaign','fund-target-fault',{units:300,yen_value:300});
+ assert.equal((await f.execute(await f.submit(earned))).status,200);
+ const stale=await f.prepare('transfer_out','stale-target',
+  {units:40,yen_value:40,target_units:40});
+ const staleApproval=await f.submit(stale);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=2 WHERE account_id=?',receivePoints);
+ assert.notEqual((await f.execute(staleApproval)).status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_credits').n,0);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=1 WHERE account_id=?',receivePoints);
+ const failure=await f.prepare('exchange_out','inject-transfer-failure',
+  {units:100,yen_value:100,target_units:50,target_rate_numerator:2,target_rate_denominator:1});
+ const aid=await f.submit(failure);
+ f.sql.exec("CREATE TRIGGER fail_transfer_credit BEFORE INSERT ON family_points_transfer_credits BEGIN SELECT RAISE(ABORT,'INJECTED_TRANSFER_FAILURE'); END;");
+ assert.notEqual((await f.execute(aid)).status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_transfer_credits').n,0);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,300);
+ assert.equal(get(f.sql,"SELECT COUNT(*) n FROM family_points_journal WHERE operation IN ('transfer_out','exchange_out')").n,0);
 });

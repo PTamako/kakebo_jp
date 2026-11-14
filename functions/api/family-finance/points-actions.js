@@ -3,7 +3,7 @@
 // Card/prepaid/SBI/exchange counterparts require separately verified executors.
 import {pointAccountingPlan} from './point-accounting.js';
 const te=new TextEncoder(), id=/^[a-f0-9]{32}$/i, hex=/^[a-f0-9]{64}$/i;
-const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','expire']);
+const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire']);
 const json=(x,status=200)=>Response.json(x,{status,headers:{'cache-control':'no-store'}});
 const fail=(code,status=409)=>json({ok:false,code,applied:false},status);
 const unique=()=>[...crypto.getRandomValues(new Uint8Array(16))].map(n=>n.toString(16).padStart(2,'0')).join('');
@@ -44,11 +44,12 @@ async function account(db,user,accountId,version){
   .bind(accountId,user.household_id,user.user_id).first();
  return a?.account_kind==='points'&&a.version===version&&a.opening_balance===0;
 }
-async function linkedPurchase(db,user,entryId){
+async function linkedPurchase(db,user,entryId,pointFundedId=null){
  if(entryId===null)return true;
  // Do not authorize another member's expense merely because the ledger is household-shared.
- const e=await db.prepare('SELECT id,type,family_account_id FROM entries WHERE id=?').bind(entryId).first();
- if(!e||e.type!=='expense')return false;
+ const e=await db.prepare('SELECT id,type,family_account_id,payment_source FROM entries WHERE id=?').bind(entryId).first();
+ if(!e||e.type!=='expense'||(pointFundedId!==null&&
+   (e.family_account_id!==pointFundedId||e.payment_source!=='points:'+pointFundedId)))return false;
  if(e.family_account_id){
   const a=await db.prepare('SELECT owner_user_id,household_id FROM family_financial_accounts WHERE account_id=?')
    .bind(e.family_account_id).first();
@@ -71,7 +72,7 @@ function valid(x,user){
   !validDate(x.effective_date)||typeof x.source_reference!=='string'||
   x.source_reference.trim().length<4||x.source_reference.length>160||
   ![true,false].includes(x.expense_net_confirmed))return false;
- const withEntry=x.operation==='earn_purchase'||x.operation==='redeem_discount';
+ const withEntry=x.operation==='earn_purchase'||x.operation==='redeem_discount'||x.operation==='redeem_purchase';
  if((withEntry&&(!Number.isSafeInteger(x.linked_entry_id)||x.linked_entry_id<=0))||
     (!withEntry&&x.linked_entry_id!==null)||
     (x.operation==='redeem_discount'&&x.expense_net_confirmed!==true)||
@@ -95,7 +96,8 @@ async function prepare(req,e,url,user){
  const x=await read(req,url);
  if(!valid(x,user))return fail('POINTS_INVALID_INTENT',400);
  if(!await account(e.DB,user,x.points_account_id,x.points_version))return fail('POINTS_ACCOUNT_CHANGED');
- if(x.linked_entry_id&&!await linkedPurchase(e.DB,user,x.linked_entry_id))return fail('POINTS_ENTRY_OWNER_UNVERIFIED');
+ if(x.linked_entry_id&&!await linkedPurchase(e.DB,user,x.linked_entry_id,
+   x.operation==='redeem_purchase'?x.points_account_id:null))return fail('POINTS_ENTRY_OWNER_UNVERIFIED');
  const reference_hash=await hash(user.household_id+'\0'+x.points_account_id+'\0'+x.source_reference.trim());
  const raw=JSON.stringify({operation:x.operation,points_account_id:x.points_account_id,
   points_version:x.points_version,units:x.units,effective_date:x.effective_date,

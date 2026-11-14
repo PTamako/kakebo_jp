@@ -23,7 +23,7 @@ function fixture(){
   sql.exec(readFileSync(new URL('../migrations/'+n,import.meta.url),'utf8'));
  }
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,amount INTEGER,type TEXT,'+
-  'client_request_id TEXT UNIQUE,family_account_id TEXT);');
+  'client_request_id TEXT UNIQUE,family_account_id TEXT,payment_source TEXT);');
  const mig=readFileSync(new URL('../migrations/0034_family_points_foundation.sql',import.meta.url),'utf8');
  sql.exec(mig);sql.exec(mig);
  for(const [u,role] of [[owner,'owner'],[member,'member'],[other,'member']])
@@ -33,8 +33,10 @@ function fixture(){
   stmt(sql,"INSERT INTO family_financial_accounts(account_id,household_id,owner_user_id,label,account_kind,origin,created_by_user_id,updated_by_user_id) VALUES(?,?,?,?,?,'member_created',?,?)",
    aid,hh,u,kind,kind,u,u);
  for(const [entry,card] of [[1,memberCard],[2,otherCard]])
-  stmt(sql,"INSERT INTO entries(id,date,amount,type,client_request_id,family_account_id) VALUES(?,'2026-11-14',1000,'expense',?,?)",
-   entry,'card'+entry,card);
+  stmt(sql,"INSERT INTO entries(id,date,amount,type,client_request_id,family_account_id,payment_source) VALUES(?,'2026-11-14',1000,'expense',?,?,?)",
+   entry,'card'+entry,card,'cc:'+card);
+ stmt(sql,"INSERT INTO entries(id,date,amount,type,client_request_id,family_account_id,payment_source) VALUES(3,'2026-11-14',100,'expense','points-funded-1',?,?)",
+  points,'points:'+points);
  const db={prepare(q){return{bind(...a){return{
   first:async()=>sql.prepare(q).get(...a)||null,
   all:async()=>({results:sql.prepare(q).all(...a)}),
@@ -96,7 +98,8 @@ function fixture(){
   effective_date:'2026-11-14',units:100,
   yen_value:100,rate_numerator:1,rate_denominator:1,
   source_reference:'reference-'+requestId,
-  linked_entry_id:['earn_purchase','redeem_discount'].includes(operation)?1:null,
+  linked_entry_id:['earn_purchase','redeem_discount'].includes(operation)?1:
+   operation==='redeem_purchase'?3:null,
   expense_net_confirmed:operation==='redeem_discount',
   ...overrides
  });
@@ -155,7 +158,7 @@ test('linked purchase points, discount, expiry remain no new expense; overdraft 
  const tooMuch=await f.prepare('expire','expire-2',{units:999,yen_value:999});
  const reject=await f.execute(await f.submit(tooMuch));assert.equal(reject.status,409);
  assert.equal(reject.data.code,'POINTS_INSUFFICIENT_BALANCE');
- assert.equal(get(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='expense'").n,2);
+ assert.equal(get(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='expense'").n,3);
  assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,50);
 });
 test('cross-member expense and wrong user cannot create intent; no forged proof',async()=>{
@@ -208,4 +211,22 @@ test('account version drift and member disabled before execution deny write',asy
  stmt(f.sql,"UPDATE homeflow_identity_links SET state='disabled' WHERE user_id=?",member);
  assert.equal((await f.execute(approval)).status,409);
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal').n,0);
+});
+
+test('point-funded purchase links its existing points expense exactly once, no cash duplicate',async()=>{
+ const f=fixture(),base=get(f.sql,'SELECT COUNT(*) n FROM entries').n;
+ const earned=await f.prepare('earn_campaign','point-purchase-funding',{units:300,yen_value:300});
+ assert.equal((await f.execute(await f.submit(earned))).status,200);
+ const purchase=await f.prepare('redeem_purchase','point-buy',{units:100,yen_value:100,
+  linked_entry_id:3});
+ const result=await f.execute(await f.submit(purchase));
+ assert.equal(result.status,200,JSON.stringify(result.data));
+ assert.equal(result.data.linked_entry_id,3);
+ assert.equal(result.data.delta_units,-100);
+ assert.equal(result.data.balance_after_units,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries').n,base);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,2);
+ const foreign=await f.call(['points-actions'],f.action('redeem_purchase','not-point-funded',{
+  linked_entry_id:1}));
+ assert.equal(foreign.data.code,'POINTS_ENTRY_OWNER_UNVERIFIED');
 });

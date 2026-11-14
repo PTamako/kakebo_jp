@@ -3,7 +3,7 @@
 // No HomeFlow "approved" claim can itself change the ledger.
 const enc=new TextEncoder(),hash64=/^[a-f0-9]{64}$/i,id=/^[a-f0-9]{32}$/i,
  uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
-const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','expire']);
+const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire']);
 const json=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}});
 const fail=(code,status=409)=>json({ok:false,code,applied:false},status);
 const exact=(x,keys)=>x&&typeof x==='object'&&!Array.isArray(x)&&
@@ -75,7 +75,7 @@ async function decode(e,p){
     !/^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(x.effective_date)||
     new Date(x.effective_date+'T00:00:00Z').toISOString().slice(0,10)!==x.effective_date||
     x.effective_date>new Date(Date.now()+9*3600000).toISOString().slice(0,10))return null;
-  if(['earn_purchase','redeem_discount'].includes(x.operation)?
+  if(['earn_purchase','redeem_discount','redeem_purchase'].includes(x.operation)?
     (!Number.isSafeInteger(x.linked_entry_id)||x.linked_entry_id<=0):
     x.linked_entry_id!==null)return null;
   if(x.expense_net_confirmed!==(x.operation==='redeem_discount'))return null;
@@ -116,10 +116,13 @@ async function proof(e,b,p){
  }catch{return null}
 }
 async function permittedPurchase(db,row,x){
- if(!x.linked_entry_id)return x.operation!=='earn_purchase'&&x.operation!=='redeem_discount';
- const entry=await db.prepare('SELECT type,family_account_id FROM entries WHERE id=?')
+ if(!x.linked_entry_id)return x.operation!=='earn_purchase'&&x.operation!=='redeem_discount'&&
+  x.operation!=='redeem_purchase';
+ const entry=await db.prepare('SELECT type,family_account_id,payment_source FROM entries WHERE id=?')
   .bind(x.linked_entry_id).first();
- if(entry?.type!=='expense')return false;
+ if(entry?.type!=='expense'||(x.operation==='redeem_purchase'&&
+  (entry.family_account_id!==row.points_account_id||
+   entry.payment_source!=='points:'+row.points_account_id)))return false;
  if(entry.family_account_id){
   const account=await db.prepare('SELECT owner_user_id,household_id FROM family_financial_accounts WHERE account_id=?')
    .bind(entry.family_account_id).first();

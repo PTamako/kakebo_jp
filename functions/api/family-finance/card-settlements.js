@@ -59,14 +59,16 @@ async function outstanding(db,household,card,allocations,debitDate){
  const ids=allocations.map(a=>a.purchase_request_id);
  const rows=(await db.prepare('SELECT p.homeflow_request_id,p.amount_jpy,p.purchase_date,'+
   'COALESCE((SELECT SUM(x.amount_jpy) FROM family_card_settlement_allocations x '+
-  'WHERE x.purchase_request_id=p.homeflow_request_id),0) paid_jpy '+
+  'WHERE x.purchase_request_id=p.homeflow_request_id),0) paid_jpy,'+
+  'COALESCE((SELECT SUM(o.amount_jpy) FROM family_points_card_offsets o '+
+  'WHERE o.purchase_request_id=p.homeflow_request_id),0) points_offset_jpy '+
   'FROM family_card_purchase_applied p WHERE p.household_id=? AND p.account_id=? '+
   'AND p.homeflow_request_id IN ('+ids.map(()=>'?').join(',')+')')
   .bind(household,card,...ids).all()).results||[];
  return rows.length===ids.length&&allocations.every(a=>{
   const r=rows.find(x=>x.homeflow_request_id===a.purchase_request_id);
-  return !!r&&r.purchase_date<=debitDate&&Number.isSafeInteger(r.amount_jpy)&&Number.isSafeInteger(r.paid_jpy)&&
-   r.amount_jpy-r.paid_jpy>=a.amount_jpy;
+  return !!r&&r.purchase_date<=debitDate&&Number.isSafeInteger(r.amount_jpy)&&Number.isSafeInteger(r.paid_jpy)&&Number.isSafeInteger(r.points_offset_jpy)&&
+   r.amount_jpy-r.paid_jpy-r.points_offset_jpy>=a.amount_jpy;
  });
 }
 const publicRow=r=>({
@@ -175,14 +177,16 @@ export async function familyCardSettlements(req,env,url,user,parts){
   const rows=(await env.DB.prepare('SELECT p.homeflow_request_id AS purchase_request_id,p.account_id,'+
    'p.amount_jpy,p.purchase_date,p.bill_month,'+
    'COALESCE((SELECT SUM(a.amount_jpy) FROM family_card_settlement_allocations a '+
-   'WHERE a.purchase_request_id=p.homeflow_request_id),0) settled_jpy '+
+   'WHERE a.purchase_request_id=p.homeflow_request_id),0) settled_jpy,'+
+   'COALESCE((SELECT SUM(o.amount_jpy) FROM family_points_card_offsets o '+
+   'WHERE o.purchase_request_id=p.homeflow_request_id),0) points_offset_jpy '+
    'FROM family_card_purchase_applied p '+
    'JOIN family_financial_accounts c ON c.account_id=p.account_id '+
    'WHERE p.household_id=? AND c.household_id=? AND c.owner_user_id=? '+
    "AND c.account_kind='credit_card' AND c.origin='member_created' "+
    'ORDER BY p.purchase_date DESC,p.homeflow_request_id LIMIT 150')
    .bind(user.household_id,user.household_id,user.user_id).all()).results||[];
-  const items=rows.map(r=>({...r,remaining_jpy:Number(r.amount_jpy)-Number(r.settled_jpy)}));
+  const items=rows.map(r=>({...r,remaining_jpy:Number(r.amount_jpy)-Number(r.settled_jpy)-Number(r.points_offset_jpy)}));
   if(items.some(r=>!Number.isSafeInteger(r.remaining_jpy)||r.remaining_jpy<0))
    return fail('CARD_LIABILITY_UNBALANCED');
   return reply({ok:true,items:items.filter(r=>r.remaining_jpy>0)});

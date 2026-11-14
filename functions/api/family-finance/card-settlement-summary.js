@@ -15,30 +15,37 @@ export async function memberCardLiabilities(db,household,settlementEnabled){
   'JOIN family_card_settlements_applied settled ON settled.homeflow_request_id=alloc.homeflow_request_id '+
   'WHERE original.household_id=? AND settled.household_id=? '+
   'AND settled.card_account_id=original.account_id '+
-  'GROUP BY original.account_id,original.bill_month) '+
+  'GROUP BY original.account_id,original.bill_month), offsets AS ('+
+  'SELECT original.account_id,original.bill_month,SUM(o.amount_jpy) points_offset_jpy '+
+  'FROM family_points_card_offsets o JOIN family_card_purchase_applied original '+
+  'ON original.homeflow_request_id=o.purchase_request_id '+
+  'WHERE original.household_id=? GROUP BY original.account_id,original.bill_month) '+
   'SELECT g.account_id,g.bill_month,g.amount_jpy,g.purchases,a.label,a.owner_user_id,'+
-  'COALESCE(paid.settled_jpy,0) settled_jpy FROM gross g '+
+  'COALESCE(paid.settled_jpy,0) settled_jpy,COALESCE(offsets.points_offset_jpy,0) points_offset_jpy FROM gross g '+
   'JOIN family_financial_accounts a ON a.account_id=g.account_id '+
   'LEFT JOIN paid ON paid.account_id=g.account_id AND paid.bill_month=g.bill_month '+
+  'LEFT JOIN offsets ON offsets.account_id=g.account_id AND offsets.bill_month=g.bill_month '+
   'WHERE a.household_id=? ORDER BY g.bill_month DESC,g.account_id LIMIT 200':
   'WITH gross AS ('+common+') '+
   'SELECT g.account_id,g.bill_month,g.amount_jpy,g.purchases,a.label,a.owner_user_id,'+
-  '0 settled_jpy FROM gross g JOIN family_financial_accounts a ON a.account_id=g.account_id '+
+  '0 settled_jpy,0 points_offset_jpy FROM gross g JOIN family_financial_accounts a ON a.account_id=g.account_id '+
   'WHERE a.household_id=? ORDER BY g.bill_month DESC,g.account_id LIMIT 200';
- const args=settlementEnabled?[household,household,household,household]:[household,household];
+ const args=settlementEnabled?[household,household,household,household,household]:[household,household];
  const rows=(await db.prepare(sql).bind(...args).all()).results||[];
  const items=[];let total=0;
  for(const x of rows){
-  const gross=safe(x.amount_jpy),settled=safe(x.settled_jpy),count=safe(x.purchases);
-  if(gross===null||settled===null||count===null||settled>gross)return null;
-  const outstanding=gross-settled;
+  const gross=safe(x.amount_jpy),settled=safe(x.settled_jpy),pointsOffset=safe(x.points_offset_jpy),count=safe(x.purchases);
+  if(gross===null||settled===null||pointsOffset===null||count===null||
+   settled+pointsOffset>gross)return null;
+  const outstanding=gross-settled-pointsOffset;
   total+=outstanding;
   if(!Number.isSafeInteger(total))return null;
   items.push({account_id:x.account_id,account_label:x.label,owner_user_id:x.owner_user_id,
    closing_month:x.bill_month,gross_charges_jpy:gross,settled_jpy:settled,
+   points_offset_jpy:pointsOffset,
    liability_jpy:outstanding,purchases:count,payment_due_date:null,
    settlement_status:!settlementEnabled?'not_reconciled':
-    outstanding===0?'settled':settled>0?'partially_settled':'unsettled'});
+    outstanding===0?'settled':settled+pointsOffset>0?'partially_settled':'unsettled'});
  }
  return {items,total};
 }

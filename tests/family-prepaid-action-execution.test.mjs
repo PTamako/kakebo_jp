@@ -5,6 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createHmac,webcrypto} from 'node:crypto';
 import {familyPrepaidActions} from '../functions/api/family-finance/prepaid-actions.js';
 import {approvedPrepaidActionRoute} from '../functions/api/internal/prepaid-actions/[[path]].js';
+import {memberPrepaidBalances} from '../functions/api/family-finance/prepaid-balance-projection.js';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const household='primary',owner='11111111-1111-4111-8111-111111111111',
  member='22222222-2222-4222-8222-222222222222',prepaid='a'.repeat(32),bank='b'.repeat(32);
@@ -194,5 +195,28 @@ test('revoked identity, stale bank/prepaid version, invalid bank confirmation an
   assert.equal(future.status,400);
   const invalidOwner=await f.call(['prepaid-actions'],{...f.topup(),expected_user_id:owner});
   assert.equal(invalidOwner.status,403);
+ }finally{f.close()}
+});
+
+
+test('new stable-ID prepaid balance is household-shared and never aliases unowned legacy Suica names',async()=>{
+ const f=fixture();try{
+  const before=await memberPrepaidBalances(f.env.DB,household);
+  assert.equal(before.total_jpy,0);
+  assert.deepEqual(before.accounts.map(x=>x.account_id),[prepaid]);
+  assert.equal(before.accounts[0].owner_user_id,member);
+  assert.equal(before.accounts[0].identity_basis,'member_created_stable_id');
+  const id=await f.submit(f.topup('user-verified-bank-ref',1000));
+  assert.equal((await f.execute(id)).status,200);
+  const snapshot=await memberPrepaidBalances(f.env.DB,household);
+  assert.equal(snapshot.total_jpy,1000);
+  assert.equal(snapshot.accounts.length,1);
+  assert.equal(snapshot.accounts[0].balance_jpy,1000);
+  assert.equal(snapshot.ledger_changed,false);
+  // Household reads are identical for either member; only stable ownership decides labels.
+  const ownerView=await memberPrepaidBalances(f.env.DB,household);
+  assert.deepEqual(ownerView,snapshot);
+  assert.deepEqual((await memberPrepaidBalances(f.env.DB,'another-household')).accounts,[]);
+  assert.equal(query(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='expense'").n,0);
  }finally{f.close()}
 });

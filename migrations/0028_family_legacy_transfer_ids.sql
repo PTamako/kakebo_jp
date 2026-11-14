@@ -8,7 +8,7 @@ CREATE INDEX IF NOT EXISTS idx_entries_family_transfer_target
  ON entries(family_transfer_target_account_id,date DESC,id DESC)
  WHERE family_transfer_target_account_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS family_finance_legacy_transfer_links (
- entry_id INTEGER PRIMARY KEY NOT NULL REFERENCES entries(id) ON DELETE RESTRICT,
+ entry_id INTEGER PRIMARY KEY NOT NULL CHECK(entry_id>0),
  household_id TEXT NOT NULL,
  actor_user_id TEXT NOT NULL REFERENCES homeflow_identity_links(user_id),
  source_account_id TEXT NOT NULL REFERENCES family_financial_accounts(account_id),

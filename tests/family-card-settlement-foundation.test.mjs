@@ -112,7 +112,7 @@ test('overpay/duplicate source evidence/duplicate settlement ID fail closed',()=
   alloc(s,settlementA,purchaseA,1000);
   alloc(s,settlementA,purchaseB,200);
   audit(s,settlementA);
-  assert.throws(()=>alloc(s,settlementA,purchaseB,400),/UNIQUE constraint failed/);
+  assert.throws(()=>alloc(s,settlementA,purchaseB,1),/UNIQUE constraint failed/);
   assert.throws(()=>stmt(s,"INSERT INTO family_card_bank_debit_evidence(evidence_id,household_id,bank_account_id,bank_version,reference_hash,debit_date,amount_jpy,evidence_kind,recorded_at) VALUES(?,?,?,?,?,?,?,'statement_import',?)",
    '3'.repeat(32),household,bank,1,'2'.repeat(64),'2026-11-18',200,now),/UNIQUE constraint failed/);
   prepare(s,settlementB,'9'.repeat(32));

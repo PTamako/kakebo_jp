@@ -170,6 +170,22 @@ async function cancel(req,env,url,user,id){
 export async function familyCardSettlements(req,env,url,user,parts){
  if(!enabled(env))return fail('CARD_SETTLEMENTS_DISABLED',503);
  if(user.role!=='member')return fail('ONLY_MEMBER_CAN_PROPOSE',403);
+ if(parts.length===2&&parts[1]==='outstanding'&&req.method==='GET'){
+  const rows=(await env.DB.prepare('SELECT p.homeflow_request_id AS purchase_request_id,p.account_id,'+
+   'p.amount_jpy,p.purchase_date,p.bill_month,'+
+   'COALESCE((SELECT SUM(a.amount_jpy) FROM family_card_settlement_allocations a '+
+   'WHERE a.purchase_request_id=p.homeflow_request_id),0) settled_jpy '+
+   'FROM family_card_purchase_applied p '+
+   'JOIN family_financial_accounts c ON c.account_id=p.account_id '+
+   'WHERE p.household_id=? AND c.household_id=? AND c.owner_user_id=? '+
+   "AND c.account_kind='credit_card' AND c.origin='member_created' "+
+   'ORDER BY p.purchase_date DESC,p.homeflow_request_id LIMIT 150')
+   .bind(user.household_id,user.household_id,user.user_id).all()).results||[];
+  const items=rows.map(r=>({...r,remaining_jpy:Number(r.amount_jpy)-Number(r.settled_jpy)}));
+  if(items.some(r=>!Number.isSafeInteger(r.remaining_jpy)||r.remaining_jpy<0))
+   return fail('CARD_LIABILITY_UNBALANCED');
+  return reply({ok:true,items:items.filter(r=>r.remaining_jpy>0)});
+ }
  if(parts.length===1&&req.method==='POST')return prepare(req,env,url,user);
  if(parts.length===1&&req.method==='GET'){
   const rows=(await env.DB.prepare('SELECT p.*,a.transfer_entry_id,a.debit_date '+

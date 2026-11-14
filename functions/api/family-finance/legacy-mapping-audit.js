@@ -51,7 +51,8 @@ export async function auditLegacyFinanceMappings(request,env,user){
  const paymentCounts=new Map(pays.map(x=>[x.legacy_name,Number(x.row_count)]))
  const transferCounts=new Map(dests.map(x=>[x.legacy_name,Number(x.row_count)]))
  const linkedCounts=new Map(linked.map(x=>[x.legacy_name,Number(x.row_count)]))
- const names=[...new Set([...sourceSet,...paymentCounts.keys(),...transferCounts.keys()])].sort()
+ const names=[...new Set([...sourceSet,...paymentCounts.keys(),...transferCounts.keys(),
+  ...linkedCounts.keys()])].sort()
  if(names.length>300||names.some(n=>typeof n!=='string'||!n.trim()||n.length>240))
   return json({code:'LEGACY_NAME_REVIEW_REQUIRED',ledger_changed:false},409)
  if([...pays,...dests,...linked].some(x=>!Number.isSafeInteger(Number(x.row_count))||

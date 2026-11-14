@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {pointAccountingPlan} from '../functions/api/family-finance/point-accounting.js';
+import {memberPointsBalances} from '../functions/api/family-finance/points-balance-projection.js';
 const owner='11111111-1111-4111-8111-111111111111';
 const member='22222222-2222-4222-8222-222222222222';
 const other='33333333-3333-4333-8333-333333333333';
@@ -110,4 +111,26 @@ test('historical reward linking is evidence only: no re-mint, no name-based owne
  assert.throws(()=>run(s,"UPDATE family_points_legacy_links SET owner_user_id=? WHERE legacy_entry_id=1",owner),/POINTS_LEGACY_LINK_IMMUTABLE/);
  assert.throws(()=>run(s,"INSERT INTO family_points_legacy_links(legacy_entry_id,household_id,owner_user_id,points_account_id,legacy_kind,reviewed_by_user_id,reviewed_at) VALUES(?,?,?,?,?,?,?)",
   1,household,other,account,'earn',owner,date),/POINTS_LEGACY_OWNER_UNVERIFIED/);
+});
+
+test('family point balances are shared read-only quantities and exclude legacy income from new units',async()=>{
+ const s=fixture();
+ const p=intent(s);post(s,p);
+ run(s,"INSERT INTO family_points_legacy_links(legacy_entry_id,household_id,owner_user_id,points_account_id,legacy_kind,reviewed_by_user_id,reviewed_at) VALUES(?,?,?,?,?,?,?)",
+  1,household,member,account,'earn',owner,date);
+ const db={prepare(q){return{bind(...args){return{
+  all:async()=>({results:s.prepare(q).all(...args)})}}}}};
+ const projection=await memberPointsBalances(db,household);
+ assert.equal(projection.scope,'household');
+ assert.equal(projection.included_in_tracked_assets,false);
+ assert.equal(projection.monetary_total_jpy,null);
+ const a=projection.accounts.find(a=>a.account_id===account);
+ const b=projection.accounts.find(a=>a.account_id===otherAccount);
+ assert.equal(a.owner_user_id,member);
+ assert.equal(a.balance_units,100);
+ assert.equal(a.legacy_reviewed_count,1);
+ assert.equal(b.owner_user_id,other);
+ assert.equal(b.balance_units,0);
+ assert.equal(projection.accounts.length,2);
+ assert.equal(get(s,'SELECT COUNT(*) n FROM family_points_journal').n,1);
 });

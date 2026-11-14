@@ -30,6 +30,8 @@ async function load(){
    output.household_id!==household||output.ledger_changed!==false||
    !Array.isArray(output.prepaid?.cards)||
    !Array.isArray(output.member_prepaid?.accounts)||
+   !Array.isArray(output.member_points?.accounts)||
+   output.member_points?.included_in_tracked_assets!==false||
    !Array.isArray(output.securities?.holdings)||
    !Array.isArray(output.credit_card_bills)||
    !Array.isArray(output.member_credit_card_charges?.statements)||
@@ -78,6 +80,14 @@ onUnmounted(()=>{alive=false;generation++;open.value=false;data.value=null})
        <small>{{a.owner_user_id===props.userId?'本人账户':'家庭成员账户'}} · 稳定账户 ID</small>
       </p>
       <p v-if="!data.member_prepaid.accounts.length" class="note">尚无新建储值卡余额</p>
+     </template>
+     <template v-if="data.member_points.enabled">
+      <strong>积分账户 · 按各积分计划分开显示</strong>
+      <p v-for="p in data.member_points.accounts" :key="p.account_id">
+       <span>{{p.account_label}} · {{p.balance_units.toLocaleString('ja-JP')}} 积分</span>
+       <small>{{p.owner_user_id===props.userId?'本人账户':'家庭成员账户'}} · 旧记录已核对 {{p.legacy_reviewed_count}} 笔</small>
+      </p>
+      <p class="note">积分数量不等于日元，不能跨积分计划合计。旧积分仍保留原账，不会因关联再次入账。</p>
      </template>
      <strong>SBI 持仓 · 已知市值 {{yen(data.securities.total_market_value_jpy)}}</strong>
      <p v-for="h in data.securities.holdings" :key="h.fund_code+':'+h.account_type">

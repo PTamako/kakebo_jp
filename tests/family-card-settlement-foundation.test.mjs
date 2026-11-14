@@ -206,3 +206,54 @@ test('points offsets and bank allocations share one immutable payable budget, wi
   assert.throws(()=>stmt(s,'DELETE FROM family_points_card_offsets'),/IMMUTABLE/);
  }finally{s.close()}
 });
+
+test('a refunded points card offset restores payable bank allocation capacity without editing original evidence',async()=>{
+ const s=schema();try{
+  seed(s);
+  prepare(s,settlementA,'e'.repeat(32));
+  const paid=debit(s,settlementA,'1'.repeat(32),'2'.repeat(64),500);
+  apply(s,settlementA,'e'.repeat(32),'1'.repeat(32),paid,500);
+  alloc(s,settlementA,purchaseA,500);
+  audit(s,settlementA);
+  postPointsCardOffset(s,purchaseA,350);
+  const refundId='55555555-5555-4555-8555-55555555555a',
+   original='55555555-5555-4555-8555-555555555559',
+   proposal='a'.repeat(32),digest='a'.repeat(64),points='e'.repeat(32);
+  stmt(s,'INSERT INTO family_points_intents ('+
+   'request_id,household_id,requester_user_id,points_account_id,expected_version,operation,'+
+   'payload_sha256,payload_cipher,payload_iv,idempotency_hash,status,homeflow_approval_id,'+
+   'created_at,expires_at,submitted_at,original_request_id) '+
+   "VALUES(?,?,?,?,?,?,?,?,?,?,'submitted',?,?,?,?,?)",
+   proposal,household,member,points,1,'reversal',digest,'sealed','iv',digest,
+   refundId,now-2000,now+86400000,now-1000,original);
+  stmt(s,'INSERT INTO family_points_journal '+
+   '(homeflow_request_id,proposal_id,household_id,requester_user_id,approver_user_id,'+
+   'actor_user_id,points_account_id,account_version,operation,delta_units,balance_after_units,'+
+   'yen_value,yen_per_unit_numerator,yen_per_unit_denominator,target_account_id,linked_entry_id,'+
+   'legacy_entry_id,source_reference_hash,reversed_request_id,payload_sha256,effective_date,applied_at) '+
+   'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+   refundId,proposal,household,member,owner,owner,points,1,'reversal',350,350,
+   350,1,1,card,null,null,digest,original,digest,'2026-11-14',now);
+  assert.equal(one(s,'SELECT liability_after_jpy AS n FROM family_points_card_offset_refunds').n,500);
+  assert.equal(one(s,'SELECT COUNT(*) n FROM family_points_card_offsets').n,1);
+  assert.equal(one(s,'SELECT COUNT(*) n FROM family_points_card_offset_refunds').n,1);
+  const db={prepare(q){return{bind(...params){return{all:async()=>({results:s.prepare(q).all(...params)})}}}}};
+  const view=await memberCardLiabilities(db,household,true);
+  const bill=view.items.find(x=>x.closing_month==='2026-12');
+  assert.equal(bill.points_offset_jpy,0);
+  assert.equal(bill.settled_jpy,500);
+  assert.equal(bill.liability_jpy,500);
+  // A later genuinely confirmed bank debit can now settle newly restored
+  // liability without being misclassified as an expense or repeated offset.
+  prepare(s,settlementB,'9'.repeat(32));
+  const next=debit(s,settlementB,'4'.repeat(32),'5'.repeat(64),200);
+  apply(s,settlementB,'9'.repeat(32),'4'.repeat(32),next,200);
+  alloc(s,settlementB,purchaseA,200);
+  audit(s,settlementB);
+  const after=await memberCardLiabilities(db,household,true);
+  assert.equal(after.items.find(x=>x.closing_month==='2026-12').liability_jpy,300);
+  assert.equal(one(s,"SELECT SUM(amount) n FROM entries WHERE type='expense'").n,1500);
+  assert.equal(one(s,"SELECT SUM(amount) n FROM entries WHERE type='transfer'").n,700);
+  assert.throws(()=>stmt(s,'DELETE FROM family_points_card_offset_refunds'),/IMMUTABLE/);
+ }finally{s.close()}
+});

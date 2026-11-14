@@ -787,3 +787,71 @@ test('prepaid refund version drift and injected debit failure keep original poin
  assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',points).n,230);
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,2);
 });
+
+test('card-offset refund atomically restores points and exact purchase liability without a new cash entry',async()=>{
+ const f=fixture(),initial=get(f.sql,'SELECT COUNT(*) n FROM entries').n;
+ const funding=await f.prepare('earn_campaign','card-refund-earn',{units:500,yen_value:500});
+ assert.equal((await f.execute(await f.submit(funding))).status,200);
+ const offset=await f.prepare('offset_card','card-refund-original',{units:300,yen_value:300});
+ const original=await f.submit(offset);
+ assert.equal((await f.execute(original)).status,200);
+ const before=await memberCardLiabilities(f.db,hh,true);
+ assert.equal(before.items.find(x=>x.account_id===memberCard).liability_jpy,700);
+ assert.equal(before.items.find(x=>x.account_id===memberCard).points_offset_jpy,300);
+ const refund=await f.prepare('reversal','card-refund-approved',
+  {units:300,yen_value:300,original_request_id:original});
+ const approval=await f.submit(refund);
+ const result=await f.execute(approval);
+ assert.equal(result.status,200,JSON.stringify(result));
+ assert.equal(result.data.delta_units,300);
+ assert.equal(result.data.refunded_card_account_id,memberCard);
+ assert.equal(result.data.refunded_card_version,1);
+ assert.equal(result.data.refunded_card_purchase_request_id,cardPurchaseApproval);
+ assert.equal(result.data.refunded_card_offset_jpy,300);
+ assert.equal(result.data.refunded_card_liability_after_jpy,1000);
+ assert.equal(result.data.reversed_request_id,original);
+ const after=await memberCardLiabilities(f.db,hh,true);
+ assert.equal(after.items.find(x=>x.account_id===memberCard).liability_jpy,1000);
+ assert.equal(after.items.find(x=>x.account_id===memberCard).points_offset_jpy,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_card_offset_refunds').n,1);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_card_offsets').n,1);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,500);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries').n,initial);
+ assert.equal((await f.execute(approval,'receipt')).data.already_applied,true);
+ assert.equal((await f.call(['points-actions'],f.action('reversal','card-refund-duplicate',
+  {units:300,yen_value:300,original_request_id:original}))).status,409);
+ assert.throws(()=>stmt(f.sql,'UPDATE family_points_card_offset_refunds SET restored_jpy=1'),
+  /POINTS_CARD_REFUND_IMMUTABLE/);
+ assert.throws(()=>stmt(f.sql,'DELETE FROM family_points_card_offset_refunds'),
+  /POINTS_CARD_REFUND_IMMUTABLE/);
+ // Released payable can be legitimately offset again in a NEW approval;
+ // it never reuses the original reference or silently edits the old offset.
+ const next=await f.prepare('offset_card','card-refund-new-offset',{units:200,yen_value:200});
+ assert.equal((await f.execute(await f.submit(next))).status,200);
+ const more=await memberCardLiabilities(f.db,hh,true);
+ assert.equal(more.items.find(x=>x.account_id===memberCard).liability_jpy,800);
+ assert.equal(more.items.find(x=>x.account_id===memberCard).points_offset_jpy,200);
+});
+test('card offset refund rejects stale card CAS and rolls back source points if liability counterpart fails',async()=>{
+ const f=fixture();
+ const earned=await f.prepare('earn_campaign','card-refund-fault-funding',{units:400,yen_value:400});
+ assert.equal((await f.execute(await f.submit(earned))).status,200);
+ const offset=await f.prepare('offset_card','card-refund-fault-original',{units:250,yen_value:250});
+ const original=await f.submit(offset);
+ assert.equal((await f.execute(original)).status,200);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=2 WHERE account_id=?',memberCard);
+ const stale=await f.call(['points-actions'],f.action('reversal','card-refund-stale-cas',
+  {units:250,yen_value:250,original_request_id:original}));
+ assert.equal(stale.status,409,JSON.stringify(stale));
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=1 WHERE account_id=?',memberCard);
+ const refund=await f.prepare('reversal','card-refund-target-failure',
+  {units:250,yen_value:250,original_request_id:original});
+ const approved=await f.submit(refund);
+ f.sql.exec("CREATE TRIGGER reject_card_refund BEFORE INSERT ON family_points_card_offset_refunds BEGIN SELECT RAISE(ABORT,'REFUND_CARD_COUNTERPART_FAILURE'); END;");
+ assert.notEqual((await f.execute(approved)).status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_card_offset_refunds').n,0);
+ assert.equal(get(f.sql,"SELECT COUNT(*) n FROM family_points_journal WHERE operation='reversal'").n,0);
+ assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,150);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,2);
+ assert.equal((await memberCardLiabilities(f.db,hh,true)).items.find(x=>x.account_id===memberCard).liability_jpy,750);
+});

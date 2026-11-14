@@ -5,6 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createHmac,webcrypto} from 'node:crypto';
 import {familyCardSettlements} from '../functions/api/family-finance/card-settlements.js';
 import {approvedCardSettlementRoute} from '../functions/api/internal/card-settlements/[[path]].js';
+import {memberCardLiabilities} from '../functions/api/family-finance/card-settlement-summary.js';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const owner='11111111-1111-4111-8111-111111111111',member='22222222-2222-4222-8222-222222222222';
 const card='a'.repeat(32),bank='b'.repeat(32),household='primary';
@@ -166,6 +167,13 @@ test('real SQLite target records one bank transfer and allocates cross-month par
   assert.equal(transfer.date,'2026-11-14');
   assert.equal(query(f.sql,'SELECT SUM(amount_jpy) v FROM family_card_settlement_allocations').v,1200);
   assert.equal(query(f.sql,'SELECT COUNT(*) n FROM family_card_settlement_audit').n,1);
+  const byBill=await memberCardLiabilities(f.env.DB,household,true);
+  assert.equal(byBill.total,300,'card payments cannot be second expenses');
+  assert.deepEqual(byBill.items.map(v=>[v.closing_month,v.gross_charges_jpy,v.settled_jpy,v.liability_jpy]),
+   [['2026-12',1000,800,200],['2026-11',500,400,100]]);
+  const beforeFlag=await memberCardLiabilities(f.env.DB,household,false);
+  assert.equal(beforeFlag.total,1500);
+
   const receipt=await f.send('receipt',b);
   assert.equal(receipt.status,200);assert.equal(receipt.data.already_applied,true);
   const duplicate=await f.send('execute',b);

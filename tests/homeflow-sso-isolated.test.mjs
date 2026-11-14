@@ -987,6 +987,20 @@ test('approved CASH draft posts once through signed executor and persists immuta
      'x-approval-signature':mac,...headers},body:raw
    }),f.env,['execute'])
   }
+  const receipt=async (overrides={},domain='homeflow:receipt')=>{
+   const body={request_id:approval,resource_id:pending.request_id,
+    requester_user_id:member,household_id:'primary',
+    payload_sha256:pending.payload_sha256,...overrides}
+   const raw=JSON.stringify(body),timestamp=String(Date.now())
+   const mac=createHmac('sha256',Buffer.from(secret,'hex'))
+    .update(domain+'\n'+timestamp+'\n'+raw).digest('hex')
+   return approvedActionRoute(new Request(app+'/api/internal/approved-actions/receipt',{
+    method:'POST',headers:{'content-type':'application/json',
+     'x-approval-client':'homeflow','x-approval-timestamp':timestamp,
+     'x-approval-signature':mac},body:raw}),f.env,['receipt'])
+  }
+  assert.equal((await receipt()).status,404,'receipt lookup cannot create a ledger entry')
+  assert.equal((await receipt({},'homeflow')).status,403,'execution signature is not a receipt signature')
   assert.equal((await call({}, {cookie:'__Host-hf_session=bad'})).status,403)
   assert.equal((await call({}, {origin:app})).status,403)
   const forged=await call({payload_sha256:'b'.repeat(64)})
@@ -1015,6 +1029,11 @@ test('approved CASH draft posts once through signed executor and persists immuta
   assert.equal(created.client_request_id,'hf:'+approval)
   assert.equal(created.raw,'','private source text is not disclosed')
   assert.equal(posted.entry_id,created.id)
+  const foundReceipt=await receipt()
+  assert.equal(foundReceipt.status,200)
+  assert.equal((await foundReceipt.json()).entry_id,created.id)
+  assert.equal((await receipt({payload_sha256:'f'.repeat(64)})).status,409)
+  assert.equal((await receipt({execution_nonce:'d'.repeat(64)})).status,400)
   const status=await finance(f,'proposals/'+pending.request_id+'/status','GET',null,memberCookie)
   assert.equal(status.status,200)
   const saved=(await status.json()).prepared

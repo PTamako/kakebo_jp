@@ -92,7 +92,8 @@ function exact(row,body){
 }
 export async function approvedActionRoute(request,env,parts){
  if(!enabled(env))return refuse('EXECUTION_DISABLED',503)
- if(parts.length!==1||parts[0]!=='execute'||request.method!=='POST')
+ const receiptOnly=parts.length===1&&parts[0]==='receipt'
+ if(parts.length!==1||!['execute','receipt'].includes(parts[0])||request.method!=='POST')
   return refuse('NOT_FOUND',404)
  if(request.headers.has('cookie')||request.headers.has('origin')||
   request.headers.has('authorization')||
@@ -110,14 +111,15 @@ export async function approvedActionRoute(request,env,parts){
   if(raw.length>1600)throw Error('too large')
   body=JSON.parse(raw)
  }catch{return refuse('INVALID_INPUT',400)}
- const mac=await hmac(env.KAKEIBO_APPROVAL_VERIFICATION_SECRET,'homeflow',stamp,raw)
+ const mac=await hmac(env.KAKEIBO_APPROVAL_VERIFICATION_SECRET,
+  receiptOnly?'homeflow:receipt':'homeflow',stamp,raw)
  if(!same(mac,signature))return refuse('INVALID_SIGNATURE',403)
  if(!body||typeof body!=='object'||Array.isArray(body)||
   Object.keys(body).sort().join(',')!==[
    'request_id','resource_id','household_id','requester_user_id',
-   'payload_sha256','execution_nonce'].sort().join(',')||
+   'payload_sha256',...(!receiptOnly?['execution_nonce']:[])].sort().join(',')||
   !uuid.test(body.request_id)||!id32.test(body.resource_id)||
-  !hex.test(body.payload_sha256)||!hex.test(body.execution_nonce)||
+  !hex.test(body.payload_sha256)||(!receiptOnly&&!hex.test(body.execution_nonce))||
   typeof body.household_id!=='string'||body.household_id.length<1||
   body.household_id.length>128||typeof body.requester_user_id!=='string'||
   body.requester_user_id.length<1||body.requester_user_id.length>128)
@@ -130,6 +132,9 @@ export async function approvedActionRoute(request,env,parts){
   if(!exact(existing,body))return refuse('APPLIED_IDENTITY_CONFLICT',409)
   return reply(publicResult(existing,true))
  }
+ // This endpoint never executes: absence is not proof that an in-flight
+ // execution cannot commit later, so the caller must retain uncertainty.
+ if(receiptOnly)return refuse('RECEIPT_NOT_FOUND',404)
  const row=await db.prepare('SELECT p.*,a.account_kind,a.origin,a.owner_user_id,'+
   'a.is_archived,a.household_id AS account_household,l.role AS owner_role,'+
   'l.state AS owner_state FROM family_finance_pending_actions p '+

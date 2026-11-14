@@ -1794,3 +1794,47 @@ test('audited legacy transfer identity blocks edited source/target/ID while pres
   assert.equal(db.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,1)
  }finally{f.DB.sqlite.close()}
 })
+
+
+test('legacy device API refuses renaming adopted payment source and rewriting a linked entry identity',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  assert.equal((await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)).status,200)
+  f.env.APP_ENV='production'
+  f.env.KAKEIBO_LEGACY_ENTRY_LINKS_ENABLED='true'
+  const plan=(await (await finance(f,'legacy/entry-links','GET',null,ownerCookie)).json()).items[0]
+  const confirmed=await finance(f,'legacy/entry-links','POST',{
+   entry_id:plan.entry_id,account_id:plan.account_id,
+   source_digest:plan.source_digest,confirm:true
+  },ownerCookie)
+  assert.equal(confirmed.status,200)
+  const legacyRequest=async(method,path,payload)=>{
+   const request=new Request(app+'/api/'+path,{method,
+    headers:{Cookie:'kakeibo_session='+oldCookie,Origin:app,
+     'content-type':'application/json'},
+    body:JSON.stringify(payload)})
+   return legacyApi({request,env:f.env,params:{path:path.split('/')}})
+  }
+  const cardRename=await legacyRequest('POST','payment-sources/rename',{
+   oldName:'PayPay Visa',newName:'Other Card'
+  })
+  assert.equal(cardRename.status,409,await cardRename.clone().text())
+  assert.equal((await cardRename.json()).code,'legacy_source_identity_locked')
+  const cardRemove=await legacyRequest('POST','payment-sources/remove',{name:'PayPay Visa'})
+  assert.equal(cardRemove.status,409)
+  assert.equal((await cardRemove.json()).code,'legacy_source_identity_locked')
+  const edit=await legacyRequest('PUT','entries/1',{
+   date:'2026-11-10',time:'',amount:1234,category:'生活',
+   merchant:'既存の個人明細',note:'old',raw:'',
+   type:'expense',paymentSource:'nanaco',transferTarget:''
+  })
+  assert.equal(edit.status,409,await edit.clone().text())
+  assert.equal((await edit.json()).code,'legacy_entry_identity_locked')
+  const original=f.DB.sqlite.prepare('SELECT * FROM entries WHERE id=1').get()
+  assert.equal(original.payment_source,'PayPay Visa')
+  assert.equal(original.family_account_id,plan.account_id)
+  assert.equal(f.DB.sqlite.prepare(
+   "SELECT COUNT(*) n FROM payment_sources WHERE name='PayPay Visa'").get().n,1)
+ }finally{f.DB.sqlite.close()}
+})

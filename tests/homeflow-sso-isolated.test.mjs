@@ -300,8 +300,10 @@ function finance(f,path,method='GET',body,secret='',origin=app){
  const headers={};
  if(secret)headers.Cookie='__Host-kakeibo_hf='+secret;
  if(!['GET','HEAD'].includes(method)){headers.Origin=origin;headers['content-type']='application/json';}
+ // Mirror the initiating PWA identity for account and proposal writes.
+ // Explicit overrides in tests still simulate old-cookie/wrong-member attempts.
  const scoped=['POST','PATCH'].includes(method)&&
-  /^accounts(?:\/|$)/.test(path)&&body&&f.accountActors?.has(secret)
+  /^(?:accounts|proposals)(?:\/|$)/.test(path)&&body&&f.accountActors?.has(secret)
    ?{expected_user_id:f.accountActors.get(secret),...body}:body;
  return familyFinance({env:f.env,
   request:new Request(app+'/api/family-finance/'+path,{method,headers,

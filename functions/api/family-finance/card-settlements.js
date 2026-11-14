@@ -61,7 +61,9 @@ async function outstanding(db,household,card,allocations,debitDate){
   'COALESCE((SELECT SUM(x.amount_jpy) FROM family_card_settlement_allocations x '+
   'WHERE x.purchase_request_id=p.homeflow_request_id),0) paid_jpy,'+
   'COALESCE((SELECT SUM(o.amount_jpy) FROM family_points_card_offsets o '+
-  'WHERE o.purchase_request_id=p.homeflow_request_id),0) points_offset_jpy '+
+  'WHERE o.purchase_request_id=p.homeflow_request_id),0)'+
+   '-COALESCE((SELECT SUM(ref.restored_jpy) FROM family_points_card_offset_refunds ref '+
+   'WHERE ref.purchase_request_id=p.homeflow_request_id),0) points_offset_jpy '+
   'FROM family_card_purchase_applied p WHERE p.household_id=? AND p.account_id=? '+
   'AND p.homeflow_request_id IN ('+ids.map(()=>'?').join(',')+')')
   .bind(household,card,...ids).all()).results||[];
@@ -179,7 +181,9 @@ export async function familyCardSettlements(req,env,url,user,parts){
    'COALESCE((SELECT SUM(a.amount_jpy) FROM family_card_settlement_allocations a '+
    'WHERE a.purchase_request_id=p.homeflow_request_id),0) settled_jpy,'+
    'COALESCE((SELECT SUM(o.amount_jpy) FROM family_points_card_offsets o '+
-   'WHERE o.purchase_request_id=p.homeflow_request_id),0) points_offset_jpy '+
+   'WHERE o.purchase_request_id=p.homeflow_request_id),0)'+
+   '-COALESCE((SELECT SUM(ref.restored_jpy) FROM family_points_card_offset_refunds ref '+
+   'WHERE ref.purchase_request_id=p.homeflow_request_id),0) points_offset_jpy '+
    'FROM family_card_purchase_applied p '+
    'JOIN family_financial_accounts c ON c.account_id=p.account_id '+
    'WHERE p.household_id=? AND c.household_id=? AND c.owner_user_id=? '+

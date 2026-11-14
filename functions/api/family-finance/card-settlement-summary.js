@@ -16,9 +16,11 @@ export async function memberCardLiabilities(db,household,settlementEnabled){
   'WHERE original.household_id=? AND settled.household_id=? '+
   'AND settled.card_account_id=original.account_id '+
   'GROUP BY original.account_id,original.bill_month), offsets AS ('+
-  'SELECT original.account_id,original.bill_month,SUM(o.amount_jpy) points_offset_jpy '+
+  'SELECT original.account_id,original.bill_month,'+
+   'SUM(o.amount_jpy-COALESCE(ref.restored_jpy,0)) points_offset_jpy '+
   'FROM family_points_card_offsets o JOIN family_card_purchase_applied original '+
   'ON original.homeflow_request_id=o.purchase_request_id '+
+   'LEFT JOIN family_points_card_offset_refunds ref ON ref.original_request_id=o.homeflow_request_id '+
   'WHERE original.household_id=? GROUP BY original.account_id,original.bill_month) '+
   'SELECT g.account_id,g.bill_month,g.amount_jpy,g.purchases,a.label,a.owner_user_id,'+
   'COALESCE(paid.settled_jpy,0) settled_jpy,COALESCE(offsets.points_offset_jpy,0) points_offset_jpy FROM gross g '+

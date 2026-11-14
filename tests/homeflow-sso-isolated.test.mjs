@@ -1235,7 +1235,7 @@ test('legacy stable-account coverage audits old payment and transfer names witho
   assert.equal(before.requires_manual_review,true);
   const card=before.items.find(x=>x.legacy_name==='PayPay Visa');
   assert.equal(card.status,'legacy_account_not_adopted');
-  assert.equal(card.entry_source_count,2);
+  assert.equal(card.entry_source_count,1,'transfers are not ordinary income/expense migration work');
   assert.equal(card.stable_account_id,null);
   const prepaid=before.items.find(x=>x.legacy_name==='nanaco');
   assert.equal(prepaid.transfer_target_count,1);
@@ -1585,6 +1585,13 @@ test('legacy transfer dual-sided mapping attaches both original-owner IDs once a
   assert.equal(replay.status,200)
   assert.equal((await replay.json()).already_linked,true)
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,1)
+  const audit=(await (await finance(f,'legacy/mapping-audit','GET',null,ownerCookie)).json())
+  assert.equal(audit.linked_legacy_transfer_count,1)
+  assert.equal(audit.remaining_legacy_transfer_count,0)
+  assert.equal(audit.partial_legacy_transfer_count,0)
+  assert.equal(audit.unverified_linked_transfer_count,0)
+  assert.equal(audit.remaining_legacy_entry_count,1,
+   'unmatched historical bank income remains separate from transfers')
   assert.equal((await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json()).items.length,0)
   assert.throws(()=>f.DB.sqlite.prepare(
    'UPDATE family_finance_legacy_transfer_links SET target_name=? WHERE entry_id=3'
@@ -1632,6 +1639,10 @@ test('dual transfer owner mapping rejects stale digest, same-name transfer and m
   assert.equal(after.family_account_id,null)
   assert.equal(after.family_transfer_target_account_id,null)
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,0)
+  const audit=(await (await finance(f,'legacy/mapping-audit','GET',null,ownerCookie)).json())
+  assert.equal(audit.remaining_legacy_transfer_count,2)
+  assert.equal(audit.linked_legacy_transfer_count,0)
+  assert.equal(audit.partial_legacy_transfer_count,0)
   f.DB.batch=realBatch
   assert.equal((await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json()).items.length,0,
    'unknown target name cannot be guessed into an account')

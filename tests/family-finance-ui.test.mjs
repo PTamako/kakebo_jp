@@ -234,3 +234,22 @@ test('verified original owner must explicitly fingerprint-confirm legacy row lin
  assert.doesNotMatch(ui,/localStorage|sessionStorage|indexedDB|\/api\/entries/)
  assert.doesNotMatch(backend,/UPDATE entries SET (?:amount|category|merchant|payment_source)/)
 })
+
+
+test('legacy owner audit separately reports claimed accounts and verified historical entry linkage progress',()=>{
+ const source=readFileSync(new URL('../src/FamilyFinanceMappingAudit.vue',import.meta.url),'utf8')
+ const backend=readFileSync(new URL('../functions/api/family-finance/legacy-mapping-audit.js',import.meta.url),'utf8')
+ assert.match(source,/linked_entry_count/)
+ assert.match(source,/linked_legacy_entry_count/)
+ assert.match(source,/remaining_legacy_entry_count/)
+ assert.match(source,/原历史收支：已关联稳定 ID/)
+ assert.match(source,/待关联 \{\{summary.remaining_legacy_entry_count\}\}/)
+ assert.match(backend,/e\.family_account_id/)
+ assert.match(backend,/a\.origin='legacy'/)
+ assert.match(backend,/a\.owner_user_id=\? AND a\.household_id=\?/)
+ assert.match(backend,/AND e\.payment_source=a\.legacy_source_name/)
+ assert.match(backend,/GROUP BY a\.legacy_source_name/)
+ assert.match(backend,/remaining_legacy_entry_count:items.reduce/)
+ assert.match(backend,/linked_legacy_entry_count:items.reduce/)
+ assert.doesNotMatch(backend,/UPDATE entries|INSERT INTO entries|DELETE FROM entries|\.run\(/i)
+})

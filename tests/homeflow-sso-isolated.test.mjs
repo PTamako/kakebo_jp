@@ -1648,3 +1648,42 @@ test('dual transfer owner mapping rejects stale digest, same-name transfer and m
    'unknown target name cannot be guessed into an account')
  }finally{f.DB.sqlite.close()}
 })
+
+
+test('transfer mapping audit never counts a half-linked or unjournaled dual-ID transfer as verified',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  const memberCookie=await loginMember(f)
+  await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)
+  const source=f.DB.sqlite.prepare(
+   "SELECT account_id FROM family_financial_accounts WHERE legacy_source_name='PayPay Visa'"
+  ).get().account_id
+  const target=f.DB.sqlite.prepare(
+   "SELECT account_id FROM family_financial_accounts WHERE legacy_source_name='nanaco'"
+  ).get().account_id
+  const add=()=>f.DB.sqlite.prepare(
+   "INSERT INTO entries(date,time,type,merchant,amount,category,note,payment_source,"+
+   "transfer_target,transfer_applied,transfer_date,raw) "+
+   "VALUES('2026-11-14','','transfer','経路不明',130,'資産','manual','PayPay Visa','nanaco',0,NULL,'')"
+  ).run().lastInsertRowid
+  const partial=Number(add())
+  f.DB.sqlite.prepare('UPDATE entries SET family_account_id=? WHERE id=?').run(source,partial)
+  const unverified=Number(add())
+  f.DB.sqlite.prepare('UPDATE entries SET family_account_id=?,family_transfer_target_account_id=? WHERE id=?')
+   .run(source,target,unverified)
+  const audit=await finance(f,'legacy/mapping-audit','GET',null,ownerCookie)
+  assert.equal(audit.status,200)
+  const body=await audit.json()
+  assert.equal(body.linked_legacy_transfer_count,0)
+  assert.equal(body.partial_legacy_transfer_count,1)
+  assert.equal(body.unverified_linked_transfer_count,1)
+  assert.equal(body.remaining_legacy_transfer_count,0)
+  assert.equal(body.requires_manual_review,true)
+  assert.equal((await finance(f,'legacy/mapping-audit','GET',null,memberCookie)).status,403)
+  f.env.APP_ENV='production';f.env.KAKEIBO_LEGACY_TRANSFER_LINKS_ENABLED='true'
+  const eligible=(await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json()).items
+  assert.equal(eligible.length,0,'no auto repair for already half-linked or unjournaled transfers')
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,0)
+ }finally{f.DB.sqlite.close()}
+})

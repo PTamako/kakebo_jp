@@ -1422,7 +1422,8 @@ test('legacy expense stable-ID linking is default OFF, owner-fingerprinted and p
   })
   const now=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
   assert.equal(now[0].family_account_id,item.account_id)
-  assert.deepEqual(now.map(row=>({...row,family_account_id:null})),old,
+  assert.deepEqual(now.map(row=>({...row,family_account_id:null})),
+   old.map(row=>({...row})),
    'linking must change exactly the foreign account ID and nothing else in the old ledger')
   assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all(),oldSources)
   const receipt=statement.get()

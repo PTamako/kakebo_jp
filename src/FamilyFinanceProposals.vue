@@ -143,6 +143,40 @@ async function action(item,kind){
   }
  }
 }
+const approvalUuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
+async function checkApproval(item){
+ const ticket=revision,user=props.userId
+ if(!alive||!open.value||busy.value||loading.value||
+  !verify(item)||item.status!=='submitted_status_unknown'||
+  !approvalUuid.test(item.homeflow_approval_id||''))return
+ // A confirmed HomeFlow review is NOT permission for this browser to modify
+ // the ledger. Only the future backend executor may do so.
+ busy.value='proof:'+item.request_id;error.value='';message.value=''
+ try{
+  const result=await call('/api/family-finance/proposals/'+
+   encodeURIComponent(item.request_id)+'/approval-proof',{
+    method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({
+     homeflow_request_id:item.homeflow_approval_id,
+     expected_user_id:user
+    })
+   })
+  if(ticket!==revision||!alive||user!==props.userId||!open.value)return
+  if(result.ok!==true||result.approval_confirmed!==true||
+   result.status!=='approved_not_applied'||result.applied!==false||
+   result.ledger_changed!==false||result.proposal_id!==item.request_id||
+   result.homeflow_request_id!==item.homeflow_approval_id)
+   throw Error('审批回执不完整，不能视为已批准或已入账')
+  message.value='HomeFlow 已确认批准申请 '+item.request_id.slice(0,8)+
+   '，但家計簿尚未入账；需等待后端实际执行并获得入账回执。'
+ }catch(e){
+  if(ticket===revision&&alive&&user===props.userId)
+   error.value=e.message==='APPROVAL_NOT_VERIFIED'?'HomeFlow 尚未确认批准，或审批已撤销。':
+    (e.message||'审批暂时无法核验')
+ }finally{
+  if(ticket===revision&&alive&&user===props.userId)busy.value=''
+ }
+}
 function onForeground(){
  if(document.visibilityState==='visible'&&open.value&&!busy.value&&!loading.value)
   void load(0)
@@ -201,6 +235,10 @@ onUnmounted(()=>{
      <div v-if="item.status==='prepared_not_submitted'" class="hf-actions">
       <button type="button" :disabled="loading||!!busy" @click="action(item,'cancel')">撤回</button>
       <button type="button" :disabled="loading||!!busy" @click="action(item,'submit')">提交审批</button>
+     </div>
+     <div v-else-if="item.status==='submitted_status_unknown'&&item.homeflow_approval_id" class="hf-actions">
+      <button type="button" :disabled="loading||!!busy" @click="checkApproval(item)">核实 HomeFlow 审批</button>
+      <small>审批通过不等于已入账</small>
      </div>
     </li>
    </ul>

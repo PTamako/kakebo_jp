@@ -37,8 +37,11 @@ async function call(path,options={}){
  return payload
 }
 async function load(at=0){
- const ticket=++revision,user=props.userId
+ // A blocked foreground refresh must not invalidate a pending mutation and
+ // strand the submit button in busy state.
+ const user=props.userId
  if(!alive||!open.value||busy.value||!Number.isSafeInteger(at)||at<0||at>500)return
+ const ticket=++revision
  loading.value=true;error.value=''
  try{
   const result=await call('/api/family-finance/proposals?offset='+at)
@@ -58,6 +61,7 @@ async function load(at=0){
  }finally{if(ticket===revision&&alive&&user===props.userId)loading.value=false}
 }
 async function toggle(){
+ if(busy.value)return
  open.value=!open.value
  if(open.value)await load(0)
  else{revision++;items.value=[];error.value='';nextOffset.value=null}

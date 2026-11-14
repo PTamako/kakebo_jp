@@ -31,6 +31,7 @@ async function load(){
    !Array.isArray(output.prepaid?.cards)||
    !Array.isArray(output.securities?.holdings)||
    !Array.isArray(output.credit_card_bills)||
+   !Array.isArray(output.member_credit_card_charges?.statements)||
    output.ownership_verification?.proof!=='immutable_legacy_owner_mapping'||
    output.ownership_verification?.read_only!==true)
    throw Error(output.code||'资产归属核对未完成，请重新读取')
@@ -72,6 +73,15 @@ onUnmounted(()=>{alive=false;generation++;open.value=false;data.value=null})
      <strong>SBI 持仓 · 已知市值 {{yen(data.securities.total_market_value_jpy)}}</strong>
      <p v-for="h in data.securities.holdings" :key="h.fund_code+':'+h.account_type">
       <span>{{h.fund_name}} · {{yen(h.market_value_jpy)}}</span><small>{{owner(h)}}</small>
+     </p>
+     <strong>家庭成员信用卡消费 · 待对账应付 {{yen(data.member_credit_card_charges.recorded_unsettled_total_jpy)}}</strong>
+     <p v-for="b in data.member_credit_card_charges.statements"
+      :key="b.account_id+':'+b.closing_month">
+      <span>{{b.account_label}} · {{b.closing_month}} 截止账期 · {{yen(b.liability_jpy)}}</span>
+      <small>{{b.owner_user_id===props.userId?'本人账户':'家庭成员账户'}} · {{b.purchases}} 笔</small>
+     </p>
+     <p v-if="data.member_credit_card_charges.statements.length" class="note">
+      这是已记消费形成的应付义务；还款未录入，付款到期日未核验，不代表银行当前实时欠款。
      </p>
      <strong>信用卡账单（负债快照，不计资产）</strong>
      <p v-for="b in data.credit_card_bills" :key="b.payment_source+':'+b.month">

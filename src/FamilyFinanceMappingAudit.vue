@@ -14,6 +14,7 @@ function valid(item){
  return item&&typeof item.legacy_name==='string'&&item.legacy_name.length>0&&
   item.legacy_name.length<=240&&Object.hasOwn(names,item.status)&&
   Number.isSafeInteger(item.entry_source_count)&&item.entry_source_count>=0&&
+  Number.isSafeInteger(item.linked_entry_count)&&item.linked_entry_count>=0&&
   Number.isSafeInteger(item.transfer_target_count)&&item.transfer_target_count>=0&&
   (item.stable_account_id===null||/^[a-f0-9]{32}$/.test(item.stable_account_id))
 }
@@ -34,7 +35,11 @@ async function load(){
    !Number.isSafeInteger(data.unresolved_source_count)||
    !Number.isSafeInteger(data.mapped_source_count)||
    data.mapped_source_count+data.unresolved_source_count!==data.items.length||
-   !Number.isSafeInteger(data.previously_linked_entries))
+   !Number.isSafeInteger(data.previously_linked_entries)||
+   !Number.isSafeInteger(data.linked_legacy_entry_count)||
+   !Number.isSafeInteger(data.remaining_legacy_entry_count)||
+   data.linked_legacy_entry_count!==data.items.reduce((s,x)=>s+x.linked_entry_count,0)||
+   data.remaining_legacy_entry_count!==data.items.reduce((s,x)=>s+x.entry_source_count,0))
    throw Error('原账户归属核对数据不完整，请暂勿迁移')
   items.value=data.items;summary.value=data
  }catch(e){
@@ -64,12 +69,13 @@ onUnmounted(()=>{alive=false;revision++;open.value=false;items.value=[];summary.
    <p v-if="error" class="hf-error" role="alert">{{error}}</p>
    <p v-if="loading" class="hf-subtle">核对中…</p>
    <template v-else-if="summary">
-    <p class="hf-subtle">已对应 {{summary.mapped_source_count}} 项 · 待确认 {{summary.unresolved_source_count}} 项 · 既有关联流水 {{summary.previously_linked_entries}} 笔</p>
+    <p class="hf-subtle">已认领账户来源 {{summary.mapped_source_count}} 项 · 待认领 {{summary.unresolved_source_count}} 项</p>
+    <p class="hf-subtle">原历史收支：已关联稳定 ID {{summary.linked_legacy_entry_count}} 笔 · 待关联 {{summary.remaining_legacy_entry_count}} 笔。转账需单独核对。</p>
     <ul class="hf-audit-list">
      <li v-for="item in items" :key="item.legacy_name">
       <strong>{{item.legacy_name}}</strong>
       <span>{{names[item.status]}}</span>
-      <small>旧流水 {{item.entry_source_count}} 笔 · 转入目标 {{item.transfer_target_count}} 笔</small>
+      <small>旧收支已关联 {{item.linked_entry_count}} 笔 · 待关联 {{item.entry_source_count}} 笔 · 转入目标 {{item.transfer_target_count}} 笔</small>
      </li>
     </ul>
     <p v-if="!items.length" class="hf-subtle">暂无可核对的旧金融来源。</p>

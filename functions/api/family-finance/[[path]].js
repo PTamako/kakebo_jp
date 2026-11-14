@@ -7,6 +7,7 @@ import {financePending} from './pending.js';
 import {familyCardPurchases} from './card-purchases.js';
 import {familyCardSettlements} from './card-settlements.js';
 import {familyPrepaidActions} from './prepaid-actions.js';
+import {familyPointsActions} from './points-actions.js';
 import {familyAssetSummary} from './assets.js';
 import {familyPlanOwnership} from './plan-ownership.js';
 import {familyLegacyResourceOwners} from './resource-owners.js';
@@ -323,6 +324,7 @@ export async function onRequest({request,env,params}){
   if(parts[0]==='card-purchases')return familyCardPurchases(request,env,url,user,parts);
   if(parts[0]==='card-settlements')return familyCardSettlements(request,env,url,user,parts);
   if(parts[0]==='prepaid-actions')return familyPrepaidActions(request,env,url,user,parts);
+  if(parts[0]==='points-actions')return familyPointsActions(request,env,url,user,parts);
   if(parts[0]==='accounts')return accounts(request,env,url,user,parts);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='transfer-links')
     return legacyTransferLinks(request,env,url,user);

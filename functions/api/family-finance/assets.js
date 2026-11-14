@@ -7,6 +7,7 @@ import {handlePrepaid} from '../prepaid-assets.js'
 import {handlePortfolio} from '../investment-portfolio.js'
 import {getCardBillSnapshots} from '../card-bill-snapshots.js'
 import {verifiedFamilyAssetOwners} from './asset-owner-projection.js'
+import {memberCardLiabilities} from './card-settlement-summary.js'
 
 const reply=(body,status=200)=>Response.json(body,{status,headers:{
  'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
@@ -82,42 +83,16 @@ export async function familyAssetSummary(env,url,user,request){
   }
   const ownership=await verifiedFamilyAssetOwners(env.DB,user.household_id,{cards,holdings,bills:items})
   if(!ownership)return reply({code:'ASSET_IDENTITY_REVIEW_REQUIRED',ledger_changed:false},409)
-  // New member-created cards have stable account IDs, never overloaded
-  // legacy payment-source names. Record their unpaid *purchase obligations*
-  // separately, grouped by closing month. No settlement or cash debit exists
-  // for these receipts yet, so do not invent a payment date or net worth.
+  // Credit-card purchases are expenses once. Bank settlement allocations
+  // change ONLY the remaining liability; bank transfers are not new expenses.
+  // With the settlement flag OFF, preserve gross/unreconciled legacy behavior.
   const settlementEnabled=env.KAKEIBO_CARD_SETTLEMENTS_ENABLED==='true';
-  let memberCreditCharges=[];
-  let memberCreditTotal=0;
+  let memberCreditCharges=[],memberCreditTotal=0;
   if(env.KAKEIBO_CARD_PURCHASES_ENABLED==='true'){
-   const cardSql='SELECT p.account_id,a.label,a.owner_user_id,p.bill_month,'+
-    'COALESCE(SUM(p.amount_jpy),0) amount_jpy,COUNT(*) purchases '+
-    (settlementEnabled?
-      ',COALESCE((SELECT SUM(z.amount_jpy) FROM family_card_settlement_allocations z '+
-      'JOIN family_card_purchase_applied original ON original.homeflow_request_id=z.purchase_request_id '+
-      'JOIN family_card_settlements_applied settlement ON settlement.homeflow_request_id=z.homeflow_request_id '+
-      'WHERE original.household_id=p.household_id AND original.account_id=p.account_id '+
-      'AND original.bill_month=p.bill_month AND settlement.household_id=p.household_id),0) settled_jpy ':
-      ',0 AS settled_jpy ')+
-    'FROM family_card_purchase_applied p '+
-    'JOIN family_financial_accounts a ON a.account_id=p.account_id '+
-    'WHERE p.household_id=? AND a.household_id=? '+
-    'GROUP BY p.account_id,p.bill_month ORDER BY p.bill_month DESC,p.account_id LIMIT 200';
-   const cardRows=(await env.DB.prepare(cardSql)
-    .bind(user.household_id,user.household_id).all()).results||[];
-   memberCreditCharges=cardRows.map(x=>{
-    const gross=number(Number(x.amount_jpy)),settled=number(Number(x.settled_jpy));
-    const remaining=gross!==null&&settled!==null&&settled<=gross?gross-settled:null;
-    return {account_id:x.account_id,account_label:x.label,owner_user_id:x.owner_user_id,
-     closing_month:x.bill_month,gross_charges_jpy:gross,settled_jpy:settled,
-     liability_jpy:remaining,purchases:number(Number(x.purchases)),payment_due_date:null,
-     settlement_status:!settlementEnabled?'not_reconciled':
-      remaining===0?'settled':settled>0?'partially_settled':'unsettled'};
-   });
-   if(memberCreditCharges.some(x=>x.liability_jpy===null||x.purchases===null))
-    return reply({code:'UNSAFE_MEMBER_CARD_LIABILITY',ledger_changed:false},409);
-   memberCreditTotal=addSafe(memberCreditCharges.map(x=>x.liability_jpy));
-   if(memberCreditTotal===null)return reply({code:'CARD_LIABILITY_OVERFLOW',ledger_changed:false},409);
+   const snapshot=await memberCardLiabilities(env.DB,user.household_id,settlementEnabled);
+   if(!snapshot)return reply({code:'UNSAFE_MEMBER_CARD_LIABILITY',ledger_changed:false},409);
+   memberCreditCharges=snapshot.items;
+   memberCreditTotal=snapshot.total;
   }
   // Bills are liabilities/snapshots and must NOT be subtracted from asset
   // total here (they may already be reflected in prepaid funding transfers).

@@ -77,7 +77,7 @@ async function decode(env,row){
     'debit_date','amount_jpy','reference_hash','evidence_kind','allocations'])||
    p.card_account_id!==row.card_account_id||p.bank_account_id!==row.bank_account_id||
    p.card_version!==row.card_version||p.bank_version!==row.bank_version||
-   !date(p.debit_date)||!money(p.amount_jpy)||!hex.test(p.reference_hash)||
+   !date(p.debit_date)||p.debit_date>new Date(Date.now()+9*3600000).toISOString().slice(0,10)||!money(p.amount_jpy)||!hex.test(p.reference_hash)||
    p.evidence_kind!=='owner_confirmed_statement'||
    !Array.isArray(p.allocations)||p.allocations.length<1||p.allocations.length>30||
    !p.allocations.every(a=>exact(a,['purchase_request_id','amount_jpy'])&&

@@ -8,7 +8,9 @@ export async function memberPointsBalances(db,householdId){
   'COALESCE((SELECT SUM(j.delta_units) FROM family_points_journal j '+
   'WHERE j.points_account_id=a.account_id AND j.household_id=a.household_id),0) '+
   '+COALESCE((SELECT SUM(c.target_units) FROM family_points_transfer_credits c '+
-  'WHERE c.target_account_id=a.account_id AND c.household_id=a.household_id),0) AS balance_units,'+
+  'WHERE c.target_account_id=a.account_id AND c.household_id=a.household_id),0) '+
+  '-COALESCE((SELECT SUM(ref.debited_target_units) FROM family_points_transfer_refunds ref '+
+  'WHERE ref.target_account_id=a.account_id AND ref.household_id=a.household_id),0) AS balance_units,'+
   '(SELECT COUNT(*) FROM family_points_legacy_links l '+
   'WHERE l.household_id=a.household_id AND l.points_account_id=a.account_id) AS legacy_reviewed_count '+
   'FROM family_financial_accounts a '+

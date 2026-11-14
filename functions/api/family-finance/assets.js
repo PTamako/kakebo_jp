@@ -82,6 +82,32 @@ export async function familyAssetSummary(env,url,user,request){
   }
   const ownership=await verifiedFamilyAssetOwners(env.DB,user.household_id,{cards,holdings,bills:items})
   if(!ownership)return reply({code:'ASSET_IDENTITY_REVIEW_REQUIRED',ledger_changed:false},409)
+  // New member-created cards have stable account IDs, never overloaded
+  // legacy payment-source names. Record their unpaid *purchase obligations*
+  // separately, grouped by closing month. No settlement or cash debit exists
+  // for these receipts yet, so do not invent a payment date or net worth.
+  let memberCreditCharges=[];
+  let memberCreditTotal=0;
+  if(env.KAKEIBO_CARD_PURCHASES_ENABLED==='true'){
+   const cardRows=(await env.DB.prepare(
+    'SELECT p.account_id,a.label,a.owner_user_id,p.bill_month,'+
+    'COALESCE(SUM(p.amount_jpy),0) amount_jpy,COUNT(*) purchases '+
+    'FROM family_card_purchase_applied p '+
+    'JOIN family_financial_accounts a ON a.account_id=p.account_id '+
+    'WHERE p.household_id=? AND a.household_id=? '+
+    'GROUP BY p.account_id,p.bill_month ORDER BY p.bill_month DESC,p.account_id LIMIT 200')
+    .bind(user.household_id,user.household_id).all()).results||[];
+   memberCreditCharges=cardRows.map(x=>({
+    account_id:x.account_id,account_label:x.label,owner_user_id:x.owner_user_id,
+    closing_month:x.bill_month,liability_jpy:number(Number(x.amount_jpy)),
+    purchases:number(Number(x.purchases)),payment_due_date:null,
+    settlement_status:'not_reconciled'
+   }));
+   if(memberCreditCharges.some(x=>x.liability_jpy===null||x.purchases===null))
+    return reply({code:'UNSAFE_MEMBER_CARD_LIABILITY',ledger_changed:false},409);
+   memberCreditTotal=addSafe(memberCreditCharges.map(x=>x.liability_jpy));
+   if(memberCreditTotal===null)return reply({code:'CARD_LIABILITY_OVERFLOW',ledger_changed:false},409);
+  }
   // Bills are liabilities/snapshots and must NOT be subtracted from asset
   // total here (they may already be reflected in prepaid funding transfers).
   // No bank/cash balance is available in the legacy D1; return a partial
@@ -94,6 +120,9 @@ export async function familyAssetSummary(env,url,user,request){
     missing_valuations:holdings.filter(x=>x.market_value_jpy===null).length,
     count:holdings.length},
    credit_card_bills:ownership.creditCardBills,
+   member_credit_card_charges:{statements:memberCreditCharges,
+    recorded_unsettled_total_jpy:memberCreditTotal,
+    settlement_reconciliation_supported:false},
    ownership_verification:ownership.verification,
    tracked_assets_jpy:knownAssets,
    tracked_assets_complete:allValued||holdings.length===0,

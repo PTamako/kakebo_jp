@@ -8,6 +8,11 @@ const items=ref([]),offset=ref(0),nextOffset=ref(null)
 const error=ref(''),unavailable=ref(false),message=ref('')
 const myAccounts=computed(()=>props.accounts.filter(a=>
  a?.owner_user_id===props.userId&&a.origin==='member_created'&&Number(a.is_archived)===0))
+// For the current gated Stage D executor only a personal CASH account can
+// produce an actual ledger row. Other account types may save drafts but must
+// not be submitted into a permanently non-executable HomeFlow approval.
+const canSubmitForExecution=item=>myAccounts.value.some(a=>
+ a.account_id===item.account_id&&a.account_kind==='cash')
 const accountId=ref(''),kind=ref('expense'),amount=ref(''),merchant=ref(''),
  category=ref(''),date=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,10)),
  note=ref('')
@@ -103,7 +108,9 @@ async function createProposal(){
    result.prepared?.ledger_changed!==false||!id32.test(result.prepared.request_id))
    throw Error('草稿回执未确认，绝不能视为已入账')
   frozenDraft=null;amount.value='';merchant.value='';note.value=''
-  message.value='加密草稿已保存，仍需在下方点击「提交审批」，目前尚未入账。'
+  message.value=canSubmitForExecution({account_id:record.account_id})
+   ?'加密草稿已保存，仍需在下方点击「提交审批」，目前尚未入账。'
+   :'加密草稿已保存；非现金账户暂不支持审批后的执行，请保留草稿等待后续功能。'
  }catch(e){if(rev===revision&&alive&&user===props.userId)failure=e.message}
  finally{
   if(rev===revision&&alive&&user===props.userId){
@@ -117,7 +124,8 @@ async function action(item,kind){
  const ticket=revision,user=props.userId
  if(!alive||!open.value||loading.value||busy.value||
   !verify(item)||item.status!=='prepared_not_submitted'||
-  !['submit','cancel'].includes(kind))return
+  !['submit','cancel'].includes(kind)||
+  (kind==='submit'&&!canSubmitForExecution(item)))return
  const question=kind==='submit'
   ?'确认将本人的加密财务草稿提交 HomeFlow 家庭审批？提交不代表入账，管理员批准后仍需单独执行。'
   :'确认撤回这份尚未提交的草稿？此操作不会修改账本。'
@@ -234,7 +242,8 @@ onUnmounted(()=>{
      <small v-if="item.status==='applied'">已入账记录：{{item.entry_id}}</small>
      <div v-if="item.status==='prepared_not_submitted'" class="hf-actions">
       <button type="button" :disabled="loading||!!busy" @click="action(item,'cancel')">撤回</button>
-      <button type="button" :disabled="loading||!!busy" @click="action(item,'submit')">提交审批</button>
+      <button type="button" :disabled="loading||!!busy||!canSubmitForExecution(item)" @click="action(item,'submit')">提交审批</button>
+      <small v-if="!canSubmitForExecution(item)">目前仅本人现金账户可提交并实际执行；其他账户草稿继续保留。</small>
      </div>
      <div v-else-if="item.status==='submitted_status_unknown'&&item.homeflow_approval_id" class="hf-actions">
       <button type="button" :disabled="loading||!!busy" @click="checkApproval(item)">核实 HomeFlow 审批</button>

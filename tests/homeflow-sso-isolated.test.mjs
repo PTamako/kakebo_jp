@@ -47,6 +47,7 @@ function d1(){
   "INSERT INTO investment_plan_history VALUES('ABC12345','tsumitate','SBI 投資信託',15000,15,1,'2026-11',CURRENT_TIMESTAMP)");
  migration('0026_family_finance_execution.sql');
  migration('0027_family_legacy_entry_link_audit.sql');
+ migration('0028_family_legacy_transfer_ids.sql');
  const wrap=sql=>{
   const statement=(values=[])=>({
     first:async()=>sqlite.prepare(sql).get(...values)||null,
@@ -1503,5 +1504,136 @@ test('legacy stable ID write refuses stale preflight and never silently maps tra
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_entry_links').get().n,0)
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries WHERE type=? AND family_account_id IS NOT NULL').get('transfer').n,0)
   f.DB.batch=realBatch
+ }finally{f.DB.sqlite.close()}
+})
+
+
+test('legacy transfer dual-sided mapping attaches both original-owner IDs once and preserves every historical value',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  const memberCookie=await loginMember(f)
+  const original=await finance(f,'legacy/transfer-links','GET',null,ownerCookie)
+  assert.equal(original.status,503)
+  assert.equal((await original.json()).code,'LEGACY_TRANSFER_LINKS_DISABLED')
+  f.env.APP_ENV='production'
+  f.env.KAKEIBO_LEGACY_TRANSFER_LINKS_ENABLED='true'
+  assert.equal((await finance(f,'legacy/transfer-links','GET',null,memberCookie)).status,403)
+  f.DB.sqlite.prepare("INSERT INTO entries(date,time,type,merchant,amount,category,note,payment_source,"+
+   "transfer_target,transfer_applied,transfer_date,raw) "+
+   "VALUES('2026-11-14','','transfer','カードからチャージ',3200,'資産移動','残す','PayPay Visa','nanaco',0,NULL,'')").run()
+  const before=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  const sources=f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all()
+  const none=(await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json())
+  assert.equal(none.items.length,0,'unadopted legacy card names are not owner-proofed')
+  assert.equal((await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)).status,200)
+  const planResponse=await finance(f,'legacy/transfer-links','GET',null,ownerCookie)
+  assert.equal(planResponse.status,200,await planResponse.clone().text())
+  const plan=await planResponse.json()
+  assert.equal(plan.read_only,true)
+  assert.equal(plan.financial_values_changed,false)
+  assert.equal(plan.requires_explicit_confirmation,true)
+  assert.equal(plan.items.length,1)
+  const intent=plan.items[0]
+  assert.equal(intent.entry_id,3)
+  assert.equal(intent.original_source,'PayPay Visa')
+  assert.equal(intent.original_target,'nanaco')
+  assert.notEqual(intent.source_account_id,intent.target_account_id)
+  assert.equal(intent.transfer_applied,0)
+  assert.match(intent.source_digest,/^[a-f0-9]{64}$/)
+  const cardSameName=await finance(f,'accounts','POST',
+   {label:'nanaco',account_kind:'prepaid'},memberCookie)
+  assert.equal(cardSameName.status,201)
+  const memberId=(await cardSameName.json()).account_id
+  assert.notEqual(memberId,intent.target_account_id,'duplicate member label never implies legacy owner')
+
+  const post=(change={},who=ownerCookie)=>finance(f,'legacy/transfer-links','POST',{
+   entry_id:intent.entry_id,source_account_id:intent.source_account_id,
+   target_account_id:intent.target_account_id,source_digest:intent.source_digest,
+   confirm:true,...change
+  },who)
+  const wrongActor=await post({expected_user_id:member})
+  assert.equal(wrongActor.status,403)
+  assert.equal((await wrongActor.json()).code,'ACTOR_CHANGED')
+  assert.equal((await post({},memberCookie)).status,403)
+  assert.equal((await post({target_account_id:memberId})).status,409)
+  assert.equal((await post({target_account_id:intent.source_account_id})).status,400)
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,0)
+  const linked=await post()
+  assert.equal(linked.status,200,await linked.clone().text())
+  assert.deepEqual(await linked.json(),{
+   ok:true,linked:true,already_linked:false,entry_id:3,
+   source_account_id:intent.source_account_id,
+   target_account_id:intent.target_account_id,financial_values_changed:false
+  })
+  const after=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  const tagged=after.at(-1)
+  assert.equal(tagged.family_account_id,intent.source_account_id)
+  assert.equal(tagged.family_transfer_target_account_id,intent.target_account_id)
+  assert.deepEqual(after.map(x=>({...x,family_account_id:null,
+   family_transfer_target_account_id:null})),
+   before.map(x=>({...x})),
+   'historical entries must not change except both stable-ID reference columns')
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all(),sources)
+  const receipts=f.DB.sqlite.prepare('SELECT * FROM family_finance_legacy_transfer_links').all()
+  assert.equal(receipts.length,1)
+  assert.equal(receipts[0].actor_user_id,owner)
+  assert.equal(receipts[0].source_name,'PayPay Visa')
+  assert.equal(receipts[0].target_name,'nanaco')
+  assert.equal(receipts[0].source_digest,intent.source_digest)
+  const replay=await post()
+  assert.equal(replay.status,200)
+  assert.equal((await replay.json()).already_linked,true)
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,1)
+  assert.equal((await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json()).items.length,0)
+  assert.throws(()=>f.DB.sqlite.prepare(
+   'UPDATE family_finance_legacy_transfer_links SET target_name=? WHERE entry_id=3'
+  ).run('other'),/LEGACY_TRANSFER_AUDIT_IMMUTABLE/)
+  assert.throws(()=>f.DB.sqlite.prepare(
+   'DELETE FROM family_finance_legacy_transfer_links').run(),/LEGACY_TRANSFER_AUDIT_IMMUTABLE/)
+ }finally{f.DB.sqlite.close()}
+})
+test('dual transfer owner mapping rejects stale digest, same-name transfer and mid-flight edit without half links',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  f.env.APP_ENV='production'
+  f.env.KAKEIBO_LEGACY_TRANSFER_LINKS_ENABLED='true'
+  await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)
+  f.DB.sqlite.prepare("INSERT INTO entries(date,time,type,merchant,amount,category,note,payment_source,"+
+   "transfer_target,transfer_applied,transfer_date,raw) "+
+   "VALUES('2026-11-14','','transfer','チャージ',1200,'資産','保留','PayPay Visa','nanaco',1,NULL,'')").run()
+  f.DB.sqlite.prepare("INSERT INTO entries(date,time,type,merchant,amount,category,note,payment_source,"+
+   "transfer_target,transfer_applied,transfer_date,raw) "+
+   "VALUES('2026-11-14','','transfer','自分に送金',12,'資産','確認','nanaco','nanaco',0,NULL,'')").run()
+  const original=(await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json()).items
+  assert.equal(original.length,1,'self-transfers are excluded even if name exists')
+  const item=original[0]
+  const post=v=>finance(f,'legacy/transfer-links','POST',{
+   entry_id:item.entry_id,source_account_id:item.source_account_id,
+   target_account_id:item.target_account_id,source_digest:v||item.source_digest,
+   confirm:true
+  },ownerCookie)
+  f.DB.sqlite.prepare('UPDATE entries SET amount=amount+1 WHERE id=?').run(item.entry_id)
+  const stale=await post()
+  assert.equal(stale.status,409)
+  assert.equal((await stale.json()).code,'LEGACY_TRANSFER_CHANGED_REVIEW_AGAIN')
+  const fresh=(await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json()).items[0]
+  assert.notEqual(fresh.source_digest,item.source_digest)
+  const realBatch=f.DB.batch
+  f.DB.batch=async writes=>{
+   f.DB.sqlite.prepare("UPDATE entries SET transfer_target='原目标已修改' WHERE id=?").run(item.entry_id)
+   return realBatch(writes)
+  }
+  const changed=await post(fresh.source_digest)
+  assert.equal(changed.status,409,await changed.clone().text())
+  assert.equal((await changed.json()).code,'LEGACY_TRANSFER_CHANGED_REVIEW_AGAIN')
+  const after=f.DB.sqlite.prepare('SELECT family_account_id,family_transfer_target_account_id FROM entries WHERE id=?').get(item.entry_id)
+  assert.equal(after.family_account_id,null)
+  assert.equal(after.family_transfer_target_account_id,null)
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,0)
+  f.DB.batch=realBatch
+  assert.equal((await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json()).items.length,0,
+   'unknown target name cannot be guessed into an account')
  }finally{f.DB.sqlite.close()}
 })

@@ -117,7 +117,13 @@ test('switching HomeFlow users while a finance mutation is in flight never reope
 test('personal financial account mutation uses originating HomeFlow user, not stale session cookie',()=>{
  const api=readFileSync(new URL('../functions/api/family-finance/[[path]].js',import.meta.url),'utf8');
  assert.equal((api.match(/data.expected_user_id!==user.user_id/g)||[]).length,2);
- assert.equal((api.match(/code:'ACTOR_CHANGED'/g)||[]).length,2);
+ // Accounts create/update and legacy account adoption all require the
+ // originating HomeFlow actor. Resource-owner adoption has an independent module.
+ assert.equal((api.match(/code:'ACTOR_CHANGED'/g)||[]).length,3);
+ const owners=readFileSync(new URL('../functions/api/family-finance/resource-owners.js',import.meta.url),'utf8');
+ assert.match(owners,/body.expected_user_id!==user.user_id/);
+ assert.match(owners,/code:'ACTOR_CHANGED'/);
+ assert.match(api,/input.expected_user_id!==user.user_id/);
  assert.match(source,/body:JSON.stringify\(\{label,account_kind:newKind.value,expected_user_id:actor\}\)/);
  assert.match(source,/body:JSON.stringify\(\{version:a.version,\.\.\.change,expected_user_id:actor\}\)/);
  assert.match(source,/const revision=epoch,actor=person.value.user_id/);

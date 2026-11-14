@@ -1570,6 +1570,16 @@ test('legacy transfer dual-sided mapping attaches both original-owner IDs once a
   const tagged=after.at(-1)
   assert.equal(tagged.family_account_id,intent.source_account_id)
   assert.equal(tagged.family_transfer_target_account_id,intent.target_account_id)
+  const memberLedger=await finance(f,'shared/entries','GET',null,memberCookie)
+  assert.equal(memberLedger.status,200)
+  const view=(await memberLedger.json()).items.find(x=>x.id===intent.entry_id)
+  assert.equal(view.family_account_id,intent.source_account_id)
+  assert.equal(view.family_transfer_target_account_id,intent.target_account_id)
+  assert.equal(view.payment_source_display,'PayPay Visa')
+  assert.equal(view.transfer_target_display,'nanaco')
+  assert.equal(view.payment_account_owner_user_id,owner)
+  assert.equal(view.transfer_target_account_owner_user_id,owner)
+  assert.equal(view.transfer_target,'nanaco','legacy target text must remain intact')
   assert.deepEqual(after.map(x=>({...x,family_account_id:null,
    family_transfer_target_account_id:null})),
    before.map(x=>({...x})),

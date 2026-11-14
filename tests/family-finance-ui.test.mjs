@@ -187,3 +187,20 @@ test('old payment mapping audit stays owner-only, read-only and does not assume 
  assert.doesNotMatch(audit,/localStorage|sessionStorage|indexedDB|\/api\/entries/)
  assert.doesNotMatch(backend,/INSERT INTO|UPDATE entries|DELETE FROM|\.run\(/i)
 })
+
+
+test('only stable member-created cash account drafts can enter an executable HomeFlow review',()=>{
+ const submit=readFileSync(new URL('../functions/api/family-finance/approval-submit.js',import.meta.url),'utf8');
+ assert.match(submit,/a.account_kind,a.origin/);
+ assert.match(submit,/row.account_kind!=='cash'\|\|row.origin!=='member_created'/);
+ assert.match(submit,/code:'ACCOUNT_TYPE_NOT_EXECUTABLE'/);
+ assert.match(submit,/applied:false,ledger_changed:false/);
+ assert.match(proposals,/const canSubmitForExecution=item=>myAccounts.value.some/);
+ assert.match(proposals,/a.account_id===item.account_id&&a.account_kind==='cash'/);
+ assert.match(proposals,/\(kind==='submit'&&!canSubmitForExecution\(item\)\)/);
+ assert.match(proposals,/:disabled="loading\|\|!!busy\|\|!canSubmitForExecution\(item\)"/);
+ assert.match(proposals,/非现金账户暂不支持审批后的执行/);
+ assert.match(proposals,/其他账户草稿继续保留/);
+ // Neither the PWA nor the new rejection code posts finance entries directly.
+ assert.doesNotMatch(proposals,/\/api\/entries\b|\/api\/internal\/approved-actions/);
+});

@@ -78,10 +78,16 @@ onUnmounted(()=>{alive=false;generation++;open.value=false;data.value=null})
      <p v-for="b in data.member_credit_card_charges.statements"
       :key="b.account_id+':'+b.closing_month">
       <span>{{b.account_label}} · {{b.closing_month}} 截止账期 · {{yen(b.liability_jpy)}}</span>
-      <small>{{b.owner_user_id===props.userId?'本人账户':'家庭成员账户'}} · {{b.purchases}} 笔</small>
+      <small>{{b.owner_user_id===props.userId?'本人账户':'家庭成员账户'}} · {{b.purchases}} 笔
+       <template v-if="data.member_credit_card_charges.settlement_reconciliation_supported">
+        · 已核销 {{yen(b.settled_jpy)}} / 原消费 {{yen(b.gross_charges_jpy)}}
+       </template>
+      </small>
      </p>
      <p v-if="data.member_credit_card_charges.statements.length" class="note">
-      这是已记消费形成的应付义务；还款未录入，付款到期日未核验，不代表银行当前实时欠款。
+      {{data.member_credit_card_charges.settlement_reconciliation_supported?
+       '按已审批的银行流水核对还款减少应付；扣款需人工核实，付款到期日未自动核验，不代表银行实时欠款。':
+       '这是已记消费形成的应付义务；还款尚未纳入本账务口径，付款到期日未核验，不代表银行当前实时欠款。'}}
      </p>
      <strong>信用卡账单（负债快照，不计资产）</strong>
      <p v-for="b in data.credit_card_bills" :key="b.payment_source+':'+b.month">

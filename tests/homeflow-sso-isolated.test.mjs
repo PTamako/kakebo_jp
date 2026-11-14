@@ -1262,3 +1262,40 @@ test('legacy stable-account coverage audits old payment and transfer names witho
    'mapping audit is not an implicit write action');
  }finally{f.DB.sqlite.close()}
 });
+
+
+test('both irreversible legacy owner adoption endpoints reject a stale originating HomeFlow member before D1 writes',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  const count=table=>f.DB.sqlite.prepare('SELECT COUNT(*) n FROM '+table).get().n;
+  const accountsBefore=count('family_financial_accounts');
+  const ownersBefore=count('family_financial_resource_owners');
+  const auditBefore=f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all();
+  // Wrong/absent original PWA actor must be rejected even if the fresh
+  // cookie currently belongs to an authenticated HomeFlow household owner.
+  for(const original of [member,undefined]){
+   const adopt=await finance(f,'legacy/adopt','POST',
+    {confirm:true,expected_user_id:original},ownerCookie);
+   assert.equal(adopt.status,403,await adopt.clone().text());
+   assert.equal((await adopt.json()).code,'ACTOR_CHANGED');
+   const resource=await finance(f,'legacy/resource-owners','POST',{
+    confirm:true,resource_kind:'recurring_plan',
+    expected_user_id:original
+   },ownerCookie);
+   assert.equal(resource.status,403,await resource.clone().text());
+   assert.equal((await resource.json()).code,'ACTOR_CHANGED');
+  }
+  assert.equal(count('family_financial_accounts'),accountsBefore);
+  assert.equal(count('family_financial_resource_owners'),ownersBefore);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM family_finance_events ORDER BY event_id').all(),auditBefore);
+  const normal=await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie);
+  assert.equal(normal.status,200,await normal.clone().text());
+  const resource=await finance(f,'legacy/resource-owners','POST',{
+   confirm:true,resource_kind:'recurring_plan'
+  },ownerCookie);
+  assert.equal(resource.status,200,await resource.clone().text());
+  assert.equal((await finance(f,'legacy/adopt','POST',{confirm:true},memberCookie)).status,403);
+ }finally{f.DB.sqlite.close()}
+});

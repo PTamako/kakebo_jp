@@ -1,6 +1,7 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
+import FamilyFinanceCardPurchases from './FamilyFinanceCardPurchases.vue'
 import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
 import FamilyFinanceLegacyTransferLink from './FamilyFinanceLegacyTransferLink.vue'
@@ -285,6 +286,9 @@ onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange'
      :user-id="person.user_id" :household-id="person.household_id" />
     <FamilyFinanceProposals v-if="person.role==='member'"
      :key="'proposals:'+person.user_id" :user-id="person.user_id" :accounts="accounts" />
+    <FamilyFinanceCardPurchases v-if="person.role==='member'"
+     :key="'card-purchases:'+person.user_id" :user-id="person.user_id"
+     :household-id="person.household_id" :accounts="accounts" />
     <form class="hf-create" @submit.prevent="createAccount">
      <strong>新建本人账户</strong>
      <select v-model="newKind" aria-label="账户类型" :disabled="busy">

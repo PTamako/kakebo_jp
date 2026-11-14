@@ -1909,3 +1909,59 @@ test('legacy device API refuses renaming adopted payment source and rewriting a 
    "SELECT COUNT(*) n FROM payment_sources WHERE name='PayPay Visa'").get().n,1)
  }finally{f.DB.sqlite.close()}
 })
+
+test('historical fixed fee and SBI plan ownership is read-only, paginated and identical for both household members',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f),memberCookie=await loginMember(f)
+  const baseRows=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  const oldPlans=['recurring_plans','investment_plans','investment_plan_history']
+  const before=oldPlans.map(t=>f.DB.sqlite.prepare('SELECT * FROM '+t).all())
+  const read=async(kind,cookie,after='',limit=20)=>{
+   const params=new URLSearchParams({kind,limit:String(limit)})
+   if(after)params.set('after',after)
+   const r=await finance(f,'shared/plan-ownership?'+params,'GET',null,cookie)
+   assert.equal(r.status,200,await r.clone().text())
+   return r.json()
+  }
+  for(const kind of ['recurring_plan','investment_plan','investment_plan_history']){
+   const missing=await read(kind,memberCookie)
+   assert.equal(missing.scope,'household')
+   assert.equal(missing.items[0].identity_status,'unverified')
+   assert.equal(missing.items[0].owner_user_id,null)
+   const adopted=await finance(f,'legacy/resource-owners','POST',{
+    confirm:true,resource_kind:kind
+   },ownerCookie)
+   assert.equal(adopted.status,200,await adopted.clone().text())
+   const a=await read(kind,ownerCookie),b=await read(kind,memberCookie)
+   assert.deepEqual(a,b)
+   assert.equal(a.items[0].owner_user_id,owner)
+   assert.equal(a.items[0].identity_status,'verified_legacy')
+   assert.equal(a.ownership_proof,'immutable_legacy_resource_owner')
+   assert.equal(a.read_only,true)
+   assert.equal(a.ledger_changed,false)
+  }
+  assert.equal((await finance(f,'shared/plan-ownership?kind=unknown','GET',null,memberCookie)).status,400)
+  assert.equal((await finance(f,'shared/plan-ownership?limit=99','GET',null,ownerCookie)).status,400)
+  const inserter=f.DB.sqlite.prepare('INSERT INTO recurring_plans(id,name) VALUES(?,?)')
+  for(let i=0;i<43;i++)inserter.run('plan-'+String(i).padStart(3,'0'),'历史计划 '+i)
+  let cursor='',keys=[]
+  do{
+   const page=await read('recurring_plan',memberCookie,cursor,20)
+   keys.push(...page.items.map(x=>x.legacy_key))
+   cursor=page.next_cursor||''
+   if(!page.next_cursor)break
+  }while(keys.length<100)
+  assert.equal(keys.length,44)
+  assert.equal(new Set(keys).size,44)
+  assert.equal(keys.filter(k=>k.startsWith('plan-')).length,43)
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events WHERE action=?').get('finance_entry_applied').n,0)
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),baseRows)
+  oldPlans.forEach((t,i)=>{
+   if(t!=='recurring_plans')
+    assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM '+t).all(),before[i])
+  })
+  f.state.homeflowActive=false
+  assert.equal((await finance(f,'shared/plan-ownership?kind=investment_plan','GET',null,memberCookie)).status,401)
+ }finally{f.DB.sqlite.close()}
+})

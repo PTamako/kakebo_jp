@@ -5,6 +5,7 @@
 import {onRequest as homeflowIdentity, ssoReady} from '../homeflow-sso/[[path]].js';
 import {financePending} from './pending.js';
 import {familyAssetSummary} from './assets.js';
+import {familyPlanOwnership} from './plan-ownership.js';
 import {familyLegacyResourceOwners} from './resource-owners.js';
 import {auditLegacyFinanceMappings} from './legacy-mapping-audit.js';
 import {legacyEntryLinks} from './legacy-entry-links.js';
@@ -330,6 +331,9 @@ export async function onRequest({request,env,params}){
   if(request.method==='GET'&&parts.length===2&&parts[0]==='shared'&&
      parts[1]==='asset-summary')
    return familyAssetSummary(env,url,user,request);
+  if(request.method==='GET'&&parts.length===2&&parts[0]==='shared'&&
+     parts[1]==='plan-ownership')
+   return familyPlanOwnership(env,url,user);
   if(request.method==='GET'&&parts[0]==='shared'&&parts[1]==='entries')
    return entries(env,user,url);
   if(request.method==='GET'&&parts[0]==='shared'&&parts[1]==='ledger-totals')

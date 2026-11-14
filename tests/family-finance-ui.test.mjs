@@ -204,3 +204,33 @@ test('only stable member-created cash account drafts can enter an executable Hom
  // Neither the PWA nor the new rejection code posts finance entries directly.
  assert.doesNotMatch(proposals,/\/api\/entries\b|\/api\/internal\/approved-actions/);
 });
+
+
+test('verified original owner must explicitly fingerprint-confirm legacy row linkage with production flag still default off',()=>{
+ const ui=readFileSync(new URL('../src/FamilyFinanceLegacyLink.vue',import.meta.url),'utf8')
+ const backend=readFileSync(new URL('../functions/api/family-finance/legacy-entry-links.js',import.meta.url),'utf8')
+ const route=readFileSync(new URL('../functions/api/family-finance/[[path]].js',import.meta.url),'utf8')
+ const migration=readFileSync(new URL('../migrations/0027_family_legacy_entry_link_audit.sql',import.meta.url),'utf8')
+ assert.match(source,/import FamilyFinanceLegacyLink from '.\/FamilyFinanceLegacyLink.vue'/)
+ assert.match(source,/<FamilyFinanceLegacyLink v-if="person.role==='owner'"/)
+ assert.match(source,/:key="'legacy-entry-links:'\+person.user_id"/)
+ assert.match(ui,/requires_explicit_confirmation!==true/)
+ assert.match(ui,/source_digest:item.source_digest,expected_user_id:user,confirm:true/)
+ assert.match(ui,/window.confirm\(/)
+ assert.match(ui,/user!==props.userId/)
+ assert.match(ui,/household!==props.householdId/)
+ assert.match(ui,/financial_values_changed!==false/)
+ assert.match(backend,/KAKEIBO_LEGACY_ENTRY_LINKS_ENABLED==='true'/)
+ assert.match(backend,/APP_ENV==='production'/)
+ assert.match(backend,/if\(body.expected_user_id!==user.user_id\)/)
+ assert.match(backend,/e.type IN \('income','expense'\)/)
+ assert.match(backend,/a.origin='legacy'/)
+ assert.match(backend,/AND family_account_id IS NULL/)
+ assert.match(backend,/INSERT INTO family_finance_legacy_entry_links/)
+ assert.match(backend,/AND EXISTS\(SELECT 1 FROM family_financial_accounts a/)
+ assert.match(backend,/JOIN homeflow_identity_links l/)
+ assert.match(route,/return legacyEntryLinks\(request,env,url,user\)/)
+ assert.match(migration,/LEGACY_ENTRY_LINK_AUDIT_IMMUTABLE/)
+ assert.doesNotMatch(ui,/localStorage|sessionStorage|indexedDB|\/api\/entries/)
+ assert.doesNotMatch(backend,/UPDATE entries SET (?:amount|category|merchant|payment_source)/)
+})

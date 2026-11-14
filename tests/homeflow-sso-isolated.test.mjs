@@ -1445,6 +1445,13 @@ test('legacy expense stable-ID linking is default OFF, owner-fingerprinted and p
   assert.throws(()=>f.DB.sqlite.prepare(
    'DELETE FROM family_finance_legacy_entry_links'
   ).run(),/LEGACY_ENTRY_LINK_AUDIT_IMMUTABLE/)
+  const auditAfter=(await (await finance(f,'legacy/mapping-audit','GET',null,ownerCookie)).json())
+  const sourceAfter=auditAfter.items.find(x=>x.legacy_name==='PayPay Visa')
+  assert.equal(sourceAfter.entry_source_count,0)
+  assert.equal(sourceAfter.linked_entry_count,1)
+  assert.equal(auditAfter.linked_legacy_entry_count,1)
+  assert.equal(auditAfter.remaining_legacy_entry_count,1,
+   'unmatched historical bank income remains unlinked and requires review')
   const emptyAfter=(await (await finance(f,'legacy/entry-links','GET',null,ownerCookie)).json())
   assert.equal(emptyAfter.items.length,0)
   assert.equal((await finance(f,'legacy/entry-links','PUT',{},ownerCookie)).status,405)

@@ -96,7 +96,7 @@ function fixture(){
  const url=new URL('https://kakeibo.example.test/api/family-finance/card-settlements');
  const input={expected_user_id:member,idempotency_key:'card-settlement-20261118-1',
   card_account_id:card,card_version:1,bank_account_id:bank,bank_version:1,
-  debit_date:'2026-11-18',amount_jpy:1200,
+  debit_date:'2026-11-14',amount_jpy:1200,
   bank_reference:'real-bank-transaction-reference-1848',statement_confirmed:true,
   allocations:[{purchase_request_id:purchaseA,amount_jpy:800},
    {purchase_request_id:purchaseB,amount_jpy:400}]};
@@ -158,12 +158,12 @@ test('real SQLite target records one bank transfer and allocates cross-month par
   const applied=await f.send('execute',b);
   assert.equal(applied.status,200,JSON.stringify(applied));
   assert.equal(applied.data.applied,true);assert.equal(applied.data.actor_user_id,owner);
-  assert.equal(applied.data.debit_date,'2026-11-18');
+  assert.equal(applied.data.debit_date,'2026-11-14');
   assert.equal(query(f.sql,"SELECT SUM(amount) v FROM entries WHERE type='expense'").v,1500);
   const transfer=query(f.sql,"SELECT * FROM entries WHERE type='transfer'");
   assert.equal(transfer.amount,1200);assert.equal(transfer.family_account_id,bank);
   assert.equal(transfer.family_transfer_target_account_id,card);
-  assert.equal(transfer.date,'2026-11-18');
+  assert.equal(transfer.date,'2026-11-14');
   assert.equal(query(f.sql,'SELECT SUM(amount_jpy) v FROM family_card_settlement_allocations').v,1200);
   assert.equal(query(f.sql,'SELECT COUNT(*) n FROM family_card_settlement_audit').n,1);
   const receipt=await f.send('receipt',b);

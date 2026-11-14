@@ -146,3 +146,17 @@ test('member can compose a private encrypted proposal only for her own stable ac
  assert.doesNotMatch(proposals,/\/api\/entries\b|\/api\/internal\/approved-actions/);
  assert.doesNotMatch(proposals,/localStorage|sessionStorage|indexedDB/);
 });
+
+
+test('finance proposal create, submit, cancellation and approval proof bind to the original HomeFlow user',()=>{
+ const pending=readFileSync(new URL('../functions/api/family-finance/pending.js',import.meta.url),'utf8')
+ const submitted=readFileSync(new URL('../functions/api/family-finance/approval-submit.js',import.meta.url),'utf8')
+ const proof=readFileSync(new URL('../functions/api/family-finance/approval-proof.js',import.meta.url),'utf8')
+ assert.match(proposals,/idempotency_key:crypto.randomUUID\(\).replace\(\/-\/g,''\),\s*expected_user_id:user/)
+ assert.match(proposals,/body:JSON.stringify\(\{expected_user_id:user\}\)/)
+ assert.match(pending,/if\(data.expected_user_id!==user.user_id\)return json\(\{code:'ACTOR_CHANGED'\},403\)/)
+ assert.match(pending,/if\(body.expected_user_id!==user.user_id\)return json\(\{code:'ACTOR_CHANGED'\},403\)/)
+ assert.match(submitted,/if\(input.expected_user_id!==user.user_id\)/)
+ assert.match(proof,/if\(form.expected_user_id!==user.user_id\)/)
+ assert.doesNotMatch(proposals,/localStorage|sessionStorage|indexedDB|\/api\/entries/)
+})

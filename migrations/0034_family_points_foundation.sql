@@ -43,7 +43,7 @@ CREATE TRIGGER IF NOT EXISTS trg_family_points_intent_identity_immutable
  idempotency_hash,created_at,expires_at ON family_points_intents
  BEGIN SELECT RAISE(ABORT,'POINTS_INTENT_IMMUTABLE'); END;
 CREATE TRIGGER IF NOT EXISTS trg_family_points_intent_status
- BEFORE UPDATE ON family_points_intents
+ BEFORE UPDATE OF status ON family_points_intents
  WHEN NOT(OLD.status='prepared' AND NEW.status IN ('submitted','cancelled'))
  BEGIN SELECT RAISE(ABORT,'POINTS_INTENT_STATE_IMMUTABLE'); END;
 CREATE TRIGGER IF NOT EXISTS trg_family_points_intent_delete

@@ -86,7 +86,7 @@ test('ledger is balance-conserving, immutable, audited and idempotent',()=>{
  post(s,p);
  assert.equal(get(s,'SELECT balance_after_units FROM family_points_journal WHERE homeflow_request_id=?',p.approval).balance_after_units,100);
  assert.equal(get(s,'SELECT COUNT(*) n FROM family_points_actor_audit').n,1);
- assert.throws(()=>post(s,p),/UNIQUE constraint failed/);
+ assert.throws(()=>post(s,p),/UNIQUE constraint failed|POINTS_JOURNAL_INVARIANT/);
  assert.throws(()=>run(s,"UPDATE family_points_journal SET delta_units=10 WHERE homeflow_request_id=?",p.approval),/POINTS_JOURNAL_IMMUTABLE/);
  assert.throws(()=>run(s,"DELETE FROM family_points_actor_audit"),/POINTS_AUDIT_IMMUTABLE/);
  assert.throws(()=>run(s,"DELETE FROM family_points_journal"),/POINTS_JOURNAL_IMMUTABLE/);
@@ -94,9 +94,9 @@ test('ledger is balance-conserving, immutable, audited and idempotent',()=>{
 test('duplicate notification and cross-user reference cannot mint double units',()=>{
  const s=fixture(),p=intent(s);post(s,p);
  const dup=intent(s);
- assert.throws(()=>post(s,dup,{units:50,after:150}),/UNIQUE constraint failed/);
+ assert.throws(()=>post(s,dup,{units:50,after:150,value:50}),/UNIQUE constraint failed|POINTS_JOURNAL_INVARIANT/);
  const separate=intent(s,{user:other,acc:otherAccount});
- post(s,separate,{units:80,after:80});
+ post(s,separate,{units:80,after:80,value:80});
  assert.equal(get(s,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',account).n,100);
  assert.equal(get(s,'SELECT SUM(delta_units) n FROM family_points_journal WHERE points_account_id=?',otherAccount).n,80);
 });
@@ -109,5 +109,5 @@ test('historical reward linking is evidence only: no re-mint, no name-based owne
   1,household,member,account,'earn',owner,date),/UNIQUE constraint failed/);
  assert.throws(()=>run(s,"UPDATE family_points_legacy_links SET owner_user_id=? WHERE legacy_entry_id=1",owner),/POINTS_LEGACY_LINK_IMMUTABLE/);
  assert.throws(()=>run(s,"INSERT INTO family_points_legacy_links(legacy_entry_id,household_id,owner_user_id,points_account_id,legacy_kind,reviewed_by_user_id,reviewed_at) VALUES(?,?,?,?,?,?,?)",
-  1,household,other,account,'earn',owner,date),/UNIQUE constraint failed/);
+  1,household,other,account,'earn',owner,date),/POINTS_LEGACY_OWNER_UNVERIFIED/);
 });

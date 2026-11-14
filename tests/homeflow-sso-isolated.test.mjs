@@ -660,7 +660,7 @@ test('signed HomeFlow decision proof can be checked for an encrypted member prop
   const ownerCookie=await loginOwner(f);
   const memberCookie=await loginMember(f);
   const created=await (await finance(f,'accounts','POST',{
-   label:'我的 PayPay Visa',account_kind:'credit_card'
+   label:'我的現金',account_kind:'cash'
   },memberCookie)).json();
   const preparedResponse=await finance(f,'proposals','POST',{
    idempotency_key:'finance-homeflow-proof-test-0001',account_id:created.account_id,
@@ -789,7 +789,7 @@ test('lost HomeFlow acknowledgement retries the same pending approval without do
  try{
   const memberCookie=await loginMemberAfterOwner(f);
   const accountId=(await (await finance(f,'accounts','POST',{
-   label:'家族支出用の私有カード',account_kind:'credit_card'
+   label:'家族支出用の本人現金',account_kind:'cash'
   },memberCookie)).json()).account_id;
   const proposal=(await (await finance(f,'proposals','POST',{
    idempotency_key:'retrying-remote-approval-00001',account_id:accountId,
@@ -1297,5 +1297,55 @@ test('both irreversible legacy owner adoption endpoints reject a stale originati
   },ownerCookie);
   assert.equal(resource.status,200,await resource.clone().text());
   assert.equal((await finance(f,'legacy/adopt','POST',{confirm:true},memberCookie)).status,403);
+ }finally{f.DB.sqlite.close()}
+});
+
+
+test('unsupported card and prepaid intents stay encrypted drafts and never enter HomeFlow approval queue',async()=>{
+ const f=await setup();
+ try{
+  const memberCookie=await loginMemberAfterOwner(f);
+  const oldLedger=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all();
+  const originalFetch=f.env.HOMEFLOW_IDENTITY_SERVICE.fetch;
+  let approvalCalls=0;
+  f.env.HOMEFLOW_IDENTITY_SERVICE.fetch=async request=>{
+   if(new URL(request.url).pathname==='/api/internal/approvals/submit'){
+    approvalCalls++;
+    throw Error('noncash must never ask HomeFlow to review non-executable action');
+   }
+   return originalFetch(request);
+  };
+  f.env.APP_ENV='production';
+  f.env.KAKEIBO_APPROVAL_SUBMISSION_ENABLED='true';
+  f.env.KAKEIBO_APPROVAL_VERIFICATION_SECRET='c'.repeat(64);
+  for(const [index,kind] of ['credit_card','prepaid','securities'].entries()){
+   const created=await finance(f,'accounts','POST',{
+    label:'未开放账户 '+kind,account_kind:kind
+   },memberCookie);
+   assert.equal(created.status,201,await created.clone().text());
+   const accountId=(await created.json()).account_id;
+   const prepared=await finance(f,'proposals','POST',{
+    idempotency_key:'noncash-unexecutable-proposal-'+index,
+    account_id:accountId,type:'expense',amount_jpy:1500,
+    date:'2026-11-14',merchant:'テスト',category:'家计'
+   },memberCookie);
+   assert.equal(prepared.status,201,await prepared.clone().text());
+   const intent=(await prepared.json()).prepared;
+   const attempted=await finance(f,'proposals/'+intent.request_id+'/submit',
+    'POST',{},memberCookie);
+   assert.equal(attempted.status,409,await attempted.clone().text());
+   const denied=await attempted.json();
+   assert.equal(denied.code,'ACCOUNT_TYPE_NOT_EXECUTABLE');
+   assert.equal(denied.applied,false);
+   assert.equal(denied.ledger_changed,false);
+   const row=f.DB.sqlite.prepare(
+    'SELECT state,homeflow_approval_id FROM family_finance_pending_actions WHERE request_id=?'
+   ).get(intent.request_id);
+   assert.equal(row.state,'prepared');
+   assert.equal(row.homeflow_approval_id,null);
+  }
+  assert.equal(approvalCalls,0);
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),oldLedger);
+  assert.equal(f.DB.sqlite.prepare("SELECT COUNT(*) n FROM family_finance_events WHERE action='finance_entry_submitted'").get().n,0);
  }finally{f.DB.sqlite.close()}
 });

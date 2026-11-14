@@ -92,17 +92,36 @@ async function reversibleOriginal(db,user,x){
  const old=await db.prepare('SELECT old.operation,old.delta_units,old.yen_value,'+
   'old.yen_per_unit_numerator AS numerator,old.yen_per_unit_denominator AS denominator,'+
   'old.effective_date,old.points_account_id,old.linked_entry_id,old.target_account_id,'+
-  'credit.target_units,credit.target_version FROM family_points_journal old '+
-  'LEFT JOIN family_points_transfer_credits credit ON credit.homeflow_request_id=old.homeflow_request_id ' +
+  'credit.target_units,credit.target_version,prepaid.amount_jpy AS prepaid_refund_amount,'+
+  'prepaid.prepaid_version FROM family_points_journal old '+
+  'LEFT JOIN family_points_transfer_credits credit ON credit.homeflow_request_id=old.homeflow_request_id '+
+  'LEFT JOIN family_points_prepaid_credits prepaid ON prepaid.homeflow_request_id=old.homeflow_request_id ' +
   'WHERE old.homeflow_request_id=? AND old.household_id=? AND old.requester_user_id=? '+
-  "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire','transfer_out','exchange_out') "+
-  'AND (old.target_account_id IS NULL OR credit.target_account_id=old.target_account_id) '+
+  "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire','transfer_out','exchange_out','transfer_prepaid') "+
+  'AND (old.target_account_id IS NULL OR credit.target_account_id=old.target_account_id '+
+  'OR prepaid.prepaid_account_id=old.target_account_id) '+
   'AND NOT EXISTS('+
    'SELECT 1 FROM family_points_journal previous WHERE previous.reversed_request_id=old.homeflow_request_id)')
   .bind(originalId,user.household_id,user.user_id,x.points_account_id).first();
  if(!old||x.effective_date<old.effective_date||
   x.units!==Math.abs(old.delta_units)||x.yen_value!==old.yen_value||
   x.rate_numerator!==old.numerator||x.rate_denominator!==old.denominator)return false;
+ if(old.operation==='transfer_prepaid'){
+  if(!id.test(old.target_account_id)||!Number.isSafeInteger(old.prepaid_refund_amount)||
+   old.prepaid_refund_amount<1||!Number.isSafeInteger(old.prepaid_version))return false;
+  const target=await db.prepare('SELECT account_id FROM family_financial_accounts '+
+   "WHERE account_id=? AND household_id=? AND owner_user_id=? AND account_kind='prepaid' "+
+   "AND origin='member_created' AND opening_balance=0 AND is_archived=0 AND version=?")
+   .bind(old.target_account_id,user.household_id,user.user_id,old.prepaid_version).first();
+  if(!target)return false;
+  const balance=await db.prepare('SELECT COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal '+
+   'WHERE prepaid_account_id=?),0)+COALESCE((SELECT SUM(amount_jpy) '+
+   'FROM family_points_prepaid_credits WHERE prepaid_account_id=?),0)'+
+   '-COALESCE((SELECT SUM(debited_prepaid_jpy) FROM family_points_prepaid_refunds '+
+   'WHERE prepaid_account_id=?),0) AS jpy')
+   .bind(old.target_account_id,old.target_account_id,old.target_account_id).first();
+  return Number.isSafeInteger(balance?.jpy)&&balance.jpy>=old.prepaid_refund_amount;
+ }
  if(!['transfer_out','exchange_out'].includes(old.operation))return true;
  if(!id.test(old.target_account_id)||!Number.isSafeInteger(old.target_units)||
   old.target_units<1||!Number.isSafeInteger(old.target_version))return false;
@@ -274,7 +293,7 @@ async function submit(req,e,url,user,requestId){
  if(p.operation==='reversal'){
   const old=await e.DB.prepare('SELECT homeflow_request_id FROM family_points_journal '+
    'WHERE homeflow_request_id=? AND points_account_id=? AND household_id=? '+
-   'AND requester_user_id=? AND operation IN (\'earn_campaign\',\'earn_purchase\',\'expire\',\'transfer_out\',\'exchange_out\') '+
+   'AND requester_user_id=? AND operation IN (\'earn_campaign\',\'earn_purchase\',\'expire\',\'transfer_out\',\'exchange_out\',\'transfer_prepaid\') '+
    'AND NOT EXISTS(SELECT 1 FROM family_points_journal r '+
     'WHERE r.reversed_request_id=family_points_journal.homeflow_request_id)')
    .bind(p.original_request_id,p.points_account_id,user.household_id,user.user_id).first();

@@ -469,7 +469,7 @@ test('owner-approved immutable reversal restores an expired credit and cancels a
  assert.equal(duplicate.status,409);
  assert.equal(duplicate.data.code,'POINTS_REVERSAL_ORIGINAL_CHANGED');
 });
-test('reversal blocks changed amount, cross-member source, linked counterpart and spent award overdraft',async()=>{
+test('reversal blocks changed amount, cross-member source and spent award overdraft while enabling full transfer refund',async()=>{
  const f=fixture();
  const earned=await f.prepare('earn_campaign','award-funding',{units:100,yen_value:100});
  const earnApproval=await f.submit(earned);
@@ -484,9 +484,10 @@ test('reversal blocks changed amount, cross-member source, linked counterpart an
   {units:60,yen_value:60,target_units:60});
  const moveApproval=await f.submit(exchanged);
  assert.equal((await f.execute(moveApproval)).status,200);
- const blocked=await f.call(['points-actions'],f.action('reversal','unsafe-original',
+ const transferRefund=await f.call(['points-actions'],f.action('reversal','refundable-transfer',
   {units:60,yen_value:60,original_request_id:moveApproval}));
- assert.equal(blocked.status,409);
+ assert.equal(transferRefund.status,201);
+ assert.equal(transferRefund.data.prepared.operation,'reversal');
  const proposal=await f.prepare('reversal','award-spent',
   {units:100,yen_value:100,original_request_id:earnApproval});
  const approval=await f.submit(proposal);

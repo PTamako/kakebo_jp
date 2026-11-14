@@ -54,14 +54,14 @@ function prepare(s,requestId,proposalId){
   proposalId,household,member,card,1,bank,1,'f'.repeat(64),
   'encrypted','iv',proposalId.padEnd(64,'a'),requestId,now-2000,now+86400000,now);
 }
-function debit(s,requestId,id,ref,amount,date='2026-11-18'){
+function debit(s,requestId,id,ref,amount,date='2026-11-14'){
  stmt(s,"INSERT INTO family_card_bank_debit_evidence(evidence_id,household_id,bank_account_id,bank_version,reference_hash,debit_date,amount_jpy,evidence_kind,recorded_at) VALUES(?,?,?,?,?,?,?,'owner_confirmed_statement',?)",
   id,household,bank,1,ref, date,amount,now);
  stmt(s,"INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,transfer_target,transfer_applied,transfer_date,client_request_id,payment_source,family_account_id,family_transfer_target_account_id) VALUES(?,'',?,'投資・資産移動','カード引落','','','transfer',?,1,?,?,?,?,?)",
   date,amount,'cc:'+card,date,'hfcardsettle:'+requestId,'bank:'+bank,bank,card);
  return one(s,'SELECT id FROM entries WHERE client_request_id=?','hfcardsettle:'+requestId).id;
 }
-function apply(s,requestId,proposalId,evidenceId,entry,amount,date='2026-11-18'){
+function apply(s,requestId,proposalId,evidenceId,entry,amount,date='2026-11-14'){
  stmt(s,"INSERT INTO family_card_settlements_applied(homeflow_request_id,proposal_id,household_id,requester_user_id,approver_user_id,actor_user_id,card_account_id,card_version,bank_account_id,bank_version,payload_sha256,evidence_id,transfer_entry_id,amount_jpy,debit_date,applied_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
   requestId,proposalId,household,member,owner,owner,card,1,bank,1,
   'f'.repeat(64),evidenceId,entry,amount,date,now);
@@ -114,7 +114,7 @@ test('overpay/duplicate source evidence/duplicate settlement ID fail closed',()=
   audit(s,settlementA);
   assert.throws(()=>alloc(s,settlementA,purchaseB,1),/UNIQUE constraint failed/);
   assert.throws(()=>stmt(s,"INSERT INTO family_card_bank_debit_evidence(evidence_id,household_id,bank_account_id,bank_version,reference_hash,debit_date,amount_jpy,evidence_kind,recorded_at) VALUES(?,?,?,?,?,?,?,'statement_import',?)",
-   '3'.repeat(32),household,bank,1,'2'.repeat(64),'2026-11-18',200,now),/UNIQUE constraint failed/);
+   '3'.repeat(32),household,bank,1,'2'.repeat(64),'2026-11-14',200,now),/UNIQUE constraint failed/);
   prepare(s,settlementB,'9'.repeat(32));
   const second=debit(s,settlementB,'4'.repeat(32),'5'.repeat(64),400);
   apply(s,settlementB,'9'.repeat(32),'4'.repeat(32),second,400);

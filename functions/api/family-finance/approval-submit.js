@@ -37,7 +37,8 @@ export async function submitPreparedApproval(request,env,url,user,id){
  }catch{return json({code:'INVALID_SUBMISSION_INPUT'},400)}
  const db=env.DB
  const row=await db.prepare('SELECT p.request_id,p.household_id,p.requester_user_id,'+
-  'p.account_id,p.payload_sha256,p.state,p.expires_at,p.homeflow_approval_id '+
+  'p.account_id,p.payload_sha256,p.state,p.expires_at,p.homeflow_approval_id,'+
+  'a.account_kind,a.origin '+
   'FROM family_finance_pending_actions p '+
   'JOIN family_financial_accounts a ON a.account_id=p.account_id '+
   'WHERE p.request_id=? AND p.household_id=? AND p.requester_user_id=? '+
@@ -50,6 +51,12 @@ export async function submitPreparedApproval(request,env,url,user,id){
    applied:false,ledger_changed:false})
  if(row.state!=='prepared'||Number(row.expires_at)<=Date.now())
   return json({code:'PROPOSAL_NOT_SUBMITTABLE'},409)
+ // HomeFlow currently has a signed executor ONLY for member-created cash
+ // accounts. Do not solicit an approval that the owner UI would offer to
+ // execute but Kakeibo will always reject as unsupported.
+ if(row.account_kind!=='cash'||row.origin!=='member_created')
+  return json({code:'ACCOUNT_TYPE_NOT_EXECUTABLE',
+   applied:false,ledger_changed:false},409)
  const envelope={household_id:row.household_id,
   requester_user_id:row.requester_user_id,resource_id:row.request_id,
   payload_sha256:row.payload_sha256}

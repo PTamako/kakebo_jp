@@ -29,6 +29,7 @@ async function load(){
   if(!response.ok||output.ok!==true||output.scope!=='household'||
    output.household_id!==household||output.ledger_changed!==false||
    !Array.isArray(output.prepaid?.cards)||
+   !Array.isArray(output.member_prepaid?.accounts)||
    !Array.isArray(output.securities?.holdings)||
    !Array.isArray(output.credit_card_bills)||
    !Array.isArray(output.member_credit_card_charges?.statements)||
@@ -70,6 +71,14 @@ onUnmounted(()=>{alive=false;generation++;open.value=false;data.value=null})
      <p v-for="a in data.prepaid.cards" :key="a.name">
       <span>{{a.name}} · {{yen(a.balance_jpy)}}</span><small>{{owner(a)}}</small>
      </p>
+     <template v-if="data.member_prepaid.enabled">
+      <strong>家庭成员新建储值账户 · 合计 {{yen(data.member_prepaid.total_jpy)}}</strong>
+      <p v-for="a in data.member_prepaid.accounts" :key="a.account_id">
+       <span>{{a.account_label}} · {{yen(a.balance_jpy)}}</span>
+       <small>{{a.owner_user_id===props.userId?'本人账户':'家庭成员账户'}} · 稳定账户 ID</small>
+      </p>
+      <p v-if="!data.member_prepaid.accounts.length" class="note">尚无新建储值卡余额</p>
+     </template>
      <strong>SBI 持仓 · 已知市值 {{yen(data.securities.total_market_value_jpy)}}</strong>
      <p v-for="h in data.securities.holdings" :key="h.fund_code+':'+h.account_type">
       <span>{{h.fund_name}} · {{yen(h.market_value_jpy)}}</span><small>{{owner(h)}}</small>

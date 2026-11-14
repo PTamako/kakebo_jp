@@ -37,8 +37,11 @@ export async function verifyPreparedApproval(request,env,url,user,id){
   if(raw.length>200)throw Error('bad request');
   form=JSON.parse(raw);
  }catch{return respond({code:'INVALID_APPROVAL_ID'},400)}
- if(!form||typeof form!=='object'||Array.isArray(form)||
-  Object.keys(form).length!==1||!uuid.test(form.homeflow_request_id))
+ if(!form||typeof form!=='object'||Array.isArray(form))
+  return respond({code:'INVALID_APPROVAL_ID'},400)
+ if(form.expected_user_id!==user.user_id)
+  return respond({code:'ACTOR_CHANGED'},403)
+ if(Object.keys(form).length!==2||!uuid.test(form.homeflow_request_id))
   return respond({code:'INVALID_APPROVAL_ID'},400);
  const row=await env.DB.prepare(
   "SELECT p.request_id,p.household_id,p.requester_user_id,p.account_id,"+

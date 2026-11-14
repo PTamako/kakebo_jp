@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
+import {memberCardLiabilities} from '../functions/api/family-finance/card-settlement-summary.js';
 
 // Draft P0-4 settlement *accounting* regression. No real bank API, OAuth,
 // HomeFlow Service Binding, or production Cloudflare D1 is called.
@@ -143,4 +144,60 @@ test('no invented bank date, wrong source bank, or revoked account version can c
    assert.equal(one(s,'SELECT COUNT(*) n FROM family_card_settlements_applied').n,0);
   }finally{s.close()}
  }
+});
+
+function postPointsCardOffset(s,purchaseId,amount){
+ const points='e'.repeat(32);
+ stmt(s,"INSERT INTO family_financial_accounts(account_id,household_id,owner_user_id,label,account_kind,origin,created_by_user_id,updated_by_user_id) VALUES(?,?,?,?,?,'member_created',?,?)",
+  points,household,member,'Member points','points',member,member);
+ const write=(id,approval,operation,delta,balance,target,ref)=>{
+  const digest=ref.repeat(64);
+  stmt(s,'INSERT INTO family_points_intents '+
+   '(request_id,household_id,requester_user_id,points_account_id,expected_version,operation,'+
+   'payload_sha256,payload_cipher,payload_iv,idempotency_hash,status,homeflow_approval_id,'+
+   'created_at,expires_at,submitted_at,target_account_id,target_version,target_purchase_request_id) '+
+   "VALUES(?,?,?,?,?,?,?,?,?,?,'submitted',?,?,?,?,?,?,?)",
+   id,household,member,points,1,operation,digest,'cipher','iv',digest,
+   approval,now-2000,now+86400000,now-1000,target,target?1:null,target?purchaseId:null);
+  stmt(s,'INSERT INTO family_points_journal '+
+   '(homeflow_request_id,proposal_id,household_id,requester_user_id,approver_user_id,'+
+   'actor_user_id,points_account_id,account_version,operation,delta_units,balance_after_units,'+
+   'yen_value,yen_per_unit_numerator,yen_per_unit_denominator,target_account_id,linked_entry_id,'+
+   'legacy_entry_id,source_reference_hash,reversed_request_id,payload_sha256,effective_date,applied_at) '+
+   'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+   approval,id,household,member,owner,owner,points,1,operation,delta,balance,
+   amount,1,1,target,null,null,digest,null,digest,'2026-11-14',now);
+ };
+ write('8'.repeat(32),'55555555-5555-4555-8555-555555555558','earn_campaign',amount,amount,null,'8');
+ write('9'.repeat(32),'55555555-5555-4555-8555-555555555559','offset_card',-amount,0,card,'9');
+}
+test('points offsets and bank allocations share one immutable payable budget, without a second expense',async()=>{
+ const s=schema();try{
+  seed(s);
+  prepare(s,settlementA,'e'.repeat(32));
+  const cash=debit(s,settlementA,'1'.repeat(32),'2'.repeat(64),500);
+  apply(s,settlementA,'e'.repeat(32),'1'.repeat(32),cash,500);
+  alloc(s,settlementA,purchaseA,500);
+  audit(s,settlementA);
+  postPointsCardOffset(s,purchaseA,350);
+  assert.equal(one(s,'SELECT SUM(amount_jpy) n FROM family_points_card_offsets').n,350);
+  assert.equal(one(s,'SELECT remaining_after_jpy n FROM family_points_card_offsets').n,150);
+  assert.equal(one(s,'SELECT SUM(amount_jpy) n FROM family_card_settlement_allocations').n,500);
+  assert.equal(one(s,"SELECT SUM(amount) n FROM entries WHERE type='expense'").n,1500);
+  assert.equal(one(s,"SELECT COUNT(*) n FROM entries WHERE type='income'").n,0);
+  const db={prepare(q){return{bind(...args){return{all:async()=>({results:s.prepare(q).all(...args)})}}}}};
+  const result=await memberCardLiabilities(db,household,true);
+  assert.equal(result.total,650);
+  const bill=result.items.find(x=>x.closing_month==='2026-12');
+  assert.equal(bill.liability_jpy,150);
+  assert.equal(bill.settled_jpy,500);
+  assert.equal(bill.points_offset_jpy,350);
+  prepare(s,settlementB,'9'.repeat(32));
+  const next=debit(s,settlementB,'4'.repeat(32),'5'.repeat(64),200);
+  apply(s,settlementB,'9'.repeat(32),'4'.repeat(32),next,200);
+  assert.throws(()=>alloc(s,settlementB,purchaseA,200),/CARD_SETTLEMENT_OVERPAY_OR_WRONG_ACCOUNT/);
+  assert.equal(one(s,'SELECT SUM(amount_jpy) n FROM family_points_card_offsets').n,350);
+  assert.equal(one(s,'SELECT SUM(amount_jpy) n FROM family_card_settlement_allocations').n,500);
+  assert.throws(()=>stmt(s,'DELETE FROM family_points_card_offsets'),/IMMUTABLE/);
+ }finally{s.close()}
 });

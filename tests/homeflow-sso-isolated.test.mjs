@@ -1698,3 +1698,99 @@ test('transfer mapping audit never counts a half-linked or unjournaled dual-ID t
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,0)
  }finally{f.DB.sqlite.close()}
 })
+
+
+test('legacy single-entry stable identity remains correct across edits, claimed-card rename and restore',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  assert.equal((await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)).status,200)
+  f.env.APP_ENV='production'
+  f.env.KAKEIBO_LEGACY_ENTRY_LINKS_ENABLED='true'
+  const preview=(await (await finance(f,'legacy/entry-links','GET',null,ownerCookie)).json()).items[0]
+  const linked=await finance(f,'legacy/entry-links','POST',{
+   entry_id:preview.entry_id,account_id:preview.account_id,
+   source_digest:preview.source_digest,confirm:true
+  },ownerCookie)
+  assert.equal(linked.status,200,await linked.clone().text())
+  const db=f.DB.sqlite
+  const before=db.prepare('SELECT * FROM entries WHERE id=1').get()
+  assert.doesNotThrow(()=>db.prepare(
+   "UPDATE entries SET amount=amount+50,note='updated note' WHERE id=1").run())
+  assert.equal(db.prepare('SELECT amount FROM entries WHERE id=1').get().amount,before.amount+50)
+  for(const stmt of [
+   "UPDATE entries SET payment_source='nanaco' WHERE id=1",
+   "UPDATE entries SET type='income' WHERE id=1",
+   "UPDATE entries SET family_account_id=NULL WHERE id=1"
+  ])assert.throws(()=>db.prepare(stmt).run(),/LEGACY_ENTRY_IDENTITY_LOCKED/)
+  assert.throws(()=>db.prepare(
+   "UPDATE payment_sources SET name='New Visa' WHERE name='PayPay Visa'").run(),
+   /LEGACY_SOURCE_NAME_LOCKED/)
+  assert.throws(()=>db.prepare("DELETE FROM payment_sources WHERE name='PayPay Visa'").run(),
+   /LEGACY_SOURCE_NAME_LOCKED/)
+  const state=db.prepare('SELECT * FROM entries WHERE id=1').get()
+  assert.equal(state.payment_source,'PayPay Visa')
+  assert.equal(state.family_account_id,preview.account_id)
+  assert.doesNotThrow(()=>db.prepare('DELETE FROM entries WHERE id=1').run(),
+   'the original trash path remains available rather than being blocked by the audit')
+  assert.throws(()=>db.prepare('INSERT INTO entries(id,date,time,type,merchant,amount,category,note,'+
+   'payment_source,family_account_id) VALUES(1,?,?,?,?,?,?,?,?,?)')
+   .run(state.date,state.time,state.type,state.merchant,state.amount,state.category,
+    state.note,'nanaco',preview.account_id),/LEGACY_ENTRY_RESTORE_IDENTITY_MISMATCH/)
+  assert.doesNotThrow(()=>db.prepare('INSERT INTO entries(id,date,time,type,merchant,amount,category,note,'+
+   'payment_source,family_account_id) VALUES(1,?,?,?,?,?,?,?,?,?)')
+   .run(state.date,state.time,state.type,state.merchant,state.amount,state.category,
+    state.note,'PayPay Visa',preview.account_id))
+  assert.equal(db.prepare('SELECT family_account_id FROM entries WHERE id=1').get().family_account_id,
+   preview.account_id)
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM family_finance_legacy_entry_links').get().n,1)
+ }finally{f.DB.sqlite.close()}
+})
+
+test('audited legacy transfer identity blocks edited source/target/ID while preserving amount/date edits',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  assert.equal((await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)).status,200)
+  const db=f.DB.sqlite
+  db.prepare("INSERT INTO entries(date,time,type,merchant,amount,category,note,payment_source,"+
+   "transfer_target,transfer_applied,transfer_date,raw) "+
+   "VALUES('2026-11-14','','transfer','交通チャージ',1200,'資産','old','PayPay Visa','nanaco',0,NULL,'')").run()
+  f.env.APP_ENV='production'
+  f.env.KAKEIBO_LEGACY_TRANSFER_LINKS_ENABLED='true'
+  const preview=(await (await finance(f,'legacy/transfer-links','GET',null,ownerCookie)).json()).items[0]
+  assert.ok(preview)
+  const linked=await finance(f,'legacy/transfer-links','POST',{
+   entry_id:preview.entry_id,source_account_id:preview.source_account_id,
+   target_account_id:preview.target_account_id,
+   source_digest:preview.source_digest,confirm:true
+  },ownerCookie)
+  assert.equal(linked.status,200,await linked.clone().text())
+  const id=preview.entry_id
+  assert.doesNotThrow(()=>db.prepare(
+   "UPDATE entries SET amount=amount+20,note='corrected',transfer_applied=1 WHERE id=?").run(id))
+  for(const [column,wrong] of [
+   ['payment_source','nanaco'],['transfer_target','PayPay Visa'],['type','expense'],
+   ['family_account_id',null],['family_transfer_target_account_id',null]
+  ]){
+   assert.throws(()=>db.prepare('UPDATE entries SET '+column+'=? WHERE id=?').run(wrong,id),
+    /LEGACY_TRANSFER_IDENTITY_LOCKED/)
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,1)
+  const state=db.prepare('SELECT * FROM entries WHERE id=?').get(id)
+  assert.equal(state.payment_source,'PayPay Visa')
+  assert.equal(state.transfer_target,'nanaco')
+  assert.equal(state.family_account_id,preview.source_account_id)
+  assert.equal(state.family_transfer_target_account_id,preview.target_account_id)
+  assert.doesNotThrow(()=>db.prepare('DELETE FROM entries WHERE id=?').run(id))
+  assert.throws(()=>db.prepare('INSERT INTO entries(id,type,payment_source,transfer_target) VALUES(?,?,?,?)')
+   .run(id,'transfer','nanaco','PayPay Visa'),/LEGACY_TRANSFER_RESTORE_IDENTITY_MISMATCH/)
+  assert.doesNotThrow(()=>db.prepare('INSERT INTO entries(id,date,time,type,merchant,amount,category,note,'+
+   'payment_source,transfer_target,transfer_applied,transfer_date,raw,family_account_id,'+
+   'family_transfer_target_account_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+   .run(id,state.date,state.time,state.type,state.merchant,state.amount,state.category,
+    state.note,state.payment_source,state.transfer_target,state.transfer_applied,state.transfer_date,
+    state.raw,state.family_account_id,state.family_transfer_target_account_id))
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM family_finance_legacy_transfer_links').get().n,1)
+ }finally{f.DB.sqlite.close()}
+})

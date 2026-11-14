@@ -9,7 +9,7 @@ if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const hh='primary',owner='11111111-1111-4111-8111-111111111111',
  member='22222222-2222-4222-8222-222222222222',
  other='33333333-3333-4333-8333-333333333333',
- points='a'.repeat(32),memberCard='b'.repeat(32),otherCard='c'.repeat(32);
+ points='a'.repeat(32),memberCard='b'.repeat(32),otherCard='c'.repeat(32),prepaid='d'.repeat(32);
 const secrets={pending:'1'.repeat(64),submit:'2'.repeat(64),proof:'3'.repeat(64),execute:'4'.repeat(64)};
 const sign=(domain,key,stamp,raw)=>createHmac('sha256',Buffer.from(key,'hex'))
  .update(domain+'\n'+stamp+'\n'+raw).digest('hex');
@@ -24,12 +24,16 @@ function fixture(){
  }
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,amount INTEGER,type TEXT,'+
   'client_request_id TEXT UNIQUE,family_account_id TEXT,payment_source TEXT);');
+ const p33=readFileSync(new URL('../migrations/0033_member_prepaid_actions.sql',import.meta.url),'utf8');
+ sql.exec(p33);
  const mig=readFileSync(new URL('../migrations/0034_family_points_foundation.sql',import.meta.url),'utf8');
  sql.exec(mig);sql.exec(mig);
+ const p35=readFileSync(new URL('../migrations/0035_points_prepaid_atomic.sql',import.meta.url),'utf8');
+ sql.exec(p35);
  for(const [u,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,hh,role,role,'active',Date.now());
- for(const [aid,kind,u] of [[points,'points',member],[memberCard,'credit_card',member],[otherCard,'credit_card',other]])
+ for(const [aid,kind,u] of [[points,'points',member],[memberCard,'credit_card',member],[otherCard,'credit_card',other],[prepaid,'prepaid',member]])
   stmt(sql,"INSERT INTO family_financial_accounts(account_id,household_id,owner_user_id,label,account_kind,origin,created_by_user_id,updated_by_user_id) VALUES(?,?,?,?,?,'member_created',?,?)",
    aid,hh,u,kind,kind,u,u);
  for(const [entry,card] of [[1,memberCard],[2,otherCard]])
@@ -101,6 +105,7 @@ function fixture(){
   linked_entry_id:['earn_purchase','redeem_discount'].includes(operation)?1:
    operation==='redeem_purchase'?3:null,
   expense_net_confirmed:operation==='redeem_discount',
+  ...(operation==='transfer_prepaid'?{target_account_id:prepaid,target_version:1}:{}),
   ...overrides
  });
  const prepare=async(operation,key,overrides={})=>{
@@ -229,4 +234,49 @@ test('point-funded purchase links its existing points expense exactly once, no c
  const foreign=await f.call(['points-actions'],f.action('redeem_purchase','not-point-funded',{
   linked_entry_id:1}));
  assert.equal(foreign.data.code,'POINTS_ENTRY_OWNER_UNVERIFIED');
+});
+
+test('point-to-prepaid is an atomic double-sided credit; no new income, transfer or expense',async()=>{
+ const f=fixture(),before=get(f.sql,'SELECT COUNT(*) n FROM entries').n;
+ const earned=await f.prepare('earn_campaign','fund-prepaid',{units:500,yen_value:500});
+ assert.equal((await f.execute(await f.submit(earned))).status,200);
+ const redeemed=await f.prepare('transfer_prepaid','exchange-prepaid',{units:150,yen_value:150});
+ const approval=await f.submit(redeemed);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_credits').n,0);
+ const result=await f.execute(approval);
+ assert.equal(result.status,200,JSON.stringify(result));
+ assert.equal(result.data.delta_units,-150);
+ assert.equal(result.data.balance_after_units,350);
+ assert.equal(result.data.prepaid_credit_jpy,150);
+ assert.equal(result.data.prepaid_balance_after_jpy,150);
+ assert.equal(result.data.target_account_id,prepaid);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries').n,before);
+ assert.equal(get(f.sql,'SELECT SUM(amount_jpy) n FROM family_points_prepaid_credits').n,150);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,2);
+ assert.equal((await f.execute(approval,'receipt')).data.already_applied,true);
+ assert.equal((await f.execute(approval)).data.already_applied,true);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_credits').n,1);
+ const tooMuch=await f.prepare('transfer_prepaid','overdraw',{units:999,yen_value:999});
+ assert.equal((await f.execute(await f.submit(tooMuch))).status,409);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_credits').n,1);
+});
+test('point-to-prepaid refuses target version drift, cross-owner, false exchange rate and atomic audit failure',async()=>{
+ for(const mode of ['target_version','target_owner','audit']){
+  const f=fixture();
+  const earned=await f.prepare('earn_campaign','fund-'+mode,{units:200,yen_value:200});
+  assert.equal((await f.execute(await f.submit(earned))).status,200);
+  const proposal=await f.prepare('transfer_prepaid','credit-'+mode,{units:100,yen_value:100});
+  const approval=await f.submit(proposal);
+  if(mode==='target_version')stmt(f.sql,'UPDATE family_financial_accounts SET version=2 WHERE account_id=?',prepaid);
+  if(mode==='target_owner')stmt(f.sql,'UPDATE family_financial_accounts SET owner_user_id=? WHERE account_id=?',other,prepaid);
+  if(mode==='audit')f.sql.exec("CREATE TRIGGER fail_points_credit BEFORE INSERT ON family_points_prepaid_credits BEGIN SELECT RAISE(ABORT,'INJECTED_CREDIT_FAILURE'); END;");
+  assert.notEqual((await f.execute(approval)).status,200);
+  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_credits').n,0);
+  assert.equal(get(f.sql,"SELECT COUNT(*) n FROM family_points_journal WHERE operation='transfer_prepaid'").n,0);
+ }
+ const f=fixture();
+ const bad=await f.call(['points-actions'],f.action('transfer_prepaid','bad-rate',{units:3,yen_value:2,rate_numerator:1,rate_denominator:1}));
+ assert.equal(bad.status,400);
+ const self=await f.call(['points-actions'],f.action('transfer_prepaid','self',{target_account_id:points}));
+ assert.equal(self.status,400);
 });

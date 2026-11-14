@@ -25,6 +25,8 @@ function fixture(){
   'payment_source TEXT,family_account_id TEXT,family_transfer_target_account_id TEXT);');
  const migration=readFileSync(new URL('../migrations/0033_member_prepaid_actions.sql',import.meta.url),'utf8');
  sql.exec(migration);sql.exec(migration);
+ sql.exec(readFileSync(new URL('../migrations/0034_family_points_foundation.sql',import.meta.url),'utf8'));
+ sql.exec(readFileSync(new URL('../migrations/0035_points_prepaid_atomic.sql',import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,household,role,role,'active',Date.now());

@@ -3,7 +3,7 @@
 // No HomeFlow "approved" claim can itself change the ledger.
 const enc=new TextEncoder(),hash64=/^[a-f0-9]{64}$/i,id=/^[a-f0-9]{32}$/i,
  uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
-const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire']);
+const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire','transfer_prepaid']);
 const json=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}});
 const fail=(code,status=409)=>json({ok:false,code,applied:false},status);
 const exact=(x,keys)=>x&&typeof x==='object'&&!Array.isArray(x)&&
@@ -43,13 +43,25 @@ async function signed(req,e,mode){
  const expected=await hmac(e.KAKEIBO_POINTS_EXECUTION_SECRET,'homeflow:points-'+mode,stamp,raw);
  return eq(tag,expected)?b:null;
 }
-const receipt=(r,replayed)=>({ok:true,applied:true,approval_id:r.homeflow_request_id,
+const receipt=(r,replayed,credit=null)=>({ok:true,applied:true,approval_id:r.homeflow_request_id,
  proposal_id:r.proposal_id,household_id:r.household_id,requester_user_id:r.requester_user_id,
  payload_sha256:r.payload_sha256,approver_user_id:r.approver_user_id,
  actor_user_id:r.actor_user_id,points_account_id:r.points_account_id,
  points_version:r.account_version,operation:r.operation,delta_units:r.delta_units,
  balance_after_units:r.balance_after_units,yen_value:r.yen_value,
- linked_entry_id:r.linked_entry_id,applied_at:r.applied_at,already_applied:replayed});
+ linked_entry_id:r.linked_entry_id,applied_at:r.applied_at,already_applied:replayed,
+ target_account_id:r.target_account_id,prepaid_version:credit?.prepaid_version??null,
+ prepaid_credit_jpy:credit?.amount_jpy??null,
+ prepaid_balance_after_jpy:credit?.balance_after_jpy??null});
+async function receiptFor(db,r,replayed){
+ if(r.operation!=='transfer_prepaid')return json(receipt(r,replayed));
+ const c=await db.prepare('SELECT * FROM family_points_prepaid_credits WHERE homeflow_request_id=?')
+  .bind(r.homeflow_request_id).first();
+ if(!c||c.prepaid_account_id!==r.target_account_id||c.amount_jpy!==r.yen_value||
+  c.household_id!==r.household_id||c.requester_user_id!==r.requester_user_id)
+  return fail('POINTS_COUNTERPART_UNCONFIRMED',503);
+ return json(receipt(r,replayed,c));
+}
 const match=(r,b)=>r&&r.homeflow_request_id===b.request_id&&r.proposal_id===b.resource_id&&
  r.household_id===b.household_id&&r.requester_user_id===b.requester_user_id&&
  r.payload_sha256===b.payload_sha256;
@@ -68,7 +80,7 @@ async function decode(e,p){
   const x=JSON.parse(raw);
   if(!exact(x,['operation','points_account_id','points_version','units','effective_date',
     'yen_value','rate_numerator','rate_denominator','reference_hash','linked_entry_id',
-    'expense_net_confirmed'])||!supported.has(x.operation)||x.operation!==p.operation||
+    'expense_net_confirmed',...(x.operation==='transfer_prepaid'?['target_account_id','target_version']:[])])||!supported.has(x.operation)||x.operation!==p.operation||
     x.points_account_id!==p.points_account_id||x.points_version!==p.expected_version||
     !Number.isSafeInteger(x.units)||x.units<1||x.units>1000000000||
     !hash64.test(x.reference_hash)||typeof x.effective_date!=='string'||
@@ -79,6 +91,10 @@ async function decode(e,p){
     (!Number.isSafeInteger(x.linked_entry_id)||x.linked_entry_id<=0):
     x.linked_entry_id!==null)return null;
   if(x.expense_net_confirmed!==(x.operation==='redeem_discount'))return null;
+  if(x.operation==='transfer_prepaid'&&(!id.test(x.target_account_id)||
+   x.target_account_id===x.points_account_id||!Number.isSafeInteger(x.target_version)||
+   x.target_version<1||!Number.isSafeInteger(x.yen_value)||
+   x.yen_value<1||x.yen_value>10000000))return null;
   if(x.yen_value!==null||x.rate_numerator!==null||x.rate_denominator!==null){
    if(!Number.isSafeInteger(x.yen_value)||x.yen_value<0||x.yen_value>1000000000||
     !Number.isSafeInteger(x.rate_numerator)||x.rate_numerator<1||x.rate_numerator>1000000000||
@@ -142,7 +158,7 @@ export async function approvedPointsRoute(request,e,parts){
  const db=e.DB;
  const prior=await db.prepare('SELECT * FROM family_points_journal '+
   'WHERE homeflow_request_id=? OR proposal_id=? LIMIT 1').bind(b.request_id,b.resource_id).first();
- if(prior)return match(prior,b)?json(receipt(prior,true)):fail('POINTS_RECEIPT_CONFLICT');
+ if(prior)return match(prior,b)?receiptFor(db,prior,true):fail('POINTS_RECEIPT_CONFLICT');
  if(mode==='receipt')return fail('POINTS_RECEIPT_UNKNOWN',404);
  const row=await db.prepare('SELECT p.*,a.account_kind,a.origin,a.version,a.is_archived,'+
   'a.opening_balance,a.owner_user_id,a.household_id AS account_household,'+
@@ -160,6 +176,17 @@ export async function approvedPointsRoute(request,e,parts){
   return fail('POINTS_ACCOUNT_OR_IDENTITY_CHANGED');
  const x=await decode(e,row);if(!x||!await permittedPurchase(db,row,x))
   return fail('POINTS_SOURCE_INVALID');
+ if(row.operation==='transfer_prepaid'){
+  if(row.target_account_id!==x.target_account_id||row.target_version!==x.target_version)
+   return fail('POINTS_PREPAID_TARGET_CHANGED');
+  const target=await db.prepare('SELECT account_kind,origin,version,is_archived,owner_user_id,'+
+   'household_id,opening_balance FROM family_financial_accounts WHERE account_id=?')
+   .bind(x.target_account_id).first();
+  if(!target||target.account_kind!=='prepaid'||target.origin!=='member_created'||
+   target.version!==x.target_version||target.is_archived!==0||
+   target.owner_user_id!==row.requester_user_id||target.household_id!==row.household_id||
+   target.opening_balance!==0)return fail('POINTS_PREPAID_TARGET_CHANGED');
+ }
  const approved=await proof(e,b,row);
  if(!approved)return fail('POINTS_APPROVAL_OR_LEASE_INVALID');
  const priorBalance=await db.prepare('SELECT COALESCE(SUM(delta_units),0) AS units FROM family_points_journal '+
@@ -184,15 +211,16 @@ export async function approvedPointsRoute(request,e,parts){
    .bind(b.request_id,b.resource_id,row.household_id,row.requester_user_id,
     approved.approver_user_id,approved.approver_user_id,row.points_account_id,
     row.expected_version,row.operation,delta,after,x.yen_value,x.rate_numerator,
-    x.rate_denominator,null,x.linked_entry_id,null,x.reference_hash,null,
+    x.rate_denominator,x.operation==='transfer_prepaid'?x.target_account_id:null,
+    x.linked_entry_id,null,x.reference_hash,null,
     row.payload_sha256,x.effective_date,at).run();
   if(result.meta?.changes!==1)return fail('POINTS_WRITE_UNCONFIRMED',503);
  }catch{
   const raced=await db.prepare('SELECT * FROM family_points_journal WHERE homeflow_request_id=?')
    .bind(b.request_id).first().catch(()=>null);
-  return match(raced,b)?json(receipt(raced,true)):fail('POINTS_WRITE_RETRY',503);
+  return match(raced,b)?receiptFor(db,raced,true):fail('POINTS_WRITE_RETRY',503);
  }
  const applied=await db.prepare('SELECT * FROM family_points_journal WHERE homeflow_request_id=?')
   .bind(b.request_id).first();
- return match(applied,b)?json(receipt(applied,false)):fail('POINTS_RECEIPT_UNCONFIRMED',503);
+ return match(applied,b)?receiptFor(db,applied,false):fail('POINTS_RECEIPT_UNCONFIRMED',503);
 }

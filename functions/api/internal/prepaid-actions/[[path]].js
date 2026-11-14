@@ -118,8 +118,9 @@ async function proof(env,b,p){
  }catch{return null}
 }
 async function currentBalance(db,id){
- const r=await db.prepare('SELECT COALESCE(SUM(delta_jpy),0) amount FROM family_prepaid_balance_journal '+
-  'WHERE prepaid_account_id=?').bind(id).first();
+ const r=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal WHERE prepaid_account_id=?),0) '+
+  '+COALESCE((SELECT SUM(amount_jpy) FROM family_points_prepaid_credits WHERE prepaid_account_id=?),0)) amount')
+  .bind(id,id).first();
  return Number.isSafeInteger(r?.amount)&&r.amount>=0?r.amount:null;
 }
 export async function approvedPrepaidActionRoute(request,env,parts){

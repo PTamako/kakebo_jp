@@ -69,8 +69,9 @@ async function checkAccounts(db,user,x){
   (x.action==='spend'||rows.some(r=>r.account_id===x.bank_account_id&&r.account_kind==='bank'&&r.version===x.bank_version));
 }
 async function balance(db,prepaidId){
- const r=await db.prepare('SELECT COALESCE(SUM(delta_jpy),0) total FROM family_prepaid_balance_journal '+
-  'WHERE prepaid_account_id=?').bind(prepaidId).first();
+ const r=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal WHERE prepaid_account_id=?),0) '+
+  '+COALESCE((SELECT SUM(amount_jpy) FROM family_points_prepaid_credits WHERE prepaid_account_id=?),0)) total')
+  .bind(prepaidId,prepaidId).first();
  return Number.isSafeInteger(r?.total)&&r.total>=0?r.total:null;
 }
 const visible=r=>({request_id:r.request_id,action:r.action,prepaid_account_id:r.prepaid_account_id,

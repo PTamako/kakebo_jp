@@ -3,7 +3,7 @@
 // No HomeFlow "approved" claim can itself change the ledger.
 const enc=new TextEncoder(),hash64=/^[a-f0-9]{64}$/i,id=/^[a-f0-9]{32}$/i,
  uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
-const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire','transfer_prepaid','offset_card','transfer_out','exchange_out']);
+const supported=new Set(['earn_campaign','earn_purchase','redeem_discount','redeem_purchase','expire','transfer_prepaid','offset_card','transfer_out','exchange_out','reversal']);
 const json=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}});
 const fail=(code,status=409)=>json({ok:false,code,applied:false},status);
 const exact=(x,keys)=>x&&typeof x==='object'&&!Array.isArray(x)&&
@@ -49,7 +49,8 @@ const receipt=(r,replayed,credit=null,card=null,move=null)=>({ok:true,applied:tr
  actor_user_id:r.actor_user_id,points_account_id:r.points_account_id,
  points_version:r.account_version,operation:r.operation,delta_units:r.delta_units,
  balance_after_units:r.balance_after_units,yen_value:r.yen_value,
- linked_entry_id:r.linked_entry_id,applied_at:r.applied_at,already_applied:replayed,
+ linked_entry_id:r.linked_entry_id,reversed_request_id:r.reversed_request_id,
+ applied_at:r.applied_at,already_applied:replayed,
  target_account_id:r.target_account_id,prepaid_version:credit?.prepaid_version??null,
  prepaid_credit_jpy:credit?.amount_jpy??null,
  prepaid_balance_after_jpy:credit?.balance_after_jpy??null,
@@ -107,6 +108,7 @@ async function decode(e,p){
     'yen_value','rate_numerator','rate_denominator','reference_hash','linked_entry_id',
     'expense_net_confirmed',...(['transfer_prepaid','offset_card','transfer_out','exchange_out'].includes(x.operation)?['target_account_id','target_version']:[]),
     ...(x.operation==='offset_card'?['target_purchase_request_id']:[]),
+    ...(x.operation==='reversal'?['original_request_id']:[]),
     ...(['transfer_out','exchange_out'].includes(x.operation)?
      ['target_units','target_rate_numerator','target_rate_denominator']:[])])||!supported.has(x.operation)||x.operation!==p.operation||
     x.points_account_id!==p.points_account_id||x.points_version!==p.expected_version||
@@ -124,6 +126,7 @@ async function decode(e,p){
    x.target_version<1||!Number.isSafeInteger(x.yen_value)||
    x.yen_value<1||x.yen_value>10000000))return null;
   if(x.operation==='offset_card'&&!uuid.test(x.target_purchase_request_id))return null;
+  if(x.operation==='reversal'&&!uuid.test(x.original_request_id))return null;
   if(['transfer_out','exchange_out'].includes(x.operation)&&(
    !Number.isSafeInteger(x.target_units)||x.target_units<1||x.target_units>1000000000||
    !Number.isSafeInteger(x.target_rate_numerator)||x.target_rate_numerator<1||x.target_rate_numerator>1000000000||
@@ -249,6 +252,22 @@ export async function approvedPointsRoute(request,e,parts){
     return fail('POINTS_CARD_LIABILITY_CHANGED');
   }
  }
+ let original=null;
+ if(row.operation==='reversal'){
+  if(row.original_request_id!==x.original_request_id)return fail('POINTS_REVERSAL_ORIGINAL_CHANGED');
+  original=await db.prepare('SELECT old.* FROM family_points_journal old WHERE '+
+   'old.homeflow_request_id=? AND old.household_id=? AND old.requester_user_id=? '+
+   "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire') "+
+   'AND old.target_account_id IS NULL AND NOT EXISTS ('+
+    'SELECT 1 FROM family_points_journal other WHERE other.reversed_request_id=old.homeflow_request_id)')
+   .bind(x.original_request_id,row.household_id,row.requester_user_id,row.points_account_id).first();
+  if(!original||x.effective_date<original.effective_date||
+   x.units!==Math.abs(original.delta_units)||
+   x.yen_value!==original.yen_value||
+   x.rate_numerator!==original.yen_per_unit_numerator||
+   x.rate_denominator!==original.yen_per_unit_denominator)
+   return fail('POINTS_REVERSAL_ORIGINAL_CHANGED');
+ }
  const approved=await proof(e,b,row);
  if(!approved)return fail('POINTS_APPROVAL_OR_LEASE_INVALID');
  const priorBalance=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_units) FROM family_points_journal WHERE points_account_id=?),0) '+
@@ -257,7 +276,8 @@ export async function approvedPointsRoute(request,e,parts){
  if(!Number.isSafeInteger(priorBalance?.units)||priorBalance.units<0)
   return fail('POINTS_BALANCE_CORRUPT');
  const positive=x.operation==='earn_campaign'||x.operation==='earn_purchase';
- const delta=positive?x.units:-x.units,after=priorBalance.units+delta;
+ const delta=x.operation==='reversal'?-original.delta_units:(positive?x.units:-x.units),
+  after=priorBalance.units+delta;
  if(!Number.isSafeInteger(after)||after<0||after>1000000000000)
   return fail('POINTS_INSUFFICIENT_BALANCE');
  const at=Date.now();
@@ -275,7 +295,8 @@ export async function approvedPointsRoute(request,e,parts){
     approved.approver_user_id,approved.approver_user_id,row.points_account_id,
     row.expected_version,row.operation,delta,after,x.yen_value,x.rate_numerator,
     x.rate_denominator,['transfer_prepaid','offset_card','transfer_out','exchange_out'].includes(x.operation)?x.target_account_id:null,
-    x.linked_entry_id,null,x.reference_hash,null,
+    x.operation==='reversal'?original.linked_entry_id:x.linked_entry_id,
+    null,x.reference_hash,x.operation==='reversal'?original.homeflow_request_id:null,
     row.payload_sha256,x.effective_date,at).run();
   if(result.meta?.changes!==1)return fail('POINTS_WRITE_UNCONFIRMED',503);
  }catch{

@@ -26,8 +26,13 @@ export async function submitPreparedApproval(request,env,url,user,id){
  try{
   const raw=await request.text()
   const input=raw.length<=128?JSON.parse(raw):null
-  if(!input||typeof input!=='object'||Array.isArray(input)||
-    Object.keys(input).length!==0)
+  if(!input||typeof input!=='object'||Array.isArray(input))
+   return json({code:'INVALID_SUBMISSION_INPUT'},400)
+  // Re-introspected cookie actor must still be the user that opened the
+  // original approval action on the device, never a later shared-PWA login.
+  if(input.expected_user_id!==user.user_id)
+   return json({code:'ACTOR_CHANGED'},403)
+  if(Object.keys(input).length!==1)
    return json({code:'INVALID_SUBMISSION_INPUT'},400)
  }catch{return json({code:'INVALID_SUBMISSION_INPUT'},400)}
  const db=env.DB

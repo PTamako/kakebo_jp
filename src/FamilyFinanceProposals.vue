@@ -70,6 +70,7 @@ async function createProposal(){
  const rev=revision,user=props.userId
  const record={
   idempotency_key:crypto.randomUUID().replace(/-/g,''),
+  expected_user_id:user,
   account_id:accountId.value,type:kind.value,amount_jpy:Number(amount.value),
   date:date.value,merchant:merchant.value.trim(),category:category.value.trim(),
   note:note.value
@@ -127,7 +128,8 @@ async function action(item,kind){
  try{
   const result=await call('/api/family-finance/proposals/'+
    encodeURIComponent(item.request_id)+'/'+kind,{
-   method:'POST',headers:{'content-type':'application/json'},body:'{}'
+   method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({expected_user_id:user})
   })
   if(!alive||user!==props.userId||!open.value)return
   if(result.applied===true||result.ledger_changed!==false)

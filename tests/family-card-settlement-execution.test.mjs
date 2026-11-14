@@ -18,7 +18,8 @@ const query=(s,q,...args)=>s.prepare(q).get(...args);
 function fixture(){
  const sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
  for(const f of ['0001_support_tables.sql','0002_versioned_migration_tracking.sql',
-  '0022_homeflow_identity_foundation.sql','0023_family_financial_account_identities.sql'])
+  '0022_homeflow_identity_foundation.sql','0023_family_financial_account_identities.sql',
+   '0027_family_legacy_entry_link_audit.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+f,import.meta.url),'utf8'));
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,'+
   'amount INTEGER,category TEXT,merchant TEXT,note TEXT,raw TEXT,type TEXT,'+
@@ -30,7 +31,11 @@ function fixture(){
   sql.exec(migration);sql.exec(migration);
  }
  for(const x of ['0033_member_prepaid_actions.sql','0034_family_points_foundation.sql',
-  '0035_points_prepaid_atomic.sql','0036_points_card_offset.sql'])
+  '0035_points_prepaid_atomic.sql','0036_points_card_offset.sql',
+  '0037_points_transfer_exchange.sql','0038_points_earn_expiry_reversals.sql',
+  '0039_points_legacy_provenance.sql','0040_points_sbi_lots.sql',
+  '0041_points_transfer_atomic_refund.sql','0042_points_prepaid_refund.sql',
+  '0043_points_card_offset_refund.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+x,import.meta.url),'utf8'));
  for(const [user,role] of [[owner,'owner'],[member,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',

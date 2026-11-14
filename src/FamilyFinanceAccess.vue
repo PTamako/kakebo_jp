@@ -1,6 +1,7 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
+import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 
 const STORAGE='kakeibo:homeflow-resume-v1'
 const hex=/^[a-f0-9]{64}$/i
@@ -261,6 +262,9 @@ onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange'
       </form>
      </li>
     </ul>
+    <FamilyFinanceMappingAudit v-if="person.role==='owner'"
+     :key="'mapping-audit:'+person.user_id" :user-id="person.user_id"
+     :household-id="person.household_id" />
     <FamilyFinanceProposals v-if="person.role==='member'"
      :key="'proposals:'+person.user_id" :user-id="person.user_id" :accounts="accounts" />
     <form class="hf-create" @submit.prevent="createAccount">

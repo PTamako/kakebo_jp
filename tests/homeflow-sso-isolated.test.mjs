@@ -46,6 +46,7 @@ function d1(){
   "INSERT INTO investment_plans VALUES('ABC12345','tsumitate','SBI 投資信託',15000,15,1);"+
   "INSERT INTO investment_plan_history VALUES('ABC12345','tsumitate','SBI 投資信託',15000,15,1,'2026-11',CURRENT_TIMESTAMP)");
  migration('0026_family_finance_execution.sql');
+ migration('0027_family_legacy_entry_link_audit.sql');
  const wrap=sql=>{
   const statement=(values=[])=>({
     first:async()=>sqlite.prepare(sql).get(...values)||null,
@@ -1349,3 +1350,150 @@ test('unsupported card and prepaid intents stay encrypted drafts and never enter
   assert.equal(f.DB.sqlite.prepare("SELECT COUNT(*) n FROM family_finance_events WHERE action='finance_entry_submitted'").get().n,0);
  }finally{f.DB.sqlite.close()}
 });
+
+
+test('legacy expense stable-ID linking is default OFF, owner-fingerprinted and preserves all old amounts and source text',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  const memberCookie=await loginMember(f)
+  const old=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  const oldSources=f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all()
+  const legacyDisabled=await finance(f,'legacy/entry-links','GET',null,ownerCookie)
+  assert.equal(legacyDisabled.status,503)
+  assert.equal((await legacyDisabled.json()).code,'LEGACY_ENTRY_LINKS_DISABLED')
+  f.env.APP_ENV='production'
+  f.env.KAKEIBO_LEGACY_ENTRY_LINKS_ENABLED='true'
+  assert.equal((await finance(f,'legacy/entry-links','GET',null,memberCookie)).status,403)
+  let empty=await finance(f,'legacy/entry-links','GET',null,ownerCookie)
+  assert.equal(empty.status,200)
+  assert.equal((await empty.json()).items.length,0,
+   'not eligible until original owner has explicitly adopted legacy accounts')
+  const linked=await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)
+  assert.equal(linked.status,200,await linked.clone().text())
+  const preview=await finance(f,'legacy/entry-links','GET',null,ownerCookie)
+  assert.equal(preview.status,200,await preview.clone().text())
+  const plan=await preview.json()
+  assert.equal(plan.read_only,true)
+  assert.equal(plan.financial_values_changed,false)
+  assert.equal(plan.requires_explicit_confirmation,true)
+  assert.equal(plan.items.length,1)
+  const item=plan.items[0]
+  assert.equal(item.entry_id,1)
+  assert.equal(item.original_source,'PayPay Visa')
+  assert.equal(item.amount_jpy,1234)
+  assert.match(item.source_digest,/^[0-9a-f]{64}$/)
+  assert.equal(plan.next_after_id,null)
+  assert.equal(f.DB.sqlite.prepare('SELECT family_account_id FROM entries WHERE id=1').get().family_account_id,null)
+  // A deliberately same-named member-created card MUST NOT inherit owner history.
+  const sharedLabel=await finance(f,'accounts','POST',{
+   label:'PayPay Visa',account_kind:'credit_card'
+  },memberCookie)
+  assert.equal(sharedLabel.status,201)
+  const memberAccount=(await sharedLabel.json()).account_id
+  assert.notEqual(item.account_id,memberAccount)
+  const statement=f.DB.sqlite.prepare("SELECT * FROM family_finance_legacy_entry_links")
+  assert.equal(statement.all().length,0)
+  const source=await finance(f,'legacy/entry-links','POST',{
+   entry_id:item.entry_id,account_id:item.account_id,
+   source_digest:item.source_digest,confirm:true,expected_user_id:member
+  },ownerCookie)
+  assert.equal(source.status,403)
+  assert.equal((await source.json()).code,'ACTOR_CHANGED')
+  const forged=await finance(f,'legacy/entry-links','POST',{
+   entry_id:item.entry_id,account_id:memberAccount,
+   source_digest:item.source_digest,confirm:true
+  },ownerCookie)
+  assert.equal(forged.status,409)
+  assert.equal(statement.all().length,0)
+  const badMember=await finance(f,'legacy/entry-links','POST',{
+   entry_id:item.entry_id,account_id:item.account_id,
+   source_digest:item.source_digest,confirm:true
+  },memberCookie)
+  assert.equal(badMember.status,403)
+  const applied=await finance(f,'legacy/entry-links','POST',{
+   entry_id:item.entry_id,account_id:item.account_id,
+   source_digest:item.source_digest,confirm:true
+  },ownerCookie)
+  assert.equal(applied.status,200,await applied.clone().text())
+  assert.deepEqual(await applied.json(),{
+   ok:true,entry_id:1,account_id:item.account_id,
+   linked:true,already_linked:false,financial_values_changed:false
+  })
+  const now=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  assert.equal(now[0].family_account_id,item.account_id)
+  assert.deepEqual(now.map(row=>({...row,family_account_id:null})),old,
+   'linking must change exactly the foreign account ID and nothing else in the old ledger')
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM payment_sources ORDER BY name').all(),oldSources)
+  const receipt=statement.get()
+  assert.equal(receipt.entry_id,1)
+  assert.equal(receipt.account_id,item.account_id)
+  assert.equal(receipt.original_source,'PayPay Visa')
+  assert.equal(receipt.actor_user_id,owner)
+  assert.equal(receipt.source_digest,item.source_digest)
+  const replay=await finance(f,'legacy/entry-links','POST',{
+   entry_id:item.entry_id,account_id:item.account_id,
+   source_digest:item.source_digest,confirm:true
+  },ownerCookie)
+  assert.equal(replay.status,200)
+  assert.equal((await replay.json()).already_linked,true)
+  assert.equal(statement.all().length,1,'idempotent replay cannot create a second immutable receipt')
+  assert.throws(()=>f.DB.sqlite.prepare(
+   'UPDATE family_finance_legacy_entry_links SET account_id=? WHERE entry_id=1'
+  ).run(memberAccount),/LEGACY_ENTRY_LINK_AUDIT_IMMUTABLE/)
+  assert.throws(()=>f.DB.sqlite.prepare(
+   'DELETE FROM family_finance_legacy_entry_links'
+  ).run(),/LEGACY_ENTRY_LINK_AUDIT_IMMUTABLE/)
+  const emptyAfter=(await (await finance(f,'legacy/entry-links','GET',null,ownerCookie)).json())
+  assert.equal(emptyAfter.items.length,0)
+  assert.equal((await finance(f,'legacy/entry-links','PUT',{},ownerCookie)).status,405)
+ }finally{f.DB.sqlite.close()}
+})
+
+test('legacy stable ID write refuses stale preflight and never silently maps transfers',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  f.env.APP_ENV='production'
+  f.env.KAKEIBO_LEGACY_ENTRY_LINKS_ENABLED='true'
+  await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)
+  f.DB.sqlite.prepare(
+   "INSERT INTO entries(date,type,merchant,amount,category,note,payment_source,"+
+   "transfer_target,transfer_applied,time,transfer_date,raw) "+
+   "VALUES('2026-11-14','transfer','轉賬',2000,'资产转移','keep','PayPay Visa','nanaco',0,'',NULL,'')"
+  ).run()
+  const before=(await (await finance(f,'legacy/entry-links','GET',null,ownerCookie)).json())
+  assert.equal(before.items.length,1)
+  const item=before.items[0]
+  // A valid historical edit between preview and confirmation MUST make the
+  // stale digest unusable. Do not overwrite the edit or link its old snapshot.
+  f.DB.sqlite.prepare('UPDATE entries SET amount=amount+1 WHERE id=1').run()
+  const stale=await finance(f,'legacy/entry-links','POST',{
+   entry_id:item.entry_id,account_id:item.account_id,
+   source_digest:item.source_digest,confirm:true
+  },ownerCookie)
+  assert.equal(stale.status,409)
+  assert.equal((await stale.json()).code,'LEGACY_ENTRY_CHANGED_REVIEW_AGAIN')
+  assert.equal(f.DB.sqlite.prepare('SELECT family_account_id FROM entries WHERE id=1').get().family_account_id,null)
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_entry_links').get().n,0)
+  const fresh=(await (await finance(f,'legacy/entry-links','GET',null,ownerCookie)).json()).items[0]
+  assert.notEqual(fresh.source_digest,item.source_digest)
+  assert.equal(fresh.amount_jpy,1235)
+  // Simulate a different Writer changing the merchant inside the request,
+  // after preflight verification but before the conditional SQL write batch.
+  const realBatch=f.DB.batch
+  f.DB.batch=async statements=>{
+   f.DB.sqlite.prepare("UPDATE entries SET merchant='新商家' WHERE id=1").run()
+   return realBatch(statements)
+  }
+  const race=await finance(f,'legacy/entry-links','POST',{
+   entry_id:fresh.entry_id,account_id:fresh.account_id,
+   source_digest:fresh.source_digest,confirm:true
+  },ownerCookie)
+  assert.equal(race.status,409,await race.clone().text())
+  assert.equal(f.DB.sqlite.prepare('SELECT family_account_id FROM entries WHERE id=1').get().family_account_id,null)
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_legacy_entry_links').get().n,0)
+  assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries WHERE type=? AND family_account_id IS NOT NULL').get('transfer').n,0)
+  f.DB.batch=realBatch
+ }finally{f.DB.sqlite.close()}
+})

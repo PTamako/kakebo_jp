@@ -204,3 +204,16 @@ test('overpayment or duplicate bank reference fails as a single rolled back D1 b
   assert.equal(query(f.sql,'SELECT COUNT(*) n FROM family_card_settlements_applied').n,0);
  }finally{f.close()}
 });
+
+test('bank settlement cannot predate any allocated card charge or use an unconfirmed future debit date',async()=>{
+ const f=fixture();try{
+  const older=await f.source(['card-settlements'],'POST',{
+   ...f.input,debit_date:'2026-11-13',idempotency_key:'card-settlement-old-20261113'});
+  assert.equal(older.status,409,JSON.stringify(older));
+  const future=await f.source(['card-settlements'],'POST',{
+   ...f.input,debit_date:'2031-01-12',idempotency_key:'card-settlement-future-20310112'});
+  assert.equal(future.status,400,JSON.stringify(future));
+  assert.equal(query(f.sql,'SELECT COUNT(*) n FROM family_card_settlement_intents').n,0);
+  assert.equal(query(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='transfer'").n,0);
+ }finally{f.close()}
+});

@@ -30,6 +30,9 @@ function schema(){
  s.exec(readFileSync(new URL('../migrations/0031_family_card_purchase_execution.sql',import.meta.url),'utf8'));
  const mig=readFileSync(new URL('../migrations/0032_family_card_settlement_foundation.sql',import.meta.url),'utf8');
  s.exec(mig);s.exec(mig);
+ for(const x of ['0033_member_prepaid_actions.sql','0034_family_points_foundation.sql',
+  '0035_points_prepaid_atomic.sql','0036_points_card_offset.sql'])
+  s.exec(readFileSync(new URL('../migrations/'+x,import.meta.url),'utf8'));
  for(const [user,role] of [[owner,'owner'],[member,'member']])
   stmt(s,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    user,household,role,role,'active',now);

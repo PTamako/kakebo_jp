@@ -17,7 +17,7 @@ function reset(){
  generation++;summary.value=[];error.value=''
 }
 function select(value){
- if(!Object.hasOwn(kinds,value)||kind.value===value||busy.value)return
+ if(!Object.hasOwn(kinds,value)||kind.value===value||busy.value||loading.value)return
  kind.value=value;cursor.value=null;pending.value=null;reset()
 }
 async function load(){
@@ -45,7 +45,10 @@ async function load(){
 function toggle(){
  if(busy.value||loading.value)return
  opened.value=!opened.value;reset()
- if(opened.value)void load()
+ if(opened.value){
+  if(!pending.value){finished.value={};cursor.value=null}
+  void load()
+ }
 }
 async function adopt(){
  if(!alive||!opened.value||busy.value||loading.value)return
@@ -106,7 +109,7 @@ onUnmounted(()=>{
    <p class="note">原管理员人工确认五类历史资源，一次最多50条；仅登记不可更改的归属证据，不移动金额或修改账户。</p>
    <p v-if="error" class="error" role="alert">{{error}}</p>
    <label>资源类别
-    <select v-model="kind" :disabled="busy||!!pending" @change="select($event.target.value)">
+    <select :value="kind" :disabled="busy||loading||!!pending" @change="select($event.target.value)">
      <option v-for="(label,key) in kinds" :key="key" :value="key">{{label}}</option>
     </select>
    </label>

@@ -344,6 +344,8 @@ test('legacy owner resource adoption PWA uses authenticated original actor and b
  assert.match(ui,/window.confirm\(/)
  assert.match(ui,/pending.value=null;success=true/)
  assert.match(ui,/frozen=pending.value/)
+ assert.match(ui,/<select :value="kind"/)
+ assert.doesNotMatch(ui,/<select v-model="kind"/)
  assert.match(ui,/data.owner_user_id!==actor/)
  assert.match(ui,/household!==props.householdId/)
  assert.match(ui,/document.addEventListener\('visibilitychange',foreground\)/)

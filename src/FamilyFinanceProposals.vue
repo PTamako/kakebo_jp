@@ -1,11 +1,19 @@
 <script setup>
-import {onMounted,onUnmounted,ref} from 'vue'
+import {computed,onMounted,onUnmounted,ref} from 'vue'
 
 const props=defineProps({userId:{type:String,required:true},
  accounts:{type:Array,default:()=>[]}})
 const open=ref(false),busy=ref(''),loading=ref(false)
 const items=ref([]),offset=ref(0),nextOffset=ref(null)
-const error=ref(''),unavailable=ref(false)
+const error=ref(''),unavailable=ref(false),message=ref('')
+const myAccounts=computed(()=>props.accounts.filter(a=>
+ a?.owner_user_id===props.userId&&a.origin==='member_created'&&Number(a.is_archived)===0))
+const accountId=ref(''),kind=ref('expense'),amount=ref(''),merchant=ref(''),
+ category=ref(''),date=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,10)),
+ note=ref('')
+// Keep an ambiguous network retry attached to its original stable key and
+// immutable payload rather than silently filing a second household approval.
+let frozenDraft=null
 let revision=0,alive=true
 const id32=/^[a-f0-9]{32}$/i
 const statuses=['prepared_not_submitted','submitted_status_unknown','applied','cancelled','expired']
@@ -54,6 +62,52 @@ async function toggle(){
  if(open.value)await load(0)
  else{revision++;items.value=[];error.value='';nextOffset.value=null}
 }
+async function createProposal(){
+ const rev=revision,user=props.userId
+ const record={
+  idempotency_key:crypto.randomUUID().replace(/-/g,''),
+  account_id:accountId.value,type:kind.value,amount_jpy:Number(amount.value),
+  date:date.value,merchant:merchant.value.trim(),category:category.value.trim(),
+  note:note.value
+ }
+ if(!alive||!open.value||busy.value||loading.value||
+  !myAccounts.value.some(a=>a.account_id===record.account_id)||
+  !['expense','income'].includes(record.type)||
+  !Number.isSafeInteger(record.amount_jpy)||record.amount_jpy<1||record.amount_jpy>10000000||
+  !/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(record.date)||
+  !record.merchant||record.merchant.length>160||
+  !record.category||record.category.length>40||record.note.length>300)return
+ if(frozenDraft){
+  const same=Object.keys(record).every(k=>k==='idempotency_key'||record[k]===frozenDraft[k])
+  if(!same){error.value='上次提交未确认，请恢复原申请内容再重试，不能重新生成一笔。';return}
+ }else{
+  if(!window.confirm('只保存本人加密记账草稿，不会入账；之后仍需提交管理员审批。继续吗？'))return
+  frozenDraft=record
+ }
+ if(rev!==revision||!alive||user!==props.userId||!open.value||
+  !myAccounts.value.some(a=>a.account_id===record.account_id))return
+ busy.value='create';error.value='';message.value=''
+ let failure=''
+ try{
+  const result=await call('/api/family-finance/proposals',{
+   method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify(frozenDraft)
+  })
+  if(rev!==revision||!alive||user!==props.userId||!open.value)return
+  if(result.ok!==true||result.prepared?.status!=='prepared_not_submitted'||
+   result.prepared?.ledger_changed!==false||!id32.test(result.prepared.request_id))
+   throw Error('草稿回执未确认，绝不能视为已入账')
+  frozenDraft=null;amount.value='';merchant.value='';note.value=''
+  message.value='加密草稿已保存，仍需在下方点击「提交审批」，目前尚未入账。'
+ }catch(e){if(rev===revision&&alive&&user===props.userId)failure=e.message}
+ finally{
+  if(rev===revision&&alive&&user===props.userId){
+   busy.value=''
+   await load(0)
+   if(failure&&alive&&user===props.userId)error.value=failure
+  }
+ }
+}
 async function action(item,kind){
  const ticket=revision,user=props.userId
  if(!alive||!open.value||loading.value||busy.value||
@@ -90,6 +144,7 @@ function onForeground(){
 onMounted(()=>{alive=true;document.addEventListener('visibilitychange',onForeground)})
 onUnmounted(()=>{
  alive=false;revision++;open.value=false;items.value=[]
+ frozenDraft=null;accountId.value='';amount.value='';merchant.value='';category.value='';note.value=''
  document.removeEventListener('visibilitychange',onForeground)
 })
 </script>
@@ -105,6 +160,29 @@ onUnmounted(()=>{
   <div v-if="open" class="hf-body">
    <p class="muted">仅可查看本人的申请。HomeFlow 负责审批，只有家計簿的真实入账回执才显示“已入账”。</p>
    <p v-if="error" class="error" role="alert">{{error}}</p>
+   <p v-if="message" class="muted" role="status">{{message}}</p>
+   <form class="hf-new-request" @submit.prevent="createProposal" aria-label="创建本人加密家庭收支草稿">
+    <strong>新建收支申请</strong>
+    <p class="muted">仅可选择本人账户；草稿不会影响家庭余额或统计。</p>
+    <select v-model="accountId" aria-label="本人账户" required :disabled="!!busy||loading">
+     <option value="" disabled>选择本人账户</option>
+     <option v-for="a in myAccounts" :key="a.account_id" :value="a.account_id">{{a.label}}</option>
+    </select>
+    <div class="hf-form-grid">
+     <select v-model="kind" aria-label="收支类型" :disabled="!!busy||loading">
+      <option value="expense">支出</option><option value="income">收入</option>
+     </select>
+     <input v-model="amount" aria-label="金额（円）" type="number" inputmode="numeric" min="1" max="10000000" step="1" required placeholder="金额（円）" :disabled="!!busy||loading"/>
+     <input v-model="date" aria-label="日期" type="date" required :disabled="!!busy||loading"/>
+    </div>
+    <div class="hf-form-grid">
+     <input v-model="merchant" aria-label="商家或来源" maxlength="160" required placeholder="商家或收入来源" :disabled="!!busy||loading"/>
+     <input v-model="category" aria-label="分类" maxlength="40" required placeholder="分类" :disabled="!!busy||loading"/>
+    </div>
+    <input v-model="note" aria-label="备注（可选）" maxlength="300" placeholder="备注（可选）" :disabled="!!busy||loading"/>
+    <button type="submit" :disabled="!!busy||loading||!myAccounts.some(a=>a.account_id===accountId)||!merchant.trim()||!category.trim()||!Number.isSafeInteger(Number(amount))||Number(amount)<1">仅保存加密草稿</button>
+    <p v-if="!myAccounts.length" class="muted">请先创建本人金融账户，再发起申请。</p>
+   </form>
    <p v-if="loading" class="muted">读取中…</p>
    <p v-else-if="unavailable" class="muted">家庭申请功能尚未开放。</p>
    <p v-else-if="!items.length" class="muted">暂无申请</p>
@@ -136,6 +214,10 @@ onUnmounted(()=>{
 .hf-proposals button{font:inherit;font-size:12px;min-height:42px;padding:7px 10px;border-radius:10px;color:inherit;border:1px solid var(--line,#ccd7d0);background:transparent}
 .hf-proposals button:disabled{opacity:.55}
 .hf-body{min-width:0;display:grid;gap:8px}
+.hf-new-request{min-width:0;display:grid;gap:8px;padding:12px;border:1px solid var(--line,#ddd);border-radius:12px}
+.hf-new-request strong{font-size:13px}
+.hf-new-request input,.hf-new-request select{box-sizing:border-box;width:100%;min-width:0;min-height:42px;padding:8px 10px;border:1px solid var(--line,#ccd7d0);border-radius:10px;background:transparent;color:inherit;font:inherit;font-size:13px}
+.hf-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,125px),1fr));gap:8px;min-width:0}
 .muted{margin:0;color:var(--muted,#71777b);font-size:12px;line-height:1.5}
 .error{margin:0;color:#b34343;font-size:12px;overflow-wrap:anywhere}
 .hf-items{list-style:none;padding:0;margin:0;display:grid;gap:7px}

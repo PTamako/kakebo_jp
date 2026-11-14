@@ -261,19 +261,26 @@ test('point-to-prepaid is an atomic double-sided credit; no new income, transfer
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_credits').n,1);
 });
 test('point-to-prepaid refuses target version drift, cross-owner, false exchange rate and atomic audit failure',async()=>{
- for(const mode of ['target_version','target_owner','audit']){
+ for(const mode of ['target_version','audit']){
   const f=fixture();
   const earned=await f.prepare('earn_campaign','fund-'+mode,{units:200,yen_value:200});
   assert.equal((await f.execute(await f.submit(earned))).status,200);
   const proposal=await f.prepare('transfer_prepaid','credit-'+mode,{units:100,yen_value:100});
   const approval=await f.submit(proposal);
   if(mode==='target_version')stmt(f.sql,'UPDATE family_financial_accounts SET version=2 WHERE account_id=?',prepaid);
-  if(mode==='target_owner')stmt(f.sql,'UPDATE family_financial_accounts SET owner_user_id=? WHERE account_id=?',other,prepaid);
   if(mode==='audit')f.sql.exec("CREATE TRIGGER fail_points_credit BEFORE INSERT ON family_points_prepaid_credits BEGIN SELECT RAISE(ABORT,'INJECTED_CREDIT_FAILURE'); END;");
   assert.notEqual((await f.execute(approval)).status,200);
   assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_prepaid_credits').n,0);
   assert.equal(get(f.sql,"SELECT COUNT(*) n FROM family_points_journal WHERE operation='transfer_prepaid'").n,0);
  }
+ const foreign=fixture();
+ const foreignId='e'.repeat(32);
+ stmt(foreign.sql,"INSERT INTO family_financial_accounts(account_id,household_id,owner_user_id,label,account_kind,origin,created_by_user_id,updated_by_user_id) VALUES(?,?,?,?,?,'member_created',?,?)",
+  foreignId,hh,other,'Other prepaid','prepaid',other,other);
+ const ownerDenied=await foreign.call(['points-actions'],foreign.action('transfer_prepaid','other-owned',{target_account_id:foreignId}));
+ assert.equal(ownerDenied.status,409);
+ assert.equal(ownerDenied.data.code,'POINTS_PREPAID_TARGET_CHANGED');
+ assert.equal(get(foreign.sql,'SELECT COUNT(*) n FROM family_points_intents').n,0);
  const f=fixture();
  const bad=await f.call(['points-actions'],f.action('transfer_prepaid','bad-rate',{units:3,yen_value:2,rate_numerator:1,rate_denominator:1}));
  assert.equal(bad.status,400);

@@ -15,7 +15,7 @@ export async function auditLegacyFinanceMappings(request,env,user){
  ).bind(user.user_id,user.household_id).first()
  if(!linked)return json({code:'OWNER_LINK_NOT_VERIFIED'},403)
  // Group in D1; never download all rows or private OCR content.
- const [accounts,oldSources,payments,transfers,linkedEntries]=await Promise.all([
+ const [accounts,oldSources,payments,transfers,linkedEntries,linkedLegacy]=await Promise.all([
   read(db,"SELECT account_id,legacy_source_name,owner_user_id,household_id "+
     "FROM family_financial_accounts WHERE origin='legacy' "+
     "AND legacy_source_name IS NOT NULL ORDER BY legacy_source_name LIMIT 301"),
@@ -27,13 +27,20 @@ export async function auditLegacyFinanceMappings(request,env,user){
     "FROM entries WHERE family_account_id IS NULL AND type='transfer' "+
     "AND transfer_target IS NOT NULL AND trim(transfer_target)<>'' "+
     "GROUP BY transfer_target ORDER BY legacy_name LIMIT 301"),
-  db.prepare("SELECT COUNT(*) AS n FROM entries WHERE family_account_id IS NOT NULL").first()
+  db.prepare("SELECT COUNT(*) AS n FROM entries WHERE family_account_id IS NOT NULL").first(),
+  read(db,"SELECT a.legacy_source_name AS legacy_name,COUNT(*) AS row_count "+
+   "FROM entries e JOIN family_financial_accounts a ON a.account_id=e.family_account_id "+
+   "AND a.origin='legacy' AND a.owner_user_id=? AND a.household_id=? "+
+   "AND e.payment_source=a.legacy_source_name "+
+   "WHERE e.type IN ('income','expense') "+
+   "GROUP BY a.legacy_source_name ORDER BY legacy_name LIMIT 301",
+   user.user_id,user.household_id)
  ])
  const collections=[accounts.results||[],oldSources.results||[],
-  payments.results||[],transfers.results||[]]
+  payments.results||[],transfers.results||[],linkedLegacy.results||[]]
  if(collections.some(x=>x.length>300))
   return json({code:'LEGACY_SOURCE_COUNT_REVIEW_REQUIRED',ledger_changed:false},409)
- const [adopted,original,pays,dests]=collections
+ const [adopted,original,pays,dests,linked]=collections
  if(adopted.some(x=>x.owner_user_id!==user.user_id||x.household_id!==user.household_id))
   return json({code:'LEGACY_ACCOUNT_OWNER_CONFLICT',ledger_changed:false},409)
  const sourceSet=new Set(original.map(x=>x.name))
@@ -43,10 +50,11 @@ export async function auditLegacyFinanceMappings(request,env,user){
   return json({code:'LEGACY_NAME_AMBIGUOUS',ledger_changed:false},409)
  const paymentCounts=new Map(pays.map(x=>[x.legacy_name,Number(x.row_count)]))
  const transferCounts=new Map(dests.map(x=>[x.legacy_name,Number(x.row_count)]))
+ const linkedCounts=new Map(linked.map(x=>[x.legacy_name,Number(x.row_count)]))
  const names=[...new Set([...sourceSet,...paymentCounts.keys(),...transferCounts.keys()])].sort()
  if(names.length>300||names.some(n=>typeof n!=='string'||!n.trim()||n.length>240))
   return json({code:'LEGACY_NAME_REVIEW_REQUIRED',ledger_changed:false},409)
- if([...pays,...dests].some(x=>!Number.isSafeInteger(Number(x.row_count))||
+ if([...pays,...dests,...linked].some(x=>!Number.isSafeInteger(Number(x.row_count))||
    Number(x.row_count)<0)||
    !Number.isSafeInteger(Number(linkedEntries?.n))||Number(linkedEntries.n)<0)
   return json({code:'LEGACY_COUNTS_INVALID',ledger_changed:false},409)
@@ -58,6 +66,7 @@ export async function auditLegacyFinanceMappings(request,env,user){
   return {
    legacy_name:name,
    entry_source_count:paymentCounts.get(name)||0,
+   linked_entry_count:linkedCounts.get(name)||0,
    transfer_target_count:transferCounts.get(name)||0,
    stable_account_id:exists&&account?account.account_id:null,
    status
@@ -69,6 +78,8 @@ export async function auditLegacyFinanceMappings(request,env,user){
   mapped_source_count:items.length-unresolved.length,
   unresolved_source_count:unresolved.length,
   previously_linked_entries:Number(linkedEntries.n),
+  linked_legacy_entry_count:items.reduce((sum,x)=>sum+x.linked_entry_count,0),
+  remaining_legacy_entry_count:items.reduce((sum,x)=>sum+x.entry_source_count,0),
   requires_manual_review:unresolved.length>0,
   items})
 }

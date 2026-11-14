@@ -30,7 +30,8 @@ function fixture(){
     KAKEIBO_DOCUMENT_ACCOUNT_VERIFY_ENABLED:'true',
     KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET:secret,
     DB:{prepare(statement){return{bind(...args){return{
-      first:async()=>sql.prepare(statement).get(...args)||null
+      first:async()=>sql.prepare(statement).get(...args)||null,
+      all:async()=>({results:sql.prepare(statement).all(...args)})
     }}}}}
   };
   return {sql,env};

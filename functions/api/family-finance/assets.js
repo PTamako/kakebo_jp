@@ -8,6 +8,7 @@ import {handlePortfolio} from '../investment-portfolio.js'
 import {getCardBillSnapshots} from '../card-bill-snapshots.js'
 import {verifiedFamilyAssetOwners} from './asset-owner-projection.js'
 import {memberCardLiabilities} from './card-settlement-summary.js'
+import {memberPrepaidBalances} from './prepaid-balance-projection.js'
 
 const reply=(body,status=200)=>Response.json(body,{status,headers:{
  'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
@@ -68,7 +69,12 @@ export async function familyAssetSummary(env,url,user,request){
   const allValued=holdings.length>0&&holdings.every(x=>x.market_value_jpy!==null)
   const prepaidTotal=addSafe(cards.map(x=>x.balance_jpy))
   const sbiTotal=allValued?addSafe(holdings.map(x=>x.market_value_jpy)):null
-  const knownAssets=addSafe([prepaidTotal,allValued?sbiTotal:0].filter(x=>x!==null))
+  const memberPrepaidEnabled=env.KAKEIBO_PREPAID_ACTIONS_ENABLED==='true';
+  const memberPrepaid=memberPrepaidEnabled?
+   await memberPrepaidBalances(env.DB,user.household_id):
+   {accounts:[],total_jpy:0,scope:'household',ledger_changed:false};
+  if(!memberPrepaid)return reply({code:'UNSAFE_MEMBER_PREPAID_BALANCE',ledger_changed:false},409);
+  const knownAssets=addSafe([prepaidTotal,memberPrepaid.total_jpy,allValued?sbiTotal:0].filter(x=>x!==null))
   if(prepaidTotal===null||knownAssets===null||
     (allValued&&sbiTotal===null))
    return reply({code:'ASSET_SUM_OVERFLOW',ledger_changed:false},409)
@@ -102,6 +108,7 @@ export async function familyAssetSummary(env,url,user,request){
    scope:'household',month,as_of_jst:
     new Date(Date.now()+9*3600000).toISOString().slice(0,10),
    prepaid:{cards:ownership.prepaid,total_jpy:prepaidTotal},
+   member_prepaid:{...memberPrepaid,enabled:memberPrepaidEnabled},
    securities:{holdings:ownership.securities,total_market_value_jpy:sbiTotal,
     missing_valuations:holdings.filter(x=>x.market_value_jpy===null).length,
     count:holdings.length},
@@ -114,7 +121,7 @@ export async function familyAssetSummary(env,url,user,request){
    tracked_assets_complete:allValued||holdings.length===0,
    excluded_from_assets:['untracked_bank_cash_balances',
     'credit_card_bill_snapshots','unposted_member_accounts'],
-   note:'仅为已跟踪储值卡余额与可确认的SBI持仓估值；无银行/现金实时余额，不能视为家庭总资产。',
+   note:'仅为遗留储值卡及本人新建稳定账户的已记录余额、可确认的SBI持仓估值；不含银行/现金实时余额，不能视为家庭净资产。',
    ledger_changed:false})
  }catch{return reply({code:'ASSET_READ_UNAVAILABLE',ledger_changed:false},503)}
 }

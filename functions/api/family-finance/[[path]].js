@@ -218,10 +218,15 @@ async function entries(env,user,url){
  const rows=await all(env.DB,'SELECT e.id,e.date,e.time,e.type,e.amount,'+
   'e.category,e.merchant,e.note,e.payment_source,e.transfer_target,'+
   'e.transfer_applied,e.transfer_date,e.family_account_id,'+
+  'e.family_transfer_target_account_id,'+
   'COALESCE(a.label,e.payment_source) AS payment_source_display,'+
-  'a.owner_user_id AS payment_account_owner_user_id '+
+  'a.owner_user_id AS payment_account_owner_user_id,'+
+  'COALESCE(t.label,e.transfer_target) AS transfer_target_display,'+
+  't.owner_user_id AS transfer_target_account_owner_user_id '+
   'FROM entries e LEFT JOIN family_financial_accounts a '+
   'ON a.account_id=e.family_account_id '+
+  'LEFT JOIN family_financial_accounts t '+
+  'ON t.account_id=e.family_transfer_target_account_id '+
   'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',limit+1,offset);
  return json({ok:true,household_id:user.household_id,items:rows.slice(0,limit),
   next_offset:rows.length>limit?offset+limit:null,ledger_scope:'household'});

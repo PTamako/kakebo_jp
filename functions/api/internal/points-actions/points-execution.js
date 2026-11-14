@@ -42,7 +42,7 @@ async function signed(req,e,mode){
  const expected=await hmac(e.KAKEIBO_POINTS_EXECUTION_SECRET,'homeflow:points-'+mode,stamp,raw);
  return eq(tag,expected)?b:null;
 }
-const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null,transferRefund=null)=>({ok:true,applied:true,approval_id:r.homeflow_request_id,
+const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null,transferRefund=null,prepaidRefund=null)=>({ok:true,applied:true,approval_id:r.homeflow_request_id,
  proposal_id:r.proposal_id,household_id:r.household_id,requester_user_id:r.requester_user_id,
  payload_sha256:r.payload_sha256,approver_user_id:r.approver_user_id,
  actor_user_id:r.actor_user_id,points_account_id:r.points_account_id,
@@ -73,19 +73,35 @@ const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null,transferRefun
  refunded_target_account_id:transferRefund?.target_account_id??null,
  refunded_target_units:transferRefund?.debited_target_units??null,
  refunded_target_balance_after_units:transferRefund?.target_balance_after_units??null,
- refunded_target_version:transferRefund?.target_version??null});
+ refunded_target_version:transferRefund?.target_version??null,
+ refunded_prepaid_account_id:prepaidRefund?.prepaid_account_id??null,
+ refunded_prepaid_jpy:prepaidRefund?.debited_prepaid_jpy??null,
+ refunded_prepaid_balance_after_jpy:prepaidRefund?.balance_after_jpy??null,
+ refunded_prepaid_version:prepaidRefund?.prepaid_version??null});
 async function receiptFor(db,r,replayed){
  if(r.operation==='reversal'&&r.target_account_id){
   const compensating=await db.prepare('SELECT * FROM family_points_transfer_refunds '+
    'WHERE homeflow_request_id=?').bind(r.homeflow_request_id).first();
-  if(!compensating||compensating.original_request_id!==r.reversed_request_id||
-   compensating.source_account_id!==r.points_account_id||
-   compensating.target_account_id!==r.target_account_id||
-   compensating.household_id!==r.household_id||
-   compensating.requester_user_id!==r.requester_user_id||
-   compensating.yen_value!==r.yen_value)
-   return fail('POINTS_TRANSFER_REFUND_COUNTERPART_MISSING',503);
-  return json(receipt(r,replayed,null,null,null,null,compensating));
+  if(compensating){
+   if(compensating.original_request_id!==r.reversed_request_id||
+    compensating.source_account_id!==r.points_account_id||
+    compensating.target_account_id!==r.target_account_id||
+    compensating.household_id!==r.household_id||
+    compensating.requester_user_id!==r.requester_user_id||
+    compensating.yen_value!==r.yen_value)
+    return fail('POINTS_TRANSFER_REFUND_COUNTERPART_MISSING',503);
+   return json(receipt(r,replayed,null,null,null,null,compensating));
+  }
+  const prepaid=await db.prepare('SELECT * FROM family_points_prepaid_refunds '+
+   'WHERE homeflow_request_id=?').bind(r.homeflow_request_id).first();
+  if(!prepaid||prepaid.original_request_id!==r.reversed_request_id||
+   prepaid.points_account_id!==r.points_account_id||
+   prepaid.prepaid_account_id!==r.target_account_id||
+   prepaid.household_id!==r.household_id||
+   prepaid.requester_user_id!==r.requester_user_id||
+   prepaid.debited_prepaid_jpy!==r.yen_value)
+   return fail('POINTS_PREPAID_REFUND_COUNTERPART_MISSING',503);
+  return json(receipt(r,replayed,null,null,null,null,null,prepaid));
  }
  if(r.operation==='redeem_asset'){
   const lot=await db.prepare('SELECT * FROM family_sbi_point_lots WHERE homeflow_request_id=?')
@@ -305,9 +321,11 @@ export async function approvedPointsRoute(request,e,parts){
   if(row.original_request_id!==x.original_request_id)return fail('POINTS_REVERSAL_ORIGINAL_CHANGED');
   original=await db.prepare('SELECT old.* FROM family_points_journal old WHERE '+
    'old.homeflow_request_id=? AND old.household_id=? AND old.requester_user_id=? '+
-   "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire','transfer_out','exchange_out') "+
+   "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire','transfer_out','exchange_out','transfer_prepaid') "+
    'AND (old.target_account_id IS NULL OR EXISTS (SELECT 1 FROM family_points_transfer_credits c '+
-   'WHERE c.homeflow_request_id=old.homeflow_request_id AND c.target_account_id=old.target_account_id)) '+
+   'WHERE c.homeflow_request_id=old.homeflow_request_id AND c.target_account_id=old.target_account_id) '+
+   'OR EXISTS (SELECT 1 FROM family_points_prepaid_credits c '+
+   'WHERE c.homeflow_request_id=old.homeflow_request_id AND c.prepaid_account_id=old.target_account_id)) '+
    'AND NOT EXISTS ('+
     'SELECT 1 FROM family_points_journal other WHERE other.reversed_request_id=old.homeflow_request_id)')
    .bind(x.original_request_id,row.household_id,row.requester_user_id,row.points_account_id).first();

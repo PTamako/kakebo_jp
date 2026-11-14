@@ -167,7 +167,14 @@ async function adoptLegacy(request,env,url,user){
  if(request.method!=='POST')return json({code:'METHOD_NOT_ALLOWED'},405);
  if(user.role!=='owner')return json({code:'OWNER_REQUIRED'},403);
  const input=await bodyForMutation(request,url);
- if(!input||input.confirm!==true)return json({code:'EXPLICIT_CONFIRMATION_REQUIRED'},403);
+ if(!input)return json({code:'BAD_ORIGIN_OR_BODY'},403);
+ // Owner-initiated legacy adoption is a durable family ownership claim.
+ // Reject a delayed PWA request if the HomeFlow cookie now belongs to a
+ // different actor, BEFORE any legacy lookup or owner assignment.
+ if(input.expected_user_id!==user.user_id)return json({code:'ACTOR_CHANGED'},403);
+ if(input.confirm!==true||
+    Object.keys(input).some(k=>!['expected_user_id','confirm'].includes(k)))
+  return json({code:'EXPLICIT_CONFIRMATION_REQUIRED'},403);
  const db=env.DB;
  const rows=await all(db,'SELECT name,sort_order,is_default,closing_day,source_type,'+
   'stat_group,is_archived,opening_balance,opening_date FROM payment_sources ORDER BY name LIMIT 301');

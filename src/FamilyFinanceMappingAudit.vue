@@ -38,6 +38,9 @@ async function load(){
    !Number.isSafeInteger(data.previously_linked_entries)||
    !Number.isSafeInteger(data.linked_legacy_entry_count)||
    !Number.isSafeInteger(data.remaining_legacy_entry_count)||
+   !['linked_legacy_transfer_count','remaining_legacy_transfer_count',
+    'partial_legacy_transfer_count','unverified_linked_transfer_count'].every(k=>
+     Number.isSafeInteger(data[k])&&data[k]>=0)||
    data.linked_legacy_entry_count!==data.items.reduce((s,x)=>s+x.linked_entry_count,0)||
    data.remaining_legacy_entry_count!==data.items.reduce((s,x)=>s+x.entry_source_count,0))
    throw Error('原账户归属核对数据不完整，请暂勿迁移')
@@ -70,7 +73,9 @@ onUnmounted(()=>{alive=false;revision++;open.value=false;items.value=[];summary.
    <p v-if="loading" class="hf-subtle">核对中…</p>
    <template v-else-if="summary">
     <p class="hf-subtle">已认领账户来源 {{summary.mapped_source_count}} 项 · 待认领 {{summary.unresolved_source_count}} 项</p>
-    <p class="hf-subtle">原历史收支：已关联稳定 ID {{summary.linked_legacy_entry_count}} 笔 · 待关联 {{summary.remaining_legacy_entry_count}} 笔。转账需单独核对。</p>
+    <p class="hf-subtle">原历史收支：已关联稳定 ID {{summary.linked_legacy_entry_count}} 笔 · 待关联 {{summary.remaining_legacy_entry_count}} 笔。</p>
+    <p class="hf-subtle">历史转账：双向已关联 {{summary.linked_legacy_transfer_count}} 笔 · 待核对 {{summary.remaining_legacy_transfer_count}} 笔。</p>
+    <p v-if="summary.partial_legacy_transfer_count||summary.unverified_linked_transfer_count" class="hf-error" role="alert">发现异常转账关联：仅一侧有关联 {{summary.partial_legacy_transfer_count}} 笔 · 双向 ID 未能核实审计 {{summary.unverified_linked_transfer_count}} 笔。需人工核验，禁止自动补写。</p>
     <ul class="hf-audit-list">
      <li v-for="item in items" :key="item.legacy_name">
       <strong>{{item.legacy_name}}</strong>

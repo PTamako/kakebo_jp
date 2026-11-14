@@ -125,7 +125,9 @@ async function permittedPurchase(db,row,x){
    .bind(entry.family_account_id).first();
   return account?.owner_user_id===row.requester_user_id&&account.household_id===row.household_id;
  }
- const legacy=await db.prepare('SELECT owner_user_id,household_id FROM family_finance_legacy_entry_links WHERE entry_id=?')
+ const legacy=await db.prepare('SELECT a.owner_user_id,l.household_id FROM family_finance_legacy_entry_links l '+
+  'JOIN family_financial_accounts a ON a.account_id=l.account_id AND a.household_id=l.household_id '+
+  'WHERE l.entry_id=?')
   .bind(x.linked_entry_id).first();
  return legacy?.owner_user_id===row.requester_user_id&&legacy.household_id===row.household_id;
 }

@@ -54,7 +54,9 @@ async function linkedPurchase(db,user,entryId){
    .bind(e.family_account_id).first();
   return a?.owner_user_id===user.user_id&&a.household_id===user.household_id;
  }
- const l=await db.prepare('SELECT owner_user_id,household_id FROM family_finance_legacy_entry_links WHERE entry_id=?')
+ const l=await db.prepare('SELECT a.owner_user_id,l.household_id FROM family_finance_legacy_entry_links l '+
+  'JOIN family_financial_accounts a ON a.account_id=l.account_id AND a.household_id=l.household_id '+
+  'WHERE l.entry_id=?')
   .bind(entryId).first();
  return l?.owner_user_id===user.user_id&&l.household_id===user.household_id;
 }
@@ -77,7 +79,7 @@ function valid(x,user){
  const none=x.yen_value===null&&x.rate_numerator===null&&x.rate_denominator===null;
  return none||pointAccountingPlan({operation:x.operation,units:x.units,yen_value:x.yen_value,
   rate_numerator:x.rate_numerator,rate_denominator:x.rate_denominator,
-  linked_entry_id:x.linked_entry_id,source_reference_hash:hex.source_reference_hash}).ok===true;
+  linked_entry_id:x.linked_entry_id,source_reference_hash:'a'.repeat(64)}).ok===true;
 }
 async function seal(e,requestId,raw){
  const key=await crypto.subtle.importKey('raw',

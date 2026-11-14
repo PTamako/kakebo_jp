@@ -83,3 +83,23 @@ test('document account proof refuses browser, forge, expired timestamp, unknown 
     assert.equal((await request(env,intent())).status,503);
   }finally{sql.close();}
 });
+
+test('signed list returns only current member cash account IDs, including duplicate display labels',async()=>{
+ const {sql,env}=fixture();
+ try{
+  const body={household_id:'primary',requester_user_id:member},raw=JSON.stringify(body);
+  const stamp=String(Date.now());
+  const sig=createHmac('sha256',Buffer.from(secret,'hex'))
+   .update('jpda:finance-account\n'+stamp+'\n'+raw).digest('hex');
+  const request=new Request('https://internal.invalid/api/internal/document-accounts/list',{
+   method:'POST',headers:{'content-type':'application/json',
+    'x-approval-client':'jp-document-assistant','x-approval-timestamp':stamp,
+    'x-approval-signature':sig},body:raw});
+  const res=await verifyDocumentFinanceAccount(request,env,['list']);
+  assert.equal(res.status,200);
+  const data=await res.json();
+  assert.deepEqual(data.accounts.map(a=>a.account_id).sort(),['a'.repeat(32),'d'.repeat(32)]);
+  assert.equal(data.accounts[0].label,'同名账户');
+  assert.equal(data.applied,false);
+ }finally{sql.close()}
+});

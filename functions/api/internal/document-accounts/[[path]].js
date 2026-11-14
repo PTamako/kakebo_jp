@@ -26,7 +26,8 @@ export async function verifyDocumentFinanceAccount(request,env,parts=['verify'])
     !hex64.test(env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET||'')||
     typeof env.DB?.prepare!=='function')
     return deny('ACCOUNT_PROOF_DISABLED',503);
-  if(request.method!=='POST'||parts.length!==1||parts[0]!=='verify')
+  const listOnly=parts.length===1&&parts[0]==='list';
+  if(request.method!=='POST'||parts.length!==1||!['verify','list'].includes(parts[0]))
     return deny('NOT_FOUND',404);
   if(request.headers.has('cookie')||request.headers.has('origin')||
     request.headers.has('authorization')||
@@ -48,13 +49,34 @@ export async function verifyDocumentFinanceAccount(request,env,parts=['verify'])
     return deny('INVALID_SIGNATURE');
   if(!body||typeof body!=='object'||Array.isArray(body)||
     Object.keys(body).sort().join(',')!==
-    ['account_id','household_id','requester_user_id','entry_type'].sort().join(',')||
-    !hex32.test(body.account_id)||
+    (listOnly?['household_id','requester_user_id']:
+     ['account_id','household_id','requester_user_id','entry_type']).sort().join(',')||
+    (!listOnly&&!hex32.test(body.account_id))||
     typeof body.household_id!=='string'||!body.household_id||body.household_id.length>128||
     typeof body.requester_user_id!=='string'||!body.requester_user_id||
     body.requester_user_id.length>128||
-    !['expense','income'].includes(body.entry_type))
+    (!listOnly&&!['expense','income'].includes(body.entry_type)))
     return deny('INVALID_INPUT',400);
+  if(listOnly){
+    // This is NOT a name-to-ID resolver. Show the caller only the cash
+    // accounts already associated with its verified HomeFlow subject.
+    const active=await env.DB.prepare(
+      'SELECT role,state FROM homeflow_identity_links '+
+      'WHERE user_id=? AND household_id=? LIMIT 1'
+    ).bind(body.requester_user_id,body.household_id).first();
+    if(active?.role!=='member'||active?.state!=='active')
+      return deny('ACCOUNT_OWNER_NOT_VERIFIED',409);
+    const selected=await env.DB.prepare(
+      'SELECT account_id,label,account_kind,version AS account_version '+
+      'FROM family_financial_accounts WHERE household_id=? '+
+      'AND owner_user_id=? AND origin=\'member_created\' '+
+      'AND account_kind=\'cash\' AND is_archived=0 '+
+      'ORDER BY sort_order,account_id LIMIT 101'
+    ).bind(body.household_id,body.requester_user_id).all();
+    const rows=selected.results||[];
+    if(rows.length>100)return deny('ACCOUNT_LIST_LIMIT',409);
+    return reply({ok:true,verified:true,applied:false,accounts:rows});
+  }
   // The mapping must exist in the TARGET database and belong to the
   // exact currently linked member. Duplicate labels carry no authority.
   const account=await env.DB.prepare(

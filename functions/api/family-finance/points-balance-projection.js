@@ -5,11 +5,13 @@
 export async function memberPointsBalances(db,householdId){
  if(typeof householdId!=='string'||!householdId)return null;
  const query='SELECT a.account_id,a.owner_user_id,a.label,a.version,'+
-  'COALESCE(SUM(j.delta_units),0) AS balance_units,'+
+  'COALESCE((SELECT SUM(j.delta_units) FROM family_points_journal j '+
+  'WHERE j.points_account_id=a.account_id AND j.household_id=a.household_id),0) '+
+  '+COALESCE((SELECT SUM(c.target_units) FROM family_points_transfer_credits c '+
+  'WHERE c.target_account_id=a.account_id AND c.household_id=a.household_id),0) AS balance_units,'+
   '(SELECT COUNT(*) FROM family_points_legacy_links l '+
   'WHERE l.household_id=a.household_id AND l.points_account_id=a.account_id) AS legacy_reviewed_count '+
-  'FROM family_financial_accounts a LEFT JOIN family_points_journal j '+
-  'ON j.points_account_id=a.account_id AND j.household_id=a.household_id '+
+  'FROM family_financial_accounts a '+
   'WHERE a.household_id=? AND a.account_kind=\'points\' '+
   'AND a.origin=\'member_created\' AND a.is_archived=0 '+
   'GROUP BY a.account_id,a.owner_user_id,a.label,a.version,a.household_id '+

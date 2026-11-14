@@ -39,7 +39,8 @@ function valid(x,user){
  x.expected_user_id===user.user_id&&id32.test(x.card_account_id)&&id32.test(x.bank_account_id)&&
  x.card_account_id!==x.bank_account_id&&Number.isSafeInteger(x.card_version)&&x.card_version>=1&&
  Number.isSafeInteger(x.bank_version)&&x.bank_version>=1&&validDate(x.debit_date)&&amount(x.amount_jpy)&&
- x.statement_confirmed===true&&typeof x.idempotency_key==='string'&&
+ x.statement_confirmed===true&&x.debit_date<=new Date(Date.now()+9*3600000).toISOString().slice(0,10)&&
+ typeof x.idempotency_key==='string'&&
  /^[a-z0-9._:-]{12,128}$/i.test(x.idempotency_key)&&
  typeof x.bank_reference==='string'&&x.bank_reference.trim().length>=4&&x.bank_reference.length<=160&&
  Array.isArray(x.allocations)&&x.allocations.length>=1&&x.allocations.length<=30&&
@@ -54,9 +55,9 @@ async function accountVersions(db,user,x){
  return rows.length===2&&rows.some(a=>a.account_id===x.card_account_id&&a.account_kind==='credit_card'&&a.version===x.card_version)&&
  rows.some(a=>a.account_id===x.bank_account_id&&a.account_kind==='bank'&&a.version===x.bank_version);
 }
-async function outstanding(db,household,card,allocations){
+async function outstanding(db,household,card,allocations,debitDate){
  const ids=allocations.map(a=>a.purchase_request_id);
- const rows=(await db.prepare('SELECT p.homeflow_request_id,p.amount_jpy,'+
+ const rows=(await db.prepare('SELECT p.homeflow_request_id,p.amount_jpy,p.purchase_date,'+
   'COALESCE((SELECT SUM(x.amount_jpy) FROM family_card_settlement_allocations x '+
   'WHERE x.purchase_request_id=p.homeflow_request_id),0) paid_jpy '+
   'FROM family_card_purchase_applied p WHERE p.household_id=? AND p.account_id=? '+
@@ -64,7 +65,7 @@ async function outstanding(db,household,card,allocations){
   .bind(household,card,...ids).all()).results||[];
  return rows.length===ids.length&&allocations.every(a=>{
   const r=rows.find(x=>x.homeflow_request_id===a.purchase_request_id);
-  return !!r&&Number.isSafeInteger(r.amount_jpy)&&Number.isSafeInteger(r.paid_jpy)&&
+  return !!r&&r.purchase_date<=debitDate&&Number.isSafeInteger(r.amount_jpy)&&Number.isSafeInteger(r.paid_jpy)&&
    r.amount_jpy-r.paid_jpy>=a.amount_jpy;
  });
 }
@@ -88,7 +89,7 @@ async function prepare(req,env,url,user){
  if(x?.expected_user_id!==user.user_id)return fail('ACTOR_CHANGED',403);
  if(!valid(x,user))return fail('INVALID_CARD_SETTLEMENT',400);
  if(!await accountVersions(env.DB,user,x))return fail('SETTLEMENT_ACCOUNT_VERSION_CONFLICT');
- if(!await outstanding(env.DB,user.household_id,x.card_account_id,x.allocations))
+ if(!await outstanding(env.DB,user.household_id,x.card_account_id,x.allocations,x.debit_date))
   return fail('SETTLEMENT_PURCHASES_OR_BALANCE_CHANGED');
  const bankRefHash=await hash('bank-statement:'+x.bank_account_id+'\u0000'+x.bank_reference.trim());
  const payload={card_account_id:x.card_account_id,card_version:x.card_version,

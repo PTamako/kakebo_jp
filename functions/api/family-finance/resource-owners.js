@@ -40,8 +40,10 @@ export async function familyLegacyResourceOwners(request,env,url,user){
  if(request.method!=='POST')return json({code:'METHOD_NOT_ALLOWED'},405);
  if(user.role!=='owner')return json({code:'OWNER_REQUIRED'},403);
  const body=await inputBody(request,url);
- if(!body||body.confirm!==true||!Object.hasOwn(kinds,body.resource_kind)||
-  Object.keys(body).some(k=>!['confirm','resource_kind','cursor'].includes(k))||
+ if(!body)return json({code:'BAD_ORIGIN_OR_BODY'},403);
+ if(body.expected_user_id!==user.user_id)return json({code:'ACTOR_CHANGED'},403);
+ if(body.confirm!==true||!Object.hasOwn(kinds,body.resource_kind)||
+  Object.keys(body).some(k=>!['expected_user_id','confirm','resource_kind','cursor'].includes(k))||
   (body.cursor!==undefined&&body.cursor!==null&&!validCursor(body.cursor)))
   return json({code:'EXPLICIT_OWNER_CONFIRMATION_REQUIRED'},403);
  const kind=body.resource_kind,cursor=body.cursor||'';

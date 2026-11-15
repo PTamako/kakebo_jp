@@ -6,6 +6,7 @@ import FamilyFinanceCardSettlements from './FamilyFinanceCardSettlements.vue'
 import FamilyFinancePrepaidActions from './FamilyFinancePrepaidActions.vue'
 import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
 import FamilySharedEntries from './FamilySharedEntries.vue'
+import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
 import FamilyFinanceLegacyTransferLink from './FamilyFinanceLegacyTransferLink.vue'
@@ -272,6 +273,9 @@ onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange'
       </form>
      </li>
     </ul>
+    <FamilySharedMutationRequests v-if="person.role==='member'"
+      :key="'shared-mutation:'+person.user_id" :user-id="person.user_id"
+      :household-id="person.household_id" />
     <FamilySharedEntries :key="'shared-entry:'+person.user_id"
       :user-id="person.user_id" :household-id="person.household_id"
       :role="person.role" @changed="refresh" />

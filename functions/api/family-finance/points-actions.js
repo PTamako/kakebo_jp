@@ -235,6 +235,7 @@ function valid(x,user){
    x.sbi_broker_cancel_reference.length>160||
    typeof x.sbi_points_refund_reference!=='string'||x.sbi_points_refund_reference.length<8||
    x.sbi_points_refund_reference.length>160||
+   x.source_reference.trim()!==x.sbi_points_refund_reference.trim()||
    !validDate(x.sbi_broker_cancel_date)||!validDate(x.sbi_points_refund_date)||
    x.sbi_points_refund_date<x.sbi_broker_cancel_date||
    x.sbi_points_returned_confirmed!==true||x.sbi_broker_cancel_confirmed!==true))return false;
@@ -283,7 +284,7 @@ async function prepare(req,e,url,user){
  const reference_hash=await hash(user.household_id+'\0'+x.points_account_id+'\0'+x.source_reference.trim());
  const brokerReferenceHash=x.operation==='redeem_asset'?
   await hash(user.household_id+'\0sbi-confirmed-trade\0'+x.broker_trade_reference):null;
- const brokerRefundHash=sbiReversal?await hash(user.household_id+'\\0sbi-cancelled-point-trade\\0'+
+ const brokerRefundHash=sbiReversal?await hash(user.household_id+'\0sbi-cancelled-point-trade\0'+
   x.sbi_broker_cancel_reference.trim()):null;
  const pointsRefundHash=sbiReversal?reference_hash:null;
  const raw=JSON.stringify({operation:x.operation,points_account_id:x.points_account_id,

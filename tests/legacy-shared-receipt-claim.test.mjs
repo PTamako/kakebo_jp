@@ -27,7 +27,7 @@ function fixture(){
  sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,'owner','active')").run(owner,hh);
  sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,'member','active')").run(member,hh);
  sql.prepare('INSERT INTO family_financial_accounts VALUES(?,?,?,0)').run(acc,hh,owner);
- sql.prepare('INSERT INTO entries VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(7,'2026-10-01','',1000,
+ sql.prepare('INSERT INTO entries VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(7,'2026-10-01','',1000,
   '食品','スーパー','原ノート','原OCR','expense',null,'Bank',acc,null,'2026-10-01');
  sql.prepare('INSERT INTO family_finance_legacy_entry_links VALUES(?,?,?,?,?,?)').run(7,hh,owner,acc,'Bank','f'.repeat(64));
  sql.prepare("INSERT INTO receipt_r2_state VALUES(7,0,8,'2026-10-01')").run();

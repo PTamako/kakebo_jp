@@ -57,7 +57,7 @@ test('historical ordinary entry is linked to verified original account only afte
   assert.equal(saved.status,200,JSON.stringify(saved))
   assert.equal(saved.body.financial_values_changed,false)
   const after=f.sql.prepare('SELECT * FROM entries WHERE id=1').get()
-  assert.deepEqual({...after,family_account_id:null},original)
+  assert.deepEqual({...after,family_account_id:null},{...original})
   assert.equal(after.family_account_id,account)
   assert.equal((await f.invoke('POST',owner,payload)).body.already_linked,true)
   assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_finance_legacy_entry_links').get().n,1)

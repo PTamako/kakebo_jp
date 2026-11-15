@@ -11,9 +11,16 @@ preview_urls = false
 [vars]
 JPDA_BRIDGE_ENABLED = "true"
 JPDA_PRIVATE_BRIDGE = "true"
+APP_ENV = "production"
+HOMEFLOW_OAUTH_ORIGIN = "https://homeflow.yupan6706.workers.dev"
 # JPDA_BRIDGE_SECRET is managed as a Cloudflare secret, never in Git.
 
 [[d1_databases]]
 binding = "DB"
 database_name = "kakeibo"
 database_id = "4d790915-fc06-4073-b660-bbb51dc74463"
+
+# Signed HomeFlow approval and immutable D1 receipt proofs only.
+[[services]]
+binding = "HOMEFLOW_IDENTITY_SERVICE"
+service = "homeflow"

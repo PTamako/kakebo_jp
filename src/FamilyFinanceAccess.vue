@@ -7,6 +7,7 @@ import FamilyFinancePrepaidActions from './FamilyFinancePrepaidActions.vue'
 import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
 import FamilySharedEntries from './FamilySharedEntries.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
+import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
 import FamilyFinanceLegacyTransferLink from './FamilyFinanceLegacyTransferLink.vue'
@@ -306,6 +307,9 @@ onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange'
     <FamilyFinancePrepaidActions v-if="person.role==='member'"
      :key="'prepaid-actions:'+person.user_id" :user-id="person.user_id"
      :household-id="person.household_id" :accounts="accounts" />
+    <FamilyRecurringFinance v-if="person.role==='member'"
+      :key="'recurring:'+person.user_id" :user-id="person.user_id"
+      :household-id="person.household_id" :accounts="accounts" @changed="refresh" />
     <FamilyFinanceBankTransfers v-if="person.role==='member'"
      :key="'bank-transfers:'+person.user_id" :user-id="person.user_id"
      :household-id="person.household_id" :accounts="accounts" />

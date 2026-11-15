@@ -129,6 +129,61 @@ async function revoke(req,e,url,u,idValue){
    fail('RECURRING_PLAN_REVOKE_CONFLICT');
  }catch{return fail('RECURRING_PLAN_REVOKE_FAILED')}
 }
+// This creates or retrieves the EXISTING HomeFlow monthly owner policy. A
+// signed proposal is not approval, not a debit and not a broker order.
+async function submitPolicy(req,e,url,u,resource){
+ if(e.KAKEIBO_RECURRING_POLICY_SUBMISSION_ENABLED!=='true'||
+  !hex.test(e.KAKEIBO_RECURRING_POLICY_SUBMISSION_SECRET||'')||
+  typeof e.HOMEFLOW_IDENTITY_SERVICE?.fetch!=='function'||
+  !/^https:\/\/[a-z0-9.-]+$/i.test(e.HOMEFLOW_OAUTH_ORIGIN||''))
+  return fail('RECURRING_POLICY_SUBMISSION_DISABLED',503);
+ const x=await input(req,url);
+ if(!exact(x,['expected_user_id','confirm_plan_resource_id'])||
+  x.expected_user_id!==u.user_id||x.confirm_plan_resource_id!==resource)
+  return fail('RECURRING_POLICY_SUBMISSION_CONFIRM_REQUIRED',428);
+ const p=await one(e.DB,u,resource);
+ if(!p||p.status!=='active')return fail('RECURRING_PLAN_NOT_CURRENT');
+ const validAccount=await accounts(e.DB,u,{
+  source_bank_account_id:p.bank_account_id,source_account_version:p.bank_version,
+  securities_account_id:p.securities_account_id,securities_version:p.securities_version,
+  plan_type:p.plan_type
+ });
+ if(!validAccount)return fail('RECURRING_POLICY_ACCOUNT_VERSION_CHANGED');
+ const body={household_id:p.household_id,requester_user_id:p.owner_user_id,
+  plan_resource_id:p.plan_resource_id,plan_payload_sha256:p.plan_payload_sha256,
+  plan_type:p.plan_type,source_account_version:p.bank_version,
+  due_day:p.due_day,max_amount_jpy:p.amount_jpy,
+  start_month:p.start_month,end_month:p.end_month};
+ const raw=JSON.stringify(body),stamp=String(Date.now());
+ const key=await crypto.subtle.importKey('raw',
+  Uint8Array.from(e.KAKEIBO_RECURRING_POLICY_SUBMISSION_SECRET.match(/.{2}/g),
+   v=>parseInt(v,16)),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+ const signature=[...new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(
+  'kakeibo-recurring-policy:submit\n'+stamp+'\n'+raw)))]
+  .map(b=>b.toString(16).padStart(2,'0')).join('');
+ let data,status;
+ try{
+  const r=await e.HOMEFLOW_IDENTITY_SERVICE.fetch(new Request(new URL(
+   '/api/internal/recurring-finance/policy-submit',e.HOMEFLOW_OAUTH_ORIGIN),{
+   method:'POST',redirect:'manual',headers:{'content-type':'application/json',
+    'x-approval-client':'kakeibo-recurring-policy',
+    'x-approval-timestamp':stamp,'x-approval-signature':signature},body:raw}));
+  if(![200,201].includes(r.status)||r.headers.has('location'))
+   return fail('RECURRING_POLICY_HOMEFLOW_NOT_CONFIRMED',503);
+  const rawResult=await r.text();if(rawResult.length>2300)
+   return fail('RECURRING_POLICY_HOMEFLOW_INVALID_RESPONSE',503);
+  data=JSON.parse(rawResult);status=r.status;
+ }catch{return fail('RECURRING_POLICY_HOMEFLOW_NETWORK_RETRY',503)}
+ if(data?.ok!==true||data.owner_approved!== (data.policy?.status==='approved')||
+  data.ledger_applied!==false||data.plan_resource_id!==p.plan_resource_id||
+  data.plan_payload_sha256!==p.plan_payload_sha256||
+  data.requester_user_id!==p.owner_user_id||data.household_id!==p.household_id||
+  data.policy?.plan_type!==p.plan_type||data.policy?.source_account_version!==p.bank_version||
+  data.policy?.max_amount_jpy!==p.amount_jpy||data.policy?.due_day!==p.due_day)
+  return fail('RECURRING_POLICY_HOMEFLOW_RECONCILE',503);
+ return reply({ok:true,policy:data.policy,owner_approved:data.owner_approved,
+  ledger_applied:false,replayed:data.replayed===true},status);
+}
 export async function familyMemberRecurringPlans(req,e,url,u,parts){
  if(!ready(e))return fail('RECURRING_PLAN_DISABLED',503);
  const r=await active(e.DB,u);
@@ -147,5 +202,7 @@ export async function familyMemberRecurringPlans(req,e,url,u,parts){
  }
  if(parts.length===3&&parts[2]==='revoke'&&req.method==='POST')
   return revoke(req,e,url,u,parts[1]);
+ if(parts.length===3&&parts[2]==='submit-policy'&&req.method==='POST')
+  return submitPolicy(req,e,url,u,parts[1]);
  return fail('NOT_FOUND',404);
 }

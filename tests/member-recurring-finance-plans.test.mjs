@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
-import {webcrypto} from 'node:crypto'
+import {webcrypto,createHmac} from 'node:crypto'
 import {DatabaseSync} from 'node:sqlite'
 import {familyMemberRecurringPlans} from '../functions/api/family-finance/member-recurring-plans.js'
 if(!globalThis.crypto)globalThis.crypto=webcrypto
@@ -112,5 +112,47 @@ test('new per-member SBI plan has stable financial bank/securities owner without
    idempotency_key:'sbi-plan-new-after-account-version-changed'})
   assert.equal(stale.status,409)
   assert.equal(f.count('family_member_recurring_plans'),1)
+ }finally{f.close()}
+})
+
+test('member frozen plan submits signed HMAC to real HomeFlow-only policy route, never becomes a ledger row',async()=>{
+ const f=fixture()
+ try{
+  const p=(await f.api(f.form('fixed_cost'))).data.plan
+  const secret='6'.repeat(64)
+  f.env.KAKEIBO_RECURRING_POLICY_SUBMISSION_ENABLED='true'
+  f.env.KAKEIBO_RECURRING_POLICY_SUBMISSION_SECRET=secret
+  f.env.HOMEFLOW_OAUTH_ORIGIN='https://homeflow.example.test'
+  let called=0
+  f.env.HOMEFLOW_IDENTITY_SERVICE={async fetch(req){
+   called++
+   assert.equal(new URL(req.url).pathname,'/api/internal/recurring-finance/policy-submit')
+   assert.equal(req.headers.get('x-approval-client'),'kakeibo-recurring-policy')
+   assert.equal(req.headers.get('origin'),null)
+   const raw=await req.text(),b=JSON.parse(raw),stamp=req.headers.get('x-approval-timestamp')
+   const expected=createHmac('sha256',Buffer.from(secret,'hex'))
+    .update('kakeibo-recurring-policy:submit\n'+stamp+'\n'+raw).digest('hex')
+   assert.equal(req.headers.get('x-approval-signature'),expected)
+   assert.equal(b.requester_user_id,member)
+   assert.equal(b.plan_resource_id,p.plan_resource_id)
+   assert.equal(b.plan_payload_sha256,p.plan_payload_sha256)
+   return Response.json({ok:true,owner_approved:false,ledger_applied:false,
+    plan_resource_id:b.plan_resource_id,plan_payload_sha256:b.plan_payload_sha256,
+    requester_user_id:b.requester_user_id,household_id:b.household_id,
+    policy:{plan_type:b.plan_type,source_account_version:b.source_account_version,
+     due_day:b.due_day,max_amount_jpy:b.max_amount_jpy,
+     status:'pending_owner',plan_resource_id:b.plan_resource_id}}, {status:201})
+  }}
+  const r=await f.api({expected_user_id:member,confirm_plan_resource_id:p.plan_resource_id},
+   ['member-recurring-plans',p.plan_resource_id,'submit-policy'])
+  assert.equal(r.status,201,JSON.stringify(r))
+  assert.equal(r.data.owner_approved,false)
+  assert.equal(r.data.ledger_applied,false)
+  assert.equal(called,1)
+  assert.equal(f.count('entries'),0)
+  const forged=await f.api({expected_user_id:owner,confirm_plan_resource_id:p.plan_resource_id},
+   ['member-recurring-plans',p.plan_resource_id,'submit-policy'])
+  assert.equal(forged.status,403)
+  assert.equal(called,1)
  }finally{f.close()}
 })

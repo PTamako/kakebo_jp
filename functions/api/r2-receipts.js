@@ -85,6 +85,15 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
           ids.some(id=>typeof id!=='number'||!validId(id))||
           new Set(ids).size!==ids.length)
           return json({error:'削除する画像IDを確認してください（最大100件）'},400)
+        // A bulk legacy delete is not permitted to tombstone an adopted
+        // shared entry. Check the entire batch BEFORE any D1/R2 mutation.
+        if(env.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED==='true'){
+          const marks=ids.map((_,i)=>'?'+(i+1)).join(',')
+          const protectedRow=await db.prepare('SELECT entry_id FROM family_legacy_shared_adoptions '+
+           'WHERE entry_id IN ('+marks+') LIMIT 1').bind(...ids).first()
+          if(protectedRow)return json({code:'adopted_receipt_bulk_delete_forbidden',
+           error:'共有明細の旧画像は一括削除できません'},409)
+        }
         const keys=ids.map(key)
         // Tombstone first: an offline iPhone may have an older local photo.
         await tombstone(ids)

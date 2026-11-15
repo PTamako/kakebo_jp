@@ -4,6 +4,7 @@ import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyFinanceCardPurchases from './FamilyFinanceCardPurchases.vue'
 import FamilyFinanceCardSettlements from './FamilyFinanceCardSettlements.vue'
 import FamilyFinancePrepaidActions from './FamilyFinancePrepaidActions.vue'
+import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
 import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
 import FamilyFinanceLegacyTransferLink from './FamilyFinanceLegacyTransferLink.vue'
@@ -296,6 +297,9 @@ onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange'
      :household-id="person.household_id" :accounts="accounts" />
     <FamilyFinancePrepaidActions v-if="person.role==='member'"
      :key="'prepaid-actions:'+person.user_id" :user-id="person.user_id"
+     :household-id="person.household_id" :accounts="accounts" />
+    <FamilyFinanceBankTransfers v-if="person.role==='member'"
+     :key="'bank-transfers:'+person.user_id" :user-id="person.user_id"
      :household-id="person.household_id" :accounts="accounts" />
     <form class="hf-create" @submit.prevent="createAccount">
      <strong>新建本人账户</strong>

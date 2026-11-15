@@ -89,6 +89,22 @@ async function prepare(){
  }catch(e){if(alive&&generation===epoch&&user===props.userId)error.value=e.message}
  finally{if(alive&&generation===epoch)busy.value=false}
 }
+function resume(item){
+ if(!alive||!open.value||busy.value||!serviceAvailable.value||
+  item?.status!=='prepared'||prepared.value||
+  !/^[a-f0-9]{32}$/i.test(item.request_id||'')||
+  !banks.value.some(a=>a.account_id===item.source_account_id&&a.version===item.source_version)||
+  !banks.value.some(a=>a.account_id===item.target_account_id&&a.version===item.target_version)||
+  item.source_account_id===item.target_account_id)return
+ sourceId.value=item.source_account_id
+ targetId.value=item.target_account_id
+ prepared.value=item
+ stableKey=''
+ sourceRef.value='';targetRef.value=''
+ sourcePosted.value=false;targetPosted.value=false
+ notice.value='已恢复原加密申请。仅提交原申请 ID，不会重复创建银行转账。'
+ error.value=''
+}
 async function submit(){
  if(!prepared.value||busy.value||!serviceAvailable.value)return
  const generation=epoch,user=props.userId,hh=props.householdId,p=prepared.value
@@ -184,12 +200,15 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
   <div class="head"><strong>转账申请记录</strong>
    <button type="button" :disabled="busy||!serviceAvailable" @click="load">刷新</button>
   </div>
-  <p v-for="r in history" :key="r.request_id" class="history">
-   {{r.source_account_id?.slice(0,8)}} → {{r.target_account_id?.slice(0,8)}} ·
-   {{r.status==='applied'?'已得到家庭账本双向回执':
-     r.status==='submitted_status_unknown'?'等待 HomeFlow 审核与执行':
-     r.status==='prepared'?'仅草稿':r.status}}
-  </p>
+  <div v-for="r in history" :key="r.request_id" class="history">
+   <span>{{r.source_account_id?.slice(0,8)}} → {{r.target_account_id?.slice(0,8)}} ·
+    {{r.status==='applied'?'已得到家庭账本双向回执':
+      r.status==='submitted_status_unknown'?'等待 HomeFlow 审核与执行':
+      r.status==='prepared'?'仅草稿':r.status}}
+   </span>
+   <button v-if="r.status==='prepared'" type="button" :disabled="busy||!!prepared||!serviceAvailable"
+    @click="resume(r)">继续原申请</button>
+  </div>
   <p v-if="!history.length&&serviceAvailable" class="hint">暂无本人已到账转账记录。</p>
  </template>
 </section>
@@ -211,6 +230,8 @@ button:disabled{opacity:.55;cursor:default}
 .check{display:flex;gap:7px;align-items:center;line-height:1.5}
 .hint,.history{font-size:12px;color:var(--muted,#777);line-height:1.5;margin:0}
 .error{font-size:12px;color:#b44646;margin:0}
-.history{padding:7px 2px;border-bottom:1px solid var(--line,#ddd)}
+.history{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:7px 2px;border-bottom:1px solid var(--line,#ddd)}
+.history span{min-width:0;overflow-wrap:anywhere}
+.history button{flex:none}
 @media(max-width:480px){.two{grid-template-columns:minmax(0,1fr)}}
 </style>

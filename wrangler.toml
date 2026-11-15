@@ -21,6 +21,7 @@ binding = "HOMEFLOW_IDENTITY_SERVICE"
 service = "homeflow"
 
 [vars]
+APP_ENV = "production"
 HOMEFLOW_OAUTH_ORIGIN = "https://homeflow.yupan6706.workers.dev"
 KAKEIBO_PUBLIC_ORIGIN = "https://kakeibo-f17.pages.dev"
 

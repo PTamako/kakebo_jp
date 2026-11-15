@@ -22,6 +22,7 @@ function setup(){
   'migrations/0022_homeflow_identity_foundation.sql',
   'migrations/0023_family_financial_account_identities.sql'])
   sql.exec(readFileSync(new URL('../'+p,import.meta.url),'utf8'))
+ sql.exec('ALTER TABLE entries ADD COLUMN family_account_id TEXT; ALTER TABLE entries ADD COLUMN family_transfer_target_account_id TEXT')
  sql.exec('CREATE TABLE family_sbi_cash_bank_evidence(bank_account_id TEXT,reference_hash TEXT)')
  sql.exec('CREATE TABLE family_card_bank_debit_evidence(bank_account_id TEXT,reference_hash TEXT)')
  sql.exec('CREATE TABLE family_sbi_cash_refund_evidence(bank_account_id TEXT,bank_refund_hash TEXT)')

@@ -62,7 +62,7 @@ export async function legacySharedAdoptionPreflight(request,env,url,user){
   if(r.r2_rows>0)blockers.push('requires_original_r2_object_and_tombstone_review');
   // Even an otherwise eligible row is REVIEW ONLY: no ownerless or silent
   // transition to mutable shared registry, no double-counted ledger copy.
-  result.push({entry_id:r.id,original_owner_user_id:r.actor_user_id,
+  result.push({entry_id:r.id,account_id:r.account_id,original_owner_user_id:r.actor_user_id,
    entry_type:r.type,source_snapshot_sha256:await sha(snapshot(r)),
    blockers,requires_explicit_owner_confirmation:true,
    requires_attachment_review:true,may_mutate:false,

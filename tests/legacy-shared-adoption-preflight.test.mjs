@@ -49,6 +49,7 @@ test('original verified owner sees only read-only historical adoption candidates
   assert.equal(r.data.ledger_applied,false)
   assert.equal(r.data.external_institution_verified,false)
   assert.equal(r.data.items[0].adoption_state,'manual_review_required')
+  assert.equal(r.data.items[0].account_id,account)
   assert.match(r.data.items[0].source_snapshot_sha256,/^[a-f0-9]{64}$/)
   assert.equal(r.data.items[0].may_mutate,false)
   assert.deepEqual(r.data.items[1].blockers,['requires_original_r2_object_and_tombstone_review'])

@@ -1,4 +1,5 @@
 // DRAFT P0-4B: signed HomeFlow approval -> one D1 bank-transfer, SBI lot, evidence, audit.
+import {approvedSbiCashReversalInternal} from './reversal.js';
  // Never executes an external SBI order or imports an old investment holding.
 const enc=new TextEncoder(),hex=/^[a-f0-9]{64}$/i,id=/^[a-f0-9]{32}$/i,
  uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -134,7 +135,7 @@ export async function approvedSbiCashRoute(req,e,parts){
  const old=await db.prepare('SELECT * FROM family_sbi_cash_applied WHERE homeflow_request_id=? OR proposal_id=? LIMIT 1')
   .bind(b.request_id,b.resource_id).first();
  if(old)return identity(old,b)?confirmed(db,old,b,true):fail('SBI_CASH_RECEIPT_CONFLICT');
- if(mode==='receipt')return fail('SBI_CASH_RECEIPT_UNKNOWN',404);
+ if(mode==='receipt')return approvedSbiCashReversalInternal(db,e,b,mode,proof);
  const r=await db.prepare('SELECT p.*,bank.version AS live_bank,bank.is_archived AS bank_archived,'+
   'bank.account_kind AS bank_kind,bank.origin AS bank_origin,bank.owner_user_id AS bank_owner,'+
   'bank.household_id AS bank_household,securities.version AS live_securities,'+
@@ -146,7 +147,8 @@ export async function approvedSbiCashRoute(req,e,parts){
   'JOIN homeflow_identity_links member ON member.user_id=p.requester_user_id '+
   'WHERE p.request_id=? AND p.homeflow_approval_id=? LIMIT 1')
   .bind(b.resource_id,b.request_id).first();
- if(!r||r.status!=='submitted'||r.expires_at<=Date.now()||
+ if(!r)return approvedSbiCashReversalInternal(db,e,b,mode,proof);
+ if(r.status!=='submitted'||r.expires_at<=Date.now()||
   r.household_id!==b.household_id||r.requester_user_id!==b.requester_user_id||
   r.payload_sha256!==b.payload_sha256||r.bank_version!==r.live_bank||
   r.securities_version!==r.live_securities||r.bank_archived!==0||r.securities_archived!==0||

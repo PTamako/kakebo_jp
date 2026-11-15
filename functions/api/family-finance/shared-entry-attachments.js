@@ -137,6 +137,7 @@ export async function familySharedAttachments(req,e,url,u,parts){
  if(parts.length===2&&method==='POST'&&owner&&r.state==='active')
   return begin(req,e,url,u,r);
  if(parts.length!==3||!id32.test(parts[2]))return fail('NOT_FOUND',404);
+ if(r.state==='purge_pending'||r.state==='purged')return fail('SHARED_ATTACHMENT_PURGED',410);
  const a=await row(e.DB,r.resource_id,parts[2]);
  if(!a)return fail('SHARED_ATTACHMENT_NOT_FOUND',404);
  if(method==='GET'&&r.state==='active'||method==='GET'&&owner&&r.state==='deleted')

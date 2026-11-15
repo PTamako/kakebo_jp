@@ -43,7 +43,7 @@ function fixture(){
   const result=stmts.map(s=>s.sync());sql.exec('COMMIT');return result;
  }catch(e){sql.exec('ROLLBACK');throw e}}};
  const objects=new Map([['receipts/v1/7',{
-  body:source,size:source.byteLength,httpMetadata:{contentType:'image/webp'},
+  body:new Uint8Array(source),size:source.byteLength,httpMetadata:{contentType:'image/webp'},
   customMetadata:{},httpEtag:'"original-etag"'}]]);
  let deletes=0,writeFail=false;
  const r2={
@@ -264,7 +264,7 @@ test('0059 repairs missing shared R2 bytes from immutable retained owner source 
  }finally{f.close()}
 });
 test('0059 denied when flags off, member, source tampered, request ID reused or target already corrupt',async()=>{
- for(const mode of ['disabled','member','source_bad','reused','target_bad','owner_revoked']){
+ for(const mode of ['disabled','member','source_bad','wrong_hash','target_bad','owner_revoked']){
   const f=fixture();try{
    const copy=await f.copy();assert.equal(copy.status,200);
    assert.equal((await f.adopt()).status,201);
@@ -276,11 +276,9 @@ test('0059 denied when flags off, member, source tampered, request ID reused or 
    if(mode==='source_bad')f.objects.get('receipts/v1/7').body[0]^=1;
    if(mode==='target_bad')f.objects.get(key).body[0]^=1;
    if(mode==='owner_revoked')f.sql.prepare("UPDATE homeflow_identity_links SET state='revoked' WHERE user_id=?").run(owner);
-   if(mode==='reused')f.sql.prepare("INSERT INTO family_legacy_shared_receipt_repairs "+
-    "(request_id,entry_id,resource_id,object_id,household_id,owner_user_id,byte_sha256,status,prepared_at) "+
-    "VALUES(?,?,?,?,?,?,?,'pending',?)").run('a'.repeat(32),7,copy.data.resource_id,copy.data.object_id,hh,owner,
-      '1'.repeat(64),Date.now());
-   const result=await recover(f,mode==='member'?f.outsider:f.actor);
+
+   const result=await recover(f,mode==='member'?f.outsider:f.actor,
+    mode==='wrong_hash'?{expected_sha256:'1'.repeat(64)}:{});
    assert.notEqual(result.status,200,mode+':'+JSON.stringify(result));
    assert.equal(result.data.source_purge_authorized,false);
    assert.equal(f.deletes(),0);

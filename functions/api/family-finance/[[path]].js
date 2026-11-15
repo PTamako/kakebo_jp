@@ -26,6 +26,7 @@ import {auditLegacyFinanceMappings} from './legacy-mapping-audit.js';
 import {legacyEntryLinks} from './legacy-entry-links.js';
 import {legacySharedAdoptionPreflight} from './legacy-shared-adoption-preflight.js';
 import {legacySharedAdopt} from './legacy-shared-adopt.js';
+import {legacySharedReceiptReview} from './legacy-shared-receipt-review.js';
 import {legacyTransferLinks} from './legacy-transfer-links.js';
 
 const json=(data,status=200)=>Response.json(data,{status,headers:{
@@ -363,6 +364,8 @@ export async function onRequest({request,env,params}){
     return legacySharedAdoptionPreflight(request,env,url,user);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='shared-adopt')
     return legacySharedAdopt(request,env,url,user);
+  if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='shared-receipt-review')
+    return legacySharedReceiptReview(request,env,url,user);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='mapping-audit')
     return auditLegacyFinanceMappings(request,env,user);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='resource-owners')

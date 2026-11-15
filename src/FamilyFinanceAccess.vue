@@ -8,6 +8,7 @@ import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
 import FamilySharedEntries from './FamilySharedEntries.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
+import {validateKakeiboHomeflowAuthorizationUrl} from './homeflow-authorization-url.js'
 import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
 import FamilyFinanceLegacyTransferLink from './FamilyFinanceLegacyTransferLink.vue'
@@ -105,9 +106,7 @@ async function start(){
   const result=await call('/api/homeflow-sso/start',{method:'POST'})
   if(!hex.test(result.state)||!hex.test(result.resume_secret)||
    typeof result.authorization_url!=='string')throw Error('授权数据无效')
-  const destination=new URL(result.authorization_url)
-  if(destination.protocol!=='https:'||destination.pathname!=='/authorize')
-   throw Error('授权地址无效')
+  const destination=validateKakeiboHomeflowAuthorizationUrl(result.authorization_url,result.state,window.location.origin)
   const proof={state:result.state,resume_secret:result.resume_secret,
    expires_at:Date.now()+Math.min(300,Math.max(1,Number(result.expires_in)||300))*1000}
   localStorage.setItem(STORAGE,JSON.stringify(proof))

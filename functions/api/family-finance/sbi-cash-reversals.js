@@ -48,7 +48,8 @@ async function original(db,id,u){
   .bind(id,u.household_id,u.user_id,u.household_id,u.household_id,u.user_id,u.user_id).first();
 }
 const safe=x=>({request_id:x.request_id,original_request_id:x.original_request_id,
- status:x.reversal_entry_id?'applied':x.status==='submitted'?'submitted_status_unknown':x.status,
+ payload_sha256:x.payload_sha256,bank_account_id:x.bank_account_id,
+ securities_account_id:x.securities_account_id,status:x.reversal_entry_id?'applied':x.status==='submitted'?'submitted_status_unknown':x.status,
  approval_id:x.homeflow_approval_id||null,applied:!!x.reversal_entry_id,
  reversal_entry_id:x.reversal_entry_id||null,expires_at:x.expires_at});
 const one=(db,id,u)=>db.prepare('SELECT i.*,r.reversal_entry_id FROM family_sbi_cash_reversal_intents i '+

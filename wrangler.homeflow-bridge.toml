@@ -24,3 +24,8 @@ database_id = "4d790915-fc06-4073-b660-bbb51dc74463"
 [[services]]
 binding = "HOMEFLOW_IDENTITY_SERVICE"
 service = "homeflow"
+
+# Verify signed document source once; do not trust document IDs from the caller.
+[[services]]
+binding = "DOCUMENT_FINANCE_SOURCE_SERVICE"
+service = "jp-document-assistant"

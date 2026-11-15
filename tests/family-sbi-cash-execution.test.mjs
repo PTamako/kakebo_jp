@@ -34,7 +34,8 @@ function fixture(){
   '0037_points_transfer_exchange.sql','0038_points_earn_expiry_reversals.sql',
   '0039_points_legacy_provenance.sql','0040_points_sbi_lots.sql',
   '0041_points_transfer_atomic_refund.sql','0042_points_prepaid_refund.sql',
-  '0043_points_card_offset_refund.sql','0044_sbi_cash_purchases.sql']){
+  '0043_points_card_offset_refund.sql','0044_sbi_cash_purchases.sql',
+  '0045_sbi_cash_reversals.sql']){
   const migration=readFileSync(new URL('../migrations/'+x,import.meta.url),'utf8');
   sql.exec(migration);
   if(x==='0044_sbi_cash_purchases.sql')sql.exec(migration); // migration replay
@@ -218,5 +219,92 @@ test('confirmed SBI additional buy is NOT auto-classified as regular 積立 and 
   assert.equal(row.transfer_date,'2026-11-14');
   assert.equal(read(f.sql,'SELECT kind FROM family_sbi_cash_lots').kind,'additional');
   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
+ }finally{f.close();}
+});
+
+
+test('SBI posted refund is an immutable reverse transfer and full lot-cost compensation, never income',async()=>{
+ const f=fixture();
+ try{
+  const original=await f.prepare();
+  assert.equal((await f.target('execute',original)).status,200);
+  const reversedApproval='66666666-6666-4666-8666-666666666666';
+  const proposal='d'.repeat(32),now=Date.now();
+  const refundHash='e'.repeat(64),cancelHash='a'.repeat(64);
+  stmt(f.sql,`INSERT INTO family_sbi_cash_reversal_intents
+    (request_id,original_request_id,household_id,requester_user_id,bank_account_id,
+     bank_version,securities_account_id,securities_version,payload_sha256,payload_cipher,
+     payload_iv,idempotency_hash,status,homeflow_approval_id,created_at,expires_at,submitted_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'submitted',?,?,?,?)`,
+   proposal,approval,household,member,bank,1,securities,1,'6'.repeat(64),
+   'sealed','iv','7'.repeat(64),reversedApproval,now-1000,now+600000,now);
+  const insertRefund=(opts={})=>{
+   const evidenceId='f'.repeat(32);
+   const entryId=()=>{
+    stmt(f.sql,`INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,
+     transfer_target,transfer_applied,transfer_date,client_request_id,payment_source,
+     family_account_id,family_transfer_target_account_id)
+     VALUES(?,'',1500,'投資・資産移動','SBI証券','取消・退款','','transfer',?,1,?,?,?, ?,?)`,
+    '2026-11-14','bank:'+bank,'2026-11-14',
+    'hfsbicashrefund:'+reversedApproval,'sbi:'+securities,securities,bank);
+    return read(f.sql,'SELECT id FROM entries WHERE client_request_id=?',
+     'hfsbicashrefund:'+reversedApproval).id;
+   };
+   f.sql.exec('BEGIN IMMEDIATE');
+   try{
+    stmt(f.sql,`INSERT INTO family_sbi_cash_refund_evidence
+     (evidence_id,household_id,original_request_id,bank_account_id,bank_version,
+      bank_refund_hash,broker_cancel_hash,bank_refund_date,broker_cancel_date,amount_jpy,
+      bank_refund_confirmed,broker_cancel_confirmed,evidence_kind,recorded_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,1,1,'owner_attested_posted_refund',?)`,
+     evidenceId,household,approval,bank,1,refundHash,cancelHash,'2026-11-14','2026-11-13',
+     opts.amount??1500,now);
+    const transfer=entryId();
+    stmt(f.sql,`INSERT INTO family_sbi_cash_reversals
+      (homeflow_request_id,proposal_id,original_request_id,household_id,requester_user_id,
+       approver_user_id,actor_user_id,bank_account_id,bank_version,
+       securities_account_id,securities_version,payload_sha256,evidence_id,reversal_entry_id,
+       amount_jpy,reversed_units,reversed_cost_jpy,bank_refund_date,broker_cancel_date,applied_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     reversedApproval,proposal,approval,household,member,owner,owner,bank,1,
+     securities,1,'6'.repeat(64),evidenceId,transfer,1500,1234500,1500,
+     '2026-11-14','2026-11-13',now);
+    stmt(f.sql,`INSERT INTO family_sbi_cash_reversal_audit
+      (event_id,homeflow_request_id,original_request_id,requester_user_id,
+       approver_user_id,actor_user_id,action,created_at)
+      VALUES(?,?,?,?,?,?,'sbi_cash_full_refund_applied',?)`,
+     '9'.repeat(32),reversedApproval,approval,member,owner,owner,now);
+    if(opts.forceAuditFailure)throw Error('forced audit rollback');
+    f.sql.exec('COMMIT');
+   }catch(error){f.sql.exec('ROLLBACK');throw error;}
+  };
+  assert.throws(()=>insertRefund({amount:1499}));
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_refund_evidence').n,0);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM entries').n,1);
+  assert.throws(()=>insertRefund({forceAuditFailure:true}));
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_reversals').n,0);
+  insertRefund();
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_reversals').n,1);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_reversal_audit').n,1);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_audit').n,1);
+  assert.equal(read(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='expense' OR type='income'").n,0);
+  assert.equal(read(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='transfer'").n,2);
+  assert.equal(read(f.sql,'SELECT COALESCE(SUM(reversed_units),0) n FROM family_sbi_cash_reversals').n,1234500);
+  for(const query of [
+   "DELETE FROM family_sbi_cash_lots",
+   "UPDATE family_sbi_cash_lots SET confirmed_units=1",
+   "DELETE FROM family_sbi_cash_reversals",
+   "UPDATE family_sbi_cash_reversals SET amount_jpy=1",
+   "DELETE FROM family_sbi_cash_refund_evidence",
+   "DELETE FROM family_sbi_cash_reversal_audit",
+   "DELETE FROM entries WHERE client_request_id='hfsbicashrefund:"+reversedApproval+"'"
+  ])assert.throws(()=>stmt(f.sql,query),query);
+  assert.throws(()=>stmt(f.sql,'INSERT INTO family_sbi_cash_reversal_intents '+
+   '(request_id,original_request_id,household_id,requester_user_id,bank_account_id,bank_version,'+
+   'securities_account_id,securities_version,payload_sha256,payload_cipher,payload_iv,'+
+   'idempotency_hash,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+   'c'.repeat(32),approval,household,member,bank,1,securities,1,'6'.repeat(64),
+   'sealed','iv','8'.repeat(64),now,now+600000));
  }finally{f.close();}
 });

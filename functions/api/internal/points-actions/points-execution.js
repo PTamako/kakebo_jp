@@ -92,7 +92,10 @@ const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null,transferRefun
  refunded_sbi_issuer_reference_hash:sbiRefund?.points_refund_hash??null,
  refunded_sbi_broker_cancel_date:sbiRefund?.broker_cancel_date??null,
  refunded_sbi_points_returned_date:sbiRefund?.points_refund_date??null,
- refunded_sbi_evidence_kind:sbiRefund?.evidence_kind??null});
+ refunded_sbi_evidence_kind:sbiRefund?.evidence_kind??null,
+ refunded_sbi_fund_code:sbiRefund?.fund_code??null,
+ refunded_sbi_account_type:sbiRefund?.account_type??null,
+ refunded_sbi_original_trade_hash:sbiRefund?.broker_reference_hash??null});
 async function receiptFor(db,r,replayed){
  if(r.operation==='reversal'&&r.target_account_id){
   const compensating=await db.prepare('SELECT * FROM family_points_transfer_refunds '+
@@ -140,7 +143,9 @@ async function receiptFor(db,r,replayed){
     sbiRefund.points_refund_hash!==r.source_reference_hash||
     sbiRefund.created_at!==r.applied_at)
     return fail('POINTS_SBI_REFUND_COUNTERPART_UNCONFIRMED',503);
-   return json(receipt(r,replayed,null,null,null,null,null,null,null,sbiRefund));
+   return json(receipt(r,replayed,null,null,null,null,null,null,null,
+    {...sbiRefund,fund_code:original.fund_code,account_type:original.account_type,
+     broker_reference_hash:original.broker_reference_hash}));
   }
   if(cardRefund.original_request_id!==r.reversed_request_id||
    cardRefund.points_account_id!==r.points_account_id||

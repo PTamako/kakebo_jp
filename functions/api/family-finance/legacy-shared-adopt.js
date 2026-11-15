@@ -1,6 +1,6 @@
-// 0055 DRAFT: one explicit original-owner adoption, retaining original entry ID.
-// Deliberately deny ALL legacy R2 attachments until the separate verified R2
-// copy/refcount migration. Missing D1 receipt rows do not prove R2 absence.
+// 0055+0057 DRAFT: one original-owner explicit ordinary entry adoption.
+// Existing legacy R2 may be claimed only from verified, owner-bound 0056 copy;
+// retain original bytes and tombstone old numeric path. No auto bulk migration.
 import {legacySharedAdoptionPreflight} from './legacy-shared-adoption-preflight.js';
 const fail=(code,status=409)=>Response.json({ok:false,code,adopted:false,ledger_changed:false},
  {status,headers:{'cache-control':'no-store'}});
@@ -69,16 +69,45 @@ export async function legacySharedAdopt(req,env,url,user){
  if(checked.status!==200)return fail('LEGACY_SHARED_PREFLIGHT_FAILED',checked.status);
  const data=await checked.json();
  const candidate=data.items?.find(x=>x.entry_id===input.entry_id);
- if(!candidate||candidate.blockers?.length||
-    candidate.source_snapshot_sha256!==input.source_snapshot_sha256)
+ if(!candidate||candidate.source_snapshot_sha256!==input.source_snapshot_sha256)
   return fail('LEGACY_SHARED_REVIEW_OR_DIGEST_CONFLICT');
- // Never infer missing object keys from D1 state. The existing receipt path
- // is private to legacy auth and MUST NOT be exposed in the new registry.
+ const hasReceipt=JSON.stringify(candidate.blockers)===
+  JSON.stringify(['requires_original_r2_object_and_tombstone_review']);
+ if(candidate.blockers?.length&&!hasReceipt)return fail('LEGACY_SHARED_REVIEW_OR_DIGEST_CONFLICT');
  if(typeof env.RECEIPTS_R2?.head!=='function')
   return fail('LEGACY_SHARED_R2_EVIDENCE_UNAVAILABLE',503);
- try{if(await env.RECEIPTS_R2.head('receipts/v1/'+input.entry_id))
-   return fail('LEGACY_SHARED_R2_ATTACHMENT_REVIEW_REQUIRED');}
- catch{return fail('LEGACY_SHARED_R2_EVIDENCE_UNAVAILABLE',503)}
+ // With an existing legacy receipt, only a 0056 verified, same-owner,
+ // same-source copy may be atomically claimed under 0057. Never accept a
+ // browser-supplied object key or "copy completed" claim.
+ const copied=hasReceipt&&env.KAKEIBO_LEGACY_SHARED_RECEIPT_COPY_ENABLED==='true'?
+   await db.prepare('SELECT * FROM family_legacy_shared_receipt_copies '+
+    'WHERE entry_id=? AND resource_id=? AND household_id=? AND owner_user_id=?')
+    .bind(input.entry_id,resource,user.household_id,user.user_id).first():null;
+ if(hasReceipt){
+  if(!copied||copied.state!=='verified'||copied.account_id!==input.account_id||
+     copied.source_snapshot_sha256!==input.source_snapshot_sha256)
+    return fail('LEGACY_SHARED_VERIFIED_RECEIPT_COPY_REQUIRED');
+  const state=await db.prepare('SELECT deleted,size_bytes FROM receipt_r2_state '+
+   'WHERE entry_id=?').bind(input.entry_id).first();
+  if(state?.deleted!==0||state.size_bytes!==null&&
+    Number(state.size_bytes)!==copied.size_bytes)
+    return fail('LEGACY_SHARED_RECEIPT_TOMBSTONED_OR_CHANGED');
+  try{
+   const original=await env.RECEIPTS_R2.head('receipts/v1/'+input.entry_id);
+   const destination=await env.RECEIPTS_R2.head(
+    'shared/v1/'+resource+'/'+copied.object_id);
+   if(!original||!destination||original.httpEtag!==copied.source_http_etag||
+      original.size!==copied.size_bytes||destination.size!==copied.size_bytes||
+      destination.httpMetadata?.contentType!==copied.content_type||
+      destination.customMetadata?.sha256!==copied.byte_sha256||
+      destination.customMetadata?.sourceKeyHash!==copied.source_object_key_sha256)
+     return fail('LEGACY_SHARED_RECEIPT_R2_EVIDENCE_CHANGED');
+  }catch{return fail('LEGACY_SHARED_R2_EVIDENCE_UNAVAILABLE',503)}
+ }else{
+  try{if(await env.RECEIPTS_R2.head('receipts/v1/'+input.entry_id))
+    return fail('LEGACY_SHARED_R2_ATTACHMENT_REVIEW_REQUIRED');}
+  catch{return fail('LEGACY_SHARED_R2_EVIDENCE_UNAVAILABLE',503)}
+ }
  const r=await fetchOriginal(db,input.entry_id,user.household_id,user.user_id);
  if(!r||await hash(originalSnapshot(r))!==input.source_snapshot_sha256||
     !Number.isSafeInteger(r.amount)||r.amount<1||r.amount>10000000||
@@ -101,7 +130,9 @@ export async function legacySharedAdopt(req,env,url,user){
   '(resource_id,entry_id,household_id,original_owner_user_id,account_id,'+
   'source_snapshot_sha256,original_link_digest,original_client_request_id,original_row_json,adopted_at) '+
   'SELECT ?,?,?,?,?,?,?,?,?,? FROM entries e WHERE e.id=? AND '+where+
-  ' AND NOT EXISTS(SELECT 1 FROM receipt_r2_state WHERE entry_id=e.id) '+
+  (hasReceipt?
+   " AND EXISTS(SELECT 1 FROM family_legacy_shared_receipt_copies c JOIN receipt_r2_state rs ON rs.entry_id=c.entry_id WHERE c.entry_id=e.id AND c.resource_id='"+resource+"' AND c.state='verified' AND c.source_snapshot_sha256='"+input.source_snapshot_sha256+"' AND rs.deleted=0) ":
+   ' AND NOT EXISTS(SELECT 1 FROM receipt_r2_state WHERE entry_id=e.id) ')+
   'AND NOT EXISTS(SELECT 1 FROM family_shared_entry_registry WHERE entry_id=e.id) '+
   'AND EXISTS(SELECT 1 FROM family_finance_legacy_entry_links l '+
   'JOIN family_financial_accounts a ON a.account_id=l.account_id '+
@@ -127,6 +158,29 @@ export async function legacySharedAdopt(req,env,url,user){
    "'active',1,?,?,?,? FROM family_legacy_shared_adoptions "+
    'WHERE entry_id=? AND resource_id=? AND changes()=1')
    .bind(snapshot,digest,at,at,input.entry_id,resource),
+  // The final actor event is created only after any shared receipt reference,
+  // old D1 tombstone, and immutable claim all succeed in ONE local D1 batch.
+  ...(hasReceipt?[
+   db.prepare('INSERT INTO family_shared_entry_attachments '+
+    '(object_id,resource_id,state,content_type,sha256,size_bytes,'+
+    'created_by_user_id,created_at,updated_at) '+
+    "SELECT object_id,resource_id,'ready',content_type,byte_sha256,size_bytes,"+
+    'owner_user_id,?,? FROM family_legacy_shared_receipt_copies '+
+    "WHERE entry_id=? AND resource_id=? AND state='verified' "+
+    'AND EXISTS(SELECT 1 FROM family_shared_entry_registry WHERE resource_id=?)')
+    .bind(at,at,input.entry_id,resource,resource),
+   db.prepare('UPDATE receipt_r2_state SET deleted=1,updated_at=CURRENT_TIMESTAMP '+
+    'WHERE entry_id=? AND deleted=0 AND EXISTS('+
+    'SELECT 1 FROM family_legacy_shared_receipt_copies WHERE entry_id=? '+
+    "AND resource_id=? AND state='verified')")
+    .bind(input.entry_id,input.entry_id,resource),
+   db.prepare('INSERT INTO family_legacy_shared_receipt_claims '+
+    '(entry_id,resource_id,object_id,household_id,original_owner_user_id,claimed_at) '+
+    'SELECT entry_id,resource_id,object_id,household_id,owner_user_id,? '+
+    'FROM family_legacy_shared_receipt_copies WHERE entry_id=? AND resource_id=? '+
+    "AND state='verified' AND changes()=1")
+    .bind(at,input.entry_id,resource)
+  ]:[]),
   db.prepare('INSERT INTO family_finance_events '+
    '(event_id,household_id,actor_user_id,resource_id,action,created_at) '+
    "SELECT ?,?,?,?,'legacy_shared_entry_adopted',? WHERE changes()=1")
@@ -135,12 +189,13 @@ export async function legacySharedAdopt(req,env,url,user){
  ];
  try{
   const result=await db.batch(stmts);
-  if(result.length!==5||result.some(x=>x.meta?.changes!==1))
+  if(result.length!==(hasReceipt?8:5)||result.some(x=>x.meta?.changes!==1))
    return fail('LEGACY_SHARED_ATOMIC_ADOPTION_NOT_CONFIRMED',503);
   const saved=await db.prepare('SELECT * FROM family_legacy_shared_adoptions WHERE entry_id=?')
    .bind(input.entry_id).first();
   return saved?out({ok:true,adopted:true,replayed:false,ledger_changed:false,
-   registry_state:'active',registry_version:1,adoption:view(saved)},201):
+   registry_state:'active',registry_version:1,
+   receipt_claimed:!!hasReceipt,legacy_object_deleted:false,adoption:view(saved)},201):
    fail('LEGACY_SHARED_ADOPTION_RECEIPT_UNKNOWN',503);
  }catch{
   const raced=await db.prepare('SELECT * FROM family_legacy_shared_adoptions WHERE entry_id=?')

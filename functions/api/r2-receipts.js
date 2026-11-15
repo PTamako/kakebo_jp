@@ -53,7 +53,11 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
       const after=Number(payload?.after??0)
       if(!Number.isSafeInteger(after)||after<0)return json({error:'再確認の位置を確認してください'},400)
       const {results=[]}=await db.prepare(
-        'SELECT entry_id FROM receipt_r2_state WHERE deleted=1 AND entry_id>?1 ORDER BY entry_id LIMIT 100'
+        (env.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED==='true'?
+         'SELECT rs.entry_id FROM receipt_r2_state rs WHERE rs.deleted=1 AND rs.entry_id>?1 '+
+         'AND NOT EXISTS(SELECT 1 FROM family_legacy_shared_adoptions a WHERE a.entry_id=rs.entry_id) '+
+         'ORDER BY rs.entry_id LIMIT 100':
+         'SELECT entry_id FROM receipt_r2_state WHERE deleted=1 AND entry_id>?1 ORDER BY entry_id LIMIT 100')
       ).bind(after).all()
       const ids=results.map(row=>Number(row.entry_id))
       if(ids.length)await bucket.delete(ids.map(key))

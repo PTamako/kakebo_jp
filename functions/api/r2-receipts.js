@@ -27,6 +27,15 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
   if (!env.RECEIPTS_R2) return json({error:'R2画像ストレージが未設定です'},503)
   const bucket=env.RECEIPTS_R2
   const method=request.method
+  // 0055 owner adoption requires an explicit write-quiescence gate: an old
+  // iPhone PUT that began before the R2 HEAD must not race the D1 registry
+  // adoption. When this release-only flag is ON, legacy receipts stay readable
+  // (except adopted IDs) but ALL old PUT/DELETE and destructive cleanup stop.
+  // The flag is OFF by default; never enable without release authorization.
+  if(env.KAKEIBO_LEGACY_R2_WRITES_FROZEN==='true'&&
+    (method==='PUT'||method==='DELETE'||(method==='POST'&&segments[0]==='cleanup')))
+    return json({code:'legacy_receipt_writes_frozen',
+      error:'历史图片写入已暂时冻结，不能继续旧端操作'},503)
   const deletedRow=async id=>db.prepare('SELECT deleted FROM receipt_r2_state WHERE entry_id=?1').bind(id).first()
   const tombstone=ids=>db.batch(ids.map(id=>db.prepare(
     'INSERT INTO receipt_r2_state(entry_id,deleted,size_bytes,updated_at) VALUES(?1,1,NULL,CURRENT_TIMESTAMP) ON CONFLICT(entry_id) DO UPDATE SET deleted=1,size_bytes=NULL,updated_at=CURRENT_TIMESTAMP'

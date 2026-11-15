@@ -29,3 +29,25 @@ test('legacy R2 single and bulk endpoints refuse adopted IDs before tombstone or
   assert.equal(r2Calls,0);
  }finally{sql.close()}
 });
+
+
+test('release-only R2 write freeze denies older iPhone mutations even for non-adopted records',async()=>{
+ const sql=new DatabaseSync(':memory:');
+ try{
+  const db={prepare:()=>{throw Error('frozen gateway must stop before DB')},
+   batch:()=>{throw Error('frozen gateway must not tombstone')}};
+  let calls=0;
+  const env={KAKEIBO_LEGACY_R2_WRITES_FROZEN:'true',RECEIPTS_R2:{
+   get:async()=>{calls++},head:async()=>{calls++},put:async()=>{calls++},delete:async()=>{calls++}}};
+  for(const [method,path,body] of [
+   ['PUT',['8'],'a'],['DELETE',['8'],'a'],
+   ['DELETE',[],JSON.stringify({ids:[8]})],
+   ['POST',['cleanup'],JSON.stringify({after:0})]
+  ]){
+   const url='https://kakeibo.test/api/r2-receipts/'+path.join('/');
+   const res=await handleR2Receipts(new Request(url,{method,body}),env,db,path);
+   assert.equal(res.status,503,method+' '+path.join('/'));
+  }
+  assert.equal(calls,0);
+ }finally{sql.close()}
+});

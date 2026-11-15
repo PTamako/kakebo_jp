@@ -31,7 +31,8 @@ function fixture(){
  let hasLegacyR2=false;
  const env={APP_ENV:'production',DB:db,KAKEIBO_FAMILY_FINANCE_ENABLED:'true',
   KAKEIBO_SHARED_ENTRY_ENABLED:'true',KAKEIBO_LEGACY_SHARED_ADOPTION_PREFLIGHT_ENABLED:'true',
-  KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED:'true',RECEIPTS_R2:{head:async()=>hasLegacyR2?{size:200}:null}};
+  KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED:'true',KAKEIBO_LEGACY_R2_WRITES_FROZEN:'true',
+  RECEIPTS_R2:{head:async()=>hasLegacyR2?{size:200}:null}};
  const person={user_id:owner,household_id:hh,role:'owner'},memberPerson={user_id:member,household_id:hh,role:'member'};
  const row=sql.prepare('SELECT e.*,l.actor_user_id,l.account_id,l.original_source,l.source_digest FROM entries e JOIN family_finance_legacy_entry_links l ON l.entry_id=e.id WHERE e.id=1').get();
  const data=[row.id,row.date,row.time,row.amount,row.type,row.category,row.merchant,row.note,row.raw,row.payment_source,row.client_request_id,row.family_account_id,row.family_transfer_target_account_id,row.created_at,row.actor_user_id,row.account_id,row.original_source,row.source_digest];
@@ -61,13 +62,14 @@ test('owner explicit one-row adoption preserves original source and household to
  }finally{f.close()}
 });
 test('no adoption for member, drifted digest, existing receipt metadata or unknown legacy R2',async()=>{
- for(const mode of ['member','drift','receipt','object','inactive','disabled']){
+ for(const mode of ['member','drift','receipt','object','inactive','disabled','unfrozen']){
   const f=fixture();try{
    if(mode==='drift')f.sql.prepare('UPDATE entries SET amount=1200').run();
    if(mode==='receipt')f.sql.prepare('INSERT INTO receipt_r2_state VALUES(1,1)').run();
    if(mode==='object')f.setR2(true);
    if(mode==='inactive')f.sql.prepare("UPDATE homeflow_identity_links SET state='disabled' WHERE user_id=?").run(owner);
    if(mode==='disabled')f.env.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED='false';
+   if(mode==='unfrozen')f.env.KAKEIBO_LEGACY_R2_WRITES_FROZEN='false';
    const a=await f.call(mode==='member'?f.memberPerson:f.person);
    assert.notEqual(a.status,201,mode+' '+JSON.stringify(a));
    assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_shared_entry_registry').get().n,0);

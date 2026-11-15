@@ -27,7 +27,8 @@ export async function legacySharedAdopt(req,env,url,user){
  if(env.APP_ENV!=='production'||env.KAKEIBO_FAMILY_FINANCE_ENABLED!=='true'||
     env.KAKEIBO_SHARED_ENTRY_ENABLED!=='true'||
     env.KAKEIBO_LEGACY_SHARED_ADOPTION_PREFLIGHT_ENABLED!=='true'||
-    env.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED!=='true'||!env.DB?.batch)
+    env.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED!=='true'||
+    env.KAKEIBO_LEGACY_R2_WRITES_FROZEN!=='true'||!env.DB?.batch)
    return fail('LEGACY_SHARED_ADOPTION_DISABLED',503);
  if(req.method!=='POST')return fail('METHOD_NOT_ALLOWED',405);
  if(req.headers.get('origin')!==url.origin||

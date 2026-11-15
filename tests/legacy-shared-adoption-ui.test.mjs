@@ -28,7 +28,7 @@ test('legacy receipt UI is three independent owner confirmations: read-only R2 b
  assert.match(component,/copied\.value\[row\.entry_id\]===row\.source_snapshot_sha256/);
  assert.match(component,/data\.legacy_object_deleted!==false/);
  assert.match(component,/reviewed\.value=\{\};copied\.value=\{\}/);
- assert.match(component,/reviewed\.value=\{\},copied\.value=\{\}/);
+ assert.match(component,/reviewed\.value=\{\};copied\.value=\{\}/);
  assert.doesNotMatch(component,/onMounted\(/);
  assert.doesNotMatch(component,/localStorage/);
 });

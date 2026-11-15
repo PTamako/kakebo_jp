@@ -158,7 +158,8 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="hint">{{notice}}</p>
   <p v-if="banks.length<2" class="hint">请先建立至少两个本人银行账户。跨家庭成员、证券、储值卡和现金转账尚未开放。</p>
-  <form v-if="serviceAvailable&&banks.length>=2" class="form" @submit.prevent="prepared?submit():prepare()">
+  <form v-if="serviceAvailable&&banks.length>=2" class="form" :novalidate="!!prepared"
+   @submit.prevent="prepared?submit():prepare()">
    <div class="two">
     <label>转出银行
      <select v-model="sourceId" :disabled="busy||!!prepared" @change="edited">

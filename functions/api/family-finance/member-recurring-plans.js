@@ -138,8 +138,9 @@ async function submitPolicy(req,e,url,u,resource){
   !/^https:\/\/[a-z0-9.-]+$/i.test(e.HOMEFLOW_OAUTH_ORIGIN||''))
   return fail('RECURRING_POLICY_SUBMISSION_DISABLED',503);
  const x=await input(req,url);
+ if(x?.expected_user_id!==u.user_id)return fail('RECURRING_POLICY_ACTOR_CHANGED',403);
  if(!exact(x,['expected_user_id','confirm_plan_resource_id'])||
-  x.expected_user_id!==u.user_id||x.confirm_plan_resource_id!==resource)
+  x.confirm_plan_resource_id!==resource)
   return fail('RECURRING_POLICY_SUBMISSION_CONFIRM_REQUIRED',428);
  const p=await one(e.DB,u,resource);
  if(!p||p.status!=='active')return fail('RECURRING_PLAN_NOT_CURRENT');

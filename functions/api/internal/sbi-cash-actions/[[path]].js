@@ -135,7 +135,8 @@ export async function approvedSbiCashRoute(req,e,parts){
  const old=await db.prepare('SELECT * FROM family_sbi_cash_applied WHERE homeflow_request_id=? OR proposal_id=? LIMIT 1')
   .bind(b.request_id,b.resource_id).first();
  if(old)return identity(old,b)?confirmed(db,old,b,true):fail('SBI_CASH_RECEIPT_CONFLICT');
- if(mode==='receipt')return approvedSbiCashReversalInternal(db,e,b,mode,proof);
+ if(mode==='receipt')return e.KAKEIBO_SBI_CASH_REVERSALS_ENABLED==='true'?
+  approvedSbiCashReversalInternal(db,e,b,mode,proof):fail('SBI_CASH_RECEIPT_UNKNOWN',404);
  const r=await db.prepare('SELECT p.*,bank.version AS live_bank,bank.is_archived AS bank_archived,'+
   'bank.account_kind AS bank_kind,bank.origin AS bank_origin,bank.owner_user_id AS bank_owner,'+
   'bank.household_id AS bank_household,securities.version AS live_securities,'+

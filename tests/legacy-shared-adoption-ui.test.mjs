@@ -10,7 +10,9 @@ test('historical owner confirmation UI never auto-adopts, requires exact digest 
  assert.match(component,/source_snapshot_sha256:digest,confirm:true/);
  assert.match(component,/expected_user_id:who/);
  assert.match(component,/window\.confirm/);
- assert.match(component,/row\.blockers\?\.length/);
+ assert.match(component,/const canAdopt=row=>/);
+ assert.match(component,/!row\.blockers\.length\|\|/);
+ assert.match(component,/needsReceipt\(row\)&&copied\.value\[row\.entry_id\]===row\.source_snapshot_sha256/);
  assert.match(component,/onBeforeUnmount\(\(\)=>\{disposed=true/);
  assert.match(component,/controller\?\.abort\(\)/);
  assert.match(component,/result\.ledger_changed!==false/);

@@ -137,6 +137,30 @@ async function write(e,p,b,approval,payload){
   'shared-entry','approved:'+p.proposal_id].join('\0'))).slice(0,32):registry.resource_id;
  if(newRecord&&await db.prepare('SELECT 1 FROM family_shared_entry_registry WHERE resource_id=?')
   .bind(id).first())return fail('SHARED_MUTATION_RESOURCE_COLLISION');
+ // An adopted legacy shared row retains its original account, request ID,
+ // OCR/raw fields and exact primary key. It must never be rewritten as a new
+ // hfshare row during an approved member update/delete/restore.
+ const adopted=!newRecord&&e.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED==='true'?
+  await db.prepare('SELECT * FROM family_legacy_shared_adoptions WHERE resource_id=? '+
+   'AND entry_id=? AND household_id=? AND original_owner_user_id=? LIMIT 1')
+   .bind(registry.resource_id,registry.entry_id,p.household_id,approval.approver_user_id).first():null;
+ let original=null;
+ if(adopted){
+  const acct=await db.prepare('SELECT owner_user_id,household_id,is_archived '+
+   'FROM family_financial_accounts WHERE account_id=? LIMIT 1').bind(adopted.account_id).first();
+  try{original=JSON.parse(adopted.original_row_json)}catch{return fail('SHARED_MUTATION_LEGACY_ROW_INVALID')}
+  if(!original||typeof original!=='object'||Array.isArray(original)||
+    Object.keys(original).length>40||
+    Object.keys(original).some(k=>!/^[a-z][a-z0-9_]*$/i.test(k))||
+    Object.values(original).some(v=>v!==null&&typeof v!=='string'&&
+     !(typeof v==='number'&&Number.isSafeInteger(v)))||
+    original.id!==registry.entry_id||original.family_account_id!==adopted.account_id||
+    original.client_request_id!==adopted.original_client_request_id||
+    original.family_transfer_target_account_id!==null||
+    acct?.owner_user_id!==approval.approver_user_id||
+    acct.household_id!==p.household_id||acct.is_archived!==0)
+   return fail('SHARED_MUTATION_LEGACY_OWNER_OR_PROVENANCE_CHANGED',409);
+ }
  const entry=action==='restore'?JSON.parse(registry.snapshot_json):payload.entry;
  const snapshot=action==='delete'?registry.snapshot_json:JSON.stringify(entry);
  const sha=await digest(snapshot);
@@ -159,14 +183,26 @@ async function write(e,p,b,approval,payload){
   stmts.push(db.prepare('INSERT INTO family_shared_entry_write_context '+
    '(resource_id,entry_id,actor_user_id,action,expected_version,stamp) VALUES(?,?,?,?,?,?)')
    .bind(id,registry.entry_id,approval.approver_user_id,action,p.expected_version,at));
+  // SQL CAS checks the immutable original source identifiers for adopted
+  // rows; stale accounts or mismatched IDs cause the entire D1 batch to abort.
+  const where=adopted?
+   'client_request_id IS ? AND family_account_id=?':
+   'client_request_id=? AND family_account_id IS NULL';
+  const sourceArgs=adopted?[adopted.original_client_request_id,adopted.account_id]:[reference];
   if(action==='update')stmts.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=? '+
-   'WHERE id=? AND client_request_id=? AND family_account_id IS NULL AND family_transfer_target_account_id IS NULL '+
+   'WHERE id=? AND '+where+' AND family_transfer_target_account_id IS NULL '+
    "AND type IN('income','expense')")
-   .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,registry.entry_id,reference));
-  else if(action==='delete')stmts.push(db.prepare("DELETE FROM entries WHERE id=? AND client_request_id=? "+
-   "AND type IN('income','expense') AND family_account_id IS NULL AND family_transfer_target_account_id IS NULL")
-   .bind(registry.entry_id,reference));
-  else stmts.push(db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
+   .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,
+    registry.entry_id,...sourceArgs));
+  else if(action==='delete')stmts.push(db.prepare('DELETE FROM entries WHERE id=? AND '+where+
+   " AND type IN('income','expense') AND family_transfer_target_account_id IS NULL")
+   .bind(registry.entry_id,...sourceArgs));
+  else if(adopted){
+   const old={...original,...entry},columns=Object.keys(old);
+   stmts.push(db.prepare('INSERT INTO entries('+
+    columns.map(k=>'"'+k+'"').join(',')+') VALUES('+
+    columns.map(()=>'?').join(',')+')').bind(...columns.map(k=>old[k])));
+  }else stmts.push(db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
    "VALUES(?,?,?,?,?,?,?,'',?,?,'')")
    .bind(registry.entry_id,entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,reference));
   stmts.push(db.prepare('UPDATE family_shared_entry_registry SET version=version+1,'+

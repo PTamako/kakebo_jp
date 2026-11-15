@@ -5,6 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {legacySharedReceiptCopy} from '../functions/api/family-finance/legacy-shared-receipt-copy.js';
 import {legacySharedAdopt} from '../functions/api/family-finance/legacy-shared-adopt.js';
 import {legacySharedSourceRefcount} from '../functions/api/family-finance/legacy-shared-source-refcount.js';
+import {legacySharedReceiptRepair} from '../functions/api/family-finance/legacy-shared-receipt-repair.js';
 import {familySharedEntries} from '../functions/api/family-finance/shared-entries.js';
 import {handleR2Receipts} from '../functions/api/r2-receipts.js';
 const hh='house',owner='owner',member='member',acc='a'.repeat(32);
@@ -23,7 +24,8 @@ function fixture(){
  sql.exec('CREATE TABLE receipt_r2_state(entry_id INTEGER PRIMARY KEY,deleted INTEGER,size_bytes INTEGER,updated_at TEXT)');
  sql.exec('CREATE TABLE family_finance_events(event_id TEXT PRIMARY KEY,household_id TEXT,actor_user_id TEXT,resource_id TEXT,action TEXT,created_at INTEGER)');
  for(const f of ['0051_shared_entry_lifecycle.sql','0055_legacy_shared_entry_adoption.sql',
-  '0056_legacy_shared_receipt_copy.sql','0057_legacy_shared_receipt_claim.sql'])
+  '0056_legacy_shared_receipt_copy.sql','0057_legacy_shared_receipt_claim.sql',
+  '0059_legacy_shared_receipt_repair.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+f,import.meta.url),'utf8'));
  sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,'owner','active')").run(owner,hh);
  sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,'member','active')").run(member,hh);
@@ -224,3 +226,86 @@ test('source R2 audit denies invalid actor, writes, unfrozen configuration and m
   }finally{f.close()}
  }
 })
+
+async function recover(f,person=f.actor,extra={}){
+ const url=new URL(base+'legacy/shared-receipt-repair');
+ const claim=f.sql.prepare('SELECT * FROM family_legacy_shared_receipt_copies WHERE entry_id=7').get();
+ const x={expected_user_id:person.user_id,entry_id:7,resource_id:claim.resource_id,
+  expected_sha256:claim.byte_sha256,request_id:'a'.repeat(32),confirm:true,...extra};
+ const req=new Request(url,{method:'POST',headers:{origin:url.origin,
+   'content-type':'application/json'},body:JSON.stringify(x)});
+ const result=await legacySharedReceiptRepair(req,f.env,url,person);
+ return{status:result.status,data:await result.json()};
+}
+test('0059 repairs missing shared R2 bytes from immutable retained owner source and replays one audit intent',async()=>{
+ const f=fixture();try{
+  const copy=await f.copy();assert.equal(copy.status,200);
+  const adopted=await f.adopt();assert.equal(adopted.status,201);
+  f.env.KAKEIBO_LEGACY_SHARED_SOURCE_REFCOUNT_ENABLED='true';
+  f.env.KAKEIBO_LEGACY_SHARED_RECEIPT_REPAIR_ENABLED='true';
+  const sharedKey='shared/v1/'+copy.data.resource_id+'/'+copy.data.object_id;
+  const ledgerBefore=f.sql.prepare('SELECT COUNT(*) n,SUM(amount) total FROM entries').get();
+  f.objects.delete(sharedKey);
+  const repair=await recover(f);
+  assert.equal(repair.status,200,JSON.stringify(repair));
+  assert.equal(repair.data.repaired,true);
+  assert.equal(repair.data.original_deleted,false);
+  assert.equal(repair.data.source_purge_authorized,false);
+  assert.deepEqual([...f.objects.get(sharedKey).body],[...f.objects.get('receipts/v1/7').body]);
+  assert.equal(f.deletes(),0);
+  assert.deepEqual(f.sql.prepare('SELECT COUNT(*) n,SUM(amount) total FROM entries').get(),ledgerBefore);
+  const audit=f.sql.prepare('SELECT * FROM family_legacy_shared_receipt_repairs').get();
+  assert.equal(audit.status,'completed');assert.equal(audit.owner_user_id,owner);
+  const again=await recover(f);assert.equal(again.status,200,JSON.stringify(again));
+  assert.equal(again.data.replayed,true);
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_legacy_shared_receipt_repairs').get().n,1);
+  assert.throws(()=>f.sql.prepare('DELETE FROM family_legacy_shared_receipt_repairs').run(),/IMMUTABLE/);
+  assert.throws(()=>f.sql.prepare("UPDATE family_legacy_shared_receipt_repairs SET byte_sha256='bad'").run(),/IMMUTABLE/);
+ }finally{f.close()}
+});
+test('0059 denied when flags off, member, source tampered, request ID reused or target already corrupt',async()=>{
+ for(const mode of ['disabled','member','source_bad','reused','target_bad','owner_revoked']){
+  const f=fixture();try{
+   const copy=await f.copy();assert.equal(copy.status,200);
+   assert.equal((await f.adopt()).status,201);
+   f.env.KAKEIBO_LEGACY_SHARED_SOURCE_REFCOUNT_ENABLED='true';
+   f.env.KAKEIBO_LEGACY_SHARED_RECEIPT_REPAIR_ENABLED='true';
+   const key='shared/v1/'+copy.data.resource_id+'/'+copy.data.object_id;
+   if(mode!=='target_bad')f.objects.delete(key);
+   if(mode==='disabled')f.env.KAKEIBO_LEGACY_SHARED_RECEIPT_REPAIR_ENABLED='false';
+   if(mode==='source_bad')f.objects.get('receipts/v1/7').body[0]^=1;
+   if(mode==='target_bad')f.objects.get(key).body[0]^=1;
+   if(mode==='owner_revoked')f.sql.prepare("UPDATE homeflow_identity_links SET state='revoked' WHERE user_id=?").run(owner);
+   if(mode==='reused')f.sql.prepare("INSERT INTO family_legacy_shared_receipt_repairs "+
+    "(request_id,entry_id,resource_id,object_id,household_id,owner_user_id,byte_sha256,status,prepared_at) "+
+    "VALUES(?,?,?,?,?,?,?,'pending',?)").run('a'.repeat(32),7,copy.data.resource_id,copy.data.object_id,hh,owner,
+      '1'.repeat(64),Date.now());
+   const result=await recover(f,mode==='member'?f.outsider:f.actor);
+   assert.notEqual(result.status,200,mode+':'+JSON.stringify(result));
+   assert.equal(result.data.source_purge_authorized,false);
+   assert.equal(f.deletes(),0);
+   assert.equal(f.sql.prepare('SELECT COUNT(*) n,SUM(amount) total FROM entries').get().total,1000);
+  }finally{f.close()}
+ }
+});
+test('0059 conditional R2 error leaves pending durable intent and exact ID retry completes safely',async()=>{
+ const f=fixture();try{
+  const copy=await f.copy();assert.equal(copy.status,200);
+  assert.equal((await f.adopt()).status,201);
+  f.env.KAKEIBO_LEGACY_SHARED_SOURCE_REFCOUNT_ENABLED='true';
+  f.env.KAKEIBO_LEGACY_SHARED_RECEIPT_REPAIR_ENABLED='true';
+  const key='shared/v1/'+copy.data.resource_id+'/'+copy.data.object_id;
+  f.objects.delete(key);f.setWriteFail(true);
+  const failed=await recover(f);assert.equal(failed.status,503,JSON.stringify(failed));
+  assert.equal(f.sql.prepare('SELECT status FROM family_legacy_shared_receipt_repairs').get().status,'pending');
+  assert.equal(f.objects.has(key),false);assert.equal(f.objects.has('receipts/v1/7'),true);
+  f.setWriteFail(false);
+  const retry=await recover(f);assert.equal(retry.status,200,JSON.stringify(retry));
+  assert.equal(f.sql.prepare('SELECT status FROM family_legacy_shared_receipt_repairs').get().status,'completed');
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_legacy_shared_receipt_repairs').get().n,1);
+  f.objects.delete(key);
+  const late=await recover(f);assert.notEqual(late.status,200);
+  assert.equal(late.data.code,'REPAIR_COMPLETED_TARGET_MISSING_NEW_REVIEW_REQUIRED');
+  assert.equal(f.objects.has('receipts/v1/7'),true);
+ }finally{f.close()}
+});

@@ -8,10 +8,13 @@ export async function memberSbiPointPositions(db,householdId){
  if(typeof householdId!=='string'||!householdId)return null;
  const result=await db.prepare('SELECT l.securities_account_id,l.owner_user_id,'+
   'a.label AS account_label,l.fund_code,l.account_type,'+
-  'SUM(l.confirmed_units) AS confirmed_units,'+
-  'SUM(l.acquisition_cost_jpy) AS acquisition_cost_jpy,'+
-  'COUNT(*) AS executed_trade_count,MAX(l.trade_date) AS latest_trade_date '+
-  'FROM family_sbi_point_lots l JOIN family_financial_accounts a '+
+  'SUM(l.confirmed_units-COALESCE(ref.reversed_units,0)) AS confirmed_units,'+
+  'SUM(l.acquisition_cost_jpy-COALESCE(ref.reversed_cost_jpy,0)) AS acquisition_cost_jpy,'+
+  'COUNT(*) AS executed_trade_count,COUNT(ref.homeflow_request_id) AS reversed_trade_count,'+
+  'MAX(l.trade_date) AS latest_trade_date '+
+  'FROM family_sbi_point_lots l LEFT JOIN family_sbi_point_refunds ref '+
+  'ON ref.original_request_id=l.homeflow_request_id AND ref.household_id=l.household_id '+
+  'JOIN family_financial_accounts a '+
   'ON a.account_id=l.securities_account_id AND a.household_id=l.household_id '+
   "AND a.owner_user_id=l.owner_user_id AND a.account_kind='securities' "+
   'WHERE l.household_id=? GROUP BY l.securities_account_id,l.owner_user_id,'+
@@ -24,9 +27,12 @@ export async function memberSbiPointPositions(db,householdId){
   if(!/^[a-f0-9]{32}$/i.test(r.securities_account_id||'')||
    !/^[A-Z0-9]{8}$/.test(r.fund_code||'')||
    !['growth','tsumitate'].includes(r.account_type)||
-   !Number.isSafeInteger(r.confirmed_units)||r.confirmed_units<1||
-   !Number.isSafeInteger(r.acquisition_cost_jpy)||r.acquisition_cost_jpy<1||
+   !Number.isSafeInteger(r.confirmed_units)||r.confirmed_units<0||
+   !Number.isSafeInteger(r.acquisition_cost_jpy)||r.acquisition_cost_jpy<0||
    !Number.isSafeInteger(r.executed_trade_count)||r.executed_trade_count<1||
+   !Number.isSafeInteger(r.reversed_trade_count)||r.reversed_trade_count<0||
+   r.reversed_trade_count>r.executed_trade_count||
+   (r.confirmed_units===0)!==(r.acquisition_cost_jpy===0)||
    typeof r.account_label!=='string'||!r.account_label||
    typeof r.owner_user_id!=='string'||!r.owner_user_id||
    !/^20\d\d-\d\d-\d\d$/.test(r.latest_trade_date||''))return null;
@@ -35,9 +41,12 @@ export async function memberSbiPointPositions(db,householdId){
    fund_code:r.fund_code,account_type:r.account_type,
    confirmed_units:r.confirmed_units,acquisition_cost_jpy:r.acquisition_cost_jpy,
    executed_trade_count:r.executed_trade_count,
+   reversed_trade_count:r.reversed_trade_count,
+   all_trades_reversed:r.reversed_trade_count===r.executed_trade_count,
    latest_trade_date:r.latest_trade_date,market_value_jpy:null,
    identity_basis:'owner_created_stable_securities_account',
-   evidence_basis:'user_attested_broker_execution',broker_reconciled:false});
+   evidence_basis:'user_attested_broker_execution',broker_reconciled:false,
+   included_in_tracked_assets_jpy:false,reconciliation_state:'not_reconciled'});
  }
  return {positions,scope:'household',read_only:true,ledger_changed:false,
   total_acquisition_cost_jpy:positions.reduce((n,p)=>n+p.acquisition_cost_jpy,0),

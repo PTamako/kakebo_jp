@@ -44,7 +44,7 @@ function setup(){
   sync:()=>({meta:{changes:sql.prepare(q).run(...p).changes}})
  }}}},async batch(a){sql.exec('BEGIN IMMEDIATE');try{
   const o=a.map(x=>x.sync());sql.exec('COMMIT');return o
- }catch(e){sql.exec('ROLLBACK');throw e}}}
+ }catch(e){sql.exec('ROLLBACK');console.error('RECURRING_SQLITE_BATCH_ERROR:',e.message);throw e}}}
  const env={APP_ENV:'production',DB:db,KAKEIBO_FAMILY_FINANCE_ENABLED:'true',
   KAKEIBO_RECURRING_FINANCE_PLANS_ENABLED:'true',KAKEIBO_RECURRING_EXECUTION_ENABLED:'true',
   KAKEIBO_RECURRING_PAYLOAD_KEY:'1'.repeat(64),

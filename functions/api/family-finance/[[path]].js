@@ -10,6 +10,7 @@ import {familyPrepaidActions} from './prepaid-actions.js';
 import {familyPointsActions} from './points-actions.js';
 import {familySbiCashActions} from './sbi-cash-actions.js';
 import {familySbiCashReversals} from './sbi-cash-reversals.js';
+import {familySbiLegacyReview} from './sbi-legacy-review.js';
 import {memberSbiCashPositions} from './sbi-cash-lot-projection.js';
 import {familyPointsLegacyLinks} from './points-legacy-links.js';
 import {familyAssetSummary} from './assets.js';
@@ -331,6 +332,7 @@ export async function onRequest({request,env,params}){
   if(parts[0]==='points-actions')return familyPointsActions(request,env,url,user,parts);
    if(parts[0]==='sbi-cash-actions')return familySbiCashActions(request,env,url,user,parts);
    if(parts[0]==='sbi-cash-reversals')return familySbiCashReversals(request,env,url,user,parts);
+   if(parts.length===1&&parts[0]==='sbi-legacy-review')return familySbiLegacyReview(request,env,url,user);
    if(parts.length===2&&parts[0]==='shared'&&parts[1]==='sbi-cash-lots'&&request.method==='GET'){
     if(env.KAKEIBO_SBI_CASH_ENABLED!=='true')return json({code:'SBI_CASH_DISABLED'},503);
     const positions=await memberSbiCashPositions(env.DB,user.household_id);

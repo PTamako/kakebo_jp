@@ -124,7 +124,7 @@ async function reversibleOriginal(db,user,x){
    x.sbi_broker_cancel_date<old.sbi_trade_date||
    x.sbi_points_refund_date<x.sbi_broker_cancel_date||
    x.sbi_points_refund_date>x.effective_date||
-   x.sbi_lot_units<1||old.sbi_cost_jpy!==old.yen_value||
+   old.sbi_lot_units<1||old.sbi_cost_jpy!==old.yen_value||
    old.sbi_account_id!==old.target_account_id)return false;
   const target=await db.prepare('SELECT account_id FROM family_financial_accounts WHERE account_id=? '+
    "AND owner_user_id=? AND household_id=? AND account_kind='securities' "+

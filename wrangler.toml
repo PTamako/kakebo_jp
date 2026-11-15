@@ -15,6 +15,15 @@ binding = "AI"
 binding = "RECEIPTS_R2"
 bucket_name = "kakeibo-receipts"
 
+# Production identity is the existing HomeFlow Worker. No new preview resources.
+[[services]]
+binding = "HOMEFLOW_IDENTITY_SERVICE"
+service = "homeflow"
+
+[vars]
+HOMEFLOW_OAUTH_ORIGIN = "https://homeflow.yupan6706.workers.dev"
+KAKEIBO_PUBLIC_ORIGIN = "https://kakeibo-f17.pages.dev"
+
 # Pages Git integration reads this file as the source of truth.
 # Cloudflare Pages automatic Preview builds are disabled. Preview has no D1
 # or R2 bindings; never point previews at the production finance database.

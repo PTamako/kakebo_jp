@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS family_sbi_legacy_holding_candidates(
  candidate_id TEXT PRIMARY KEY CHECK(length(candidate_id)=32),
  household_id TEXT NOT NULL,
  owner_user_id TEXT NOT NULL REFERENCES homeflow_identity_links(user_id) ON DELETE RESTRICT,
+ source_owner_user_id TEXT NOT NULL REFERENCES homeflow_identity_links(user_id) ON DELETE RESTRICT,
  lot_type TEXT NOT NULL CHECK(lot_type IN ('cash','points')),
  lot_homeflow_request_id TEXT NOT NULL CHECK(length(lot_homeflow_request_id)=36),
  securities_account_id TEXT NOT NULL REFERENCES family_financial_accounts(account_id) ON DELETE RESTRICT,
@@ -51,9 +52,11 @@ CREATE TRIGGER IF NOT EXISTS trg_sbi_legacy_candidate_verified_snapshot
    AND proof.household_id=NEW.household_id AND proof.owner_user_id=NEW.owner_user_id
    AND proof.assigned_by_user_id=NEW.owner_user_id
    AND owner.household_id=NEW.household_id AND owner.role='owner' AND owner.state='active'
-   AND sec.household_id=NEW.household_id AND sec.owner_user_id=NEW.owner_user_id
+   AND sec.household_id=NEW.household_id AND sec.owner_user_id=NEW.source_owner_user_id
    AND sec.origin='member_created' AND sec.account_kind='securities'
    AND sec.is_archived=0 AND sec.opening_balance=0
+   AND EXISTS(SELECT 1 FROM homeflow_identity_links m WHERE m.user_id=NEW.source_owner_user_id
+     AND m.household_id=NEW.household_id AND m.role='member' AND m.state='active')
    AND h.fund_name=NEW.legacy_fund_name
    AND h.units=NEW.legacy_units AND h.acquisition_cost=NEW.legacy_acquisition_cost
    AND h.reported_value IS NEW.legacy_reported_value
@@ -63,7 +66,7 @@ CREATE TRIGGER IF NOT EXISTS trg_sbi_legacy_candidate_verified_snapshot
   (NEW.lot_type='cash' AND EXISTS(
    SELECT 1 FROM family_sbi_cash_lots l
    WHERE l.homeflow_request_id=NEW.lot_homeflow_request_id
-    AND l.household_id=NEW.household_id AND l.owner_user_id=NEW.owner_user_id
+    AND l.household_id=NEW.household_id AND l.owner_user_id=NEW.source_owner_user_id
     AND l.securities_account_id=NEW.securities_account_id
     AND l.fund_code=NEW.lot_fund_code AND l.account_type=NEW.lot_account_type
     AND l.confirmed_units=NEW.lot_confirmed_units
@@ -76,7 +79,7 @@ CREATE TRIGGER IF NOT EXISTS trg_sbi_legacy_candidate_verified_snapshot
   (NEW.lot_type='points' AND EXISTS(
    SELECT 1 FROM family_sbi_point_lots l
    WHERE l.homeflow_request_id=NEW.lot_homeflow_request_id
-    AND l.household_id=NEW.household_id AND l.owner_user_id=NEW.owner_user_id
+    AND l.household_id=NEW.household_id AND l.owner_user_id=NEW.source_owner_user_id
     AND l.securities_account_id=NEW.securities_account_id
     AND l.fund_code=NEW.lot_fund_code AND l.account_type=NEW.lot_account_type
     AND l.confirmed_units=NEW.lot_confirmed_units

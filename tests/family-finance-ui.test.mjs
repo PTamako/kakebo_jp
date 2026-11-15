@@ -22,7 +22,7 @@ test('five-minute Safari proof remains separate from credentials; no bearer toke
  assert.match(source,/localStorage\.setItem\(STORAGE,JSON\.stringify\(proof\)\)/);
  assert.match(source,/localStorage\.removeItem\(STORAGE\)/);
  assert.match(source,/expires_at:Date\.now\(\)\+Math\.min\(300/);
- assert.match(source,/destination\.protocol!=='https:'\|\|destination\.pathname!=='\/authorize'/);
+ assert.match(source,/validateKakeiboHomeflowAuthorizationUrl\(result\.authorization_url,result\.state,window\.location\.origin\)/);
  assert.match(source,/body:JSON\.stringify\(\{state:pending\.value\.state,resume_secret:pending\.value\.resume_secret\}\)/);
  assert.match(source,/\/api\/homeflow-sso\/logout/);
  assert.doesNotMatch(source,/localStorage\.setItem\([^\n]*(access_token|session_assertion)/);

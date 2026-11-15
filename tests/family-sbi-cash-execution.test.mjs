@@ -288,6 +288,13 @@ test('SBI posted refund is an immutable reverse transfer and full lot-cost compe
   insertRefund();
   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_reversals').n,1);
   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_reversal_audit').n,1);
+  const netPosition=await memberSbiCashPositions(f.db,household);
+  assert.equal(netPosition.positions[0].confirmed_units,0);
+  assert.equal(netPosition.positions[0].acquisition_cost_jpy,0);
+  assert.equal(netPosition.positions[0].reversed_trades,1);
+  assert.equal(netPosition.positions[0].all_trades_reversed,true);
+  assert.equal(netPosition.total_cost_jpy,0);
+  assert.equal(netPosition.included_in_tracked_assets_jpy,false);
   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_audit').n,1);
   assert.equal(read(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='expense' OR type='income'").n,0);

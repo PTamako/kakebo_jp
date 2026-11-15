@@ -77,9 +77,6 @@ async function prepare(req,e,url,u){
   old.archived_bank!==0||old.archived_securities!==0||
   x.broker_cancel_date<old.trade_date||x.bank_refund_date<x.broker_cancel_date||
   x.bank_refund_date<old.effective_date)return fail('SBI_REFUND_ORIGINAL_OR_VERSION');
- const refunded=await e.DB.prepare('SELECT homeflow_request_id FROM family_sbi_cash_reversals WHERE original_request_id=?')
-  .bind(x.original_request_id).first();
- if(refunded)return fail('SBI_REFUND_ALREADY_APPLIED');
  const refundHash=await hash('bank-statement:'+old.bank_account_id+'\0'+x.bank_refund_reference.trim());
  const cancelHash=await hash(u.household_id+'\0sbi-cancelled-trade\0'+x.broker_cancel_reference.trim());
  const payload={original_request_id:x.original_request_id,bank_account_id:old.bank_account_id,
@@ -97,6 +94,9 @@ async function prepare(req,e,url,u){
  if(repeat)return repeat.payload_sha256===digest?
   json({ok:true,prepared:safe(await one(e.DB,repeat.request_id,u)),replayed:true}):
   fail('SBI_REFUND_IDEMPOTENCY_CONFLICT');
+ const refunded=await e.DB.prepare('SELECT homeflow_request_id FROM family_sbi_cash_reversals WHERE original_request_id=?')
+  .bind(x.original_request_id).first();
+ if(refunded)return fail('SBI_REFUND_ALREADY_APPLIED');
  const requestId=uid(),at=Date.now(),sealed=await seal(e,requestId,raw);
  try{
   const result=await e.DB.prepare('INSERT INTO family_sbi_cash_reversal_intents '+

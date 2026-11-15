@@ -113,8 +113,12 @@ async function modify(req,e,url,u,id,action){
  const snapshot=next?JSON.stringify(next):r.snapshot_json;
  const digest=await hash(snapshot);
  const at=Date.now(),db=e.DB,ref='hfshare:'+id;
- const adopted=await db.prepare('SELECT original_row_json,original_client_request_id,account_id '+
-  'FROM family_legacy_shared_adoptions WHERE resource_id=? AND entry_id=?').bind(id,r.entry_id).first();
+ // If the additive adoption migration/feature is not enabled, existing 0051
+ // ordinary shared entries must remain writable without requiring 0055.
+ // If the flag IS enabled but the table is missing, this query fails closed.
+ const adopted=e.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED==='true'?
+  await db.prepare('SELECT original_row_json,original_client_request_id,account_id '+
+   'FROM family_legacy_shared_adoptions WHERE resource_id=? AND entry_id=?').bind(id,r.entry_id).first():null;
  const original=adopted?JSON.parse(adopted.original_row_json):null;
  const statements=[context(db,r,u,action,at)];
  if(action==='update'){

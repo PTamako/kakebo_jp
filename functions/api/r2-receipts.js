@@ -99,6 +99,16 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
     if(segments.length!==1 || !validId(idSegment))
       return json({error:'画像IDを確認してください'},400)
     const id=Number(idSegment)
+    // Adopted originals belong exclusively to the guarded shared lifecycle.
+    // Never let the legacy numeric-id endpoint overwrite, revive, read or
+    // permanently delete an adopted receipt (including iPhone offline retry).
+    // Missing 0055 while flag is ON is a hard failure, not a permissive fallback.
+    if(env.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED==='true'){
+      const adoption=await db.prepare('SELECT entry_id FROM family_legacy_shared_adoptions '+
+       'WHERE entry_id=? LIMIT 1').bind(id).first()
+      if(adoption)return json({code:'receipt_adopted_legacy_path_disabled',
+       error:'共有明細の原画像は旧URLから操作できません'},410)
+    }
     const objectKey=key(id)
     if(method==='HEAD') {
       // A version request happens only when the user selects a replacement

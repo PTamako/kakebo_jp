@@ -11,6 +11,7 @@ import {familyPointsActions} from './points-actions.js';
 import {familySbiCashActions} from './sbi-cash-actions.js';
 import {familyBankTransfers} from './bank-transfers.js';
 import {familyCrossMemberBankTransfers} from './cross-member-bank-transfers.js';
+import {familySharedEntries} from './shared-entries.js';
 import {familySbiCashReversals} from './sbi-cash-reversals.js';
 import {familySbiLegacyReview} from './sbi-legacy-review.js';
 import {memberSbiCashPositions} from './sbi-cash-lot-projection.js';
@@ -335,6 +336,7 @@ export async function onRequest({request,env,params}){
    if(parts[0]==='sbi-cash-actions')return familySbiCashActions(request,env,url,user,parts);
    if(parts[0]==='bank-transfers')return familyBankTransfers(request,env,url,user,parts);
     if(parts[0]==='cross-member-bank-transfers')return familyCrossMemberBankTransfers(request,env,url,user,parts);
+    if(parts[0]==='shared-entries')return familySharedEntries(request,env,url,user,parts);
    if(parts[0]==='sbi-cash-reversals')return familySbiCashReversals(request,env,url,user,parts);
    if(parts.length===1&&parts[0]==='sbi-legacy-review')return familySbiLegacyReview(request,env,url,user);
    if(parts.length===2&&parts[0]==='shared'&&parts[1]==='sbi-cash-lots'&&request.method==='GET'){

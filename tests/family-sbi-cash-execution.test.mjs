@@ -511,3 +511,38 @@ test('SBI legacy snapshot refuses combined holdings, unverified owners and audit
   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_legacy_holding_candidates').n,0);
  }finally{f.close();}
 });
+
+
+test('SBI legacy owner review audit fault rolls back candidate without touching original fund or transfer',async()=>{
+ const f=fixture();try{
+  const original=await f.prepare();
+  assert.equal((await f.target('execute',original)).status,200);
+  stmt(f.sql,"INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost) "+
+   "VALUES('1234ABCD','tsumitate','Reviewed holding',2000000,2500)");
+  stmt(f.sql,"INSERT INTO family_financial_resource_owners(resource_kind,legacy_key,household_id,"+
+   "owner_user_id,assigned_by_user_id) VALUES('investment_holding','1234ABCD:tsumitate',?,?,?)",
+   household,owner,owner);
+  const url=new URL('https://kakeibo.example.test/api/family-finance/sbi-legacy-review?kind=cash');
+  const user={user_id:owner,household_id:household,role:'owner'};
+  const listed=await familySbiLegacyReview(new Request(url),f.env,url,user);
+  assert.equal(listed.status,200);
+  const row=(await listed.json()).items[0];
+  const data={expected_user_id:owner,lot_kind:'cash',
+   lot_homeflow_request_id:row.lot_homeflow_request_id,
+   securities_account_id:row.securities_account_id,
+   source_lot_digest:row.source_lot_digest,
+   legacy_snapshot_digest:row.legacy_holding.legacy_snapshot_digest,
+   confirm_candidate_only:true};
+  f.sql.exec("CREATE TRIGGER abort_sbi_review_audit BEFORE INSERT ON family_sbi_legacy_candidate_audit "+
+   "BEGIN SELECT RAISE(ABORT,'AUDIT_DOWN'); END;");
+  const postUrl=new URL('https://kakeibo.example.test/api/family-finance/sbi-legacy-review');
+  const req=new Request(postUrl,{method:'POST',
+   headers:{origin:postUrl.origin,'content-type':'application/json'},body:JSON.stringify(data)});
+  const failure=await familySbiLegacyReview(req,f.env,postUrl,user);
+  assert.equal(failure.status,503,await failure.clone().text());
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_legacy_holding_candidates').n,0);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_legacy_candidate_audit').n,0);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM investment_holdings').n,1);
+ }finally{f.close();}
+});

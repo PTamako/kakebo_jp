@@ -38,7 +38,8 @@ function fixture(){
   '0042_points_prepaid_refund.sql','0043_points_card_offset_refund.sql',
   '0044_sbi_cash_purchases.sql','0045_sbi_cash_reversals.sql',
   '0046_sbi_legacy_holding_review.sql','0047_sbi_point_full_refund.sql',
-  '0048_posted_bank_transfers.sql','0049_cross_member_bank_transfers.sql'])
+  '0048_posted_bank_transfers.sql','0049_cross_member_bank_transfers.sql',
+  '0050_cross_bank_statement_usage_guards.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   add(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
@@ -224,5 +225,28 @@ test('source cannot create recipient confirmation; amount and reference cannot s
   const duplicated=await f.source()
   assert.equal(duplicated.data.replayed,true)
   assert.equal(count(f.sql,'family_cross_bank_intents'),1)
+ }finally{f.close()}
+})
+
+test('after cross-bank ledger commits neither sender debit nor recipient credit bank statement can be reused by SBI or card evidence',async()=>{
+ const f=fixture();try{
+  const b=await f.setup()
+  const done=await f.target('execute',b)
+  assert.equal(done.status,200,JSON.stringify(done))
+  const j=get(f.sql,'SELECT * FROM family_cross_bank_journal')
+  assert.throws(()=>add(f.sql,'INSERT INTO family_card_bank_debit_evidence '+
+   '(evidence_id,household_id,bank_account_id,bank_version,reference_hash,debit_date,'+
+   "amount_jpy,evidence_kind,recorded_at) VALUES(?,?,?,?,?,?,?,'owner_confirmed_statement',?)",
+   '9'.repeat(32),hh,src,1,j.source_reference_hash,'2026-11-13',1500,Date.now()),
+   /CROSS_BANK_STATEMENT_ALREADY_USED/)
+  assert.throws(()=>add(f.sql,'INSERT INTO family_sbi_cash_bank_evidence '+
+   '(evidence_id,household_id,bank_account_id,bank_version,reference_hash,debit_date,'+
+   "amount_jpy,evidence_kind,recorded_at) VALUES(?,?,?,?,?,?,?,'owner_confirmed_statement',?)",
+   '8'.repeat(32),hh,dst,1,j.credit_reference_hash,'2026-11-14',1500,Date.now()),
+   /CROSS_BANK_STATEMENT_ALREADY_USED/)
+  assert.equal(count(f.sql,'family_cross_bank_journal'),1)
+  assert.equal(count(f.sql,'entries'),1)
+  assert.equal(count(f.sql,'family_card_bank_debit_evidence'),0)
+  assert.equal(count(f.sql,'family_sbi_cash_bank_evidence'),0)
  }finally{f.close()}
 })

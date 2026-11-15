@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {createHmac,webcrypto} from 'node:crypto';
 import {familySbiCashActions} from '../functions/api/family-finance/sbi-cash-actions.js';
+import {familySbiCashReversals} from '../functions/api/family-finance/sbi-cash-reversals.js';
 import {approvedSbiCashRoute} from '../functions/api/internal/sbi-cash-actions/[[path]].js';
 import {memberSbiCashPositions} from '../functions/api/family-finance/sbi-cash-lot-projection.js';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
@@ -59,7 +60,7 @@ function fixture(){
  }};
  let proofActive=true;
  const env={DB:db,APP_ENV:'production',KAKEIBO_FAMILY_FINANCE_ENABLED:'true',
-  KAKEIBO_SBI_CASH_ENABLED:'true',KAKEIBO_FAMILY_PENDING_KEY:keys.pending,
+  KAKEIBO_SBI_CASH_ENABLED:'true',KAKEIBO_SBI_CASH_REVERSALS_ENABLED:'true',KAKEIBO_FAMILY_PENDING_KEY:keys.pending,
   KAKEIBO_SBI_CASH_SUBMISSION_SECRET:keys.submission,
   KAKEIBO_SBI_CASH_EXECUTION_SECRET:keys.execution,
   KAKEIBO_SBI_CASH_PROOF_SECRET:keys.proof,
@@ -72,7 +73,7 @@ function fixture(){
    calls.submission++;
    assert.equal(req.headers.get('x-approval-signature'),sign('kakeibo-sbi-cash:submit',keys.submission,stamp,raw));
    const b=JSON.parse(raw);
-   return Response.json({ok:true,approval_id:approval,resource_id:b.resource_id,
+   return Response.json({ok:true,approval_id:b.kind==='reversal'?'66666666-6666-4666-8666-666666666666':approval,resource_id:b.resource_id,
     payload_sha256:b.payload_sha256,household_id:b.household_id,
     requester_user_id:b.requester_user_id,expected_version:b.expected_version,
     operation:'finance.sbi_cash.'+b.kind,status:'pending',applied:false});
@@ -86,7 +87,8 @@ function fixture(){
   assert.equal(b.execution_nonce,'f'.repeat(64));
   return Response.json({ok:true,verified:true,execution_authorized:true,
    execution_status:'executing',source_app:'kakebo',target_app:'kakebo',
-   operation:'finance.sbi_cash.'+read(sql,'SELECT kind FROM family_sbi_cash_intents WHERE request_id=?',b.resource_id).kind,
+   operation:'finance.sbi_cash.'+(read(sql,'SELECT kind FROM family_sbi_cash_intents WHERE request_id=?',b.resource_id)?.kind||
+    (read(sql,'SELECT request_id FROM family_sbi_cash_reversal_intents WHERE request_id=?',b.resource_id)?'reversal':'invalid')),
    resource_type:'sbi_cash_action',
    request_id:b.request_id,resource_id:b.resource_id,household_id:b.household_id,
    requester_user_id:b.requester_user_id,payload_sha256:b.payload_sha256,
@@ -307,4 +309,99 @@ test('SBI posted refund is an immutable reverse transfer and full lot-cost compe
    'c'.repeat(32),approval,household,member,bank,1,securities,1,'6'.repeat(64),
    'sealed','iv','8'.repeat(64),now,now+600000));
  }finally{f.close();}
+});
+
+
+test('SBI refund follows signed prepare, HomeFlow approval, two-bank-side journal and receipt recovery',async()=>{
+ const f=fixture();
+ try{
+  const original=await f.prepare();
+  assert.equal((await f.target('execute',original)).status,200);
+  const refundInput={expected_user_id:member,idempotency_key:'sbi-cash-refund-20261115-001',
+   original_request_id:approval,bank_version:1,securities_version:1,
+   bank_refund_reference:'bank-posted-refund-20261114-001',
+   broker_cancel_reference:'broker-cancel-confirmed-20261113-001',
+   bank_refund_date:'2026-11-14',broker_cancel_date:'2026-11-13',
+   bank_refund_confirmed:true,broker_cancel_confirmed:true};
+  const refund=async(parts=['sbi-cash-reversals'],data=refundInput)=>{
+   const req=new Request('https://kakeibo.example.test/api/family-finance/sbi-cash-reversals',{
+    method:'POST',headers:{origin:'https://kakeibo.example.test','content-type':'application/json'},
+    body:JSON.stringify(data)});
+   const res=await familySbiCashReversals(req,f.env,new URL(req.url),
+    {user_id:member,household_id:household,role:'member'},parts);
+   return {status:res.status,data:await res.json()};
+  };
+  // Full cancellation is impossible until both bank and broker have already confirmed it.
+  assert.equal((await refund(undefined,{...refundInput,bank_refund_confirmed:false})).status,400);
+  const prepared=await refund();
+  assert.equal(prepared.status,201,JSON.stringify(prepared));
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_reversals').n,0);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM entries').n,1);
+  const submitted=await refund(['sbi-cash-reversals',prepared.data.prepared.request_id,'submit'],
+   {expected_user_id:member});
+  assert.equal(submitted.status,200,JSON.stringify(submitted));
+  const b={request_id:submitted.data.approval_id,resource_id:prepared.data.prepared.request_id,
+   household_id:household,requester_user_id:member,
+   payload_sha256:prepared.data.prepared.payload_sha256};
+  const applied=await f.target('execute',b);
+  assert.equal(applied.status,200,JSON.stringify(applied));
+  assert.equal(applied.data.kind,'reversal');
+  assert.equal(applied.data.original_request_id,approval);
+  assert.equal(applied.data.amount_jpy,1500);
+  assert.equal(applied.data.confirmed_units,1234500);
+  assert.equal(applied.data.bank_refund_date,'2026-11-14');
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_reversals').n,1);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_reversal_audit').n,1);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
+  assert.equal(read(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='transfer'").n,2);
+  assert.equal(read(f.sql,"SELECT COUNT(*) n FROM entries WHERE type='income' OR type='expense'").n,0);
+  const replay=await f.target('receipt',b);
+  assert.equal(replay.status,200);assert.equal(replay.data.already_applied,true);
+  const again=await f.target('execute',b);
+  assert.equal(again.status,200);assert.equal(again.data.already_applied,true);
+  assert.equal((await refund()).status,200); // same source idempotency key only
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_reversals').n,1);
+  assert.throws(()=>stmt(f.sql,"DELETE FROM family_sbi_cash_lots"));
+  assert.throws(()=>stmt(f.sql,"UPDATE family_sbi_cash_reversals SET reversed_units=1"));
+ }finally{f.close();}
+});
+test('SBI refund cannot pay back already-spent securities or bypass audit/identity-version drift',async()=>{
+ for(const mode of ['spent','audit','version']){
+  const f=fixture();
+  try{
+   const original=await f.prepare();
+   assert.equal((await f.target('execute',original)).status,200);
+   const form={expected_user_id:member,idempotency_key:'sbi-cash-refund-neg-20261115-'+mode,
+    original_request_id:approval,bank_version:1,securities_version:1,
+    bank_refund_reference:'bank-refund-neg-'+mode,
+    broker_cancel_reference:'broker-cancel-neg-'+mode,
+    bank_refund_date:'2026-11-14',broker_cancel_date:'2026-11-13',
+    bank_refund_confirmed:true,broker_cancel_confirmed:true};
+   const req=(path,body)=>new Request('https://kakeibo.example.test/api/family-finance/'+path,{
+    method:'POST',headers:{origin:'https://kakeibo.example.test','content-type':'application/json'},
+    body:JSON.stringify(body)});
+   const src=async(path,body)=>{
+    const response=await familySbiCashReversals(req(path,body),f.env,
+     new URL('https://kakeibo.example.test/api/family-finance/'+path),
+     {user_id:member,household_id:household,role:'member'},path.split('/'));
+    return {status:response.status,data:await response.json()};
+   };
+   const prepared=await src('sbi-cash-reversals',form);
+   assert.equal(prepared.status,201,mode+' '+JSON.stringify(prepared));
+   const submitted=await src('sbi-cash-reversals/'+prepared.data.prepared.request_id+'/submit',
+    {expected_user_id:member});
+   assert.equal(submitted.status,200);
+   if(mode==='spent')stmt(f.sql,"INSERT INTO entries(date,time,amount,type,family_account_id) VALUES('2026-11-14','',300,'expense',?)",securities);
+   if(mode==='audit')f.sql.exec("CREATE TRIGGER reject_cash_refund_audit BEFORE INSERT ON family_sbi_cash_reversal_audit BEGIN SELECT RAISE(ABORT,'AUDIT_FAILURE'); END;");
+   if(mode==='version')stmt(f.sql,'UPDATE family_financial_accounts SET version=version+1 WHERE account_id=?',bank);
+   const b={request_id:submitted.data.approval_id,resource_id:prepared.data.prepared.request_id,
+    household_id:household,requester_user_id:member,
+    payload_sha256:prepared.data.prepared.payload_sha256};
+   const result=await f.target('execute',b);
+   assert.notEqual(result.status,200,mode);
+   for(const table of ['family_sbi_cash_refund_evidence','family_sbi_cash_reversals','family_sbi_cash_reversal_audit'])
+    assert.equal(read(f.sql,'SELECT COUNT(*) n FROM '+table).n,0,table+' '+mode);
+   assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
+  }finally{f.close();}
+ }
 });

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
-import {createHmac,webcrypto} from 'node:crypto'
+import {createHmac,createHash,webcrypto} from 'node:crypto'
 import {familySharedMutationRequests} from '../functions/api/family-finance/shared-mutation-requests.js'
 import {approvedSharedMutationRoute} from '../functions/api/internal/shared-entries/[[path]].js'
 if(!globalThis.crypto)globalThis.crypto=webcrypto
@@ -19,10 +19,13 @@ function fixture(){
  sql.exec('PRAGMA foreign_keys=ON')
  sql.exec('CREATE TABLE schema_migrations(version TEXT PRIMARY KEY,description TEXT)')
  sql.exec('CREATE TABLE homeflow_identity_links(user_id TEXT PRIMARY KEY,household_id TEXT,role TEXT,state TEXT)')
+ sql.exec('CREATE TABLE family_financial_accounts(account_id TEXT PRIMARY KEY,household_id TEXT,owner_user_id TEXT,is_archived INTEGER)')
+ sql.exec('CREATE TABLE family_finance_legacy_entry_links(entry_id INTEGER PRIMARY KEY,household_id TEXT,actor_user_id TEXT,account_id TEXT,original_source TEXT,source_digest TEXT)')
+ sql.exec('CREATE TABLE receipt_r2_state(entry_id INTEGER PRIMARY KEY,deleted INTEGER,size_bytes INTEGER)')
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,amount INTEGER,category TEXT,'+
   'merchant TEXT,note TEXT,raw TEXT,type TEXT,client_request_id TEXT UNIQUE,payment_source TEXT,'+
   'family_account_id TEXT,family_transfer_target_account_id TEXT)')
- for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql'])
+ for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+version,import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,?,'active')").run(u,hh,role)
@@ -37,7 +40,7 @@ function fixture(){
   catch(e){sql.exec('ROLLBACK');throw e}
  }}
  const env={DB:db,APP_ENV:'production',KAKEIBO_FAMILY_FINANCE_ENABLED:'true',
-  KAKEIBO_SHARED_ENTRY_ENABLED:'true',
+  KAKEIBO_SHARED_ENTRY_ENABLED:'true',KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED:'true',
   KAKEIBO_SHARED_MUTATION_APPROVAL_ENABLED:'true',
   KAKEIBO_FAMILY_PENDING_KEY:secrets.pending,
   KAKEIBO_SHARED_MUTATION_SUBMISSION_SECRET:secrets.submit,
@@ -188,4 +191,77 @@ test('revoked owner proof, account disabled and audit trigger fault atomically r
     assert.equal(f.count(table),0,kind+':'+table)
   }finally{f.close()}
  }
+})
+
+
+const hashText=v=>createHash('sha256').update(v).digest('hex')
+function seedAdopted(f){
+ const sql=f.sql,resource='a'.repeat(32),account='b'.repeat(32),oldId=7;
+ const now=Date.now(),linkDigest='c'.repeat(64),sourceDigest='d'.repeat(64);
+ sql.prepare('INSERT INTO family_financial_accounts VALUES(?,?,?,0)').run(account,hh,owner)
+ sql.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source,family_account_id,family_transfer_target_account_id) '+
+  'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(oldId,sample.date,sample.time,900,sample.category,'旧商店','旧备注',
+   '旧OCR原文','expense',null,'Bank',account,null)
+ sql.prepare('INSERT INTO family_finance_legacy_entry_links VALUES(?,?,?,?,?,?)')
+  .run(oldId,hh,owner,account,'Bank',linkDigest)
+ const original=sql.prepare('SELECT * FROM entries WHERE id=?').get(oldId)
+ sql.prepare('INSERT INTO family_legacy_shared_adoptions(resource_id,entry_id,household_id,original_owner_user_id,account_id,'+
+  'source_snapshot_sha256,original_link_digest,original_client_request_id,original_row_json,adopted_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+  .run(resource,oldId,hh,owner,account,sourceDigest,linkDigest,null,JSON.stringify(original),now)
+ const snapshot=JSON.stringify({...sample,amount:900,merchant:'旧商店',note:'旧备注'})
+ sql.prepare('INSERT INTO family_shared_entry_write_context VALUES(?,?,?,?,?,?)')
+  .run(resource,oldId,owner,'create',0,now)
+ sql.prepare('INSERT INTO family_shared_entry_registry(resource_id,household_id,entry_id,creator_user_id,last_actor_user_id,'+
+  'state,version,snapshot_json,payload_sha256,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+  .run(resource,hh,oldId,owner,owner,'active',1,snapshot,hashText(snapshot),now,now)
+ sql.prepare('DELETE FROM family_shared_entry_write_context WHERE resource_id=?').run(resource)
+ return {resource,account,oldId,original}
+}
+
+test('member owner-approved update/delete/restore of adopted historical entry preserves original OCR, account and ID',async()=>{
+ const f=fixture()
+ try{
+  const old=seedAdopted(f),baseline=f.count('entries')
+  const u=await f.apply('update',old.resource,1,{...sample,amount:1500})
+  const updated=await f.target('execute',u)
+  assert.equal(updated.status,200,JSON.stringify(updated))
+  assert.equal(updated.data.version_after,2)
+  assert.equal(f.count('entries'),baseline)
+  let row=f.sql.prepare('SELECT * FROM entries WHERE id=?').get(old.oldId)
+  assert.equal(row.amount,1500)
+  assert.equal(row.raw,old.original.raw)
+  assert.equal(row.family_account_id,old.account)
+  assert.equal(row.client_request_id,null)
+  const d=await f.apply('delete',old.resource,2,null)
+  assert.equal((await f.target('execute',d)).status,200)
+  assert.equal(f.count('entries'),0)
+  const r=await f.apply('restore',old.resource,3,null)
+  const restored=await f.target('execute',r)
+  assert.equal(restored.status,200,JSON.stringify(restored))
+  row=f.sql.prepare('SELECT * FROM entries WHERE id=?').get(old.oldId)
+  assert.equal(row.amount,1500)
+  assert.equal(row.raw,old.original.raw)
+  assert.equal(row.payment_source,old.original.payment_source)
+  assert.equal(row.family_account_id,old.account)
+  assert.equal(row.client_request_id,null)
+  assert.equal(f.count('entries'),baseline)
+  assert.equal(f.count('family_legacy_shared_adoptions'),1)
+  assert.equal(f.count('family_shared_entry_audit'),4)
+  assert.equal(f.count('family_shared_mutation_applied'),3)
+  assert.equal((await f.target('receipt',r)).data.already_applied,true)
+ }finally{f.close()}
+})
+test('adopted history cannot execute when source financial account archived, and journal remains empty',async()=>{
+ const f=fixture()
+ try{
+  const old=seedAdopted(f)
+  const b=await f.apply('update',old.resource,1,{...sample,amount:1500})
+  f.sql.prepare('UPDATE family_financial_accounts SET is_archived=1 WHERE account_id=?').run(old.account)
+  const result=await f.target('execute',b)
+  assert.equal(result.status,409,JSON.stringify(result))
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(old.oldId),900)
+  assert.equal(f.count('family_shared_mutation_applied'),0)
+  assert.equal(f.count('family_shared_entry_audit'),1)
+  assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,1)
+ }finally{f.close()}
 })

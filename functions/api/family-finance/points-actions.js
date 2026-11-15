@@ -264,6 +264,7 @@ async function seal(e,requestId,raw){
 }
 async function prepare(req,e,url,user){
  const x=await read(req,url);
+ const sbiReversal=x?.operation==='reversal'&&x?.sbi_reversal===true;
  if(!valid(x,user))return fail('POINTS_INVALID_INTENT',400);
  if(!await account(e.DB,user,x.points_account_id,x.points_version))return fail('POINTS_ACCOUNT_CHANGED');
  if(x.operation==='reversal'&&!await reversibleOriginal(e.DB,user,x))

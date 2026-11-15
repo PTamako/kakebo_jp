@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {legacySharedReceiptCopy} from '../functions/api/family-finance/legacy-shared-receipt-copy.js';
 import {legacySharedAdopt} from '../functions/api/family-finance/legacy-shared-adopt.js';
+import {legacySharedSourceRefcount} from '../functions/api/family-finance/legacy-shared-source-refcount.js';
 import {familySharedEntries} from '../functions/api/family-finance/shared-entries.js';
 import {handleR2Receipts} from '../functions/api/r2-receipts.js';
 const hh='house',owner='owner',member='member',acc='a'.repeat(32);
@@ -174,3 +175,52 @@ test('legacy cleanup skips claimed old R2 original and cannot delete the verifie
   assert.equal(f.objects.size,2);
  }finally{f.close()}
 });
+
+async function sourceAudit(f,actor=f.actor,method='GET'){
+ const endpoint=new URL(base+'legacy/shared-source-refcount?entry_id=7')
+ const response=await legacySharedSourceRefcount(new Request(endpoint,{method}),f.env,endpoint,actor)
+ return {status:response.status,data:await response.json()}
+}
+test('old R2 source reference audit verifies both original and claimed bytes without deleting either',async()=>{
+ const f=fixture();try{
+  const copy=await f.copy();assert.equal(copy.status,200)
+  const adopted=await f.adopt();assert.equal(adopted.status,201)
+  f.env.KAKEIBO_LEGACY_SHARED_SOURCE_REFCOUNT_ENABLED='true'
+  const before=f.sql.prepare('SELECT id,amount,raw,payment_source FROM entries').get()
+  const checked=await sourceAudit(f)
+  assert.equal(checked.status,200,JSON.stringify(checked))
+  assert.equal(checked.data.original_and_shared_sha256_verified,true)
+  assert.equal(checked.data.source_copy_refs,1)
+  assert.equal(checked.data.claim_refs,1)
+  assert.equal(checked.data.shared_ready_refs,1)
+  assert.equal(checked.data.old_live_refs,0)
+  assert.equal(checked.data.original_deleted,false)
+  assert.equal(checked.data.source_purge_authorized,false)
+  assert.equal(f.deletes(),0)
+  assert.equal(f.objects.size,2)
+  assert.deepEqual({...f.sql.prepare('SELECT id,amount,raw,payment_source FROM entries').get()},{...before})
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_shared_entry_audit').get().n,1)
+ }finally{f.close()}
+})
+test('source R2 audit denies invalid actor, writes, unfrozen configuration and missing/mismatched original or copy',async()=>{
+ for(const failure of ['member','write','flag','unfrozen','source_missing','target_missing','target_corrupt','owner_revoked']){
+  const f=fixture();try{
+   const copied=await f.copy();assert.equal(copied.status,200)
+   assert.equal((await f.adopt()).status,201)
+   f.env.KAKEIBO_LEGACY_SHARED_SOURCE_REFCOUNT_ENABLED='true'
+   const sharedKey='shared/v1/'+copied.data.resource_id+'/'+copied.data.object_id
+   if(failure==='flag')f.env.KAKEIBO_LEGACY_SHARED_SOURCE_REFCOUNT_ENABLED='false'
+   if(failure==='unfrozen')f.env.KAKEIBO_LEGACY_R2_WRITES_FROZEN='false'
+   if(failure==='source_missing')f.objects.delete('receipts/v1/7')
+   if(failure==='target_missing')f.objects.delete(sharedKey)
+   if(failure==='target_corrupt')f.objects.get(sharedKey).body[0]^=1
+   if(failure==='owner_revoked')f.sql.prepare("UPDATE homeflow_identity_links SET state='revoked' WHERE user_id=?").run(owner)
+   const result=await sourceAudit(f,failure==='member'?f.outsider:f.actor,
+    failure==='write'?'POST':'GET')
+   assert.notEqual(result.status,200,failure+':'+JSON.stringify(result))
+   assert.equal(result.data.source_purge_authorized,false)
+   assert.equal(f.deletes(),0)
+   assert.equal(f.sql.prepare('SELECT deleted FROM receipt_r2_state').get().deleted,1)
+  }finally{f.close()}
+ }
+})

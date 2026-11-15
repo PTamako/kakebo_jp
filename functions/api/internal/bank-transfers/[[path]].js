@@ -1,3 +1,4 @@
+import {crossMemberBankExecution} from './cross-member.js';
 // DRAFT P0-4C: signed HomeFlow approval; posted bank debit+credit -> ONE immutable transfer.
 // Internal ledger only. No external bank API or cross-member money movement.
 const enc=new TextEncoder(),hex=/^[a-f0-9]{64}$/i,id=/^[a-f0-9]{32}$/i,
@@ -147,6 +148,13 @@ export async function approvedBankTransferRoute(req,e,parts){
  const mode=parts[0],b=await signed(req,e,mode);
  if(!b)return fail('BANK_TRANSFER_UNAUTHORIZED',403);
  const db=e.DB;
+ const cross=e.KAKEIBO_CROSS_MEMBER_BANK_ENABLED==='true'?
+  await db.prepare('SELECT request_id FROM family_cross_bank_intents WHERE request_id=? LIMIT 1')
+   .bind(b.resource_id).first():null;
+ const crossJournal=e.KAKEIBO_CROSS_MEMBER_BANK_ENABLED==='true'?
+  await db.prepare('SELECT homeflow_request_id FROM family_cross_bank_journal WHERE homeflow_request_id=? LIMIT 1')
+   .bind(b.request_id).first():null;
+ if(cross||crossJournal)return crossMemberBankExecution(e,b,mode);
  const prior=await db.prepare('SELECT * FROM family_bank_transfers_applied WHERE homeflow_request_id=? OR proposal_id=? LIMIT 1')
   .bind(b.request_id,b.resource_id).first();
  if(prior)return identity(prior,b)?receipt(db,prior,b,true):fail('BANK_TRANSFER_RECEIPT_CONFLICT');

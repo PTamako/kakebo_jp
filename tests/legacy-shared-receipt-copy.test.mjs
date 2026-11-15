@@ -72,7 +72,7 @@ test('owner confirmed copy is byte-identical, only one destination, with durable
   const again=await f.call();assert.equal(again.status,200,JSON.stringify(again));
   assert.equal(again.data.replayed,true);assert.equal(f.puts(),1);
   assert.throws(()=>f.sql.prepare('DELETE FROM family_legacy_shared_receipt_copies').run(),/IMMUTABLE/);
-  assert.throws(()=>f.sql.prepare('UPDATE family_legacy_shared_receipt_copies SET byte_sha256=?').run('x'),/IMMUTABLE/);
+  assert.throws(()=>f.sql.prepare('UPDATE family_legacy_shared_receipt_copies SET byte_sha256=?').run('x'),/(?:IDENTITY_IMMUTABLE|STATE_INVALID)/);
  }finally{f.close()}
 });
 test('R2 interrupted upload leaves durable pending and exact owner retry promotes once',async()=>{

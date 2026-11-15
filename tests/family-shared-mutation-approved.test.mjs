@@ -25,7 +25,7 @@ function fixture(){
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,amount INTEGER,category TEXT,'+
   'merchant TEXT,note TEXT,raw TEXT,type TEXT,client_request_id TEXT UNIQUE,payment_source TEXT,'+
   'family_account_id TEXT,family_transfer_target_account_id TEXT)')
- for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql'])
+ for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+version,import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,?,'active')").run(u,hh,role)
@@ -259,7 +259,7 @@ test('adopted history cannot execute when source financial account archived, and
   f.sql.prepare('UPDATE family_financial_accounts SET is_archived=1 WHERE account_id=?').run(old.account)
   const result=await f.target('execute',b)
   assert.equal(result.status,409,JSON.stringify(result))
-  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(old.oldId),900)
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(old.oldId).amount,900)
   assert.equal(f.count('family_shared_mutation_applied'),0)
   assert.equal(f.count('family_shared_entry_audit'),1)
   assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,1)

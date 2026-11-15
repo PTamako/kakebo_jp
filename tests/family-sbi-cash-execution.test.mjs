@@ -7,6 +7,7 @@ import {familySbiCashActions} from '../functions/api/family-finance/sbi-cash-act
 import {familySbiCashReversals} from '../functions/api/family-finance/sbi-cash-reversals.js';
 import {approvedSbiCashRoute} from '../functions/api/internal/sbi-cash-actions/[[path]].js';
 import {memberSbiCashPositions} from '../functions/api/family-finance/sbi-cash-lot-projection.js';
+import {familySbiLegacyReview} from '../functions/api/family-finance/sbi-legacy-review.js';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const owner='11111111-1111-4111-8111-111111111111';
 const member='22222222-2222-4222-8222-222222222222';
@@ -23,12 +24,13 @@ function fixture(){
  sql.exec('PRAGMA foreign_keys=ON;');
  for(const x of ['0001_support_tables.sql','0002_versioned_migration_tracking.sql',
   '0022_homeflow_identity_foundation.sql','0023_family_financial_account_identities.sql',
-  '0027_family_legacy_entry_link_audit.sql'])
+  '0025_family_financial_resource_owners.sql','0027_family_legacy_entry_link_audit.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+x,import.meta.url),'utf8'));
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,amount INTEGER,'+
   'category TEXT,merchant TEXT,note TEXT,raw TEXT,type TEXT,transfer_target TEXT,'+
   'transfer_applied INTEGER,transfer_date TEXT,client_request_id TEXT UNIQUE,'+
   'payment_source TEXT,family_account_id TEXT,family_transfer_target_account_id TEXT);');
+ sql.exec(readFileSync(new URL('../migrations/0006_sbi_portfolio_linkage.sql',import.meta.url),'utf8'));
  for(const x of ['0031_family_card_purchase_execution.sql','0032_family_card_settlement_foundation.sql',
   '0033_member_prepaid_actions.sql','0034_family_points_foundation.sql',
   '0035_points_prepaid_atomic.sql','0036_points_card_offset.sql',
@@ -36,7 +38,7 @@ function fixture(){
   '0039_points_legacy_provenance.sql','0040_points_sbi_lots.sql',
   '0041_points_transfer_atomic_refund.sql','0042_points_prepaid_refund.sql',
   '0043_points_card_offset_refund.sql','0044_sbi_cash_purchases.sql',
-  '0045_sbi_cash_reversals.sql']){
+  '0045_sbi_cash_reversals.sql','0046_sbi_legacy_holding_review.sql']){
   const migration=readFileSync(new URL('../migrations/'+x,import.meta.url),'utf8');
   sql.exec(migration);
   if(x==='0044_sbi_cash_purchases.sql')sql.exec(migration); // migration replay
@@ -60,7 +62,8 @@ function fixture(){
  }};
  let proofActive=true;
  const env={DB:db,APP_ENV:'production',KAKEIBO_FAMILY_FINANCE_ENABLED:'true',
-  KAKEIBO_SBI_CASH_ENABLED:'true',KAKEIBO_SBI_CASH_REVERSALS_ENABLED:'true',KAKEIBO_FAMILY_PENDING_KEY:keys.pending,
+  KAKEIBO_SBI_CASH_ENABLED:'true',KAKEIBO_SBI_CASH_REVERSALS_ENABLED:'true',
+  KAKEIBO_SBI_LEGACY_REVIEW_ENABLED:'true',KAKEIBO_FAMILY_PENDING_KEY:keys.pending,
   KAKEIBO_SBI_CASH_SUBMISSION_SECRET:keys.submission,
   KAKEIBO_SBI_CASH_EXECUTION_SECRET:keys.execution,
   KAKEIBO_SBI_CASH_PROOF_SECRET:keys.proof,
@@ -414,4 +417,97 @@ test('SBI refund cannot pay back already-spent securities or bypass audit/identi
    assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
   }finally{f.close();}
  }
+});
+
+
+test('SBI legacy holding snapshot review is owner-verified and immutable but NEVER counted as reconciled or imported',async()=>{
+ const f=fixture();try{
+  const original=await f.prepare();assert.equal((await f.target('execute',original)).status,200);
+  stmt(f.sql,`INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,acquisition_cost,
+    reported_value,reported_at) VALUES('1234ABCD','tsumitate','SBI Verified Snapshot',2500000,3000,3200,'2026-11-13')`);
+  const originalLot=read(f.sql,'SELECT * FROM family_sbi_cash_lots');
+  const originalHolding=read(f.sql,'SELECT * FROM investment_holdings');
+  const get=async(user=owner)=>{
+   const url=new URL('https://kakeibo.example.test/api/family-finance/sbi-legacy-review?kind=cash');
+   const resp=await familySbiLegacyReview(new Request(url),f.env,url,
+    {user_id:user,household_id:household,role:user===owner?'owner':'member'});
+   return {status:resp.status,data:await resp.json()};
+  };
+  let out=await get();
+  assert.equal(out.status,200);
+  assert.equal(out.data.items.length,1);
+  assert.equal(out.data.items[0].reconciliation_state,'legacy_owner_or_type_unverified');
+  assert.equal(out.data.items[0].legacy_holding,null);
+  assert.equal((await get(member)).status,403);
+  stmt(f.sql,`INSERT INTO family_financial_resource_owners
+    (resource_kind,legacy_key,household_id,owner_user_id,assigned_by_user_id)
+    VALUES('investment_holding','1234ABCD:tsumitate',?,?,?)`,household,owner,owner);
+  out=await get();
+  assert.equal(out.status,200);
+  const row=out.data.items[0];
+  assert.equal(row.reconciliation_state,'eligible_for_explicit_unverified_review');
+  assert.equal(row.source_owner_user_id,member);
+  assert.equal(row.legacy_holding.units,2500000);
+  assert.equal(out.data.asset_value_complete,false);
+  const action={expected_user_id:owner,lot_kind:'cash',
+   lot_homeflow_request_id:row.lot_homeflow_request_id,
+   securities_account_id:row.securities_account_id,
+   source_lot_digest:row.source_lot_digest,
+   legacy_snapshot_digest:row.legacy_holding.legacy_snapshot_digest,
+   confirm_candidate_only:true};
+  const submit=async(body=action,user=owner)=>{
+   const url=new URL('https://kakeibo.example.test/api/family-finance/sbi-legacy-review');
+   const req=new Request(url,{method:'POST',headers:{origin:url.origin,'content-type':'application/json'},
+    body:JSON.stringify(body)});
+   const resp=await familySbiLegacyReview(req,f.env,url,
+    {user_id:user,household_id:household,role:user===owner?'owner':'member'});
+   return {status:resp.status,data:await resp.json()};
+  };
+  assert.equal((await submit({...action,confirm_candidate_only:false})).status,400);
+  assert.equal((await submit({...action,legacy_snapshot_digest:'a'.repeat(64)})).status,409);
+  const accepted=await submit();
+  assert.equal(accepted.status,201,JSON.stringify(accepted));
+  assert.equal(accepted.data.broker_reconciled,false);
+  assert.equal(accepted.data.valuation_changed,false);
+  assert.equal(accepted.data.ledger_changed,false);
+  assert.equal((await submit()).status,200);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_legacy_holding_candidates').n,1);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_legacy_candidate_audit').n,1);
+  const link=read(f.sql,'SELECT * FROM family_sbi_legacy_holding_candidates');
+  assert.equal(link.owner_user_id,owner);
+  assert.equal(link.source_owner_user_id,member);
+  assert.equal(link.candidate_status,'pending_broker_reconciliation');
+  assert.equal(link.source_trade_confirmed_as_historical_duplicate,0);
+  assert.equal(link.included_in_tracked_assets,0);
+  assert.deepEqual(read(f.sql,'SELECT * FROM family_sbi_cash_lots'),originalLot);
+  assert.deepEqual(read(f.sql,'SELECT * FROM investment_holdings'),originalHolding);
+  for(const query of [
+   'DELETE FROM family_sbi_legacy_holding_candidates',
+   'UPDATE family_sbi_legacy_holding_candidates SET included_in_tracked_assets=1',
+   'DELETE FROM family_sbi_legacy_candidate_audit'])
+   assert.throws(()=>stmt(f.sql,query),query);
+  stmt(f.sql,"UPDATE investment_holdings SET reported_value=3201 WHERE fund_code='1234ABCD'");
+  const after=await get();
+  assert.equal(after.data.items[0].reconciliation_state,'candidate_snapshot_stale');
+  assert.equal((await submit()).status,409);
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_cash_lots').n,1);
+ }finally{f.close();}
+});
+test('SBI legacy snapshot refuses combined holdings, unverified owners and audit write failure',async()=>{
+ const f=fixture();try{
+  const original=await f.prepare();assert.equal((await f.target('execute',original)).status,200);
+  stmt(f.sql,`INSERT INTO investment_holdings(fund_code,account_type,fund_name,units,
+   acquisition_cost) VALUES('1234ABCD','combined','Combined NISA screenshot',3000000,3000)`);
+  stmt(f.sql,`INSERT INTO family_financial_resource_owners
+    (resource_kind,legacy_key,household_id,owner_user_id,assigned_by_user_id)
+    VALUES('investment_holding','1234ABCD:combined',?,?,?)`,household,owner,owner);
+  const url=new URL('https://kakeibo.example.test/api/family-finance/sbi-legacy-review?kind=cash');
+  const res=await familySbiLegacyReview(new Request(url),f.env,url,
+   {user_id:owner,household_id:household,role:'owner'});
+  assert.equal(res.status,200);
+  const row=(await res.json()).items[0];
+  assert.equal(row.legacy_holding,null);
+  assert.equal(row.reconciliation_state,'legacy_owner_or_type_unverified');
+  assert.equal(read(f.sql,'SELECT COUNT(*) n FROM family_sbi_legacy_holding_candidates').n,0);
+ }finally{f.close();}
 });

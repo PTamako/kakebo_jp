@@ -26,13 +26,14 @@ function fixture(){
  const sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
  for(const n of ['0001_support_tables.sql','0002_versioned_migration_tracking.sql',
   '0022_homeflow_identity_foundation.sql','0023_family_financial_account_identities.sql',
-  '0027_family_legacy_entry_link_audit.sql']){
+  '0025_family_financial_resource_owners.sql','0027_family_legacy_entry_link_audit.sql']){
   sql.exec(readFileSync(new URL('../migrations/'+n,import.meta.url),'utf8'));
  }
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,amount INTEGER,'+
   'category TEXT,merchant TEXT,note TEXT,raw TEXT,type TEXT,transfer_target TEXT,'+
   'transfer_applied INTEGER,transfer_date TEXT,client_request_id TEXT UNIQUE,'+
   'payment_source TEXT,family_account_id TEXT,family_transfer_target_account_id TEXT);');
+ sql.exec(readFileSync(new URL('../migrations/0006_sbi_portfolio_linkage.sql',import.meta.url),'utf8'));
  for(const name of ['0031_family_card_purchase_execution.sql','0032_family_card_settlement_foundation.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
  const p33=readFileSync(new URL('../migrations/0033_member_prepaid_actions.sql',import.meta.url),'utf8');
@@ -48,6 +49,9 @@ function fixture(){
  sql.exec(readFileSync(new URL('../migrations/0041_points_transfer_atomic_refund.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0042_points_prepaid_refund.sql',import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0043_points_card_offset_refund.sql',import.meta.url),'utf8'));
+ for(const n of ['0044_sbi_cash_purchases.sql','0045_sbi_cash_reversals.sql',
+  '0046_sbi_legacy_holding_review.sql','0047_sbi_point_full_refund.sql'])
+  sql.exec(readFileSync(new URL('../migrations/'+n,import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,hh,role,role,'active',Date.now());
@@ -73,7 +77,7 @@ function fixture(){
  const requests=new Map(),approvals=new Map();
  let proofAuthorized=true,invalidProof=false,failSubmit=false;
  const env={APP_ENV:'production',DB:db,KAKEIBO_FAMILY_FINANCE_ENABLED:'true',
-  KAKEIBO_POINTS_ACTIONS_ENABLED:'true',KAKEIBO_FAMILY_PENDING_KEY:secrets.pending,
+  KAKEIBO_POINTS_ACTIONS_ENABLED:'true',KAKEIBO_SBI_POINT_REFUNDS_ENABLED:'true',KAKEIBO_FAMILY_PENDING_KEY:secrets.pending,
   KAKEIBO_POINTS_SUBMISSION_SECRET:secrets.submit,
   KAKEIBO_POINTS_PROOF_SECRET:secrets.proof,
   KAKEIBO_POINTS_EXECUTION_SECRET:secrets.execute,
@@ -854,4 +858,83 @@ test('card offset refund rejects stale card CAS and rolls back source points if 
  assert.equal(get(f.sql,'SELECT SUM(delta_units) n FROM family_points_journal').n,150);
  assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,2);
  assert.equal((await memberCardLiabilities(f.db,hh,true)).items.find(x=>x.account_id===memberCard).liability_jpy,750);
+});
+
+
+test('SBI points refund requires confirmed cancellation AND returned issuer points, atomically reverses exact immutable lot',async()=>{
+ const f=fixture(),before=get(f.sql,'SELECT COUNT(*) n FROM entries').n;
+ const earned=await f.prepare('earn_campaign','sbi-point-refund-earned',{units:400,yen_value:400});
+ assert.equal((await f.execute(await f.submit(earned))).status,200);
+ const bought=await f.prepare('redeem_asset','sbi-point-refund-original',{units:200,yen_value:200,
+  sbi_confirmed_units:2000});
+ const old=await f.submit(bought);
+ assert.equal((await f.execute(old)).status,200);
+ const originalLot=get(f.sql,'SELECT * FROM family_sbi_point_lots WHERE homeflow_request_id=?',old);
+ const originalJournal=get(f.sql,'SELECT * FROM family_points_journal WHERE homeflow_request_id=?',old);
+ const opts={units:200,yen_value:200,original_request_id:old,
+  source_reference:'issuer-return-refund-20261115',
+  sbi_reversal:true,sbi_securities_version:1,
+  sbi_broker_cancel_reference:'SBI-TRADE-CANCEL-20261115',
+  sbi_points_refund_reference:'issuer-return-refund-20261115',
+  sbi_broker_cancel_date:'2026-11-14',sbi_points_refund_date:'2026-11-14',
+  sbi_broker_cancel_confirmed:true,sbi_points_returned_confirmed:true};
+ const bad=await f.call(['points-actions'],f.action('reversal','sbi-point-refund-no-issuer',
+  {...opts,sbi_points_returned_confirmed:false}));
+ assert.equal(bad.status,400);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_refunds').n,0);
+ const draft=await f.prepare('reversal','sbi-point-refund-completed',opts);
+ const approval=await f.submit(draft);
+ const done=await f.execute(approval);
+ assert.equal(done.status,200,JSON.stringify(done));
+ assert.equal(done.data.refunded_sbi_securities_account_id,securities);
+ assert.equal(done.data.refunded_sbi_units,2000);
+ assert.equal(done.data.refunded_sbi_cost_jpy,200);
+ assert.equal(done.data.refunded_sbi_points_units,200);
+ assert.equal(done.data.refunded_sbi_evidence_kind,'owner_attested_completed_cancel_and_issuer_refund');
+ assert.equal(done.data.reversed_request_id,old);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_refunds').n,1);
+ assert.deepEqual(get(f.sql,'SELECT * FROM family_sbi_point_lots WHERE homeflow_request_id=?',old),originalLot);
+ assert.deepEqual(get(f.sql,'SELECT * FROM family_points_journal WHERE homeflow_request_id=?',old),originalJournal);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM entries').n,before);
+ const view=await memberSbiPointPositions(f.db,hh);
+ assert.equal(view.positions[0].confirmed_units,0);
+ assert.equal(view.positions[0].acquisition_cost_jpy,0);
+ assert.equal(view.total_acquisition_cost_jpy,0);
+ assert.equal(view.included_in_tracked_assets_jpy,false);
+ assert.equal((await f.execute(approval,'receipt')).data.already_applied,true);
+ assert.equal((await f.execute(approval)).data.already_applied,true);
+ const dup=await f.call(['points-actions'],f.action('reversal','sbi-point-refund-other-id',opts));
+ assert.equal(dup.status,409);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_refunds').n,1);
+ assert.throws(()=>stmt(f.sql,'DELETE FROM family_sbi_point_refunds'),/SBI_POINT_REFUND_IMMUTABLE/);
+ assert.throws(()=>stmt(f.sql,'UPDATE family_sbi_point_refunds SET reversed_units=1'),/SBI_POINT_REFUND_IMMUTABLE/);
+});
+test('SBI points refund rejects stale securities CAS and failed counterpart leaves no phantom point credit',async()=>{
+ const f=fixture();
+ const earned=await f.prepare('earn_campaign','sbi-refund-fault-earned',{units:400,yen_value:400});
+ assert.equal((await f.execute(await f.submit(earned))).status,200);
+ const buy=await f.prepare('redeem_asset','sbi-refund-fault-purchase',{units:175,yen_value:175,
+  sbi_confirmed_units:1750});
+ const original=await f.submit(buy);assert.equal((await f.execute(original)).status,200);
+ const opts={units:175,yen_value:175,original_request_id:original,
+  source_reference:'issuer-return-fault-20261115',sbi_reversal:true,sbi_securities_version:1,
+  sbi_broker_cancel_reference:'SBI-CANCEL-FAULT-20261115',
+  sbi_points_refund_reference:'issuer-return-fault-20261115',
+  sbi_broker_cancel_date:'2026-11-14',sbi_points_refund_date:'2026-11-14',
+  sbi_broker_cancel_confirmed:true,sbi_points_returned_confirmed:true};
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=2 WHERE account_id=?',securities);
+ const stale=await f.call(['points-actions'],f.action('reversal','sbi-refund-fault-stale',opts));
+ assert.equal(stale.status,409);
+ stmt(f.sql,'UPDATE family_financial_accounts SET version=1 WHERE account_id=?',securities);
+ const proposal=await f.prepare('reversal','sbi-refund-fault-proposal',opts);
+ const approval=await f.submit(proposal);
+ f.sql.exec("CREATE TRIGGER fail_sbi_points_refund BEFORE INSERT ON family_sbi_point_refunds "+
+  "BEGIN SELECT RAISE(ABORT,'FORCED_SBI_REFUND_TARGET_ERROR'); END;");
+ const failed=await f.execute(approval);
+ assert.notEqual(failed.status,200);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_refunds').n,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_journal WHERE reversed_request_id=?',original).n,0);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_points_actor_audit').n,2);
+ assert.equal(get(f.sql,'SELECT COUNT(*) n FROM family_sbi_point_lots').n,1);
+ assert.equal((await memberSbiPointPositions(f.db,hh)).positions[0].confirmed_units,1750);
 });

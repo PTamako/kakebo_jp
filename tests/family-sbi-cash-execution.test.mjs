@@ -343,8 +343,11 @@ test('SBI refund follows signed prepare, HomeFlow approval, two-bank-side journa
   const b={request_id:submitted.data.approval_id,resource_id:prepared.data.prepared.request_id,
    household_id:household,requester_user_id:member,
    payload_sha256:prepared.data.prepared.payload_sha256};
+  assert.match(b.request_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.match(b.resource_id,/^[a-f0-9]{32}$/i);
+  assert.match(b.payload_sha256,/^[a-f0-9]{64}$/i);
   const applied=await f.target('execute',b);
-  assert.equal(applied.status,200,JSON.stringify(applied));
+  assert.equal(applied.status,200,JSON.stringify({result:applied,input:b}));
   assert.equal(applied.data.kind,'reversal');
   assert.equal(applied.data.original_request_id,approval);
   assert.equal(applied.data.amount_jpy,1500);

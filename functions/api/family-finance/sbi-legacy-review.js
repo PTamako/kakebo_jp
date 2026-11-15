@@ -30,10 +30,12 @@ async function lot(db,u,kind,requestId){
  const t=dbtable[kind];
  const row=await db.prepare('SELECT l.* FROM '+t+' l '+
   'JOIN family_financial_accounts s ON s.account_id=l.securities_account_id '+
-  'WHERE l.homeflow_request_id=? AND l.household_id=? AND l.owner_user_id=? '+
-  "AND s.household_id=? AND s.owner_user_id=? AND s.origin='member_created' "+
+  'JOIN homeflow_identity_links member ON member.user_id=l.owner_user_id '+
+  'WHERE l.homeflow_request_id=? AND l.household_id=? '+
+  "AND member.household_id=l.household_id AND member.role='member' AND member.state='active' "+
+  "AND s.household_id=? AND s.owner_user_id=l.owner_user_id AND s.origin='member_created' "+
   "AND s.account_kind='securities' AND s.opening_balance=0 AND s.is_archived=0 LIMIT 1")
-  .bind(requestId,u.household_id,u.user_id,u.household_id,u.user_id).first();
+  .bind(requestId,u.household_id,u.household_id).first();
  if(kind==='cash'&&row){
   const revoked=await db.prepare('SELECT original_request_id FROM family_sbi_cash_reversals WHERE original_request_id=?')
    .bind(requestId).first();
@@ -79,8 +81,8 @@ export async function familySbiLegacyReview(request,env,url,user){
   if(!Object.hasOwn(dbtable,kind)||(after&&!uuid.test(after)))
    return fail('SBI_REVIEW_INVALID_CURSOR',400);
   const rows=(await db.prepare('SELECT l.homeflow_request_id FROM '+dbtable[kind]+' l '+
-   'WHERE l.household_id=? AND l.owner_user_id=? AND l.homeflow_request_id>? '+
-   'ORDER BY l.homeflow_request_id LIMIT 6').bind(user.household_id,user.user_id,after).all()).results||[];
+   'WHERE l.household_id=? AND l.homeflow_request_id>? '+
+   'ORDER BY l.homeflow_request_id LIMIT 6').bind(user.household_id,after).all()).results||[];
   const result=[];
   for(const r of rows.slice(0,5)){
    const x=await candidate(db,user,kind,r.homeflow_request_id);
@@ -90,7 +92,7 @@ export async function familySbiLegacyReview(request,env,url,user){
    result.push({lot_homeflow_request_id:x.lot.homeflow_request_id,
     fund_code:x.lot.fund_code,account_type:x.lot.account_type,
     confirmed_units:x.lot.confirmed_units,acquisition_cost_jpy:x.lot.acquisition_cost_jpy,
-    trade_date:x.lot.trade_date,securities_account_id:x.lot.securities_account_id,
+    source_owner_user_id:x.lot.owner_user_id,trade_date:x.lot.trade_date,securities_account_id:x.lot.securities_account_id,
     source_lot_digest:x.lot_digest,
     legacy_holding:old?{fund_code:old.fund_code,account_type:old.account_type,
      units:old.units,acquisition_cost:old.acquisition_cost,
@@ -137,14 +139,14 @@ export async function familySbiLegacyReview(request,env,url,user){
  try{
   const actions=[
    db.prepare('INSERT INTO family_sbi_legacy_holding_candidates '+
-    '(candidate_id,household_id,owner_user_id,lot_type,lot_homeflow_request_id,'+
+    '(candidate_id,household_id,owner_user_id,source_owner_user_id,lot_type,lot_homeflow_request_id,'+
     'securities_account_id,lot_fund_code,lot_account_type,lot_confirmed_units,'+
     'lot_acquisition_cost_jpy,lot_trade_date,lot_broker_reference_hash,source_lot_digest,'+
     'legacy_fund_code,legacy_account_type,legacy_fund_name,legacy_units,'+
     'legacy_acquisition_cost,legacy_reported_value,legacy_reported_at,legacy_updated_at,'+
     'legacy_snapshot_digest,reviewer_user_id,reviewed_at) '+
-    'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(candidateId,user.household_id,user.user_id,b.lot_kind,l.homeflow_request_id,
+    'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .bind(candidateId,user.household_id,user.user_id,l.owner_user_id,b.lot_kind,l.homeflow_request_id,
      l.securities_account_id,l.fund_code,l.account_type,l.confirmed_units,l.acquisition_cost_jpy,
      l.trade_date,l.broker_reference_hash,b.source_lot_digest,h.fund_code,h.account_type,
      h.fund_name,h.units,h.acquisition_cost,h.reported_value,h.reported_at,h.updated_at,

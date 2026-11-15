@@ -113,18 +113,28 @@ async function modify(req,e,url,u,id,action){
  const snapshot=next?JSON.stringify(next):r.snapshot_json;
  const digest=await hash(snapshot);
  const at=Date.now(),db=e.DB,ref='hfshare:'+id;
+ const adopted=await db.prepare('SELECT original_row_json,original_client_request_id,account_id '+
+  'FROM family_legacy_shared_adoptions WHERE resource_id=? AND entry_id=?').bind(id,r.entry_id).first();
+ const original=adopted?JSON.parse(adopted.original_row_json):null;
  const statements=[context(db,r,u,action,at)];
  if(action==='update'){
+  const allowed=adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL';
   statements.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=? '+
-   'WHERE id=? AND client_request_id=? AND type IN(?,?) AND family_account_id IS NULL '+
-   'AND family_transfer_target_account_id IS NULL')
-   .bind(...entryArgs(next),r.entry_id,ref,r.state==='active'?'expense':'_',r.state==='active'?'income':'_'));
+   'WHERE id=? AND '+allowed+" AND type IN('expense','income') AND family_transfer_target_account_id IS NULL")
+   .bind(...entryArgs(next),r.entry_id,...(adopted?[adopted.original_client_request_id,adopted.account_id]:[ref])));
  }else if(action==='delete'){
-  statements.push(db.prepare('DELETE FROM entries WHERE id=? AND client_request_id=? '+
-   "AND type IN('income','expense') AND family_account_id IS NULL AND family_transfer_target_account_id IS NULL")
-   .bind(r.entry_id,ref));
+  statements.push(db.prepare('DELETE FROM entries WHERE id=? AND '+
+   (adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL')+
+   " AND type IN('income','expense') AND family_transfer_target_account_id IS NULL")
+   .bind(r.entry_id,...(adopted?[adopted.original_client_request_id,adopted.account_id]:[ref])));
  }else{
-  statements.push(db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
+  if(adopted){
+   const old={...original,...next};
+   const columns=Object.keys(old);
+   if(columns.some(k=>!/^[a-z][a-z0-9_]*$/i.test(k)))return fail('LEGACY_SHARED_RESTORE_SCHEMA_REVIEW_REQUIRED');
+   statements.push(db.prepare('INSERT INTO entries('+columns.map(k=>'"'+k+'"').join(',')+') VALUES('+
+    columns.map(()=>'?').join(',')+')').bind(...columns.map(k=>old[k])));
+  }else statements.push(db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
    "VALUES(?,?,?,?,?,?,?,'',?,?,'')")
    .bind(r.entry_id,...entryArgs(next),ref));
  }

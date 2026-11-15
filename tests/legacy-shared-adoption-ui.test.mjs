@@ -17,3 +17,18 @@ test('historical owner confirmation UI never auto-adopts, requires exact digest 
  assert.doesNotMatch(component,/onMounted\(/);
  assert.doesNotMatch(component,/localStorage|sessionStorage/);
 });
+
+
+test('legacy receipt UI is three independent owner confirmations: read-only R2 byte check, manual copy, then adopt',()=>{
+ assert.match(component,/needsReceipt\(row\)/);
+ assert.match(component,/requires_original_r2_object_and_tombstone_review/);
+ assert.match(component,/shared-receipt-review\?entry_id=/);
+ assert.match(component,/shared-receipt-copy/);
+ assert.match(component,/window\.confirm\('确认只为历史账目/);
+ assert.match(component,/copied\.value\[row\.entry_id\]===row\.source_snapshot_sha256/);
+ assert.match(component,/data\.legacy_object_deleted!==false/);
+ assert.match(component,/reviewed\.value=\{\};copied\.value=\{\}/);
+ assert.match(component,/reviewed\.value=\{\},copied\.value=\{\}/);
+ assert.doesNotMatch(component,/onMounted\(/);
+ assert.doesNotMatch(component,/localStorage/);
+});

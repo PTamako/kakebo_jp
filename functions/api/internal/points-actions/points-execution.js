@@ -42,7 +42,7 @@ async function signed(req,e,mode){
  const expected=await hmac(e.KAKEIBO_POINTS_EXECUTION_SECRET,'homeflow:points-'+mode,stamp,raw);
  return eq(tag,expected)?b:null;
 }
-const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null,transferRefund=null,prepaidRefund=null,cardRefund=null)=>({ok:true,applied:true,approval_id:r.homeflow_request_id,
+const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null,transferRefund=null,prepaidRefund=null,cardRefund=null,sbiRefund=null)=>({ok:true,applied:true,approval_id:r.homeflow_request_id,
  proposal_id:r.proposal_id,household_id:r.household_id,requester_user_id:r.requester_user_id,
  payload_sha256:r.payload_sha256,approver_user_id:r.approver_user_id,
  actor_user_id:r.actor_user_id,points_account_id:r.points_account_id,
@@ -82,7 +82,17 @@ const receipt=(r,replayed,credit=null,card=null,move=null,sbi=null,transferRefun
  refunded_card_version:cardRefund?.card_version??null,
  refunded_card_purchase_request_id:cardRefund?.purchase_request_id??null,
  refunded_card_offset_jpy:cardRefund?.restored_jpy??null,
- refunded_card_liability_after_jpy:cardRefund?.liability_after_jpy??null});
+ refunded_card_liability_after_jpy:cardRefund?.liability_after_jpy??null,
+ refunded_sbi_securities_account_id:sbiRefund?.securities_account_id??null,
+ refunded_sbi_securities_version:sbiRefund?.securities_version??null,
+ refunded_sbi_units:sbiRefund?.reversed_units??null,
+ refunded_sbi_cost_jpy:sbiRefund?.reversed_cost_jpy??null,
+ refunded_sbi_points_units:sbiRefund?.refunded_points_units??null,
+ refunded_sbi_broker_cancel_hash:sbiRefund?.broker_cancel_hash??null,
+ refunded_sbi_issuer_reference_hash:sbiRefund?.points_refund_hash??null,
+ refunded_sbi_broker_cancel_date:sbiRefund?.broker_cancel_date??null,
+ refunded_sbi_points_returned_date:sbiRefund?.points_refund_date??null,
+ refunded_sbi_evidence_kind:sbiRefund?.evidence_kind??null});
 async function receiptFor(db,r,replayed){
  if(r.operation==='reversal'&&r.target_account_id){
   const compensating=await db.prepare('SELECT * FROM family_points_transfer_refunds '+
@@ -111,7 +121,28 @@ async function receiptFor(db,r,replayed){
   }
   const cardRefund=await db.prepare('SELECT * FROM family_points_card_offset_refunds '+
    'WHERE homeflow_request_id=?').bind(r.homeflow_request_id).first();
-  if(!cardRefund||cardRefund.original_request_id!==r.reversed_request_id||
+  if(!cardRefund){
+   const sbiRefund=await db.prepare('SELECT * FROM family_sbi_point_refunds WHERE homeflow_request_id=?')
+    .bind(r.homeflow_request_id).first();
+   const original=sbiRefund?await db.prepare('SELECT * FROM family_sbi_point_lots WHERE homeflow_request_id=?')
+    .bind(r.reversed_request_id).first():null;
+   if(!sbiRefund||!original||sbiRefund.original_request_id!==r.reversed_request_id||
+    sbiRefund.points_account_id!==r.points_account_id||
+    sbiRefund.securities_account_id!==r.target_account_id||
+    sbiRefund.household_id!==r.household_id||
+    sbiRefund.requester_user_id!==r.requester_user_id||
+    sbiRefund.approver_user_id!==r.approver_user_id||
+    sbiRefund.actor_user_id!==r.actor_user_id||
+    sbiRefund.refunded_points_units!==r.delta_units||
+    sbiRefund.reversed_cost_jpy!==r.yen_value||
+    sbiRefund.reversed_units!==original.confirmed_units||
+    sbiRefund.reversed_cost_jpy!==original.acquisition_cost_jpy||
+    sbiRefund.points_refund_hash!==r.source_reference_hash||
+    sbiRefund.created_at!==r.applied_at)
+    return fail('POINTS_SBI_REFUND_COUNTERPART_UNCONFIRMED',503);
+   return json(receipt(r,replayed,null,null,null,null,null,null,null,sbiRefund));
+  }
+  if(cardRefund.original_request_id!==r.reversed_request_id||
    cardRefund.points_account_id!==r.points_account_id||
    cardRefund.card_account_id!==r.target_account_id||
    cardRefund.household_id!==r.household_id||
@@ -175,7 +206,11 @@ async function decode(e,p){
     'yen_value','rate_numerator','rate_denominator','reference_hash','linked_entry_id',
     'expense_net_confirmed',...(['transfer_prepaid','offset_card','transfer_out','exchange_out','redeem_asset'].includes(x.operation)?['target_account_id','target_version']:[]),
     ...(x.operation==='offset_card'?['target_purchase_request_id']:[]),
-    ...(x.operation==='reversal'?['original_request_id']:[]),
+    ...(x.operation==='reversal'?['original_request_id',
+     ...(x.sbi_reversal===true?['sbi_reversal','sbi_securities_version',
+      'sbi_broker_cancel_hash','sbi_points_refund_hash','sbi_broker_cancel_date',
+      'sbi_points_refund_date','sbi_broker_cancel_confirmed',
+      'sbi_points_returned_confirmed']:[])]:[]),
     ...(x.operation==='redeem_asset'?['sbi_fund_code','sbi_account_type','sbi_confirmed_units',
      'sbi_broker_reference_hash','sbi_broker_execution_attested']:[]),
     ...(['transfer_out','exchange_out'].includes(x.operation)?
@@ -196,6 +231,16 @@ async function decode(e,p){
    x.yen_value<1||x.yen_value>10000000))return null;
   if(x.operation==='offset_card'&&!uuid.test(x.target_purchase_request_id))return null;
   if(x.operation==='reversal'&&!uuid.test(x.original_request_id))return null;
+  if(x.operation==='reversal'&&x.sbi_reversal===true&&(
+   !Number.isSafeInteger(x.sbi_securities_version)||x.sbi_securities_version<1||
+   !hash64.test(x.sbi_broker_cancel_hash)||!hash64.test(x.sbi_points_refund_hash)||
+   x.sbi_broker_cancel_hash===x.sbi_points_refund_hash||
+   !/^20\d\d-\d\d-\d\d$/.test(x.sbi_broker_cancel_date||'')||
+   !/^20\d\d-\d\d-\d\d$/.test(x.sbi_points_refund_date||'')||
+   x.sbi_broker_cancel_date>x.sbi_points_refund_date||
+   x.sbi_points_refund_date>x.effective_date||
+   x.sbi_broker_cancel_confirmed!==true||x.sbi_points_returned_confirmed!==true))
+   return null;
   if(x.operation==='redeem_asset'&&(
    !/^[A-Z0-9]{8}$/.test(x.sbi_fund_code||'')||
    !['growth','tsumitate'].includes(x.sbi_account_type)||
@@ -340,11 +385,13 @@ export async function approvedPointsRoute(request,e,parts){
   if(row.original_request_id!==x.original_request_id)return fail('POINTS_REVERSAL_ORIGINAL_CHANGED');
   original=await db.prepare('SELECT old.* FROM family_points_journal old WHERE '+
    'old.homeflow_request_id=? AND old.household_id=? AND old.requester_user_id=? '+
-   "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire','transfer_out','exchange_out','transfer_prepaid','offset_card') "+
+   "AND old.points_account_id=? AND old.operation IN ('earn_campaign','earn_purchase','expire','transfer_out','exchange_out','transfer_prepaid','offset_card','redeem_asset') "+
    'AND (old.target_account_id IS NULL OR EXISTS (SELECT 1 FROM family_points_transfer_credits c '+
    'WHERE c.homeflow_request_id=old.homeflow_request_id AND c.target_account_id=old.target_account_id) '+
    'OR EXISTS (SELECT 1 FROM family_points_prepaid_credits c '+
    'WHERE c.homeflow_request_id=old.homeflow_request_id AND c.prepaid_account_id=old.target_account_id) '+
+   'OR EXISTS (SELECT 1 FROM family_sbi_point_lots c '+
+   'WHERE c.homeflow_request_id=old.homeflow_request_id AND c.securities_account_id=old.target_account_id) '+
    'OR EXISTS (SELECT 1 FROM family_points_card_offsets c '+
    'WHERE c.homeflow_request_id=old.homeflow_request_id AND c.card_account_id=old.target_account_id)) '+
    'AND NOT EXISTS ('+
@@ -357,6 +404,34 @@ export async function approvedPointsRoute(request,e,parts){
    x.rate_denominator!==original.yen_per_unit_denominator)
    return fail('POINTS_REVERSAL_ORIGINAL_CHANGED');
  }
+ if(row.operation==='reversal'&&original?.operation==='redeem_asset'){
+  if(e.KAKEIBO_SBI_POINT_REFUNDS_ENABLED!=='true'||x.sbi_reversal!==true||
+   !Number.isSafeInteger(row.sbi_refund_securities_version)||
+   row.sbi_refund_securities_version!==x.sbi_securities_version||
+   row.sbi_refund_broker_hash!==x.sbi_broker_cancel_hash||
+   row.sbi_refund_points_hash!==x.sbi_points_refund_hash||
+   row.sbi_refund_broker_date!==x.sbi_broker_cancel_date||
+   row.sbi_refund_points_date!==x.sbi_points_refund_date||
+   x.sbi_points_refund_hash!==x.reference_hash)
+   return fail('POINTS_SBI_REFUND_EVIDENCE_OR_FLAG_INVALID');
+  const lot=await db.prepare('SELECT * FROM family_sbi_point_lots WHERE homeflow_request_id=?')
+   .bind(original.homeflow_request_id).first();
+  const sec=lot?await db.prepare('SELECT * FROM family_financial_accounts WHERE account_id=?')
+   .bind(lot.securities_account_id).first():null;
+  if(!lot||!sec||lot.securities_account_id!==original.target_account_id||
+   lot.points_account_id!==row.points_account_id||
+   sec.account_kind!=='securities'||sec.origin!=='member_created'||
+   sec.owner_user_id!==row.requester_user_id||sec.household_id!==row.household_id||
+   sec.is_archived!==0||sec.opening_balance!==0||sec.version!==x.sbi_securities_version||
+   x.sbi_broker_cancel_date<lot.trade_date||
+   x.sbi_points_refund_date<x.sbi_broker_cancel_date||
+   x.sbi_broker_cancel_hash===lot.broker_reference_hash)
+   return fail('POINTS_SBI_REFUND_TARGET_OR_PROOF_CHANGED');
+  const candidate=await db.prepare('SELECT candidate_id FROM family_sbi_legacy_holding_candidates '+
+   "WHERE lot_type='points' AND lot_homeflow_request_id=?").bind(original.homeflow_request_id).first();
+  if(candidate)return fail('POINTS_SBI_REFUND_RECONCILIATION_CONFLICT');
+ }else if(row.operation==='reversal'&&x.sbi_reversal===true)
+  return fail('POINTS_SBI_REFUND_NON_ASSET_ORIGINAL');
  const approved=await proof(e,b,row);
  if(!approved)return fail('POINTS_APPROVAL_OR_LEASE_INVALID');
  const priorBalance=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_units) FROM family_points_journal WHERE points_account_id=?),0) '+

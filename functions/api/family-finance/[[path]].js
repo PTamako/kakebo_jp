@@ -29,6 +29,7 @@ import {legacySharedAdopt} from './legacy-shared-adopt.js';
 import {legacySharedReceiptReview} from './legacy-shared-receipt-review.js';
 import {legacySharedReceiptCopy} from './legacy-shared-receipt-copy.js';
 import {legacySharedSourceRefcount} from './legacy-shared-source-refcount.js';
+import {legacySharedReceiptRepair} from './legacy-shared-receipt-repair.js';
 import {legacyTransferLinks} from './legacy-transfer-links.js';
 
 const json=(data,status=200)=>Response.json(data,{status,headers:{
@@ -372,6 +373,8 @@ export async function onRequest({request,env,params}){
     return legacySharedReceiptCopy(request,env,url,user);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='shared-source-refcount')
     return legacySharedSourceRefcount(request,env,url,user);
+  if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='shared-receipt-repair')
+    return legacySharedReceiptRepair(request,env,url,user);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='mapping-audit')
     return auditLegacyFinanceMappings(request,env,user);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='resource-owners')

@@ -11,6 +11,7 @@ import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import {validateKakeiboHomeflowAuthorizationUrl} from './homeflow-authorization-url.js'
 import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
+import FamilyFinanceLegacySharedAdoption from './FamilyFinanceLegacySharedAdoption.vue'
 import FamilyFinanceLegacyTransferLink from './FamilyFinanceLegacyTransferLink.vue'
 import FamilyFinanceAssetOwnership from './FamilyFinanceAssetOwnership.vue'
 import FamilyFinancePlanOwnership from './FamilyFinancePlanOwnership.vue'
@@ -284,6 +285,9 @@ onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange'
      :household-id="person.household_id" />
     <FamilyFinanceMappingAudit v-if="person.role==='owner'"
      :key="'mapping-audit:'+person.user_id" :user-id="person.user_id"
+     :household-id="person.household_id" />
+    <FamilyFinanceLegacySharedAdoption v-if="person.role==='owner'"
+     :key="'legacy-shared-adopt:'+person.user_id" :user-id="person.user_id"
      :household-id="person.household_id" />
     <FamilyFinanceLegacyLink v-if="person.role==='owner'"
      :key="'legacy-entry-links:'+person.user_id" :user-id="person.user_id"

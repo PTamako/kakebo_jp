@@ -5,6 +5,7 @@ import FamilyFinanceCardPurchases from './FamilyFinanceCardPurchases.vue'
 import FamilyFinanceCardSettlements from './FamilyFinanceCardSettlements.vue'
 import FamilyFinancePrepaidActions from './FamilyFinancePrepaidActions.vue'
 import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
+import FamilySharedEntries from './FamilySharedEntries.vue'
 import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
 import FamilyFinanceLegacyTransferLink from './FamilyFinanceLegacyTransferLink.vue'
@@ -271,6 +272,9 @@ onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange'
       </form>
      </li>
     </ul>
+    <FamilySharedEntries :key="'shared-entry:'+person.user_id"
+      :user-id="person.user_id" :household-id="person.household_id"
+      :role="person.role" @changed="refresh" />
     <FamilyFinanceOwnerAdoption v-if="person.role==='owner'"
      :key="'resource-adoption:'+person.user_id" :user-id="person.user_id"
      :household-id="person.household_id" />

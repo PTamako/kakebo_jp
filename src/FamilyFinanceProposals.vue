@@ -1,6 +1,7 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 import TransactionForm from './TransactionForm.vue'
+import {SPOUSE_INCOME_CATEGORY} from './spouse-income.js'
 
 const props=defineProps({userId:{type:String,required:true},
  accounts:{type:Array,default:()=>[]}})
@@ -33,7 +34,7 @@ Object.defineProperty(memberDraft,'date',{
 Object.defineProperty(memberDraft,'note',{
  get:()=>note.value,set:value=>{note.value=value},enumerable:true})
 const memberCategories=['食費','日用品','交通','住居','医療','交際費','その他']
-const memberIncomeCategories=['給与','賞与','副収入','ポイント還元','その他']
+const memberIncomeCategories=['給与','賞与','副収入','ポイント還元',SPOUSE_INCOME_CATEGORY,'その他']
 const allowAccountType=()=>{}
 
 // Keep an ambiguous network retry attached to its original stable key and
@@ -238,14 +239,14 @@ onUnmounted(()=>{
     </select>
     <TransactionForm :record="memberDraft" :categories="memberCategories"
       :income-categories="memberIncomeCategories" :payment-sources="[]"
-      :allowed-types="['expense','income','transfer']" :show-payment-source="false"
-      :member-transfer-only="true" :receipt-enabled="false" :category-label="x=>x"
-      @change-type="kind=$event;category='';if($event==='transfer')memberDraft.transferTarget='family:cross-bank'"
+      :allowed-types="['expense','income']" :show-payment-source="false"
+      :receipt-enabled="false" :category-label="x=>x"
+      @change-type="kind=$event;category=''"
     />
-    <label v-if="kind==='income'" class="hf-merchant">
+    <label v-if="kind==='income'&&category!==SPOUSE_INCOME_CATEGORY" class="hf-merchant">
       收入来源 <input v-model="merchant" maxlength="160" required placeholder="工资、奖金或其他来源"/>
     </label>
-    <button v-if="kind!=='transfer'" type="submit" :disabled="!!busy||loading||!myAccounts.some(a=>a.account_id===accountId)||!merchant.trim()||!category.trim()||!Number.isSafeInteger(Number(amount))||Number(amount)<1">仅保存加密草稿</button>
+    <button type="submit" :disabled="!!busy||loading||!myAccounts.some(a=>a.account_id===accountId)||!merchant.trim()||!category.trim()||!Number.isSafeInteger(Number(amount))||Number(amount)<1">仅保存加密草稿</button>
     <p v-if="!myAccounts.length" class="muted">请先创建本人金融账户，再发起申请。</p>
    </form>
    <p v-if="loading" class="muted">读取中…</p>

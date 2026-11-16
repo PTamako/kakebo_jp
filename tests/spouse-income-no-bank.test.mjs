@@ -6,6 +6,7 @@ const read=path=>readFileSync(new URL('../src/'+path,import.meta.url),'utf8')
 const form=read('TransactionForm.vue')
 const owner=read('FinanceTools.vue')
 const workspace=read('FamilyMemberWorkspace.vue')
+const shared=read('OriginalKakeiboPages.vue')
 const approval=read('FamilySharedMutationRequests.vue')
 const proposal=read('FamilyFinanceProposals.vue')
 const bank=read('FamilyCrossMemberBankTransfer.vue')
@@ -31,7 +32,7 @@ test('both recipients have an explicit spouse-source income category',()=>{
 
 test('member recipient records spouse income with original form and HomeFlow confirmation',()=>{
  assert.match(workspace,/entryIncomeCategories=\['給与','賞与','副収入','ポイント還元',SPOUSE_INCOME_CATEGORY/)
- assert.match(workspace,/<EntryInputPage v-else-if="tab==='add'"/)
+ assert.match(shared,/<EntryInputPage v-if="activeTab==='add'"/)
  assert.match(read('EntryInputPage.vue'),/<TransactionForm /)
  assert.match(workspace,/sharedMutationRef.value\?\.submitEntry\(record\)/)
  assert.match(approval,/async function submitEntry\(input\)/)

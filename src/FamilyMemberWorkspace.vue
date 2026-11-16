@@ -111,7 +111,7 @@ function newEntry(){return {type:'expense',amount:'',date:new Date(Date.now()+9*
 const memberEntries=ref([])
 const memberInputMode=ref('manual'),memberRawText=ref(''),memberScanMode=ref('statement')
 const memberOcrBusy=ref(false),memberOcrStatus=ref('')
-const memberTodayLabel=computed(()=>new Date(Date.now()+32400000).toLocaleString('ja-JP',{
+const memberTodayLabel=computed(()=>new Date().toLocaleString('ja-JP',{
  timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'}))
 function addMemberEntry(){memberEntries.value.push(newEntry())}
 function removeMemberEntry(index){if(!memberEntryPending.value)memberEntries.value.splice(index,1)}
@@ -132,6 +132,9 @@ function recognizeMemberText(){
  const rows=structured?.rows||repeated||
   (memberScanMode.value==='receipt'?[parseReceipt(raw,[])]:parseEntries(raw,[],reference))
  const parsed=Array.isArray(rows)?rows.slice(0,80):[]
+ if(parsed.some(x=>x?.type==='transfer')){
+  memberEntryError.value='資産移動を含む明細は支出として保存できません。資産移動メニューで処理してください。';return
+ }
  const drafts=parsed.filter(x=>x&&Number.isSafeInteger(Number(x.amount))&&Number(x.amount)>0)
   .map(x=>({...newEntry(),type:x.type==='income'?'income':'expense',
    amount:Number(x.amount),date:String(x.date||newEntry().date),

@@ -59,6 +59,8 @@ export async function familyMemberMerchantRules(req,env,url,user,parts){
   }
   if(req.method==='POST'){
    const x=await body(req,url);
+   if(x?.expected_user_id!==undefined&&x.expected_user_id!==user.user_id)
+    return fail('ACTOR_CHANGED',403);
    if(!exact(x,['expected_user_id','expected_version','keyword','category','payment_source'])||
     x.expected_user_id!==user.user_id||!Number.isSafeInteger(x.expected_version)||
     x.expected_version<0||!safe(x.keyword,120)||!safe(x.category,100)||
@@ -91,6 +93,8 @@ export async function familyMemberMerchantRules(req,env,url,user,parts){
   }
   if(req.method==='DELETE'){
    const x=await body(req,url);
+   if(x?.expected_user_id!==undefined&&x.expected_user_id!==user.user_id)
+    return fail('ACTOR_CHANGED',403);
    if(!exact(x,['expected_user_id','expected_version','keyword'])||
     x.expected_user_id!==user.user_id||!Number.isSafeInteger(x.expected_version)||
     x.expected_version<1||!safe(x.keyword,120))return fail('INVALID_RULE',400);

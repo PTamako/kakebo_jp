@@ -54,3 +54,10 @@ test('original statistics, balances and ledger rows are reused without duplicati
  assert.match(family,/makeFamilyStatsContext/)
  assert.match(family,/api\('shared\/stats\?month='/)
 })
+
+test('member entry form is immediately visible with the original input UI',()=>{
+ assert.match(proposal,/const open=ref\(true\)/)
+ assert.match(proposal,/onMounted\(\(\)=>\{alive=true;[\s\S]*?void load\(0\)/)
+ assert.match(proposal,/<TransactionForm /)
+ assert.match(proposal,/\/api\/family-finance\/proposals/)
+})

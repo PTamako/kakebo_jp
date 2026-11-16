@@ -14,7 +14,7 @@ function fixture(){
   'PRAGMA foreign_keys=ON',
   'CREATE TABLE schema_migrations(version TEXT PRIMARY KEY,description TEXT)',
   'CREATE TABLE homeflow_identity_links(user_id TEXT PRIMARY KEY,household_id TEXT,role TEXT,state TEXT,display_name TEXT)',
-  'CREATE TABLE payment_sources(name TEXT PRIMARY KEY,is_archived INTEGER DEFAULT 0,stat_group TEXT DEFAULT \'card\',source_type TEXT DEFAULT \'standard\')',
+  'CREATE TABLE payment_sources(name TEXT PRIMARY KEY,is_archived INTEGER DEFAULT 0,stat_group TEXT DEFAULT \'card\',source_type TEXT DEFAULT \'standard\',sort_order INTEGER DEFAULT 0)',
   'CREATE TABLE entries(id INTEGER PRIMARY KEY AUTOINCREMENT,date TEXT,time TEXT,amount INTEGER,category TEXT,merchant TEXT,note TEXT,raw TEXT,type TEXT,client_request_id TEXT UNIQUE,payment_source TEXT)',
   "INSERT INTO homeflow_identity_links VALUES ('owner','home','owner','active','白ちゃん'),('spouse','home','member','active','鸡毛大王'),('outsider','other','member','active','外部')",
   "INSERT INTO payment_sources(name) VALUES ('楽天カード'),('現金')",

@@ -31,5 +31,5 @@ test('management renders only HomeFlow identity; old card settings and one stati
  assert.match(identity,/v-if="person&&!props.identityOnly"/);
  assert.match(sharedPages,/<ManagementPage v-show="activeTab==='finance'"/)
  assert.match(app,/:management-bindings="originalManagementBindings"/);
- assert.match(app,/<StatisticsPage v-else-if="tab === 'stat'" \/>/);
+ assert.match(sharedPages,/<StatisticsPage v-else-if="activeTab==='stat'"/);
 });

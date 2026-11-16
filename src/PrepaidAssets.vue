@@ -1,10 +1,11 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
-const props=defineProps({ api:{type:Function,required:true}, active:{type:Boolean,default:false}, revision:{type:Number,default:0} })
+const props=defineProps({ api:{type:Function,required:true}, active:{type:Boolean,default:false}, revision:{type:Number,default:0},
+ memberMode:{type:Boolean,default:false},onMemberOpening:{type:Function,default:null} })
 const emit=defineEmits(['summary','open-card-settings','open-history'])
 const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false)
-const money=value=>'¥'+Number(value||0).toLocaleString('ja-JP')
+const money=value=>value===null||value===undefined?'—':'¥'+Number(value).toLocaleString('ja-JP')
 const selected=ref(null),openingDraft=ref(0),saving=ref(false),notice=ref('')
 function startOpening(card){ selected.value=card;openingDraft.value=Number(card.opening_balance) }
 async function saveOpening(){
@@ -17,7 +18,10 @@ async function saveOpening(){
   if(!window.confirm(card.name+'の期首残高を'+money(amount)+'に変更します。現在の計算残高も'+money(changed)+'変わります。記帳履歴は変更しません。よろしいですか？'))return
   saving.value=true;error.value='';notice.value=''
   try{
-    await props.api('prepaid-assets/opening',{method:'POST',body:JSON.stringify({name:card.name,openingBalance:amount})})
+    if(props.memberMode){
+      if(!props.onMemberOpening)throw Error('本人の口座編集が使用できません')
+      await props.onMemberOpening(card,amount)
+    }else await props.api('prepaid-assets/opening',{method:'POST',body:JSON.stringify({name:card.name,openingBalance:amount})})
     selected.value=null;await refresh();notice.value=card.name+'の期首残高を保存しました'
   }catch(e){error.value=e.message}
   finally{saving.value=false}
@@ -27,7 +31,7 @@ async function refresh(){
   const id=++requestId
   loading.value=true;error.value=''
   try{
-    const payload=await props.api('prepaid-assets')
+    const payload=await props.api(props.memberMode?'prepaid-report':'prepaid-assets')
     if(id===requestId){
       data.value=payload
       emit('summary',{balance:payload.cards.reduce((sum,card)=>sum+Number(card.balance),0), latestUsage:payload.latestUsage || null, latestCharge:payload.latestCharge || null})
@@ -67,10 +71,11 @@ onMounted(()=>{if(props.active)void refresh()})
         <button type="button" class="wallet-add" @click="emit('open-card-settings')">＋ カードを追加</button>
       </div>
       <p v-if="loading && !data" class="wallet-hint" role="status">残高を読み込み中…</p>
+      <p v-if="memberMode" class="wallet-hint">本人が登録した残高と家計簿の入出金から集計しています。電子マネー会社の残高とは自動照合していません。</p>
       
       
       <template v-if="data">
-        <p v-if="!data.cards.length" class="wallet-hint">管理のカード設定からプリペイドカードを追加できます。</p>
+        <p v-if="!data.cards.length" class="wallet-hint">「＋ カードを追加」からプリペイドカードを登録できます。</p>
         <div class="wallet-list">
           <article v-for="card in (showAll ? data.cards : data.cards.slice(0,2))" :key="card.name" class="wallet-row">
             <div class="wallet-row-top">

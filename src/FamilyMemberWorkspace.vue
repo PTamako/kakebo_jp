@@ -8,6 +8,7 @@ import FinanceSectionTabs from './FinanceSectionTabs.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import LedgerEntryContent from './LedgerEntryContent.vue'
+import LedgerTypeFilter from './LedgerTypeFilter.vue'
 import AssetsPage from './pages/AssetsPage.vue'
 import StatisticsPage from './pages/StatisticsPage.vue'
 import {makeFamilyStatsContext} from './family-stats-context.js'
@@ -176,11 +177,8 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
   </section>
   <section v-if="tab==='list'" class="member-page">
    <div class="page-heading"><div><h1>収支明細</h1></div><p class="heading-subtitle">家庭共享账本 · 私人卡片信息不共享</p></div>
-   <div class="entry-type-filter" role="group" aria-label="明細の種類">
-    <button v-for="option in [{value:'all',label:'すべて'},{value:'income',label:'収入'},{value:'expense',label:'支出'},{value:'transfer',label:'資産移動'}]"
-     :key="option.value" type="button" :class="{selected:selectedEntryType===option.value}"
-     :aria-pressed="selectedEntryType===option.value" @click="selectedEntryType=option.value">{{option.label}}</button>
-   </div>
+   <LedgerTypeFilter :model-value="selectedEntryType" @change="selectedEntryType=$event" />
+
    <div v-if="!visibleEntries.length" class="empty-state"><span class="empty-icon">▤</span>
     <strong>この条件に該当する明細はありません</strong></div>
    <div v-else class="ledger day-group-list">

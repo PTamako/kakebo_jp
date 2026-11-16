@@ -1,17 +1,21 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { sortOtherLast } from './category-sort.js'
 import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
-import FamilyCrossMemberBankTransfer from './FamilyCrossMemberBankTransfer.vue'
-const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, memberTransferOnly: {type:Boolean,default:false} })
+import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
+const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true} })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
 const orderedCategories = computed(() => sortOtherLast(props.categories))
-const orderedIncomeCategories = computed(() => sortOtherLast(props.incomeCategories))
+const orderedIncomeCategories = computed(() => sortOtherLast([...new Set([...props.incomeCategories,SPOUSE_INCOME_CATEGORY])]))
 const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
+watch(()=>record.value.category,cat=>{
+ if(record.value.type==='income' && cat===SPOUSE_INCOME_CATEGORY && !String(record.value.merchant||'').trim())
+  record.value.merchant=SPOUSE_INCOME_SOURCE
+})
 const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receiptName || props.existingReceipt)
 const categoryOptions = computed(()=> (record.value.type==='income'?orderedIncomeCategories.value:orderedCategories.value)
   .map(c=>({value:c,label:props.categoryLabel(c)})))
@@ -38,13 +42,9 @@ const autoSbiKind = computed(()=>inferredSbiEntryKind(record.value))
 const autoSbiLabel = computed(()=>({
   point:'ポイント買付',monthly:'毎月の積立',purchase:'追加買付'
 })[autoSbiKind.value]||'追加買付')
-const transferOptions = computed(()=> props.memberTransferOnly?[
- {value:'',label:'選択してください'},
- {value:'family:cross-bank',label:'家庭成员银行账户间转移（双人确认）'}
-] : [
+const transferOptions = computed(()=> [
   {value:'',label:'選択してください'},
   {value:'sbi',label:'SBI証券（投資信託）'},
-  {value:'family:cross-bank',label:'家庭成员银行账户间转移（双人确认）'},
   ...props.transferDestinations.map(dest=>({value:dest.value,label:dest.name+'（チャージ）'})),
   ...(record.value.transferTarget && record.value.transferTarget!=='sbi' && record.value.transferTarget!=='family:cross-bank' && !props.transferDestinations.some(dest=>dest.value===record.value.transferTarget)
     ? [{value:record.value.transferTarget,label:'既存の振替先：'+record.value.transferTarget}] : [])
@@ -62,6 +62,11 @@ const transferOptions = computed(()=> props.memberTransferOnly?[
     <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><MobileChoiceSheet v-model="record.category" :options="categoryOptions" label="カテゴリ" /></label>
     <label v-if="record.type==='income' && record.category==='ポイント還元'" class="form-field reward-destination-field"><span>還元先（任意）</span><MobileChoiceSheet v-model="record.rewardDestination" :options="rewardOptions" label="還元先" /><small>プリペイド・SBI証券は資産移動を自動作成、クレジットカードは利用額から差し引きます。</small></label>
     <label v-if="record.type==='income' && record.category==='ポイント還元' && record.rewardDestination==='sbi'" class="form-field sbi-reward-date-field"><span>SBI証券への適用日（必須）</span><input v-model="record.transferDate" type="date" required /><small>収入の日付とは別に、投資への反映日を選択してください。未来の日付は当日まで未反映です。</small></label>
+    <label v-if="record.type==='income' && record.category===SPOUSE_INCOME_CATEGORY" class="form-field">
+      <span>収入元（配偶）</span>
+      <input v-model="record.merchant" maxlength="120" placeholder="配偶" aria-label="配偶からの収入元" />
+      <small>受け取った本人の収入として記録します。銀行口座の登録は不要です。</small>
+    </label>
     <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
     <label v-if="record.type==='expense' && showPaymentSource" class="form-field"><span>支払方法・カード</span><MobileChoiceSheet :model-value="record.paymentSource" :options="paymentOptions" label="支払方法・カード" @change="emit('payment-change',$event)" /></label>
   </div>
@@ -73,8 +78,6 @@ const transferOptions = computed(()=> props.memberTransferOnly?[
       <input v-model="record.transferDate" type="date" required />
     </label>
   </div>
-  <FamilyCrossMemberBankTransfer v-if="record.type==='transfer' && record.transferTarget==='family:cross-bank'"
-    :record="record"/>
   <label v-if="record.type==='transfer' && record.transferTarget==='sbi' && !editMode" class="form-field">
     <span>SBIの取引区分</span>
     <MobileChoiceSheet v-model="record.sbiPurpose" :options="sbiPurposeOptions" label="SBIの取引区分" />

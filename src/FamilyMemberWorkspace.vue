@@ -4,7 +4,7 @@ import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import BottomNavigation from './BottomNavigation.vue'
-import FinanceSectionTabs from './FinanceSectionTabs.vue'
+import FinanceManagementHeader from './FinanceManagementHeader.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import LedgerEntryContent from './LedgerEntryContent.vue'
@@ -203,8 +203,9 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
   <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
     :open-personal-management="()=>{tab='finance';managementTab='cards'}" />
   <section v-else-if="tab==='finance'" class="member-page">
-   <h1>管理</h1><p class="help">只管理本人的卡片、固定费用和其他账户，不会出现其他家庭成员的卡片与余额。</p>
-   <FinanceSectionTabs v-model="managementTab" />
+   <FinanceManagementHeader v-model="managementTab" :busy="busy"
+     :status="'本人のカード・残高・固定費のみ · '+myAccounts.length+'口座'"
+     :error="error" @refresh="refresh" />
    <template v-if="managementTab==='cards'">
     <section class="finance-panel">
      <h2>支払方法・カード管理</h2>

@@ -28,8 +28,9 @@ test('no member route can return the original owner\'s prepaid cards and SBI sna
 });
 test('HomeFlow member bypasses old legacy access even with an old device session',()=>{
  assert.match(app,/const member=await fetch\('\/api\/homeflow-sso\/me'/);
- assert.match(app,/proof\.identity\?\.role==='member'/);
- assert.match(app,/onFamilyIdentityChange\(proof\.identity\);locked\.value=true;return true/);
+ assert.match(app,/\['member','owner'\]\.includes\(proof\.identity\?\.role\)/);
+ assert.match(app,/onFamilyIdentityChange\(proof\.identity\)/);
+ assert.match(app,/return proof\.identity\.role==='member'/);
  assert.match(app,/if\(familyIdentity\.value\?\.role==='member'\)return flash/);
  assert.match(app,/<FamilyMemberWorkspace v-if="familyIdentity\?\.role==='member'"/);
  assert.match(identity,/emit\('identity-change',user\.identity\)/);

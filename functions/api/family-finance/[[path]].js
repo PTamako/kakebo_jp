@@ -238,8 +238,15 @@ async function adoptLegacy(request,env,url,user){
  }catch{return json({code:'LEGACY_CONFLICT'},409);}
 }
 async function entries(env,user,url){
- const limit=Math.max(1,Math.min(20,Number(url.searchParams.get('limit'))||5));
+ const limit=Math.max(1,Math.min(100,Number(url.searchParams.get('limit'))||20));
  const offset=Math.max(0,Math.min(10000,Number(url.searchParams.get('offset'))||0));
+ const period=url.searchParams.get('month');
+ if(period!==null&&!/^\\d{4}-(0[1-9]|1[0-2])$/.test(period))
+  return json({code:'BAD_LEDGER_MONTH'},400);
+ const lower=period?period+'-01':null;
+ const upper=period?(
+  period.endsWith('-12')?String(Number(period.slice(0,4))+1).padStart(4,'0')+'-01-01':
+  period.slice(0,5)+String(Number(period.slice(5))+1).padStart(2,'0')+'-01'):null;
  const rows=await all(env.DB,'SELECT e.id,e.date,e.time,e.type,e.amount,'+
   'e.category,e.merchant,e.note,e.payment_source,e.transfer_target,'+
   'e.transfer_applied,e.transfer_date,e.family_account_id,'+
@@ -252,7 +259,9 @@ async function entries(env,user,url){
   'ON a.account_id=e.family_account_id '+
   'LEFT JOIN family_financial_accounts t '+
   'ON t.account_id=e.family_transfer_target_account_id '+
-  'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',limit+1,offset);
+  (period?'WHERE e.date >= ? AND e.date < ? ':'')+
+  'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',
+  ...(period?[lower,upper]:[]),limit+1,offset);
  // Family members share transaction amounts and categories, not the
  // owner's payment card names or stable account IDs.
  const items=rows.slice(0,limit).map(r=>{

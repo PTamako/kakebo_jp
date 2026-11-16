@@ -23,6 +23,15 @@ function d1(){
  migration('0023_family_financial_account_identities.sql');
  migration('0024_family_finance_pending_actions.sql');
  migration('0025_family_financial_resource_owners.sql');
+ // The deployed household database has these additive provenance tables.
+ // Older isolated fixtures did not need them until shared ledger reads
+ // exposed the authenticated creator/legacy-owner nickname.
+ sqlite.exec("CREATE TABLE IF NOT EXISTS family_shared_entry_registry ("+
+  "resource_id TEXT PRIMARY KEY,household_id TEXT,entry_id INTEGER,"+
+  "creator_user_id TEXT,state TEXT);"+
+  "CREATE TABLE IF NOT EXISTS family_legacy_owner_claims ("+
+  "record_scope TEXT,record_key TEXT,household_id TEXT,owner_user_id TEXT,"+
+  "PRIMARY KEY(record_scope,record_key));");
  sqlite.exec("CREATE TABLE entries (id INTEGER PRIMARY KEY,date TEXT,time TEXT,type TEXT,merchant TEXT,amount INTEGER,category TEXT,note TEXT,payment_source TEXT,transfer_target TEXT,transfer_applied INTEGER,transfer_date TEXT);"+
    "INSERT INTO entries VALUES(1,'2026-11-10','','expense','既存の個人明細',1234,'生活','旧账保留','PayPay Visa',NULL,0,NULL);"+
    "INSERT INTO entries VALUES(2,'2026-11-10','','income','工资到账',100000,'工资','工资保留','银行',NULL,0,NULL);"+

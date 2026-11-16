@@ -11,6 +11,7 @@ import {familyPointsActions} from './points-actions.js';
 import {familySbiCashActions} from './sbi-cash-actions.js';
 import {familyBankTransfers} from './bank-transfers.js';
 import {familyCrossMemberBankTransfers} from './cross-member-bank-transfers.js';
+import {ledgerRecorderColumns,ledgerRecorderJoins} from '../ledger-recorder.js';
 import {familySharedEntries} from './shared-entries.js';
 import {familySharedMutationRequests} from './shared-mutation-requests.js';
 import {familyMemberRecurringPlans} from './member-recurring-plans.js';
@@ -256,11 +257,13 @@ async function entries(env,user,url){
   'COALESCE(a.label,e.payment_source) AS payment_source_display,'+
   'a.owner_user_id AS payment_account_owner_user_id,'+
   'COALESCE(t.label,e.transfer_target) AS transfer_target_display,'+
-  't.owner_user_id AS transfer_target_account_owner_user_id '+
+  't.owner_user_id AS transfer_target_account_owner_user_id,'+
+  ledgerRecorderColumns+' '+
   'FROM entries e LEFT JOIN family_financial_accounts a '+
   'ON a.account_id=e.family_account_id '+
   'LEFT JOIN family_financial_accounts t '+
   'ON t.account_id=e.family_transfer_target_account_id '+
+  ledgerRecorderJoins+' '+
   (period?'WHERE e.date >= ? AND e.date < ? ':'')+
   'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',
   ...(period?[lower,upper]:[]),limit+1,offset);

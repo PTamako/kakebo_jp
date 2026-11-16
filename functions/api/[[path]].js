@@ -15,6 +15,18 @@ import { getCardBillSnapshots } from './card-bill-snapshots.js'
 import { handleR2Receipts } from './r2-receipts.js'
 import {verifyLegacyOwner} from './legacy-owner-guard.js'
 import {ledgerRecorderColumns,ledgerRecorderJoins} from './ledger-recorder.js'
+const readLedgerWithOptionalRecorder=async(db,joinedSql,legacySql,args)=>{
+ try{return (await db.prepare(joinedSql).bind(...args).all()).results}
+ catch(e){
+  // An older restored database may predate the additive provenance tables.
+  // Display an entry without a nickname rather than breaking the ledger.
+  // Other SQL errors must still propagate rather than being disguised.
+  const message=String(e?.message||e)
+  if(!/no such table: (?:family_shared_entry_registry|family_legacy_owner_claims)|no such column: (?:creator|legacy_owner)\.display_name/i.test(message))throw e
+  return (await db.prepare(legacySql).bind(...args).all()).results
+ }
+}
+
 import { readScheduledJobStatus } from './scheduled-job-status.js'
 import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
 // Cloudflare Pages Functions：/api/*
@@ -1216,7 +1228,10 @@ export async function onRequest({ request, env, params }) {
         if (cursorRaw !== null) {
           const cursor = Number(cursorRaw)
           if (!Number.isSafeInteger(cursor) || cursor < 0) return json({error:'読み込み位置が正しくありません'},400)
-          const {results} = await db.prepare(recorderSelect+'WHERE e.date>=?1 AND e.date<?2 AND e.id>?3 ORDER BY e.id ASC LIMIT 500').bind(bounds.start,bounds.end,cursor).all()
+          const results=await readLedgerWithOptionalRecorder(db,
+           recorderSelect+'WHERE e.date>=?1 AND e.date<?2 AND e.id>?3 ORDER BY e.id ASC LIMIT 500',
+           'SELECT * FROM entries WHERE date>=?1 AND date<?2 AND id>?3 ORDER BY id ASC LIMIT 500',
+           [bounds.start,bounds.end,cursor])
           return json(results)
         }
         const offsetRaw = url.searchParams.get('offset')
@@ -1224,9 +1239,10 @@ export async function onRequest({ request, env, params }) {
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) return json({ error: '読み込み位置が正しくありません' }, 400)
         // Legacy clients get the same list shape; the annual view requests 500-row pages.
         const limit = offsetRaw === null ? 10000 : 500
-        const { results } = await db
-          .prepare(recorderSelect+'WHERE e.date>=?1 AND e.date<?2 ORDER BY e.date DESC, e.time DESC, e.id DESC LIMIT ?3 OFFSET ?4')
-          .bind(bounds.start,bounds.end,limit,offset).all()
+        const results=await readLedgerWithOptionalRecorder(db,
+         recorderSelect+'WHERE e.date>=?1 AND e.date<?2 ORDER BY e.date DESC, e.time DESC, e.id DESC LIMIT ?3 OFFSET ?4',
+         'SELECT * FROM entries WHERE date>=?1 AND date<?2 ORDER BY date DESC, time DESC, id DESC LIMIT ?3 OFFSET ?4',
+         [bounds.start,bounds.end,limit,offset])
         return json(results)
       }
       if (m === 'POST') {

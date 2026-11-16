@@ -304,7 +304,10 @@ test('production legacy finance data rejects spouse and old-code-only access wit
  try{
   const ownerCookie=await loginOwner(f);
   const memberCookie=await loginMember(f);
-  f.env.KAKEIBO_REQUIRE_OWNER_IDENTITY_FOR_LEGACY='true';
+  // There must be no opt-in loophole in actual production configuration.
+  // In particular, the old shared access code cannot turn a member into owner.
+  f.env.APP_ENV='production';
+  delete f.env.KAKEIBO_REQUIRE_OWNER_IDENTITY_FOR_LEGACY;
   const get=(cookie='')=>legacyApi({
    request:new Request(app+'/api/payment-sources',{
     headers:{'x-session':oldCookie,...(cookie?{Cookie:'__Host-kakeibo_hf='+cookie}:{})}

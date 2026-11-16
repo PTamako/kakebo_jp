@@ -15,6 +15,7 @@ const props=defineProps({
   shareReady:{type:Boolean,default:false},
   shareError:{type:String,default:''},
   archived:{type:Array,default:()=>[]},
+  allowPermanentDelete:{type:Boolean,default:true},
   emptyHint:{type:String,default:''},
   onSave:{type:Function,required:true},
   onDanger:{type:Function,required:true}
@@ -43,7 +44,7 @@ const emit=defineEmits(['update:selected','update:mode','default','archive','rem
     <span>{{item.label}} <small>（{{item.kind==='prepaid'?'プリペイド':'カード'}}）</small></span>
     <div class="card-archive-actions">
      <button type="button" :disabled="busy" @click="emit('archive',item.value)">復元</button>
-     <button type="button" :disabled="busy" @click="emit('remove',item.value)">完全削除</button>
+     <button v-if="allowPermanentDelete" type="button" :disabled="busy" @click="emit('remove',item.value)">完全削除</button>
     </div>
    </div>
   </details>

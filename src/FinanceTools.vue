@@ -2,6 +2,7 @@
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
 import CardManagementControls from './CardManagementControls.vue'
+import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
 import { sortOtherLast } from './category-sort.js'
 import ReviewTrashActions from './ReviewTrashActions.vue'
@@ -1604,32 +1605,23 @@ async function removeCardBill(record) {
     <InvestmentTransferReview />
     <SbiPortfolio :api="props.api" active-view="plans" :refresh-key="investmentRefreshKey" />
   </section>
-  <article v-show="managementTab === 'cards'" class="finance-panel">
-    <h2>支払方法・カード管理</h2>
-    <CardManagementControls v-model="selectedCard" :busy="busy"
-      :options="[...orderedPayments.map(source=>({value:source,label:source})),...(selectedCard&&!orderedPayments.includes(selectedCard)?[{value:selectedCard,label:selectedCard}]:[])]"
-      :default-value="defaultPaymentSource"
-      @default="emit('set-default-payment-source',selectedCard)"
-      @edit="selectCardForEdit" @add="cardMode='add'" />
-    <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
-    <MobileCardEditorSheet :mode="cardMode" :card-name="selectedCard"
-      :card="paymentSourceMeta[selectedCard]||null" :closing-day="closingDayFor(selectedCard)"
-      :payment-sources="paymentSources" :share-options="cardShareOptions"
-      :share-ready="cardShareReady" :share-error="cardMessage.startsWith('家庭共有を読み込めません')?cardMessage:''"
-      :busy="busy" :on-save="saveCardFromSheet"
-      :on-danger="runCardDanger" @close="cardMode=''" />
-    <details v-if="archivedPaymentSources.length" class="card-archive-disclosure">
-      <summary>アーカイブ済みのカード <strong>{{archivedPaymentSources.length}}件</strong></summary>
-      <p class="card-type-hint">新しい記帳には表示しません。過去の明細、請求、プリペイド残高はそのまま残ります。</p>
-      <div v-for="name in archivedPaymentSources" :key="name" class="card-archived-item">
-        <span>{{name}} <small>（{{props.paymentSourceMeta[name]?.source_type==='prepaid'?'プリペイド':'カード'}}）</small></span>
-        <div class="card-archive-actions">
-          <button type="button" :disabled="busy" @click="archivePaymentSource(name,false)">復元</button>
-          <button type="button" :disabled="busy" @click="removePaymentSource(name)">完全削除</button>
-        </div>
-      </div>
-    </details>
-  </article>
+  <OriginalCardManagementPanel v-show="managementTab === 'cards'"
+    :selected="selectedCard"
+    :options="[...orderedPayments.map(source=>({value:source,label:source})),
+      ...(selectedCard&&!orderedPayments.includes(selectedCard)?[{value:selectedCard,label:selectedCard}]:[])]"
+    :default-value="defaultPaymentSource" :busy="busy"
+    :mode="cardMode" :name="selectedCard"
+    :card="paymentSourceMeta[selectedCard]||null" :closing-day="closingDayFor(selectedCard)"
+    :payment-sources="paymentSources" :share-options="cardShareOptions"
+    :share-ready="cardShareReady"
+    :share-error="cardMessage.startsWith('家庭共有を読み込めません')?cardMessage:''"
+    :archived="archivedPaymentSources.map(name=>({value:name,label:name,
+      kind:props.paymentSourceMeta[name]?.source_type}))"
+    :on-save="saveCardFromSheet" :on-danger="runCardDanger"
+    @update:selected="selectedCard=$event"
+    @update:mode="next=>next==='edit'?selectCardForEdit():cardMode=next"
+    @default="emit('set-default-payment-source',selectedCard)"
+    @archive="name=>archivePaymentSource(name,false)" @remove="removePaymentSource" />
   <MobileMerchantRulesPanel v-if="managementTab === 'tools'"
     :rules="merchantRulesCombined" :categories="orderedCategories"
     :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" />

@@ -4,10 +4,12 @@ import { readFileSync } from 'node:fs'
 
 const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
 const app = source('src/App.vue')
+const workspace=source('src/OriginalKakeiboPages.vue')
 const css = source('src/mobile-ui.css')
 const navigation = source('src/BottomNavigation.vue')
 const nav = navigation.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/)?.[0]
-assert.match(app,/<BottomNavigation :active-tab="tab"/)
+assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
+assert.match(workspace,/<BottomNavigation :active-tab="activeTab"/)
 const buttons = nav?.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) || []
 
 test('bottom tabs place the icon-only add action at the exact center', () => {

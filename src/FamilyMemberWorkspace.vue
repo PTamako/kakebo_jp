@@ -405,29 +405,74 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
   </section>
   <StatisticsPage v-else-if="tab==='stat'" />
   <section v-else-if="tab==='add'" class="page-section member-page">
-   <div class="page-heading"><h1>入力</h1></div>
-   <div class="draft-heading"><div><h2>入力内容の確認</h2><p>保存前に金額・日付を確認</p></div><span class="count-pill">1件</span></div>
-   <div class="entry-card">
-    <div class="entry-card-heading"><span class="entry-number">01</span><strong>{{memberEntry.merchant||'新しい記録'}}</strong></div>
-    <TransactionForm :record="memberEntry"
-     :categories="[...new Set([...entryExpenseCategories,...entryCategories])]"
-     :income-categories="entryIncomeCategories" :payment-sources="[]"
-     :payment-choices="memberPaymentOptions"
-     :allowed-types="['expense','income']" :show-payment-source="true"
-     :receipt-enabled="false" :category-label="x=>x"
-     @change-type="setMemberEntryType"
-     @payment-change="memberEntry.paymentSource=$event" />
-    <label v-if="memberEntry.type==='income'&&memberEntry.category!==SPOUSE_INCOME_CATEGORY" class="form-field">
-     <span>収入元</span><input v-model="memberEntry.merchant" maxlength="120" placeholder="給与・副収入など" />
-    </label>
+   <div class="page-heading">
+    <div><h1>入力</h1><time class="entry-live-clock">{{memberTodayLabel}}</time></div>
    </div>
-   <p v-if="memberEntryError" class="member-alert" role="alert">{{memberEntryError}}</p>
-   <p v-if="memberEntryNotice" class="help" role="status">{{memberEntryNotice}}</p>
-   <div class="batch-actions">
-    <button class="button-primary" type="button" :disabled="memberEntryPending||!(Number(memberEntry.amount)>0)||!memberEntry.category"
-     @click="submitMemberEntry">{{memberEntryPending?'送信中…':'保存して審査を依頼'}}</button>
-   </div>
-   <p class="help">明細には灰色の「待入帳」として表示します。HomeFlow 管理者の承認と入帳完了後に正式計上されます。</p>
+   <fieldset class="draft-controls" :disabled="memberEntryPending||memberOcrBusy">
+    <div class="input-mode-switch" role="tablist" aria-label="入力方法">
+     <button type="button" role="tab" :aria-selected="memberInputMode==='manual'"
+      :class="{selected:memberInputMode==='manual'}" @click="memberInputMode='manual';memberScanMode='statement'">手入力</button>
+     <button type="button" role="tab" :aria-selected="memberInputMode==='scan'"
+      :class="{selected:memberInputMode==='scan'}" @click="memberInputMode='scan'">画像から読み取る</button>
+    </div>
+    <div v-if="memberInputMode==='manual'" class="panel text-paste-panel">
+     <details class="text-entry-details">
+      <summary>テキストを貼り付けて読み取る</summary>
+      <label class="field-label" for="member-raw-text">テキスト入力</label>
+      <textarea id="member-raw-text" v-model="memberRawText" rows="4"
+       placeholder="ご利用明細やレシートの文字を貼り付けてください"></textarea>
+      <div class="action-row">
+       <button type="button" class="button-secondary" :disabled="!memberRawText.trim()" @click="memberScanMode='statement';recognizeMemberText()">テキストを読み取る</button>
+      </div>
+     </details>
+    </div>
+    <div v-else class="panel capture-panel">
+     <div class="input-mode-switch" role="tablist" aria-label="読み取り対象">
+      <button type="button" :class="{selected:memberScanMode==='statement'}" @click="memberScanMode='statement'">利用明細</button>
+      <button type="button" :class="{selected:memberScanMode==='receipt'}" @click="memberScanMode='receipt'">レシート</button>
+     </div>
+     <p class="microcopy">端末内OCRを使用します。写真は自動保存されません。</p>
+     <label class="button-secondary upload-button" :aria-disabled="memberOcrBusy">
+      画像を読み取る
+      <input type="file" accept="image/*" hidden :disabled="memberOcrBusy" @change="memberScanImage" />
+     </label>
+     <p v-if="memberOcrStatus" class="microcopy" role="status">{{memberOcrStatus}}</p>
+     <details v-if="memberRawText.trim()" class="text-entry-details"><summary>読み取り文字を確認・修正</summary>
+      <textarea v-model="memberRawText" rows="5" aria-label="読み取り文字"></textarea>
+      <button type="button" class="button-secondary" @click="recognizeMemberText()">修正して再解析</button>
+     </details>
+    </div>
+    <div v-if="memberEntries.length" class="draft-heading">
+     <div><h2>入力内容の確認</h2><p>保存前に金額・日付を確認</p></div>
+     <span class="count-pill">{{memberEntries.length}}件</span>
+    </div>
+    <div v-for="(f,i) in memberEntries" :key="i" class="entry-card">
+     <div class="entry-card-heading">
+      <span class="entry-number">{{String(i+1).padStart(2,'0')}}</span>
+      <strong>{{f.merchant||'新しい記録'}}</strong>
+      <button class="icon-button remove-button" type="button" @click="removeMemberEntry(i)" aria-label="この記録を削除">×</button>
+     </div>
+     <TransactionForm :record="f"
+      :categories="[...new Set([...entryExpenseCategories,...entryCategories])]"
+      :income-categories="entryIncomeCategories" :payment-sources="[]"
+      :payment-choices="memberPaymentOptions"
+      :allowed-types="['expense','income']" :show-payment-source="true"
+      :receipt-enabled="false" :category-label="x=>x"
+      @change-type="setMemberEntryType($event,f)"
+      @payment-change="f.paymentSource=$event" />
+     <label v-if="f.type==='income'&&f.category!==SPOUSE_INCOME_CATEGORY" class="form-field">
+      <span>収入元</span><input v-model="f.merchant" maxlength="120" placeholder="給与・副収入など"/>
+     </label>
+    </div>
+    <p v-if="memberEntryError" class="member-alert" role="alert">{{memberEntryError}}</p>
+    <p v-if="memberEntryNotice" class="microcopy" role="status">{{memberEntryNotice}}</p>
+    <div class="batch-actions" :class="{'batch-actions-empty':!memberEntries.length}">
+     <button class="button-secondary" type="button" @click="addMemberEntry">＋ 記録を追加</button>
+     <button class="button-primary" type="button"
+      :disabled="memberEntryPending||memberOcrBusy||!memberEntries.length||memberEntries.some(f=>!(Number(f.amount)>0)||!f.category)"
+      @click="submitMemberEntry">{{memberEntryPending?'送信中…':`保存 ${memberEntries.length}件`}}</button>
+    </div>
+   </fieldset>
    <p v-if="cardSharingError" class="member-alert" role="alert">共有カードの取得に失敗しました：{{cardSharingError}}。更新して再試行してください。</p>
   </section>
     <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"

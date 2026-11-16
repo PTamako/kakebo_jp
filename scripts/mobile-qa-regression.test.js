@@ -5,6 +5,7 @@ import test from 'node:test'
 const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
 const app = source('src/App.vue')+'\n'+source('src/pages/LedgerPage.vue')+'\n'+source('src/pages/StatisticsPage.vue')
 const transactionForm = source('src/TransactionForm.vue')
+const workspace=source('src/OriginalKakeiboPages.vue')
 const finance = source('src/FinanceTools.vue')
 const managementHeader = source('src/FinanceManagementHeader.vue')
 const sharedNav = source('src/BottomNavigation.vue')
@@ -37,7 +38,8 @@ test('cross-month duplicate navigation selects date after month watcher resets i
 })
 
 test('finance management starts loading only when tab is active and refreshes on revisit', () => {
-  assert.match(app, /<ManagementPage [^>]*v-show="tab === 'finance'" :active="tab === 'finance'"/)
+  assert.match(workspace, /<ManagementPage v-show="activeTab==='finance'"/)
+  assert.match(workspace, /:active="activeTab==='finance'"/)
   assert.match(finance, /onMounted\(\(\) => \{ if \(!props\.memberView && props\.active\) void initializeFinance\(\) \}\)/)
   // Revisit reuses a fresh ledger; mutations, expiration and explicit backup force refresh.
   assert.match(finance, /watch\(\(\) => props\.ledgerRevision, \(\) => \{/)

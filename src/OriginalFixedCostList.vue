@@ -33,7 +33,7 @@ watch([query,filter],()=>{showAll.value=false;expanded.value=''})
 </script>
 <template>
  <article class="finance-panel recurring-plans-panel">
-  <details class="recurring-list-disclosure" open>
+  <details class="recurring-list-disclosure">
    <summary class="recurring-list-summary">
     <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{items.length}}件</strong></span>
     <span class="recurring-list-summary-total">今月対象 {{activeCount}}件 · 今月予定額 {{yen(total)}}</span>
@@ -107,5 +107,5 @@ details[open]>.recurring-list-summary:after{content:'⌃'}
 .recurring-plan-actions button{min-height:40px;padding:7px 12px;background:var(--card);border:1px solid var(--line);border-radius:9px;color:var(--blue-dark);font-size:12px;font-weight:750}
 .recurring-list-more{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--blue-dark);font-weight:750}
 .recurring-list-empty{font-size:12px;color:var(--muted);padding:12px;text-align:center}
-@media(min-width:360px){.recurring-list-filters{grid-template-columns:1fr 1fr}}
+
 </style>

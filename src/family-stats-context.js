@@ -16,7 +16,6 @@ export function makeFamilyStatsContext({tab,month,selectedYear,stats,annualStats
  const categoryIconPath=()=>ICON_LIBRARY.find(x=>x.id==='other')?.path||''
  const categoryLabel=x=>x||'その他'
  const dayRows=computed(()=>[...(stats.value?.byDay||[])].sort((a,b)=>a.date.localeCompare(b.date)))
- const japanToday=ref(japanTodayKey(new Date()))
  const resetMonth=()=>{month.value=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).slice(0,7)}
  const openCategoryDetails=(category,type,period)=>{if(type==='income'||type==='expense'||type==='transfer')entryType.value=type
   if(period==='year')month.value=String(selectedYear.value)+'-01'

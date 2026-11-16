@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs'
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const balance=read('src/pages/AssetsPage.vue')
 const management=read('src/FinanceTools.vue')
+const managementTabs=read('src/FinanceSectionTabs.vue')
 const portfolio=read('src/SbiPortfolio.vue')
 const reminders=read('src/InvestmentTransferReview.vue')
 test('残高 is two selectable views, never a scrolling plan-manager page',()=>{
@@ -19,7 +20,8 @@ test('残高 is two selectable views, never a scrolling plan-manager page',()=>{
   assert.match(balance,/min-height:43px/)
 })
 test('管理 has its own 積立 page, with working plan and purchase month controls',()=>{
-  assert.match(management,/>積立<\/button>/)
+  assert.match(management,/<FinanceSectionTabs v-model="managementTab"/)
+  assert.match(managementTabs,/\['investment','積立'\]/)
   assert.match(management,/managementTab === 'investment'/)
   assert.match(management,/<SbiPortfolio :api="props\.api" active-view="plans" :refresh-key="investmentRefreshKey"/)
   assert.match(management,/@click="refreshEverything"/)

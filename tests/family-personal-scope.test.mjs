@@ -40,9 +40,11 @@ test('member workspace keeps five familiar tabs, but uses only SSO personal and 
   assert.match(workspace,new RegExp("tab==='"+tab+"'"));
  }
  assert.match(workspace,/\/api\/family-finance\/'\+path/);
- for(const path of ['accounts','personal/assets','shared/entries','shared/stats?month','shared/stats?year']){
+ for(const path of ['accounts','personal/assets','shared/entries']){
   assert.match(workspace,new RegExp(path.replace('/','\\/')));
  }
+ assert.match(workspace,/api\('shared\/stats\?month='/);
+ assert.match(workspace,/api\('shared\/stats\?year='/);
  assert.match(workspace,/x\.owner_user_id!==user/);
  assert.match(workspace,/owner_user_id===props\.user\.user_id/);
  assert.match(workspace,/user-id="user\.user_id"/);

@@ -10,10 +10,10 @@ const sourceId=ref(''),targetId=ref(''),debitReference=ref(''),posted=ref(false)
 const recipientId=ref(''),creditDate=ref(''),creditReference=ref(''),credited=ref(false)
 let generation=0,alive=true,stableKey=''
 const today=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
-const myBanks=computed(()=>accounts.value.filter(a=>a.account_kind==='bank'&&
- a.owner_user_id===identity.value?.user_id&&a.origin==='member_created'&&Number(a.is_archived)===0))
-const recipientBanks=computed(()=>accounts.value.filter(a=>a.account_kind==='bank'&&
- a.owner_user_id!==identity.value?.user_id&&a.origin==='member_created'&&Number(a.is_archived)===0))
+const myBanks=computed(()=>accounts.value.filter(a=>
+ a.owner_user_id===identity.value?.user_id))
+const recipientBanks=computed(()=>accounts.value.filter(a=>
+ a.owner_user_id!==identity.value?.user_id))
 const source=computed(()=>myBanks.value.find(a=>a.account_id===sourceId.value))
 const destination=computed(()=>recipientBanks.value.find(a=>a.account_id===targetId.value))
 const valid=computed(()=>identity.value?.role==='member'&&source.value&&destination.value&&
@@ -44,11 +44,14 @@ async function refresh(){
   }
   identity.value=user
   const [a,h]=await Promise.all([
-   api('/api/family-finance/accounts'),
+   api('/api/family-finance/cross-member-bank-transfers/eligible-accounts'),
    api('/api/family-finance/cross-member-bank-transfers')
   ])
   if(!alive||current!==generation||user.user_id!==identity.value?.user_id)return
-  accounts.value=Array.isArray(a.items)?a.items.filter(x=>x.household_id===user.household_id):[]
+  accounts.value=Array.isArray(a.items)?a.items.filter(x=>
+   typeof x.account_id==='string'&&/^[a-f0-9]{32}$/.test(x.account_id)&&
+   typeof x.owner_user_id==='string'&&typeof x.label==='string'&&
+   Number.isSafeInteger(x.version)&&x.version>=1):[]
   history.value=Array.isArray(h.items)?h.items.filter(x=>x.source_user_id===user.user_id||
    x.recipient_user_id===user.user_id):[]
   enabled.value=true

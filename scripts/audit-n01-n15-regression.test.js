@@ -57,12 +57,12 @@ test('N07: backup rejects malformed child settings before touching the database'
 })
 test('N04/N09/N10/N11/logo: safe preview gate, transfer disclosure, no logo border',()=>{
   const api=text('functions/api/[[path]].js')
-  const app=text('src/App.vue')+'\n'+text('src/pages/AssetsPage.vue')+'\n'+text('src/SbiPortfolio.vue')
+  const app=text('src/App.vue')+'\n'+text('src/OcrCapturePanel.vue')+'\n'+text('src/pages/AssetsPage.vue')+'\n'+text('src/SbiPortfolio.vue')
   assert.match(api,/env\.PREVIEW_D1_ISOLATED === 'true'/)
   // New UI states the distinction more clearly: bookkeeping application is
   // neither SBI account funding nor completed fund purchase.
   assert.match(app,/期日反映は証券口座への入金・買付完了を保証しません/)
-  assert.match(app,/本日のAI残り回数：\{\{aiQuota\.remaining\}\}\/\{\{aiQuota\.limit\}\}回/)
+  assert.match(app,/本日のAI残り回数：\{\{quota\.remaining\}\}\/\{\{quota\.limit\}\}回/)
   assert.doesNotMatch(app,/Cloudflare AIに画像を送信|回数上限≠料金上限|本日の共通AI残り/)
   assert.match(app,/main\.theme-green \.brand-mark\{[\s\S]*?background:transparent;[\s\S]*?box-shadow:none;/)
 })

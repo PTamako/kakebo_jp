@@ -1,13 +1,16 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 const props=defineProps({userId:{type:String,required:true},
- householdId:{type:String,required:true},accounts:{type:Array,required:true}})
+ householdId:{type:String,required:true},accounts:{type:Array,required:true},view:{type:String,default:'plans'}})
 const emit=defineEmits(['changed'])
-const open=ref(false),busy=ref(false),available=ref(false),error=ref(''),notice=ref('')
+const open=ref(true),busy=ref(false),available=ref(false),error=ref(''),notice=ref('')
 const plans=ref([]),occurrences=ref([]),policies=ref({})
 const day=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const month=()=>day().slice(0,7)
-const form=ref({plan_type:'fixed_cost',source_bank_account_id:'',
+const activeType=computed(()=>props.view==='investment'?'sbi_tsumitate':'fixed_cost')
+const visiblePlans=computed(()=>plans.value.filter(p=>p.plan_type===activeType.value))
+const visibleOccurrences=computed(()=>occurrences.value.filter(p=>p.plan_type===activeType.value))
+const form=ref({plan_type:props.view==='investment'?'sbi_tsumitate':'fixed_cost',source_bank_account_id:'',
  securities_account_id:'',amount_jpy:'',due_day:Math.min(28,Number(day().slice(8))),
  start_month:month(),end_month:month(),category:'固定費',merchant:'',
  fund_code:'',fund_name:''})
@@ -41,11 +44,11 @@ async function api(path,options={}){
  return data
 }
 function reset(){
- generation++;open.value=false;busy.value=false;available.value=false;
+ generation++;open.value=true;busy.value=false;available.value=false;
  error.value='';notice.value='';plans.value=[];occurrences.value=[];policies.value={};
  selected.value='';bankRef.value='';brokerRef.value='';units.value='';planRetry='';
  bankPosted.value=false;brokerExecuted.value=false
- form.value={plan_type:'fixed_cost',source_bank_account_id:'',securities_account_id:'',
+ form.value={plan_type:props.view==='investment'?'sbi_tsumitate':'fixed_cost',source_bank_account_id:'',securities_account_id:'',
   amount_jpy:'',due_day:Math.min(28,Number(day().slice(8))),start_month:month(),
   end_month:month(),category:'固定費',merchant:'',fund_code:'',fund_name:''}
 }
@@ -178,21 +181,21 @@ function foreground(){
  units.value='';bankPosted.value=false;brokerExecuted.value=false
  if(open.value)void refresh()
 }
-watch(()=>[props.userId,props.householdId],reset)
-onMounted(()=>document.addEventListener('visibilitychange',foreground))
+watch(()=>[props.userId,props.householdId,props.view],()=>{reset();void refresh()})
+onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
 onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitychange',foreground)})
 </script>
 <template>
-<section class="recurring-panel" aria-label="本人周期固定费与SBI定投授权">
- <header><strong>周期固定费与 SBI 定投</strong>
+<section class="recurring-panel finance-panel" :aria-label="view==='investment'?'毎月の積立':'固定費の設定'">
+ <header><strong>{{view==='investment'?'毎月の積立':'固定費の設定'}}</strong>
   <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'收起':'设置'}}</button></header>
  <template v-if="open">
   <p class="help">本功能仅对本人新计划使用。HomeFlow 管理员批准的是计划期限与额度，银行扣款及 SBI 成交不会由本 App 发起；必须核对真实已发生记录后逐月记账。</p>
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="help">{{notice}}</p>
   <form v-if="available" class="editor" @submit.prevent="createPlan">
-   <strong>建立个人计划</strong>
-   <label>计划类型<select v-model="form.plan_type" :disabled="busy"><option value="fixed_cost">固定费用</option><option value="sbi_tsumitate">SBI 定投</option></select></label>
+   <strong>{{view==='investment'?'積立設定':'固定費の設定'}}</strong>
+   <p class="help">{{view==='investment'?'本人の証券口座で行うSBI積立':'本人の銀行口座からの固定費'}} · HomeFlow で計画を一度承認します</p>
    <label>本人扣款银行<select v-model="form.source_bank_account_id" :disabled="busy" required><option value="">选择账户</option>
     <option v-for="a in banks" :key="a.account_id" :value="a.account_id">{{a.label}} · v{{a.version}}</option>
    </select></label>
@@ -216,8 +219,8 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
    <button type="submit" :disabled="busy||!canPlan">保存计划（不记账）</button>
   </form>
   <div v-if="available" class="items">
-   <strong>本人计划与家庭审批</strong>
-   <div v-for="p in plans" :key="p.plan_resource_id" class="item">
+   <strong>{{view==='investment'?'登録済みの積立':'登録済みの固定費'}} · {{visiblePlans.length}}件</strong>
+   <div v-for="p in visiblePlans" :key="p.plan_resource_id" class="item">
     <div class="head"><strong>{{p.merchant}} · {{currency(p.amount_jpy)}}</strong><span>{{p.state}}</span></div>
     <p class="help">{{p.plan_type==='fixed_cost'?'固定费':'SBI 定投'}} · {{p.start_month}}～{{p.end_month}} · 每月{{p.due_day}}日</p>
     <p class="help">管理员授权：{{currentPolicy(p)?.status||'未读取，请点提交／恢复授权'}}</p>
@@ -245,7 +248,7 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
    <button type="submit" :disabled="busy||!bankPosted||(chosen.plan_type==='sbi_tsumitate'&&!brokerExecuted)">准备唯一月度凭证</button>
   </form>
   <div v-if="available" class="items"><strong>月度凭证与执行恢复</strong>
-   <div v-for="o in occurrences" :key="o.occurrence_id" class="item">
+   <div v-for="o in visibleOccurrences" :key="o.occurrence_id" class="item">
     <p class="help">{{o.period_key}} · {{currency(o.amount_jpy)}} · {{o.occurrence_id.slice(0,8)}} · {{o.plan_type}}</p>
     <div class="head">
      <button type="button" :disabled="busy" @click="perform(o,'execute')">按原 ID 核验后执行</button>

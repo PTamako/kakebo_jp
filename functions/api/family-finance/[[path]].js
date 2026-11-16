@@ -26,6 +26,7 @@ import {familyPointsLegacyLinks} from './points-legacy-links.js';
 import {familyAssetSummary} from './assets.js';
 import {familyPersonalAssets} from './personal-assets.js';
 import {familyManualHoldings} from './manual-holdings.js';
+import {familyPrepaidReport} from './prepaid-report.js';
 import {familyHouseholdStats} from './household-stats.js';
 import {familyPlanOwnership} from './plan-ownership.js';
 import {familyLegacyResourceOwners} from './resource-owners.js';
@@ -412,6 +413,7 @@ export async function onRequest({request,env,params}){
      parts[0]==='personal'&&parts[1]==='assets')
    return familyPersonalAssets(env,user);
   if(parts[0]==='manual-holdings')return familyManualHoldings(request,env,url,user,parts);
+  if(parts.length===1&&parts[0]==='prepaid-report'&&request.method==='GET')return familyPrepaidReport(env,user);
   if(parts[0]==='accounts')return accounts(request,env,url,user,parts);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='transfer-links')
     return legacyTransferLinks(request,env,url,user);

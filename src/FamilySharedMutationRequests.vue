@@ -74,52 +74,80 @@ async function openSpouseIncome(){
  open.value=true
  await load()
 }
-// Reuse the normal transaction editor. One click securely prepares AND submits
-// an immutable request; HomeFlow approval is still required to affect the ledger.
+// Only household-ledger mutations enter HomeFlow. Personal accounts, cards
+// and balances use their own owner-scoped APIs without these approvals.
+// The normal editor calls this adapter: prepare and submit share one click.
 let inlineRequest=null
-async function submitEntry(input){
- if(busy.value)throw Error('前の申請を処理中です')
- const entry={
-  date:String(input?.date||''),time:String(input?.time||''),
+function canonical(input){
+ const e={date:String(input?.date||''),time:String(input?.time||''),
   amount:Number(input?.amount),type:String(input?.type||''),
   category:String(input?.category||'').trim(),
-  merchant:String(input?.merchant||'').trim(),note:String(input?.note||'').trim()
- }
- if(!/^20\\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$/.test(entry.date)||
-  !/^([01]\\d|2[0-3]):[0-5]\\d$|^$/.test(entry.time)||
-  !Number.isSafeInteger(entry.amount)||entry.amount<1||entry.amount>10000000||
-  !['expense','income'].includes(entry.type)||
-  !entry.category||entry.category.length>100||entry.merchant.length>120||entry.note.length>500)
+  merchant:String(input?.merchant||'').trim(),note:String(input?.note||'').trim()}
+ if(!/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(e.date)||
+  !/^([01]\d|2[0-3]):[0-5]\d$|^$/.test(e.time)||
+  !Number.isSafeInteger(e.amount)||e.amount<1||e.amount>10000000||
+  !['expense','income'].includes(e.type)||
+  !e.category||e.category.length>100||e.merchant.length>120||e.note.length>500)
   throw Error('日付・金額・カテゴリ・内容を確認してください')
- const snapshot=JSON.stringify(entry)
+ return e
+}
+async function submitIntent(operation,entry,target=null){
+ if(busy.value)throw Error('前の申請を処理中です')
+ if(!['create','update','delete'].includes(operation))throw Error('操作が無効です')
+ const snapshot=JSON.stringify({operation,entry,resource_id:target?.resource_id||null,
+  expected_version:target?.version||0})
  if(inlineRequest&&inlineRequest.snapshot!==snapshot)
-  throw Error('申請結果が未確定です。内容を変更せず再試行してください')
- if(!inlineRequest)inlineRequest={snapshot,
-  key:'shared-entry:'+crypto.randomUUID(),proposalId:null,
-  userId:props.userId,householdId:props.householdId}
+  throw Error('前の申請結果が未確定です。同じ内容で再試行してください')
+ if(!inlineRequest)inlineRequest={snapshot,key:'shared-entry:'+crypto.randomUUID(),
+  proposalId:null,userId:props.userId,householdId:props.householdId}
  const pending=inlineRequest
  if(pending.userId!==props.userId||pending.householdId!==props.householdId)
-  throw Error('ログインが変更されました。再送できません')
+  throw Error('別の家族の申請を再送できません')
  busy.value=true
  try{
   if(!pending.proposalId){
    const result=await api('/api/family-finance/shared-mutation-requests',
     post({expected_user_id:props.userId,idempotency_key:pending.key,
-     operation:'create',resource_id:null,expected_version:0,entry}))
-   if(result.prepared?.status!=='prepared'||result.prepared?.applied!==false)
-    throw Error('申請準備の確認ができません')
-   pending.proposalId=result.prepared.proposal_id
+     operation,resource_id:target?.resource_id||null,
+     expected_version:target?.version||0,entry}))
+   const data=result.prepared
+   if(data?.applied!==false||!data?.proposal_id)
+    throw Error('申請の準備結果を確認できません')
+   pending.proposalId=data.proposal_id
+   if(data.status==='submitted_status_unknown'&&data.homeflow_approval_id){
+    inlineRequest=null
+    return {proposalId:pending.proposalId,status:data.status}
+   }
+   if(data.status!=='prepared')throw Error('申請の受付状態を確認してください')
   }
   const result=await api('/api/family-finance/shared-mutation-requests/'+
    encodeURIComponent(pending.proposalId)+'/submit',
    post({expected_user_id:props.userId}))
   if(result.applied!==false||result.status!=='submitted_status_unknown')
-   throw Error('審査受付が未確認です。元の申請を照合してください')
+   throw Error('HomeFlow の受付が未確認です。重複申請しないでください')
   inlineRequest=null
   return {proposalId:pending.proposalId,status:result.status}
  }finally{busy.value=false}
 }
-defineExpose({openForEntry,openSpouseIncome,submitEntry})
+async function submitEntry(input){return submitIntent('create',canonical(input))}
+async function submitMutation(operation,original,edited=null){
+ if(!['update','delete'].includes(operation)||!Number.isSafeInteger(Number(original?.id))||
+  original?.pending_approval)throw Error('承認待ちの明細は変更できません')
+ if(inlineRequest&&inlineRequest.operation!==undefined&&inlineRequest.operation!==operation)
+  throw Error('前の申請を確認してください')
+ // Resolve an approved resource and its CAS version from the server, never
+ // trust an arbitrary entry ID or browser-provided version.
+ const result=await api('/api/family-finance/shared-entries?state=active')
+ const target=(result.items||[]).find(r=>String(r.entry_id)===String(original.id))
+ if(!target)throw Error('この明細は共有審査対象に登録されていません')
+ const pending=await api('/api/family-finance/shared-mutation-requests?view=ledger&month='+
+  encodeURIComponent(String(original.date).slice(0,7)))
+ if((pending.items||[]).some(r=>String(r.source_entry_id)===String(original.id)))
+  throw Error('この明細には審査中の変更があります')
+ const entry=operation==='update'?canonical(edited):null
+ return submitIntent(operation,entry,target)
+}
+defineExpose({submitEntry,submitMutation,openForEntry,openSpouseIncome})
 async function toggle(){
  if(busy.value)return
  open.value=!open.value

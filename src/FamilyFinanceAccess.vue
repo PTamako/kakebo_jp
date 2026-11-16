@@ -17,6 +17,7 @@ import FamilyFinanceAssetOwnership from './FamilyFinanceAssetOwnership.vue'
 import FamilyFinancePlanOwnership from './FamilyFinancePlanOwnership.vue'
 import FamilyFinanceOwnerAdoption from './FamilyFinanceOwnerAdoption.vue'
 
+const props=defineProps({identityOnly:{type:Boolean,default:false}})
 const STORAGE='kakeibo:homeflow-resume-v1'
 const hex=/^[a-f0-9]{64}$/i
 const enabled=ref(false),financeEnabled=ref(false),busy=ref(false),error=ref('')
@@ -82,7 +83,7 @@ async function check(){
    if(revision!==epoch)return
    if(user.ok===true&&user.ledger_access===false&&user.identity?.user_id){
     person.value=user.identity;clearPending()
-    if(financeEnabled.value)await refresh()
+    if(financeEnabled.value&&!props.identityOnly)await refresh()
    }else resetIdentity()
   }else resetIdentity()
  }catch{
@@ -201,7 +202,7 @@ onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange'
     <button type="button" :disabled="busy" @click="start">{{pending?'重新授权':'使用 HomeFlow 登录'}}</button>
    </template>
   </div>
-  <template v-if="person">
+  <template v-if="person&&!props.identityOnly">
    <p v-if="!financeEnabled" class="hf-note">家庭金融账户功能尚未开放，旧账本不会因身份关联而自动开放。</p>
    <template v-else>
     <div class="hf-subhead"><strong>家庭账户</strong>

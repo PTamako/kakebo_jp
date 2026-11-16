@@ -16,6 +16,7 @@ import {ledgerRecorderColumns,ledgerRecorderJoins} from '../ledger-recorder.js';
 import {familySharedEntries} from './shared-entries.js';
 import {familySharedMutationRequests} from './shared-mutation-requests.js';
 import {familyMemberRecurringPlans} from './member-recurring-plans.js';
+import {familyMemberFixedCosts} from './member-fixed-costs.js';
 import {familyMemberAiOcr} from './member-ai-ocr.js';
 import {familyRecurringOccurrences} from './recurring-occurrences.js';
 import {familySbiCashReversals} from './sbi-cash-reversals.js';
@@ -388,6 +389,7 @@ export async function onRequest({request,env,params}){
     if(parts[0]==='shared-entries')return familySharedEntries(request,env,url,user,parts);
     if(parts[0]==='shared-mutation-requests')return familySharedMutationRequests(request,env,url,user,parts);
     if(parts[0]==='member-recurring-plans')return familyMemberRecurringPlans(request,env,url,user,parts);
+    if(parts[0]==='member-fixed-costs')return familyMemberFixedCosts(request,env,url,user,parts);
    if(parts[0]==='ai-ocr')return familyMemberAiOcr(request,env,url,user,parts);
     if(parts[0]==='recurring-occurrences')return familyRecurringOccurrences(request,env,url,user,parts);
    if(parts[0]==='sbi-cash-reversals')return familySbiCashReversals(request,env,url,user,parts);

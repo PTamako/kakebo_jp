@@ -884,13 +884,13 @@ watch(()=>props.user.user_id,loadMemberCategories)
    </template>
    <template #member-privacy>
      <div class="device-privacy-section">
-       <div class="device-privacy-row"><strong>ログイン状態の保存</strong>
-         <span class="help">HomeFlow で管理</span></div>
-       <p class="help">この端末のログインは本人の HomeFlow 認証情報で復元します。家族のカード情報や本人の金融データは端末に保存しません。</p>
+       <div class="device-privacy-row"><strong>ログイン状態の保存</strong><span class="help">HomeFlow で管理</span></div>
+       <p class="help">ログイン状態は本人の HomeFlow 認証で管理しています。家族のカード・口座データを端末に保存しません。</p>
+       <button type="button" class="button-secondary" @click="emit('logout')">この端末からログアウト</button>
      </div>
      <div class="device-privacy-section">
-       <strong>保存済みレシート画像</strong>
-       <p class="help">本人の画像は端末OCRで読み取ります。所有権が確認できない家庭共有画像の一括削除はできません。</p>
+       <div class="device-privacy-row"><strong>保存済みレシート画像</strong><span class="help">端末内保存なし</span></div>
+       <p class="help">本人の OCR 画像は端末内で読み取り、一括保存しません。共有レシートは所有権を確認せず削除できません。</p>
      </div>
    </template>
    <template #member-backup>

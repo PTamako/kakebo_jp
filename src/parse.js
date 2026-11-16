@@ -90,7 +90,681 @@ function parseAiCsvRow(raw, rules) {
   const fiveColumn = line.match(new RegExp('^([^,，]+)\\s*[,，]\\s*([^,，]+)\\s*[,，]\\s*(.+?)\\s*[,，]\\s*' + yenAmount + '\\s*(?:円)?\\s*[,，]\\s*([^,，]+)$'))
   const dateToken = '(?:20\\d{2}年\\d{1,2}月\\d{1,2}日?|(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日?|\\d{1,2}[/]\\d{1,2})'
   const unknown = /^(?:不明|未記載|記載なし|不詳|[-—ー])$/
-  const validDate = value => unknown.test(value) || isRelativeDateToken(value) || new RegExp('^' + dateToken + '$').test(value)
+  // Japanese transaction apps print the weekday after the purchase date:
+  // "2026/11/15(日)" or "2026年11月15日（日）". Gemma faithfully
+  // transcribes it. Keep the raw line, but validate the date without this
+  // presentation-only suffix; never interpret a weekday as transaction time.
+  const stripWeekday = value => value.replace(/\s*\(\s*(?:月|火|水|木|金|土|日)(?:曜日)?\s*\)\s*$/, '').trim()
+  const validDate = value => {
+    const date = stripWeekday(value)
+    return unknown.test(date) || isRelativeDateToken(date) || new RegExp('^' + dateToken + '
+  // Gemma can return the printed Japanese clock (19時48分) instead of HH:mm.
+  // Require a standalone clock token so merchant/payment text cannot become time.
+  const validTime = value => unknown.test(value) || isRelativeTimeToken(value)
+    || (/^(?:(?:午前|午後|AM|PM)\s*)?(?:[01]?\d|2[0-3])\s*(?:[:：]\s*[0-5]\d|時\s*[0-5]?\d\s*分?)$/i.test(value) && !!readClockTime(value))
+  const result = fiveColumn && validDate(fiveColumn[1].trim()) && validTime(fiveColumn[2].trim())
+    ? { dateText: fiveColumn[1].trim(), timeText: fiveColumn[2].trim(),
+        merchant: fiveColumn[3].trim(), amountText: fiveColumn[4], paymentText: fiveColumn[5].trim() }
+    : null
+  if (result) {
+    const amount = Number(result.amountText.replace(/[^\d]/g, ''))
+    if (!result.merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
+    const merchant = result.merchant.replace(/^QP\s*[/／]\s*/i, '').trim()
+    if (!merchant || unknown.test(merchant)) return null
+    const { category, keyword } = classify(merchant, rules)
+    const relativeTime = isRelativeTimeToken(result.timeText) ? result.timeText : ''
+    const clock = readClockTime(result.timeText)
+    return {
+      date: (unknown.test(result.dateText) || isRelativeDateToken(result.dateText)) ? '' : findDate(result.dateText),
+      time: clock,
+      amount, category, merchant: merchant.slice(0, 60),
+      paymentSource: unknown.test(result.paymentText) ? '' : result.paymentText,
+      note: relativeTime ? '画面表示：' + relativeTime + '（正確な取引時刻は不明）' : '',
+      raw: line, suggested: category, keyword
+    }
+  }
+  // Preserve existing dated three/four-column statement imports.
+  const m = line.match(/^((?:20\d{2}年\d{1,2}月\d{1,2}日|(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}|\d{1,2}月\d{1,2}日|\d{1,2}\/\d{1,2})(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s*[,，]\s*(.+?)\s*[,，]\s*([¥￥]?\s*\d{1,3}(?:[,，]\d{3})*|[¥￥]?\s*\d+)\s*(?:円)?\s*(?:[,，]\s*(.*))?$/)
+  if (!m) return null
+  const merchant = m[2].replace(/^QP\s*[/／]\s*/i, '').trim()
+  const amount = Number(m[3].replace(/[^\d]/g, ''))
+  if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
+  const { category, keyword } = classify(merchant, rules)
+  return { date: findDate(m[1]), time: findTransactionTime(m[1]), amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
+}
+export function parseEntry(raw, rules) {
+  const ai = parseAiCsvRow(raw, rules)
+  if (ai) return ai
+  const text = normalize(raw)
+  const { category, keyword } = classify(text, rules)
+  const firstLine = text.split('\n').map(s => s.trim()).find(s => s.length >= 2 && !/^[\d¥\s:\/.\-]+$/.test(s)) || ''
+  // AI card statements often use CSV-like rows: date, merchant, amount, payment plan.
+  // The card title must contain only the merchant, never the whole transaction.
+  const csvParts = firstLine.split(/[,，]\s*/).map(part => part.trim())
+  const csvDate = /^(?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}$/
+  const csvAmount = /^(?:[¥￥]\s*)?\d[\d,，]*(?:\s*円)?$/
+  const structuredMerchant = csvParts.length >= 3 && csvDate.test(csvParts[0])
+    && csvParts.slice(2).some(part => csvAmount.test(part))
+    ? csvParts[1] : ''
+  // Do not save a notification's right-aligned price as part of its shop name.
+  // Keep ordinary merchant numbers (such as セブン-イレブン) intact.
+  const merchant = (structuredMerchant || firstLine.slice(0, 60) || keyword)
+    .replace(/\s+[¥￥]?\s*\d{1,3}(?:[,，.．]\d{3})+\s*(?:円)?\s*[\[［\]］|]?\s*$/u, '')
+    .replace(/\s+[¥￥]\s*\d[\d,，.．]*\s*(?:円)?\s*$/u, '')
+    // In low-resolution screenshots, ¥ or 円 can look like an opening bracket.
+    .replace(/\s+\d{2,7}\s*[\[［|]\s*$/u, '')
+    .trim().slice(0, 60)
+  return {
+    date: findDate(text), time: findTime(text), amount: findAmount(text),
+    category, merchant, note: text.length <= 40 ? text.replace(/\s+/g, ' ') : '',
+    raw: text, suggested: category, keyword
+  }
+}
+
+// Receipts are single purchases: never use the largest yen value (often a balance).
+export function parseReceipt(raw, rules = []) {
+  const text = normalize(raw)
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
+  const money = value => Number(value.replace(/[,，\s]/g, ''))
+  const amountIn = line => {
+    const s = line.replace(/[OoＯｏ](?=\d)/g, '0')
+    const m = s.match(/[¥￥]\s*([\d,，]+)|([\d,，]+)\s*円|(?:^|\s)(\d{1,3}(?:[,，]\d{3})*|\d{1,6})(?=\s*(?:$|[税込]))/)
+    const amount = m ? money(m[1] || m[2] || m[3]) : 0
+    return Number.isSafeInteger(amount) && amount > 0 && amount <= 9999999 ? amount : 0
+  }
+  const totalLabel = /(?:合\s*計|お\s*買\s*上(?:げ)?(?:金額)?|お\s*支\s*払(?:い)?(?:金額)?|ご\s*請\s*求\s*額|総\s*合\s*計|TOTAL)/i
+  const excluded = /(?:税率|対象|内消費税|税込対象|小計|お預り|お釣り|釣銭|残高|クーポン|値引|割引|ポイント)/
+  const candidates = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!totalLabel.test(line) || excluded.test(line)) continue
+    const score = /(?:総\s*合\s*計|お\s*支\s*払(?:い)?(?:金額)?|ご\s*請\s*求\s*額)/i.test(line) ? 3 : /合\s*計|TOTAL/i.test(line) ? 2 : 1
+    // Read the value after the label; never accidentally read a date or register number before it.
+    const suffix = line.slice(line.search(totalLabel)).replace(totalLabel, '').replace(/^[\s:：=\-]+/, '')
+    let amount = amountIn(suffix)
+    if (!amount && i + 1 < lines.length && !/[一-龯ぁ-んァ-ヶ]/.test(lines[i + 1].replace(/円/g, ''))) amount = amountIn(lines[i + 1])
+    if (amount) candidates.push({ amount, score, index: i })
+  }
+  // OCR may turn 合計 into punctuation (e.g. '= =t ¥239').
+  // Only trust a malformed total when the same amount is independently present
+  // in a tax-inclusive line, and the candidate is adjacent to the tax breakdown.
+  if (!candidates.length) {
+    const inclusive = new Set(lines.filter(line => /(?:税率|対象)/.test(line) && !/内消費税|消費税等/.test(line))
+      .map(line => [...line.matchAll(/[¥￥\\]\s*([\d,，]+)(?!\d)/g)].map(m => money(m[1]))).flat())
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (!/^[\s=＝・\-tT]+[¥￥\\]\s*[\d,，]+\s*$/.test(line)) continue
+      const m = line.match(/[¥￥\\]\s*([\d,，]+)/)
+      const value = m ? money(m[1]) : 0
+      const preceding = lines.slice(Math.max(0, i - 4), i).join(' ')
+      if (value > 0 && inclusive.has(value) && /小計|消費税|税抜/.test(preceding)) {
+        candidates.push({ amount: value, score: 2, index: i })
+      }
+    }
+  }
+  // Reconstruct a damaged total from an explicit subtotal and consumption tax.
+  // The OCR payment figure may be corrupted independently (e.g. Y911 instead of ¥311).
+  if (!candidates.length) {
+    const readYen = line => {
+      const m = line.match(/[¥￥\\]\s*([\d,，]{1,7})(?!\d)/)
+      return m ? money(m[1]) : 0
+    }
+    const subtotal = lines.filter(line => /小\s*計/.test(line)).map(readYen).find(Boolean) || 0
+    const tax = lines.filter(line => /(?:外\s*税|消費税)/.test(line) && !/対象|税率/.test(line)).map(readYen).find(Boolean) || 0
+    const taxBase = lines.filter(line => /(?:外\s*税|消費税)/.test(line) && /対象|税率/.test(line)).map(readYen).find(Boolean) || 0
+    if (subtotal > 0 && tax > 0 && taxBase === subtotal && subtotal <= 9999999 - tax && Math.abs(tax - Math.floor(subtotal * 0.08)) <= 1) {
+      candidates.push({ amount: subtotal + tax, score: 1, index: lines.length, reconstructed: true })
+    }
+  }
+  // OCR may lose the subtotal label while retaining the 8% tax base and tax.
+  // Use only an explicit taxable base and tax, not an isolated payment number.
+  if (!candidates.length) {
+    const yen = line => {
+      const m = line.match(/[¥￥\\]\s*([\d,，]{1,7})(?!\d)/)
+      return m ? money(m[1]) : 0
+    }
+    const base = lines.filter(line => /(?:外\s*税|税率|8\s*%)/.test(line) && /対象|対象額/.test(line)).map(yen).find(Boolean) || 0
+    const tax = lines.filter(line => /外\s*税|消費税/.test(line) && !/対象|対象額|税率/.test(line)).map(yen).find(Boolean) || 0
+    if (base > 0 && tax > 0 && base <= 9999999 - tax && Math.abs(tax - Math.floor(base * 0.08)) <= 1) {
+      candidates.push({ amount: base + tax, score: 1, index: lines.length, reconstructed: true })
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score || a.index - b.index)
+  const amount = candidates[0]?.amount || 0
+  // Normalize spaced and common OCR-misread convenience-store names without
+  // altering the statement parser. Prefer the branch printed near the header.
+  const compact = line => line.replace(/[\s　・]/g, '')
+  const isSeven = line => /セ[ブフ][ン]?[-ー－‐−]?イ[レル]?ブ[ン]?|セブン[-ー－‐−]?イレブン/.test(compact(line))
+  const sevenFound = lines.some(isSeven)
+  const branch = lines.slice(0, Math.min(lines.length, 12))
+    .find(line => /店\s*$/.test(line) && !/電話|番号|登録/.test(line))
+  const brand = sevenFound ? 'セブン-イレブン' : ''
+  const isMyBasket = lines.slice(0, 8).some(line => /まいば[すき]けっと|まいばす|マイバスケット/.test(compact(line)))
+  // AI transcription can already contain the brand in a labeled full store name.
+  // Avoid prefixing the same brand twice (e.g. まいばすけっと 店名:まいばすけっと南小岩8丁目店).
+  const labeledMerchant = lines.find(line => /^店名\s*[:：]/.test(line))
+    ?.replace(/^店名\s*[:：]\s*/, '').trim() || ''
+  const branchName = branch ? compact(branch.replace(/^店名\s*[:：]\s*/, '')) : ''
+  const withBrand = (name, detail) => detail
+    ? (compact(detail).startsWith(compact(name)) ? detail : name + ' ' + detail)
+    : name
+  const merchant = labeledMerchant
+    || (isMyBasket ? withBrand('まいばすけっと', branchName)
+      : brand ? withBrand(brand, branchName)
+      : (lines.find(line => /ローソン|ファミリーマート|まいばすけっと|イオン|スーパー|マルエツ|ライフ/.test(compact(line)))
+        || lines.find(line => /(?:店|ストア|マーケット)$/.test(compact(line)) && !/電話|番号/.test(line))
+        || ''))
+  const categorySource = merchant || text.slice(0, 120)
+  const { category, keyword } = classify(categorySource, rules)
+  // Receipts also print compact two-digit years (26.10.29) and Japanese era dates.
+  // Gemma 4 uses a dedicated purchase-date field. Do not fall through to
+  // a coupon start date when the purchase date was explicitly unreadable.
+  const labeledDate = lines.find(line => /^日付\s*[:：]/.test(line))
+  const dateLine = labeledDate !== undefined ? labeledDate
+    : lines.find(line => /20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}/.test(line))
+    || lines.find(line => /(?<!\d)\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?!\d)/.test(line))
+    || lines.find(line => /令和\s*(?:元|\d{1,2})\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?/.test(line)) || ''
+  const labeledTime = lines.find(line => /^時刻\s*[:：]/.test(line))
+  const era = dateLine.match(/令和\s*(元|\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})/)
+  // findDate() normally falls back to today's date. That fallback is
+  // unsafe for an unreadable Gemma purchase date: a coupon may carry a
+  // completely unrelated date. Require an actually printed date instead.
+  const printedDate = /(?:20\d{2}\s*[年\/.\-]\s*\d{1,2}\s*[月\/.\-]\s*\d{1,2}|(?<!\d)\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?!\d)|令和\s*(?:元|\d{1,2})\s*年\s*\d{1,2}\s*月\s*\d{1,2}|\d{1,2}\s*月\s*\d{1,2}\s*日?|(?<!\d)\d{1,2}\/\d{1,2}(?!\d))/.test(dateLine)
+  let receiptDate = era
+    ? `${2018+(era[1]==='元'?1:Number(era[1]))}-${pad(era[2])}-${pad(era[3])}`
+    : dateLine && printedDate ? findDate(dateLine) : ''
+  let dateCorrected = false
+  // OCR can read 2026 as 2006. Correct only with two independent clues:
+  // the receipt month/day is today and another line contains the current year.
+  if (receiptDate) {
+    const today = new Date()
+    const oldYear = today.getFullYear() - 20
+    const expected = `${oldYear}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+    if (receiptDate === expected && lines.some(line => new RegExp(`(?<!\\d)${today.getFullYear()}(?!\\d)`).test(line))) {
+      receiptDate = ymd(today)
+      dateCorrected = true
+    }
+  }
+  return {
+    date: receiptDate,
+    time: labeledTime !== undefined ? findTransactionTime(labeledTime) : findTransactionTime(text, dateLine),
+    amount,
+    category,
+    merchant: merchant.slice(0, 60),
+    note: [dateCorrected ? '要確認：日付の年をOCR誤認識として補正しました' : '', candidates[0]?.reconstructed ? '要確認：小計と消費税から合計金額を推定しました' : amount ? '' : '要確認：合計金額を読み取れませんでした'].filter(Boolean).join(' / '),
+    raw: text, suggested: category, keyword
+  }
+}
+
+// 貼り付けテキストまたはOCR画像から複数の明細を抽出する。
+function parseEntriesInternal(raw, rules) {
+  const marker = '\n__QP_AMOUNT_COLUMN__\n'
+  let qpColumnAmounts = []
+  if (typeof raw === 'string' && raw.includes(marker)) {
+    const parts = raw.split(marker)
+    raw = parts[0]
+    qpColumnAmounts = (parts[1] || '').split(/\r?\n/).map(line => line.trim())
+      .map(line => line.match(/^(?:[¥￥]\s*)?(\d{1,3}(?:[,，.]\d{3})+|\d{2,6})(?:\s*円)?$/)?.[1])
+      .filter(Boolean)
+      .map(value => Number(value.replace(/[,，.]/g, '')))
+      .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
+  }
+  // Preserve original word boundaries for space-delimited AI statements.
+  const originalLines = String(raw).split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const originalSpacedRows = originalLines.map(line => {
+    const m = line.normalize('NFKC').match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)$/)
+    if (!m) return null
+    const merchant = m[2].trim()
+    const amount = Number(m[3].replace(/[^\d]/g, ''))
+    if (!merchant || amount <= 0 || amount > 9999999) return null
+    const { category, keyword } = classify(merchant, rules)
+    return { date: findDate(m[1]), time: '', amount, category, merchant, note: '', raw: line, suggested: category, keyword }
+  })
+  if (originalSpacedRows.length && originalSpacedRows.every(Boolean)) return originalSpacedRows
+  const text = normalize(raw)
+  if (!text) return []
+  const csvLines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const csvRows = csvLines.map(line => parseAiCsvRow(line, rules))
+  if (csvRows.length && csvRows.every(Boolean)) return csvRows
+  // Space-delimited AI card rows: date, merchant, yen amount, installment count.
+  const spacedRows = csvLines.map(line => {
+    const match = line.match(/^((?:20)?\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}(?:\s+(?:[01]?\d|2[0-3])[:：][0-5]\d)?)\s+(.+?)\s+([¥￥]?\d{1,3}(?:[,，]\d{3})*|[¥￥]?\d+)\s*円\s+(?:\d+回払い|一回払い|分割払い|リボ払い)\s*$/)
+    if (!match) return null
+    const merchant = match[2].trim()
+    const amount = Number(match[3].replace(/[^\d]/g, ''))
+    if (!merchant || !Number.isSafeInteger(amount) || amount <= 0 || amount > 9999999) return null
+    const { category, keyword } = classify(merchant, rules)
+    return { date: findDate(match[1]), time: '', amount, category, merchant: merchant.slice(0, 60), note: '', raw: line, suggested: category, keyword }
+  })
+  if (spacedRows.length && spacedRows.every(Boolean)) return spacedRows
+
+  // Normalize card-statement rows such as "QUICPay 利用 (QP/ マイバスケット ) 628gm"
+  // into the existing QP-row format before parsing each transaction independently.
+  const lines = text.split(/\r?\n/).map(s => s.trim())
+    .filter(Boolean)
+    .map(line => line.replace(/^.*?\(\s*Q?O?P\s*\//i, 'QP / '))
+
+  const dateLine = line => /20\d{2}\s*[年/. -]\s*\d{1,2}\s*[月/. -]\s*\d{1,2}/.test(line)
+    || /(?<!\d)\d{2}\s*[.\/-]\s*\d{1,2}\s*[.\/-]\s*\d{1,2}(?!\d)/.test(line)
+    || /\d{1,2}\s*月\s*\d{1,2}/.test(line)
+    || /\d{1,2}\s*\/\s*\d{1,2}/.test(line)
+  const paymentLine = line => /^(?:1回払い|一回払い|分割払い|リボ払い|ボーナス払い|支払回数|クレジット|カード利用|ご利用日|利用日|利用金額|お支払方法|お支払い方法)$/i.test(line.replace(/[\s＞>]/g, ''))
+  const amountLine = line => {
+    const s = line.replace(/[＞>」】]/g, '').trim()
+    if (!/^(?:[¥￥]\s*)?\d[\d,]*(?:\s*円)?$/.test(s)) return false
+    const digits = s.replace(/[^\d]/g, '')
+    const hasCurrency = /[¥￥円]/.test(s)
+    const hasThousandsSeparator = /^\s*(?:[¥￥]\s*)?\d{1,3}(?:,\d{3})+(?:\s*円)?\s*$/.test(s)
+    // Long unformatted numbers in card statements are ambiguous and often reference IDs.
+    // Accept long amounts only when currency or thousands separators make them explicit.
+    if (!hasCurrency && !hasThousandsSeparator && digits.length >= 6) return false
+    const amount = Number(digits)
+    return amount > 0 && amount <= 9999999
+  }
+  const cleanAmountLine = line => {
+    const s = line.replace(/[＞>」】]/g, '').trim()
+    const m = s.match(/(?:[¥￥]\s*)?([\d,]+)(?:\s*円)?/)
+    return m ? Number(m[1].replace(/,/g, '')) : 0
+  }
+  const extractTrailingAmount = line => {
+    // Japanese card-statement OCR often misreads 円 as m/g/gm and thousand separators as periods.
+    // Only accept a number at the very end with a currency-like marker, to avoid treating address digits as amounts.
+    const m = line.match(/(?:[¥￥]\s*)?(\d[\d,，.]{1,7})\s*(円|m{1,2}|g(?:m)?|mm|H)?\s*(?:[Nn＞>2ンてvく～〜]+)?\s*[、,，。．.）)」】]*\s*$/i)
+    if (!m) return null
+    const rawNumber = m[1]
+    // Amounts in these Japanese statements are whole yen; OCR may render 5,931 as 5.931.
+    const amount = Number(rawNumber.replace(/[,，.]/g, ''))
+    if (!Number.isFinite(amount) || amount < 1 || amount > 999999) return null
+    const marker = m[2] || ''
+    const hasCurrency = /円|[¥￥]|m|g|H/i.test(marker) || /[Nn＞>2ンてvく～〜]\s*$/.test(line)
+    if (!hasCurrency) return null
+    return { amount, raw: m[0], index: m.index }
+  }
+  const cleanMerchant = value => {
+    const cleaned = value
+    // Card statements may append a reference number to every merchant row, not only Suica.
+    // Strip visible numeric references and OCR-truncated forms such as "7...".
+    .replace(/\s+\d{6,}\s*$/g, '')
+    .replace(/\s+\d{1,3}\s*[.…・]{2,}\s*$/g, '')
+    .replace(/[＞>」】]+\s*$/g, '')
+    .replace(/[Nn]\s*$/g, '')
+    .replace(/[\s,，、。．.]+$/g, '')
+    .trim()
+    .replace(/マイバスケツト/g, 'マイバスケット')
+    .replace(/\(([^()]*)\)/g, '（$1）')
+    // Keep balanced closing parentheses, drop only stray OCR punctuation.
+    return cleaned.includes('（') ? cleaned : cleaned.replace(/\)\s*$/, '').trim()
+  }
+
+  // Card statement blocks sometimes separate merchant, amount and date into
+  // separate lines (e.g. 2,992円～). Recover each independently instead of
+  // falling back to a single giant draft containing all the transactions.
+  const standaloneAmount = line => {
+    const match = line.match(/^(?:[¥￥]\s*)?(\d{1,3}(?:[,，.]\d{3})+|\d{1,6})\s*円\s*[~～〜く>＞Nn]*$/)
+    if (!match) return null
+    const value = Number(match[1].replace(/[,，.]/g, ''))
+    return value > 0 && value <= 9999999 ? value : null
+  }
+  const cardBlocks = []
+  let blockStart = 0
+  for (let i = 0; i < lines.length; i++) {
+    if (!dateLine(lines[i]) || !/^\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}$/.test(lines[i])) continue
+    const block = lines.slice(blockStart, i).filter(line => !/^(?:ご本人|本人|家族|家族会員|1回払い|一回払い|分割払い|リボ払い)$/.test(line))
+    const amountIndex = block.findIndex(line => standaloneAmount(line) !== null)
+    if (amountIndex >= 1) {
+      const amount = standaloneAmount(block[amountIndex])
+      const merchantText = [...block.slice(0, amountIndex), ...block.slice(amountIndex + 1)].join('')
+      const merchant = cleanMerchant(merchantText)
+      if (merchant && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) {
+        const { category, keyword } = classify(merchant, rules)
+        cardBlocks.push({ date: findDate(lines[i]), time: '', amount, category,
+          merchant: merchant.slice(0, 60), note: '', raw: block.join('\n') + '\n' + lines[i], suggested: category, keyword })
+      }
+    }
+    blockStart = i + 1
+  }
+  if (cardBlocks.length >= 2 && cardBlocks.length === lines.filter(dateLine).length) return cardBlocks
+
+  // QP statements: each transaction is a QP-prefixed merchant/amount line,
+  // followed by a date and payment-method line. Parse the final numeric token explicitly.
+  const qpRows = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!/^QP\s*\//i.test(line)) continue
+    const body = line.replace(/^QP\s*\/\s*/i, '').trim()
+    // Capture the final amount token, not the merchant/reference text.
+    // The OCR engine may remove the space before the amount entirely (e.g. "ダイソー880m").
+    // Anchor the amount to the line ending marker instead of requiring a separator from the merchant.
+    const m = body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)?\s*[、,，。．.'’vV|]+\s*$/i)
+      || body.match(/^(.*?)([0-9０-９oOｏＯ][0-9０-９oOｏＯ\]\[\s,，.]{0,8})\s*(?:円|m{1,2}|g(?:m)?|ロ|口)\s*$/i)
+    if (!m || !m[1].trim()) continue
+    // Ambiguous OCR glyphs (O/o) must not be guessed as the digit 6.
+    // Keep the row for manual review rather than silently recording a wrong charge.
+    const ambiguousAmount = /[oOｏＯ]/.test(m[2])
+    const token = m[2].replace(/[\]\[]/g, '').replace(/[\s,，.]/g, '')
+    const amount = ambiguousAmount ? 0 : Number(token)
+    if (!Number.isFinite(amount) || amount < 0 || amount > 999999) continue
+    let nextDate = null
+    for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+      if (/^QP\s*\//i.test(lines[j])) break
+      if (dateLine(lines[j])) { nextDate = lines[j]; break }
+    }
+    if (!nextDate) continue
+    const merchant = cleanMerchant(m[1])
+    if (!merchant || !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) continue
+    const { category, keyword } = classify(merchant, rules)
+    qpRows.push({
+      date: findDate(nextDate), time: '', amount, category,
+      merchant: merchant.slice(0, 60), note: amount ? '' : '要確認：金額の数字が不明瞭です',
+      raw: merchant + '\n' + nextDate + '\n' + m[2],
+      suggested: category, keyword
+    })
+  }
+  // Prefer the established parser when it recovered every row; use block recovery only for missing rows.
+  if (qpRows.length >= lines.filter(line => /^(?:QUICPay\s*利用\s*)?QP\s*\//i.test(line)).length && qpRows.length >= 2) return qpRows
+  // Robust transaction-block fallback for QUICPay OCR. Keep every detected transaction,
+  // even if OCR misses its amount; zero-amount drafts remain editable instead of being dropped.
+  const qpStart = line => /^(?:QUICPay\s*利用\s*)?QP\s*\//i.test(line)
+  const qpStarts = lines.map((line, index) => qpStart(line) ? index : -1).filter(index => index >= 0)
+  if (qpStarts.length >= 2) {
+    const recovered = []
+    for (let n = 0; n < qpStarts.length; n++) {
+      const start = qpStarts[n]
+      const block = lines.slice(start, qpStarts[n + 1] ?? lines.length)
+      const dateRaw = block.find(dateLine)
+      if (!dateRaw) continue
+      const first = block[0].replace(/^QP\s*\/\s*/i, '').trim()
+      const joined = block.join(' ')
+      const dateIndex = block.indexOf(dateRaw)
+      const amountSources = block.slice(0, dateIndex < 0 ? block.length : dateIndex)
+      let amount = 0
+      for (const candidate of amountSources) {
+        const stripped = candidate.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+        const matches = [...stripped.matchAll(/([\doOｏＯ][\doOｏＯ,，.]{0,7})\s*(円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])/ig)]
+        if (matches.length) {
+          const rawAmount = matches[matches.length - 1][1]
+          const parsed = /[oOｏＯ]/.test(rawAmount) ? 0 : Number(rawAmount.replace(/[,，.]/g, ''))
+          if (parsed > 0 && parsed <= 999999) { amount = parsed; break }
+        }
+      }
+      // Merchant may wrap across OCR lines; remove amount/date/payment noise from the block.
+      let merchant = first
+        .replace(/\s*[（(].*$/, '')
+        .replace(/[＞>」】）)]+\s*$/, '')
+      const wrapped = block.slice(1, dateIndex < 0 ? block.length : dateIndex)
+        .filter(line => !/回\s*払|^[\d,，.]+\s*(?:円|m|g|=|＝)?$/i.test(line))
+        .filter(line => !/(\d[\d,，.]{0,7})\s*(?:円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝)/i.test(line))
+      if (wrapped.length) merchant += wrapped.join('')
+      merchant = cleanQpMerchant(merchant)
+      if (!merchant || !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) {
+        merchant = cleanQpMerchant(first)
+      }
+      if (!merchant) continue
+      const { category, keyword } = classify(merchant, rules)
+      recovered.push({
+        date: findDate(dateRaw), time: '', amount, category,
+        merchant: merchant.slice(0, 60),
+        note: amount ? '' : '金額を読み取れませんでした。明細を確認してください',
+        raw: block.join('\n'), suggested: category, keyword
+      })
+    }
+    if (qpColumnAmounts.length === recovered.length) {
+      recovered.forEach((row, index) => {
+        row.amount = qpColumnAmounts[index]
+        row.note = ''
+        row.raw += '\\n右側の金額欄から金額を再認識'
+      })
+    }
+    if (recovered.length > qpRows.length) return recovered
+  }
+  function cleanQpMerchant(value) {
+    return value
+      .replace(/\s*\d[\d,，.]{0,7}\s*(?:円|m{1,2}|g(?:m)?|mm|ロ|口|=|＝|[Nn＞>2ンてvく～〜])\s*[、,，。．.）)]*\s*$/i, '')
+      .replace(/[＞>」】）)]+\s*$/, '')
+      .replace(/[\s,，、。．.]+$/, '')
+      .trim()
+      .replace(/マイバスケツト/g, 'マイバスケット')
+  }
+
+
+  // Some issuers put merchant and reference on one line, then date/cardholder/payment/amount on another.
+  // Other issuers put amount beside merchant and date on a separate line. Keep these layouts distinct.
+  const isCardMetadata = line => /^(?:ご本人|本人|家族|家族会員|1回払い|一回払い|分割払い|リボ払い|ボーナス払い|ご本人\s+1回払い|本人\s+1回払い)$/i
+    .test(line.replace(/[\s＞>]/g, ''))
+  const pairedStatementRows = []
+  for (let i = 0; i < lines.length; i++) {
+    const detailLine = lines[i]
+    if (!dateLine(detailLine) || !/[¥￥]\s*[\d,]+/.test(detailLine)) continue
+    const amountMatch = detailLine.match(/[¥￥]\s*([\d,]+)/)
+    if (!amountMatch) continue
+    const amount = Number(amountMatch[1].replace(/,/g, ''))
+    if (amount <= 0 || amount > 9999999) continue
+
+    // Collect merchant text directly above this detail line. Skip cardholder/payment metadata,
+    // and join OCR-wrapped suffixes such as "マクドナルドモバイルオーダ" + "ー".
+    const parts = []
+    for (let j = i - 1; j >= 0; j--) {
+      const candidate = lines[j]
+      if (dateLine(candidate)) break
+      if (isCardMetadata(candidate) || paymentLine(candidate) || amountLine(candidate)) continue
+      if (/^(?:ご本人|本人|家族|1回払い|一回払い|分割払い|リボ払い|ボーナス払い)$/.test(candidate.replace(/[\s＞>]/g, ''))) continue
+      if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(candidate)) {
+        // Ignore standalone reference numbers and other OCR noise.
+        if (/^\d{4,}$/.test(candidate)) continue
+        break
+      }
+      parts.unshift(candidate)
+      // Usually merchant names occupy one or two lines; don't absorb unrelated page headings.
+      if (parts.length >= 3) break
+    }
+    if (!parts.length) continue
+    const merchantLine = cleanMerchant(parts.join(''))
+    if (!merchantLine || isCardMetadata(merchantLine)) continue
+    const { category, keyword } = classify(merchantLine, rules)
+    pairedStatementRows.push({
+      date: findDate(detailLine), time: '', amount, category,
+      merchant: merchantLine.slice(0, 60), note: '',
+      raw: merchantLine + '\n' + detailLine,
+      suggested: category, keyword
+    })
+  }
+  if (pairedStatementRows.length >= 2) return pairedStatementRows
+
+  const merchantRows = []
+  const dateLines = lines.filter(dateLine)
+  let activeMerchantRow = null
+
+  // OCR frequently returns one merchant+amount line, then a date/payment line.
+  // Example: "セブンイレブン葛飾柴又4丁目店 521mM N".
+  // Keep wrapped merchant suffixes attached to the immediately preceding row.
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i]
+    if (dateLine(line) || paymentLine(line)) {
+      activeMerchantRow = null
+      continue
+    }
+    if (/^目\s*店\s*[＞>]*$/.test(line)) {
+      if (activeMerchantRow) activeMerchantRow.merchant += '目店'
+      continue
+    }
+    if (amountLine(line)) {
+      activeMerchantRow = null
+      continue
+    }
+    let found = extractTrailingAmount(line)
+    // If OCR wraps a long merchant name and places the amount on the next visual line,
+    // join the two before parsing (e.g. "マクドナルドモバイルオーダ" + "ー 420 円").
+    if (!found && i + 1 < lines.length && !dateLine(lines[i + 1]) && !paymentLine(lines[i + 1])) {
+      const nextFound = extractTrailingAmount(lines[i + 1])
+      if (nextFound && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(line)) {
+        line = line + lines[i + 1]
+        i++
+        found = extractTrailingAmount(line)
+      }
+    }
+    if (!found) continue
+    // Some card apps put parenthetical merchant details on the line after the amount.
+    // Keep that continuation with the merchant when the next line is the transaction date.
+    let merchantSource = line.slice(0, found.index)
+    if (i + 1 < lines.length && /^\s*[（(]/.test(lines[i + 1]) &&
+        !dateLine(lines[i + 1]) && !extractTrailingAmount(lines[i + 1]) &&
+        i + 2 < lines.length && dateLine(lines[i + 2])) {
+      merchantSource += lines[i + 1]
+      i++
+    }
+    const merchant = cleanMerchant(merchantSource)
+    if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(merchant)) continue
+    activeMerchantRow = { merchant, amount: found.amount, amountRaw: found.raw }
+    merchantRows.push(activeMerchantRow)
+  }
+
+  if (merchantRows.length >= 2 && merchantRows.length === dateLines.length) {
+    return merchantRows.map((row, i) => {
+      const dateRaw = dateLines[i]
+      const { category, keyword } = classify(row.merchant, rules)
+      return {
+        date: findDate(dateRaw), time: '', amount: row.amount, category,
+        merchant: row.merchant.slice(0, 60), note: '',
+        raw: row.merchant + '\n' + dateRaw + '\n' + row.amountRaw,
+        suggested: category, keyword
+      }
+    }).filter(e => e.amount > 0)
+  }
+
+  const merchantLike = line => {
+    if (dateLine(line) || amountLine(line) || paymentLine(line)) return false
+    if (/^(?:目店|丁目店|店|円|¥|￥)$/i.test(line.replace(/[\s＞>]/g, ''))) return false
+    return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z]/u.test(line)
+  }
+
+  // Card statements may also OCR as columns: merchant names first, then dates, then amounts.
+  const merchants = []
+  for (const line of lines) {
+    if (!merchantLike(line)) continue
+    if (/^(?:目店|丁目店|店)$/.test(line.replace(/[\s＞>]/g, '')) && merchants.length) {
+      merchants[merchants.length - 1] += line.replace(/[＞>]/g, '')
+    } else {
+      merchants.push(cleanMerchant(line))
+    }
+  }
+  const amountLines = lines.filter(amountLine)
+  const hasColumnarShape = merchants.length >= 2 && dateLines.length >= 2 && amountLines.length >= 2
+    && merchants.length === dateLines.length && dateLines.length === amountLines.length
+
+  if (hasColumnarShape) {
+    return merchants.map((merchant, i) => {
+      const dateRaw = dateLines[i]
+      const amount = cleanAmountLine(amountLines[i])
+      const { category, keyword } = classify(merchant, rules)
+      return {
+        date: findDate(dateRaw), time: '', amount, category,
+        merchant: merchant.slice(0, 60), note: '',
+        raw: merchant + '\n' + dateRaw + '\n' + amountLines[i],
+        suggested: category, keyword
+      }
+    }).filter(e => e.amount > 0)
+  }
+
+  const blocks = text.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
+  if (blocks.length > 1) return blocks.map(block => parseEntry(block, rules)).filter(e => e.amount > 0)
+
+  const hasReceiptTotal = /合\s*計|合计|小計|小计|総\s*額|total|請求額|お買上(?:げ)?金額/i.test(text)
+  const transactionLines = lines.filter(line =>
+    line.length >= 3 &&
+    /(?:[¥￥]\s*[\d,]+|[\d,]+\s*(?:円|元|日元|块|塊))/.test(line) &&
+    !/^(?:小計|合計|合计|消費税|税|お預り|お釣り|釣銭|現金|クレジット|total|tax)\b/i.test(line)
+  )
+  if (!hasReceiptTotal && transactionLines.length >= 2 && transactionLines.length === lines.length) {
+    return transactionLines.map(line => parseEntry(line, rules)).filter(e => e.amount > 0)
+  }
+
+  // Do not mistake month/day digits for a transaction amount when OCR omitted the amount
+  // from a card-statement row that still contains payment metadata.
+  const hasCardPaymentMetadata = lines.some(line => /回\s*払(?:い)?/.test(line))
+  const hasExplicitAmount = lines.some(line =>
+    /[¥￥]\s*[\d,]+|[\d,]+\s*円|\d[\d,，.]{1,7}\s*(?:m{1,2}|g(?:m)?|mm|ロ|口)\b/i.test(line)
+  )
+  const entry = parseEntry(text, rules)
+  if (hasCardPaymentMetadata && dateLines.length && !hasExplicitAmount) return [{ ...entry, amount: 0 }]
+  return [entry]
+}
+// Parsed statement rows must carry the printed transaction time when present.
+// Never assign the current time to imported OCR/credit-card records.
+export function parseEntries(raw, rules, reference = new Date()) {
+  const rows = parseEntriesInternal(raw, rules)
+  return rows.map(row => {
+    const resolved = resolveRelativeEntryTime(row, reference)
+    if (resolved.time) return resolved
+    const time = findTransactionTime(resolved.raw || '') ||
+      (rows.length === 1 ? findTransactionTime(raw) : '')
+    return time ? { ...resolved, time } : resolved
+  })
+}
+
+// 画像から文字を抽出：Tesseract.jsを端末のブラウザ内で実行し、画像はアップロードしない
+export async function ocrImage(file, onProgress) {
+  const { createWorker } = await import('tesseract.js')
+  const worker = await createWorker(['jpn', 'eng'], 1, {
+    logger: m => m.status === 'recognizing text' && onProgress?.(Math.round(m.progress * 100))
+  })
+  try {
+    const primary = (await worker.recognize(file)).data.text
+    if (!/QUIC\s*Pay|QUICPay|(?:^|[\s(（])QP\s*\//im.test(primary)) return primary
+
+    let bitmap
+    try {
+      bitmap = await createImageBitmap(file)
+      const sourceWidth = Math.max(1, Math.round(bitmap.width * 0.4))
+      const scale = 2
+      const canvas = document.createElement('canvas')
+      canvas.width = sourceWidth * scale
+      canvas.height = bitmap.height * scale
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context) return primary
+      context.drawImage(bitmap, bitmap.width - sourceWidth, 0, sourceWidth, bitmap.height, 0, 0, canvas.width, canvas.height)
+
+      // Enlarge and increase contrast before reading the right-aligned price column.
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
+      for (let i = 0; i < pixels.data.length; i += 4) {
+        const luminance = pixels.data[i] * 0.299 + pixels.data[i + 1] * 0.587 + pixels.data[i + 2] * 0.114
+        const value = luminance > 178 ? 255 : 0
+        pixels.data[i] = value
+        pixels.data[i + 1] = value
+        pixels.data[i + 2] = value
+      }
+      context.putImageData(pixels, 0, 0)
+
+      const columnText = (await worker.recognize(canvas)).data.text
+      // Accept OCR noise around an amount, but only retain plausible yen values.
+      const amounts = columnText.split(/\r?\n/).map(line => line.trim())
+        .map(line => {
+          const normalized = line
+            .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+            .replace(/[OoＯｏ]/g, '0')
+            .replace(/[Il|]/g, '1')
+            .replace(/[Ss]/g, '5')
+            .replace(/[Ｂ]/g, '8')
+            .replace(/[¥￥円,，.:\s]/g, '')
+          const match = normalized.match(/^\D{0,2}(\d{2,6})\D{0,2}$/)
+          return match ? Number(match[1]) : null
+        })
+        .filter(value => Number.isInteger(value) && value > 0 && value <= 999999)
+      const qpCount = primary.split(/\r?\n/).filter(line => /QUIC\s*Pay|QP\s*\//i.test(line)).length
+      if (qpCount >= 2 && amounts.length === qpCount) {
+        return primary + '\n__QP_AMOUNT_COLUMN__\n' + amounts.join('\n')
+      }
+    } catch (_) {
+      // Keep the primary OCR result if image cropping or the second pass is unavailable.
+    } finally {
+      bitmap?.close?.()
+    }
+    return primary
+  } finally {
+    await worker.terminate()
+  }
+}
+).test(date)
+  }
   // Gemma can return the printed Japanese clock (19時48分) instead of HH:mm.
   // Require a standalone clock token so merchant/payment text cannot become time.
   const validTime = value => unknown.test(value) || isRelativeTimeToken(value)

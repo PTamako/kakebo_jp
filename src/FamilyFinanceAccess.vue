@@ -18,6 +18,7 @@ import FamilyFinancePlanOwnership from './FamilyFinancePlanOwnership.vue'
 import FamilyFinanceOwnerAdoption from './FamilyFinanceOwnerAdoption.vue'
 
 const props=defineProps({identityOnly:{type:Boolean,default:false}})
+const emit=defineEmits(['identity-change'])
 const STORAGE='kakeibo:homeflow-resume-v1'
 const hex=/^[a-f0-9]{64}$/i
 const enabled=ref(false),financeEnabled=ref(false),busy=ref(false),error=ref('')
@@ -30,7 +31,7 @@ const kinds=[
  {value:'other',label:'其他'}
 ]
 let epoch=0
-const canManage=a=>!!person.value&&(person.value.role==='owner'||a.owner_user_id===person.value.user_id)
+const canManage=a=>!!person.value&&a.owner_user_id===person.value.user_id
 const role=computed(()=>person.value?.role==='owner'?'管理员':'家庭成员')
 function clearPending(){
  try{localStorage.removeItem(STORAGE)}catch{}
@@ -46,6 +47,7 @@ function restorePending(){
 }
 function resetIdentity(){
  epoch++;person.value=null;accounts.value=[];advancedOpen.value=false
+ emit('identity-change',null)
  editing.value=null;rename.value='';newLabel.value='';newKind.value='credit_card'
 }
 async function call(path,options={}){
@@ -83,6 +85,7 @@ async function check(){
    if(revision!==epoch)return
    if(user.ok===true&&user.ledger_access===false&&user.identity?.user_id){
     person.value=user.identity;clearPending()
+    emit('identity-change',user.identity)
     if(financeEnabled.value&&!props.identityOnly)await refresh()
    }else resetIdentity()
   }else resetIdentity()

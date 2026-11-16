@@ -123,7 +123,11 @@ test('switching HomeFlow users while a finance mutation is in flight never reope
  assert.match(source,/async function createAccount\(\)\{[\s\S]*?const revision=epoch,actor=person\.value\.user_id/);
  assert.match(source,/async function mutate\(a,change\)\{[\s\S]*?const revision=epoch,actor=person\.value\.user_id/);
  assert.equal((source.match(/if\(revision!==epoch\|\|person\.value\?\.user_id!==actor\)return/g)||[]).length,2);
- assert.match(source,/onUnmounted\(\(\)=>\{resetIdentity\(\)/);
+ const unmount=source.match(/onUnmounted\(\(\)=>\{([\s\S]*?)\n\}\)/)?.[1]||'';
+ assert.match(unmount,/epoch\+\+;person\.value=null;accounts\.value=\[\]/);
+ assert.doesNotMatch(unmount,/resetIdentity\(|emit\('identity-change',null\)/);
+ // Unmount clears private state without emitting a fake account logout;
+ // explicit account switching and logout still emit resetIdentity().
  assert.match(source,/newLabel\.value='';newKind\.value='credit_card'/);
  // No saved financial form, private account lists or ledger caches across users.
  assert.doesNotMatch(source,/localStorage\.setItem\([^\n]*(?:account|ledger|totals)/i);

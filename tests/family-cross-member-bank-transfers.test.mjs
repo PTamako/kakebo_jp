@@ -68,6 +68,24 @@ function fixture(){
  env.HOMEFLOW_IDENTITY_SERVICE={async fetch(req){
   const path=new URL(req.url).pathname,raw=await req.text()
   const b=JSON.parse(raw),t=req.headers.get('x-approval-timestamp')
+  if(path.endsWith('/cross-member/consent-submit')){
+   assert.equal(req.headers.get('x-approval-client'),'kakeibo-cross-member')
+   assert.equal(req.headers.get('x-approval-signature'),
+    sign('kakeibo-cross-member:consent-submit',keys.consent,t,raw))
+   assert.equal(req.headers.get('origin'),null)
+   assert.equal(req.headers.get('cookie'),null)
+   assert.equal(b.household_id,hh)
+   assert.equal(b.requester_user_id,member)
+   assert.equal(b.recipient_user_id,owner)
+   if(!validConsent)return Response.json({ok:false},{status:409})
+   return Response.json({ok:true,ledger_applied:false,approval_submitted:false,replayed:false,
+    consent:{consent_id:consentId,household_id:hh,resource_id:b.resource_id,
+     payload_sha256:b.payload_sha256,source_user_id:member,recipient_user_id:owner,
+     source_account_version:b.source_account_version,
+     recipient_account_version:b.recipient_account_version,
+     source_confirmed:true,status:'awaiting_recipient',ledger_applied:false,
+     execution_permitted:false,expires_at:Date.now()+600000}}, {status:201})
+  }
   if(path.endsWith('/cross-member/consent-proof')){
    assert.equal(req.headers.get('x-approval-client'),'kakeibo-cross-member')
    assert.equal(req.headers.get('x-approval-signature'),
@@ -146,6 +164,31 @@ function fixture(){
  return {sql,env,source,target,setup,sourceForm,creditForm,receiver,
   disableConsent(){validConsent=false},disableApproval(){validApproval=false},close(){sql.close()}}
 }
+test('asset-transfer picker registers source consent using signed HomeFlow binding without posting a ledger row',async()=>{
+ const f=fixture();try{
+  const p=await f.source()
+  assert.equal(p.status,201,JSON.stringify(p))
+  assert.equal(p.data.prepared.amount_jpy,1500)
+  assert.equal(p.data.prepared.debit_date,'2026-11-13')
+  const id=p.data.prepared.request_id
+  const denied=await f.source(['cross-member-bank-transfers',id,'request-consent'],
+   {expected_user_id:owner})
+  assert.equal(denied.status,403)
+  const submitted=await f.source(['cross-member-bank-transfers',id,'request-consent'],
+   {expected_user_id:member})
+  assert.equal(submitted.status,200,JSON.stringify(submitted))
+  assert.equal(submitted.data.consent_id,consentId)
+  assert.equal(submitted.data.consent_status,'awaiting_recipient')
+  assert.equal(submitted.data.recipient_confirmed,false)
+  assert.equal(submitted.data.applied,false)
+  assert.equal(count(f.sql,'entries'),0)
+  assert.equal(count(f.sql,'family_cross_bank_journal'),0)
+  f.disableConsent()
+  const retry=await f.source(['cross-member-bank-transfers',id,'request-consent'],
+   {expected_user_id:member})
+  assert.equal(retry.status,503,'unknown consent must not be mistaken for approval')
+ }finally{f.close()}
+})
 test('independent member debit + owner credit + consent + signed approval: one immutable double-sided bank transfer',async()=>{
  const f=fixture();try{
   const p=await f.source()

@@ -22,7 +22,7 @@ const readLedgerWithOptionalRecorder=async(db,joinedSql,legacySql,args)=>{
   // Display an entry without a nickname rather than breaking the ledger.
   // Other SQL errors must still propagate rather than being disguised.
   const message=String(e?.message||e)
-  if(!/no such table: (?:family_shared_entry_registry|family_legacy_owner_claims)|no such column: (?:creator|legacy_owner)\.display_name/i.test(message))throw e
+  if(!/no such table: (?:family_shared_entry_registry|family_legacy_owner_claims)|no such column: (?:(?:creator|legacy_owner)\.)?display_name/i.test(message))throw e
   return (await db.prepare(legacySql).bind(...args).all()).results
  }
 }

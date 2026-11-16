@@ -64,7 +64,7 @@ test('D1 Worker writes one weekly occurrence with unique date key, and repeat ru
 })
 test('D1 migrations, UI, API and backups persist weekly schedule and exclude date-specific rows',()=>{
   const migration=source('migrations/0013_recurring_posting_mode.sql')
-  const ui=source('src/FinanceTools.vue')+'\n'+source('src/FixedCostEditorFields.vue')
+  const ui=source('src/FinanceTools.vue')+'\n'+source('src/FixedCostEditorFields.vue')+'\n'+source('src/OriginalFixedCostList.vue')
   const api=source('functions/api/[[path]].js')
   const backup=source('functions/api/restore-atomic.js')
   const schema=source('schema.sql')

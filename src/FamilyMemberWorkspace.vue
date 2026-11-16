@@ -20,7 +20,7 @@ import {makeFamilyLedgerContext} from './family-ledger-context.js'
 const props=defineProps({user:{type:Object,required:true}})
 const emit=defineEmits(['logout'])
 const tab=ref('list'),managementTab=ref('cards')
-const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),totals=ref(null),yearly=ref(null)
+const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
 const year=ref(month.value.slice(0,4))
 const busy=ref(false),error=ref(''),label=ref(''),kind=ref('cash')
@@ -80,7 +80,6 @@ const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.u
 const selectedEntryType=ref('all')
 const monthlyReport=ref(null),annualReport=ref(null),selectedYear=ref(Number(year.value))
 const sharedMutationRef=ref(null)
-const spouseIncomeRequestRef=ref(null)
 const memberEntryPending=ref(false),memberEntryError=ref(''),memberEntryNotice=ref('')
 const entryExpenseCategories=['食費','日用品','交通','住居','医療','交際費','その他']
 const entryIncomeCategories=['給与','賞与','副収入','ポイント還元',SPOUSE_INCOME_CATEGORY,'その他']
@@ -98,7 +97,7 @@ async function submitMemberEntry(){
  if(memberEntryPending.value)return
  memberEntryPending.value=true;memberEntryError.value='';memberEntryNotice.value=''
  try{
-  const r=await spouseIncomeRequestRef.value?.submitEntry(memberEntry.value)
+  const r=await sharedMutationRef.value?.submitEntry(memberEntry.value)
   if(!r?.proposalId)throw Error('申請の受付を確認できません')
   memberEntryNotice.value='HomeFlow に審査を依頼しました。承認後に入帳されるまで金額には反映されません。'
   memberEntry.value=newEntry()
@@ -107,11 +106,32 @@ async function submitMemberEntry(){
  }catch(e){memberEntryError.value=e.message||'申請を送信できません'}
  finally{memberEntryPending.value=false}
 }
-function openApproval(action,entry){
- if(!entry)return
- void sharedMutationRef.value?.openForEntry(action,entry)
+const ledgerEntries=computed(()=>{
+ const byId=new Map(),drafts=[]
+ for(const p of pendingMutations.value){
+  if(p.operation==='create'&&p.entry){
+   drafts.push({...p.entry,id:'pending:'+p.proposal_id,
+    pending_approval:true,pending_operation:'create',pending_status:p.status,
+    recorded_by:props.user.display_name||props.user.login_name||'家族'})
+  }else if(p.source_entry_id!=null)byId.set(String(p.source_entry_id),p)
+ }
+ return [...sharedEntries.value.map(entry=>{
+  const change=byId.get(String(entry.id))
+  return change?{...entry,pending_approval:true,pending_operation:change.operation,
+   pending_status:change.status,pending_preview:change.entry||null}:entry
+ }),...drafts]
+})
+async function openApproval(action,entry){
+ if(!entry||entry.pending_approval)throw Error('審査中の記録は変更できません')
+ const original=sharedEntries.value.find(x=>String(x.id)===String(entry.id))
+ if(!original)throw Error('元の明細を確認できません')
+ const result=await sharedMutationRef.value?.submitMutation(action,original,
+  action==='update'?entry:null)
+ if(!result?.proposalId)throw Error('HomeFlow の審査受付を確認できません')
+ await refresh()
+ return result
 }
-const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:sharedEntries,
+const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:ledgerEntries,
  entryTypeFilter:selectedEntryType,load:()=>refresh(),more:()=>moreEntries(),
  openApproval,onError:message=>{error.value=message}})
 provide('kakeibo-page-context',{
@@ -158,7 +178,7 @@ async function api(path,options={}){
 }
 async function refresh(){
  const ticket=++epoch,user=props.user.user_id
- error.value='';accounts.value=[];assets.value=[];sharedEntries.value=[];totals.value=null;yearly.value=null
+ error.value='';accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];totals.value=null;yearly.value=null
  try{
   const [a,b,c,d,e]=await Promise.all([
    api('accounts'),api('personal/assets'),
@@ -177,6 +197,18 @@ async function refresh(){
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
   yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
    net_income_expense:Number(e.income||0)-Number(e.total||0)}
+  // Only the requesting member receives these read-only pending previews.
+  try{
+   const pending=await api('shared-mutation-requests?view=ledger&month='+
+    encodeURIComponent(month.value))
+   if(ticket===epoch&&user===props.user.user_id){
+    if(pending.ledger_scope!=='member_pending_only'||!Array.isArray(pending.items))
+     throw Error('審査状態の検証に失敗しました')
+    pendingMutations.value=pending.items
+   }
+  }catch(pendingError){
+   if(ticket===epoch)error.value='審査中の明細を確認できません：'+pendingError.message
+  }
  }catch(e){if(ticket===epoch)error.value=e.message}
 }
 function request(body,method='POST'){return {method,headers:{'content-type':'application/json'},body:JSON.stringify(body)}}
@@ -209,7 +241,7 @@ function foreground(){if(document.visibilityState==='visible')void refresh()}
 watch(()=>props.user.user_id,()=>{label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
-onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEntries.value=[];
+onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];
  document.removeEventListener('visibilitychange',foreground)})
 </script>
 <template>
@@ -223,14 +255,14 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
     <FamilyAccountMenu :identity="user" @logout="emit('logout')" />
    </div>
   </header>
+  <FamilySharedMutationRequests ref="sharedMutationRef" headless
+   :key="'member-ledger-submit:'+user.user_id"
+   :user-id="user.user_id" :household-id="user.household_id" />
   <section v-if="error" class="member-alert" role="alert">{{error}}
    <button type="button" @click="refresh">再试一次</button>
   </section>
   <section v-if="tab==='list'" class="member-page">
    <LedgerPage member />
-   <FamilySharedMutationRequests ref="sharedMutationRef" only-when-open
-     :key="'personal-mutation:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" />
   </section>
   <StatisticsPage v-else-if="tab==='stat'" />
   <section v-else-if="tab==='add'" class="page-section member-page">
@@ -255,9 +287,6 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
      @click="submitMemberEntry">{{memberEntryPending?'送信中…':'保存して審査を依頼'}}</button>
    </div>
    <p class="help">明細には灰色の「待入帳」として表示します。HomeFlow 管理者の承認と入帳完了後に正式計上されます。</p>
-   <FamilySharedMutationRequests ref="spouseIncomeRequestRef" headless
-     :key="'entry-approval:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" />
   </section>
     <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
     :open-personal-management="()=>{tab='finance';managementTab='cards'}" />

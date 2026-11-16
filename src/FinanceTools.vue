@@ -13,6 +13,7 @@ import MobileMultiChoiceSheet from './MobileMultiChoiceSheet.vue'
 import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
+import FixedCostEditorFields from './FixedCostEditorFields.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
@@ -1634,34 +1635,12 @@ async function removeCardBill(record) {
     :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" />
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>
-    <div class="recurring-form-layout">
-      <label class="recurring-form-field recurring-form-name"><span>名称</span><input v-model="plan.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120" /></label>
-      <div class="recurring-form-field recurring-form-amount"><span>金額</span><AmountInput v-model="plan.amount" input-label="固定費額（円）" /></div>
-      <div class="recurring-form-field recurring-form-schedule">
-        <span>周期</span>
-        <MobileChoiceSheet v-model="planCycleChoice" label="記帳周期" :searchable="false" :options="planCycleOptions" />
-      </div>
-      <div v-if="plan.scheduleType==='monthly'" class="recurring-form-field recurring-form-schedule">
-        <span>{{plan.intervalMonths===12?'毎年の記帳日':'記帳日（複数選択可）'}}</span>
-        <MobileMultiChoiceSheet v-model="plan.monthDays" label="記帳する日付" :columns="5"
-          :options="Array.from({length:31},(_,i)=>({value:i+1,label:(i+1)+'日'}))" />
-        <small v-if="plan.intervalMonths>1">開始月を基準に{{plan.intervalMonths}}か月ごとに記帳します。</small>
-      </div>
-      <div v-else-if="plan.scheduleType==='weekly'" class="recurring-form-field recurring-form-schedule">
-        <span>曜日（複数選択可）</span>
-        <MobileMultiChoiceSheet v-model="plan.weekdays" label="記帳する曜日" :columns="4"
-          :options="WEEKDAYS_JA.map((name,index)=>({value:index,label:name+'曜日'}))" />
-      </div>
-      <label class="recurring-form-field"><span>カテゴリ</span><MobileChoiceSheet v-model="plan.category" label="固定費カテゴリ" :options="[{value:'',label:'選択してください'},...orderedCategories.map(category=>({value:category,label:categoryLabel(category)}))]" /></label>
-      <label class="recurring-form-field"><span>支払方法</span><MobileChoiceSheet v-model="plan.paymentSource" label="固定費支払方法" :options="[...orderedPayments.map(source=>({value:source,label:source})),...(plan.paymentSource && !props.paymentSources.includes(plan.paymentSource)?[{value:plan.paymentSource,label:plan.paymentSource+'（既存の設定）'}]:[])]" /></label>
-      <label class="recurring-form-field recurring-start-month"><span>開始月</span><input v-model="plan.startMonth" type="month" aria-label="固定費の適用開始月" /></label>
-    </div>
-    <fieldset class="recurring-posting-mode">
-      <legend>記帳方法</legend>
-      <label :class="{selected:plan.postingMode==='auto'}"><input v-model="plan.postingMode" type="radio" value="auto" name="recurring-posting-mode" /><span>自動記帳</span></label>
-      <label :class="{selected:plan.postingMode==='manual'}"><input v-model="plan.postingMode" type="radio" value="manual" name="recurring-posting-mode" /><span>確認して記帳</span></label>
-    </fieldset>
-    <p class="recurring-posting-hint">{{plan.postingMode==='auto' ? (plan.scheduleType==='workday'?'土日・祝日を除く日に、自動で支出明細に登録します。':recurringFrequencyLabel(plan)+'になると、自動で支出明細に登録します。') : '予定日以降、内容を確認してから支出明細に登録します。'}}</p>
+    <FixedCostEditorFields :model="plan" v-model:cycleChoice="planCycleChoice"
+      :cycle-options="planCycleOptions" :categories="orderedCategories"
+      :payment-choices="[...orderedPayments.map(source=>({value:source,label:source})),
+        ...(plan.paymentSource&&!props.paymentSources.includes(plan.paymentSource)
+         ?[{value:plan.paymentSource,label:plan.paymentSource+'（既存の設定）'}]:[])]"
+      :category-label="categoryLabel" />
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
   </article>

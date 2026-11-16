@@ -55,7 +55,7 @@ test('extracted pages share exactly the parent navigation refs and do not create
   assert.match(app,/<BottomNavigation :active-tab="tab"/)
   assert.match(app,/openLedgerFromNav\(\)/)
   assert.match(ledger,/@click="clearDetailFilter"/)
-  assert.match(ledger,/@click="setEntryTypeFilter/)
+  assert.match(ledger,/<LedgerTypeFilter[^>]+@change="setEntryTypeFilter"/)
 })
 
 test('finance_settings is retired, while login attempt throttling remains active',()=>{

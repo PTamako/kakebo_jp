@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
-const app=read('src/App.vue')
+const app=read('src/App.vue')+'\n'+read('src/EntryInputPage.vue')
 const finance=read('src/FinanceTools.vue')
 const tabs=read('src/FinanceSectionTabs.vue')
 const managementHeader=read('src/FinanceManagementHeader.vue')

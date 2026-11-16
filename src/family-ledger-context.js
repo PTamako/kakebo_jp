@@ -41,7 +41,7 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  const displayEntries=computed(()=>filteredEntries.value)
  const sortedDisplayEntries=computed(()=>[...displayEntries.value].sort((a,b)=>
   String(b.date||'').localeCompare(String(a.date||'')) ||
-  String(b.time||'').localeCompare(String(a.time||''))||Number(b.id)-Number(a.id)))
+  String(b.time||'').localeCompare(String(a.time||''))||String(b.id).localeCompare(String(a.id))))
  const annualDetailMode=computed(()=>false)
  const paymentMethodAnnualTotals=computed(()=>new Map())
  const annualMonthGroups=computed(()=>groupAnnualEntries(sortedDisplayEntries.value,annualVisibleCounts.value,listPageSize,entryTypeFilter.value))
@@ -50,8 +50,9 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
   for(const e of sortedDisplayEntries.value){
    if(!map.has(e.date))map.set(e.date,{date:e.date,items:[],count:0,total:0})
    const g=map.get(e.date);g.count++
-   g.total+=e.type==='income'?Number(e.amount||0):e.type==='transfer'&&entryTypeFilter.value==='all'
-    ?0:-Number(e.amount||0)
+   if(!e.pending_approval||e.pending_operation!=='create')
+    g.total+=e.type==='income'?Number(e.amount||0):e.type==='transfer'&&entryTypeFilter.value==='all'
+     ?0:-Number(e.amount||0)
   }
   const shown=new Set(sortedDisplayEntries.value.slice(0,visibleEntryCount.value).map(x=>x.id))
   for(const e of sortedDisplayEntries.value)if(shown.has(e.id))map.get(e.date).items.push(e)
@@ -62,7 +63,8 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
   const [y,m]=month.value.split('-').map(Number)
   if(!Number.isInteger(y)||!Number.isInteger(m)||m<1||m>12)return []
   const count=new Date(y,m,0).getDate(),first=new Date(y,m-1,1).getDay()
-  const relevant=(entries.value||[]).filter(e=>String(e.date||'').startsWith(month.value))
+  const relevant=(entries.value||[]).filter(e=>!e.pending_approval||e.pending_operation!=='create')
+   .filter(e=>String(e.date||'').startsWith(month.value))
    .filter(e=>selectedDateType(e,entryTypeFilter.value))
   const days=new Map()
   for(const row of relevant){
@@ -127,19 +129,30 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  function clearDetailFilter(){detailFilter.value=null;prepaidHistoryFilter.value=null}
  function cancelEdit(){editingEntry.value=null;editReceiptImage.value=null}
  function startEdit(entry){
+  if(entry?.pending_approval){onError('この明細は HomeFlow 審査中です');return}
   editingEntry.value={...entry,paymentSource:'',payment_source:null,transferTarget:''}
   swipedEntryId.value=null
  }
  function setEntryType(row,type){if(['income','expense'].includes(type)){row.type=type;row.category=''}}
  function manualPayment(){}
  function handleEntryClick(entry){startEdit(entry)}
- function saveEdit(){
-  if(!editingEntry.value)return
-  const row=editingEntry.value
-  openApproval('update',row)
-  cancelEdit()
+ async function saveEdit(){
+  if(!editingEntry.value||editSaving.value)return
+  const row={...editingEntry.value}
+  editSaving.value=true
+  try{
+   await openApproval('update',row)
+   cancelEdit()
+  }catch(e){onError(e.message||'編集申請の送信に失敗しました')}
+  finally{editSaving.value=false}
  }
- function remove(id,entry){openApproval('delete',entry||entries.value.find(e=>e.id===id))}
+ async function remove(id,entry){
+  const row=entry||entries.value.find(e=>e.id===id)
+  if(!row||row.pending_approval)return
+  if(!window.confirm('この明細の削除を HomeFlow の管理者へ申請しますか？承認前は削除されません。'))return
+  try{await openApproval('delete',row)}
+  catch(e){onError(e.message||'削除申請の送信に失敗しました')}
+ }
  const closeReceipt=()=>{viewedReceiptUrl.value=null}
  const viewReceipt=()=>onError('其他成员的私人收据不可直接查看')
  const removeReceiptImage=()=>onError('私人收据不允许跨成员删除')

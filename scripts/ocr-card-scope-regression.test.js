@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs'
 import { selectedImportCard } from '../src/import-payment-scope.js'
 import { paymentForDraft } from '../src/payment-rules.js'
 
-const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
+const app=read('src/App.vue')+'\n'+read('src/EntryInputPage.vue')
 
 test('manual and image card choices remain independent when switching modes', () => {
   assert.equal(selectedImportCard(false, '楽天カード', 'PayPayカード'), '楽天カード')
@@ -34,7 +35,7 @@ test('owner and member share one capture component with card before target type'
  assert.match(capture, /label="読み取り対象のカード"/)
  assert.match(capture, /:disabled="busy"/)
  assert.match(app, /<OcrCapturePanel v-if="entryInputMode === 'scan'"/)
- assert.match(member, /<OcrCapturePanel v-else/)
+ assert.match(member, /<EntryInputPage v-else-if/)
 })
 test('manual and image OCR preserve distinct card selection', () => {
  const capture=read('src/OcrCapturePanel.vue')

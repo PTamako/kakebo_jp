@@ -17,6 +17,7 @@ const vueFiles = [
 ]
 const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
 const finance = read('src/FinanceTools.vue')
+const controls = read('src/CardManagementControls.vue')
 const selects = vueFiles.flatMap(file =>
   [...read(file).matchAll(/<select\b[\s\S]*?<\/select>/g)].map(match => ({ file, markup: match[0] }))
 )
@@ -42,7 +43,8 @@ test('all native selects have controlled application state', () => {
 })
 
 test('card management, billing, and recurring category can return to initial labels', () => {
-  assert.match(finance, /<MobileChoiceSheet v-model="selectedCard"[^>]*支払方法・カードを選択/)
+  assert.match(finance, /<CardManagementControls v-model="selectedCard"/)
+  assert.match(controls, /<MobileChoiceSheet[\s\S]*?支払方法・カードを選択/)
   assert.match(finance, /<MobileChoiceSheet v-model="bill\.name"[^>]*カードを選択/)
   assert.match(finance, /<MobileChoiceSheet v-model="plan\.category"[^>]*選択してください/)
   // Other optional selectors must remain resettable too.

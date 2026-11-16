@@ -43,6 +43,9 @@ const year=ref(month.value.slice(0,4))
 const busy=ref(false),error=ref(''),label=ref(''),kind=ref('cash')
 const renameId=ref(''),rename=ref(''),notice=ref('')
 const selectedCardId=ref(''),cardMode=ref('')
+const preferredCardType=ref('standard')
+function openMemberPrepaidAdd(){preferredCardType.value='prepaid';cardMode.value='add';tab.value='finance'}
+function openMemberCardSettings(){preferredCardType.value='standard';tab.value='finance'}
 const cardAccounts=computed(()=>myAccounts.value.filter(a=>['credit_card','prepaid'].includes(a.account_kind)))
 const selectedCard=computed(()=>cardAccounts.value.find(a=>a.account_id===selectedCardId.value)||null)
 const defaultCard=computed(()=>cardAccounts.value.find(a=>Number(a.is_default)===1)?.account_id||'')
@@ -400,25 +403,92 @@ const memberDuplicateGroups=computed(()=>{
 })
 const memberArchivedAccounts=computed(()=>myAccounts.value.filter(a=>
  a.is_archived&&a.origin==='member_created'))
+const memberPortfolioVersions=ref(new Map())
+async function memberPrepaidApi(path,options={}){
+ if(path!=='prepaid-report'||(options.method&&options.method!=='GET'))
+  throw Error('本人のプリペイド一覧のみ読み取れます')
+ const result=await api('prepaid-report')
+ if(result.scope!=='personal'||result.owner_user_id!==props.user.user_id)
+  throw Error('カードの個人範囲を確認できません')
+ return result
+}
+async function saveMemberPrepaidOpening(card,amount){
+ if(!card?.account_id||!Number.isSafeInteger(amount)||amount<0||amount>100000000)
+  throw Error('本人の期首残高を確認してください')
+ const account=myAccounts.value.find(a=>a.account_id===card.account_id&&
+  a.owner_user_id===props.user.user_id&&a.account_kind==='prepaid'&&
+  a.origin==='member_created')
+ if(!account||account.version!==card.version)throw Error('カード情報が更新されました。再読み込みしてください')
+ const result=await api('accounts/'+account.account_id,request({
+  version:account.version,opening_balance:amount,expected_user_id:props.user.user_id},'PATCH'))
+ if(result.ledger_changed!==false)throw Error('本人の期首残高の更新を確認できません')
+ await refresh()
+}
+function openMemberWalletHistory(name,mode){
+ tab.value='list'
+ notice.value=name+' の'+(mode==='charge'?'チャージ':'利用・振替')+'記録を確認してください'
+}
 const memberRecurringRef=ref(null)
-async function memberSbiApi(path,options){
- if(options?.method&&options.method!=='GET')throw Error('本人の投資設定は HomeFlow の承認手続きから変更してください')
- const match=/^investment-portfolio\?month=(20\d{2}-(?:0[1-9]|1[0-2]))$/.exec(path)
- if(!match)throw Error('本人の投資情報は読み取り専用です')
+async function memberSbiApi(path,options={}){
  const actor=props.user.user_id,ticket=epoch
- const [planResult,occurrenceResult]=await Promise.allSettled([
-  api('member-recurring-plans'),api('recurring-occurrences')
+ const method=options.method||'GET'
+ if(path==='ai-ocr'&&method==='POST'){
+  const result=await api('ai-ocr',options)
+  if(result.engine!=='gemma4')throw Error('画像OCRの結果を確認できません')
+  return result
+ }
+ if(method==='PUT'){
+  const map={'investment-portfolio/holding':'holding',
+   'investment-portfolio/price':'price',
+   'investment-portfolio/holdings-bulk':'holdings-bulk'}
+  const sub=map[path]
+  if(!sub)throw Error('買付や積立の変更には HomeFlow 承認が必要です')
+  const body=JSON.parse(options.body||'{}')
+  const key=(x)=>x.fundCode+':'+x.accountType
+  const versions=memberPortfolioVersions.value
+  let payload
+  if(sub==='holding'){
+   const found=versions.get(key(body))
+   payload={expected_user_id:actor,fundCode:body.fundCode,fundName:body.fundName,
+    accountType:body.accountType,units:Number(body.units),
+    acquisitionCost:Number(body.acquisitionCost),expectedVersion:found?.version||0}
+  }else if(sub==='price'){
+   payload={expected_user_id:actor,fundCode:body.fundCode,
+    navPer10000:Number(body.navPer10000),priceDate:body.priceDate}
+  }else{
+   payload={expected_user_id:actor,holdings:(body.holdings||[]).map(h=>({
+    fundCode:h.fundCode,accountType:h.accountType,
+    units:Number(h.units),acquisitionCost:Number(h.acquisitionCost),
+    expectedUnits:Number(h.expectedUnits),
+    expectedAcquisitionCost:Number(h.expectedAcquisitionCost),
+    expectedVersion:versions.get(key(h))?.version||0
+   }))}
+  }
+  const saved=await api('manual-holdings/'+sub,request(payload,'PUT'))
+  if(actor!==props.user.user_id||ticket!==epoch)throw Error('アカウントが変更されました')
+  if(saved.ledger_changed!==false)throw Error('保有情報の変更を確認できません')
+  return saved
+ }
+ const match=/^investment-portfolio\?month=(20\d{2}-(?:0[1-9]|1[0-2]))$/.exec(path)
+ if(!match||method!=='GET')throw Error('本人の投資情報だけを読み取れます')
+ const [planResult,occurrenceResult,holdingsResult]=await Promise.allSettled([
+  api('member-recurring-plans'),api('recurring-occurrences'),api('manual-holdings')
  ])
  if(actor!==props.user.user_id||ticket!==epoch)throw Error('利用者が切り替わりました')
  if(planResult.status!=='fulfilled'||planResult.value.ok!==true)
   throw Error('本人の積立設定を読み込めませんでした')
+ if(holdingsResult.status!=='fulfilled'||holdingsResult.value.scope!=='personal'||
+  holdingsResult.value.owner_user_id!==actor||!Array.isArray(holdingsResult.value.holdings))
+  throw Error('本人の保有情報を読み込めませんでした')
  if(!Array.isArray(planResult.value.items)||planResult.value.items.some(p=>p.owner_user_id!==actor))
   throw Error('本人の積立設定の所有者を確認できません')
+ const holdings=holdingsResult.value.holdings
+ if(holdings.some(h=>h.owner_user_id!==actor))throw Error('本人以外の保有情報が含まれています')
+ memberPortfolioVersions.value=new Map(holdings.map(h=>[h.fund_code+':'+h.account_type,{version:h.version}]))
  const occurrences=occurrenceResult.status==='fulfilled'&&
   Array.isArray(occurrenceResult.value.items)?occurrenceResult.value.items:null
- return memberInvestmentSnapshot({
-  userId:actor,requestedMonth:match[1],plans:planResult.value.items,occurrences
- })
+ return memberInvestmentSnapshot({userId:actor,requestedMonth:match[1],
+  plans:planResult.value.items,occurrences,manualHoldings:holdings})
 }
 function openMemberInvestmentPlan(plan=null){
  const target=memberRecurringRef.value
@@ -612,7 +682,11 @@ watch(()=>props.user.user_id,loadMemberCategories)
   <OriginalKakeiboPages :identity="user" :theme="theme" :themes="themes"
    :active-tab="tab" :member="true" :personal-assets="assets"
    :on-create-personal-account="createAccount"
-   :on-open-personal-management="()=>{tab='finance'}"
+   :on-open-personal-management="openMemberPrepaidAdd"
+   :personal-prepaid-api="memberPrepaidApi"
+   :personal-portfolio-api="memberSbiApi"
+   :on-personal-opening="saveMemberPrepaidOpening"
+   :on-personal-history="openMemberWalletHistory"
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
     memberRefresh:refresh,memberTrashCount:memberArchivedAccounts.length,api}"
@@ -629,8 +703,9 @@ watch(()=>props.user.user_id,loadMemberCategories)
       :archived="cardAccounts.filter(a=>a.is_archived).map(a=>({value:a.account_id,
         label:a.label,kind:a.account_kind}))"
       :allow-permanent-delete="false" empty-hint="＋から本人のカードを追加できます。"
+      :default-source-type="preferredCardType"
       :on-save="saveCard" :on-danger="cardDanger"
-      @update:selected="selectedCardId=$event" @update:mode="cardMode=$event"
+      @update:selected="selectedCardId=$event" @update:mode="next=>{if(next==='add')preferredCardType='standard';cardMode=next}"
       @default="makeDefaultCard"
       @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
    </template>

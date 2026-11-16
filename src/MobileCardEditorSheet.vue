@@ -5,6 +5,7 @@ import MobileChoiceSheet from './MobileChoiceSheet.vue'
 
 const props=defineProps({
   mode:{type:String,default:''},
+  defaultSourceType:{type:String,default:'standard'},
   cardName:{type:String,default:''},
   card:{type:Object,default:null},
   closingDay:{type:String,default:'末日'},
@@ -75,7 +76,7 @@ function resetDraft(){
       isArchived:Number(card.is_archived||0),effectiveClosingDay:closingDay.value
     }
   }else{
-    name.value='';sourceType.value='standard';statGroup.value='card'
+    name.value='';sourceType.value=props.defaultSourceType==='prepaid'?'prepaid':'standard';statGroup.value='card'
     closingDay.value='末日';original.value=null
   }
 }

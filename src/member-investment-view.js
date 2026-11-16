@@ -3,9 +3,10 @@
 // authenticated member endpoints. Never mirror legacy owner holdings/NAV.
 const month=/^20\d\d-(0[1-9]|1[0-2])$/
 const safeMoney=n=>Number.isSafeInteger(Number(n))&&Number(n)>=0
-export function memberInvestmentSnapshot({userId,requestedMonth,plans=[],occurrences=[]}){
+export function memberInvestmentSnapshot({userId,requestedMonth,plans=[],occurrences=[],manualHoldings=[]}){
  if(!userId||!month.test(requestedMonth))throw Error('MEMBER_INVESTMENT_SCOPE_INVALID')
  if(!Array.isArray(plans)||!(occurrences===null||Array.isArray(occurrences)))throw Error('MEMBER_INVESTMENT_SOURCE_INVALID')
+ if(!Array.isArray(manualHoldings)||manualHoldings.some(h=>h.owner_user_id!==userId))throw Error('MEMBER_INVESTMENT_OWNER_CHANGED')
  const own=plans.filter(p=>p&&p.owner_user_id===userId&&p.plan_type==='sbi_tsumitate'&&
    /^[A-Z0-9]{8}$/.test(p.fund_code||'')&&safeMoney(p.amount_jpy)&&
    /^20\d\d-(0[1-9]|1[0-2])$/.test(p.start_month||'')&&
@@ -33,10 +34,18 @@ export function memberInvestmentSnapshot({userId,requestedMonth,plans=[],occurre
   return sum+Number(o.amount_jpy)
  },0)
  const scheduled=normalized.filter(p=>p.enabled).reduce((sum,p)=>sum+p.monthly_amount,0)
+ const holdings=manualHoldings.filter(h=>/^[A-Z0-9]{8}$/.test(h.fund_code||'')&&
+  Number.isSafeInteger(h.units)&&h.units>=0&&
+  Number.isSafeInteger(h.acquisition_cost)&&h.acquisition_cost>=0)
+ const priced=holdings.every(h=>h.market_value!==null&&Number.isSafeInteger(h.market_value))
+ const valuation=holdings.length&&priced
+  ?holdings.reduce((sum,h)=>sum+h.market_value,0):null
+ const acquisition=holdings.reduce((sum,h)=>sum+h.acquisition_cost,0)
+
  return {
   month:requestedMonth,scope:'personal',viewer_user_id:userId,
-  institution_verified:false,holdings:[],prices:[],plans:normalized,transfers:[],
-  valuation:{value:null,pnl:null},
+  institution_verified:false,holdings,prices:[],plans:normalized,transfers:[],
+  valuation:{value:valuation,pnl:valuation===null?null:valuation-acquisition},
   reconciliation:{
    monthly_amount:scheduled,registered:occurrences===null?null:confirmed,
    unregistered:occurrences===null?null:Math.max(0,scheduled-confirmed),

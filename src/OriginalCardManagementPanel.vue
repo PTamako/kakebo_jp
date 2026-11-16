@@ -3,6 +3,7 @@ import CardManagementControls from './CardManagementControls.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 const props=defineProps({
   selected:{type:String,default:''},
+  defaultSourceType:{type:String,default:'standard'},
   options:{type:Array,default:()=>[]},
   defaultValue:{type:String,default:''},
   busy:{type:Boolean,default:false},
@@ -31,7 +32,7 @@ const emit=defineEmits(['update:selected','update:mode','default','archive','rem
    @default="emit('default')" @edit="emit('update:mode','edit')"
    @add="emit('update:mode','add')"/>
   <p v-if="defaultValue">デフォルト：{{options.find(x=>x.value===defaultValue)?.label||defaultValue}}</p>
-  <MobileCardEditorSheet :mode="mode" :card-name="name" :card="card"
+  <MobileCardEditorSheet :mode="mode" :card-name="name" :card="card" :default-source-type="defaultSourceType"
    :closing-day="closingDay" :payment-sources="paymentSources"
    :share-options="shareOptions" :share-ready="shareReady" :share-error="shareError"
    :busy="busy" :on-save="onSave" :on-danger="onDanger"

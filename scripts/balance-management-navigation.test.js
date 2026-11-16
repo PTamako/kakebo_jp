@@ -59,6 +59,7 @@ test('single-fund SBI detail screenshots and wallet history remain accessible',(
   assert.match(portfolio,/applySbiFundDetailUpdates\(bulkRows\.value,parsed\.updates,importedScreenshotKeys\.value\)/)
   assert.match(portfolio,/@submit.prevent="saveBulk"/)
   assert.doesNotMatch(portfolio,/readSbiScreen|reconcileSbiScreens|portfolio-profit|portfolio-positions|従来の2画面照合/)
-  assert.match(balance,/@open-history="openPrepaidHistoryDetails"/)
+  assert.match(balance,/@open-history="openHistory"/)
+   assert.match(balance,/const openHistory=\(name,mode\)=>isPersonal.value\?props.onPersonalHistory/)
   assert.match(balance,/@open-card-settings="openCardSettings"/)
 })

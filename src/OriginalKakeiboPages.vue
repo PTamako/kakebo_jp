@@ -14,6 +14,10 @@ const props=defineProps({
   member:{type:Boolean,default:false},
   managementBindings:{type:Object,default:()=>({})},
   personalAssets:{type:Array,default:null},
+  personalPrepaidApi:{type:Function,default:null},
+  personalPortfolioApi:{type:Function,default:null},
+  onPersonalOpening:{type:Function,default:null},
+  onPersonalHistory:{type:Function,default:null},
   onCreatePersonalAccount:{type:Function,default:null},
   onOpenPersonalManagement:{type:Function,default:null},
 })
@@ -33,6 +37,11 @@ function navigate(next){
   <StatisticsPage v-else-if="activeTab==='stat'"/>
   <AssetsPage v-else-if="activeTab==='investments'"
    :personal-assets="member?personalAssets:null"
+   :personal-user-id="member?identity?.user_id||'':''"
+   :personal-prepaid-api="member?personalPrepaidApi:null"
+   :personal-portfolio-api="member?personalPortfolioApi:null"
+   :on-personal-opening="member?onPersonalOpening:null"
+   :on-personal-history="member?onPersonalHistory:null"
    :on-create-personal-account="member?onCreatePersonalAccount:null"
    :open-personal-management="member?onOpenPersonalManagement:null"/>
   <ManagementPage v-show="activeTab==='finance'"

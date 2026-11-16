@@ -8,8 +8,8 @@ const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
 const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
 
 test('privacy and backup no longer repeat receipt count, expiry or refresh controls',()=>{
-  const privacy=finance.split('<summary>端末のプライバシー設定</summary>')[1].split('</details>')[0]
-  const backup=finance.split('<summary>バックアップ・復元</summary>')[1].split('</details>')[0]
+  const privacy=finance.slice(finance.lastIndexOf('<template #privacy>'),finance.lastIndexOf('<template #backup>'))
+  const backup=finance.slice(finance.lastIndexOf('<template #backup>'),finance.lastIndexOf('<template #duplicates>'))
   assert.match(privacy,/ログイン状態の保存/)
   assert.match(privacy,/保存済みレシート画像/)
   assert.doesNotMatch(privacy,/非公開R2で保管・自動削除なし/)
@@ -22,7 +22,7 @@ test('privacy and backup no longer repeat receipt count, expiry or refresh contr
   assert.doesNotMatch(app,/if\(!rememberDevice.value\)clearSessionReceiptImages\(\)/)
 })
 test('completed R2 receipt migration removes only the temporary migration controls',()=>{
-  const privacy=finance.split('<summary>端末のプライバシー設定</summary>')[1].split('</details>')[0]
+  const privacy=finance.slice(finance.lastIndexOf('<template #privacy>'),finance.lastIndexOf('<template #backup>'))
   assert.match(privacy,/<template v-if="deviceReceiptCount > 0">[\s\S]*?@click="syncLegacyReceiptImages"[\s\S]*?<\/template>/)
   assert.match(privacy,/v-if="receiptMigrationStatus"/)
   assert.doesNotMatch(privacy,/R2＋端末の合計/)

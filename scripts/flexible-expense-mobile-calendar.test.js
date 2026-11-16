@@ -66,7 +66,7 @@ test('flexible single dates, mixed formats, and malformed money are handled safe
 })
 
 test('image upload recognizes in append mode then stays in 画像から読み取る tab',()=>{
-  const app=src('src/App.vue')
+  const app=src('src/App.vue')+'\n'+src('src/EntryInputPage.vue')
   const image=app.match(/async function onImage\([\s\S]*?\n\}(?=\nfunction addBlank)/)?.[0]
   const manual=app.match(/function recognize\([\s\S]*?\n\}(?=\nasync function onImage)/)?.[0]
   assert.ok(image)

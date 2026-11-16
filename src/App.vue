@@ -35,6 +35,7 @@ import { sortOtherLast } from './category-sort.js'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileLoginSheet from './MobileLoginSheet.vue'
 import FamilyFinanceAccess from './FamilyFinanceAccess.vue'
+import FamilyAccountMenu from './FamilyAccountMenu.vue'
 import FamilyMemberWorkspace from './FamilyMemberWorkspace.vue'
 import BottomNavigation from './BottomNavigation.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
@@ -396,6 +397,18 @@ function onFamilyIdentityChange(identity){
    })()
   }
  }
+}
+async function logoutFamilyMember(){
+ if(!familyIdentity.value||familyIdentity.value.role!=='member')return
+ if(!confirm('家庭账户からログアウトしますか？'))return
+ try{
+  const response=await fetch('/api/homeflow-sso/logout',{
+   method:'POST',credentials:'same-origin',cache:'no-store'
+  })
+  if(!response.ok)throw Error('HTTP '+response.status)
+  onFamilyIdentityChange(null)
+  sessionStorage.setItem('kakeibo-logged-out','1')
+ }catch(e){flash('HomeFlow のログアウトに失敗しました：'+e.message)}
 }
 const PENDING_LOGOUT_KEY='kakeibo-server-logout-pending-v1'
 const PENDING_HF_LOGOUT_KEY='kakeibo-homeflow-logout-pending-v1'
@@ -1938,10 +1951,10 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
   <MobileLoginSheet :open="loginSheetOpen" :busy="loginSheetBusy" :error="loginSheetError"
     @submit="submitLoginSheet" @cancel="cancelLoginSheet" />
   <main v-if="locked" :class="`theme-${theme}`">
-    <FamilyFinanceAccess :identity-only="familyIdentity?.role==='member'"
+    <FamilyFinanceAccess v-if="!familyIdentity" identity-only
       @identity-change="onFamilyIdentityChange" />
     <FamilyMemberWorkspace v-if="familyIdentity?.role==='member'"
-      :key="familyIdentity.user_id" :user="familyIdentity" />
+      :key="familyIdentity.user_id" :user="familyIdentity" @logout="logoutFamilyMember" />
     <div v-else class="empty-state"><strong>ログアウトしました</strong>
     <p v-if="serverLogoutPending" role="alert">サーバー側のログアウトはまだ確認できません。通信回復後に再試行します。</p>
     <button v-if="serverLogoutPending" type="button" class="button-secondary" @click="completeServerLogout()">サーバーのログアウトを再確認</button>
@@ -1981,7 +1994,8 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
             </button>
           </div>
         </details>
-        <button type="button" class="header-logout" @click="logout" aria-label="ログアウト"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6"/></svg><span>ログアウト</span></button>
+        <FamilyAccountMenu v-if="familyIdentity" :identity="familyIdentity" @logout="logout" />
+        <button type="button" v-else class="header-logout" @click="logout" aria-label="ログアウト"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6"/></svg><span>ログアウト</span></button>
       </div>
     </header>
 
@@ -2067,7 +2081,6 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
     <LedgerPage v-else-if="tab === 'list'" />
     <StatisticsPage v-else-if="tab === 'stat'" />
     <AssetsPage v-else-if="tab === 'investments'" />
-    <FamilyFinanceAccess v-if="tab === 'finance'" identity-only />
     <ManagementPage :card-settings-request="cardSettingsRequest" :payment-source-meta="paymentSourceMeta" v-show="tab === 'finance'" :active="tab === 'finance'" :ledger-revision="ledgerRevision" :api="api" :categories="categories" :category-display-names="categoryDisplayNames" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @receipt-images-removed="onReceiptImagesRemoved" @receipt-images-updated="refreshReceiptImageIds" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @open-card-bill-details="openCardBillDetails" @ledger-updated="ledgerRevision++; load(); loadYear()" />
     <BottomNavigation :active-tab="tab" @change="next=>next==='list'?openLedgerFromNav():tab=next" />
   </main>

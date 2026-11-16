@@ -4,6 +4,7 @@
 // IMPORTANT: migration 0023 is unexecuted; do not enable before full backup.
 import {onRequest as homeflowIdentity, ssoReady} from '../homeflow-sso/[[path]].js';
 import {financePending} from './pending.js';
+import {familyLegacyCardSharing} from './legacy-card-sharing.js';
 import {familyCardPurchases} from './card-purchases.js';
 import {familyCardSettlements} from './card-settlements.js';
 import {familyPrepaidActions} from './prepaid-actions.js';
@@ -258,7 +259,7 @@ async function entries(env,user,url){
   'a.owner_user_id AS payment_account_owner_user_id,'+
   'COALESCE(t.label,e.transfer_target) AS transfer_target_display,'+
   't.owner_user_id AS transfer_target_account_owner_user_id,'+
-  ledgerRecorderColumns+' '+
+  ledgerRecorderColumns+',ls.actor_user_id AS shared_card_actor_user_id '+
   'FROM entries e LEFT JOIN family_financial_accounts a '+
   'ON a.account_id=e.family_account_id '+
   'LEFT JOIN family_financial_accounts t '+
@@ -272,13 +273,14 @@ async function entries(env,user,url){
  const items=rows.slice(0,limit).map(r=>{
   if(user.role==='owner')return r;
   const ownSource=r.payment_account_owner_user_id===user.user_id;
+  const grantedSpender=r.shared_card_actor_user_id===user.user_id;
   const ownTarget=r.transfer_target_account_owner_user_id===user.user_id;
   return {...r,
-   payment_source:ownSource?r.payment_source:null,
+   payment_source:ownSource||grantedSpender?r.payment_source:null,
    transfer_target:ownTarget?r.transfer_target:null,
    family_account_id:ownSource?r.family_account_id:null,
    family_transfer_target_account_id:ownTarget?r.family_transfer_target_account_id:null,
-   payment_source_display:ownSource?r.payment_source_display:'个人支付方式',
+   payment_source_display:ownSource||grantedSpender?r.payment_source_display:'个人支付方式',
    transfer_target_display:ownTarget?r.transfer_target_display:'个人账户',
    payment_account_owner_user_id:ownSource?user.user_id:null,
    transfer_target_account_owner_user_id:ownTarget?user.user_id:null};
@@ -372,6 +374,8 @@ export async function onRequest({request,env,params}){
  try{
   const user=await identity(request,env);
   if(!user)return json({code:'SSO_NOT_AUTHENTICATED'},401);
+  if(parts[0]==='legacy-card-shares'||parts[0]==='legacy-card-spends')
+   return familyLegacyCardSharing(request,env,url,user,parts);
   if(parts[0]==='proposals')return financePending(request,env,url,user,parts);
   if(parts[0]==='card-purchases')return familyCardPurchases(request,env,url,user,parts);
   if(parts[0]==='card-settlements')return familyCardSettlements(request,env,url,user,parts);

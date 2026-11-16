@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 const read=path=>readFileSync(new URL('../src/'+path,import.meta.url),'utf8')
-const app=read('App.vue')
+const app=read('App.vue')+'\n'+read('EntryInputPage.vue')
 const family=read('FamilyMemberWorkspace.vue')
 const nav=read('BottomNavigation.vue')
 const finance=read('FinanceTools.vue')
@@ -33,9 +33,10 @@ test('new member cards use the original card editing sheet and owner-only accoun
 })
 test('member uses the same TransactionForm while only household ledger mutations require approval',()=>{
  assert.match(app,/<TransactionForm /)
- assert.match(family,/<TransactionForm :record="f"/)
+ assert.match(app,/<TransactionForm /)
+ assert.match(family,/<EntryInputPage v-else-if="tab==='add'"/)
  assert.match(form,/allowedTypes/)
- assert.match(family,/:allowed-types="\['expense','income'\]"/)
+ assert.match(family,/allowedTypes:computed\(\(\)=>\['expense','income'\]\)/)
  assert.match(family,/ref="sharedMutationRef" headless/)
  assert.match(family,/sharedMutationRef.value\?\.submitEntry\(record\)/)
  assert.match(family,/sharedMutationRef.value\?\.submitMutation\(action,original,/)
@@ -84,8 +85,9 @@ test('both users share management and member input supports genuine OCR without 
  assert.match(family,/<ManagementPage v-else-if="tab==='finance'"/)
  assert.match(family,/:member-view="true"/)
  assert.match(finance,/if\(props\.memberView\)return false/)
- assert.match(family,/<button type="button" role="tab" :aria-selected="memberInputMode==='scan'"/)
- assert.match(family,/memberRawText\.value=await ocrImage\(file/)
+ assert.match(app,/<OcrCapturePanel v-if="entryInputMode === 'scan'"/)
+ assert.match(family,/<EntryInputPage v-else-if="tab==='add'"/)
+ assert.match(family,/memberRawText\.value=await ocrImage\(file\)/)
  assert.match(family,/parseEntries\(raw,\[\],reference\)/)
  assert.match(family,/memberEntries\.value\.shift\(\);sent\+\+/)
  assert.doesNotMatch(family,/\/api\/entries\b/)

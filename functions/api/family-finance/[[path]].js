@@ -243,7 +243,7 @@ async function entries(env,user,url){
  const limit=Math.max(1,Math.min(100,Number(url.searchParams.get('limit'))||20));
  const offset=Math.max(0,Math.min(10000,Number(url.searchParams.get('offset'))||0));
  const period=url.searchParams.get('month');
- if(period!==null&&!/^\\d{4}-(0[1-9]|1[0-2])$/.test(period))
+ if(period!==null&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))
   return json({code:'BAD_LEDGER_MONTH'},400);
  const lower=period?period+'-01':null;
  const upper=period?(

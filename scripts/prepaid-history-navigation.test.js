@@ -14,7 +14,7 @@ test('each prepaid card exposes its own charge and usage links',()=>{
  assert.match(wallet,/card\.name\+'のチャージ履歴'/)
  assert.match(wallet,/card\.name\+'の利用・振替履歴'/)
  assert.doesNotMatch(wallet,/wallet-recharge|data\.recharges|最近のチャージ/)
- assert.match(assets,/@open-history="openPrepaidHistoryDetails"/)
+ assert.match(assets,/@open-history="openHistory"/)
 })
 
 test('prepaid history navigates to current month in existing ledger tab',()=>{

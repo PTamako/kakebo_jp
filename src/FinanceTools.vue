@@ -446,8 +446,8 @@ function showMoreMerchantRules() { visibleMerchantRuleCount.value += merchantRul
 // Only explicit Save mutates remembered rules; reading/opening the sheet is local.
 async function saveMerchantRule({keyword,oldCategory,oldPayment,category,paymentSource}){
   const original=merchantRulesCombined.value.find(item=>item.keyword===keyword)
-  if(!original)throw Error('ルールが変更されています。一覧を更新してください')
-  if(original.category!==oldCategory||original.payment_source!==oldPayment)
+  if(!original && (oldCategory||oldPayment))throw Error('ルールが変更されています。一覧を更新してください')
+  if(original && (original.category!==oldCategory||original.payment_source!==oldPayment))
     throw Error('別の端末で変更されました。画面を更新してください')
   if(category && !props.categories.includes(category) && category!==original.category)
     throw Error('カテゴリを確認してください')
@@ -455,12 +455,12 @@ async function saveMerchantRule({keyword,oldCategory,oldPayment,category,payment
     throw Error('支払方法を確認してください')
   let changed=false
   try{
-    if(category!==original.category){
+    if(category!==(original?.category||'')){
       if(category)await props.api('rules',{method:'POST',body:JSON.stringify({keyword,category})})
       else await props.api('custom-rules?keyword='+encodeURIComponent(keyword),{method:'DELETE'})
       changed=true
     }
-    if(paymentSource!==original.payment_source){
+    if(paymentSource!==(original?.payment_source||'')){
       if(paymentSource)await props.api('merchant-payment-rules',{method:'POST',body:JSON.stringify({keyword,paymentSource})})
       else await props.api('merchant-payment-rules?keyword='+encodeURIComponent(keyword),{method:'DELETE'})
       changed=true
@@ -1604,6 +1604,7 @@ async function removeCardBill(record) {
   <slot v-if="memberView&&managementTab!=='tools'" :name="'member-'+managementTab" />
   <OriginalOtherManagement v-if="memberView" :active="managementTab==='tools'"
     :trash-count="memberTrashCount">
+    <template #rules><slot name="member-rules"/></template>
     <template #jobs><slot name="member-jobs"/></template>
     <template #privacy><slot name="member-privacy"/></template>
     <template #backup><slot name="member-backup"/></template>

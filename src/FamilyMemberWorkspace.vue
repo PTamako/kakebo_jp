@@ -9,6 +9,7 @@ import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} 
 import BottomNavigation from './BottomNavigation.vue'
 import AppTopbar from './AppTopbar.vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
+import CardManagementControls from './CardManagementControls.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import LedgerEntryContent from './LedgerEntryContent.vue'
@@ -34,6 +35,17 @@ const renameId=ref(''),rename=ref(''),notice=ref('')
 const selectedCardId=ref(''),cardMode=ref('')
 const cardAccounts=computed(()=>myAccounts.value.filter(a=>['credit_card','prepaid'].includes(a.account_kind)))
 const selectedCard=computed(()=>cardAccounts.value.find(a=>a.account_id===selectedCardId.value)||null)
+const defaultCard=computed(()=>cardAccounts.value.find(a=>Number(a.is_default)===1)?.account_id||'')
+async function makeDefaultCard(){
+ const target=selectedCard.value
+ if(!target||busy.value||target.owner_user_id!==props.user.user_id)return
+ if(defaultCard.value===target.account_id)return
+ const previous=cardAccounts.value.find(a=>a.account_id===defaultCard.value)
+ if(previous)await modify(previous,{is_default:false})
+ // Refresh above may update account versions; select the refreshed target.
+ const current=cardAccounts.value.find(a=>a.account_id===target.account_id)
+ if(current)await modify(current,{is_default:true})
+}
 const cardLabels=computed(()=>cardAccounts.value.map(a=>a.label))
 const cardMeta=computed(()=>selectedCard.value?{
  source_type:selectedCard.value.account_kind==='prepaid'?'prepaid':'standard',
@@ -371,19 +383,10 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
    <template v-if="managementTab==='cards'">
     <section class="finance-panel">
      <h2>支払方法・カード管理</h2>
-     <div class="finance-inputs card-controls card-main-controls">
-      <MobileChoiceSheet v-model="selectedCardId" label="管理するカード"
-       :options="[{value:'',label:'支払方法・カードを選択'},
-        ...cardAccounts.map(a=>({value:a.account_id,label:a.label}))]" />
-      <button type="button" class="card-icon-action" :disabled="!selectedCard||!!busy"
-       @click="cardMode='edit'" aria-label="カードを編集" title="カードを編集">
-       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 4.5a2.1 2.1 0 0 1 3 3L9 18l-4 1 1-4 16.5-16.5Z"/></svg>
-      </button>
-      <button type="button" class="card-icon-action" @click="cardMode='add'"
-       aria-label="カードを追加" title="カードを追加">
-       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-      </button>
-     </div>
+     <CardManagementControls v-model="selectedCardId" :busy="busy"
+       :options="cardAccounts.map(a=>({value:a.account_id,label:a.label}))"
+       :default-value="defaultCard" @default="makeDefaultCard"
+       @edit="cardMode='edit'" @add="cardMode='add'" />
      <MobileCardEditorSheet :mode="cardMode" :card-name="selectedCard?.label||''"
       :card="cardMeta" :closing-day="selectedCard?.closing_day?String(selectedCard.closing_day)+'日':'末日'"
       :payment-sources="cardLabels" :busy="busy" :on-save="saveCard" :on-danger="cardDanger"

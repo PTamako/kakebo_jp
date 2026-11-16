@@ -34,7 +34,7 @@ test('member account management respects server actor and version; no direct led
  assert.match(source,/\/api\/family-finance\/accounts/);
  assert.match(source,/body:JSON\.stringify\(\{version:a\.version,\.\.\.change,expected_user_id:actor\}\)/);
  assert.match(source,/ledger_changed!==false/);
- assert.match(source,/\/api\/family-finance\/shared\/ledger-totals\?month=/);
+ assert.doesNotMatch(source,/\/api\/family-finance\/shared\/ledger-totals\?month=/);
  assert.doesNotMatch(source,/\/api\/family-finance\/shared\/entries.{0,60}POST/);
 });
 
@@ -47,17 +47,24 @@ test('new family-member PWA does not get stuck in legacy code modal, with origin
 });
 
 
-test('household annual statistics are shared and do not expose a per-person summary selector',()=>{
- assert.match(source,/\/api\/family-finance\/shared\/year-summary\?year=/);
- assert.match(source,/yearly\.ledger_scope==='household'&&yearly\.complete===true/);
- assert.match(source,/selectedYear=ref\(month\.slice\(0,4\)\)/);
- assert.match(source,/@change="refresh"/);
- assert.match(source,/annual\.totals\.income/);
- assert.match(source,/annual\.totals\.expense/);
- assert.match(source,/annual\.net_income_expense/);
- assert.match(source,/annual\.totals\.transfer/);
- assert.match(source,/annual\.categories\.filter\(c=>c\.type==='expense'\)/);
- assert.doesNotMatch(source,/selectedAccountOwner|myStats|spouseStats/);
+test('management does not duplicate the household statistics page or fetch its totals',()=>{
+ assert.match(app,/<StatisticsPage v-else-if="tab === 'stat'" \/>/);
+ assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'" \/>/);
+ assert.doesNotMatch(source,/家庭年度统计|年度支出分类|家庭每月收支/);
+ assert.doesNotMatch(source,/\/api\/family-finance\/shared\/(?:ledger-totals|year-summary)/);
+ assert.doesNotMatch(source,/selectedYear|annual\.totals|totals\.totals/);
+ assert.match(source,/const list=await call\('\/api\/family-finance\/accounts'\)/);
+});
+
+test('management keeps owner and member tools available only after explicit expansion',()=>{
+ assert.match(source,/advancedOpen=ref\(false\)/);
+ assert.match(source,/advancedOpen\.value=false/);
+ assert.match(source,/<div v-if="advancedOpen" class="hf-advanced">/);
+ assert.match(source,/:aria-expanded="advancedOpen"/);
+ assert.match(source,/更多家庭财务工具/);
+ assert.match(source,/原有支付方式和历史账目仍保留在记账本中/);
+ assert.match(source,/<FamilyFinanceLegacyLink v-if="person.role==='owner'"/);
+ assert.match(source,/<FamilyFinanceProposals v-if="person.role==='member'"/);
 });
 
 test('member-only proposal UI distinguishes HomeFlow submitted from durable Kakeibo applied',()=>{
@@ -92,7 +99,7 @@ test('member approval submission and cancellation only act on the authenticated 
 test('Safari foreground hides previous account finance and private proposals before a new verified login',()=>{
  assert.match(source,/function foreground\(\)\{/);
  assert.match(source,/if\(document.visibilityState!=='visible'\)return/);
- assert.match(source,/function resetIdentity\(\)\{[\s\S]*?person.value=null;accounts.value=\[\];totals.value=null;annual.value=null/);
+ assert.match(source,/function resetIdentity\(\)\{[\s\S]*?person.value=null;accounts.value=\[\];advancedOpen.value=false/);
  assert.match(source,/editing.value=null;rename.value='';newLabel.value='';newKind.value='credit_card'/);
  assert.match(source,/void check\(\)/);
  assert.match(source,/:key="'proposals:'\+person.user_id"/);

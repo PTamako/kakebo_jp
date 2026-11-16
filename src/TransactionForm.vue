@@ -5,7 +5,7 @@ import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
-const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true} })
+const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentChoices: {type:Array,default:()=>[]} })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
@@ -19,12 +19,16 @@ watch(()=>record.value.category,cat=>{
 const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receiptName || props.existingReceipt)
 const categoryOptions = computed(()=> (record.value.type==='income'?orderedIncomeCategories.value:orderedCategories.value)
   .map(c=>({value:c,label:props.categoryLabel(c)})))
-const paymentOptions = computed(()=> [
+const paymentOptions = computed(()=> {
+ const options=props.paymentChoices.length ? props.paymentChoices
+  : orderedPayments.value.map(name=>({value:name,label:name}));
+ return [
   {value:'',label:'未設定'},
-  ...orderedPayments.value.map(name=>({value:name,label:name})),
-  ...(record.value.paymentSource && !props.paymentSources.includes(record.value.paymentSource)
+  ...options,
+  ...(record.value.paymentSource && !options.some(option=>option.value===record.value.paymentSource)
     ? [{value:record.value.paymentSource,label:record.value.paymentSource+'（既存の設定）'}] : [])
-])
+ ];
+})
 const transferSourceOptions = computed(()=>paymentOptions.value.filter(item=>
   !item.value || record.value.transferTarget !== 'prepaid:'+item.value))
 const rewardOptions = computed(()=> [

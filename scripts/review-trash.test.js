@@ -6,6 +6,7 @@ import { duplicateReviewSignature } from '../src/duplicate-review.js'
 
 const src = path => readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const finance = src('src/FinanceTools.vue')
+const sharedTools = src('src/OriginalOtherManagement.vue')
 const api = src('functions/api/[[path]].js')
 const app = src('src/App.vue')
 const row = (id=1) => ({id,date:'2026-10-30',time:'19:20',type:'expense',merchant:'Suicaチャージ',amount:1000,payment_source:'楽天カード'})
@@ -117,6 +118,7 @@ test('invalid trash keys and storage errors fail without deleting anything',()=>
 
 test('category detail groups collapse independently with deleted settings separate from excluded months',()=>{
   assert.match(finance,/<details v-if="reviewTrash\.duplicateGroups\.length" class="review-trash-category">/)
+  assert.match(sharedTools, /<details class="finance-panel finance-disclosure review-trash-panel"/)
   assert.match(finance,/<details v-if="trashedRecurringPlans\.length" class="review-trash-category">/)
   assert.match(finance,/<details v-if="reviewTrash\.recurringExclusions\.length" class="review-trash-category">/)
   assert.match(finance,/<details v-if="reviewTrash\.transferReminders\.length" class="review-trash-category">/)

@@ -238,14 +238,14 @@ onUnmounted(()=>{
     </select>
     <TransactionForm :record="memberDraft" :categories="memberCategories"
       :income-categories="memberIncomeCategories" :payment-sources="[]"
-      :allowed-types="['expense','income']" :show-payment-source="false"
-      :receipt-enabled="false" :category-label="x=>x"
-      @change-type="kind=$event;category=''"
+      :allowed-types="['expense','income','transfer']" :show-payment-source="false"
+      :member-transfer-only="true" :receipt-enabled="false" :category-label="x=>x"
+      @change-type="kind=$event;category='';if($event==='transfer')memberDraft.transferTarget='family:cross-bank'"
     />
     <label v-if="kind==='income'" class="hf-merchant">
       收入来源 <input v-model="merchant" maxlength="160" required placeholder="工资、奖金或其他来源"/>
     </label>
-    <button type="submit" :disabled="!!busy||loading||!myAccounts.some(a=>a.account_id===accountId)||!merchant.trim()||!category.trim()||!Number.isSafeInteger(Number(amount))||Number(amount)<1">仅保存加密草稿</button>
+    <button v-if="kind!=='transfer'" type="submit" :disabled="!!busy||loading||!myAccounts.some(a=>a.account_id===accountId)||!merchant.trim()||!category.trim()||!Number.isSafeInteger(Number(amount))||Number(amount)<1">仅保存加密草稿</button>
     <p v-if="!myAccounts.length" class="muted">请先创建本人金融账户，再发起申请。</p>
    </form>
    <p v-if="loading" class="muted">读取中…</p>

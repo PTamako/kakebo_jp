@@ -7,8 +7,7 @@ const json = (x, status=200) => Response.json(x,{status,headers:{
 const fail=(code,status=409)=>json({ok:false,code,ledger_changed:false},status);
 const normal=x=>typeof x==='string'?x.normalize('NFKC').trim():null;
 const safe=(x,max)=>typeof x==='string'&&x.length<=max&&
- !/[\\u0000-\\u001f\\u007f]/.test(x);
-const ruleFields='household_id,owner_user_id,keyword,category,payment_source,version,updated_at';
+ [...x].every(ch=>ch.charCodeAt(0)>31&&ch.charCodeAt(0)!==127);
 async function first(db,sql,...args){return db.prepare(sql).bind(...args).first();}
 async function body(req,url){
  if(req.headers.get('origin')!==url.origin||

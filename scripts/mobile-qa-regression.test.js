@@ -38,7 +38,7 @@ test('cross-month duplicate navigation selects date after month watcher resets i
 
 test('finance management starts loading only when tab is active and refreshes on revisit', () => {
   assert.match(app, /<ManagementPage [^>]*v-show="tab === 'finance'" :active="tab === 'finance'"/)
-  assert.match(finance, /onMounted\(\(\) => \{ if \(props\.active\) void initializeFinance\(\) \}\)/)
+  assert.match(finance, /onMounted\(\(\) => \{ if \(!props\.memberView && props\.active\) void initializeFinance\(\) \}\)/)
   // Revisit reuses a fresh ledger; mutations, expiration and explicit backup force refresh.
   assert.match(finance, /watch\(\(\) => props\.ledgerRevision, \(\) => \{/)
   assert.match(finance, /ledgerDirty = props\.ledgerRevision !== startingRevision/)
@@ -53,7 +53,7 @@ test('failed finance loads cannot be exported as stale complete backups', () => 
   assert.match(finance, /rows\.value=\[\];loaded\.value=false;lastLoadedAt\.value=null/)
   assert.match(finance, /loadError\.value='全明細の読み込みに失敗しました：'/)
   assert.match(finance, /financeInitialized = await loadAll\(\)/)
-  assert.match(finance, /:error="loadError"/)
+  assert.match(finance, /:error="memberView \? memberError : loadError"/)
   assert.match(managementHeader, /v-if="error" class="finance-load-error" role="alert"/)
   assert.match(finance, /:disabled="busy\|\|backupBusy\|\|!loaded" @click="downloadBackup"/)
   assert.match(finance, /JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます/)

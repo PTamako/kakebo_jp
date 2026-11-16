@@ -14,7 +14,8 @@ test('independent family account UI is gated and does not unlock shared legacy l
  assert.match(source,/financeEnabled\.value=feature\.enabled===true/);
  assert.match(source,/user\.ledger_access===false/);
  assert.match(app,/<main v-if="locked"/);
- assert.match(app,/<FamilyFinanceAccess :identity-only="familyIdentity\?\.role==='member'"[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
+ assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity" identity-only[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
+ assert.match(app,/<FamilyAccountMenu v-if="familyIdentity"/);
  assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.doesNotMatch(source,/\/api\/entries\b|\/api\/auth\/login|AUTH_TOKEN/);
 });
@@ -49,7 +50,8 @@ test('new family-member PWA does not get stuck in legacy code modal, with origin
 
 test('management does not duplicate the household statistics page or fetch its totals',()=>{
  assert.match(app,/<StatisticsPage v-else-if="tab === 'stat'" \/>/);
- assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'" identity-only \/>/);
+ assert.match(app,/<FamilyAccountMenu v-if="familyIdentity"/);
+ assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.doesNotMatch(source,/家庭年度统计|年度支出分类|家庭每月收支/);
  assert.doesNotMatch(source,/\/api\/family-finance\/shared\/(?:ledger-totals|year-summary)/);
  assert.doesNotMatch(source,/selectedYear|annual\.totals|totals\.totals/);
@@ -57,7 +59,8 @@ test('management does not duplicate the household statistics page or fetch its t
 });
 
 test('normal management uses identity-only HomeFlow status and original payment-card management',()=>{
- assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'" identity-only \/>/);
+ assert.match(app,/<FamilyAccountMenu v-if="familyIdentity"/);
+ assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.match(source,/defineProps\(\{identityOnly:\{type:Boolean,default:false\}\}\)/);
  assert.match(source,/v-if="person&&!props.identityOnly"/);
  assert.match(source,/if\(financeEnabled.value&&!props.identityOnly\)await refresh\(\)/);

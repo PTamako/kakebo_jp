@@ -6,6 +6,8 @@ import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
 import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 import {parseEntries,parseReceipt,ocrImage} from './parse.js'
+import {compressReceiptImage} from './receipt-image.js'
+import OcrCapturePanel from './OcrCapturePanel.vue'
 import {encryptBackupBlob} from './backup-encryption.js'
 import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
@@ -111,7 +113,24 @@ function newEntry(){return {type:'expense',amount:'',date:new Date(Date.now()+9*
  bindRule:false,bindPaymentRule:false}}
 const memberEntries=ref([])
 const memberInputMode=ref('manual'),memberRawText=ref(''),memberScanMode=ref('statement')
-const memberOcrBusy=ref(false),memberOcrStatus=ref('')
+const memberOcrBusy=ref(false),memberOcrStatus=ref(''),memberOcrWarning=ref('')
+const memberScanPaymentSource=ref('cash')
+const memberAiQuota=ref(null)
+const memberAiEnabled=ref((()=>{
+ try{return localStorage.getItem('kakeibo-ai-ocr-enabled')==='true'}catch{return false}
+})())
+async function refreshMemberAiQuota(){
+ try{memberAiQuota.value=await api('ai-ocr/quota')}
+ catch{memberAiQuota.value=null}
+}
+function setMemberAiEnabled(enabled){
+ memberAiEnabled.value=enabled===true
+ try{localStorage.setItem('kakeibo-ai-ocr-enabled',String(memberAiEnabled.value))}catch{}
+ if(enabled)void refreshMemberAiQuota()
+}
+watch(memberInputMode,mode=>{if(mode==='scan')void refreshMemberAiQuota()})
+const memberImportPaymentOptions=computed(()=>
+ [{value:'cash',label:'自動判定（現金）'},...memberPaymentOptions.value.filter(x=>x.value!=='cash')])
 const memberTodayLabel=computed(()=>new Date().toLocaleString('ja-JP',{
  timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'}))
 function addMemberEntry(){memberEntries.value.push(newEntry())}
@@ -140,7 +159,9 @@ function recognizeMemberText(){
   .map(x=>({...newEntry(),type:x.type==='income'?'income':'expense',
    amount:Number(x.amount),date:String(x.date||newEntry().date),
    time:String(x.time||''),merchant:String(x.merchant||''),
-   category:String(x.category||'日用品'),note:String(x.note||'')}))
+   category:String(x.category||'日用品'),note:String(x.note||''),
+   paymentSource:memberPaymentOptions.value.some(c=>c.value===memberScanPaymentSource.value)
+    ?memberScanPaymentSource.value:'cash'}))
  if(!drafts.length){memberEntryError.value='解析できる金額がありません。原文と金額を確認してください。';return}
  if(memberEntries.value.length&& !window.confirm('現在の未保存記録を読み取り結果で置き換えますか？'))return
  memberEntries.value=drafts
@@ -149,15 +170,39 @@ function recognizeMemberText(){
 async function memberScanImage(event){
  const file=event.target?.files?.[0];if(event.target)event.target.value=''
  if(!file||memberOcrBusy.value)return
- memberOcrBusy.value=true;memberEntryError.value='';memberOcrStatus.value='端末内OCRで読み取り中'
+ memberOcrBusy.value=true;memberEntryError.value='';memberOcrWarning.value=''
+ memberOcrStatus.value='端末内OCR'
+ const originalMode=memberScanMode.value
  try{
-  memberRawText.value=await ocrImage(file,progress=>{
-   memberOcrStatus.value='端末内OCRで読み取り中 '+Math.max(0,Math.min(100,Number(progress)||0))+'%'
-  })
+  if(memberAiEnabled.value){
+   try{
+    await refreshMemberAiQuota()
+    if(memberAiQuota.value&&Number(memberAiQuota.value.remaining)<=0)
+     throw Error('本日のAI上限に達しました')
+    const image=await compressReceiptImage(file,2000,1024*1024)
+    const body=new FormData()
+    body.append('image',image,image.type==='image/jpeg'?'receipt.jpg':'receipt.webp')
+    body.append('mode',originalMode)
+    const response=await fetch('/api/family-finance/ai-ocr',{
+     method:'POST',body,credentials:'same-origin',cache:'no-store'
+    })
+    const result=await response.json().catch(()=>({}))
+    if(!response.ok||result.ok!==true||result.engine!=='gemma4'||!result.text?.trim())
+     throw Error(result.error||'AIの応答を確認できませんでした')
+    memberRawText.value=result.text
+    memberOcrStatus.value='Gemma 4'
+   }catch(aiError){
+    memberOcrWarning.value='AIが使えないため端末内OCRへ切替：'+String(aiError.message||'通信エラー')
+    memberRawText.value=await ocrImage(file)
+    memberOcrStatus.value='端末内OCR'
+   }finally{await refreshMemberAiQuota()}
+  }else{
+   memberRawText.value=await ocrImage(file)
+   memberOcrStatus.value='端末内OCR'
+  }
   if(!memberRawText.value.trim())throw Error('文字が読み取れませんでした')
   recognizeMemberText()
   memberInputMode.value='scan'
-  memberOcrStatus.value='端末内OCR · 読み取り完了（元画像は保存しません）'
  }catch(e){memberEntryError.value='画像を読み取れませんでした：'+e.message}
  finally{memberOcrBusy.value=false}
 }
@@ -453,22 +498,13 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
       </div>
      </details>
     </div>
-    <div v-else class="panel capture-panel">
-     <div class="input-mode-switch" role="tablist" aria-label="読み取り対象">
-      <button type="button" :class="{selected:memberScanMode==='statement'}" @click="memberScanMode='statement'">利用明細</button>
-      <button type="button" :class="{selected:memberScanMode==='receipt'}" @click="memberScanMode='receipt'">レシート</button>
-     </div>
-     <p class="microcopy">端末内OCRを使用します。写真は自動保存されません。</p>
-     <label class="button-secondary upload-button" :aria-disabled="memberOcrBusy">
-      画像を読み取る
-      <input type="file" accept="image/*" hidden :disabled="memberOcrBusy" @change="memberScanImage" />
-     </label>
-     <p v-if="memberOcrStatus" class="microcopy" role="status">{{memberOcrStatus}}</p>
-     <details v-if="memberRawText.trim()" class="text-entry-details"><summary>読み取り文字を確認・修正</summary>
-      <textarea v-model="memberRawText" rows="5" aria-label="読み取り文字"></textarea>
-      <button type="button" class="button-secondary" @click="recognizeMemberText()">修正して再解析</button>
-     </details>
-    </div>
+    <OcrCapturePanel v-else :ai-enabled="memberAiEnabled" :quota="memberAiQuota"
+      :payment-options="memberImportPaymentOptions" :payment-source="memberScanPaymentSource"
+      :mode="memberScanMode" :busy="memberOcrBusy"
+      :status="memberOcrStatus" :warning="memberOcrWarning"
+      @update:ai-enabled="setMemberAiEnabled"
+      @update:payment-source="memberScanPaymentSource=$event"
+      @update:mode="memberScanMode=$event" />
     <div v-if="memberEntries.length" class="draft-heading">
      <div><h2>入力内容の確認</h2><p>保存前に金額・日付を確認</p></div>
      <span class="count-pill">{{memberEntries.length}}件</span>
@@ -494,7 +530,11 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
     <p v-if="memberEntryError" class="member-alert" role="alert">{{memberEntryError}}</p>
     <p v-if="memberEntryNotice" class="microcopy" role="status">{{memberEntryNotice}}</p>
     <div class="batch-actions" :class="{'batch-actions-empty':!memberEntries.length}">
-     <button class="button-secondary" type="button" @click="addMemberEntry">＋ 記録を追加</button>
+     <button v-if="memberInputMode==='manual'" class="button-secondary" type="button" @click="addMemberEntry">＋ 記録を追加</button>
+     <label v-else class="button-secondary upload-button" :aria-disabled="memberOcrBusy">
+      {{memberEntries.length?'別の画像を読み取る':memberScanMode==='statement'?'明細を読み取る':'レシートを読み取る'}}
+      <input type="file" accept="image/*" :disabled="memberOcrBusy" hidden @change="memberScanImage" />
+     </label>
      <button class="button-primary" type="button"
       :disabled="memberEntryPending||memberOcrBusy||!memberEntries.length||memberEntries.some(f=>!(Number(f.amount)>0)||!f.category)"
       @click="submitMemberEntry">{{memberEntryPending?'送信中…':`保存 ${memberEntries.length}件`}}</button>

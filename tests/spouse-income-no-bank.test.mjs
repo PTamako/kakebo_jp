@@ -31,8 +31,8 @@ test('both recipients have an explicit spouse-source income category',()=>{
 
 test('member recipient records spouse income with original form and HomeFlow confirmation',()=>{
  assert.match(workspace,/entryIncomeCategories=\['給与','賞与','副収入','ポイント還元',SPOUSE_INCOME_CATEGORY/)
- assert.match(workspace,/<TransactionForm :record="memberEntry"/)
- assert.match(workspace,/sharedMutationRef.value\?\.submitEntry\(memberEntry.value\)/)
+ assert.match(workspace,/<TransactionForm :record="f"/)
+ assert.match(workspace,/sharedMutationRef.value\?\.submitEntry\(record\)/)
  assert.match(approval,/async function submitEntry\(input\)/)
  assert.match(approval,/submitIntent\('create',canonical\(input\)\)/)
  assert.match(approval,/operation,resource_id:target\?\.resource_id\|\|null/)

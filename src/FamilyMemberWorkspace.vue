@@ -1,11 +1,11 @@
 <script setup>
 import {ref,computed,provide,onMounted,onUnmounted,watch} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
-import FamilySharedCardSpend from './FamilySharedCardSpend.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
 import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
+import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
 import BottomNavigation from './BottomNavigation.vue'
 import FamilyAccountMenu from './FamilyAccountMenu.vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
@@ -79,6 +79,7 @@ const kinds=[['credit_card','信用卡'],['prepaid','储值卡'],['cash','现金
 const kindLabel=x=>kinds.find(k=>k[0]===x)?.[1]||'账户'
 const yen=n=>n===null||n===undefined?'—':'¥'+Number(n).toLocaleString('ja-JP')
 const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.user.user_id))
+const memberPaymentOptions=computed(()=>buildMemberPaymentChoices(myAccounts.value,sharedCards.value))
 const selectedEntryType=ref('all')
 const monthlyReport=ref(null),annualReport=ref(null),selectedYear=ref(Number(year.value))
 const sharedMutationRef=ref(null)
@@ -86,7 +87,7 @@ const memberEntryPending=ref(false),memberEntryError=ref(''),memberEntryNotice=r
 const entryExpenseCategories=['食費','日用品','交通','住居','医療','交際費','その他']
 const entryIncomeCategories=['給与','賞与','副収入','ポイント還元',SPOUSE_INCOME_CATEGORY,'その他']
 function newEntry(){return {type:'expense',amount:'',date:new Date(Date.now()+9*3600000).toISOString().slice(0,10),
- time:'',category:'食費',merchant:'',note:'',paymentSource:'',transferTarget:'',
+ time:'',category:'食費',merchant:'',note:'',paymentSource:'cash',transferTarget:'',
  bindRule:false,bindPaymentRule:false}}
 const memberEntry=ref(newEntry())
 function setMemberEntryType(type){
@@ -95,13 +96,80 @@ function setMemberEntryType(type){
  memberEntry.value.category=type==='expense'?'食費':'給与'
  memberEntry.value.merchant=''
 }
+// Every displayed expense uses the same record editor. The selected source
+// determines the existing server-verified execution path, never just its label.
+let pendingPaidEntry=null
+function safeSpend(entry){
+ const amount=Number(entry.amount),merchant=String(entry.merchant||'').trim()
+ const category=String(entry.category||'').trim(),note=String(entry.note||'').trim()
+ if(entry.type!=='expense'||!/^20\d\d-\d\d-\d\d$/.test(entry.date)||
+  !Number.isSafeInteger(amount)||amount<1||amount>10000000||
+  !merchant||merchant.length>120||!category||category.length>40||note.length>300)
+  throw Error('金額・日付・店舗・カテゴリを確認してください')
+ return {date:entry.date,time:String(entry.time||''),amount,merchant,category,note}
+}
+async function submitPaidExpense(choice){
+ const entry=safeSpend(memberEntry.value),user=props.user.user_id
+ const snapshot=JSON.stringify({user,source:memberEntry.value.paymentSource,entry})
+ if(pendingPaidEntry&&pendingPaidEntry.snapshot!==snapshot)
+  throw Error('前回の送信結果が未確認です。元の内容で再試行してください')
+ if(!pendingPaidEntry)pendingPaidEntry={snapshot,key:'member-spend:'+crypto.randomUUID(),requestId:null}
+ const pending=pendingPaidEntry
+ if(choice.kind==='shared'){
+  const result=await api('legacy-card-spends',request({
+   expected_user_id:user,idempotency_key:pending.key,card_name:choice.card.card_name,
+   date:entry.date,time:entry.time,amount_jpy:entry.amount,
+   merchant:entry.merchant,category:entry.category,note:entry.note}))
+  if(result.applied!==true||!Number.isSafeInteger(result.entry_id)||result.entry_id<1)
+   throw Error('共有カードの入帳結果が未確認です')
+  pendingPaidEntry=null
+  return {type:'applied',entryId:result.entry_id}
+ }
+ if(choice.kind!=='personal')throw Error('支払方法を確認してください')
+ const a=choice.account
+ const prepaid=a.account_kind==='prepaid',path=prepaid?'prepaid-actions':'card-purchases'
+ if(!pending.requestId){
+  const base={expected_user_id:user,idempotency_key:pending.key,
+   date:entry.date,amount_jpy:entry.amount,merchant:entry.merchant,
+   category:entry.category,note:entry.note}
+  const body=prepaid?{...base,action:'spend',
+   prepaid_account_id:a.account_id,prepaid_version:a.version}:{
+   ...base,account_id:a.account_id,account_version:a.version}
+  const result=await api(path,request(body))
+  const prepared=prepaid?result.action:result.prepared
+  if(!prepared?.request_id)throw Error('決済申請の準備結果が未確認です')
+  pending.requestId=prepared.request_id
+  if(prepared.status==='submitted_status_unknown'&&prepared.approval_id){
+   pendingPaidEntry=null
+   return {type:'pending'}
+  }
+  if(prepared.status!=='prepared')throw Error('決済申請の状態を確認してください')
+ }
+ const response=await api(path+'/'+encodeURIComponent(pending.requestId)+'/submit',
+  request({expected_user_id:user}))
+ if(response.applied!==false||response.status!=='submitted_status_unknown')
+  throw Error('HomeFlow 承認依頼の受付を確認できません')
+ pendingPaidEntry=null
+ return {type:'pending'}
+}
 async function submitMemberEntry(){
  if(memberEntryPending.value)return
  memberEntryPending.value=true;memberEntryError.value='';memberEntryNotice.value=''
  try{
-  const r=await sharedMutationRef.value?.submitEntry(memberEntry.value)
-  if(!r?.proposalId)throw Error('申請の受付を確認できません')
-  memberEntryNotice.value='HomeFlow に審査を依頼しました。承認後に入帳されるまで金額には反映されません。'
+  const choice=memberEntry.value.type==='expense'
+   ?resolveMemberPayment(memberEntry.value.paymentSource,myAccounts.value,sharedCards.value)
+   :{kind:'cash'}
+  if(!choice)throw Error('支払方法が変更・解除されました。もう一度選択してください')
+  if(choice.kind==='shared'||choice.kind==='personal'){
+   const result=await submitPaidExpense(choice)
+   memberEntryNotice.value=result.type==='applied'
+    ?'共有されたカードに支出を保存しました。'
+    :'HomeFlow に審査を依頼しました。承認と入帳が完了するまで計上されません。'
+  }else{
+   const r=await sharedMutationRef.value?.submitEntry(memberEntry.value)
+   if(!r?.proposalId)throw Error('申請の受付を確認できません')
+   memberEntryNotice.value='HomeFlow に審査を依頼しました。承認と入帳完了後に正式計上されます。'
+  }
   memberEntry.value=newEntry()
   await refresh()
   tab.value='list'
@@ -243,10 +311,10 @@ async function modify(a,changes){
 function edit(a){if(a.owner_user_id!==props.user.user_id||a.origin==='legacy')return
  renameId.value=a.account_id;rename.value=a.label}
 function foreground(){if(document.visibilityState==='visible')void refresh()}
-watch(()=>props.user.user_id,()=>{label.value='';renameId.value='';void refresh()})
+watch(()=>props.user.user_id,()=>{pendingPaidEntry=null;memberEntry.value=newEntry();label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
-onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
+onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
  document.removeEventListener('visibilitychange',foreground)})
 </script>
 <template>
@@ -278,9 +346,11 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
     <TransactionForm :record="memberEntry"
      :categories="[...new Set([...entryExpenseCategories,...entryCategories])]"
      :income-categories="entryIncomeCategories" :payment-sources="[]"
-     :allowed-types="['expense','income']" :show-payment-source="false"
+     :payment-choices="memberPaymentOptions"
+     :allowed-types="['expense','income']" :show-payment-source="true"
      :receipt-enabled="false" :category-label="x=>x"
-     @change-type="setMemberEntryType" />
+     @change-type="setMemberEntryType"
+     @payment-change="memberEntry.paymentSource=$event" />
     <label v-if="memberEntry.type==='income'&&memberEntry.category!==SPOUSE_INCOME_CATEGORY" class="form-field">
      <span>収入元</span><input v-model="memberEntry.merchant" maxlength="120" placeholder="給与・副収入など" />
     </label>
@@ -292,10 +362,7 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
      @click="submitMemberEntry">{{memberEntryPending?'送信中…':'保存して審査を依頼'}}</button>
    </div>
    <p class="help">明細には灰色の「待入帳」として表示します。HomeFlow 管理者の承認と入帳完了後に正式計上されます。</p>
-   <FamilySharedCardSpend v-if="sharedCards.length" :key="'shared-card:'+user.user_id"
-    :user-id="user.user_id" :cards="sharedCards" @posted="refresh" @refresh="refresh" />
-   <p v-if="cardSharingError" class="help">家庭共有カードの取得に失敗しました。{{cardSharingError}}</p>
-   <button type="button" class="member-share-refresh" @click="refresh">共有カードを更新</button>
+   <p v-if="cardSharingError" class="member-alert" role="alert">共有カードの取得に失敗しました：{{cardSharingError}}。更新して再試行してください。</p>
   </section>
     <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
     :open-personal-management="()=>{tab='finance';managementTab='cards'}" />

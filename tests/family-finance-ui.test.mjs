@@ -5,13 +5,15 @@ import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('../src/FamilyFinanceAccess.vue',import.meta.url),'utf8');
 const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8');
 const topbar=readFileSync(new URL('../src/AppTopbar.vue',import.meta.url),'utf8');
+const sharedPages=readFileSync(new URL('../src/OriginalKakeiboPages.vue',import.meta.url),'utf8');
 const proposals=readFileSync(new URL('../src/FamilyFinanceProposals.vue',import.meta.url),'utf8');
 
 test('the same header component is used for owner and member without exposing financial data',()=>{
  assert.match(topbar,/<FamilyAccountMenu v-if="identity"/)
- assert.match(app,/<AppTopbar :theme="theme" :themes="themes" :identity="familyIdentity"/)
+ assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
+ assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/)
  const member=readFileSync(new URL('../src/FamilyMemberWorkspace.vue',import.meta.url),'utf8')
- assert.match(member,/<AppTopbar :identity="user" :theme="theme" :themes="themes"/)
+ assert.match(member,/<OriginalKakeiboPages :identity="user" :theme="theme" :themes="themes"/)
 })
 test('independent family account UI is gated and does not unlock shared legacy ledger auth',()=>{
  assert.match(source,/api\/homeflow-sso\/status/);
@@ -22,7 +24,8 @@ test('independent family account UI is gated and does not unlock shared legacy l
  assert.match(source,/user\.ledger_access===false/);
  assert.match(app,/<main v-if="locked"/);
  assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity" identity-only[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
- assert.match(app,/<AppTopbar :theme="theme" :themes="themes" :identity="familyIdentity"/);
+ assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
+ assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/);
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.doesNotMatch(source,/\/api\/entries\b|\/api\/auth\/login|AUTH_TOKEN/);
 });
@@ -57,7 +60,8 @@ test('new family-member PWA does not get stuck in legacy code modal, with origin
 
 test('management does not duplicate the household statistics page or fetch its totals',()=>{
  assert.match(app,/<StatisticsPage v-else-if="tab === 'stat'" \/>/);
- assert.match(app,/<AppTopbar :theme="theme" :themes="themes" :identity="familyIdentity"/);
+ assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
+ assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/);
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.doesNotMatch(source,/家庭年度统计|年度支出分类|家庭每月收支/);
  assert.doesNotMatch(source,/\/api\/family-finance\/shared\/(?:ledger-totals|year-summary)/);
@@ -66,12 +70,14 @@ test('management does not duplicate the household statistics page or fetch its t
 });
 
 test('normal management uses identity-only HomeFlow status and original payment-card management',()=>{
- assert.match(app,/<AppTopbar :theme="theme" :themes="themes" :identity="familyIdentity"/);
+ assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
+ assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/);
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.match(source,/defineProps\(\{identityOnly:\{type:Boolean,default:false\}\}\)/);
  assert.match(source,/v-if="person&&!props.identityOnly"/);
  assert.match(source,/if\(financeEnabled.value&&!props.identityOnly\)await refresh\(\)/);
- assert.match(app,/<ManagementPage :card-settings-request=/);
+ assert.match(sharedPages,/<ManagementPage v-show="activeTab==='finance'"/)
+ assert.match(app,/:management-bindings="originalManagementBindings"/);
 });
 
 test('management keeps owner and member tools available only after explicit expansion',()=>{

@@ -138,6 +138,27 @@ async function setup(){
   call('complete','POST',{state:flow.body.state,resume_secret:secret},{legacy,origin});
  return {DB,env,state,call,start,callback,complete};
 }
+test('family member original LedgerPage calendar receives month-limited rows without private card data',async()=>{
+ const f=await setup()
+ try{
+  await loginOwner(f)
+  const spouse=await loginMember(f)
+  const nov=await finance(f,'shared/entries?month=2026-11&limit=100','GET',null,spouse)
+  assert.equal(nov.status,200,await nov.clone().text())
+  const body=await nov.json()
+  assert.equal(body.ledger_scope,'household')
+  assert.equal(body.items.length,2)
+  assert.ok(body.items.every(row=>row.date.startsWith('2026-11')))
+  assert.ok(body.items.every(row=>row.payment_source===null))
+  assert.ok(body.items.every(row=>row.family_account_id===null))
+  const another=await finance(f,'shared/entries?month=2025-01&limit=100','GET',null,spouse)
+  assert.equal(another.status,200)
+  assert.deepEqual((await another.json()).items,[])
+  const invalid=await finance(f,'shared/entries?month=2026-00','GET',null,spouse)
+  assert.equal(invalid.status,400)
+ }finally{f.DB.sqlite.close()}
+})
+
 test('new SSO routes fail closed by default or on any preview hostname',async()=>{
  const f=await setup();
  try{

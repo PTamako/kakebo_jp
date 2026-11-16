@@ -42,7 +42,7 @@ test('ledger queries use the same attribution source in original and spouse page
  assert.match(legacyApi,/recorderSelect='SELECT e\.\*,'\+ledgerRecorderColumns/)
  assert.match(legacyApi,/recorderSelect\+'WHERE e\.date/)
  assert.match(householdApi,/ledgerRecorderJoins\+' '/)
- assert.match(householdApi,/ledgerRecorderColumns\+' '/)
+ assert.match(householdApi,/ledgerRecorderColumns\+',ls\.actor_user_id AS shared_card_actor_user_id '/)
  assert.doesNotMatch(householdApi,/recorded_by:user\.display_name/)
 })
 test('ledger row shows only the nickname while preserving backend provenance',()=>{

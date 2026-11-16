@@ -1,7 +1,7 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
-const props=defineProps({userId:{type:String,required:true},householdId:{type:String,required:true}})
+const props=defineProps({userId:{type:String,required:true},householdId:{type:String,required:true},headless:{type:Boolean,default:false},onlyWhenOpen:{type:Boolean,default:false}})
 const spouseQuickMode=ref(false)
 const open=ref(false),busy=ref(false),error=ref(''),message=ref(''),
  proposals=ref([]),rows=ref([]),deleted=ref([]),available=ref(false),
@@ -74,7 +74,52 @@ async function openSpouseIncome(){
  open.value=true
  await load()
 }
-defineExpose({openForEntry,openSpouseIncome})
+// Reuse the normal transaction editor. One click securely prepares AND submits
+// an immutable request; HomeFlow approval is still required to affect the ledger.
+let inlineRequest=null
+async function submitEntry(input){
+ if(busy.value)throw Error('前の申請を処理中です')
+ const entry={
+  date:String(input?.date||''),time:String(input?.time||''),
+  amount:Number(input?.amount),type:String(input?.type||''),
+  category:String(input?.category||'').trim(),
+  merchant:String(input?.merchant||'').trim(),note:String(input?.note||'').trim()
+ }
+ if(!/^20\\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$/.test(entry.date)||
+  !/^([01]\\d|2[0-3]):[0-5]\\d$|^$/.test(entry.time)||
+  !Number.isSafeInteger(entry.amount)||entry.amount<1||entry.amount>10000000||
+  !['expense','income'].includes(entry.type)||
+  !entry.category||entry.category.length>100||entry.merchant.length>120||entry.note.length>500)
+  throw Error('日付・金額・カテゴリ・内容を確認してください')
+ const snapshot=JSON.stringify(entry)
+ if(inlineRequest&&inlineRequest.snapshot!==snapshot)
+  throw Error('申請結果が未確定です。内容を変更せず再試行してください')
+ if(!inlineRequest)inlineRequest={snapshot,
+  key:'shared-entry:'+crypto.randomUUID(),proposalId:null,
+  userId:props.userId,householdId:props.householdId}
+ const pending=inlineRequest
+ if(pending.userId!==props.userId||pending.householdId!==props.householdId)
+  throw Error('ログインが変更されました。再送できません')
+ busy.value=true
+ try{
+  if(!pending.proposalId){
+   const result=await api('/api/family-finance/shared-mutation-requests',
+    post({expected_user_id:props.userId,idempotency_key:pending.key,
+     operation:'create',resource_id:null,expected_version:0,entry}))
+   if(result.prepared?.status!=='prepared'||result.prepared?.applied!==false)
+    throw Error('申請準備の確認ができません')
+   pending.proposalId=result.prepared.proposal_id
+  }
+  const result=await api('/api/family-finance/shared-mutation-requests/'+
+   encodeURIComponent(pending.proposalId)+'/submit',
+   post({expected_user_id:props.userId}))
+  if(result.applied!==false||result.status!=='submitted_status_unknown')
+   throw Error('審査受付が未確認です。元の申請を照合してください')
+  inlineRequest=null
+  return {proposalId:pending.proposalId,status:result.status}
+ }finally{busy.value=false}
+}
+defineExpose({openForEntry,openSpouseIncome,submitEntry})
 async function toggle(){
  if(busy.value)return
  open.value=!open.value
@@ -157,7 +202,7 @@ onMounted(()=>document.addEventListener('visibilitychange',foreground))
 onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitychange',foreground)})
 </script>
 <template>
-<section class="shared-request" aria-label="家庭共享收支修改审批申请">
+<section v-if="!headless && (!onlyWhenOpen || open)" class="shared-request" aria-label="家庭共享收支修改审批申请">
  <header><strong>{{spouseQuickMode?'配偶からの収入':'申请修改共享账目'}}</strong>
   <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'收起':'申请'}}</button></header>
  <template v-if="open">

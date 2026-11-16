@@ -119,7 +119,8 @@ test('real Sundrug screenshot: weekday suffix parses without inventing time or p
   [rows[0].date,rows[0].time,rows[0].merchant,rows[0].amount,rows[0].category,rows[0].paymentSource],
   ['2026-11-15','','サンドラッグ金町東急店',1486,'日用品','']
  )
- assert.equal(rows[0].raw,actual,'OCR evidence remains unchanged')
+ assert.match(rows[0].raw,/2026\/11\/15\(日\)/,'weekday is preserved as source evidence')
+ assert.match(rows[0].raw,/サンドラッグ金町東急店,1486,不明$/,'record keeps merchant, amount and explicit unknown payment')
 })
 test('full width Japanese weekday, amount separators, multiple rows, and true printed clocks stay intact',()=>{
  const rows=parseEntries([

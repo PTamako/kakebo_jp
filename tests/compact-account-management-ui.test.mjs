@@ -4,15 +4,17 @@ import {readFileSync} from 'node:fs'
 
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 const app=read('src/App.vue')
+const topbar=read('src/AppTopbar.vue')
 const member=read('src/FamilyMemberWorkspace.vue')
 const menu=read('src/FamilyAccountMenu.vue')
 const tabs=read('src/FinanceSectionTabs.vue')
 const mobile=read('src/mobile-ui.css')
 
 test('account status lives in compact top-right menu rather than management card',()=>{
- assert.match(app,/<FamilyAccountMenu v-if="familyIdentity" :identity="familyIdentity" @logout="logout"/)
+ assert.match(app,/<AppTopbar :theme="theme" :themes="themes" :identity="familyIdentity"/)
+ assert.match(topbar,/<FamilyAccountMenu v-if="identity" :identity="identity"/)
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/)
- assert.match(member,/<FamilyAccountMenu :identity="user" @logout="emit\('logout'\)"/)
+ assert.match(member,/<AppTopbar :identity="user" :theme="theme" :themes="themes"/)
  assert.match(menu,/<summary aria-label="HomeFlow 家庭账户"/)
  assert.match(menu,/HomeFlow 家庭账户/)
  assert.match(menu,/identity\.display_name/)

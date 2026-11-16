@@ -37,6 +37,7 @@ import MobileLoginSheet from './MobileLoginSheet.vue'
 import FamilyFinanceAccess from './FamilyFinanceAccess.vue'
 import FamilyAccountMenu from './FamilyAccountMenu.vue'
 import FamilyMemberWorkspace from './FamilyMemberWorkspace.vue'
+import AppTopbar from './AppTopbar.vue'
 import BottomNavigation from './BottomNavigation.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
@@ -1954,7 +1955,8 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
     <FamilyFinanceAccess v-if="!familyIdentity" identity-only
       @identity-change="onFamilyIdentityChange" />
     <FamilyMemberWorkspace v-if="familyIdentity?.role==='member'"
-      :key="familyIdentity.user_id" :user="familyIdentity" @logout="logoutFamilyMember" />
+      :key="familyIdentity.user_id" :user="familyIdentity" :theme="theme" :themes="themes"
+      @theme-change="setTheme" @logout="logoutFamilyMember" />
     <div v-else class="empty-state"><strong>ログアウトしました</strong>
     <p v-if="serverLogoutPending" role="alert">サーバー側のログアウトはまだ確認できません。通信回復後に再試行します。</p>
     <button v-if="serverLogoutPending" type="button" class="button-secondary" @click="completeServerLogout()">サーバーのログアウトを再確認</button>
@@ -1970,34 +1972,8 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
       <button v-else-if="pendingReceiptMarkers.length" type="button" @click="openPendingReceiptMonth">該当する記録を確認</button>
       <button v-else type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button>
     </div>
-    <header class="topbar">
-      <div class="brand">
-        <img class="brand-wordmark" src="/branding/kakeibo-wordmark.png?v=4"
-          alt="家計簿" width="400" height="133" decoding="async" />
-      </div>
-      
-      <div class="header-actions">
-        <details class="theme-picker">
-          <summary aria-label="テーマカラーを選ぶ" title="配色を変更">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H13a1.5 1.5 0 0 1 0-3h3.5A4.5 4.5 0 0 0 21 9.5 9 9 0 0 0 12 3Z"/><circle cx="7.5" cy="10" r="1"/><circle cx="11" cy="6.5" r="1"/><circle cx="16" cy="8.5" r="1"/></svg>
-            <span class="theme-indicator" :style="{ background: themes.find(item => item.id === theme)?.color }"></span>
-          </summary>
-          <div class="theme-switcher" role="group" aria-label="テーマカラー">
-            <button v-for="item in themes" :key="item.id" type="button" class="theme-swatch"
-              :class="{ selected: theme === item.id }" :aria-label="item.label + 'テーマ'"
-              :aria-pressed="theme === item.id"
-              @click="setTheme(item.id); $event.currentTarget.closest('details').open = false">
-              <span class="theme-dot" :style="{ backgroundColor: item.color }" aria-hidden="true"></span>
-              <svg v-if="theme === item.id" class="theme-check" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m5 12 5 5 9-10" />
-              </svg>
-            </button>
-          </div>
-        </details>
-        <FamilyAccountMenu v-if="familyIdentity" :identity="familyIdentity" @logout="logout" />
-        <button type="button" v-else class="header-logout" @click="logout" aria-label="ログアウト"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6"/></svg><span>ログアウト</span></button>
-      </div>
-    </header>
+    <AppTopbar :theme="theme" :themes="themes" :identity="familyIdentity"
+      @change-theme="setTheme" @logout="logout" />
 
     <div v-if="(tab === 'list' || (tab === 'stat' && statsPeriod === 'month')) && pageLoadError" class="panel" role="alert"><span>{{pageLoadError}}</span> <button type="button" class="button-secondary" @click="load">再読み込み</button></div>
     <div v-if="tab === 'stat' && statsPeriod === 'year' && annualLoadError" class="panel" role="alert"><span>{{annualLoadError}}</span> <button type="button" class="button-secondary" @click="loadYear">再読み込み</button></div>

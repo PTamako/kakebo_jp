@@ -27,7 +27,8 @@ test('App only coordinates tabs; all four pages own their templates',()=>{
   assert.match(assets,/<PrepaidAssets :api="api" :active="true" :revision="ledgerRevision"/)
   assert.match(assets,/@summary="onPrepaidSummary"/)
   assert.doesNotMatch(assets,/旧評価額|旧評価損益|legacy-investment-details/)
-  assert.match(management,/<FinanceTools v-bind="\$attrs"\s*\/>/)
+  assert.match(management,/<FinanceTools v-bind="\$attrs">/)
+  assert.match(management,/<slot name="member-cards"/)
   assert.match(app,/<ManagementPage [^>]*v-show="tab === 'finance'"/)
 })
 

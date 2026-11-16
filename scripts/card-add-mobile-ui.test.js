@@ -3,13 +3,17 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 const finance=read('src/FinanceTools.vue')
+const controls=read('src/CardManagementControls.vue')
 const sheet=read('src/MobileCardEditorSheet.vue')
 const api=read('functions/api/[[path]].js')
 
 test('card selector and toolbar stay on the main page while add/edit use a shared bottom sheet',()=>{
-  assert.match(finance,/<MobileChoiceSheet v-model="selectedCard"/)
-  assert.match(finance,/@click="selectCardForEdit"/)
-  assert.match(finance,/@click="cardMode = 'add'"/)
+  assert.match(finance,/<CardManagementControls v-model="selectedCard"/)
+  assert.match(controls,/<MobileChoiceSheet :model-value="modelValue"/)
+  assert.match(finance,/@edit="selectCardForEdit"/)
+  assert.match(controls,/@click="emit\('edit'\)"/)
+  assert.match(finance,/@add="cardMode='add'"/)
+  assert.match(controls,/@click="emit\('add'\)"/)
   assert.match(finance,/<MobileCardEditorSheet :mode="cardMode"/)
   assert.match(finance,/:on-save="saveCardFromSheet"/)
   assert.match(finance,/:on-danger="runCardDanger"/)

@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
 const app = read('src/App.vue')
+const header = read('src/AppTopbar.vue')
 const css = read('src/mobile-ui.css')
-const picker = app.match(/<div class="theme-switcher"[\s\S]*?<\/div>/)?.[0] || ''
+const picker = header.match(/<div class="theme-switcher"[\s\S]*?<\/div>/)?.[0] || ''
 const swatches = [...app.matchAll(/\{ id: '([^']+)', label: '([^']+)', color: '(#[0-9a-fA-F]{6})' \}/g)]
 
 test('eight cream themes preserve the four original saved IDs', () => {
@@ -25,7 +26,7 @@ test('color-only picker has accessible Japanese labels and a visible selected ch
   assert.match(picker, /:class="\{ selected: theme === item\.id \}"/)
   assert.match(picker, /:style="\{ backgroundColor: item\.color \}"/)
   assert.match(picker, /v-if="theme === item\.id" class="theme-check"/)
-  assert.match(picker, /@click="setTheme\(item\.id\)/)
+  assert.match(picker, /@click="emit\('change-theme',item\.id\)/)
   assert.doesNotMatch(picker, /\{\{\s*item\.label\s*\}\}|<strong>|<i\b/)
 })
 test('picker has 4 columns, 44px tap targets, and a focus outline', () => {
@@ -53,8 +54,8 @@ test('four new themes style the app, charts, calendar and central add', () => {
 test('original themes and Japanese UI language remain intact', () => {
   for(const id of ['blue','yellow','green']) assert.match(app,new RegExp('main\\.theme-'+id+'\\{--ink:'))
   // Header was upgraded to an accessible generated horizontal wordmark in PR #186.
-  assert.match(app, /<img class="brand-wordmark" src="\/branding\/kakeibo-wordmark\.png\?v=4"/)
-  assert.match(app, /alt="家計簿"/)
+  assert.match(header, /<img class="brand-wordmark" src="\/branding\/kakeibo-wordmark\.png\?v=4"/)
+  assert.match(header, /alt="家計簿"/)
   assert.doesNotMatch(app, /<strong>家計簿<\/strong>/)
-  assert.match(app, /aria-label="テーマカラーを選ぶ"/)
+  assert.match(header, /aria-label="テーマカラーを選ぶ"/)
 })

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
+import CardManagementControls from './CardManagementControls.vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
 import { sortOtherLast } from './category-sort.js'
 import ReviewTrashActions from './ReviewTrashActions.vue'
@@ -30,7 +31,7 @@ import { listR2Receipts, getR2Receipt, uploadR2Receipt, deleteR2ReceiptsByIds, r
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
-const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true } })
+const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null} })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared', 'receipt-images-removed', 'receipt-images-updated'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -46,7 +47,7 @@ const appContext = inject('kakeibo-page-context', null)
 const investmentRefreshKey = ref(0)
 const refreshingEverything = ref(false)
 async function refreshEverything() {
-  if (busy.value || refreshingEverything.value) return
+  if(props.memberView || busy.value || refreshingEverything.value) return
   refreshingEverything.value = true
   try {
     // Fetch the Worker-maintained transfer status before the ledger snapshot.
@@ -172,7 +173,7 @@ async function syncLegacyReceiptImages() {
   }
 }
 watch([() => props.active, managementTab], ([active,tab]) => {
-  if(active && tab === 'tools') {
+  if(!props.memberView && active && tab === 'tools') {
     void refreshLocalReceiptCount()
     // Prefetch all bin sources when entering その他, not only after tapping
     // ゴミ箱. Otherwise the collapsed header shows a misleading partial count.
@@ -1429,6 +1430,7 @@ async function applyRecurring(){
 let financeInitialized = false
 let financeInitPromise = null
 async function initializeFinance() {
+  if(props.memberView)return false
   if (financeInitialized && loaded.value) return true
   if (financeInitPromise) return financeInitPromise
   financeInitPromise = (async () => {
@@ -1475,7 +1477,7 @@ function refreshRecurringStatus(force=false) {
   const previous=recurringClock.value
   const now=Date.now()
   recurringClock.value=now
-  if(!props.active || managementTab.value!=='plans')return
+  if(props.memberView || !props.active || managementTab.value!=='plans')return
   if(!financeInitialized || !loaded.value)return void initializeFinance()
   const dateChanged=tokyoDateAt(previous)!==tokyoDateAt(now)
   const wasAfter=new Date(previous+9*3600000).getUTCHours()*60+
@@ -1495,8 +1497,9 @@ function refreshRecurringStatus(force=false) {
 function onRecurringVisibilityChange() {
   if(document.visibilityState==='visible')refreshRecurringStatus(true)
 }
-onMounted(() => { if (props.active) void initializeFinance() })
+onMounted(() => { if (!props.memberView && props.active) void initializeFinance() })
 onMounted(() => {
+  if(props.memberView)return
   recurringClockTimer=setInterval(()=>refreshRecurringStatus(),60*1000)
   document.addEventListener('visibilitychange',onRecurringVisibilityChange)
 })
@@ -1505,16 +1508,17 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange',onRecurringVisibilityChange)
 })
 watch([()=>props.active,managementTab],([active,tab])=>{
-  if(active && tab==='plans')refreshRecurringStatus(true)
+  if(!props.memberView && active && tab==='plans')refreshRecurringStatus(true)
 })
 watch(() => props.ledgerRevision, () => {
+  if(props.memberView)return
   ledgerDirty = true
   // Avoid fetching during a restore or duplicate check; the next visit or
   // explicit refresh will reconcile the current D1 ledger safely.
   if (props.active && !busy.value) void loadAll()
 })
 watch(() => props.active, active => {
-  if (!active) return
+  if (props.memberView || !active) return
   if (!financeInitialized || !loaded.value) return void initializeFinance()
   if (ledgerDirty || !lastLoadedAt.value ||
       Date.now() - lastLoadedAt.value.getTime() >= MANAGEMENT_LEDGER_TTL_MS) {
@@ -1589,21 +1593,23 @@ async function removeCardBill(record) {
 <template>
 <section class="finance-tools">
   <FinanceManagementHeader v-model="managementTab"
-    :busy="!!busy||refreshingEverything"
-    :status="loaded ? '最終更新：'+lastLoadedLabel+' · '+rows.length+'件' : busy ? '明細を読み込み中…' : '未読み込み'"
-    :error="loadError" @refresh="refreshEverything" />
+    :busy="memberView ? memberBusy : (!!busy||refreshingEverything)"
+    :status="memberView ? memberStatus : (loaded ? '最終更新：'+lastLoadedLabel+' · '+rows.length+'件' : busy ? '明細を読み込み中…' : '未読み込み')"
+    :error="memberView ? memberError : loadError"
+    @refresh="memberView ? memberRefresh?.() : refreshEverything()" />
+  <slot v-if="memberView" :name="'member-'+managementTab" />
+  <template v-else>
   <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
     <InvestmentTransferReview />
     <SbiPortfolio :api="props.api" active-view="plans" :refresh-key="investmentRefreshKey" />
   </section>
   <article v-show="managementTab === 'cards'" class="finance-panel">
     <h2>支払方法・カード管理</h2>
-    <div class="finance-inputs card-controls card-main-controls">
-      <MobileChoiceSheet v-model="selectedCard" :disabled="busy" label="管理するカード" :options="[{value:'',label:'支払方法・カードを選択'},...orderedPayments.map(source=>({value:source,label:source})),...(selectedCard&&!orderedPayments.includes(selectedCard)?[{value:selectedCard,label:selectedCard}]:[])]" />
-      <button type="button" class="card-icon-action" :disabled="!selectedCard || selectedCard === defaultPaymentSource" @click="emit('set-default-payment-source', selectedCard)" aria-label="デフォルトに設定" title="デフォルトに設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.5l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9L12 3Z"/></svg></button>
-      <button type="button" class="card-icon-action" :disabled="!selectedCard" @click="selectCardForEdit" aria-label="カードを編集" title="カードを編集"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 4.5a2.1 2.1 0 0 1 3 3L9 18l-4 1 1-4L16.5 4.5Z"/></svg></button>
-      <button type="button" class="card-icon-action" @click="cardMode = 'add'" aria-label="カードを追加" title="カードを追加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-    </div>
+    <CardManagementControls v-model="selectedCard" :busy="busy"
+      :options="[...orderedPayments.map(source=>({value:source,label:source})),...(selectedCard&&!orderedPayments.includes(selectedCard)?[{value:selectedCard,label:selectedCard}]:[])]"
+      :default-value="defaultPaymentSource"
+      @default="emit('set-default-payment-source',selectedCard)"
+      @edit="selectCardForEdit" @add="cardMode='add'" />
     <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
     <MobileCardEditorSheet :mode="cardMode" :card-name="selectedCard"
       :card="paymentSourceMeta[selectedCard]||null" :closing-day="closingDayFor(selectedCard)"
@@ -1932,6 +1938,7 @@ async function removeCardBill(record) {
     </template>
     
   </details>
+  </template>
 </section>
 </template>
 <style scoped>

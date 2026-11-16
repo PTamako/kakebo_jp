@@ -88,7 +88,7 @@ test('invalid origin/actor and deactivated sessions reject writes',async()=>{
  const f=fixture()
  try{
   const bad={expected_user_id:'other',expected_version:0,keyword:'A店',category:'食費',payment_source:'cash'}
-  assert.equal((await f.send(member,'POST',bad)).status,400)
+  assert.equal((await f.send(member,'POST',bad)).status,403)
   f.sqlite.exec("UPDATE homeflow_identity_links SET state='revoked' WHERE user_id='member'")
   assert.equal((await f.rule()).status,403)
  }finally{f.sqlite.close()}

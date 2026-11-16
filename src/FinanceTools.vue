@@ -1751,7 +1751,7 @@ async function removeCardBill(record) {
     :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" /></template>
     <template #jobs>
 
-    <summary>定期処理の実行状況</summary>
+    
     <button type="button" :disabled="jobHealthBusy" @click="loadJobHealth">{{jobHealthBusy?'確認中…':'最新の実行結果を確認'}}</button>
     <p v-if="jobHealthError" role="alert">{{jobHealthError}}</p>
     <p v-if="!jobHealthBusy && jobHealthLoaded && jobHealth.length===0">各処理の実行履歴がまだありません。</p>
@@ -1760,7 +1760,7 @@ async function removeCardBill(record) {
     </template>
     <template #privacy>
 
-    <summary>端末のプライバシー設定</summary>
+    
     <div class="device-privacy-section">
       <label class="device-login-field"><span>ログイン状態の保存</span>
         <MobileChoiceSegments :model-value="props.rememberDevice ? 'remember' : 'session'" label="ログイン状態の保存方法"
@@ -1810,7 +1810,7 @@ async function removeCardBill(record) {
     </template>
     <template #backup>
 
-    <summary>バックアップ・復元</summary>
+    
     <p>JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます。画像は非公開R2に保存し、既存画像は上書きしません。</p>
     <label class="backup-password-label">暗号化パスワード（任意）<input v-model="backupPassword" type="password" autocomplete="off" minlength="10" maxlength="128" placeholder="10文字以上・端末に保存しません" /></label>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,.zip,.kbe,application/json,application/zip,application/octet-stream" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
@@ -1831,7 +1831,7 @@ async function removeCardBill(record) {
     </template>
     <template #duplicates>
 
-    <summary>重複の可能性</summary>
+    
     <p v-if="busy">重複候補を確認中…</p>
     <p v-else-if="!reviewStateReady" role="status">{{ reviewStateError || '確認履歴を読み込み中…' }}</p>
     <p v-else-if="!loaded">{{ loadError || '全明細を更新してください。' }}</p>
@@ -1849,7 +1849,7 @@ async function removeCardBill(record) {
     </template>
     <template #trash>
 
-    <summary>ゴミ箱 <span class="review-trash-count" aria-live="polite">{{trashCountReady ? trashCount+'件' : trashCountLoading ? '確認中…' : '再読み込みが必要'}}</span></summary>
+    
     <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>
       <p v-if="!trashCountReady" class="review-trash-loading" role="status">{{reviewStateError || (trashCountLoading ? 'ゴミ箱を確認中…' : '件数を取得できませんでした。再読み込みしてください。')}}</p>

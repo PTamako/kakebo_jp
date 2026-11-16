@@ -4,9 +4,9 @@ import FixedCostEditorFields from './FixedCostEditorFields.vue'
 import {recurringDatesForPlanInMonth} from './recurring-posting.js'
 const props=defineProps({
  userId:{type:String,required:true},paymentChoices:{type:Array,default:()=>[]},
- categories:{type:Array,default:()=>[]}
+ categories:{type:Array,default:()=>[]},
+ onSubmitEntry:{type:Function,required:true}
 })
-const emit=defineEmits(['entry-requested'])
 const today=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const currentMonth=()=>today().slice(0,7)
 const blank=()=>({name:'',amount:'',scheduleType:'monthly',intervalMonths:1,
@@ -109,12 +109,17 @@ async function toggle(item){
  }catch(e){error.value=e.message}
  finally{busy.value=false}
 }
-function submitDue(item){
- if(!item.enabled)return
- // A personal schedule never writes a family entry by itself. The host must
- // request an authenticated HomeFlow approval for this one explicit instance.
- if(!confirm(item.name+' '+money(item.amount)+'を家庭帳簿に申請しますか？承認まで未入帳です。'))return
- emit('entry-requested',item)
+async function submitDue(item){
+ if(!item.enabled||busy.value)return
+ if(!confirm(item.name+' '+money(item.amount)+'を記帳しますか？家庭帳簿への記録は HomeFlow で審査が必要です。'))return
+ busy.value=true;error.value='';notice.value=''
+ try{
+  const receipt=await props.onSubmitEntry(item)
+  if(!receipt?.proposalId&&!receipt?.type)throw Error('記帳の受付を確認できません')
+  notice.value=receipt.proposalId?'HomeFlow へ記帳申請を送りました。承認まで未入帳です。':
+   '利用記録を受け付けました。'
+ }catch(e){error.value='記帳できませんでした：'+String(e.message||e)}
+ finally{busy.value=false}
 }
 watch(()=>props.userId,()=>{clear();items.value=[];void load()})
 onMounted(load)

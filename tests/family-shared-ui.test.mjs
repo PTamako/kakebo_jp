@@ -62,7 +62,7 @@ test('member ledger keeps pending item previews separate from physical totals',(
  assert.match(family,/const ledgerEntries=computed\(\(\)=>/)
  assert.match(family,/pending_approval:true/)
  assert.match(family,/view=ledger&month=/)
- assert.match(family,/entry:'pending:'\+p.proposal_id/)
+ assert.match(family,/id:'pending:'\+p.proposal_id/)
  assert.match(context,/!e.pending_approval\|\|e.pending_operation!=='create'/)
  assert.match(entry,/削除待審査/)
  assert.match(entry,/変更待審査/)

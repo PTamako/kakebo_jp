@@ -7,7 +7,12 @@ const json=(data,status)=>Response.json(data,{status,headers:{
  'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'
 }});
 export async function verifyLegacyOwner(request,env,url){
- if(env.KAKEIBO_REQUIRE_OWNER_IDENTITY_FOR_LEGACY!=='true')return null;
+ // Production isolation must never depend on an optional dashboard flag.
+ // HomeFlow member auth must NOT turn an old shared device code into a
+ // capability for the original owner's cards, receipts or portfolio.
+ const enforce=env.KAKEIBO_REQUIRE_OWNER_IDENTITY_FOR_LEGACY==='true'||
+  (env.APP_ENV==='production'&&env.KAKEIBO_FAMILY_FINANCE_ENABLED==='true');
+ if(!enforce)return null;
  if(!ssoReady(env,url))return json({
   code:'HOMEFLOW_OWNER_VERIFICATION_UNAVAILABLE',
   error:'HomeFlow 管理员身份验证暂不可用，请先恢复统一登录'},503);

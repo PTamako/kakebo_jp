@@ -13,6 +13,7 @@ import { validateCardBillRecalculation } from './card-bill-validation.js'
 import { validateLedgerTextFields } from './ledger-input-validation.js'
 import { getCardBillSnapshots } from './card-bill-snapshots.js'
 import { handleR2Receipts } from './r2-receipts.js'
+import {verifyLegacyOwner} from './legacy-owner-guard.js'
 import { readScheduledJobStatus } from './scheduled-job-status.js'
 import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
 // Cloudflare Pages Functions：/api/*
@@ -186,6 +187,13 @@ export async function onRequest({ request, env, params }) {
   }
   if (isPagesPreview && m !== 'GET' && a !== 'auth')
     return json({error:'プレビュー画面では明細・設定を更新できません。本番サイトをご利用ください',code:'preview_read_only'},403)
+  // A device access code alone is never sufficient once personal isolation
+  // has been explicitly enabled. This applies before auth/login and all API
+  // reads/writes. Revoke/logout is always allowed to clear old cookies.
+  if (!(a === 'auth' && b === 'logout' && m === 'POST')) {
+    const ownerDenied=await verifyLegacyOwner(request,env,url)
+    if (ownerDenied)return ownerDenied
+  }
   if (a === 'auth') {
     if (b === 'login' && m === 'POST') {
       let body

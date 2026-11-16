@@ -95,7 +95,7 @@ test('recurring candidate drawer and swipe-to-dismiss are both reversible',()=>{
   assert.match(finance,/@touchend="onRecurringTouchEnd/)
   assert.match(finance,/@click="dismissRecurring\(candidate\)"/)
   assert.match(finance,/@restore="restoreRecurringExclusion\(item\)"/)
-  assert.match(finance,/<summary>ゴミ箱/)
+  assert.match(readFileSync(new URL('../src/OriginalOtherManagement.vue',import.meta.url),'utf8'),/<summary>ゴミ箱/)
   assert.doesNotMatch(finance,/<summary>除外済み/)
   assert.match(finance,/recurringPreview\.value=recurringPreview\.value\.filter/)
   assert.match(finance,/recurringExclusions:recurringExclusionsBackup/)

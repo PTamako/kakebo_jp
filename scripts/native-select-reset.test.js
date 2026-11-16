@@ -62,7 +62,7 @@ test('the card editor resets its draft every time the selected card or mode chan
   assert.match(sheet,/name\.value=props\.cardName/)
   assert.match(sheet,/sourceType\.value=card\.source_type\|\|'standard'/)
   assert.match(sheet,/statGroup\.value=card\.stat_group\|\|'card'/)
-  assert.match(sheet,/name\.value='';sourceType\.value='standard'/)
+  assert.match(sheet,/name\.value='';sourceType\.value=props\.defaultSourceType==='prepaid'\?'prepaid':'standard'/)
   assert.match(sheet,/if\(dirty\.value&&!window\.confirm\('変更内容を破棄しますか？'\)\)return/)
 })
 

@@ -4,6 +4,7 @@ import { sortOtherLast } from './category-sort.js'
 import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
+import FamilyCrossMemberBankTransfer from './FamilyCrossMemberBankTransfer.vue'
 const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false } })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
@@ -40,8 +41,9 @@ const autoSbiLabel = computed(()=>({
 const transferOptions = computed(()=> [
   {value:'',label:'選択してください'},
   {value:'sbi',label:'SBI証券（投資信託）'},
+  {value:'family:cross-bank',label:'家庭成员银行账户间转移（双人确认）'},
   ...props.transferDestinations.map(dest=>({value:dest.value,label:dest.name+'（チャージ）'})),
-  ...(record.value.transferTarget && record.value.transferTarget!=='sbi' && !props.transferDestinations.some(dest=>dest.value===record.value.transferTarget)
+  ...(record.value.transferTarget && record.value.transferTarget!=='sbi' && record.value.transferTarget!=='family:cross-bank' && !props.transferDestinations.some(dest=>dest.value===record.value.transferTarget)
     ? [{value:record.value.transferTarget,label:'既存の振替先：'+record.value.transferTarget}] : [])
 ])
 </script>
@@ -60,7 +62,16 @@ const transferOptions = computed(()=> [
     <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
     <label v-if="record.type==='expense'" class="form-field"><span>支払方法・カード</span><MobileChoiceSheet :model-value="record.paymentSource" :options="paymentOptions" label="支払方法・カード" @change="emit('payment-change',$event)" /></label>
   </div>
-  <div v-if="record.type==='transfer'" class="field-grid transfer-schedule-fields"><label class="form-field"><span>振替先</span><MobileChoiceSheet v-model="record.transferTarget" :options="transferOptions" label="振替先" /></label><label class="form-field"><span>反映日</span><input v-model="record.transferDate" type="date" required /></label></div>
+  <div v-if="record.type==='transfer'" class="field-grid transfer-schedule-fields">
+    <label class="form-field"><span>转移方式／振替先</span>
+      <MobileChoiceSheet v-model="record.transferTarget" :options="transferOptions" label="振替先" />
+    </label>
+    <label v-if="record.transferTarget!=='family:cross-bank'" class="form-field"><span>反映日</span>
+      <input v-model="record.transferDate" type="date" required />
+    </label>
+  </div>
+  <FamilyCrossMemberBankTransfer v-if="record.type==='transfer' && record.transferTarget==='family:cross-bank'"
+    :record="record"/>
   <label v-if="record.type==='transfer' && record.transferTarget==='sbi' && !editMode" class="form-field">
     <span>SBIの取引区分</span>
     <MobileChoiceSheet v-model="record.sbiPurpose" :options="sbiPurposeOptions" label="SBIの取引区分" />
@@ -70,7 +81,7 @@ const transferOptions = computed(()=> [
     <span>取引名（任意）</span>
     <input v-model="record.merchant" maxlength="500" placeholder="SBI証券 投信積立サービス" />
   </label>
-  <label v-if="record.type==='transfer'" class="form-field">
+  <label v-if="record.type==='transfer' && record.transferTarget!=='family:cross-bank'" class="form-field">
     <span>{{record.transferTarget?.startsWith('prepaid:') ? 'チャージ元（任意）' : '振替元（任意）'}}</span>
     <MobileChoiceSheet v-model="record.paymentSource" :options="transferSourceOptions" label="振替元" />
   </label>

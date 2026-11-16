@@ -35,7 +35,8 @@ const visible=r=>({request_id:r.request_id,resource_id:r.request_id,
  payload_sha256:r.payload_sha256,source_user_id:r.requester_user_id,
  recipient_user_id:r.recipient_user_id,source_account_id:r.source_account_id,
  source_account_version:r.source_version,target_account_id:r.target_account_id,
- recipient_account_version:r.target_version,recipient_confirmed:!!r.credit_reference_hash,
+ recipient_account_version:r.target_version,amount_jpy:r.amount_jpy,debit_date:r.debit_date,
+ recipient_confirmed:!!r.credit_reference_hash,
  status:r.transfer_entry_id?'applied':r.status==='submitted'?'submitted_status_unknown':r.status,
  consent_id:r.consent_id||null,approval_id:r.homeflow_approval_id||null,
  applied:!!r.transfer_entry_id,expires_at:r.expires_at});
@@ -154,6 +155,43 @@ async function consent(e,p,id){
    payload_sha256:p.payload_sha256,source_account_version:p.source_version,
    recipient_account_version:p.target_version});
 }
+
+async function requestConsent(req,e,url,u,id){
+ const x=await read(req,url);
+ if(!exact(x,['expected_user_id'])||x.expected_user_id!==u.user_id)
+  return deny('CROSS_BANK_ACTOR_CHANGED',403);
+ const p=await readOne(e.DB,id,u);
+ if(!p)return deny('CROSS_BANK_NOT_FOUND',404);
+ if(u.role!=='member'||p.requester_user_id!==u.user_id)
+  return deny('CROSS_BANK_SOURCE_ONLY',403);
+ if(p.status!=='prepared'||p.expires_at<=Date.now()||!await versions(e.DB,p))
+  return deny('CROSS_BANK_INTENT_OR_CAS_CHANGED');
+ // The signed call is fully scoped to this authenticated member's immutable
+ // encrypted intent. No HomeFlow browser cookie is forwarded or forged.
+ const response=await callHomeflow(e,'/api/internal/cross-member/consent-submit',
+  'kakeibo-cross-member','kakeibo-cross-member:consent-submit',
+  e.KAKEIBO_CROSS_MEMBER_PROOF_SECRET,{
+   household_id:p.household_id,requester_user_id:p.requester_user_id,
+   recipient_user_id:p.recipient_user_id,resource_id:p.request_id,
+   payload_sha256:p.payload_sha256,source_account_version:p.source_version,
+   recipient_account_version:p.target_version
+  });
+ const f=response?.consent;
+ if(response?.ok!==true||response.ledger_applied!==false||
+  response.approval_submitted!==false||
+  f?.resource_id!==p.request_id||f?.payload_sha256!==p.payload_sha256||
+  f?.household_id!==p.household_id||f?.source_user_id!==p.requester_user_id||
+  f?.recipient_user_id!==p.recipient_user_id||
+  f?.source_account_version!==p.source_version||
+  f?.recipient_account_version!==p.target_version||
+  f?.ledger_applied!==false||f?.execution_permitted!==false||
+  !uuid.test(f?.consent_id||''))
+  return deny('CROSS_BANK_CONSENT_SUBMISSION_UNKNOWN',503);
+ return reply({ok:true,consent_id:f.consent_id,consent_status:f.status,
+  recipient_confirmed:!!p.credit_reference_hash,applied:false,
+  expires_at:f.expires_at,replayed:response.replayed===true});
+}
+
 async function submit(req,e,url,u,id){
  const x=await read(req,url);
  if(!x||x.expected_user_id!==u.user_id)return deny('CROSS_BANK_ACTOR_CHANGED',403);
@@ -220,6 +258,20 @@ async function cancel(req,e,url,u,id){
 }
 export async function familyCrossMemberBankTransfers(req,e,url,u,parts){
  if(!ready(e))return deny('CROSS_BANK_DISABLED',503);
+ // This picker intentionally returns no account balances, card metadata,
+ // old account data, or receipts to the other household member.
+ if(parts.length===2&&parts[1]==='eligible-accounts'&&req.method==='GET'){
+  const rows=(await e.DB.prepare('SELECT a.account_id,a.label,a.owner_user_id,a.version '+ 
+   'FROM family_financial_accounts a JOIN homeflow_identity_links m '+
+   'ON m.user_id=a.owner_user_id AND m.household_id=a.household_id '+ 
+   "WHERE a.household_id=? AND a.account_kind='bank' "+ 
+   "AND a.origin='member_created' AND a.is_archived=0 AND m.state='active' "+
+   "AND (a.owner_user_id=? OR (?='member' AND m.role='owner') "+
+   "OR (?='owner' AND m.role='member')) "+
+   'ORDER BY a.owner_user_id,a.label LIMIT 100')
+   .bind(u.household_id,u.user_id,u.role,u.role).all()).results||[];
+  return reply({ok:true,items:rows});
+ }
  if(parts.length===1&&req.method==='POST')return prepare(req,e,url,u);
  if(req.method==='GET'&&parts.length===1){
   const result=(await e.DB.prepare(SELECT+'WHERE i.household_id=? AND (i.requester_user_id=? OR i.recipient_user_id=?) '+
@@ -233,6 +285,7 @@ export async function familyCrossMemberBankTransfers(req,e,url,u,parts){
  }
  if(parts.length===3&&req.method==='POST'){
   if(parts[2]==='recipient')return recipient(req,e,url,u,parts[1]);
+  if(parts[2]==='request-consent')return requestConsent(req,e,url,u,parts[1]);
   if(parts[2]==='submit')return submit(req,e,url,u,parts[1]);
   if(parts[2]==='cancel')return cancel(req,e,url,u,parts[1]);
  }

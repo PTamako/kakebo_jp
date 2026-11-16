@@ -5,11 +5,12 @@ const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 const app=read('src/App.vue')
 const finance=read('src/FinanceTools.vue')
 const tabs=read('src/FinanceSectionTabs.vue')
+const managementHeader=read('src/FinanceManagementHeader.vue')
 const stats=read('src/pages/StatisticsPage.vue')
 const wallet=read('src/pages/AssetsPage.vue')
 
 test('main navigation and management tabs use concise, natural Japanese',()=>{
-  assert.match(finance,/<h1 class="finance-heading">管理<\/h1>/)
+  assert.match(managementHeader,/<h1 class="finance-heading">管理<\/h1>/)
   assert.match(tabs,/\['plans','固定費'\]/)
   assert.match(tabs,/\['cards','カード'\]/)
   assert.match(tabs,/\['investment','積立'\]/)

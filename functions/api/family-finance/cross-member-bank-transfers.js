@@ -258,6 +258,20 @@ async function cancel(req,e,url,u,id){
 }
 export async function familyCrossMemberBankTransfers(req,e,url,u,parts){
  if(!ready(e))return deny('CROSS_BANK_DISABLED',503);
+ // This picker intentionally returns no account balances, card metadata,
+ // old account data, or receipts to the other household member.
+ if(parts.length===2&&parts[1]==='eligible-accounts'&&req.method==='GET'){
+  const rows=(await e.DB.prepare('SELECT a.account_id,a.label,a.owner_user_id,a.version '+ 
+   'FROM family_financial_accounts a JOIN homeflow_identity_links m '+
+   'ON m.user_id=a.owner_user_id AND m.household_id=a.household_id '+ 
+   "WHERE a.household_id=? AND a.account_kind='bank' "+ 
+   "AND a.origin='member_created' AND a.is_archived=0 AND m.state='active' "+
+   "AND (a.owner_user_id=? OR (?='member' AND m.role='owner') "+
+   "OR (?='owner' AND m.role='member')) "+
+   'ORDER BY a.owner_user_id,a.label LIMIT 100')
+   .bind(u.household_id,u.user_id,u.role,u.role).all()).results||[];
+  return reply({ok:true,items:rows});
+ }
  if(parts.length===1&&req.method==='POST')return prepare(req,e,url,u);
  if(req.method==='GET'&&parts.length===1){
   const result=(await e.DB.prepare(SELECT+'WHERE i.household_id=? AND (i.requester_user_id=? OR i.recipient_user_id=?) '+

@@ -17,7 +17,7 @@ import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} 
 import BottomNavigation from './BottomNavigation.vue'
 import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
-import CardManagementControls from './CardManagementControls.vue'
+import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import LedgerEntryContent from './LedgerEntryContent.vue'
@@ -579,24 +579,20 @@ watch(()=>props.user.user_id,loadMemberCategories)
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    <template #member-cards>
-    <section class="finance-panel">
-     <h2>支払方法・カード管理</h2>
-     <CardManagementControls v-model="selectedCardId" :busy="busy"
-       :options="cardAccounts.map(a=>({value:a.account_id,label:a.label}))"
-       :default-value="defaultCard" @default="makeDefaultCard"
-       @edit="cardMode='edit'" @add="cardMode='add'" />
-     <MobileCardEditorSheet :mode="cardMode" :card-name="selectedCard?.label||''"
-      :card="cardMeta" :closing-day="selectedCard?.closing_day?String(selectedCard.closing_day)+'日':'末日'"
-      :payment-sources="cardLabels" :busy="busy" :on-save="saveCard" :on-danger="cardDanger"
-      @close="cardMode=''" />
-     <p v-if="!cardAccounts.length" class="help">个人卡片为空白，点击＋创建自己的卡片。</p>
-     <div v-for="a in cardAccounts" :key="a.account_id" class="entry">
-      <div><strong>{{a.label}}</strong><small>{{kindLabel(a.account_kind)}} · {{a.is_archived?'已归档':'使用中'}}</small></div>
-      <button type="button" @click="selectedCardId=a.account_id;cardMode='edit'">编辑</button>
-      <button v-if="a.is_archived" type="button" @click="modify(a,{is_archived:false})">恢复</button>
-     </div>
-    </section>
-
+    <OriginalCardManagementPanel
+      :selected="selectedCardId"
+      :options="cardAccounts.filter(a=>!a.is_archived).map(a=>({value:a.account_id,label:a.label}))"
+      :default-value="defaultCard" :busy="busy"
+      :mode="cardMode" :name="selectedCard?.label||''" :card="cardMeta"
+      :closing-day="selectedCard?.closing_day?String(selectedCard.closing_day)+'日':'末日'"
+      :payment-sources="cardLabels" :share-ready="false"
+      :archived="cardAccounts.filter(a=>a.is_archived).map(a=>({value:a.account_id,
+        label:a.label,kind:a.account_kind}))"
+      :allow-permanent-delete="false" empty-hint="＋から本人のカードを追加できます。"
+      :on-save="saveCard" :on-danger="cardDanger"
+      @update:selected="selectedCardId=$event" @update:mode="cardMode=$event"
+      @default="makeDefaultCard"
+      @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
    </template>
    <template #member-plans>
     <MemberFixedCosts :key="'member-fixed:'+user.user_id" :user-id="user.user_id"

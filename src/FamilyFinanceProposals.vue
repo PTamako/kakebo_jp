@@ -4,7 +4,7 @@ import TransactionForm from './TransactionForm.vue'
 
 const props=defineProps({userId:{type:String,required:true},
  accounts:{type:Array,default:()=>[]}})
-const open=ref(false),busy=ref(''),loading=ref(false)
+const open=ref(true),busy=ref(''),loading=ref(false)
 const items=ref([]),offset=ref(0),nextOffset=ref(null)
 const error=ref(''),unavailable=ref(false),message=ref('')
 const myAccounts=computed(()=>props.accounts.filter(a=>
@@ -209,7 +209,7 @@ function onForeground(){
  if(document.visibilityState==='visible'&&open.value&&!busy.value&&!loading.value)
   void load(0)
 }
-onMounted(()=>{alive=true;document.addEventListener('visibilitychange',onForeground)})
+onMounted(()=>{alive=true;document.addEventListener('visibilitychange',onForeground);void load(0)})
 onUnmounted(()=>{
  alive=false;revision++;open.value=false;items.value=[]
  frozenDraft=null;accountId.value='';amount.value='';merchant.value='';category.value='';note.value=''

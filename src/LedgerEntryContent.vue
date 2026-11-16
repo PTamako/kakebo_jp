@@ -10,6 +10,7 @@ const props=defineProps({
 })
 const emit=defineEmits(['open','edit'])
 const name=x=>props.categoryLabel(x)||x||'その他'
+const attribution=e=>e?.recorder_basis==='creator'?'記帳：':e?.recorder_basis==='legacy_assigned'?'旧記録：':null
 </script>
 <template>
  <div class="ledger-row-content" :role="clickable?'button':undefined" :tabindex="clickable?0:undefined"
@@ -27,6 +28,10 @@ const name=x=>props.categoryLabel(x)||x||'その他'
    <small>{{annual?String(entry.date||'').replace(/-/g,'/'):String(entry.date||'').slice(5)}}
     <template v-if="entry.time"> · {{entry.time}}</template> · {{name(entry.category)}}
     <template v-if="!annual"> · {{entry.type==='income'?'収入':entry.type==='transfer'?'資産移動':'支出'}}</template>
+    <span v-if="attribution(entry)&&entry.recorded_by" class="ledger-recorder"
+     :title="entry.recorder_basis==='legacy_assigned'?'原账本归属人；旧记录未单独保存实际记账操作人':'由已验证的 HomeFlow 身份创建'">
+     · {{attribution(entry)}}{{entry.recorded_by}}
+    </span>
     <template v-if="prepaidUsage&&entry.payment_source"> · {{entry.payment_source}}</template>
     <template v-if="entry.type==='income'&&entry.category==='ポイント還元'&&entry.transfer_target">
      · → {{entry.transfer_target.startsWith('prepaid:')?entry.transfer_target.slice(8):
@@ -43,3 +48,7 @@ const name=x=>props.categoryLabel(x)||x||'その他'
   </span>
  </div>
 </template>
+<style scoped>
+.ledger-recorder{display:inline;white-space:normal;overflow-wrap:normal;
+ font-size:clamp(10px,2.7vw,12px);color:var(--muted,#897b85);font-weight:600}
+</style>

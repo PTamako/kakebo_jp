@@ -1,6 +1,7 @@
 <script setup>
 import {ref,computed,provide,onMounted,onUnmounted,watch} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
+import FamilySharedCardSpend from './FamilySharedCardSpend.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import BottomNavigation from './BottomNavigation.vue'
@@ -19,6 +20,7 @@ const props=defineProps({user:{type:Object,required:true}})
 const emit=defineEmits(['logout'])
 const tab=ref('list'),managementTab=ref('cards')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),totals=ref(null),yearly=ref(null)
+const sharedCards=ref([]),cardSharingError=ref('')
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
 const year=ref(month.value.slice(0,4))
 const busy=ref(false),error=ref(''),label=ref(''),kind=ref('cash')
@@ -132,11 +134,12 @@ async function refresh(){
  const ticket=++epoch,user=props.user.user_id
  error.value='';accounts.value=[];assets.value=[];sharedEntries.value=[];totals.value=null;yearly.value=null
  try{
-  const [a,b,c,d,e]=await Promise.all([
+  const [a,b,c,d,e,f]=await Promise.all([
    api('accounts'),api('personal/assets'),
    api('shared/entries?limit=100&month='+encodeURIComponent(month.value)),
    api('shared/stats?month='+month.value),
-   api('shared/stats?year='+year.value)
+   api('shared/stats?year='+year.value),
+   api('legacy-card-shares').catch(e=>({incoming:[],share_error:e.message}))
   ])
   if(!alive||ticket!==epoch||user!==props.user.user_id)return
   if(a.account_scope!=='personal'||b.scope!=='personal'||b.viewer_user_id!==user||
@@ -144,6 +147,8 @@ async function refresh(){
    throw Error('账本权限范围核验失败')
   if((a.items||[]).some(x=>x.owner_user_id!==user))throw Error('账户归属不一致')
   accounts.value=a.items||[];assets.value=b.accounts||[]
+  cardSharingError.value=f.share_error||''
+  sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
   monthlyReport.value=d;annualReport.value=e
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
@@ -181,7 +186,7 @@ function foreground(){if(document.visibilityState==='visible')void refresh()}
 watch(()=>props.user.user_id,()=>{label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
-onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEntries.value=[];
+onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEntries.value=[];sharedCards.value=[];
  document.removeEventListener('visibilitychange',foreground)})
 </script>
 <template>
@@ -216,6 +221,10 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
    <FamilySharedMutationRequests ref="spouseIncomeRequestRef"
      :key="'spouse-income:'+user.user_id"
      :user-id="user.user_id" :household-id="user.household_id" />
+   <FamilySharedCardSpend v-if="sharedCards.length" :key="'shared-card:'+user.user_id"
+    :user-id="user.user_id" :cards="sharedCards" @posted="refresh" @refresh="refresh" />
+   <p v-if="cardSharingError" class="help">家庭共有カードの取得に失敗しました。{{cardSharingError}}</p>
+   <button type="button" class="member-share-refresh" @click="refresh">共有カードを更新</button>
    <FamilyFinanceProposals :key="'personal-proposal:'+user.user_id"
     :user-id="user.user_id" :accounts="myAccounts"/>
   </section>
@@ -290,6 +299,7 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
 .member-family-label{font-size:12px;color:var(--muted,#81777b);white-space:nowrap}
 .member-page{display:grid;gap:12px;min-width:0}
 .member-page h1{margin:0;font-size:23px}
+.member-share-refresh{justify-self:start;font-size:12px}
 .member-page h2{font-size:16px;margin:8px 0 0}
 .entry,.summary-grid>div{display:flex;justify-content:space-between;gap:8px;border:1px solid var(--line,#ecdfe3);border-radius:14px;background:var(--card,#fff);padding:12px;min-width:0}
 .entry{flex-wrap:wrap;align-items:center}

@@ -2,6 +2,8 @@
 import {ref,computed,provide,onMounted,onUnmounted,watch} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
+import SbiPortfolio from './SbiPortfolio.vue'
+import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
@@ -385,6 +387,31 @@ async function api(path,options={}){
  if(!res.ok||data.ok!==true)throw Error(data.code||'读取失败')
  return data
 }
+const memberRecurringRef=ref(null)
+async function memberSbiApi(path,options){
+ if(options?.method&&options.method!=='GET')throw Error('本人の投資設定は HomeFlow の承認手続きから変更してください')
+ const match=/^investment-portfolio\?month=(20\d{2}-(?:0[1-9]|1[0-2]))$/.exec(path)
+ if(!match)throw Error('本人の投資情報は読み取り専用です')
+ const actor=props.user.user_id,ticket=epoch
+ const [planResult,occurrenceResult]=await Promise.allSettled([
+  api('member-recurring-plans'),api('recurring-occurrences')
+ ])
+ if(actor!==props.user.user_id||ticket!==epoch)throw Error('利用者が切り替わりました')
+ if(planResult.status!=='fulfilled'||planResult.value.ok!==true)
+  throw Error('本人の積立設定を読み込めませんでした')
+ if(!Array.isArray(planResult.value.items)||planResult.value.items.some(p=>p.owner_user_id!==actor))
+  throw Error('本人の積立設定の所有者を確認できません')
+ const occurrences=occurrenceResult.status==='fulfilled'&&
+  Array.isArray(occurrenceResult.value.items)?occurrenceResult.value.items:null
+ return memberInvestmentSnapshot({
+  userId:actor,requestedMonth:match[1],plans:planResult.value.items,occurrences
+ })
+}
+function openMemberInvestmentPlan(plan=null){
+ const target=memberRecurringRef.value
+ if(!target?.openPlanEditor)throw Error('積立登録の画面を開けません。管理の積立を再表示してください')
+ target.openPlanEditor(plan)
+}
 async function refresh(){
  const ticket=++epoch,user=props.user.user_id
  error.value='';accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];totals.value=null;yearly.value=null
@@ -601,8 +628,12 @@ watch(()=>props.user.user_id,loadMemberCategories)
      :on-submit-entry="submitMemberFixedCost" />
    </template>
    <template #member-investment>
-    <FamilyRecurringFinance view="investment" :key="'personal-sbi:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+    <SbiPortfolio member-mode active-view="plans" :api="memberSbiApi"
+      :on-member-create="()=>openMemberInvestmentPlan()"
+      :on-member-edit="openMemberInvestmentPlan"/>
+    <FamilyRecurringFinance ref="memberRecurringRef" view="investment"
+     :key="'personal-sbi:'+user.user_id" :user-id="user.user_id"
+     :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
    </template>
    <template #member-tools>
     <details class="finance-panel finance-disclosure">

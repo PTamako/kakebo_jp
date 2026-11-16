@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
-import FamilyPersonalBankSettings from './FamilyPersonalBankSettings.vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
 import { sortOtherLast } from './category-sort.js'
 import ReviewTrashActions from './ReviewTrashActions.vue'
@@ -1575,7 +1574,6 @@ async function removeCardBill(record) {
       </div>
     </details>
   </article>
-  <FamilyPersonalBankSettings v-if="props.active&&managementTab==='cards'" />
   <MobileMerchantRulesPanel v-if="managementTab === 'tools'"
     :rules="merchantRulesCombined" :categories="orderedCategories"
     :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" />

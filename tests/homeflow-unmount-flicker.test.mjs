@@ -18,7 +18,7 @@ test('HomeFlow owner original-ledger transition never emits logout during child 
   'successful SSO should send owner identity to the parent')
  assert.match(app,/if\(identity\.role==='owner'\)/)
  assert.match(app,/locked\.value=false/)
- assert.match(app,/<FamilyFinanceAccess :identity-only=/)
+ assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity" identity-only/)
  assert.match(app,/<main v-else :class=/)
 })
 

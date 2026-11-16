@@ -3,11 +3,27 @@ import { computed, inject, ref } from 'vue'
 import SbiPortfolio from '../SbiPortfolio.vue'
 import PrepaidAssets from '../PrepaidAssets.vue'
 const props=defineProps({personalAssets:{type:Array,default:null},
- openPersonalManagement:{type:Function,default:null}})
+ openPersonalManagement:{type:Function,default:null},
+ onCreatePersonalAccount:{type:Function,default:null}})
 const isPersonal=computed(()=>Array.isArray(props.personalAssets))
 const {tab,openPrepaidHistoryDetails,ledgerRevision,transferLoading,api,openCardSettingsFromWallet}=
  inject('kakeibo-page-context',{})
 const activeView = ref('wallets')
+const creating=ref(false),createOpen=ref(false),assetName=ref(''),createError=ref('')
+const createKind=computed(()=>activeView.value==='funds'?'securities':'prepaid')
+function beginPersonalAsset(){
+ createOpen.value=true;assetName.value='';createError.value=''
+}
+async function savePersonalAsset(){
+ const label=assetName.value.trim()
+ if(!label||label.length>80||creating.value||!props.onCreatePersonalAccount)return
+ creating.value=true;createError.value=''
+ try{
+  await props.onCreatePersonalAccount(createKind.value,label)
+  assetName.value='';createOpen.value=false
+ }catch(e){createError.value='口座を追加できませんでした：'+String(e.message||e)}
+ finally{creating.value=false}
+}
 const selectView = value => { activeView.value = value }
 const portfolioSummary = ref(null)
 const prepaidSummary = ref(null)
@@ -111,6 +127,22 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
     </nav>
 
     <div v-if="isPersonal" class="personal-asset-list" aria-label="本人の残高明細">
+      <div class="personal-asset-actions">
+       <button type="button" class="button-secondary" @click="beginPersonalAsset">
+        ＋ {{activeView==='funds'?'証券口座を追加':'電子マネーを追加'}}
+       </button>
+      </div>
+      <form v-if="createOpen" class="personal-asset-create" @submit.prevent="savePersonalAsset">
+       <label>{{activeView==='funds'?'証券口座名':'電子マネー名'}}
+        <input v-model="assetName" maxlength="80" required
+         :placeholder="activeView==='funds'?'例：SBI証券':'例：Suica'"/>
+       </label>
+       <div class="personal-asset-create-actions">
+        <button type="submit" :disabled="creating||!assetName.trim()">追加</button>
+        <button type="button" :disabled="creating" @click="createOpen=false">キャンセル</button>
+       </div>
+       <p v-if="createError" role="alert">{{createError}}</p>
+      </form>
       <p class="personal-asset-hint">本人の金融口座だけ表示します。未核証の銀行残高や券商市值は「—」のままです。</p>
       <div v-for="a in personalAssets.filter(a=>!a.is_archived&&
        (activeView==='wallets'?a.account_kind!=='securities':a.account_kind==='securities'))"
@@ -123,10 +155,9 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
        <span v-else>残高 —</span>
        <small v-if="a.balance_note">{{a.balance_note}}</small>
       </div>
-      <p v-if="!personalAssets.filter(a=>!a.is_archived).length" class="personal-asset-hint">
-       個人の資産口座はまだありません。
-       <button type="button" class="button-secondary" @click="openCardSettings">管理で追加</button>
-      </p>
+      <p v-if="!personalAssets.filter(a=>!a.is_archived&&
+       (activeView==='funds'?a.account_kind==='securities':a.account_kind!=='securities')).length"
+        class="personal-asset-hint">本人の{{activeView==='funds'?'証券口座':'電子マネー'}}はまだありません。上の「＋」から追加できます。</p>
     </div>
     <SbiPortfolio v-else :api="api" :transfer-loading="transferLoading" :active-view="activeView" :refresh-key="ledgerRevision" @summary="onPortfolioSummary">
       <template #before-holdings>
@@ -138,6 +169,15 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
 <style scoped>
 .assets-page{display:grid;gap:7px;min-width:0}
 .personal-asset-list{display:grid;gap:8px;margin-top:7px;min-width:0}
+.personal-asset-actions{display:flex;justify-content:flex-end}
+.personal-asset-actions button{min-height:44px;border:1px solid var(--line);border-radius:11px;padding:8px 14px;background:var(--tint);color:var(--blue-dark);font-weight:750}
+.personal-asset-create{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--card)}
+.personal-asset-create label{display:grid;gap:6px;font-size:12px;color:var(--muted)}
+.personal-asset-create input{width:100%;min-width:0;min-height:44px;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:8px 12px;color:var(--ink)}
+.personal-asset-create-actions{display:flex;gap:8px}
+.personal-asset-create-actions button{flex:1;min-height:44px;border:1px solid var(--line);border-radius:11px;background:var(--tint);color:var(--blue-dark);font-weight:750}
+.personal-asset-create p[role=alert]{color:#b42f48;font-size:12px}
+
 .personal-asset-hint{font-size:12px;color:var(--muted);margin:4px 0}
 .personal-asset-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;border:1px solid var(--line);padding:12px;border-radius:13px;background:var(--card);min-width:0}
 .personal-asset-row>strong{overflow-wrap:anywhere}

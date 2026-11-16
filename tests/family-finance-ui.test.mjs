@@ -16,7 +16,7 @@ test('independent family account UI is gated and does not unlock shared legacy l
  assert.match(app,/<main v-if="locked"/);
  assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity" identity-only[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
  assert.match(app,/<FamilyAccountMenu v-if="familyIdentity"/);
- assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
+ assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.doesNotMatch(source,/\/api\/entries\b|\/api\/auth\/login|AUTH_TOKEN/);
 });
 test('five-minute Safari proof remains separate from credentials; no bearer tokens stored',()=>{

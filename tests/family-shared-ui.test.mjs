@@ -15,7 +15,7 @@ test('owner and member use EXACT same navigation and management-tab components',
  assert.match(family,/<BottomNavigation :active-tab="tab"/)
  assert.match(finance,/<FinanceManagementHeader v-model="managementTab"/)
  assert.match(family,/<ManagementPage v-else-if="tab==='finance'"/)
- assert.match(finance,/<slot v-if="memberView" :name="'member-'+managementTab"/)
+ assert.ok(finance.includes('<slot v-if="memberView" :name="\'member-\'+managementTab"'))
  assert.match(finance, /if\(props\.memberView\)return false/)
  assert.match(finance, /<template v-else>/)
  for(const tab of ['list','stat','add','investments','finance'])

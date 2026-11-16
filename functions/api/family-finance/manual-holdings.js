@@ -44,7 +44,9 @@ const view=x=>{
   data_source:'manual_member_tracking'}
 }
 export async function familyManualHoldings(req,env,url,user,parts){
- if(!id(user.user_id)||!id(user.household_id)||!env.DB?.prepare)return reject('IDENTITY_REQUIRED',403)
+ if(typeof user?.user_id!=='string'||!user.user_id||
+  typeof user.household_id!=='string'||!user.household_id||!env.DB?.prepare)
+  return reject('IDENTITY_REQUIRED',403)
  const db=env.DB
  if(req.method==='GET'&&parts.length===1){
   try{

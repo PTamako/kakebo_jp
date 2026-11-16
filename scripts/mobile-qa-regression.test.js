@@ -136,7 +136,7 @@ test('CSP permits local header logo without allowing the unused LINE image domai
 })
 
 test('brand wordmark is bundled locally, responsive and needs no remote image hosts', () => {
-  const header = app.match(/<header class="topbar">[\s\S]*?<\/header>/)?.[0]
+  const header = source('src/AppTopbar.vue').match(/<header class="topbar">[\s\S]*?<\/header>/)?.[0]
   assert.ok(header)
   assert.match(header, /<img class="brand-wordmark" src="\/branding\/kakeibo-wordmark\.png\?v=4"/)
   assert.match(header, /alt="家計簿"/)

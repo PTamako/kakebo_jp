@@ -35,7 +35,8 @@ test('both POST and PUT validate before any entries SQL writes',()=>{
 test('management and ledger share authoritative D1 category labels',()=>{
   const app=source('src/App.vue')
   const management=source('src/FinanceTools.vue')
-  assert.match(app,/:category-display-names="categoryDisplayNames"/)
+  assert.match(app,/categoryDisplayNames:categoryDisplayNames.value/)
+   assert.match(app,/:management-bindings="originalManagementBindings"/)
   assert.match(management,/categoryDisplayNames: \{ type: Object/)
   assert.match(management,/const categoryLabel = category => props\.categoryDisplayNames\[category\] \|\| category/)
   assert.doesNotMatch(management,/const categoryJapaneseLabels =/)

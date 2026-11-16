@@ -190,9 +190,10 @@ export async function onRequest({ request, env, params }) {
   // A device access code alone is never sufficient once personal isolation
   // has been explicitly enabled. This applies before auth/login and all API
   // reads/writes. Revoke/logout is always allowed to clear old cookies.
+  const ownerProof={verified:false}
   if (!(a === 'auth' && b === 'logout' && m === 'POST')) {
-    const ownerDenied=await verifyLegacyOwner(request,env,url)
-    if (ownerDenied)return ownerDenied
+    const ownerDenied=await verifyLegacyOwner(request,env,url,ownerProof)
+    if(ownerDenied)return ownerDenied
   }
   if (a === 'auth') {
     if (b === 'login' && m === 'POST') {
@@ -258,12 +259,17 @@ export async function onRequest({ request, env, params }) {
     }
     return json({ error: '対象が見つかりません' }, 404)
   }
+  // One verified HomeFlow owner identity is sufficient; never ask again for
+  // the old shared device code once the production owner guard has passed.
+  // All legacy requests still verify the owner and current HomeFlow assertion.
   const session = request.headers.get('x-session') || cookieSession(request)
-  if (!/^[a-f0-9]{64}$/.test(session)) return json({ error: 'アクセスコードを確認してください' }, 401)
-  let validSession
-  try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
-  catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
-  if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
+  if(!ownerProof.verified){
+    if (!/^[a-f0-9]{64}$/.test(session)) return json({ error: 'アクセスコードを確認してください' }, 401)
+    let validSession
+    try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
+    catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
+    if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
+  }
   if (a === 'receipts') {
     // A preview must never read OR mutate the production private receipt bucket.
     if (isPagesPreview) return json({error:'プレビューではR2画像を利用できません'},403)

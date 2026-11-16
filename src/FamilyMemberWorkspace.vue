@@ -7,7 +7,7 @@ import TransactionForm from './TransactionForm.vue'
 import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
 import BottomNavigation from './BottomNavigation.vue'
-import FamilyAccountMenu from './FamilyAccountMenu.vue'
+import AppTopbar from './AppTopbar.vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
@@ -18,8 +18,12 @@ import StatisticsPage from './pages/StatisticsPage.vue'
 import {makeFamilyStatsContext} from './family-stats-context.js'
 import LedgerPage from './pages/LedgerPage.vue'
 import {makeFamilyLedgerContext} from './family-ledger-context.js'
-const props=defineProps({user:{type:Object,required:true}})
-const emit=defineEmits(['logout'])
+const props=defineProps({
+ user:{type:Object,required:true},
+ theme:{type:String,required:true},
+ themes:{type:Array,required:true}
+})
+const emit=defineEmits(['logout','theme-change'])
 const tab=ref('list'),managementTab=ref('cards')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
@@ -320,15 +324,8 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
 </script>
 <template>
  <div class="member-shell">
-  <header class="topbar member-topbar">
-   <div class="brand">
-    <img class="brand-wordmark" src="/branding/kakeibo-wordmark.png?v=4"
-     alt="家計簿" width="400" height="100"/>
-   </div>
-   <div class="header-actions">
-    <FamilyAccountMenu :identity="user" @logout="emit('logout')" />
-   </div>
-  </header>
+  <AppTopbar :identity="user" :theme="theme" :themes="themes"
+    @change-theme="emit('theme-change',$event)" @logout="emit('logout')" />
   <FamilySharedMutationRequests ref="sharedMutationRef" headless
    :key="'member-ledger-submit:'+user.user_id"
    :user-id="user.user_id" :household-id="user.household_id" />

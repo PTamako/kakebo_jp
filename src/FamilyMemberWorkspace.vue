@@ -2,6 +2,7 @@
 import {ref,computed,provide,onMounted,onUnmounted,watch} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
+import MemberFixedCosts from './MemberFixedCosts.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
 import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
@@ -264,6 +265,20 @@ async function submitPaidExpense(choice,record){
  pendingPaidEntry=null
  return {type:'pending'}
 }
+async function submitMemberFixedCost(item){
+ if(memberEntryPending.value||busy.value)throw Error('別の操作が進行中です')
+ const choice=resolveMemberPayment(item.paymentSource,myAccounts.value,sharedCards.value)
+ if(!choice)throw Error('支払方法を再確認してください。共有が解除されたカードは使用できません')
+ const record={...newEntry(),type:'expense',amount:item.amount,category:item.category,
+  merchant:item.name,note:'固定費 '+item.name,paymentSource:item.paymentSource}
+ let result
+ if(choice.kind==='cash'){
+  result=await sharedMutationRef.value?.submitEntry(record)
+  if(!result?.proposalId)throw Error('HomeFlow の申請受付を確認できません')
+ }else result=await submitPaidExpense(choice,record)
+ await refresh()
+ return result
+}
 async function submitMemberEntry(){
  if(memberEntryPending.value||memberOcrBusy.value||!memberEntries.value.length)return
  memberEntryPending.value=true;memberEntryError.value='';memberEntryNotice.value=''
@@ -409,16 +424,20 @@ async function refresh(){
  }catch(e){if(ticket===epoch)error.value=e.message}
 }
 function request(body,method='POST'){return {method,headers:{'content-type':'application/json'},body:JSON.stringify(body)}}
-async function createAccount(){
- if(busy.value||!label.value.trim())return
+async function createAccount(type,name){
+ const source=String(type||kind.value)
+ const title=String(name||label.value).trim()
+ if(busy.value||!title||title.length>80||!kinds.some(k=>k[0]===source))throw Error('口座の種類と名称を確認してください')
  const ticket=epoch,user=props.user.user_id
  busy.value=true;error.value=''
  try{
-  const r=await api('accounts',request({label:label.value.trim(),account_kind:kind.value,expected_user_id:user}))
-  if(ticket!==epoch||user!==props.user.user_id)return
-  if(r.ledger_changed!==false||r.owner_user_id!==user)throw Error('账户所有权核验失败')
-  label.value='';notice.value='账户已添加';await refresh()
- }catch(e){if(ticket===epoch)error.value=e.message}finally{busy.value=false}
+  const r=await api('accounts',request({label:title,account_kind:source,expected_user_id:user}))
+  if(ticket!==epoch||user!==props.user.user_id)throw Error('アカウントが変更されました')
+  if(r.ledger_changed!==false||r.owner_user_id!==user)throw Error('口座の所有者を確認できません')
+  label.value='';notice.value='本人の口座を追加しました';await refresh()
+  return r
+ }catch(e){if(ticket===epoch)error.value=e.message;throw e}
+ finally{busy.value=false}
 }
 async function modify(a,changes){
  if(busy.value||a.owner_user_id!==props.user.user_id||a.origin!=='member_created')return
@@ -558,7 +577,8 @@ watch(()=>props.user.user_id,loadMemberCategories)
   <StatisticsPage v-else-if="tab==='stat'" />
   <EntryInputPage v-else-if="tab==='add'" />
     <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
-    :open-personal-management="()=>{tab='finance'}" />
+     :on-create-personal-account="createAccount"
+     :open-personal-management="()=>{tab='finance'}" />
   <ManagementPage v-else-if="tab==='finance'" class="member-page"
     :member-view="true" :member-busy="busy" :member-error="error"
     :member-status="'本人のカード・残高・固定費 · '+myAccounts.length+'口座'"
@@ -581,20 +601,13 @@ watch(()=>props.user.user_id,loadMemberCategories)
       <button v-if="a.is_archived" type="button" @click="modify(a,{is_archived:false})">恢复</button>
      </div>
     </section>
-    <div class="finance-panel new-account">
-     <strong>现金、银行、积分或证券账户</strong>
-     <form class="new-account" @submit.prevent="createAccount">
-      <select v-model="kind" aria-label="账户类型">
-       <option v-for="k in kinds.filter(x=>!['credit_card','prepaid'].includes(x[0]))" :key="k[0]" :value="k[0]">{{k[1]}}</option>
-      </select>
-      <input v-model="label" maxlength="80" required placeholder="账户名称" aria-label="账户名称"/>
-      <button type="submit" :disabled="busy||!label.trim()">新建</button>
-     </form>
-    </div>
+
    </template>
    <template #member-plans>
-    <FamilyRecurringFinance view="plans" :key="'personal-recurring:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+    <MemberFixedCosts :key="'member-fixed:'+user.user_id" :user-id="user.user_id"
+     :payment-choices="memberPaymentOptions"
+     :categories="[...new Set([...entryExpenseCategories,...entryCategories])]"
+     :on-submit-entry="submitMemberFixedCost" />
    </template>
    <template #member-investment>
     <FamilyRecurringFinance view="investment" :key="'personal-sbi:'+user.user_id"

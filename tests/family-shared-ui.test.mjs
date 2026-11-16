@@ -61,3 +61,11 @@ test('member entry form is immediately visible with the original input UI',()=>{
  assert.match(proposal,/<TransactionForm /)
  assert.match(proposal,/\/api\/family-finance\/proposals/)
 })
+
+test('same original transaction filter is reused by both household accounts',()=>{
+ const filter=read('LedgerTypeFilter.vue')
+ const ledger=read('pages/LedgerPage.vue')
+ assert.match(ledger,/<LedgerTypeFilter :model-value="entryTypeFilter" @change="setEntryTypeFilter"/)
+ assert.match(family,/<LedgerTypeFilter :model-value="selectedEntryType" @change="selectedEntryType=\$event"/)
+ for(const name of ['すべて','収入','支出','資産移動'])assert.ok(filter.includes(name))
+})

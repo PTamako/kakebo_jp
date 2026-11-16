@@ -4,15 +4,16 @@ import { readFileSync } from 'node:fs'
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 const app=read('src/App.vue')
 const finance=read('src/FinanceTools.vue')
+const tabs=read('src/FinanceSectionTabs.vue')
 const stats=read('src/pages/StatisticsPage.vue')
 const wallet=read('src/pages/AssetsPage.vue')
 
 test('main navigation and management tabs use concise, natural Japanese',()=>{
   assert.match(finance,/<h1 class="finance-heading">管理<\/h1>/)
-  assert.match(finance,/>固定費<\/button>/)
-  assert.match(finance,/>カード<\/button>/)
-  assert.match(finance,/>積立<\/button>/)
-  assert.match(finance,/>その他<\/button>/)
+  assert.match(tabs,/\['plans','固定費'\]/)
+  assert.match(tabs,/\['cards','カード'\]/)
+  assert.match(tabs,/\['investment','積立'\]/)
+  assert.match(tabs,/\['tools','その他'\]/)
   assert.doesNotMatch(finance,/>固定支出<\/button>|管理・照合/)
 })
 test('monthly statistics use conventional Japanese category and yearly breakdown labels',()=>{

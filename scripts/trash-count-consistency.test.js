@@ -72,7 +72,7 @@ test('trash header never presents partial 2 before all three categories have fin
 test('entering その他 prefetches transfer notices and deleted fixed expenses before bin opens',()=>{
   const handler=finance.match(/watch\(\[\(\) => props\.active, managementTab\], \(\[active,tab\]\) => \{([\s\S]*?)\n\}\)/)?.[1]
   assert.ok(handler)
-  assert.match(handler,/if\(active && tab === 'tools'\)/)
+  assert.match(handler,/if\(!props\.memberView && active && tab === 'tools'\)/)
   assert.match(handler,/void loadTransferTrash\(\)/)
   assert.match(handler,/void loadDeletedPlans\(\)/)
   assert.match(handler,/void loadDeletedEntries\(\)/)

@@ -41,7 +41,7 @@ async function list(db,u){
     "FROM family_legacy_card_shares s WHERE s.household_id=? AND s.owner_user_id=? "+
     "ORDER BY s.card_name,s.grantee_user_id LIMIT 200",u.household_id,u.user_id)
   ]);
-  return json({ok:true,scope:'owner-card-settings',targets,outgoing,ledger_changed:false});
+  return json({ok:true,scope:'owner-card-settings',viewer_user_id:u.user_id,targets,outgoing,ledger_changed:false});
  }
  if(u.role==='member'){
   const incoming=await all(db,

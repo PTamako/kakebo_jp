@@ -4,6 +4,8 @@ import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilySharedCardSpend from './FamilySharedCardSpend.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
+import TransactionForm from './TransactionForm.vue'
+import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 import BottomNavigation from './BottomNavigation.vue'
 import FamilyAccountMenu from './FamilyAccountMenu.vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
@@ -19,7 +21,7 @@ import {makeFamilyLedgerContext} from './family-ledger-context.js'
 const props=defineProps({user:{type:Object,required:true}})
 const emit=defineEmits(['logout'])
 const tab=ref('list'),managementTab=ref('cards')
-const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),totals=ref(null),yearly=ref(null)
+const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
 const year=ref(month.value.slice(0,4))
@@ -80,12 +82,58 @@ const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.u
 const selectedEntryType=ref('all')
 const monthlyReport=ref(null),annualReport=ref(null),selectedYear=ref(Number(year.value))
 const sharedMutationRef=ref(null)
-const spouseIncomeRequestRef=ref(null)
-function openApproval(action,entry){
- if(!entry)return
- void sharedMutationRef.value?.openForEntry(action,entry)
+const memberEntryPending=ref(false),memberEntryError=ref(''),memberEntryNotice=ref('')
+const entryExpenseCategories=['食費','日用品','交通','住居','医療','交際費','その他']
+const entryIncomeCategories=['給与','賞与','副収入','ポイント還元',SPOUSE_INCOME_CATEGORY,'その他']
+function newEntry(){return {type:'expense',amount:'',date:new Date(Date.now()+9*3600000).toISOString().slice(0,10),
+ time:'',category:'食費',merchant:'',note:'',paymentSource:'',transferTarget:'',
+ bindRule:false,bindPaymentRule:false}}
+const memberEntry=ref(newEntry())
+function setMemberEntryType(type){
+ if(!['expense','income'].includes(type))return
+ memberEntry.value.type=type
+ memberEntry.value.category=type==='expense'?'食費':'給与'
+ memberEntry.value.merchant=''
 }
-const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:sharedEntries,
+async function submitMemberEntry(){
+ if(memberEntryPending.value)return
+ memberEntryPending.value=true;memberEntryError.value='';memberEntryNotice.value=''
+ try{
+  const r=await sharedMutationRef.value?.submitEntry(memberEntry.value)
+  if(!r?.proposalId)throw Error('申請の受付を確認できません')
+  memberEntryNotice.value='HomeFlow に審査を依頼しました。承認後に入帳されるまで金額には反映されません。'
+  memberEntry.value=newEntry()
+  await refresh()
+  tab.value='list'
+ }catch(e){memberEntryError.value=e.message||'申請を送信できません'}
+ finally{memberEntryPending.value=false}
+}
+const ledgerEntries=computed(()=>{
+ const byId=new Map(),drafts=[]
+ for(const p of pendingMutations.value){
+  if(p.operation==='create'&&p.entry){
+   drafts.push({...p.entry,id:'pending:'+p.proposal_id,
+    pending_approval:true,pending_operation:'create',pending_status:p.status,
+    recorded_by:props.user.display_name||props.user.login_name||'家族'})
+  }else if(p.source_entry_id!=null)byId.set(String(p.source_entry_id),p)
+ }
+ return [...sharedEntries.value.map(entry=>{
+  const change=byId.get(String(entry.id))
+  return change?{...entry,pending_approval:true,pending_operation:change.operation,
+   pending_status:change.status,pending_preview:change.entry||null}:entry
+ }),...drafts]
+})
+async function openApproval(action,entry){
+ if(!entry||entry.pending_approval)throw Error('審査中の記録は変更できません')
+ const original=sharedEntries.value.find(x=>String(x.id)===String(entry.id))
+ if(!original)throw Error('元の明細を確認できません')
+ const result=await sharedMutationRef.value?.submitMutation(action,original,
+  action==='update'?entry:null)
+ if(!result?.proposalId)throw Error('HomeFlow の審査受付を確認できません')
+ await refresh()
+ return result
+}
+const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:ledgerEntries,
  entryTypeFilter:selectedEntryType,load:()=>refresh(),more:()=>moreEntries(),
  openApproval,onError:message=>{error.value=message}})
 provide('kakeibo-page-context',{
@@ -132,7 +180,7 @@ async function api(path,options={}){
 }
 async function refresh(){
  const ticket=++epoch,user=props.user.user_id
- error.value='';accounts.value=[];assets.value=[];sharedEntries.value=[];totals.value=null;yearly.value=null
+ error.value='';accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];totals.value=null;yearly.value=null
  try{
   const [a,b,c,d,e,f]=await Promise.all([
    api('accounts'),api('personal/assets'),
@@ -154,6 +202,18 @@ async function refresh(){
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
   yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
    net_income_expense:Number(e.income||0)-Number(e.total||0)}
+  // Only the requesting member receives these read-only pending previews.
+  try{
+   const pending=await api('shared-mutation-requests?view=ledger&month='+
+    encodeURIComponent(month.value))
+   if(ticket===epoch&&user===props.user.user_id){
+    if(pending.ledger_scope!=='member_pending_only'||!Array.isArray(pending.items))
+     throw Error('審査状態の検証に失敗しました')
+    pendingMutations.value=pending.items
+   }
+  }catch(pendingError){
+   if(ticket===epoch)error.value='審査中の明細を確認できません：'+pendingError.message
+  }
  }catch(e){if(ticket===epoch)error.value=e.message}
 }
 function request(body,method='POST'){return {method,headers:{'content-type':'application/json'},body:JSON.stringify(body)}}
@@ -186,7 +246,7 @@ function foreground(){if(document.visibilityState==='visible')void refresh()}
 watch(()=>props.user.user_id,()=>{label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
-onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEntries.value=[];sharedCards.value=[];
+onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
  document.removeEventListener('visibilitychange',foreground)})
 </script>
 <template>
@@ -200,35 +260,44 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
     <FamilyAccountMenu :identity="user" @logout="emit('logout')" />
    </div>
   </header>
+  <FamilySharedMutationRequests ref="sharedMutationRef" headless
+   :key="'member-ledger-submit:'+user.user_id"
+   :user-id="user.user_id" :household-id="user.household_id" />
   <section v-if="error" class="member-alert" role="alert">{{error}}
    <button type="button" @click="refresh">再试一次</button>
   </section>
   <section v-if="tab==='list'" class="member-page">
    <LedgerPage member />
-   <FamilySharedMutationRequests ref="sharedMutationRef"
-     :key="'personal-mutation:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" />
   </section>
   <StatisticsPage v-else-if="tab==='stat'" />
-  <section v-else-if="tab==='add'" class="member-page">
-   <h1>記録を追加</h1>
-   <p class="help">家庭账目通过 HomeFlow 审批入账，不使用管理员旧账本访问码。</p>
-   <div class="spouse-income-shortcut">
-    <button type="button" @click="spouseIncomeRequestRef?.openSpouseIncome()">
-     <span>配偶からの収入</span><small>收到配偶的钱，记入本人收入 · 无需银行账户</small>
-    </button>
+  <section v-else-if="tab==='add'" class="page-section member-page">
+   <div class="page-heading"><h1>入力</h1></div>
+   <div class="draft-heading"><div><h2>入力内容の確認</h2><p>保存前に金額・日付を確認</p></div><span class="count-pill">1件</span></div>
+   <div class="entry-card">
+    <div class="entry-card-heading"><span class="entry-number">01</span><strong>{{memberEntry.merchant||'新しい記録'}}</strong></div>
+    <TransactionForm :record="memberEntry"
+     :categories="[...new Set([...entryExpenseCategories,...entryCategories])]"
+     :income-categories="entryIncomeCategories" :payment-sources="[]"
+     :allowed-types="['expense','income']" :show-payment-source="false"
+     :receipt-enabled="false" :category-label="x=>x"
+     @change-type="setMemberEntryType" />
+    <label v-if="memberEntry.type==='income'&&memberEntry.category!==SPOUSE_INCOME_CATEGORY" class="form-field">
+     <span>収入元</span><input v-model="memberEntry.merchant" maxlength="120" placeholder="給与・副収入など" />
+    </label>
    </div>
-   <FamilySharedMutationRequests ref="spouseIncomeRequestRef"
-     :key="'spouse-income:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" />
+   <p v-if="memberEntryError" class="member-alert" role="alert">{{memberEntryError}}</p>
+   <p v-if="memberEntryNotice" class="help" role="status">{{memberEntryNotice}}</p>
+   <div class="batch-actions">
+    <button class="button-primary" type="button" :disabled="memberEntryPending||!(Number(memberEntry.amount)>0)||!memberEntry.category"
+     @click="submitMemberEntry">{{memberEntryPending?'送信中…':'保存して審査を依頼'}}</button>
+   </div>
+   <p class="help">明細には灰色の「待入帳」として表示します。HomeFlow 管理者の承認と入帳完了後に正式計上されます。</p>
    <FamilySharedCardSpend v-if="sharedCards.length" :key="'shared-card:'+user.user_id"
     :user-id="user.user_id" :cards="sharedCards" @posted="refresh" @refresh="refresh" />
    <p v-if="cardSharingError" class="help">家庭共有カードの取得に失敗しました。{{cardSharingError}}</p>
    <button type="button" class="member-share-refresh" @click="refresh">共有カードを更新</button>
-   <FamilyFinanceProposals :key="'personal-proposal:'+user.user_id"
-    :user-id="user.user_id" :accounts="myAccounts"/>
   </section>
-  <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
+    <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
     :open-personal-management="()=>{tab='finance';managementTab='cards'}" />
   <section v-else-if="tab==='finance'" class="member-page">
    <FinanceManagementHeader v-model="managementTab" :busy="busy"
@@ -278,7 +347,7 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
     <p class="help">个人证券账户：仅显示本人创建的账户。真实基金份额及市值在对账前不会自动填写。</p>
     <div v-for="a in myAccounts.filter(x=>x.account_kind==='securities')" :key="a.account_id">{{a.label}}</div>
    </div>
-   <div v-else class="entry"><p class="help">独立个人账户 · {{user.display_name}}。家庭汇总在「統計」查看。</p>
+   <div v-else class="finance-panel"><p class="help">個人の金融口座は本人が直接管理できます。家庭帳簿への入帳時だけ審査が必要です。</p>
     <button type="button" @click="refresh">すべて更新</button>
    </div>
   </section>

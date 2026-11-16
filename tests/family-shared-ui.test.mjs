@@ -28,20 +28,17 @@ test('new member cards use the original card editing sheet and owner-only accoun
  assert.match(family,/a\.owner_user_id!==user/)
  assert.match(family,/!a\|\|a\.owner_user_id!==user\|\|a\.origin!=='member_created'/)
 })
-test('member entry creator reuses original TransactionForm but is approval-only',()=>{
+test('member uses the same TransactionForm while only household ledger mutations require approval',()=>{
  assert.match(app,/<TransactionForm /)
- assert.match(proposal,/<TransactionForm /)
+ assert.match(family,/<TransactionForm :record="memberEntry"/)
  assert.match(form,/allowedTypes/)
- assert.match(form,/showPaymentSource/)
- assert.match(proposal,/:allowed-types="\['expense','income'\]"/)
- assert.doesNotMatch(proposal,/:member-transfer-only=/)
- assert.doesNotMatch(proposal,/family:cross-bank/)
- assert.match(family,/<FamilySharedMutationRequests ref="spouseIncomeRequestRef"/)
- assert.match(family,/spouseIncomeRequestRef\?\.openSpouseIncome\(\)/)
- assert.match(proposal,/:receipt-enabled="false"/)
- assert.match(proposal,/\/api\/family-finance\/proposals/)
- assert.doesNotMatch(proposal,/\/api\/entries/)
- assert.match(family,/<FamilySharedMutationRequests /)
+ assert.match(family,/:allowed-types="\['expense','income'\]"/)
+ assert.match(family,/ref="sharedMutationRef" headless/)
+ assert.match(family,/sharedMutationRef.value\?\.submitEntry\(memberEntry.value\)/)
+ assert.match(family,/sharedMutationRef.value\?\.submitMutation\(action,original,/)
+ assert.match(family,/api\('accounts',request\(/)
+ assert.doesNotMatch(family,/<FamilyFinanceProposals :key=/)
+ assert.doesNotMatch(family,/spouseIncomeRequestRef/)
 })
 
 test('original statistics, balances and ledger rows are reused without duplicating layouts',()=>{
@@ -59,11 +56,17 @@ test('original statistics, balances and ledger rows are reused without duplicati
  assert.match(family,/api\('shared\/stats\?month='/)
 })
 
-test('member entry form is immediately visible with the original input UI',()=>{
- assert.match(proposal,/const open=ref\(true\)/)
- assert.match(proposal,/onMounted\(\(\)=>\{alive=true;[\s\S]*?void load\(0\)/)
- assert.match(proposal,/<TransactionForm /)
- assert.match(proposal,/\/api\/family-finance\/proposals/)
+test('member ledger keeps pending item previews separate from physical totals',()=>{
+ const context=read('family-ledger-context.js')
+ const entry=read('LedgerEntryContent.vue')
+ assert.match(family,/const ledgerEntries=computed\(\(\)=>/)
+ assert.match(family,/pending_approval:true/)
+ assert.match(family,/view=ledger&month=/)
+ assert.match(family,/id:'pending:'\+p.proposal_id/)
+ assert.match(context,/!e.pending_approval\|\|e.pending_operation!=='create'/)
+ assert.match(entry,/削除待審査/)
+ assert.match(entry,/変更待審査/)
+ assert.match(entry,/待入帳/)
 })
 
 test('same original transaction filter is reused by both household accounts',()=>{

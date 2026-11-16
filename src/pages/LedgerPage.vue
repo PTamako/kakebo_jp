@@ -38,12 +38,12 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
             <span class="entry-day-total">{{ detailFilter?.paymentMethod ? yen(paymentMethodAnnualTotals.get(group.month) || 0) : formatLedgerTotal(group.total, entryTypeFilter) }}</span>
           </button>
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+            <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)), 'pending-ledger-entry': e.pending_approval }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
               <LedgerEntryContent :entry="e" :categories="categories" :category-icon-path="categoryIconPath"
-                :category-label="categoryLabel" :yen="yen" annual @open="handleEntryClick(e)"
+                :category-label="categoryLabel" :yen="yen" :clickable="!e.pending_approval" annual @open="handleEntryClick(e)"
                 @edit="startEdit(e)" />
               <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedEntryId = null" aria-label="レシート画像を見る">レシート</button>
-              <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id,e); swipedEntryId = null" aria-label="記録を削除">削除</button>
+              <button v-if="!e.pending_approval" class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id,e); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
           <div v-if="expandedMonth === group.month && group.items.length < group.count" class="load-more-wrap">
@@ -60,15 +60,15 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
             <span class="entry-day-total">{{ detailFilter?.period === 'card-bill' || detailFilter?.paymentMethod ? yen(group.total) : formatLedgerTotal(group.total, entryTypeFilter) }}</span>
           </button>
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
-            <li v-for="e in group.items" :key="e.id" :data-ledger-entry-id="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
+            <li v-for="e in group.items" :key="e.id" :data-ledger-entry-id="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)), 'pending-ledger-entry': e.pending_approval }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
               <LedgerEntryContent :entry="e" :categories="categories" :category-icon-path="categoryIconPath"
-                :category-label="categoryLabel" :yen="yen"
+                :category-label="categoryLabel" :yen="yen" :clickable="!e.pending_approval"
                 :card-bill="detailFilter?.period==='card-bill'"
                 :prepaid-usage="prepaidHistoryFilter?.kind==='usage'"
                 @open="handleEntryClick(e)" @edit="startEdit(e)" />
               
               <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedEntryId = null" aria-label="レシート画像を見る">レシート</button>
-              <button class="swipe-delete" @click.stop="remove(e.id,e); swipedEntryId = null" aria-label="記録を削除">削除</button>
+              <button v-if="!e.pending_approval" class="swipe-delete" @click.stop="remove(e.id,e); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
           </ul>
         </section>
@@ -100,4 +100,9 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
 
 <style scoped>
 .ledger-external-label{color:var(--muted);font-size:11px;font-weight:650}
+</style>
+
+<style scoped>
+.pending-ledger-entry {opacity:.54;filter:grayscale(1)}
+.pending-ledger-entry :deep(.ledger-info b) {color:var(--muted,#8c7e88)}
 </style>

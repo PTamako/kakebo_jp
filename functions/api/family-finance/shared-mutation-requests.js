@@ -51,11 +51,11 @@ async function seal(e,id,raw){
  const b64=x=>btoa(String.fromCharCode(...x));
  return {iv:b64(iv),cipher:b64(new Uint8Array(cipher))};
 }
-async function mac(secret,stamp,raw){
+async function mac(secret,stamp,raw,domain='kakeibo-shared-entry:submit'){
  const key=await crypto.subtle.importKey('raw',Uint8Array.from(
   secret.match(/.{2}/g),x=>parseInt(x,16)),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  return [...new Uint8Array(await crypto.subtle.sign('HMAC',key,
-  enc.encode('kakeibo-shared-entry:submit\n'+stamp+'\n'+raw)))]
+  enc.encode(domain+'\n'+stamp+'\n'+raw)))]
   .map(x=>x.toString(16).padStart(2,'0')).join('');
 }
 const operation=o=>'finance.entry.'+o;
@@ -146,6 +146,98 @@ async function submit(req,e,url,u,proposal){
   return json({ok:true,approval_id:remote.approval_id,status:'submitted_status_unknown',applied:false});
  }catch{return fail('SHARED_MUTATION_SUBMISSION_RECONCILE',503)}
 }
+
+const pendingStates=new Set(['pending','approved','executing','failed_retryable','failed_final','conflict']);
+async function decryptIntent(e,record){
+ try{
+  const iv=Uint8Array.from(atob(record.payload_iv),x=>x.charCodeAt(0));
+  const ciphertext=Uint8Array.from(atob(record.payload_cipher),x=>x.charCodeAt(0));
+  if(iv.length!==12||ciphertext.length<16||ciphertext.length>2500)return null;
+  const key=await crypto.subtle.importKey('raw',Uint8Array.from(
+   e.KAKEIBO_FAMILY_PENDING_KEY.match(/.{2}/g),x=>parseInt(x,16)),
+   'AES-GCM',false,['decrypt']);
+  const bytes=await crypto.subtle.decrypt({name:'AES-GCM',iv,
+   additionalData:enc.encode('kakeibo-shared-mutation:'+record.proposal_id)},key,ciphertext);
+  const raw=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+  if(await digest(raw)!==record.payload_sha256)return null;
+  const value=JSON.parse(raw);
+  if(!exact(value,['operation','resource_id','expected_version','entry'])||
+   value.operation!==record.operation||value.resource_id!==record.resource_id||
+   value.expected_version!==record.expected_version)return null;
+  if(['create','update'].includes(value.operation)){
+   const entry=cleanEntry(value.entry);
+   return entry?{...value,entry}:null;
+  }
+  return value.entry===null?value:null;
+ }catch{return null}
+}
+async function verifiedStatuses(e,u,rows){
+ const ids=[...new Set(rows.map(x=>x.homeflow_approval_id))];
+ if(!ids.length)return new Map();
+ const raw=JSON.stringify({household_id:u.household_id,requester_user_id:u.user_id,
+  approval_ids:ids}),stamp=String(Date.now());
+ const response=await e.HOMEFLOW_IDENTITY_SERVICE.fetch(new Request(
+  new URL('/api/internal/approvals/shared-entry-status',e.HOMEFLOW_OAUTH_ORIGIN),{
+   method:'POST',redirect:'manual',headers:{'content-type':'application/json',
+    'x-approval-client':'kakeibo-shared-entry','x-approval-timestamp':stamp,
+    'x-approval-signature':await mac(e.KAKEIBO_SHARED_MUTATION_SUBMISSION_SECRET,stamp,raw,
+     'kakeibo-shared-entry:status')},body:raw}));
+ if(response.status!==200||response.headers.has('location'))
+  throw Error('approval_status_not_verified');
+ const result=await response.json();
+ if(result?.ok!==true||!Array.isArray(result.items)||result.items.length!==ids.length)
+  throw Error('approval_status_incomplete');
+ const statuses=new Map();
+ for(const item of result.items){
+  const source=rows.find(row=>row.homeflow_approval_id===item.approval_id);
+  if(!source||statuses.has(item.approval_id)||
+   item.resource_id!==source.proposal_id||
+   item.operation!=='finance.entry.'+source.operation||
+   !['pending','approved','rejected','cancelled','expired','executing','applied',
+    'failed_retryable','failed_final','conflict'].includes(item.status))
+   throw Error('approval_status_mismatch');
+  statuses.set(item.approval_id,item.status);
+ }
+ return statuses;
+}
+// Pending items are a UI-only projection. They never write entries or participate
+// in household statistics, monthly totals or asset balances.
+async function ledgerProjection(e,u,month){
+ if(!/^20\d\d-(0[1-9]|1[0-2])$/.test(month))
+  return fail('INVALID_MONTH',400);
+ const rows=(await e.DB.prepare("SELECT * FROM family_shared_mutation_intents "+
+  "WHERE household_id=? AND requester_user_id=? AND status='submitted' "+
+  "ORDER BY created_at DESC LIMIT 60").bind(u.household_id,u.user_id).all()).results||[];
+ const candidates=rows.filter(row=>uuid.test(row.homeflow_approval_id||''));
+ let states;
+ try{states=await verifiedStatuses(e,u,candidates)}
+ catch{return fail('APPROVAL_STATUS_UNAVAILABLE',503)}
+ const items=[];
+ for(const row of candidates){
+  const status=states.get(row.homeflow_approval_id);
+  if(!pendingStates.has(status))continue;
+  const payload=await decryptIntent(e,row);
+  if(!payload)return fail('SEALED_LEDGER_INTENT_INVALID',503);
+  let original=null;
+  if(row.operation!=='create'){
+   original=await e.DB.prepare('SELECT entry_id,snapshot_json,version,state FROM family_shared_entry_registry '+
+    'WHERE resource_id=? AND household_id=? LIMIT 1')
+    .bind(row.resource_id,u.household_id).first();
+   if(!original||original.state!=='active')continue;
+  }
+  let originalDate=null;
+  if(original){
+   try{originalDate=JSON.parse(original.snapshot_json).date}catch{return fail('LEDGER_SNAPSHOT_INVALID',503)}
+  }
+  if((originalDate||payload.entry?.date||'').slice(0,7)!==month)continue;
+  items.push({proposal_id:row.proposal_id,approval_id:row.homeflow_approval_id,
+   operation:row.operation,status,entry:payload.entry,
+   source_entry_id:original?.entry_id||null,
+   requested_at:row.created_at});
+ }
+ return json({ok:true,ledger_scope:'member_pending_only',items,applied:false});
+}
+
 async function cancel(req,e,url,u,proposal){
  const x=await read(req,url);
  if(!exact(x,['expected_user_id'])||x.expected_user_id!==u.user_id)return fail('SHARED_MUTATION_ACTOR_CHANGED',403);
@@ -164,6 +256,8 @@ export async function familySharedMutationRequests(req,e,url,u,parts){
  if(!ready(e))return fail('SHARED_MUTATION_PROPOSALS_DISABLED',503);
  if(!await member(e.DB,u))return fail('SHARED_MUTATION_MEMBER_REQUIRED',403);
  if(parts.length===1&&req.method==='POST')return prepare(req,e,url,u);
+ if(parts.length===1&&req.method==='GET'&&url.searchParams.get('view')==='ledger')
+  return ledgerProjection(e,u,url.searchParams.get('month')||'');
  if(parts.length===1&&req.method==='GET'){
   const rows=(await e.DB.prepare('SELECT * FROM family_shared_mutation_intents '+
    'WHERE household_id=? AND requester_user_id=? ORDER BY created_at DESC LIMIT 30')

@@ -12,7 +12,7 @@ import {parseEntries,parseReceipt,ocrImage} from './parse.js'
 import {compressReceiptImage} from './receipt-image.js'
 import EntryInputPage from './EntryInputPage.vue'
 import {ICON_LIBRARY} from './icon-library.js'
-import {encryptBackupBlob} from './backup-encryption.js'
+import {encryptBackupBlob,decryptBackupBlob} from './backup-encryption.js'
 import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
@@ -632,23 +632,101 @@ function edit(a){if(a.owner_user_id!==props.user.user_id||a.origin==='legacy')re
 const personalBackupBusy=ref(false),personalBackupMessage=ref('')
 async function exportPersonalAccounts(){
  if(personalBackupBusy.value)return
- const password=window.prompt('本人の口座設定を暗号化して保存します。10文字以上の保存用パスワードを入力してください。')
+ const password=window.prompt('本人の設定を暗号化して保存します。10文字以上のパスワードを入力してください。')
  if(password===null)return
  if(password.length<10){personalBackupMessage.value='10文字以上のパスワードが必要です';return}
  personalBackupBusy.value=true;personalBackupMessage.value=''
  try{
   const actor=props.user.user_id
-  const record={format:'kakeibo-member-account-settings-v1',exported_at:new Date().toISOString(),
-   owner_user_id:actor,scope:'personal_account_settings_only',
-   accounts:myAccounts.value.filter(a=>a.owner_user_id===actor)}
+  const [accountsResult,rulesResult,fixedResult]=await Promise.all([
+   api('accounts'),api('member-merchant-rules'),api('member-fixed-costs')
+  ])
+  if(actor!==props.user.user_id)throw Error('バックアップ中にアカウントが変更されました')
+  if(accountsResult.account_scope!=='personal'||
+   rulesResult.scope!=='personal'||rulesResult.viewer_user_id!==actor||
+   fixedResult.scope!=='personal'||!Array.isArray(fixedResult.items)||
+   accountsResult.items?.some(a=>a.owner_user_id!==actor)||
+   fixedResult.items.some(p=>p.owner_user_id!==actor))
+   throw Error('本人の設定を安全に取得できません')
+  const record={format:'kakeibo-member-personal-settings-v2',exported_at:new Date().toISOString(),
+   owner_user_id:actor,scope:'personal_settings_only',
+   accounts:accountsResult.items||[],merchant_rules:rulesResult.items||[],
+   fixed_costs:fixedResult.items||[],categories:memberCategoryRecords.value}
   const blob=await encryptBackupBlob(new Blob([JSON.stringify(record)],{type:'application/json'}),password)
-  if(props.user.user_id!==actor)throw Error('エクスポート中にアカウントが変更されました')
+  if(props.user.user_id!==actor)throw Error('保存中にアカウントが変更されました')
   const url=URL.createObjectURL(blob),link=document.createElement('a')
   link.href=url;link.download='kakeibo-personal-settings-'+new Date().toISOString().slice(0,10)+'.enc'
   document.body.appendChild(link);link.click();link.remove()
   setTimeout(()=>URL.revokeObjectURL(url),60000)
-  personalBackupMessage.value='本人の口座設定のみ暗号化して保存しました。家族の記録・領収書・復元データは含まれません。'
+  personalBackupMessage.value='本人のカード・銀行・固定費・店舗ルール・カテゴリの設定を暗号化して保存しました。家庭共有明細や他人のデータは含まれません。'
  }catch(e){personalBackupMessage.value='保存できませんでした：'+e.message}
+ finally{personalBackupBusy.value=false}
+}
+async function importPersonalBackup(event){
+ const file=event.target?.files?.[0]
+ if(event.target)event.target.value=''
+ if(!file||personalBackupBusy.value)return
+ if(file.size>75*1024*1024){personalBackupMessage.value='バックアップが大きすぎます';return}
+ const password=window.prompt('暗号化バックアップのパスワードを入力してください。')
+ if(password===null)return
+ personalBackupBusy.value=true;personalBackupMessage.value=''
+ try{
+  const actor=props.user.user_id
+  const decrypted=await decryptBackupBlob(file,password)
+  if(decrypted.format!=='json')throw Error('本人用JSONバックアップを選択してください')
+  const data=JSON.parse(await decrypted.blob.text())
+  if(!['kakeibo-member-account-settings-v1','kakeibo-member-personal-settings-v2'].includes(data?.format)||
+   data.owner_user_id!==actor||!['personal_settings_only','personal_account_settings_only'].includes(data.scope)||
+   !Array.isArray(data.accounts)||data.accounts.some(a=>a.owner_user_id!==actor))
+   throw Error('このバックアップは別のユーザーのものか、形式が一致しません')
+  if(data.format==='kakeibo-member-account-settings-v1'){
+   personalBackupMessage.value='旧形式は口座設定の保存専用です。口座と残高の自動復元は行いません。'
+   return
+  }
+  if(!Array.isArray(data.merchant_rules)||data.merchant_rules.length>200||
+     !Array.isArray(data.categories)||data.categories.length>80||
+     !Array.isArray(data.fixed_costs)||data.fixed_costs.some(p=>p.owner_user_id!==actor))
+   throw Error('設定の件数や所有者を確認できません')
+  const existing=await api('member-merchant-rules')
+  if(existing.scope!=='personal'||existing.viewer_user_id!==actor)
+   throw Error('本人のルールを確認できません')
+  const existingKeys=new Set((existing.items||[]).map(r=>r.keyword))
+  const recoverable=data.merchant_rules.filter(r=>r&&typeof r.keyword==='string'&&
+   r.keyword.trim().length>=2&&r.keyword.length<=120&&
+   typeof r.category==='string'&&r.category.length<=100&&
+   typeof r.payment_source==='string'&&r.payment_source.length<=160&&
+   (r.category||r.payment_source)&&!existingKeys.has(r.keyword))
+  if(!confirm('本人の未登録店舗ルール'+recoverable.length+
+     '件とカテゴリ設定を追加しますか？既存のルール、カード、残高、固定費、共有明細は上書きしません。'))return
+  if(actor!==props.user.user_id)throw Error('アカウントが変更されました')
+  let categoriesAdded=0,rulesAdded=0,rulesSkipped=0
+  for(const c of data.categories){
+   if(!c||!['expense','income'].includes(c.type)||typeof c.name!=='string'||
+      !c.name.trim()||c.name.length>20||typeof c.icon!=='string')continue
+   if(memberCategoryRecords.value.some(x=>x.type===c.type&&x.name===c.name))continue
+   if(memberCategoryRecords.value.length>=80)break
+   memberCategoryRecords.value.push({type:c.type,name:c.name,icon:c.icon});categoriesAdded++
+  }
+  localStorage.setItem('kakeibo-personal-categories:'+actor,
+    JSON.stringify(memberCategoryRecords.value))
+  for(const r of recoverable){
+   if(actor!==props.user.user_id)throw Error('アカウントが変更されました')
+   if(r.payment_source&&!memberPaymentOptions.value.some(c=>c.value===r.payment_source)){
+    rulesSkipped++;continue
+   }
+   try{
+    await api('member-merchant-rules',request({
+     expected_user_id:actor,expected_version:0,keyword:r.keyword,
+     category:r.category,payment_source:r.payment_source
+    }))
+    rulesAdded++
+   }catch{rulesSkipped++}
+  }
+  await loadMemberMerchantRules()
+  personalBackupMessage.value='復元：カテゴリ'+categoriesAdded+'件、店舗ルール'+rulesAdded+
+   '件を追加。既存設定・口座・残高・固定費は変更していません。'+
+   (rulesSkipped?'権限切れ・重複等で'+rulesSkipped+'件のルールをスキップしました。':'')
+ }catch(e){personalBackupMessage.value='復元できませんでした：'+e.message}
  finally{personalBackupBusy.value=false}
 }
 
@@ -816,12 +894,17 @@ watch(()=>props.user.user_id,loadMemberCategories)
      </div>
    </template>
    <template #member-backup>
-     <p class="help">本人のカード・銀行などの口座設定を暗号化して保存します。管理者の私有証券情報や家族全員のレシートは含めません。</p>
+    <p class="help">本人のカード・銀行・固定費・カテゴリ・店舗ルールの設定を暗号化して保存します。家庭共有明細や他人の情報は含めません。</p>
+    <div class="member-backup-actions">
      <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportPersonalAccounts">
-      {{personalBackupBusy?'暗号化中…':'本人の設定を暗号化して保存'}}
+      {{personalBackupBusy?'処理中…':'本人の設定を暗号化して保存'}}
      </button>
-     <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
-     <p class="help">バックアップを使った自動復元は本人の所有権と重複検証が完了するまで実行しません。</p>
+     <label class="member-backup-upload button-secondary">バックアップを選択
+      <input type="file" accept=".enc" :disabled="personalBackupBusy" @change="importPersonalBackup"/>
+     </label>
+    </div>
+    <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
+    <p class="help">復元は本人の未登録店舗ルール・カテゴリのみ追加します。口座・残高・固定費・家庭明細の自動上書きは行いません。</p>
    </template>
    <template #member-duplicates>
      <p v-if="!memberDuplicateGroups.length" class="help">現在表示中の家庭明細に同日・同額・同店の重複候補はありません。</p>
@@ -881,4 +964,11 @@ watch(()=>props.user.user_id,loadMemberCategories)
 
 .member-shell :deep(.bottom-nav){z-index:30}
 @media(max-width:360px){.summary-grid{grid-template-columns:1fr}}
+</style>
+
+<style scoped>
+.member-backup-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.member-backup-actions>button,.member-backup-upload{min-height:46px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13px;font-weight:700;border:1px solid var(--line,#ecdfe3);border-radius:12px;background:var(--tint,#fff1f5);color:var(--ink,#473d46);padding:8px}
+.member-backup-upload input{display:none}
+@media(max-width:360px){.member-backup-actions{grid-template-columns:1fr}}
 </style>

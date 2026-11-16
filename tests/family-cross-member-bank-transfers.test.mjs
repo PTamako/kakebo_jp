@@ -164,6 +164,24 @@ function fixture(){
  return {sql,env,source,target,setup,sourceForm,creditForm,receiver,
   disableConsent(){validConsent=false},disableApproval(){validApproval=false},close(){sql.close()}}
 }
+test('eligible transfer bank account picker does not return the other member balance or card information',async()=>{
+ const f=fixture()
+ try{
+  const path=['cross-member-bank-transfers','eligible-accounts']
+  for(const actor of [{user_id:member,household_id:hh,role:'member'},f.receiver]){
+   const url='https://kakeibo.example.test/api/family-finance/cross-member-bank-transfers/eligible-accounts'
+   const response=await familyCrossMemberBankTransfers(new Request(url,{method:'GET'}),f.env,new URL(url),actor,path)
+   assert.equal(response.status,200)
+   const value=await response.json()
+   assert.equal(value.ok,true)
+   assert.equal(value.items.length,2)
+   for(const row of value.items){
+    assert.deepEqual(Object.keys(row).sort(),['account_id','label','owner_user_id','version'].sort())
+    assert.equal('opening_balance' in row,false)
+   }
+  }
+ }finally{f.close()}
+})
 test('asset-transfer picker registers source consent using signed HomeFlow binding without posting a ledger row',async()=>{
  const f=fixture();try{
   const p=await f.source()

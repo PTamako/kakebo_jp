@@ -4,6 +4,7 @@ import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import BottomNavigation from './BottomNavigation.vue'
+import FamilyAccountMenu from './FamilyAccountMenu.vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
@@ -15,6 +16,7 @@ import {makeFamilyStatsContext} from './family-stats-context.js'
 import LedgerPage from './pages/LedgerPage.vue'
 import {makeFamilyLedgerContext} from './family-ledger-context.js'
 const props=defineProps({user:{type:Object,required:true}})
+const emit=defineEmits(['logout'])
 const tab=ref('list'),managementTab=ref('cards')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),totals=ref(null),yearly=ref(null)
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
@@ -187,7 +189,10 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
    <div class="brand">
     <img class="brand-wordmark" src="/branding/kakeibo-wordmark.png?v=4"
      alt="家計簿" width="400" height="100"/>
-   </div><span class="member-family-label">家庭账本</span>
+   </div>
+   <div class="header-actions">
+    <FamilyAccountMenu :identity="user" @logout="emit('logout')" />
+   </div>
   </header>
   <section v-if="error" class="member-alert" role="alert">{{error}}
    <button type="button" @click="refresh">再试一次</button>

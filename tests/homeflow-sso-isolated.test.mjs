@@ -299,6 +299,33 @@ async function loginMember(f){
  (f.accountActors??=new Map()).set(cookie,member);
  return cookie;
 }
+test('production legacy finance data rejects spouse and old-code-only access with owner gate enabled',async()=>{
+ const f=await setup();
+ try{
+  const ownerCookie=await loginOwner(f);
+  const memberCookie=await loginMember(f);
+  f.env.KAKEIBO_REQUIRE_OWNER_IDENTITY_FOR_LEGACY='true';
+  const get=(cookie='')=>legacyApi({
+   request:new Request(app+'/api/payment-sources',{
+    headers:{'x-session':oldCookie,...(cookie?{Cookie:'__Host-kakeibo_hf='+cookie}:{})}
+   }),env:f.env,params:{path:['payment-sources']}});
+  const memberResult=await get(memberCookie);
+  assert.equal(memberResult.status,403,'member must never receive the original cards even when old device token is known');
+  assert.equal((await get()).status,401,'old device secret without HomeFlow is insufficient');
+  const verified=await get(ownerCookie);
+  assert.equal(verified.status,200,await verified.clone().text());
+  const oldLogin=await legacyApi({request:new Request(app+'/api/auth/login',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({code:'legacy-code'})}),env:f.env,
+   params:{path:['auth','login']}});
+  assert.equal(oldLogin.status,401,'old access code cannot bypass owner SSO');
+  const revoke=await legacyApi({request:new Request(app+'/api/auth/logout',{
+   method:'POST',headers:{'x-session':oldCookie}}),env:f.env,
+   params:{path:['auth','logout']}});
+  assert.equal(revoke.status,200,'legacy session logout remains available');
+ }finally{f.DB.sqlite.close()}
+});
+
 function finance(f,path,method='GET',body,secret='',origin=app){
  const headers={};
  if(secret)headers.Cookie='__Host-kakeibo_hf='+secret;
@@ -313,6 +340,33 @@ function finance(f,path,method='GET',body,secret='',origin=app){
    body:method==='GET'?undefined:JSON.stringify(scoped??{})}),
   params:{path:path.split('?')[0].split('/')}});
 }
+test('members render the original monthly and yearly charts with the same family statistics',async()=>{
+ const f=await setup()
+ try{
+  const ownerCookie=await loginOwner(f)
+  const memberCookie=await loginMember(f)
+  const before=f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all()
+  for(const query of ['month=2026-11','year=2026']){
+   const read=async cookie=>{
+    const r=await finance(f,'shared/stats?'+query,'GET',null,cookie)
+    assert.equal(r.status,200,await r.clone().text())
+    return r.json()
+   }
+   const a=await read(ownerCookie),b=await read(memberCookie)
+   assert.equal(a.ledger_scope,'household')
+   assert.deepEqual(a,b,'charts must not change between household members')
+   assert.equal(a.total,1234)
+   assert.equal(a.income,100000)
+   assert.equal(a.recordCount,2)
+   assert.equal(a.byCategory[0].category,'生活')
+   assert.equal(a.byCategory[0].amount,1234)
+   assert.ok(a.paymentMethods.every(x=>!Object.hasOwn(x,'payment_source')),
+    'only aggregate method groups; never private card names')
+  }
+  assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),before)
+ }finally{f.DB.sqlite.close()}
+})
+
 test('family-finance stays off without explicit flag and family-bound audience',async()=>{
  const f=await setup();
  try{
@@ -367,8 +421,12 @@ test('both members see identical family ledger/statistics, no member direct ledg
   const ownerCookie=await loginOwner(f);
   const memberCookie=await loginMember(f);
   const fetch=async(secret,path)=>await (await finance(f,path,'GET',null,secret)).json();
-  assert.deepEqual((await fetch(ownerCookie,'shared/entries')).items,
-   (await fetch(memberCookie,'shared/entries')).items);
+  const ownerEntries=(await fetch(ownerCookie,'shared/entries')).items;
+  const memberEntries=(await fetch(memberCookie,'shared/entries')).items;
+  const common=r=>({id:r.id,date:r.date,type:r.type,amount:r.amount,category:r.category,merchant:r.merchant});
+  assert.deepEqual(ownerEntries.map(common),memberEntries.map(common));
+  assert.ok(memberEntries.every(e=>e.payment_source===null&&e.family_account_id===null),
+   'private legacy payment card references must not reach a member');
   const path='shared/ledger-totals?month=2026-11';
   const familyRoute=async(secret)=>familyFinance({env:f.env,
     request:new Request(app+'/api/family-finance/'+path,{headers:{
@@ -388,7 +446,7 @@ test('both members see identical family ledger/statistics, no member direct ledg
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM entries').get().n,2);
  }finally{f.DB.sqlite.close();}
 });
-test('member can configure own identically named card, cannot edit spouse, owner can manage all',async()=>{
+test('member and owner manage their own identically named accounts without cross-user access',async()=>{
  const f=await setup();
  try{
   const ownerCookie=await loginOwner(f);
@@ -400,7 +458,10 @@ test('member can configure own identically named card, cannot edit spouse, owner
   assert.equal(created.status,201,await created.clone().text());
   const accountId=(await created.json()).account_id;
   const accounts=await (await finance(f,'accounts','GET',null,memberCookie)).json();
-  assert.equal(accounts.items.filter(a=>a.label==='PayPay Visa').length,2);
+  assert.equal(accounts.account_scope,'personal');
+  assert.equal(accounts.items.filter(a=>a.label==='PayPay Visa').length,1);
+  assert.equal(accounts.items.length,1);
+  assert.ok(accounts.items.every(a=>a.owner_user_id===member));
   const owned=accounts.items.find(a=>a.account_id===accountId);
   assert.equal(owned.owner_user_id,member);
   const updated=await finance(f,'accounts/'+accountId,'PATCH',{
@@ -411,11 +472,10 @@ test('member can configure own identically named card, cannot edit spouse, owner
     label:'stale',version:1},memberCookie)).status,409);
   const ownerUpdated=await finance(f,'accounts/'+accountId,'PATCH',{
     label:'管理员协助修改',version:2},ownerCookie);
-  assert.equal(ownerUpdated.status,200);
+  assert.equal(ownerUpdated.status,403,'admin approval does not grant private card editing');
   const audit=f.DB.sqlite.prepare("SELECT actor_user_id,action FROM family_finance_events WHERE resource_id=? ORDER BY created_at,action").all(accountId);
-  assert.equal(audit.length,3);
-  assert.ok(audit.some(v=>v.actor_user_id===owner));
-  assert.ok(audit.some(v=>v.actor_user_id===member));
+  assert.equal(audit.length,2);
+  assert.ok(audit.every(v=>v.actor_user_id===member));
   assert.equal(f.DB.sqlite.prepare('SELECT amount FROM entries WHERE id=1').get().amount,1234);
   assert.equal(f.DB.sqlite.prepare('SELECT name FROM payment_sources WHERE name=?').get('PayPay Visa').name,'PayPay Visa');
   f.state.homeflowActive=false;
@@ -511,7 +571,7 @@ test('financial pending encryption and account identity fail closed on CSRF, cro
 });
 
 
-test('both members see identical read-only actual prepaid/SBI assets and card bill snapshots',async()=>{
+test('original owner can view legacy asset snapshots; member cannot view them',async()=>{
  const f=await setup();
  try{
   const ownerCookie=await loginOwner(f);
@@ -525,8 +585,13 @@ test('both members see identical read-only actual prepaid/SBI assets and card bi
    assert.equal(response.status,200,await response.clone().text());
    return response.json();
   };
-  const admin=await read(ownerCookie),spouse=await read(memberCookie);
-  assert.deepEqual(admin,spouse,'all tracked assets/bills are household visible without an owner filter');
+  const admin=await read(ownerCookie);
+  const spouse=await finance(f,'shared/asset-summary','GET',null,memberCookie);
+  assert.equal(spouse.status,403);
+  assert.equal((await spouse.json()).code,'PRIVATE_ASSET_SCOPE_REQUIRED');
+  const personal=await finance(f,'personal/assets','GET',null,memberCookie);
+  assert.equal(personal.status,200,await personal.clone().text());
+  assert.deepEqual((await personal.json()).accounts,[],'member starts with no personal assets');
   assert.equal(admin.household_id,'primary');
   assert.equal(admin.scope,'household');
   assert.equal(admin.prepaid.cards.length,1);
@@ -548,7 +613,7 @@ test('both members see identical read-only actual prepaid/SBI assets and card bi
  }finally{f.DB.sqlite.close();}
 });
 
-test('both members see verified old financial asset ownership; missing proofs stay unknown, same-name new account does not steal history',async()=>{
+test('verified old asset ownership is owner-private; same-name member account never inherits history',async()=>{
  const f=await setup()
  try{
   const ownerCookie=await loginOwner(f)
@@ -569,7 +634,8 @@ test('both members see verified old financial asset ownership; missing proofs st
   assert.equal(initial.ownership_verification.card_bills_unverified,1)
   const adoption=await finance(f,'legacy/adopt','POST',{confirm:true},ownerCookie)
   assert.equal(adoption.status,200,await adoption.clone().text())
-  const adopted=await read(memberCookie)
+  assert.equal((await finance(f,'shared/asset-summary','GET',null,memberCookie)).status,403)
+  const adopted=await read(ownerCookie)
   assert.equal(adopted.prepaid.cards[0].owner_user_id,owner)
   assert.equal(adopted.prepaid.cards[0].identity_status,'verified_legacy')
   assert.match(adopted.prepaid.cards[0].account_id,/^[a-f0-9]{32}$/)
@@ -588,8 +654,13 @@ test('both members see verified old financial asset ownership; missing proofs st
   },memberCookie)
   assert.equal(duplicate.status,201)
   const memberAccount=(await duplicate.json()).account_id
-  const admin=await read(ownerCookie),spouse=await read(memberCookie)
-  assert.deepEqual(admin,spouse,'family assets and ownership are identically visible to both members')
+  const admin=await read(ownerCookie)
+  const own=await finance(f,'personal/assets','GET',null,memberCookie)
+  assert.equal(own.status,200,await own.clone().text())
+  const personal=(await own.json()).accounts
+  assert.equal(personal.length,1)
+  assert.equal(personal[0].account_id,memberAccount)
+  assert.notEqual(personal[0].balance_jpy,2400,'member must not inherit legacy nanaco balance')
   assert.equal(admin.scope,'household')
   assert.equal(admin.tracked_assets_jpy,22400)
   assert.equal(admin.prepaid.total_jpy,2400)
@@ -609,7 +680,7 @@ test('both members see verified old financial asset ownership; missing proofs st
    proof:'immutable_legacy_owner_mapping',read_only:true
   })
   const eventsBefore=f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n
-  await read(memberCookie);await read(ownerCookie)
+  await finance(f,'personal/assets','GET',null,memberCookie);await read(ownerCookie)
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) n FROM family_finance_events').get().n,eventsBefore,
    'normal asset GETs must never write audit events')
   assert.deepEqual(f.DB.sqlite.prepare('SELECT * FROM entries ORDER BY id').all(),originalEntries)
@@ -1123,7 +1194,7 @@ test('ledger + receipt + actor audit roll back together on failed result journal
 })
 
 
-test('yearly family statistics are identical for spouses and exclude asset transfers from net spending',async()=>{
+test('yearly family totals match for both spouses while private payment-card breakdown is hidden',async()=>{
  const f=await setup();
  try{
   f.DB.sqlite.exec(`INSERT INTO entries(id,date,time,type,merchant,amount,category,note,payment_source,transfer_applied)
@@ -1142,7 +1213,12 @@ test('yearly family statistics are identical for spouses and exclude asset trans
   };
   const a=await read(ownerCookie),b=await read(memberCookie);
   assert.equal(a.status,200,JSON.stringify(a.body));
-  assert.deepEqual(a,b,'household statistics must not vary by account ownership');
+  assert.equal(b.status,200);
+  for(const key of ['totals','counts','months','categories','net_income_expense'])
+   assert.deepEqual(a.body[key],b.body[key],'shared '+key+' must be identical');
+  assert.deepEqual(b.body.payment_sources,[],'member may not inspect old card names');
+  assert.equal(b.body.private_payment_sources_redacted,true);
+  assert.equal(a.body.private_payment_sources_redacted,false);
   assert.equal(a.body.ledger_scope,'household');
   assert.equal(a.body.complete,true);
   assert.equal(a.body.ledger_changed,false);
@@ -1664,13 +1740,13 @@ test('legacy transfer dual-sided mapping attaches both original-owner IDs once a
   const memberLedger=await finance(f,'shared/entries','GET',null,memberCookie)
   assert.equal(memberLedger.status,200)
   const view=(await memberLedger.json()).items.find(x=>x.id===intent.entry_id)
-  assert.equal(view.family_account_id,intent.source_account_id)
-  assert.equal(view.family_transfer_target_account_id,intent.target_account_id)
-  assert.equal(view.payment_source_display,'PayPay Visa')
-  assert.equal(view.transfer_target_display,'nanaco')
-  assert.equal(view.payment_account_owner_user_id,owner)
-  assert.equal(view.transfer_target_account_owner_user_id,owner)
-  assert.equal(view.transfer_target,'nanaco','legacy target text must remain intact')
+  assert.equal(view.family_account_id,null,'original owner stable IDs are private')
+  assert.equal(view.family_transfer_target_account_id,null)
+  assert.equal(view.payment_source_display,'个人支付方式')
+  assert.equal(view.transfer_target_display,'个人账户')
+  assert.equal(view.payment_account_owner_user_id,null)
+  assert.equal(view.transfer_target_account_owner_user_id,null)
+  assert.equal(view.transfer_target,null,'legacy private target is not sent to member')
   assert.deepEqual(after.map(x=>({...x,family_account_id:null,
    family_transfer_target_account_id:null})),
    before.map(x=>({...x})),
@@ -1929,7 +2005,7 @@ test('legacy device API refuses renaming adopted payment source and rewriting a 
  }finally{f.DB.sqlite.close()}
 })
 
-test('historical fixed fee and SBI plan ownership is read-only, paginated and identical for both household members',async()=>{
+test('historical fixed fee and SBI plan ownership is owner-private, read-only and paginated',async()=>{
  const f=await setup()
  try{
   const ownerCookie=await loginOwner(f),memberCookie=await loginMember(f)
@@ -1944,7 +2020,8 @@ test('historical fixed fee and SBI plan ownership is read-only, paginated and id
    return r.json()
   }
   for(const kind of ['recurring_plan','investment_plan','investment_plan_history']){
-   const missing=await read(kind,memberCookie)
+   assert.equal((await finance(f,'shared/plan-ownership?kind='+kind,'GET',null,memberCookie)).status,403)
+   const missing=await read(kind,ownerCookie)
    assert.equal(missing.scope,'household')
    assert.equal(missing.items[0].identity_status,'unverified')
    assert.equal(missing.items[0].owner_user_id,null)
@@ -1952,21 +2029,21 @@ test('historical fixed fee and SBI plan ownership is read-only, paginated and id
     confirm:true,resource_kind:kind
    },ownerCookie)
    assert.equal(adopted.status,200,await adopted.clone().text())
-   const a=await read(kind,ownerCookie),b=await read(kind,memberCookie)
-   assert.deepEqual(a,b)
+   const a=await read(kind,ownerCookie)
+   assert.equal((await finance(f,'shared/plan-ownership?kind='+kind,'GET',null,memberCookie)).status,403)
    assert.equal(a.items[0].owner_user_id,owner)
    assert.equal(a.items[0].identity_status,'verified_legacy')
    assert.equal(a.ownership_proof,'immutable_legacy_resource_owner')
    assert.equal(a.read_only,true)
    assert.equal(a.ledger_changed,false)
   }
-  assert.equal((await finance(f,'shared/plan-ownership?kind=unknown','GET',null,memberCookie)).status,400)
+  assert.equal((await finance(f,'shared/plan-ownership?kind=unknown','GET',null,memberCookie)).status,403)
   assert.equal((await finance(f,'shared/plan-ownership?limit=99','GET',null,ownerCookie)).status,400)
   const inserter=f.DB.sqlite.prepare('INSERT INTO recurring_plans(id,name) VALUES(?,?)')
   for(let i=0;i<43;i++)inserter.run('plan-'+String(i).padStart(3,'0'),'历史计划 '+i)
   let cursor='',keys=[]
   do{
-   const page=await read('recurring_plan',memberCookie,cursor,20)
+   const page=await read('recurring_plan',ownerCookie,cursor,20)
    keys.push(...page.items.map(x=>x.legacy_key))
    cursor=page.next_cursor||''
    if(!page.next_cursor)break

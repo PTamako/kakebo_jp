@@ -30,9 +30,10 @@ test('PWA launcher icons and Apple touch icon use the new generated images', () 
 
 test('in-app header uses the horizontal logo rather than obsolete icon and label', () => {
   const app = read('src/App.vue')
+  const header = read('src/AppTopbar.vue')
   const mobile = read('src/mobile-ui.css')
-  assert.match(app, /<img class="brand-wordmark" src="\/branding\/kakeibo-wordmark\.png\?v=4"/)
-  assert.match(app, /alt="家計簿"/)
+  assert.match(header, /<img class="brand-wordmark" src="\/branding\/kakeibo-wordmark\.png\?v=4"/)
+  assert.match(header, /alt="家計簿"/)
   assert.doesNotMatch(app, /src="\/branding\/kakeibo-ledger\.svg"/)
   assert.match(mobile, /main \.brand-wordmark \{/)
   assert.match(app, /\.brand-wordmark\{[^}]*max-width:100%/)

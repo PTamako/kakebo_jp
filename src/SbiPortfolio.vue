@@ -101,6 +101,7 @@ const sourceLabel = source => ['official_mufg','official_daiwa'].includes(source
 // Never claim that an unknown fund is manual-only without trying the
 // official read-only provider lookup. A network failure remains "確認不可".
 const navMode = code => {
+  if(props.memberMode)return /^[A-Z0-9]{8}$/.test(String(code||''))?'manual':'invalid'
   const fundCode=String(code||'').trim().toUpperCase()
   if (!/^[A-Z0-9]{8}$/.test(fundCode)) return 'invalid'
   if (autoNavSupported(fundCode)) return 'auto'
@@ -120,6 +121,7 @@ const navModeHelp = code => ({
   invalid:'8文字の銘柄コードを入力すると、公式APIの対応状況を確認します。'
 })[navMode(code)]
 async function checkNavSupport(code,force=false) {
+  if(props.memberMode)return
   const normalized=String(code||'').trim().toUpperCase()
   if(!/^[A-Z0-9]{8}$/.test(normalized) ||
      autoNavSupported(normalized) || Object.hasOwn(KNOWN_MANUAL_NAV_FUNDS,normalized))return
@@ -416,7 +418,9 @@ function editPrice(h) {
   }
 }
 async function submit(path, body, message) {
-  if(props.memberMode){error.value='本人の積立変更は HomeFlow 承認のある専用設定から行ってください';return}
+  if(props.memberMode&&!['holding','price'].includes(path)){
+    error.value='本人の積立変更は HomeFlow 承認のある専用設定から行ってください';return
+  }
   saving.value = true
   notice.value = ''
   try{

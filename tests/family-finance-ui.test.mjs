@@ -49,11 +49,19 @@ test('new family-member PWA does not get stuck in legacy code modal, with origin
 
 test('management does not duplicate the household statistics page or fetch its totals',()=>{
  assert.match(app,/<StatisticsPage v-else-if="tab === 'stat'" \/>/);
- assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'" \/>/);
+ assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'" identity-only \/>/);
  assert.doesNotMatch(source,/家庭年度统计|年度支出分类|家庭每月收支/);
  assert.doesNotMatch(source,/\/api\/family-finance\/shared\/(?:ledger-totals|year-summary)/);
  assert.doesNotMatch(source,/selectedYear|annual\.totals|totals\.totals/);
  assert.match(source,/const list=await call\('\/api\/family-finance\/accounts'\)/);
+});
+
+test('normal management uses identity-only HomeFlow status and original payment-card management',()=>{
+ assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'" identity-only \/>/);
+ assert.match(source,/defineProps\(\{identityOnly:\{type:Boolean,default:false\}\}\)/);
+ assert.match(source,/v-if="person&&!props.identityOnly"/);
+ assert.match(source,/if\(financeEnabled.value&&!props.identityOnly\)await refresh\(\)/);
+ assert.match(app,/<ManagementPage :card-settings-request=/);
 });
 
 test('management keeps owner and member tools available only after explicit expansion',()=>{

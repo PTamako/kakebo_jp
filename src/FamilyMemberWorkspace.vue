@@ -5,6 +5,9 @@ import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
 import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
+import {parseEntries,parseReceipt,ocrImage} from './parse.js'
+import {parseNamedExpenseBlocks} from './named-expense.js'
+import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
 import BottomNavigation from './BottomNavigation.vue'
 import AppTopbar from './AppTopbar.vue'
@@ -105,12 +108,54 @@ const entryIncomeCategories=['給与','賞与','副収入','ポイント還元',
 function newEntry(){return {type:'expense',amount:'',date:new Date(Date.now()+9*3600000).toISOString().slice(0,10),
  time:'',category:'食費',merchant:'',note:'',paymentSource:'cash',transferTarget:'',
  bindRule:false,bindPaymentRule:false}}
-const memberEntry=ref(newEntry())
-function setMemberEntryType(type){
+const memberEntries=ref([])
+const memberInputMode=ref('manual'),memberRawText=ref(''),memberScanMode=ref('statement')
+const memberOcrBusy=ref(false),memberOcrStatus=ref('')
+const memberTodayLabel=computed(()=>new Date(Date.now()+32400000).toLocaleString('ja-JP',{
+ timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'}))
+function addMemberEntry(){memberEntries.value.push(newEntry())}
+function removeMemberEntry(index){if(!memberEntryPending.value)memberEntries.value.splice(index,1)}
+function setMemberEntryType(type,entry){
  if(!['expense','income'].includes(type))return
- memberEntry.value.type=type
- memberEntry.value.category=type==='expense'?'食費':'給与'
- memberEntry.value.merchant=''
+ entry.type=type
+ entry.category=type==='expense'?'食費':'給与'
+ entry.merchant=''
+}
+function recognizeMemberText(){
+ memberEntryError.value='';memberEntryNotice.value=''
+ const raw=memberRawText.value.trim()
+ if(!raw)return
+ const reference=new Date()
+ const structured=parseNamedExpenseBlocks(raw,reference)
+ if(structured?.error){memberEntryError.value=structured.error;return}
+ const repeated=parseRepeatedExpense(raw)
+ const rows=structured?.rows||repeated||
+  (memberScanMode.value==='receipt'?[parseReceipt(raw,[])]:parseEntries(raw,[],reference))
+ const parsed=Array.isArray(rows)?rows.slice(0,80):[]
+ const drafts=parsed.filter(x=>x&&Number.isSafeInteger(Number(x.amount))&&Number(x.amount)>0)
+  .map(x=>({...newEntry(),type:x.type==='income'?'income':'expense',
+   amount:Number(x.amount),date:String(x.date||newEntry().date),
+   time:String(x.time||''),merchant:String(x.merchant||''),
+   category:String(x.category||'日用品'),note:String(x.note||'')}))
+ if(!drafts.length){memberEntryError.value='解析できる金額がありません。原文と金額を確認してください。';return}
+ if(memberEntries.value.length&& !window.confirm('現在の未保存記録を読み取り結果で置き換えますか？'))return
+ memberEntries.value=drafts
+ memberEntryNotice.value=drafts.length+'件を読み取りました。保存する前に金額・日付・支払方法を確認してください。'
+}
+async function memberScanImage(event){
+ const file=event.target?.files?.[0];if(event.target)event.target.value=''
+ if(!file||memberOcrBusy.value)return
+ memberOcrBusy.value=true;memberEntryError.value='';memberOcrStatus.value='端末内OCRで読み取り中'
+ try{
+  memberRawText.value=await ocrImage(file,progress=>{
+   memberOcrStatus.value='端末内OCRで読み取り中 '+Math.max(0,Math.min(100,Number(progress)||0))+'%'
+  })
+  if(!memberRawText.value.trim())throw Error('文字が読み取れませんでした')
+  recognizeMemberText()
+  memberInputMode.value='scan'
+  memberOcrStatus.value='端末内OCR · 読み取り完了（元画像は保存しません）'
+ }catch(e){memberEntryError.value='画像を読み取れませんでした：'+e.message}
+ finally{memberOcrBusy.value=false}
 }
 // Every displayed expense uses the same record editor. The selected source
 // determines the existing server-verified execution path, never just its label.
@@ -124,9 +169,9 @@ function safeSpend(entry){
   throw Error('金額・日付・店舗・カテゴリを確認してください')
  return {date:entry.date,time:String(entry.time||''),amount,merchant,category,note}
 }
-async function submitPaidExpense(choice){
- const entry=safeSpend(memberEntry.value),user=props.user.user_id
- const snapshot=JSON.stringify({user,source:memberEntry.value.paymentSource,entry})
+async function submitPaidExpense(choice,record){
+ const entry=safeSpend(record),user=props.user.user_id
+ const snapshot=JSON.stringify({user,source:record.paymentSource,entry})
  if(pendingPaidEntry&&pendingPaidEntry.snapshot!==snapshot)
   throw Error('前回の送信結果が未確認です。元の内容で再試行してください')
  if(!pendingPaidEntry)pendingPaidEntry={snapshot,key:'member-spend:'+crypto.randomUUID(),requestId:null}
@@ -169,29 +214,40 @@ async function submitPaidExpense(choice){
  return {type:'pending'}
 }
 async function submitMemberEntry(){
- if(memberEntryPending.value)return
+ if(memberEntryPending.value||memberOcrBusy.value||!memberEntries.value.length)return
  memberEntryPending.value=true;memberEntryError.value='';memberEntryNotice.value=''
+ let sent=0,applied=0
  try{
-  const choice=memberEntry.value.type==='expense'
-   ?resolveMemberPayment(memberEntry.value.paymentSource,myAccounts.value,sharedCards.value)
-   :{kind:'cash'}
-  if(!choice)throw Error('支払方法が変更・解除されました。もう一度選択してください')
-  if(pendingPaidEntry&&choice.kind==='cash')throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
-  if(choice.kind==='shared'||choice.kind==='personal'){
-   const result=await submitPaidExpense(choice)
-   memberEntryNotice.value=result.type==='applied'
-    ?'共有されたカードに支出を保存しました。'
-    :'HomeFlow に審査を依頼しました。承認と入帳が完了するまで計上されません。'
-  }else{
-   const r=await sharedMutationRef.value?.submitEntry(memberEntry.value)
-   if(!r?.proposalId)throw Error('申請の受付を確認できません')
-   memberEntryNotice.value='HomeFlow に審査を依頼しました。承認と入帳完了後に正式計上されます。'
+  while(memberEntries.value.length){
+   const record=memberEntries.value[0]
+   const choice=record.type==='expense'
+    ?resolveMemberPayment(record.paymentSource,myAccounts.value,sharedCards.value)
+    :{kind:'cash'}
+   if(!choice)throw Error('支払方法が変更・解除されました。もう一度選択してください')
+   if(pendingPaidEntry&&choice.kind==='cash')
+    throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
+   if(choice.kind==='shared'||choice.kind==='personal'){
+    const result=await submitPaidExpense(choice,record)
+    if(result.type==='applied')applied++
+   }else{
+    const result=await sharedMutationRef.value?.submitEntry(record)
+    if(!result?.proposalId)throw Error('申請の受付を確認できません')
+   }
+   // Remove one draft only after the authenticated backend confirmed receipt.
+   // A later failure leaves all unsent rows editable, not silently discarded.
+   memberEntries.value.shift();sent++
   }
-  memberEntry.value=newEntry()
+  memberEntryNotice.value=applied?
+   sent+'件受付（うち'+applied+'件は承認済み共有カードで入帳）':
+   sent+'件を HomeFlow 審査に送信しました。承認・入帳までは待入帳です。'
+  memberRawText.value=''
   await refresh()
   tab.value='list'
- }catch(e){memberEntryError.value=e.message||'申請を送信できません'}
- finally{memberEntryPending.value=false}
+ }catch(e){
+  memberEntryError.value=(sent?sent+'件の受付を確認済み。残り'+memberEntries.value.length+'件：':'')+
+   (e.message||'申請を送信できません')
+  await refresh().catch(()=>{})
+ }finally{memberEntryPending.value=false}
 }
 const ledgerEntries=computed(()=>{
  const byId=new Map(),drafts=[]
@@ -328,7 +384,7 @@ async function modify(a,changes){
 function edit(a){if(a.owner_user_id!==props.user.user_id||a.origin==='legacy')return
  renameId.value=a.account_id;rename.value=a.label}
 function foreground(){if(document.visibilityState==='visible')void refresh()}
-watch(()=>props.user.user_id,()=>{pendingPaidEntry=null;memberEntry.value=newEntry();label.value='';renameId.value='';void refresh()})
+watch(()=>props.user.user_id,()=>{pendingPaidEntry=null;memberEntries.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
 onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];

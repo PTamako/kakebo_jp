@@ -20,7 +20,7 @@ test('残高 is two selectable views, never a scrolling plan-manager page',()=>{
   assert.match(balance,/min-height:43px/)
 })
 test('管理 has its own 積立 page, with working plan and purchase month controls',()=>{
-  assert.match(management,/<FinanceSectionTabs v-model="managementTab"/)
+  assert.match(management,/<FinanceManagementHeader v-model="managementTab"/)
   assert.match(managementTabs,/\['investment','積立'\]/)
   assert.match(management,/managementTab === 'investment'/)
   assert.match(management,/<SbiPortfolio :api="props\.api" active-view="plans" :refresh-key="investmentRefreshKey"/)

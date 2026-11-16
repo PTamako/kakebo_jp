@@ -5,6 +5,7 @@
 // HomeFlow GET endpoints are read-only; the separate signed JPDA POST can insert
 // strictly validated entries. Neither path exports raw notes, OCR, or credentials.
 import { onRequestPost as documentAssistantPost } from '../functions/api/bridge/document-assistant.js'
+import { routeInternalFinance } from './family-finance-service-router.js'
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{
   'content-type':'application/json; charset=utf-8','cache-control':'no-store',
   'x-content-type-options':'nosniff','referrer-policy':'no-referrer'
@@ -83,6 +84,14 @@ export async function readLedger(request,db){
 export default {
   async fetch(request,env){
     const path=new URL(request.url).pathname
+    // The only new write paths are preexisting signed Kakeibo execution
+    // handlers. This Worker has workers_dev=false and no public route.
+    // Never route these to Pages URL or skip target verification.
+    if(path.startsWith('/api/internal/')){
+      const response=await routeInternalFinance(request,env)
+      if(response)return response
+      return json({ok:false,error:'internal_route_not_found'},404)
+    }
     if(request.method==='POST'&&path==='/api/bridge/document-assistant'){
       // The internal Worker is reachable through Cloudflare Service Bindings
       // only. Its handler still requires a valid shared HMAC and mapped actor.

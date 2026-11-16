@@ -336,3 +336,11 @@ Cloudflare 构建执行 `npm run build`：Node 回归测试、`npm audit --omit=
 - 新規画像は R2 条件付き `PUT`（存在しなければ保存）を用いて preflight `HEAD` を省き、書き込み完了時のオブジェクトメタデータと SHA-256 チェックサムを利用する。すでにオブジェクトがある稀なケースだけ `HEAD` を呼んで同一画像の再試行を判断する。
 - 画像を見る操作では対象 1 件に R2 `GET` を 1 回実行。ZIP エクスポート、ユーザーが実行するアップロード、削除、旧画像の移行のみ、それぞれ必要な R2 操作を行う。削除の成否は `delete()` の結果で判断し、追加の `HEAD` は実行しない。
 - **適用順序**：①専用 Preview D1 で 0014 の列を追加・検証、②本番 D1 の列や帳簿件数・金額を読み取り専用で記録、③本番 D1 に 0014 だけを適用、④全テストと Pages Preview 成功を確認してコードを本番にデプロイ。本番 D1 に `schema.sql` 全体を再実行しない。
+
+## 2026-11-15: 0059 legacy shared receipt recovery (UNDEPLOYED)
+
+- `0059_legacy_shared_receipt_repair.sql` must run **after** 0051, 0055, 0056 and 0057 (and follow the repository's full ordered migration plan); it does not update old entries, balances or R2 objects. No production migration has been executed by this development.
+- The `legacy/shared-receipt-repair` endpoint is owner-initiated, origin-checked, exact request-id/entry/resource/digest bound, and **disabled by default**. It additionally requires the existing adoption, source-reference and old-client-write freeze flags. The original owner must explicitly confirm a single missing shared object.
+- Requires a verified immutable copy/claim/tombstone, still-active owner and account, exact historical SHA-256/ETag/size/MIME, and one live shared R2 reference. A source object must still exist; the endpoint cannot reconstruct a missing source or resolve unknown stale iPhone writes.
+- It writes a durable `pending` audit intent **before** an R2 conditional `If-None-Match: *` copy and reads back SHA-256. A lost response can retry the **same** request ID; `completed` plus a now-missing destination fails and requires fresh review. Existing conflicting/corrupt target objects are never overwritten.
+- No source delete, source-purge authorization, ledger change or silent automatic restoration. D1+R2 are **not** distributed-ACID. For real production enablement, Stage F still requires fresh immutable backups and isolated restore checks, old clients drained, read-only source reference report, signed review and the rest of G0–G9; keep flag off until then. Both full Validate and Mobile WebKit are necessary, and neither substitutes two actual iPhones.

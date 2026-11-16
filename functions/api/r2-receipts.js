@@ -27,6 +27,15 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
   if (!env.RECEIPTS_R2) return json({error:'R2画像ストレージが未設定です'},503)
   const bucket=env.RECEIPTS_R2
   const method=request.method
+  // 0055 owner adoption requires an explicit write-quiescence gate: an old
+  // iPhone PUT that began before the R2 HEAD must not race the D1 registry
+  // adoption. When this release-only flag is ON, legacy receipts stay readable
+  // (except adopted IDs) but ALL old PUT/DELETE and destructive cleanup stop.
+  // The flag is OFF by default; never enable without release authorization.
+  if(env.KAKEIBO_LEGACY_R2_WRITES_FROZEN==='true'&&
+    (method==='PUT'||method==='DELETE'||(method==='POST'&&segments[0]==='cleanup')))
+    return json({code:'legacy_receipt_writes_frozen',
+      error:'历史图片写入已暂时冻结，不能继续旧端操作'},503)
   const deletedRow=async id=>db.prepare('SELECT deleted FROM receipt_r2_state WHERE entry_id=?1').bind(id).first()
   const tombstone=ids=>db.batch(ids.map(id=>db.prepare(
     'INSERT INTO receipt_r2_state(entry_id,deleted,size_bytes,updated_at) VALUES(?1,1,NULL,CURRENT_TIMESTAMP) ON CONFLICT(entry_id) DO UPDATE SET deleted=1,size_bytes=NULL,updated_at=CURRENT_TIMESTAMP'
@@ -44,7 +53,11 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
       const after=Number(payload?.after??0)
       if(!Number.isSafeInteger(after)||after<0)return json({error:'再確認の位置を確認してください'},400)
       const {results=[]}=await db.prepare(
-        'SELECT entry_id FROM receipt_r2_state WHERE deleted=1 AND entry_id>?1 ORDER BY entry_id LIMIT 100'
+        (env.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED==='true'?
+         'SELECT rs.entry_id FROM receipt_r2_state rs WHERE rs.deleted=1 AND rs.entry_id>?1 '+
+         'AND NOT EXISTS(SELECT 1 FROM family_legacy_shared_adoptions a WHERE a.entry_id=rs.entry_id) '+
+         'ORDER BY rs.entry_id LIMIT 100':
+         'SELECT entry_id FROM receipt_r2_state WHERE deleted=1 AND entry_id>?1 ORDER BY entry_id LIMIT 100')
       ).bind(after).all()
       const ids=results.map(row=>Number(row.entry_id))
       if(ids.length)await bucket.delete(ids.map(key))
@@ -85,6 +98,15 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
           ids.some(id=>typeof id!=='number'||!validId(id))||
           new Set(ids).size!==ids.length)
           return json({error:'削除する画像IDを確認してください（最大100件）'},400)
+        // A bulk legacy delete is not permitted to tombstone an adopted
+        // shared entry. Check the entire batch BEFORE any D1/R2 mutation.
+        if(env.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED==='true'){
+          const marks=ids.map((_,i)=>'?'+(i+1)).join(',')
+          const protectedRow=await db.prepare('SELECT entry_id FROM family_legacy_shared_adoptions '+
+           'WHERE entry_id IN ('+marks+') LIMIT 1').bind(...ids).first()
+          if(protectedRow)return json({code:'adopted_receipt_bulk_delete_forbidden',
+           error:'共有明細の旧画像は一括削除できません'},409)
+        }
         const keys=ids.map(key)
         // Tombstone first: an offline iPhone may have an older local photo.
         await tombstone(ids)
@@ -99,6 +121,16 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
     if(segments.length!==1 || !validId(idSegment))
       return json({error:'画像IDを確認してください'},400)
     const id=Number(idSegment)
+    // Adopted originals belong exclusively to the guarded shared lifecycle.
+    // Never let the legacy numeric-id endpoint overwrite, revive, read or
+    // permanently delete an adopted receipt (including iPhone offline retry).
+    // Missing 0055 while flag is ON is a hard failure, not a permissive fallback.
+    if(env.KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED==='true'){
+      const adoption=await db.prepare('SELECT entry_id FROM family_legacy_shared_adoptions '+
+       'WHERE entry_id=? LIMIT 1').bind(id).first()
+      if(adoption)return json({code:'receipt_adopted_legacy_path_disabled',
+       error:'共有明細の原画像は旧URLから操作できません'},410)
+    }
     const objectKey=key(id)
     if(method==='HEAD') {
       // A version request happens only when the user selects a replacement

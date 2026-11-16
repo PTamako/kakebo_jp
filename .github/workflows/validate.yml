@@ -34,8 +34,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Focused family finance identity and asset provenance regressions
+        run: node --test tests/homeflow-sso-isolated.test.mjs tests/family-finance-ui.test.mjs
       - name: Verify tests, production build and production dependency advisories
         run: npm run verify:release
+      - name: Bundle signed private Kakeibo finance Service Binding Worker (no deploy)
+        run: npx wrangler deploy --config wrangler.homeflow-bridge.toml --dry-run --outdir .wrangler/private-bridge-dryrun
       - name: Report all dependency advisories (non-blocking dev dependency inventory)
         if: success()
         run: npm audit --json > dependency-audit.json || true

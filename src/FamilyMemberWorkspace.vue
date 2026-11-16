@@ -12,6 +12,8 @@ import LedgerTypeFilter from './LedgerTypeFilter.vue'
 import AssetsPage from './pages/AssetsPage.vue'
 import StatisticsPage from './pages/StatisticsPage.vue'
 import {makeFamilyStatsContext} from './family-stats-context.js'
+import LedgerPage from './pages/LedgerPage.vue'
+import {makeFamilyLedgerContext} from './family-ledger-context.js'
 const props=defineProps({user:{type:Object,required:true}})
 const tab=ref('list'),managementTab=ref('cards')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),totals=ref(null),yearly=ref(null)
@@ -73,9 +75,19 @@ const yen=n=>n===null||n===undefined?'—':'¥'+Number(n).toLocaleString('ja-JP'
 const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.user.user_id))
 const selectedEntryType=ref('all')
 const monthlyReport=ref(null),annualReport=ref(null),selectedYear=ref(Number(year.value))
-provide('kakeibo-page-context',
- makeFamilyStatsContext({tab,month,selectedYear,stats:monthlyReport,
-  annualStats:annualReport,entryType:selectedEntryType}))
+const sharedMutationRef=ref(null)
+function openApproval(action,entry){
+ if(!entry)return
+ void sharedMutationRef.value?.openForEntry(action,entry)
+}
+const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:sharedEntries,
+ entryTypeFilter:selectedEntryType,load:()=>refresh(),more:()=>moreEntries(),
+ openApproval,onError:message=>{error.value=message}})
+provide('kakeibo-page-context',{
+ ...makeFamilyStatsContext({tab,month,selectedYear,stats:monthlyReport,
+   annualStats:annualReport,entryType:selectedEntryType}),
+ ...memberLedger
+})
 watch(selectedYear,n=>{if(Number.isInteger(n)&&n>=2000&&n<=9998)year.value=String(n)})
 
 const pageOffset=ref(null)
@@ -96,7 +108,7 @@ async function moreEntries(){
  const user=props.user.user_id,ticket=epoch
  ledgerLoading.value=true
  try{
-  const next=await api('shared/entries?limit=20&offset='+pageOffset.value)
+  const next=await api('shared/entries?limit=100&month='+encodeURIComponent(month.value)+'&offset='+pageOffset.value)
   if(user!==props.user.user_id||ticket!==epoch)return
   if(next.ledger_scope!=='household')throw Error('家庭账目范围验证失败')
   const current=new Set(sharedEntries.value.map(x=>x.id))
@@ -119,7 +131,7 @@ async function refresh(){
  try{
   const [a,b,c,d,e]=await Promise.all([
    api('accounts'),api('personal/assets'),
-   api('shared/entries?limit=20'),
+   api('shared/entries?limit=100&month='+encodeURIComponent(month.value)),
    api('shared/stats?month='+month.value),
    api('shared/stats?year='+year.value)
   ])
@@ -176,32 +188,10 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
    <button type="button" @click="refresh">再试一次</button>
   </section>
   <section v-if="tab==='list'" class="member-page">
-   <div class="page-heading"><div><h1>収支明細</h1></div><p class="heading-subtitle">家庭共享账本 · 私人卡片信息不共享</p></div>
-   <LedgerTypeFilter :model-value="selectedEntryType" @change="selectedEntryType=$event" />
-
-   <div v-if="!visibleEntries.length" class="empty-state"><span class="empty-icon">▤</span>
-    <strong>この条件に該当する明細はありません</strong></div>
-   <div v-else class="ledger day-group-list">
-    <section v-for="group in entryDays" :key="group.date" class="entry-day-group">
-     <button type="button" class="entry-day-heading">
-      <strong>{{group.date.replace(/-/g,'/')}}</strong>
-      <span class="entry-day-count">{{group.items.length}}件</span>
-      <span class="entry-day-total">{{yen(group.amount)}}</span>
-     </button>
-     <ul class="ledger entry-day-items">
-      <li v-for="e in group.items" :key="e.id">
-       <LedgerEntryContent :entry="e" :categories="entryCategories"
-        :category-label="x=>x" :yen="yen" :clickable="false" />
-      </li>
-     </ul>
-    </section>
-   </div>
-   <button v-if="pageOffset!==null" type="button" class="button-secondary load-more-button"
-    :disabled="ledgerLoading" @click="moreEntries">
-    {{ledgerLoading?'読み込み中…':'読み込みを続ける'}}
-   </button>
-   <FamilySharedMutationRequests :key="'personal-mutation:'+user.user_id"
-    :user-id="user.user_id" :household-id="user.household_id" />
+   <LedgerPage member />
+   <FamilySharedMutationRequests ref="sharedMutationRef"
+     :key="'personal-mutation:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" />
   </section>
   <StatisticsPage v-else-if="tab==='stat'" />
   <section v-else-if="tab==='add'" class="member-page">

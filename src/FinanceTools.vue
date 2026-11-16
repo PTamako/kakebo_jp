@@ -285,6 +285,26 @@ const cardMode = ref('')
 watch(()=>props.cardSettingsRequest,()=>{managementTab.value='cards';cardMode.value='add'})
 const selectedCard = ref('')
 const cardMessage = ref('')
+const cardShareOwnerId=ref(''),cardShareTargets=ref([]),cardShareOutgoing=ref([]),cardShareReady=ref(false)
+const cardShareOptions=computed(()=>cardShareTargets.value.map(member=>{
+ const grant=cardShareOutgoing.value.find(g=>g.card_name===selectedCard.value&&
+  g.grantee_user_id===member.user_id)
+ return {user_id:member.user_id,display_name:member.display_name||'家庭成员',
+  enabled:Number(grant?.is_active||0)===1,version:grant?.version||0}
+}))
+async function loadCardShares(){
+ cardShareReady.value=false
+ const res=await fetch('/api/family-finance/legacy-card-shares',{
+  credentials:'same-origin',cache:'no-store'})
+ const data=await res.json().catch(()=>({}))
+ if(!res.ok||data.ok!==true||data.scope!=='owner-card-settings'||
+  typeof data.viewer_user_id!=='string'||!Array.isArray(data.targets)||
+  !Array.isArray(data.outgoing))throw Error(data.code||'家庭カード共有設定を取得できません')
+ cardShareOwnerId.value=data.viewer_user_id
+ cardShareTargets.value=data.targets
+ cardShareOutgoing.value=data.outgoing
+ cardShareReady.value=true
+}
 const closingDays = computed(() => props.paymentClosingDays)
 const defaultClosingDay = name => {
   const normalized = String(name || '').normalize('NFKC').toLowerCase().replace(/[\s　・（）()_-]/g, '')
@@ -293,8 +313,10 @@ const defaultClosingDay = name => {
   return '末日'
 }
 const closingDayFor = name => closingDays.value[name] === 0 ? '末日' : closingDays.value[name] == null ? defaultClosingDay(name) : String(closingDays.value[name])
-function selectCardForEdit() {
+async function selectCardForEdit() {
   if(!selectedCard.value||busy.value)return
+  cardMessage.value=''
+  try{await loadCardShares()}catch(e){cardShareReady.value=false;cardMessage.value='家庭共有を読み込めません：'+e.message}
   cardMode.value='edit'
 }
 watch(selectedCard,()=>{cardMessage.value=''},{flush:'sync'})
@@ -308,6 +330,10 @@ async function saveCardFromSheet(payload){
   if(busy.value)throw Error('別の処理が実行中です')
   const name=String(payload?.name||'').trim()
   const kind=payload?.sourceType,statGroup=payload?.statGroup
+  const {shareChanges=[],detailsChanged=true,...legacyPayload}=payload
+  if(!Array.isArray(shareChanges)||shareChanges.length>cardShareTargets.value.length||
+    (shareChanges.length&&!cardShareReady.value))
+    throw Error('家庭共有の権限情報を再取得してください')
   if(!name||name.length>80||!['standard','prepaid'].includes(kind)||!['card','points'].includes(statGroup))
     throw Error('名称・種類・集計区分を確認してください')
   if(payload.mode==='add'){
@@ -322,9 +348,11 @@ async function saveCardFromSheet(payload){
   busy.value=true
   try{
     const currentName=selectedCard.value
-    const response=await props.api(payload.mode==='add'?'payment-sources':'payment-sources/update',{
-      method:'POST',body:JSON.stringify(payload)
-    })
+    const metadataChanged=payload.mode==='add'||detailsChanged
+    const response=metadataChanged?
+      await props.api(payload.mode==='add'?'payment-sources':'payment-sources/update',{
+       method:'POST',body:JSON.stringify(legacyPayload)
+      }):{ok:true,changed:false}
     if(!response?.ok)throw Error('保存結果を確認できません')
     // The backend already commits the rename and all foreign references; only
     // refresh the client snapshot and selection after that transaction succeeds.
@@ -344,13 +372,32 @@ async function saveCardFromSheet(payload){
       if(bill.value.name===currentName)bill.value.name=name
     }
     selectedCard.value=name
-    emit('payment-settings-refresh')
-    emit('settings-changed')
-    if(payload.mode==='edit')emit('ledger-updated')
+    for(const grant of shareChanges){
+      if(!cardShareTargets.value.some(x=>x.user_id===grant.grantee_user_id))
+        throw Error('家庭メンバーの設定を再読み込みしてください')
+      const result=await fetch('/api/family-finance/legacy-card-shares',{
+        method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({expected_user_id:cardShareOwnerId.value,card_name:name,
+         grantee_user_id:grant.grantee_user_id,enabled:grant.enabled,
+         expected_version:grant.expected_version})
+      })
+      const data=await result.json().catch(()=>({}))
+      if(!result.ok||data.ok!==true)
+        throw Error('カード情報は保存済みですが、共有の更新に失敗しました：'+
+         (data.code||'通信エラー')+'。カード画面を再読み込みしてください')
+    }
+    if(shareChanges.length)await loadCardShares()
+    if(metadataChanged){
+      emit('payment-settings-refresh')
+      emit('settings-changed')
+      if(payload.mode==='edit')emit('ledger-updated')
+    }
     // A settings refresh failing after a successful write must not make the
     // user repeat a non-idempotent save.
     try{await loadFinanceSettings()}catch(e){loadError.value='カードは保存されましたが、関連データの更新に失敗しました：'+e.message}
-    cardMessage.value=payload.mode==='add'?name+'を追加しました':name+'を更新しました'
+    cardMessage.value=payload.mode==='add'?name+'を追加しました':
+      shareChanges.length?name+'の共有設定を保存しました':name+'を更新しました'
     return response
   }finally{busy.value=false}
 }
@@ -1558,9 +1605,11 @@ async function removeCardBill(record) {
       <button type="button" class="card-icon-action" @click="cardMode = 'add'" aria-label="カードを追加" title="カードを追加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
     <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
+    <p v-if="cardMessage" class="card-type-hint" role="status">{{cardMessage}}</p>
     <MobileCardEditorSheet :mode="cardMode" :card-name="selectedCard"
       :card="paymentSourceMeta[selectedCard]||null" :closing-day="closingDayFor(selectedCard)"
-      :payment-sources="paymentSources" :busy="busy" :on-save="saveCardFromSheet"
+      :payment-sources="paymentSources" :share-options="cardShareOptions"
+      :share-ready="cardShareReady" :busy="busy" :on-save="saveCardFromSheet"
       :on-danger="runCardDanger" @close="cardMode=''" />
     <details v-if="archivedPaymentSources.length" class="card-archive-disclosure">
       <summary>アーカイブ済みのカード <strong>{{archivedPaymentSources.length}}件</strong></summary>

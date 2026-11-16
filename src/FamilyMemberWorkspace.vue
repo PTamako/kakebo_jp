@@ -142,7 +142,7 @@ async function saveMemberMerchantRule({keyword,oldCategory,oldPayment,expectedVe
  if((previous?.version||0)!==expectedVersion||
     (previous?.category||'')!==oldCategory||(previous?.payment_source||'')!==oldPayment)
   throw Error('別の端末でルールが変更されました。更新してください')
- if(category&&!memberRuleCategoryOptions.value.includes(category))throw Error('カテゴリを確認してください')
+ if(category&&!memberRuleCategoryOptions.value.includes(category)&&category!==(previous?.category||''))throw Error('カテゴリを確認してください')
  if(paymentSource&&!memberPaymentOptions.value.some(o=>o.value===paymentSource))
   throw Error('支払方法を確認してください')
  if(!category&&!paymentSource){

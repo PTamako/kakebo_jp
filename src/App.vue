@@ -996,6 +996,9 @@ function removeDraft(i) { forms.value.splice(i, 1) }
 async function saveAll() {
   if (busy.value) return
   if (!forms.value.length) return flash('保存する記録がありません')
+  // Cross-member bank intents require independent approval, never legacy entries.
+  if (forms.value.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank'))
+    return flash('跨成员银行转账请在资产转移卡片内发起双人确认；不会直接记账。')
   const invalidTransfer = forms.value.findIndex(f => f.type === 'transfer' && (!f.transferTarget || !/^\d{4}-\d{2}-\d{2}$/.test(f.transferDate || '')))
   if (invalidTransfer >= 0) return flash(`${invalidTransfer + 1}件目の振替先と適用日を確認してください`)
   const invalidSbiReward = forms.value.findIndex(f => f.type === 'income' && f.category === 'ポイント還元' &&
@@ -1984,7 +1987,7 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
         <button v-if="entryInputMode === 'manual'" type="button" class="button-secondary" :disabled="!!busy" @click="addBlank('expense')">＋ 記録を追加</button>
         <label v-else class="button-secondary upload-button" :class="{ 'upload-disabled': !!busy }" :aria-disabled="!!busy">{{ forms.length ? '別の画像を読み取る' : recognitionMode === 'statement' ? '明細を読み取る' : 'レシートを読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
-        <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length">{{ busy === 'saving' ? '保存中…' : `保存 ${forms.length}件` }}</button>
+        <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length || forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank')">{{ busy === 'saving' ? '保存中…' : forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank') ? '请在家庭转账卡片中提交' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>
     </section>

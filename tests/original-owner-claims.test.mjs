@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 const sql=readFileSync(new URL('../migrations/0060_legacy_owner_claims.sql',import.meta.url),'utf8');
 const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8');
 const topbar=readFileSync(new URL('../src/AppTopbar.vue',import.meta.url),'utf8');
+const sharedPages=readFileSync(new URL('../src/OriginalKakeiboPages.vue',import.meta.url),'utf8');
 const identity=readFileSync(new URL('../src/FamilyFinanceAccess.vue',import.meta.url),'utf8');
 
 test('existing personal legacy data owner is explicitly verified, not guessed from display name',()=>{
@@ -23,10 +24,12 @@ test('existing personal legacy data owner is explicitly verified, not guessed fr
 });
 
 test('management renders only HomeFlow identity; old card settings and one statistics page remain',()=>{
- assert.match(app,/<AppTopbar :theme="theme" :themes="themes" :identity="familyIdentity"/);
+ assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
+ assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/);
  assert.match(topbar,/<FamilyAccountMenu v-if="identity"/);
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.match(identity,/v-if="person&&!props.identityOnly"/);
- assert.match(app,/<ManagementPage :card-settings-request=/);
+ assert.match(sharedPages,/<ManagementPage v-show="activeTab==='finance'"/)
+ assert.match(app,/:management-bindings="originalManagementBindings"/);
  assert.match(app,/<StatisticsPage v-else-if="tab === 'stat'" \/>/);
 });

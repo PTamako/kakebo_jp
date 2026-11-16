@@ -1977,7 +1977,7 @@ test('legacy device API refuses renaming adopted payment source and rewriting a 
   assert.equal(confirmed.status,200)
   const legacyRequest=async(method,path,payload)=>{
    const request=new Request(app+'/api/'+path,{method,
-    headers:{Cookie:'kakeibo_session='+oldCookie,Origin:app,
+    headers:{Cookie:'kakeibo_session='+oldCookie+'; __Host-kakeibo_hf='+ownerCookie,Origin:app,
      'content-type':'application/json'},
     body:JSON.stringify(payload)})
    return legacyApi({request,env:f.env,params:{path:path.split('/')}})

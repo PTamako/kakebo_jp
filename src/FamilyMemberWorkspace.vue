@@ -387,6 +387,19 @@ async function api(path,options={}){
  if(!res.ok||data.ok!==true)throw Error(data.code||'读取失败')
  return data
 }
+const memberDuplicateGroups=computed(()=>{
+ const groups=new Map()
+ for(const e of sharedEntries.value){
+  if(!e||!['expense','income'].includes(e.type)||e.pending_approval)continue
+  const date=String(e.date||''),merchant=String(e.merchant||'').trim().toLowerCase()
+  if(!date||!merchant||!Number.isSafeInteger(Number(e.amount)))continue
+  const key=[date,e.type,Number(e.amount),merchant].join('|')
+  const rows=groups.get(key)||[];rows.push(e);groups.set(key,rows)
+ }
+ return [...groups.values()].filter(g=>g.length>1).slice(0,15)
+})
+const memberArchivedAccounts=computed(()=>myAccounts.value.filter(a=>
+ a.is_archived&&a.origin==='member_created'))
 const memberRecurringRef=ref(null)
 async function memberSbiApi(path,options){
  if(options?.method&&options.method!=='GET')throw Error('本人の投資設定は HomeFlow の承認手続きから変更してください')
@@ -635,29 +648,47 @@ watch(()=>props.user.user_id,loadMemberCategories)
      :key="'personal-sbi:'+user.user_id" :user-id="user.user_id"
      :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
    </template>
-   <template #member-tools>
-    <details class="finance-panel finance-disclosure">
-     <summary>端末のプライバシー設定</summary>
-     <p class="help">写真は端末内OCRで読み取り、原画像は自動保存しません。口座情報は本人のログインでのみ取得します。</p>
-    </details>
-    <details class="finance-panel finance-disclosure">
-     <summary>バックアップ・復元</summary>
-     <p class="help">本人の個人口座設定だけ暗号化して書き出せます。家庭帳簿・レシート・全履歴は対象外です。このファイルからの自動復元には未対応です。</p>
+   <template #member-jobs>
+     <p class="help">本人の定期設定は「固定費」「積立」に保存されます。金融取引は HomeFlow の承認と実際の入出金証拠が必要です。</p>
+     <button type="button" class="button-secondary" :disabled="busy" @click="refresh">
+       {{busy?'確認中…':'本人の設定と審査状態を更新'}}
+     </button>
+     <p class="help">審査中の家庭明細 {{pendingMutations.length}}件</p>
+   </template>
+   <template #member-privacy>
+     <div class="device-privacy-section">
+       <div class="device-privacy-row"><strong>ログイン状態の保存</strong>
+         <span class="help">HomeFlow で管理</span></div>
+       <p class="help">この端末のログインは本人の HomeFlow 認証情報で復元します。家族のカード情報や本人の金融データは端末に保存しません。</p>
+     </div>
+     <div class="device-privacy-section">
+       <strong>保存済みレシート画像</strong>
+       <p class="help">本人の画像は端末OCRで読み取ります。所有権が確認できない家庭共有画像の一括削除はできません。</p>
+     </div>
+   </template>
+   <template #member-backup>
+     <p class="help">本人のカード・銀行などの口座設定を暗号化して保存します。管理者の私有証券情報や家族全員のレシートは含めません。</p>
      <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportPersonalAccounts">
       {{personalBackupBusy?'暗号化中…':'本人の設定を暗号化して保存'}}
      </button>
      <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
-    </details>
-    <details class="finance-panel finance-disclosure">
-     <summary>ゴミ箱 · 本人のアーカイブ済み口座 {{myAccounts.filter(a=>a.is_archived&&a.origin==='member_created').length}}件</summary>
-     <div v-for="a in myAccounts.filter(x=>x.is_archived&&x.origin==='member_created')"
-      :key="a.account_id" class="entry">
-      <strong>{{a.label}}</strong>
-      <button type="button" :disabled="busy" @click="modify(a,{is_archived:false})">復元</button>
+     <p class="help">バックアップを使った自動復元は本人の所有権と重複検証が完了するまで実行しません。</p>
+   </template>
+   <template #member-duplicates>
+     <p v-if="!memberDuplicateGroups.length" class="help">現在表示中の家庭明細に同日・同額・同店の重複候補はありません。</p>
+     <div v-for="(group,i) in memberDuplicateGroups" :key="i" class="entry">
+       <strong>{{group[0].date}} · {{group[0].merchant}} · ¥{{Number(group[0].amount).toLocaleString('ja-JP')}} · {{group.length}}件</strong>
+       <button type="button" @click="tab='list'">明細を見る</button>
      </div>
-     <p v-if="!myAccounts.some(a=>a.is_archived&&a.origin==='member_created')" class="help">アーカイブ済みの口座はありません。</p>
-     <p class="help">家庭帳簿の削除と復元は管理者審査が必要です。</p>
-    </details>
+     <p class="help">共有明細の削除・変更は本人の承認申請から行い、管理者の確認後に反映します。</p>
+   </template>
+   <template #member-trash>
+     <p v-if="!memberArchivedAccounts.length" class="help">本人がアーカイブした口座はありません。</p>
+     <div v-for="a in memberArchivedAccounts" :key="a.account_id" class="entry">
+       <strong>{{a.label}}</strong>
+       <button type="button" :disabled="busy" @click="modify(a,{is_archived:false})">復元</button>
+     </div>
+     <p class="help">このゴミ箱は本人の口座設定だけを扱います。家庭共有明細の完全削除は管理者専用です。</p>
    </template>
   </OriginalKakeiboPages>
  </div>

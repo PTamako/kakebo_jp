@@ -6,6 +6,9 @@ import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
 import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 import {parseEntries,parseReceipt,ocrImage} from './parse.js'
+import {compressReceiptImage} from './receipt-image.js'
+import EntryInputPage from './EntryInputPage.vue'
+import {ICON_LIBRARY} from './icon-library.js'
 import {encryptBackupBlob} from './backup-encryption.js'
 import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
@@ -29,7 +32,7 @@ const props=defineProps({
  themes:{type:Array,required:true}
 })
 const emit=defineEmits(['logout','theme-change'])
-const tab=ref('list')
+const tab=ref('add')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
@@ -111,7 +114,25 @@ function newEntry(){return {type:'expense',amount:'',date:new Date(Date.now()+9*
  bindRule:false,bindPaymentRule:false}}
 const memberEntries=ref([])
 const memberInputMode=ref('manual'),memberRawText=ref(''),memberScanMode=ref('statement')
-const memberOcrBusy=ref(false),memberOcrStatus=ref('')
+const memberOcrBusy=ref(false),memberOcrStatus=ref(''),memberOcrWarning=ref('')
+const memberScanPaymentSource=ref('cash')
+const memberImportPaymentSource=ref('cash')
+const memberAiQuota=ref(null)
+const memberAiEnabled=ref((()=>{
+ try{return localStorage.getItem('kakeibo-ai-ocr-enabled')==='true'}catch{return false}
+})())
+async function refreshMemberAiQuota(){
+ try{memberAiQuota.value=await api('ai-ocr/quota')}
+ catch{memberAiQuota.value=null}
+}
+function setMemberAiEnabled(enabled){
+ memberAiEnabled.value=enabled===true
+ try{localStorage.setItem('kakeibo-ai-ocr-enabled',String(memberAiEnabled.value))}catch{}
+ if(enabled)void refreshMemberAiQuota()
+}
+watch(memberInputMode,mode=>{if(mode==='scan')void refreshMemberAiQuota()})
+const memberImportPaymentOptions=computed(()=>
+ [{value:'cash',label:'自動判定（現金）'},...memberPaymentOptions.value.filter(x=>x.value!=='cash')])
 const memberTodayLabel=computed(()=>new Date().toLocaleString('ja-JP',{
  timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'}))
 function addMemberEntry(){memberEntries.value.push(newEntry())}
@@ -122,7 +143,7 @@ function setMemberEntryType(type,entry){
  entry.category=type==='expense'?'食費':'給与'
  entry.merchant=''
 }
-function recognizeMemberText(){
+function recognizeMemberText(fromImage=false){
  memberEntryError.value='';memberEntryNotice.value=''
  const raw=memberRawText.value.trim()
  if(!raw)return
@@ -140,7 +161,9 @@ function recognizeMemberText(){
   .map(x=>({...newEntry(),type:x.type==='income'?'income':'expense',
    amount:Number(x.amount),date:String(x.date||newEntry().date),
    time:String(x.time||''),merchant:String(x.merchant||''),
-   category:String(x.category||'日用品'),note:String(x.note||'')}))
+   category:String(x.category||'日用品'),note:String(x.note||''),
+   paymentSource:memberPaymentOptions.value.some(c=>c.value===(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value))
+    ?(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value):'cash'}))
  if(!drafts.length){memberEntryError.value='解析できる金額がありません。原文と金額を確認してください。';return}
  if(memberEntries.value.length&& !window.confirm('現在の未保存記録を読み取り結果で置き換えますか？'))return
  memberEntries.value=drafts
@@ -149,15 +172,39 @@ function recognizeMemberText(){
 async function memberScanImage(event){
  const file=event.target?.files?.[0];if(event.target)event.target.value=''
  if(!file||memberOcrBusy.value)return
- memberOcrBusy.value=true;memberEntryError.value='';memberOcrStatus.value='端末内OCRで読み取り中'
+ memberOcrBusy.value=true;memberEntryError.value='';memberOcrWarning.value=''
+ memberOcrStatus.value='端末内OCR'
+ const originalMode=memberScanMode.value
  try{
-  memberRawText.value=await ocrImage(file,progress=>{
-   memberOcrStatus.value='端末内OCRで読み取り中 '+Math.max(0,Math.min(100,Number(progress)||0))+'%'
-  })
+  if(memberAiEnabled.value){
+   try{
+    await refreshMemberAiQuota()
+    if(memberAiQuota.value&&Number(memberAiQuota.value.remaining)<=0)
+     throw Error('本日のAI上限に達しました')
+    const image=await compressReceiptImage(file,2000,1024*1024)
+    const body=new FormData()
+    body.append('image',image,image.type==='image/jpeg'?'receipt.jpg':'receipt.webp')
+    body.append('mode',originalMode)
+    const response=await fetch('/api/family-finance/ai-ocr',{
+     method:'POST',body,credentials:'same-origin',cache:'no-store'
+    })
+    const result=await response.json().catch(()=>({}))
+    if(!response.ok||result.ok!==true||result.engine!=='gemma4'||!result.text?.trim())
+     throw Error(result.error||'AIの応答を確認できませんでした')
+    memberRawText.value=result.text
+    memberOcrStatus.value='Gemma 4'
+   }catch(aiError){
+    memberOcrWarning.value='AIが使えないため端末内OCRへ切替：'+String(aiError.message||'通信エラー')
+    memberRawText.value=await ocrImage(file)
+    memberOcrStatus.value='端末内OCR'
+   }finally{await refreshMemberAiQuota()}
+  }else{
+   memberRawText.value=await ocrImage(file)
+   memberOcrStatus.value='端末内OCR'
+  }
   if(!memberRawText.value.trim())throw Error('文字が読み取れませんでした')
-  recognizeMemberText()
+  recognizeMemberText(true)
   memberInputMode.value='scan'
-  memberOcrStatus.value='端末内OCR · 読み取り完了（元画像は保存しません）'
  }catch(e){memberEntryError.value='画像を読み取れませんでした：'+e.message}
  finally{memberOcrBusy.value=false}
 }
@@ -416,6 +463,84 @@ watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
 onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
  document.removeEventListener('visibilitychange',foreground)})
+// The original EntryInputPage renders for both identities. All writes here
+// continue through the authenticated member-specific HomeFlow approval adapter.
+const memberCategoryDialog=ref(false),memberCategorySaving=ref(false)
+const memberCategoryEntryType=ref('expense'),memberCategoryName=ref('')
+const memberCategoryIcon=ref('daily'),memberAvailableIcons=ICON_LIBRARY
+const memberCategoryRecords=ref([])
+function loadMemberCategories(){
+ try{
+  const raw=localStorage.getItem('kakeibo-personal-categories:'+props.user.user_id)
+  const parsed=JSON.parse(raw||'[]')
+  memberCategoryRecords.value=Array.isArray(parsed)?parsed.filter(x=>
+   x&&['income','expense'].includes(x.type)&&typeof x.name==='string'&&x.name.length<=20
+  ).slice(0,80):[]
+ }catch{memberCategoryRecords.value=[]}
+}
+function saveMemberCategory(){
+ const name=memberCategoryName.value.trim(),type=memberCategoryEntryType.value
+ if(!name||name.length>20||!['income','expense'].includes(type))return
+ if(memberCategoryRecords.value.some(x=>x.type===type&&x.name===name)){
+  memberEntryError.value='すでに同じカテゴリがあります';return
+ }
+ memberCategorySaving.value=true
+ try{
+  memberCategoryRecords.value.push({type,name,icon:memberCategoryIcon.value})
+  localStorage.setItem('kakeibo-personal-categories:'+props.user.user_id,
+   JSON.stringify(memberCategoryRecords.value))
+  memberCategoryDialog.value=false;memberCategoryName.value=''
+ }catch(e){memberEntryError.value='端末へカテゴリを保存できません：'+e.message}
+ finally{memberCategorySaving.value=false}
+}
+const memberInputBusy=computed(()=>memberEntryPending.value?'saving':memberOcrBusy.value?'読み取り中':'')
+const memberReceiptImage=ref(null),memberReceiptFileName=ref('')
+const memberDraftRecoveryInfo=ref('')
+const memberPaymentSourceChoices=computed(()=>memberPaymentOptions.value)
+const memberExpenseCategoryChoices=computed(()=>[...new Set([
+ ...entryExpenseCategories,...entryCategories.value,
+ ...memberCategoryRecords.value.filter(x=>x.type==='expense').map(x=>x.name)
+])])
+const memberIncomeCategoryChoices=computed(()=>[...new Set([
+ ...entryIncomeCategories,...memberCategoryRecords.value.filter(x=>x.type==='income').map(x=>x.name)
+])])
+function clearMemberDraft(){
+ if(memberEntries.value.length||memberRawText.value.trim()){
+  if(!window.confirm('未保存の下書きを破棄しますか？'))return
+ }
+ memberEntries.value=[];memberRawText.value='';memberEntryError.value=''
+}
+provide('kakeibo-entry-input',{
+ liveClockIso:computed(()=>new Date().toISOString()),todayLabel:memberTodayLabel,
+ addCategory:()=>{memberCategoryDialog.value=true},busy:memberInputBusy,
+ categoryDialog:memberCategoryDialog,categorySaving:memberCategorySaving,
+ saveCategory:saveMemberCategory,categoryEntryType:memberCategoryEntryType,
+ categoryName:memberCategoryName,categoryIcon:memberCategoryIcon,
+ availableIcons:memberAvailableIcons,input:memberRawText,entryInputMode:memberInputMode,
+ recognitionMode:memberScanMode,importPaymentSource:memberImportPaymentSource,
+ importPaymentOptions:memberImportPaymentOptions,
+ recognize:()=>recognizeMemberText(false),
+ aiOcrEnabled:memberAiEnabled,aiQuota:memberAiQuota,
+ scanImportPaymentSource:memberScanPaymentSource,
+ ocrEngine:memberOcrStatus,ocrWarning:memberOcrWarning,
+ setAiOcrEnabled:setMemberAiEnabled,forms:memberEntries,
+ draftRecoveryInfo:memberDraftRecoveryInfo,clearLocalDraft:clearMemberDraft,
+ removeDraft:removeMemberEntry,rewardDestinations:computed(()=>[]),
+ transferDestinations:computed(()=>[]),categories:memberExpenseCategoryChoices,
+ INCOME_CATEGORIES:memberIncomeCategoryChoices,
+ paymentSources:computed(()=>[]),categoryLabel:(x)=>x,
+ selectDraftReceipt:()=>{},pendingReceiptImage:memberReceiptImage,
+ pendingReceiptFileName:memberReceiptFileName,receiptSaveError:memberEntryError,
+ setEntryType:(f,type)=>setMemberEntryType(type,f),
+ applyMerchantPayment:()=>{},
+ manualPayment:(f,source)=>{f.paymentSource=source},
+ onImage:memberScanImage,addBlank:()=>addMemberEntry(),saveAll:submitMemberEntry,
+ receiptEnabled:computed(()=>false),
+ allowedTypes:computed(()=>['expense','income']),
+ paymentChoices:memberPaymentSourceChoices
+})
+loadMemberCategories()
+watch(()=>props.user.user_id,loadMemberCategories)
 </script>
 <template>
  <div class="member-shell">
@@ -431,77 +556,7 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
    <LedgerPage member />
   </section>
   <StatisticsPage v-else-if="tab==='stat'" />
-  <section v-else-if="tab==='add'" class="page-section member-page">
-   <div class="page-heading">
-    <div><h1>入力</h1><time class="entry-live-clock">{{memberTodayLabel}}</time></div>
-   </div>
-   <fieldset class="draft-controls" :disabled="memberEntryPending||memberOcrBusy">
-    <div class="input-mode-switch" role="tablist" aria-label="入力方法">
-     <button type="button" role="tab" :aria-selected="memberInputMode==='manual'"
-      :class="{selected:memberInputMode==='manual'}" @click="memberInputMode='manual';memberScanMode='statement'">手入力</button>
-     <button type="button" role="tab" :aria-selected="memberInputMode==='scan'"
-      :class="{selected:memberInputMode==='scan'}" @click="memberInputMode='scan'">画像から読み取る</button>
-    </div>
-    <div v-if="memberInputMode==='manual'" class="panel text-paste-panel">
-     <details class="text-entry-details">
-      <summary>テキストを貼り付けて読み取る</summary>
-      <label class="field-label" for="member-raw-text">テキスト入力</label>
-      <textarea id="member-raw-text" v-model="memberRawText" rows="4"
-       placeholder="ご利用明細やレシートの文字を貼り付けてください"></textarea>
-      <div class="action-row">
-       <button type="button" class="button-secondary" :disabled="!memberRawText.trim()" @click="memberScanMode='statement';recognizeMemberText()">テキストを読み取る</button>
-      </div>
-     </details>
-    </div>
-    <div v-else class="panel capture-panel">
-     <div class="input-mode-switch" role="tablist" aria-label="読み取り対象">
-      <button type="button" :class="{selected:memberScanMode==='statement'}" @click="memberScanMode='statement'">利用明細</button>
-      <button type="button" :class="{selected:memberScanMode==='receipt'}" @click="memberScanMode='receipt'">レシート</button>
-     </div>
-     <p class="microcopy">端末内OCRを使用します。写真は自動保存されません。</p>
-     <label class="button-secondary upload-button" :aria-disabled="memberOcrBusy">
-      画像を読み取る
-      <input type="file" accept="image/*" hidden :disabled="memberOcrBusy" @change="memberScanImage" />
-     </label>
-     <p v-if="memberOcrStatus" class="microcopy" role="status">{{memberOcrStatus}}</p>
-     <details v-if="memberRawText.trim()" class="text-entry-details"><summary>読み取り文字を確認・修正</summary>
-      <textarea v-model="memberRawText" rows="5" aria-label="読み取り文字"></textarea>
-      <button type="button" class="button-secondary" @click="recognizeMemberText()">修正して再解析</button>
-     </details>
-    </div>
-    <div v-if="memberEntries.length" class="draft-heading">
-     <div><h2>入力内容の確認</h2><p>保存前に金額・日付を確認</p></div>
-     <span class="count-pill">{{memberEntries.length}}件</span>
-    </div>
-    <div v-for="(f,i) in memberEntries" :key="i" class="entry-card">
-     <div class="entry-card-heading">
-      <span class="entry-number">{{String(i+1).padStart(2,'0')}}</span>
-      <strong>{{f.merchant||'新しい記録'}}</strong>
-      <button class="icon-button remove-button" type="button" @click="removeMemberEntry(i)" aria-label="この記録を削除">×</button>
-     </div>
-     <TransactionForm :record="f"
-      :categories="[...new Set([...entryExpenseCategories,...entryCategories])]"
-      :income-categories="entryIncomeCategories" :payment-sources="[]"
-      :payment-choices="memberPaymentOptions"
-      :allowed-types="['expense','income']" :show-payment-source="true"
-      :receipt-enabled="false" :category-label="x=>x"
-      @change-type="setMemberEntryType($event,f)"
-      @payment-change="f.paymentSource=$event" />
-     <label v-if="f.type==='income'&&f.category!==SPOUSE_INCOME_CATEGORY" class="form-field">
-      <span>収入元</span><input v-model="f.merchant" maxlength="120" placeholder="給与・副収入など"/>
-     </label>
-    </div>
-    <p v-if="memberEntryError" class="member-alert" role="alert">{{memberEntryError}}</p>
-    <p v-if="memberEntryNotice" class="microcopy" role="status">{{memberEntryNotice}}</p>
-    <div class="batch-actions" :class="{'batch-actions-empty':!memberEntries.length}">
-     <button class="button-secondary" type="button" @click="addMemberEntry">＋ 記録を追加</button>
-     <button class="button-primary" type="button"
-      :disabled="memberEntryPending||memberOcrBusy||!memberEntries.length||memberEntries.some(f=>!(Number(f.amount)>0)||!f.category)"
-      @click="submitMemberEntry">{{memberEntryPending?'送信中…':`保存 ${memberEntries.length}件`}}</button>
-    </div>
-   </fieldset>
-   <p v-if="cardSharingError" class="member-alert" role="alert">共有カードの取得に失敗しました：{{cardSharingError}}。更新して再試行してください。</p>
-  </section>
+  <EntryInputPage v-else-if="tab==='add'" />
     <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
     :open-personal-management="()=>{tab='finance'}" />
   <ManagementPage v-else-if="tab==='finance'" class="member-page"

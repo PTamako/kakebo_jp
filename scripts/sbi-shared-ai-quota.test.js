@@ -57,7 +57,7 @@ test('AI limit is one Japan-time D1 daily bucket capped at 20, not 20 per OCR fe
 
 test('SBI fund-detail and text import share the single visible AI switch',()=>{
   const ui=read('src/SbiPortfolio.vue')
-  const app=read('src/App.vue')
+  const app=read('src/App.vue')+'\n'+read('src/OcrCapturePanel.vue')
   const api=read('functions/api/[[path]].js')
   const quota=read('functions/api/ai-quota.js')
   const beforeDetails=ui.indexOf('<details class="sbi-single-import">')

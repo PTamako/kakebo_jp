@@ -66,7 +66,7 @@ test('flexible single dates, mixed formats, and malformed money are handled safe
 })
 
 test('image upload recognizes in append mode then stays in 画像から読み取る tab',()=>{
-  const app=src('src/App.vue')
+  const app=src('src/App.vue')+'\n'+src('src/EntryInputPage.vue')
   const image=app.match(/async function onImage\([\s\S]*?\n\}(?=\nfunction addBlank)/)?.[0]
   const manual=app.match(/function recognize\([\s\S]*?\n\}(?=\nasync function onImage)/)?.[0]
   assert.ok(image)
@@ -76,7 +76,8 @@ test('image upload recognizes in append mode then stays in 画像から読み取
   assert.doesNotMatch(image,/entryInputMode\.value\s*=\s*'manual'/)
   assert.doesNotMatch(manual,/entryInputMode\.value\s*=\s*'manual'/)
   assert.doesNotMatch(manual,/entryInputMode\.value\s*=\s*'scan'/)
-  assert.match(app,/v-if="entryInputMode === 'scan'" class="panel capture-panel"/)
+  assert.match(app,/<OcrCapturePanel v-if="entryInputMode === 'scan'"/)
+  assert.match(src('src/OcrCapturePanel.vue'),/class="panel capture-panel"/)
   assert.match(app,/@change="onImage\(\$event, recognitionMode\)"/)
 })
 

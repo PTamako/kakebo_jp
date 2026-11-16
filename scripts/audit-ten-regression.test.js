@@ -25,7 +25,7 @@ test('isolated test fixture covers migrated merchant matching examples',()=>{
 })
 
 test('today and highest expense/income marks survive month and week calendar views',()=>{
-  const app=source('src/App.vue')+'\n'+source('src/pages/LedgerPage.vue')
+  const app=source('src/App.vue')+'\n'+source('src/EntryInputPage.vue')+'\n'+source('src/pages/LedgerPage.vue')
   assert.match(app,/calendar-today/)
   assert.match(app,/calendar-top-expense/)
   assert.match(app,/calendar-top-income/)
@@ -105,7 +105,7 @@ test('Japanese kanji October and numeric October Fridays expand to identical fiv
 })
 
 test('手入力 text reading keeps the manual tab and review/save controls; only image reading opens image tab',()=>{
-  const app=source('src/App.vue')
+  const app=source('src/App.vue')+'\n'+source('src/EntryInputPage.vue')
   const manual=app.match(/function recognize\([\s\S]*?\n\}(?=\nasync function onImage)/)?.[0]
   const image=app.match(/async function onImage\([\s\S]*?\n\}(?=\nfunction addBlank)/)?.[0]
   assert.ok(manual,'text recognizer is present')

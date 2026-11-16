@@ -3,7 +3,7 @@ import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 const props=defineProps({userId:{type:String,required:true},
  householdId:{type:String,required:true},accounts:{type:Array,required:true},view:{type:String,default:'plans'}})
 const emit=defineEmits(['changed'])
-const open=ref(true),busy=ref(false),available=ref(false),error=ref(''),notice=ref('')
+const open=ref(true),busy=ref(false),available=ref(false),executionAvailable=ref(false),error=ref(''),notice=ref('')
 const plans=ref([]),occurrences=ref([]),policies=ref({})
 const day=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const month=()=>day().slice(0,7)
@@ -44,7 +44,7 @@ async function api(path,options={}){
  return data
 }
 function reset(){
- generation++;open.value=true;busy.value=false;available.value=false;
+ generation++;open.value=true;busy.value=false;available.value=false;executionAvailable.value=false;
  error.value='';notice.value='';plans.value=[];occurrences.value=[];policies.value={};
  selected.value='';bankRef.value='';brokerRef.value='';units.value='';planRetry='';
  bankPosted.value=false;brokerExecuted.value=false
@@ -55,18 +55,29 @@ function reset(){
 async function refresh(){
  const ticket=++generation,who=props.userId,hh=props.householdId
  if(!open.value)return
- try{
-  const [p,o]=await Promise.all([
+ // A disabled monthly execution path must never hide otherwise enabled
+ // personal plan registration and HomeFlow policy applications.
+ const [planResult,executionResult]=await Promise.allSettled([
    api('/api/family-finance/member-recurring-plans'),
    api('/api/family-finance/recurring-occurrences')
-  ])
-  if(!alive||!open.value||ticket!==generation||who!==props.userId||hh!==props.householdId)return
+ ])
+ if(!alive||!open.value||ticket!==generation||who!==props.userId||hh!==props.householdId)return
+ if(planResult.status==='fulfilled'){
+  const p=planResult.value
   plans.value=Array.isArray(p.items)?p.items:[]
-  occurrences.value=Array.isArray(o.items)?o.items:[]
   available.value=true;error.value=''
- }catch(e){
-  if(ticket===generation){plans.value=[];occurrences.value=[];available.value=false;
-   error.value=/DISABLED/.test(e.message)?'周期金融授权功能暂未开放；既有账本与旧定投不受影响':e.message}
+ }else{
+  plans.value=[];available.value=false
+  const msg=String(planResult.reason?.message||'計画情報を取得できません')
+  error.value=/DISABLED/.test(msg)?'計画登録は管理者設定により停止中です。既存の固定費には影響しません。':msg
+ }
+ if(executionResult.status==='fulfilled'){
+  occurrences.value=Array.isArray(executionResult.value.items)?executionResult.value.items:[]
+  executionAvailable.value=true
+ }else{
+  occurrences.value=[];executionAvailable.value=false
+  if(available.value && !/DISABLED/.test(String(executionResult.reason?.message||'')))
+   notice.value='月度履歴の読み込みに失敗しました：'+String(executionResult.reason?.message||'再更新してください')
  }
 }
 async function toggle(){
@@ -126,7 +137,7 @@ async function submitPolicy(p){
 }
 async function prepareOccurrence(){
  const p=chosen.value,policy=p&&currentPolicy(p)
- if(busy.value||!available.value||!p||policy?.status!=='approved'||
+ if(!executionAvailable.value||busy.value||!available.value||!p||policy?.status!=='approved'||
   !bankPosted.value||!bankRef.value.trim()||bankRef.value.trim().length<8||
   p.plan_type==='sbi_tsumitate'&&(!brokerExecuted.value||brokerRef.value.trim().length<8||
    !Number.isSafeInteger(Number(units.value))||Number(units.value)<=0))return
@@ -153,7 +164,7 @@ async function prepareOccurrence(){
  finally{if(ticket===generation)busy.value=false}
 }
 async function perform(o,action='execute'){
- if(busy.value||!available.value||!window.confirm(
+ if(!executionAvailable.value||busy.value||!available.value||!window.confirm(
   action==='execute'?'确认按本月已发生、已核验的银行／证券证据执行一次内部记账？不会向机构发送支付命令。':
   '仅按原凭证核对 HomeFlow 与家計簿的不可变回执，不再执行新的扣款。'))return
  const ticket=generation,actor=props.userId,hh=props.householdId

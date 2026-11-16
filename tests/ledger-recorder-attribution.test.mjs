@@ -42,10 +42,10 @@ test('ledger queries use the same attribution source in original and spouse page
  assert.match(householdApi,/ledgerRecorderColumns\+' '/)
  assert.doesNotMatch(householdApi,/recorded_by:user\.display_name/)
 })
-test('ledger metadata shows true recorder versus historic account attribution on original row',()=>{
- assert.match(view,/recorder_basis==='creator'\?'記帳：'/)
- assert.match(view,/recorder_basis==='legacy_assigned'\?'旧記録：'/)
- assert.match(view,/entry\.recorded_by/)
+test('ledger row shows only the nickname while preserving backend provenance',()=>{
+ assert.match(view,/v-if="entry\.recorded_by"/)
+ assert.match(view,/· \{\{entry\.recorded_by\}\}/)
  assert.match(view,/class="ledger-recorder"/)
- assert.doesNotMatch(view,/记账：管理员|记账：owner/)
+ assert.doesNotMatch(view,/記帳：|旧記録：|记账：管理员|记账：owner/)
+ assert.match(view,/recorder_basis==='legacy_assigned'/)
 })

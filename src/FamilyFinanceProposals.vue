@@ -1,9 +1,10 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref} from 'vue'
+import TransactionForm from './TransactionForm.vue'
 
 const props=defineProps({userId:{type:String,required:true},
  accounts:{type:Array,default:()=>[]}})
-const open=ref(false),busy=ref(''),loading=ref(false)
+const open=ref(true),busy=ref(''),loading=ref(false)
 const items=ref([]),offset=ref(0),nextOffset=ref(null)
 const error=ref(''),unavailable=ref(false),message=ref('')
 const myAccounts=computed(()=>props.accounts.filter(a=>
@@ -16,6 +17,25 @@ const canSubmitForExecution=item=>myAccounts.value.some(a=>
 const accountId=ref(''),kind=ref('expense'),amount=ref(''),merchant=ref(''),
  category=ref(''),date=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,10)),
  note=ref('')
+// The same form component as the owner's original ledger; submit remains an
+// approval-only HomeFlow intent, never a direct write to the legacy ledger.
+const memberDraft={time:'',paymentSource:'',transferTarget:'',transferDate:'',bindRule:false,bindPaymentRule:false}
+Object.defineProperty(memberDraft,'type',{
+ get:()=>kind.value,set:value=>{kind.value=value},enumerable:true})
+Object.defineProperty(memberDraft,'amount',{
+ get:()=>amount.value,set:value=>{amount.value=value},enumerable:true})
+Object.defineProperty(memberDraft,'merchant',{
+ get:()=>merchant.value,set:value=>{merchant.value=value},enumerable:true})
+Object.defineProperty(memberDraft,'category',{
+ get:()=>category.value,set:value=>{category.value=value},enumerable:true})
+Object.defineProperty(memberDraft,'date',{
+ get:()=>date.value,set:value=>{date.value=value},enumerable:true})
+Object.defineProperty(memberDraft,'note',{
+ get:()=>note.value,set:value=>{note.value=value},enumerable:true})
+const memberCategories=['食費','日用品','交通','住居','医療','交際費','その他']
+const memberIncomeCategories=['給与','賞与','副収入','ポイント還元','その他']
+const allowAccountType=()=>{}
+
 // Keep an ambiguous network retry attached to its original stable key and
 // immutable payload rather than silently filing a second household approval.
 let frozenDraft=null
@@ -189,7 +209,7 @@ function onForeground(){
  if(document.visibilityState==='visible'&&open.value&&!busy.value&&!loading.value)
   void load(0)
 }
-onMounted(()=>{alive=true;document.addEventListener('visibilitychange',onForeground)})
+onMounted(()=>{alive=true;document.addEventListener('visibilitychange',onForeground);void load(0)})
 onUnmounted(()=>{
  alive=false;revision++;open.value=false;items.value=[]
  frozenDraft=null;accountId.value='';amount.value='';merchant.value='';category.value='';note.value=''
@@ -216,19 +236,16 @@ onUnmounted(()=>{
      <option value="" disabled>选择本人账户</option>
      <option v-for="a in myAccounts" :key="a.account_id" :value="a.account_id">{{a.label}}</option>
     </select>
-    <div class="hf-form-grid">
-     <select v-model="kind" aria-label="收支类型" :disabled="!!busy||loading">
-      <option value="expense">支出</option><option value="income">收入</option>
-     </select>
-     <input v-model="amount" aria-label="金额（円）" type="number" inputmode="numeric" min="1" max="10000000" step="1" required placeholder="金额（円）" :disabled="!!busy||loading"/>
-     <input v-model="date" aria-label="日期" type="date" required :disabled="!!busy||loading"/>
-    </div>
-    <div class="hf-form-grid">
-     <input v-model="merchant" aria-label="商家或来源" maxlength="160" required placeholder="商家或收入来源" :disabled="!!busy||loading"/>
-     <input v-model="category" aria-label="分类" maxlength="40" required placeholder="分类" :disabled="!!busy||loading"/>
-    </div>
-    <input v-model="note" aria-label="备注（可选）" maxlength="300" placeholder="备注（可选）" :disabled="!!busy||loading"/>
-    <button type="submit" :disabled="!!busy||loading||!myAccounts.some(a=>a.account_id===accountId)||!merchant.trim()||!category.trim()||!Number.isSafeInteger(Number(amount))||Number(amount)<1">仅保存加密草稿</button>
+    <TransactionForm :record="memberDraft" :categories="memberCategories"
+      :income-categories="memberIncomeCategories" :payment-sources="[]"
+      :allowed-types="['expense','income','transfer']" :show-payment-source="false"
+      :member-transfer-only="true" :receipt-enabled="false" :category-label="x=>x"
+      @change-type="kind=$event;category='';if($event==='transfer')memberDraft.transferTarget='family:cross-bank'"
+    />
+    <label v-if="kind==='income'" class="hf-merchant">
+      收入来源 <input v-model="merchant" maxlength="160" required placeholder="工资、奖金或其他来源"/>
+    </label>
+    <button v-if="kind!=='transfer'" type="submit" :disabled="!!busy||loading||!myAccounts.some(a=>a.account_id===accountId)||!merchant.trim()||!category.trim()||!Number.isSafeInteger(Number(amount))||Number(amount)<1">仅保存加密草稿</button>
     <p v-if="!myAccounts.length" class="muted">请先创建本人金融账户，再发起申请。</p>
    </form>
    <p v-if="loading" class="muted">读取中…</p>

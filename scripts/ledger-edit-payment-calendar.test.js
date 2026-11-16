@@ -12,7 +12,7 @@ const saveEdit = app.match(/async function saveEdit\(\) \{([\s\S]*?)\n\}\n\ncons
 const monthWatch = app.match(/watch\(month, async \(\) => \{([\s\S]*?)\n\}\)/)?.[1] || ''
 
 test('saved-entry editor applies a manually selected card, even after statement import', () => {
-  const editor = ledger.match(/<TransactionForm [^\n]*edit-mode[^\n]*\/>/)?.[0] || ''
+  const editor = ledger.match(/<TransactionForm [\s\S]*?edit-mode[\s\S]*?\/>/)?.[0] || ''
   assert.ok(editor, 'saved-entry editor exists')
   assert.match(editor, /@payment-change="manualPayment\(editingEntry, \$event\)"/)
   assert.match(ledger, /saveEdit, manualPayment, selectedDay/)

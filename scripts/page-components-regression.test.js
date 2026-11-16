@@ -23,7 +23,7 @@ test('App only coordinates tabs; all four pages own their templates',()=>{
   assert.match(ledger,/class="edit-dialog"/)
   assert.match(stats,/statsPeriod === 'month'/)
   assert.match(stats,/class="page-section stats-page annual-page"/)
-  assert.match(assets,/<SbiPortfolio :api="api" :transfer-loading="transferLoading" :active-view="activeView" :refresh-key="ledgerRevision" @summary="onPortfolioSummary">/)
+  assert.match(assets,/<SbiPortfolio v-else :api="api" :transfer-loading="transferLoading" :active-view="activeView" :refresh-key="ledgerRevision" @summary="onPortfolioSummary">/)
   assert.match(assets,/<PrepaidAssets :api="api" :active="true" :revision="ledgerRevision"/)
   assert.match(assets,/@summary="onPrepaidSummary"/)
   assert.doesNotMatch(assets,/旧評価額|旧評価損益|legacy-investment-details/)
@@ -36,7 +36,7 @@ test('extracted pages share exactly the parent navigation refs and do not create
   assert.ok(match,'App injects a single shared ref registry')
   const names=new Set(match[1].split(',').map(s=>s.trim()))
   for (const [name,source] of [['明細',ledger],['統計',stats],['残高',assets]]) {
-    const injection=source.match(/const \{([^}]+)\} = inject\('kakeibo-page-context'\)/)
+    const injection=source.match(/const \{([^}]+)\}\s*=\s*inject\('kakeibo-page-context'(?:,\{\})?\)/)
     assert.ok(injection, name+' has parent state')
     for (const symbol of injection[1].split(',').map(x=>x.trim()))
       assert.ok(names.has(symbol),name+' missing parent symbol '+symbol)
@@ -52,9 +52,10 @@ test('extracted pages share exactly the parent navigation refs and do not create
   assert.match(stats,/<PaymentMethodSwitcher :report="annualStats" period="year" :yen="yen" :open-details="openPaymentMethodDetails"/)
   assert.match(read('src/PaymentMethodSwitcher.vue'),/props\.openDetails\(selectedMethod\.value, props\.period\)/)
   assert.match(app,/@open-duplicate="openDuplicateDate"/)
-  assert.match(app,/@click="openLedgerFromNav"/)
+  assert.match(app,/<BottomNavigation :active-tab="tab"/)
+  assert.match(app,/openLedgerFromNav\(\)/)
   assert.match(ledger,/@click="clearDetailFilter"/)
-  assert.match(ledger,/@click="setEntryTypeFilter/)
+  assert.match(ledger,/<LedgerTypeFilter[^>]+@change="setEntryTypeFilter"/)
 })
 
 test('finance_settings is retired, while login attempt throttling remains active',()=>{

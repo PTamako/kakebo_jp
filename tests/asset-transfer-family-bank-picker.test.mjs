@@ -16,7 +16,7 @@ test('original asset transfer form offers account-based family bank transfer wit
  assert.match(form,/record.transferTarget!=='family:cross-bank'/)
 })
 test('family cross-member bank transfer NEVER submits through ordinary ledger entries or batch save',()=>{
- assert.match(app,/forms.value.some\(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank'\)/)
+ assert.match(app,/forms.value.some\(f\s*=>\s*f.type\s*===\s*'transfer'\s*&&\s*f.transferTarget\s*===\s*'family:cross-bank'\)/)
  assert.match(app,/跨成员银行转账请在资产转移卡片内发起双人确认；不会直接记账/)
  assert.match(app,/:disabled="!!busy \|\| !forms.length \|\| forms.some\(/)
  assert.match(cross,/\/api\/family-finance\/cross-member-bank-transfers/)

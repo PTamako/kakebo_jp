@@ -1,0 +1,73 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+const read=path=>readFileSync(new URL('../src/'+path,import.meta.url),'utf8')
+const app=read('App.vue')
+const family=read('FamilyMemberWorkspace.vue')
+const nav=read('BottomNavigation.vue')
+const finance=read('FinanceTools.vue')
+const tabs=read('FinanceSectionTabs.vue')
+const proposal=read('FamilyFinanceProposals.vue')
+const form=read('TransactionForm.vue')
+
+test('owner and member use EXACT same navigation and management-tab components',()=>{
+ assert.match(app,/<BottomNavigation :active-tab="tab"/)
+ assert.match(family,/<BottomNavigation :active-tab="tab"/)
+ assert.match(finance,/<FinanceManagementHeader v-model="managementTab"/)
+ assert.match(family,/<FinanceManagementHeader v-model="managementTab"/)
+ for(const tab of ['list','stat','add','investments','finance'])
+  assert.match(nav,new RegExp("'"+tab+"'"))
+ for(const tab of ['cards','plans','investment','tools'])
+  assert.match(tabs,new RegExp("'"+tab+"'"))
+})
+test('new member cards use the original card editing sheet and owner-only account API',()=>{
+ assert.match(finance,/MobileCardEditorSheet/)
+ assert.match(family,/<MobileCardEditorSheet /)
+ assert.match(family,/cardAccounts\.value/)
+ assert.match(family,/account_kind:kind,expected_user_id:user/)
+ assert.match(family,/a\.owner_user_id!==user/)
+ assert.match(family,/!a\|\|a\.owner_user_id!==user\|\|a\.origin!=='member_created'/)
+})
+test('member entry creator reuses original TransactionForm but is approval-only',()=>{
+ assert.match(app,/<TransactionForm /)
+ assert.match(proposal,/<TransactionForm /)
+ assert.match(form,/allowedTypes/)
+ assert.match(form,/showPaymentSource/)
+ assert.match(proposal,/:allowed-types="\['expense','income','transfer'\]"/)
+ assert.match(proposal,/:member-transfer-only="true"/)
+ assert.match(proposal,/family:cross-bank/)
+ assert.match(proposal,/:receipt-enabled="false"/)
+ assert.match(proposal,/\/api\/family-finance\/proposals/)
+ assert.doesNotMatch(proposal,/\/api\/entries/)
+ assert.match(family,/<FamilySharedMutationRequests /)
+})
+
+test('original statistics, balances and ledger rows are reused without duplicating layouts',()=>{
+ assert.match(app,/<StatisticsPage v-else-if="tab === 'stat'" \/>/)
+ assert.match(family,/<StatisticsPage v-else-if="tab==='stat'" \/>/)
+ assert.match(app,/<AssetsPage v-else-if="tab === 'investments'" \/>/)
+ assert.match(family,/<AssetsPage v-else-if="tab==='investments'"/)
+ assert.match(family,/<LedgerPage member \/>/)
+ const ledger=read('pages/LedgerPage.vue')
+ assert.match(ledger,/<LedgerEntryContent /)
+ const assets=read('pages/AssetsPage.vue')
+ assert.match(assets,/personalAssets/)
+ assert.match(assets,/isPersonal/)
+ assert.match(family,/makeFamilyStatsContext/)
+ assert.match(family,/api\('shared\/stats\?month='/)
+})
+
+test('member entry form is immediately visible with the original input UI',()=>{
+ assert.match(proposal,/const open=ref\(true\)/)
+ assert.match(proposal,/onMounted\(\(\)=>\{alive=true;[\s\S]*?void load\(0\)/)
+ assert.match(proposal,/<TransactionForm /)
+ assert.match(proposal,/\/api\/family-finance\/proposals/)
+})
+
+test('same original transaction filter is reused by both household accounts',()=>{
+ const filter=read('LedgerTypeFilter.vue')
+ const ledger=read('pages/LedgerPage.vue')
+ assert.match(ledger,/<LedgerTypeFilter :model-value="entryTypeFilter" @change="setEntryTypeFilter"/)
+ assert.match(family,/<LedgerPage member \/>/)
+ for(const name of ['すべて','収入','支出','資産移動'])assert.ok(filter.includes(name))
+})

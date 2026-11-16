@@ -14,7 +14,7 @@ test('independent family account UI is gated and does not unlock shared legacy l
  assert.match(source,/financeEnabled\.value=feature\.enabled===true/);
  assert.match(source,/user\.ledger_access===false/);
  assert.match(app,/<main v-if="locked"/);
- assert.match(app,/<FamilyFinanceAccess \/>/);
+ assert.match(app,/<FamilyFinanceAccess :identity-only="familyIdentity\?\.role==='member'"[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
  assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.doesNotMatch(source,/\/api\/entries\b|\/api\/auth\/login|AUTH_TOKEN/);
 });
@@ -29,7 +29,7 @@ test('five-minute Safari proof remains separate from credentials; no bearer toke
  assert.doesNotMatch(source,/document\.cookie\s*=/);
 });
 test('member account management respects server actor and version; no direct ledger writes',()=>{
- assert.match(source,/person\.value\.role==='owner'\|\|a\.owner_user_id===person\.value\.user_id/);
+ assert.match(source,/const canManage=a=>!!person\.value&&a\.owner_user_id===person\.value\.user_id/);
  assert.match(source,/a\.origin==='legacy'/);
  assert.match(source,/\/api\/family-finance\/accounts/);
  assert.match(source,/body:JSON\.stringify\(\{version:a\.version,\.\.\.change,expected_user_id:actor\}\)/);

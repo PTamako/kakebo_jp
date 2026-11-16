@@ -35,6 +35,8 @@ import { sortOtherLast } from './category-sort.js'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileLoginSheet from './MobileLoginSheet.vue'
 import FamilyFinanceAccess from './FamilyFinanceAccess.vue'
+import FamilyMemberWorkspace from './FamilyMemberWorkspace.vue'
+import BottomNavigation from './BottomNavigation.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import { matchesPaymentStatMethod } from './payment-stat-group.js'
 import { sundayFirstOffset, startOfSundayWeek } from './calendar-week.js'
@@ -365,17 +367,59 @@ async function setRememberDevice(remember) {
   }catch(error){flash('ログイン保存設定を変更できませんでした：'+error.message)}
 }
 const locked = ref(sessionStorage.getItem('kakeibo-logged-out') === '1')
+const familyIdentity=ref(null)
+let ownerBootstrap=0
+function onFamilyIdentityChange(identity){
+ familyIdentity.value=identity?.user_id?identity:null
+ if(identity?.role==='member'||!identity){
+  ownerBootstrap++
+  locked.value=true
+  token.value=''
+  sessionStorage.removeItem('kakeibo-device-session')
+  entries.value=[];stats.value=null;annualStats.value=null
+  paymentSources.value=[];paymentSourceMeta.value={};paymentClosingDays.value={}
+  return
+ }
+ if(identity.role==='owner'){
+  const shouldLoad=locked.value
+  locked.value=false
+  // The original UI and account are restored by a verified HomeFlow owner
+  // without another legacy login prompt.
+  if(shouldLoad){
+   const ticket=++ownerBootstrap
+   void (async()=>{
+    try{
+     await restoreAppState()
+     if(ticket!==ownerBootstrap||familyIdentity.value?.user_id!==identity.user_id)return
+     await Promise.allSettled([load(),loadYear(),loadTransfers()])
+    }catch(error){if(ticket===ownerBootstrap)flash(error.message)}
+   })()
+  }
+ }
+}
 const PENDING_LOGOUT_KEY='kakeibo-server-logout-pending-v1'
+const PENDING_HF_LOGOUT_KEY='kakeibo-homeflow-logout-pending-v1'
 const serverLogoutPending=ref((()=>{try{return localStorage.getItem(PENDING_LOGOUT_KEY)==='1'}catch{return false}})())
 let logoutRevocationPromise=null
 async function completeServerLogout(oldSession=''){
   if(logoutRevocationPromise)return logoutRevocationPromise
   logoutRevocationPromise=(async()=>{
     try{
-      const response=await fetch('/api/auth/logout',{
+      // Revocation MUST cover both old device credentials and HomeFlow SSO.
+      // Otherwise logout would be followed by automatic owner re-entry.
+      const legacy=await fetch('/api/auth/logout',{
         method:'POST',credentials:'same-origin',headers:oldSession?{'x-session':oldSession}:{}
       })
-      if(!response.ok)throw Error('HTTP '+response.status)
+      if(!legacy.ok)throw Error('旧会话撤销失败 '+legacy.status)
+      if(localStorage.getItem(PENDING_HF_LOGOUT_KEY)==='1'||familyIdentity.value){
+        const homeflow=await fetch('/api/homeflow-sso/logout',{
+         method:'POST',credentials:'same-origin',
+         headers:{Origin:window.location.origin,'Content-Type':'application/json'},
+         body:JSON.stringify({})
+        })
+        if(!homeflow.ok)throw Error('HomeFlow 撤销失败 '+homeflow.status)
+        localStorage.removeItem(PENDING_HF_LOGOUT_KEY)
+      }
       localStorage.removeItem(PENDING_LOGOUT_KEY)
       serverLogoutPending.value=false
       return true
@@ -415,6 +459,11 @@ async function logout() {
   sessionStorage.removeItem('kakeibo-token')
   sessionStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
+  // Persist the SSO revocation obligation so a failed network call is retried.
+  if(familyIdentity.value)try{localStorage.setItem(PENDING_HF_LOGOUT_KEY,'1')}catch{}
+  familyIdentity.value=null
+  entries.value=[];stats.value=null;annualStats.value=null
+  paymentSources.value=[];paymentSourceMeta.value={};paymentClosingDays.value={}
   // Persist only a revocation marker (never credentials), then retry on reconnect.
   serverLogoutPending.value=true
   try{localStorage.setItem(PENDING_LOGOUT_KEY,'1')}
@@ -453,6 +502,7 @@ function cancelLoginSheet(){
   loginResolver?.reject(Error('ログインをキャンセルしました'))
 }
 async function unlock() {
+  if(familyIdentity.value?.role==='member')return flash('成员只能使用自己的 HomeFlow 身份，不能进入旧账本管理')
   try { await ensureLogin(); await restoreAppState(); await Promise.all([load(), loadYear(), loadTransfers()]) }
   catch (error) { flash(error.message) }
 }
@@ -464,6 +514,15 @@ async function api(path, opt = {}) {
     ...opt, headers: { ...(opt.body instanceof FormData ? {} : { 'content-type': 'application/json' }), 'x-session': requestToken, ...(opt.headers || {}) }
   })
   if (r.status === 401) {
+    // The old access code cannot repair an expired HomeFlow owner session.
+    // Clear all on-screen private data and return to the unified login.
+    const denied=await r.clone().json().catch(()=>null)
+    if(denied?.code==='HOMEFLOW_OWNER_REQUIRED'){
+      token.value='';locked.value=true;familyIdentity.value=null
+      entries.value=[];stats.value=null;annualStats.value=null
+      paymentSources.value=[];paymentSourceMeta.value={}
+      throw Error('请先以管理员 HomeFlow 账号重新登录，才能查看原有个人资产')
+    }
     // A different request may already have refreshed the session.
     if (token.value !== requestToken) return api(path, opt)
     if (rejectedSession !== requestToken) {
@@ -564,6 +623,16 @@ async function routeNewFamilyMemberToIsolatedLogin(){
   try{
     const status=await fetch('/api/homeflow-sso/status',{credentials:'same-origin',cache:'no-store'})
     if(!status.ok||(await status.json()).enabled!==true)return false
+    const member=await fetch('/api/homeflow-sso/me',{credentials:'same-origin',cache:'no-store'})
+    if(member.ok){
+     const proof=await member.json()
+     if(proof.ok===true&&proof.ledger_access===false&&
+       ['member','owner'].includes(proof.identity?.role)){
+      onFamilyIdentityChange(proof.identity)
+      // Owner proceeds with the original page; member never reaches it.
+      return proof.identity.role==='member'
+     }
+    }
     const old=await fetch('/api/payment-sources',{credentials:'same-origin',cache:'no-store'})
     if(old.status===401){locked.value=true;return true}
   }catch{/* Keep the previous legacy login flow on service errors. */}
@@ -996,9 +1065,8 @@ function removeDraft(i) { forms.value.splice(i, 1) }
 async function saveAll() {
   if (busy.value) return
   if (!forms.value.length) return flash('保存する記録がありません')
-  // Cross-member bank intents require independent approval, never legacy entries.
-  if (forms.value.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank'))
-    return flash('跨成员银行转账请在资产转移卡片内发起双人确认；不会直接记账。')
+  if(forms.value.some(f=>f.type==='transfer'&&f.transferTarget==='family:cross-bank'))
+   return flash('跨成员银行转账请在资产转移卡片内发起双人确认；不会直接记账。')
   const invalidTransfer = forms.value.findIndex(f => f.type === 'transfer' && (!f.transferTarget || !/^\d{4}-\d{2}-\d{2}$/.test(f.transferDate || '')))
   if (invalidTransfer >= 0) return flash(`${invalidTransfer + 1}件目の振替先と適用日を確認してください`)
   const invalidSbiReward = forms.value.findIndex(f => f.type === 'income' && f.category === 'ポイント還元' &&
@@ -1869,11 +1937,15 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
   <GlobalToast />
   <MobileLoginSheet :open="loginSheetOpen" :busy="loginSheetBusy" :error="loginSheetError"
     @submit="submitLoginSheet" @cancel="cancelLoginSheet" />
-  <main v-if="locked" :class="`theme-${theme}`"><div class="empty-state"><strong>ログアウトしました</strong>
+  <main v-if="locked" :class="`theme-${theme}`">
+    <FamilyFinanceAccess :identity-only="familyIdentity?.role==='member'"
+      @identity-change="onFamilyIdentityChange" />
+    <FamilyMemberWorkspace v-if="familyIdentity?.role==='member'"
+      :key="familyIdentity.user_id" :user="familyIdentity" />
+    <div v-else class="empty-state"><strong>ログアウトしました</strong>
     <p v-if="serverLogoutPending" role="alert">サーバー側のログアウトはまだ確認できません。通信回復後に再試行します。</p>
     <button v-if="serverLogoutPending" type="button" class="button-secondary" @click="completeServerLogout()">サーバーのログアウトを再確認</button>
     <p>旧账户需要原访问码；家庭成员请使用下方 HomeFlow 入口。</p><button type="button" class="button-primary" @click="unlock">旧账户登录</button></div>
-    <FamilyFinanceAccess />
    </main>
   <main v-else :class="`theme-${theme}`">
     <div v-if="receiptSaveError || pendingReceiptUploads.length || pendingReceiptMarkers.length" role="alert" class="receipt-error-banner">
@@ -1997,13 +2069,7 @@ provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFrom
     <AssetsPage v-else-if="tab === 'investments'" />
     <FamilyFinanceAccess v-if="tab === 'finance'" identity-only />
     <ManagementPage :card-settings-request="cardSettingsRequest" :payment-source-meta="paymentSourceMeta" v-show="tab === 'finance'" :active="tab === 'finance'" :ledger-revision="ledgerRevision" :api="api" :categories="categories" :category-display-names="categoryDisplayNames" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @receipt-images-removed="onReceiptImagesRemoved" @receipt-images-updated="refreshReceiptImageIds" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @open-card-bill-details="openCardBillDetails" @ledger-updated="ledgerRevision++; load(); loadYear()" />
-    <nav class="bottom-nav" aria-label="メインメニュー">
-      <button type="button" :class="{ active: tab === 'list' }" :aria-current="tab === 'list' ? 'page' : undefined" @click="openLedgerFromNav"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span><span>明細</span></button>
-      <button type="button" :class="{ active: tab === 'stat' }" :aria-current="tab === 'stat' ? 'page' : undefined" @click="tab = 'stat'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.5 19.5h15"/><rect x="6" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="7.5" width="3.2" height="10" rx="1"/><rect x="14.8" y="4.5" width="3.2" height="13" rx="1"/></svg></span><span>統計</span></button>
-      <button type="button" class="nav-add" :class="{ active: tab === 'add' }" :aria-current="tab === 'add' ? 'page' : undefined" aria-label="記録を追加" title="記録を追加" @click="tab = 'add'"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-      <button type="button" :class="{ active: tab === 'investments' }" :aria-current="tab === 'investments' ? 'page' : undefined" aria-label="残高" @click="tab = 'investments'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2.5"/><path d="M3.5 10h17M7 4.5h10M15.5 14.5h2"/></svg></span><span>残高</span></button>
-      <button type="button" :class="{ active: tab === 'finance' }" :aria-current="tab === 'finance' ? 'page' : undefined" @click="tab = 'finance'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span><span>管理</span></button>
-    </nav>
+    <BottomNavigation :active-tab="tab" @change="next=>next==='list'?openLedgerFromNav():tab=next" />
   </main>
 </template>
 

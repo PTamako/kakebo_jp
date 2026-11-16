@@ -6,6 +6,8 @@ const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf
 const app = source('src/App.vue')+'\n'+source('src/pages/LedgerPage.vue')+'\n'+source('src/pages/StatisticsPage.vue')
 const transactionForm = source('src/TransactionForm.vue')
 const finance = source('src/FinanceTools.vue')
+const managementHeader = source('src/FinanceManagementHeader.vue')
+const sharedNav = source('src/BottomNavigation.vue')
 const mobile = source('src/mobile-ui.css')
 const html = source('index.html')
 const pkg = JSON.parse(source('package.json'))
@@ -13,7 +15,7 @@ const pkg = JSON.parse(source('package.json'))
 test('switching expense/income/transfer inside the edit form must not submit it', () => {
   const switchGroup = transactionForm.match(/<div class="type-switch"[\s\S]*?<\/div>/)?.[0]
   assert.ok(switchGroup, 'transaction type switch exists')
-  assert.match(switchGroup, /<button\b[^>]*type="button"[^>]*@click="emit\('change-type'/)
+  assert.match(switchGroup, /<button[\s\S]*?type="button"[\s\S]*?@click="emit\('change-type'/)
   const editor = app.match(/<form class="edit-dialog"[\s\S]*?<\/form>/)?.[0]
   assert.ok(editor, 'edit dialog remains a form')
   assert.match(editor, /type="submit"[^>]*>.*?変更を保存/s)
@@ -51,13 +53,14 @@ test('failed finance loads cannot be exported as stale complete backups', () => 
   assert.match(finance, /rows\.value=\[\];loaded\.value=false;lastLoadedAt\.value=null/)
   assert.match(finance, /loadError\.value='全明細の読み込みに失敗しました：'/)
   assert.match(finance, /financeInitialized = await loadAll\(\)/)
-  assert.match(finance, /v-if="loadError" class="finance-load-error" role="alert"/)
+  assert.match(finance, /:error="loadError"/)
+  assert.match(managementHeader, /v-if="error" class="finance-load-error" role="alert"/)
   assert.match(finance, /:disabled="busy\|\|backupBusy\|\|!loaded" @click="downloadBackup"/)
   assert.match(finance, /JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます/)
 })
 
 test('mobile navigation, keyboard and charts retain touch-safe affordances', () => {
-  const nav = app.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/)?.[0]
+  const nav = sharedNav.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/)?.[0]
   assert.ok(nav)
   assert.equal((nav.match(/:aria-current=/g) || []).length, 5)
   assert.match(mobile, /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/)

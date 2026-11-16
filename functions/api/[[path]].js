@@ -13,6 +13,7 @@ import { validateCardBillRecalculation } from './card-bill-validation.js'
 import { validateLedgerTextFields } from './ledger-input-validation.js'
 import { getCardBillSnapshots } from './card-bill-snapshots.js'
 import { handleR2Receipts } from './r2-receipts.js'
+import {verifyLegacyOwner} from './legacy-owner-guard.js'
 import { readScheduledJobStatus } from './scheduled-job-status.js'
 import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
 // Cloudflare Pages Functions：/api/*
@@ -186,6 +187,14 @@ export async function onRequest({ request, env, params }) {
   }
   if (isPagesPreview && m !== 'GET' && a !== 'auth')
     return json({error:'プレビュー画面では明細・設定を更新できません。本番サイトをご利用ください',code:'preview_read_only'},403)
+  // A device access code alone is never sufficient once personal isolation
+  // has been explicitly enabled. This applies before auth/login and all API
+  // reads/writes. Revoke/logout is always allowed to clear old cookies.
+  const ownerProof={verified:false}
+  if (!(a === 'auth' && b === 'logout' && m === 'POST')) {
+    const ownerDenied=await verifyLegacyOwner(request,env,url,ownerProof)
+    if(ownerDenied)return ownerDenied
+  }
   if (a === 'auth') {
     if (b === 'login' && m === 'POST') {
       let body
@@ -233,11 +242,14 @@ export async function onRequest({ request, env, params }) {
     }
     if (b === 'remember' && m === 'PUT') {
       const session = request.headers.get('x-session') || cookieSession(request)
-      if (!/^[a-f0-9]{64}$/.test(session))
+      let oldSessionLive=false
+      if(/^[a-f0-9]{64}$/.test(session)){
+        const found=await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash=?1 AND expires_at>?2')
+          .bind(await sessionHash(session),Date.now()).first()
+        oldSessionLive=!!found
+      }
+      if(!oldSessionLive&&!ownerProof.verified)
         return json({error:'再ログインしてください'},401)
-      const found = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2')
-        .bind(await sessionHash(session),Date.now()).first()
-      if (!found) return json({error:'再ログインしてください'},401)
       const body = await request.json().catch(() => null)
       if (typeof body?.remember !== 'boolean') return json({error:'保存方法を確認してください'},400)
       // Persist the D1 privacy preference before issuing the new cookie.
@@ -246,16 +258,22 @@ export async function onRequest({ request, env, params }) {
         await db.prepare("INSERT INTO app_client_state(state_key,value_json,updated_at) VALUES('remember_device',?1,CURRENT_TIMESTAMP) ON CONFLICT(state_key) DO UPDATE SET value_json=excluded.value_json,updated_at=CURRENT_TIMESTAMP")
           .bind(JSON.stringify(body.remember)).run()
       } catch { return json({error:'保存方法をD1に記録できませんでした。設定は変更していません'},503) }
-      return json({ok:true},200,{'set-cookie':sessionCookie(session,body.remember)})
+      return json({ok:true},200,oldSessionLive?
+        {'set-cookie':sessionCookie(session,body.remember)}:{})
     }
     return json({ error: '対象が見つかりません' }, 404)
   }
+  // One verified HomeFlow owner identity is sufficient; never ask again for
+  // the old shared device code once the production owner guard has passed.
+  // All legacy requests still verify the owner and current HomeFlow assertion.
   const session = request.headers.get('x-session') || cookieSession(request)
-  if (!/^[a-f0-9]{64}$/.test(session)) return json({ error: 'アクセスコードを確認してください' }, 401)
-  let validSession
-  try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
-  catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
-  if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
+  if(!ownerProof.verified){
+    if (!/^[a-f0-9]{64}$/.test(session)) return json({ error: 'アクセスコードを確認してください' }, 401)
+    let validSession
+    try { validSession = await db.prepare('SELECT token_hash FROM device_sessions WHERE token_hash = ?1 AND expires_at > ?2').bind(await sessionHash(session), Date.now()).first() }
+    catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
+    if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
+  }
   if (a === 'receipts') {
     // A preview must never read OR mutate the production private receipt bucket.
     if (isPagesPreview) return json({error:'プレビューではR2画像を利用できません'},403)

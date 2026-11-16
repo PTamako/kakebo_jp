@@ -20,6 +20,8 @@ import {familySbiLegacyReview} from './sbi-legacy-review.js';
 import {memberSbiCashPositions} from './sbi-cash-lot-projection.js';
 import {familyPointsLegacyLinks} from './points-legacy-links.js';
 import {familyAssetSummary} from './assets.js';
+import {familyPersonalAssets} from './personal-assets.js';
+import {familyHouseholdStats} from './household-stats.js';
 import {familyPlanOwnership} from './plan-ownership.js';
 import {familyLegacyResourceOwners} from './resource-owners.js';
 import {auditLegacyFinanceMappings} from './legacy-mapping-audit.js';
@@ -88,11 +90,12 @@ function validSort(sort){return Number.isInteger(sort)&&sort>=-10000&&sort<=1000
 async function accounts(request,env,url,user,parts){
  const db=env.DB;
  if(request.method==='GET'&&parts.length===1){
-  // All family financial asset summaries are readable by both members.
-  // Card numbers, OAuth credentials and private receipts are never returned.
+  // Management is strictly personal even when the ledger/statistics are shared.
+  // Never return another member's label, balance or account source metadata.
   const rows=await all(db,'SELECT '+accountFields+' FROM family_financial_accounts '+
-   'WHERE household_id=? ORDER BY is_archived,sort_order,account_id LIMIT 300',user.household_id);
-  return json({ok:true,items:rows,household_scope:true});
+   'WHERE household_id=? AND owner_user_id=? ORDER BY is_archived,sort_order,account_id LIMIT 300',
+   user.household_id,user.user_id);
+  return json({ok:true,items:rows,account_scope:'personal'});
  }
  if(request.method==='POST'&&parts.length===1){
   const data=await bodyForMutation(request,url);
@@ -103,7 +106,9 @@ async function accounts(request,env,url,user,parts){
   if(!legalLabel(data.label)||!kinds.has(data.account_kind))
    return json({code:'INVALID_ACCOUNT'},400);
   const target=typeof data.owner_user_id==='string'?data.owner_user_id:user.user_id;
-  if(target!==user.user_id&&user.role!=='owner')
+  // Administrator approves family ledger changes, but does not create or
+  // edit another member's private banking and payment-card configuration.
+  if(target!==user.user_id)
    return json({code:'NOT_YOUR_ACCOUNT'},403);
   const targetUser=await first(db,"SELECT user_id FROM homeflow_identity_links "+
     "WHERE user_id=? AND household_id=? AND state='active'",target,user.household_id);
@@ -147,7 +152,7 @@ async function accounts(request,env,url,user,parts){
    ' FROM family_financial_accounts WHERE account_id=? AND household_id=?',
    parts[1],user.household_id);
   if(!account)return json({code:'ACCOUNT_NOT_FOUND'},404);
-  if(account.owner_user_id!==user.user_id&&user.role!=='owner')
+  if(account.owner_user_id!==user.user_id)
    return json({code:'NOT_YOUR_ACCOUNT'},403);
   // Old payment_sources and card bills remain authoritative until
   // all references are moved with a lossless dedicated migration.
@@ -172,9 +177,9 @@ async function accounts(request,env,url,user,parts){
     db.prepare('UPDATE family_financial_accounts SET '+updates.join(',')+
       ',updated_by_user_id=?,updated_at=?,version=version+1 '+
       'WHERE account_id=? AND household_id=? AND version=? AND '+
-      '(owner_user_id=? OR ?=\'owner\') AND origin=\'member_created\'')
+      'owner_user_id=? AND origin=\'member_created\'')
       .bind(...values,user.user_id,stamp,account.account_id,user.household_id,
-       data.version,user.user_id,user.role),
+       data.version,user.user_id),
     db.prepare('INSERT INTO family_finance_events '+
       '(event_id,household_id,actor_user_id,resource_id,action,created_at) '+
       'SELECT ?,?,?,?, ?,? WHERE changes()=1')
@@ -235,8 +240,15 @@ async function adoptLegacy(request,env,url,user){
  }catch{return json({code:'LEGACY_CONFLICT'},409);}
 }
 async function entries(env,user,url){
- const limit=Math.max(1,Math.min(20,Number(url.searchParams.get('limit'))||5));
+ const limit=Math.max(1,Math.min(100,Number(url.searchParams.get('limit'))||20));
  const offset=Math.max(0,Math.min(10000,Number(url.searchParams.get('offset'))||0));
+ const period=url.searchParams.get('month');
+ if(period!==null&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))
+  return json({code:'BAD_LEDGER_MONTH'},400);
+ const lower=period?period+'-01':null;
+ const upper=period?(
+  period.endsWith('-12')?String(Number(period.slice(0,4))+1).padStart(4,'0')+'-01-01':
+  period.slice(0,5)+String(Number(period.slice(5))+1).padStart(2,'0')+'-01'):null;
  const rows=await all(env.DB,'SELECT e.id,e.date,e.time,e.type,e.amount,'+
   'e.category,e.merchant,e.note,e.payment_source,e.transfer_target,'+
   'e.transfer_applied,e.transfer_date,e.family_account_id,'+
@@ -249,9 +261,28 @@ async function entries(env,user,url){
   'ON a.account_id=e.family_account_id '+
   'LEFT JOIN family_financial_accounts t '+
   'ON t.account_id=e.family_transfer_target_account_id '+
-  'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',limit+1,offset);
- return json({ok:true,household_id:user.household_id,items:rows.slice(0,limit),
-  next_offset:rows.length>limit?offset+limit:null,ledger_scope:'household'});
+  (period?'WHERE e.date >= ? AND e.date < ? ':'')+
+  'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',
+  ...(period?[lower,upper]:[]),limit+1,offset);
+ // Family members share transaction amounts and categories, not the
+ // owner's payment card names or stable account IDs.
+ const items=rows.slice(0,limit).map(r=>{
+  if(user.role==='owner')return r;
+  const ownSource=r.payment_account_owner_user_id===user.user_id;
+  const ownTarget=r.transfer_target_account_owner_user_id===user.user_id;
+  return {...r,
+   payment_source:ownSource?r.payment_source:null,
+   transfer_target:ownTarget?r.transfer_target:null,
+   family_account_id:ownSource?r.family_account_id:null,
+   family_transfer_target_account_id:ownTarget?r.family_transfer_target_account_id:null,
+   payment_source_display:ownSource?r.payment_source_display:'个人支付方式',
+   transfer_target_display:ownTarget?r.transfer_target_display:'个人账户',
+   payment_account_owner_user_id:ownSource?user.user_id:null,
+   transfer_target_account_owner_user_id:ownTarget?user.user_id:null};
+ });
+ return json({ok:true,household_id:user.household_id,items,
+  next_offset:rows.length>limit?offset+limit:null,ledger_scope:'household',
+  private_payment_sources_redacted:user.role!=='owner'});
 }
 async function totals(env,user,url){
  const month=url.searchParams.get('month');
@@ -327,7 +358,8 @@ async function yearSummary(env,user,url){
  return json({ok:true,year,household_id:user.household_id,ledger_scope:'household',
   computed_from:'entries',complete:true,ledger_changed:false,
   totals,counts,net_income_expense:totals.income-totals.expense,
-  months,categories,payment_sources:paymentSources});
+  months,categories,payment_sources:user.role==='owner'?paymentSources:[],
+  private_payment_sources_redacted:user.role!=='owner'});
 }
 export async function onRequest({request,env,params}){
  const url=new URL(request.url),parts=params.path||[];
@@ -354,10 +386,19 @@ export async function onRequest({request,env,params}){
    if(parts.length===2&&parts[0]==='shared'&&parts[1]==='sbi-cash-lots'&&request.method==='GET'){
     if(env.KAKEIBO_SBI_CASH_ENABLED!=='true')return json({code:'SBI_CASH_DISABLED'},503);
     const positions=await memberSbiCashPositions(env.DB,user.household_id);
-    return positions?json({ok:true,...positions}):json({code:'SBI_CASH_PROJECTION_FAILED'},503);
+    if(!positions)return json({code:'SBI_CASH_PROJECTION_FAILED'},503);
+    // Owner-only stable IDs; the shared route must not expose other members' lots.
+    const own=positions.positions.filter(x=>x.owner_user_id===user.user_id);
+    return json({ok:true,...positions,positions:own,
+     total_cost_jpy:own.reduce((sum,p)=>sum+p.acquisition_cost_jpy,0),
+     scope:'personal'});
+
    }
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='points-links')
     return familyPointsLegacyLinks(request,env,url,user);
+  if(request.method==='GET'&&parts.length===2&&
+     parts[0]==='personal'&&parts[1]==='assets')
+   return familyPersonalAssets(env,user);
   if(parts[0]==='accounts')return accounts(request,env,url,user,parts);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='transfer-links')
     return legacyTransferLinks(request,env,url,user);
@@ -382,15 +423,21 @@ export async function onRequest({request,env,params}){
   if(parts[0]==='legacy'&&parts[1]==='adopt')
    return adoptLegacy(request,env,url,user);
   if(request.method==='GET'&&parts.length===2&&parts[0]==='shared'&&
-     parts[1]==='asset-summary')
+     parts[1]==='asset-summary'){
+   if(user.role!=='owner')return json({code:'PRIVATE_ASSET_SCOPE_REQUIRED'},403);
    return familyAssetSummary(env,url,user,request);
+  }
   if(request.method==='GET'&&parts.length===2&&parts[0]==='shared'&&
      parts[1]==='plan-ownership')
-   return familyPlanOwnership(env,url,user);
+   return user.role==='owner'
+    ?familyPlanOwnership(env,url,user)
+    :json({code:'PRIVATE_PLAN_SCOPE_REQUIRED'},403);
   if(request.method==='GET'&&parts[0]==='shared'&&parts[1]==='entries')
    return entries(env,user,url);
   if(request.method==='GET'&&parts[0]==='shared'&&parts[1]==='ledger-totals')
    return totals(env,user,url);
+  if(request.method==='GET'&&parts.length===2&&parts[0]==='shared'&&
+     parts[1]==='stats')return familyHouseholdStats(env,url,user);
   if(request.method==='GET'&&parts.length===2&&parts[0]==='shared'&&
      parts[1]==='year-summary')
    return yearSummary(env,user,url);

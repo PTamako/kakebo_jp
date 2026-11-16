@@ -2,26 +2,40 @@
 import { computed, inject, ref } from 'vue'
 import SbiPortfolio from '../SbiPortfolio.vue'
 import PrepaidAssets from '../PrepaidAssets.vue'
-const { tab, openPrepaidHistoryDetails, ledgerRevision, transferLoading, api, openCardSettingsFromWallet } = inject('kakeibo-page-context')
+const props=defineProps({personalAssets:{type:Array,default:null},
+ openPersonalManagement:{type:Function,default:null}})
+const isPersonal=computed(()=>Array.isArray(props.personalAssets))
+const {tab,openPrepaidHistoryDetails,ledgerRevision,transferLoading,api,openCardSettingsFromWallet}=
+ inject('kakeibo-page-context',{})
 const activeView = ref('wallets')
 const selectView = value => { activeView.value = value }
 const portfolioSummary = ref(null)
 const prepaidSummary = ref(null)
 const onPortfolioSummary = value => { portfolioSummary.value = value }
 const onPrepaidSummary = value => { prepaidSummary.value = value }
-const openCardSettings = () => openCardSettingsFromWallet()
+const openCardSettings = () => isPersonal.value?props.openPersonalManagement?.():openCardSettingsFromWallet()
 const yen = value => value === null || !Number.isFinite(Number(value)) ? '—' : '¥'+Number(value).toLocaleString('ja-JP')
-const investment = computed(() => portfolioSummary.value?.valuation ?? null)
-const prepaid = computed(() => prepaidSummary.value?.balance ?? null)
-const latestUsage = computed(() => prepaidSummary.value?.latestUsage || null)
-const latestCharge = computed(() => prepaidSummary.value?.latestCharge || null)
+const investment = computed(() => isPersonal.value?null:portfolioSummary.value?.valuation ?? null)
+const prepaid = computed(() => {
+ if(!isPersonal.value)return prepaidSummary.value?.balance ?? null
+ const items=props.personalAssets.filter(a=>a.account_kind==='prepaid'&&!a.is_archived)
+ if(!items.length||items.some(a=>a.balance_jpy===null||!a.balance_verified))return null
+ return items.reduce((sum,a)=>sum+Number(a.balance_jpy),0)
+})
+const latestUsage = computed(() => isPersonal.value?null:prepaidSummary.value?.latestUsage || null)
+const latestCharge = computed(() => isPersonal.value?null:prepaidSummary.value?.latestCharge || null)
 const shortDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value||'')) ? String(value).slice(5).replace('-', '/') : ''
 // This is a view of *tracked* wallets and funds, not a total net-worth figure.
-const pnl = computed(() => portfolioSummary.value?.pnl ?? null)
-const acquisition = computed(() => portfolioSummary.value?.acquisition ?? null)
-const pnlRatio = computed(() => portfolioSummary.value?.ratio ?? null)
-const fundCount = computed(() => portfolioSummary.value?.fundCount ?? 0)
-const allocation = computed(() => portfolioSummary.value?.allocation ?? [])
+const pnl = computed(() => isPersonal.value?null:portfolioSummary.value?.pnl ?? null)
+const acquisition = computed(() => {
+ if(!isPersonal.value)return portfolioSummary.value?.acquisition ?? null
+ const holdings=props.personalAssets.filter(a=>a.account_kind==='securities'&&!a.is_archived)
+ return holdings.length&&holdings.every(a=>a.sbi_confirmed_cost_jpy!==null)
+  ?holdings.reduce((sum,a)=>sum+Number(a.sbi_confirmed_cost_jpy),0):null
+})
+const pnlRatio = computed(() => isPersonal.value?null:portfolioSummary.value?.ratio ?? null)
+const fundCount = computed(() => isPersonal.value?props.personalAssets.filter(a=>a.account_kind==='securities'&&!a.is_archived).length:portfolioSummary.value?.fundCount ?? 0)
+const allocation = computed(() => isPersonal.value?[]:portfolioSummary.value?.allocation ?? [])
 const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '—' : (Number(value) >= 0 ? '+' : '−') + '¥' + Math.abs(Number(value)).toLocaleString('ja-JP')
 </script>
 <template>
@@ -37,7 +51,7 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
             <span class="asset-label-icon asset-label-wallet" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg>
             </span>
-            <span>電子マネー残高<small>Suica・PASMO など</small></span>
+            <span>電子マネー残高<small>{{isPersonal?'本人のプリペイドのみ':'Suica・PASMO など'}}</small></span>
           </div>
           <strong class="asset-wallet-value">{{yen(prepaid)}}</strong>
         </div>
@@ -77,7 +91,7 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
           <span class="asset-label-icon asset-label-investment" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9m6 9V5m6 13v-6m4 6V8"/><path d="M3 21h18"/></svg>
           </span>
-          <span>評価額・損益の内訳<small>SBI証券 · {{fundCount}}銘柄</small></span>
+          <span>評価額・損益の内訳<small>{{isPersonal?'本人の証券口座':'SBI証券'}} · {{fundCount}}銘柄</small></span>
         </div>
         <strong class="asset-investment-value">{{yen(investment)}}</strong>
         <div class="asset-investment-foot">
@@ -96,7 +110,25 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
       <button type="button" role="tab" :aria-selected="activeView==='funds'" :class="{selected:activeView==='funds'}" @click="selectView('funds')">投資信託</button>
     </nav>
 
-    <SbiPortfolio :api="api" :transfer-loading="transferLoading" :active-view="activeView" :refresh-key="ledgerRevision" @summary="onPortfolioSummary">
+    <div v-if="isPersonal" class="personal-asset-list" aria-label="本人の残高明細">
+      <p class="personal-asset-hint">本人の金融口座だけ表示します。未核証の銀行残高や券商市值は「—」のままです。</p>
+      <div v-for="a in personalAssets.filter(a=>!a.is_archived&&
+       (activeView==='wallets'?a.account_kind!=='securities':a.account_kind==='securities'))"
+       :key="a.account_id" class="personal-asset-row">
+       <strong>{{a.label}}</strong>
+       <span v-if="a.account_kind==='prepaid'">{{yen(a.balance_jpy)}}</span>
+       <span v-else-if="a.account_kind==='credit_card'">請求 {{yen(a.credit_liability_jpy)}}</span>
+       <span v-else-if="a.account_kind==='points'">{{a.balance_units??'—'}} pt</span>
+       <span v-else-if="a.account_kind==='securities'">取得 {{yen(a.sbi_confirmed_cost_jpy)}}</span>
+       <span v-else>残高 —</span>
+       <small v-if="a.balance_note">{{a.balance_note}}</small>
+      </div>
+      <p v-if="!personalAssets.filter(a=>!a.is_archived).length" class="personal-asset-hint">
+       個人の資産口座はまだありません。
+       <button type="button" class="button-secondary" @click="openCardSettings">管理で追加</button>
+      </p>
+    </div>
+    <SbiPortfolio v-else :api="api" :transfer-loading="transferLoading" :active-view="activeView" :refresh-key="ledgerRevision" @summary="onPortfolioSummary">
       <template #before-holdings>
         <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" @summary="onPrepaidSummary" @open-card-settings="openCardSettings" @open-history="openPrepaidHistoryDetails" />
       </template>
@@ -105,6 +137,13 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
 </template>
 <style scoped>
 .assets-page{display:grid;gap:7px;min-width:0}
+.personal-asset-list{display:grid;gap:8px;margin-top:7px;min-width:0}
+.personal-asset-hint{font-size:12px;color:var(--muted);margin:4px 0}
+.personal-asset-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;border:1px solid var(--line);padding:12px;border-radius:13px;background:var(--card);min-width:0}
+.personal-asset-row>strong{overflow-wrap:anywhere}
+.personal-asset-row>span{font-variant-numeric:tabular-nums;font-weight:750}
+.personal-asset-row>small{grid-column:1/-1;font-size:11px;color:var(--muted)}
+
 .assets-page .page-heading{margin-bottom:0;min-height:0}
 .assets-page .page-heading h1{letter-spacing:-.035em}
 .asset-overview{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;min-width:0}

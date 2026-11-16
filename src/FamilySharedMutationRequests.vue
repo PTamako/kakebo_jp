@@ -43,6 +43,21 @@ async function load(){
    available.value=false;error.value=/DISABLED/.test(e.message)?'家庭审批账目修改尚未启用；现有账本不会变化。':e.message}
  }
 }
+async function openForEntry(operation,entry){
+ if(!['update','delete','restore'].includes(operation)||!entry?.id)return
+ if(!open.value){open.value=true;await load()}
+ const collection=operation==='restore'?deleted.value:rows.value
+ const source=collection.find(x=>String(x.entry_id)===String(entry.id))
+ if(!source){
+  error.value='这条旧记录还没有登记为可审批的共享账目，请管理员先核验并执行共享登记；不会修改或删除原记录。'
+  action.value=operation;resource.value=''
+  return
+ }
+ error.value='';action.value=operation;resource.value=source.resource_id
+ if(operation==='update')draft.value={...source.entry,...entry,
+  amount:String(entry.amount),payment_source:undefined,transfer_target:undefined}
+}
+defineExpose({openForEntry})
 async function toggle(){
  if(busy.value)return
  open.value=!open.value

@@ -1,6 +1,9 @@
 <script setup>
 import { inject } from 'vue'
+const props=defineProps({member:{type:Boolean,default:false}})
 import TransactionForm from '../TransactionForm.vue'
+import LedgerEntryContent from '../LedgerEntryContent.vue'
+import LedgerTypeFilter from '../LedgerTypeFilter.vue'
 import { isExternalLedgerEntry } from '../ledger-origin.js'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
@@ -9,7 +12,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
 <template>
 <section  class="page-section">
       <div class="page-heading"><div><h1>収支明細</h1></div><div class="heading-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div></div>
-      <div class="entry-type-filter" role="group" aria-label="明細の種類"><button v-for="option in [{value: 'all', label: 'すべて'}, {value: 'income', label: '収入'}, {value: 'expense', label: '支出'}, {value: 'transfer', label: '資産移動'}]" :key="option.value" type="button" :class="{ selected: entryTypeFilter === option.value }" :aria-pressed="entryTypeFilter === option.value" @click="setEntryTypeFilter(option.value)">{{ option.label }}</button></div>
+      <LedgerTypeFilter :model-value="entryTypeFilter" @change="setEntryTypeFilter" />
       <section v-if="!detailFilter && !prepaidHistoryFilter" class="month-calendar" aria-label="月間明細カレンダー">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><div class="calendar-actions"><button type="button" class="calendar-reset" @click="calendarExpanded = !calendarExpanded">{{ calendarExpanded ? '週のみ表示' : '月全体を表示' }}</button><button v-if="selectedDay" type="button" class="calendar-reset" @click="selectedDay = ''">選択解除</button></div></div>
         <div class="calendar-legend" aria-label="日付マークの説明"><span><i class="legend-today"></i>今日</span><span><i class="calendar-peak-expense">支</i>支出最多</span><span><i class="calendar-peak-income">収</i>収入最多</span><span><i class="calendar-peak-transfer">移</i>資産移動最多</span></div>
@@ -36,11 +39,9 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
           </button>
           <ul v-if="expandedMonth === group.month" class="ledger entry-day-items">
             <li v-for="e in group.items" :key="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
-              <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
-                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
-                <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}<span v-if="isExternalLedgerEntry(e)" class="ledger-external-label"> • 外部</span></b><small>{{ e.date.replace(/-/g, '/') }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }}</small></div>
-                <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
-              </div>
+              <LedgerEntryContent :entry="e" :categories="categories" :category-icon-path="categoryIconPath"
+                :category-label="categoryLabel" :yen="yen" annual @open="handleEntryClick(e)"
+                @edit="startEdit(e)" />
               <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedEntryId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" :disabled="pendingEntryIds.has(e.id)" @click.stop="remove(e.id,e); swipedEntryId = null" aria-label="記録を削除">削除</button>
             </li>
@@ -60,11 +61,11 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
           </button>
           <ul v-if="expandedEntryDays.has(group.date)" class="ledger entry-day-items">
             <li v-for="e in group.items" :key="e.id" :data-ledger-entry-id="e.id" :class="{ 'swiped-open': swipedEntryId === e.id, 'receipt-available': receiptImageIds.has(Number(e.id)) }" @touchstart.passive="startSwipe($event)" @touchend="endSwipe($event, e.id)" @touchcancel="swipedEntryId = null">
-              <div class="ledger-row-content" role="button" tabindex="0" @click="handleEntryClick(e)" @keydown.enter.prevent="startEdit(e)" @keydown.space.prevent="startEdit(e)">
-                <span class="category-dot" :class="[ 'cat-' + (categories.indexOf(e.category) + 1), e.type === 'income' ? 'income-category-dot' : '' ]"><svg class="ui-line-icon category-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="categoryIconPath(e.category)"/></svg></span>
-                <div class="ledger-info"><b>{{ e.merchant || categoryLabel(e.category) }}<span v-if="isExternalLedgerEntry(e)" class="ledger-external-label"> • 外部</span></b><small>{{ e.date.slice(5) }}<template v-if="e.time"> · {{ e.time }}</template> · {{ categoryLabel(e.category) }} · {{ e.type === 'income' ? '収入' : e.type === 'transfer' ? '資産移動' : '支出' }}<template v-if="prepaidHistoryFilter?.kind === 'usage' && e.payment_source"> · {{e.payment_source}}</template><template v-if="e.type==='income' && e.category==='ポイント還元' && e.transfer_target"> · → {{e.transfer_target.startsWith('prepaid:') ? e.transfer_target.slice(8) : e.transfer_target.startsWith('credit:') ? e.transfer_target.slice(7) : e.transfer_target}}</template><template v-if="e.type === 'transfer' && e.transfer_target"> · {{ e.transfer_target === 'sbi' ? '→ SBI証券' : e.transfer_target.startsWith('prepaid:') ? '→ '+e.transfer_target.slice(8) : e.transfer_target }}</template></small></div>
-                <span class="ledger-amount" :class="{ 'income-amount': e.type === 'income', 'transfer-amount': e.type === 'transfer' }">{{ detailFilter?.period === 'card-bill' ? (e.type === 'income' ? '−' : '') : e.type === 'income' ? '+' : e.type === 'transfer' ? '' : '−' }}{{ yen(e.amount) }}</span>
-              </div>
+              <LedgerEntryContent :entry="e" :categories="categories" :category-icon-path="categoryIconPath"
+                :category-label="categoryLabel" :yen="yen"
+                :card-bill="detailFilter?.period==='card-bill'"
+                :prepaid-usage="prepaidHistoryFilter?.kind==='usage'"
+                @open="handleEntryClick(e)" @edit="startEdit(e)" />
               
               <button v-if="receiptImageIds.has(Number(e.id))" type="button" class="swipe-receipt" @click.stop="viewReceipt(e.id); swipedEntryId = null" aria-label="レシート画像を見る">レシート</button>
               <button class="swipe-delete" @click.stop="remove(e.id,e); swipedEntryId = null" aria-label="記録を削除">削除</button>
@@ -88,7 +89,8 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
           <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
           <div class="edit-dialog-heading"><h2>記録を編集</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="閉じる">×</button></div>
           <fieldset class="edit-fields" :disabled="editSaving">
-          <TransactionForm :reward-destinations="rewardDestinations" :transfer-destinations="transferDestinations" :record="editingEntry" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :existing-receipt="receiptImageIds.has(Number(editingEntry.id))" :receipt-name="editReceiptFileName" :receipt-enabled="true" edit-mode @change-type="setEntryType(editingEntry, $event)" @payment-change="manualPayment(editingEntry, $event)" @select-receipt="selectEditReceipt" @clear-receipt="editReceiptImage = null; editReceiptFileName = ''" />
+          <TransactionForm :reward-destinations="rewardDestinations" :transfer-destinations="transferDestinations" :record="editingEntry" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :existing-receipt="receiptImageIds.has(Number(editingEntry.id))" :receipt-name="editReceiptFileName" :receipt-enabled="!props.member" :show-payment-source="!props.member"
+            :allowed-types="props.member?['income','expense']:['expense','income','transfer']" edit-mode @change-type="setEntryType(editingEntry, $event)" @payment-change="manualPayment(editingEntry, $event)" @select-receipt="selectEditReceipt" @clear-receipt="editReceiptImage = null; editReceiptFileName = ''" />
           </fieldset>
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="editSaving" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary" :disabled="editSaving">{{ editSaving ? '保存中…' : '変更を保存' }}</button></div>
         </form>

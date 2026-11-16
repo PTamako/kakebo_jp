@@ -15,7 +15,7 @@ export const ledgerRecorderColumns=[
 export const ledgerRecorderJoins=[
  "LEFT JOIN family_legacy_card_spends ls ON ls.entry_id=e.id",
  "LEFT JOIN homeflow_identity_links shared_card_spender ON shared_card_spender.user_id=ls.actor_user_id AND shared_card_spender.household_id=ls.household_id",
- "LEFT JOIN family_shared_entry_registry sr ON sr.entry_id=e.id AND sr.state='active'"
+ "LEFT JOIN family_shared_entry_registry sr ON sr.entry_id=e.id AND sr.state='active'",
  "LEFT JOIN homeflow_identity_links creator ON creator.user_id=sr.creator_user_id AND creator.household_id=sr.household_id",
  "LEFT JOIN family_legacy_owner_claims old ON old.record_scope='ledger' AND old.record_key=CAST(e.id AS TEXT)",
  "LEFT JOIN homeflow_identity_links legacy_owner ON legacy_owner.user_id=old.owner_user_id AND legacy_owner.household_id=old.household_id"

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 const form=read('src/TransactionForm.vue')
-const app=read('src/App.vue')
+const app=read('src/App.vue')+'\n'+read('src/EntryInputPage.vue')
 const cross=read('src/FamilyCrossMemberBankTransfer.vue')
 const backend=read('functions/api/family-finance/cross-member-bank-transfers.js')
 

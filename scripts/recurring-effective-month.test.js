@@ -48,10 +48,10 @@ test('server independently rejects pre-effective-month approvals',()=>{
   assert.equal(result.code,'before_start')
 })
 test('UI exposes editable effective month, automatic range and still requires explicit confirmation',()=>{
-  const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
+  const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/FixedCostEditorFields.vue',import.meta.url),'utf8')
   const source=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
   const api=readFileSync(new URL('../functions/api/[[path]].js',import.meta.url),'utf8')
-  assert.match(finance,/v-model="plan.startMonth" type="month"/)
+  assert.match(finance,/v-model="model.startMonth" type="month"/)
   assert.match(finance,/startMonth:plan.value.startMonth/)
   assert.match(finance,/plan.value = \{\.\.\.item, paymentSource:item.paymentSource \|\| '現金',startMonth:item.startMonth/)
   assert.match(finance,/recurringReviewWindow\(plans.value,currentRecurringMonth\(\)\)/)

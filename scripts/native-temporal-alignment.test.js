@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const mobile = read('src/mobile-ui.css')
-const finance = read('src/FinanceTools.vue')
+const finance = read('src/FinanceTools.vue')+'\n'+read('src/FixedCostEditorFields.vue')
 const sbi = read('src/SbiPortfolio.vue')
 const transaction = read('src/TransactionForm.vue')
 const ledger = read('src/pages/LedgerPage.vue')
@@ -22,7 +22,7 @@ test('one native iPhone Safari alignment rule covers month, date and time throug
 
 test('reported closing month and recurring start month retain native pickers', () => {
   assert.match(finance,/class="card-closing-month" v-model="bill\.month" type="month"/)
-  assert.match(finance,/v-model="plan\.startMonth" type="month"/)
+  assert.match(finance,/v-model="model\.startMonth" type="month"/)
   assert.match(finance,/\.finance-panel \.recurring-start-month input\[type=month\]\{display:inline-flex;align-items:center;/)
   assert.doesNotMatch(finance,/input\[type=month\]\{display:block/)
 })

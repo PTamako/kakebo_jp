@@ -9,6 +9,9 @@ const props=defineProps({
   card:{type:Object,default:null},
   closingDay:{type:String,default:'末日'},
   paymentSources:{type:Array,default:()=>[]},
+  shareOptions:{type:Array,default:()=>[]},
+  shareReady:{type:Boolean,default:false},
+  shareError:{type:String,default:''},
   busy:{type:Boolean,default:false},
   onSave:{type:Function,required:true},
   onDanger:{type:Function,required:true}
@@ -18,7 +21,7 @@ const opened=computed(()=>props.mode==='add'||props.mode==='edit')
 const isEdit=computed(()=>props.mode==='edit')
 const isSpecial=computed(()=>isEdit.value&&['現金','その他','其他'].includes(props.cardName))
 const name=ref(''),sourceType=ref('standard'),statGroup=ref('card'),closingDay=ref('末日')
-const original=ref(null)
+const original=ref(null),sharedUsers=ref([])
 const saving=ref(false),error=ref(''),showDanger=ref(false)
 const shell=ref(null),closeButton=ref(null),lastTrigger=ref(null)
 const theme=ref({}),keyboardInset=ref(0),screenHeight=ref(null)
@@ -38,13 +41,19 @@ const closingOptions=[
 ]
 const canEditClosing=computed(()=>isEdit.value&&!isSpecial.value&&sourceType.value==='standard')
 const normalizedName=computed(()=>name.value.trim())
-const dirty=computed(()=>{
+const shareChanges=computed(()=>props.shareOptions.filter(person=>
+  sharedUsers.value.includes(person.user_id)!==Boolean(person.enabled)
+ ).map(person=>({grantee_user_id:person.user_id,
+  enabled:sharedUsers.value.includes(person.user_id),
+  expected_version:person.version||0})))
+const detailsDirty=computed(()=>{
   if(!opened.value)return false
   if(!isEdit.value)return !!normalizedName.value||sourceType.value!=='standard'||statGroup.value!=='card'
   const saved=original.value
   return !!saved&&(normalizedName.value!==saved.name||sourceType.value!==saved.sourceType||
     statGroup.value!==saved.statGroup||(canEditClosing.value&&closingDay.value!==saved.effectiveClosingDay))
 })
+const dirty=computed(()=>detailsDirty.value||shareChanges.value.length>0)
 const valid=computed(()=>{
   if(!normalizedName.value||normalizedName.value.length>80)return false
   if(!isEdit.value&&props.paymentSources.includes(normalizedName.value))return false
@@ -53,6 +62,7 @@ const valid=computed(()=>{
 })
 function resetDraft(){
   error.value='';showDanger.value=false;saving.value=false
+  sharedUsers.value=props.shareOptions.filter(x=>x.enabled).map(x=>x.user_id)
   if(isEdit.value){
     const card=props.card||{}
     name.value=props.cardName
@@ -110,6 +120,8 @@ async function save(){
       sourceType:sourceType.value,statGroup:statGroup.value}
     if(isEdit.value){
       payload.oldName=props.cardName
+      payload.detailsChanged=detailsDirty.value
+      payload.shareChanges=shareChanges.value
       payload.expected={
         sourceType:original.value.sourceType,
         statGroup:original.value.statGroup,
@@ -224,6 +236,18 @@ onBeforeUnmount(()=>{
                 <MobileChoiceSheet v-model="closingDay" :disabled="saving||busy"
                   label="カードの締め日" :options="closingOptions" :searchable="false"/>
               </div>
+              <div v-if="isEdit&&!isSpecial&&statGroup==='card'&&shareReady" class="card-editor-field card-share-field">
+                <span>家庭共有</span>
+                <label v-for="person in shareOptions" :key="person.user_id" class="card-share-person">
+                  <input type="checkbox" :disabled="saving||busy"
+                    :checked="sharedUsers.includes(person.user_id)"
+                    @change="event=>sharedUsers=event.target.checked?
+                      [...sharedUsers,person.user_id]:sharedUsers.filter(id=>id!==person.user_id)" />
+                  <span>{{person.display_name}}にこのカードでの記帳を許可</span>
+                </label>
+                <p class="card-editor-hint">共有された人は支出を記帳できます。カードの設定・振替・請求管理は共有されません。後から解除できます。</p>
+              </div>
+              <p v-if="isEdit&&shareError" role="status" class="card-editor-error">{{shareError}}</p>
               <p v-if="isEdit" class="card-editor-hint">名称を変更しても過去の明細と保存済み請求は引き継がれます。</p>
               <p v-if="error" class="card-editor-error" role="alert">{{error}}</p>
               <details v-if="isEdit&&cardName!=='現金'" class="card-editor-danger">
@@ -262,6 +286,8 @@ onBeforeUnmount(()=>{
 .card-editor-field :deep(.mobile-choice-trigger){background:var(--card,#fff);min-height:48px}
 .card-editor-hint{font-size:12px;line-height:1.5;color:var(--muted,#78818a);margin:0}
 .card-editor-error{font-size:13px;color:#b6294b;margin:0;overflow-wrap:anywhere}
+.card-share-person{display:flex;align-items:center;gap:10px;min-height:44px;color:var(--ink,#242830);font-size:13px}
+.card-share-person input{width:20px;height:20px;accent-color:var(--blue,#d05a81);flex:none}
 .card-editor-danger{margin-top:3px;padding-top:8px;border-top:1px solid var(--line,#e2e5ea)}
 .card-editor-danger summary{display:flex;align-items:center;min-height:44px;cursor:pointer;color:var(--muted,#7a8089);font-size:13px;font-weight:700}
 .card-editor-danger summary:after{content:'⌄';margin-left:auto}

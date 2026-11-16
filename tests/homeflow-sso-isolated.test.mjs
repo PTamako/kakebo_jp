@@ -58,6 +58,7 @@ function d1(){
  migration('0027_family_legacy_entry_link_audit.sql');
  migration('0028_family_legacy_transfer_ids.sql');
  migration('0029_family_legacy_identity_guards.sql');
+ migration('0061_family_legacy_card_sharing.sql');
  const wrap=sql=>{
   const statement=(values=[])=>({
     first:async()=>sqlite.prepare(sql).get(...values)||null,

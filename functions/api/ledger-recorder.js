@@ -2,15 +2,19 @@
 // approval actor or a card owner. Older rows have an *assigned account owner*
 // but no reliable per-entry creator event, so the UI labels them 旧記録.
 export const ledgerRecorderColumns=[
- "CASE WHEN sr.creator_user_id IS NOT NULL THEN COALESCE(NULLIF(TRIM(creator.display_name),''),'家庭成员')",
+ "CASE WHEN ls.actor_user_id IS NOT NULL THEN COALESCE(NULLIF(TRIM(shared_card_spender.display_name),''),'家庭成员')",
+ " WHEN sr.creator_user_id IS NOT NULL THEN COALESCE(NULLIF(TRIM(creator.display_name),''),'家庭成员')",
  " WHEN old.owner_user_id IS NOT NULL THEN COALESCE(NULLIF(TRIM(legacy_owner.display_name),''),'原管理员')",
  " ELSE NULL END AS recorded_by,",
- "CASE WHEN sr.creator_user_id IS NOT NULL THEN 'creator'",
+ "CASE WHEN ls.actor_user_id IS NOT NULL THEN 'shared_card_spender'",
+ " WHEN sr.creator_user_id IS NOT NULL THEN 'creator'",
  " WHEN old.owner_user_id IS NOT NULL THEN 'legacy_assigned'",
  " ELSE NULL END AS recorder_basis"
 ].join(' ');
 
 export const ledgerRecorderJoins=[
+ "LEFT JOIN family_legacy_card_spends ls ON ls.entry_id=e.id",
+ "LEFT JOIN homeflow_identity_links shared_card_spender ON shared_card_spender.user_id=ls.actor_user_id AND shared_card_spender.household_id=ls.household_id",
  "LEFT JOIN family_shared_entry_registry sr ON sr.entry_id=e.id AND sr.state='active'",
  "LEFT JOIN homeflow_identity_links creator ON creator.user_id=sr.creator_user_id AND creator.household_id=sr.household_id",
  "LEFT JOIN family_legacy_owner_claims old ON old.record_scope='ledger' AND old.record_key=CAST(e.id AS TEXT)",

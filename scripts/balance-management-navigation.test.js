@@ -24,7 +24,7 @@ test('管理 has its own 積立 page, with working plan and purchase month contr
   assert.match(managementTabs,/\['investment','積立'\]/)
   assert.match(management,/managementTab === 'investment'/)
   assert.match(management,/<SbiPortfolio :api="props\.api" active-view="plans" :refresh-key="investmentRefreshKey"/)
-  assert.match(management,/@click="refreshEverything"/)
+  assert.match(management,/@refresh="refreshEverything"/)
   assert.match(management,/await appContext\.loadTransfers\(\)/)
   assert.match(management,/await loadAll\(\)/)
   assert.match(management,/investmentRefreshKey\.value\+\+/)

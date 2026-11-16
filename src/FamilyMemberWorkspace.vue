@@ -78,6 +78,7 @@ const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.u
 const selectedEntryType=ref('all')
 const monthlyReport=ref(null),annualReport=ref(null),selectedYear=ref(Number(year.value))
 const sharedMutationRef=ref(null)
+const spouseIncomeRequestRef=ref(null)
 function openApproval(action,entry){
  if(!entry)return
  void sharedMutationRef.value?.openForEntry(action,entry)
@@ -207,6 +208,14 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
   <section v-else-if="tab==='add'" class="member-page">
    <h1>記録を追加</h1>
    <p class="help">家庭账目通过 HomeFlow 审批入账，不使用管理员旧账本访问码。</p>
+   <div class="spouse-income-shortcut">
+    <button type="button" @click="spouseIncomeRequestRef?.openSpouseIncome()">
+     <span>配偶からの収入</span><small>收到配偶的钱，记入本人收入 · 无需银行账户</small>
+    </button>
+   </div>
+   <FamilySharedMutationRequests ref="spouseIncomeRequestRef"
+     :key="'spouse-income:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" />
    <FamilyFinanceProposals :key="'personal-proposal:'+user.user_id"
     :user-id="user.user_id" :accounts="myAccounts"/>
   </section>
@@ -271,6 +280,12 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
 .member-shell{max-width:680px;margin:auto;padding:12px 16px 140px;min-height:76vh;display:grid;gap:14px;align-content:start}
 .member-topbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
 .member-topbar .brand{display:flex;align-items:center;min-width:0}
+.spouse-income-shortcut{min-width:0}
+.spouse-income-shortcut button{display:flex;flex-direction:column;gap:4px;align-items:flex-start;
+ width:100%;min-height:64px;padding:12px 14px;border:1px solid var(--line,#f3e5e8);
+ border-radius:14px;background:var(--card,#fff);color:var(--blue-dark,#bd5376);
+ font:inherit;font-weight:750;text-align:left;cursor:pointer}
+.spouse-income-shortcut button small{font-size:11px;font-weight:500;color:var(--muted,#8c7e88)}
 .member-topbar .brand-wordmark{display:block;width:min(168px,43vw);height:auto;object-fit:contain}
 .member-family-label{font-size:12px;color:var(--muted,#81777b);white-space:nowrap}
 .member-page{display:grid;gap:12px;min-width:0}

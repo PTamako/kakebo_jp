@@ -7,13 +7,13 @@ const app=read('src/App.vue')
 const cross=read('src/FamilyCrossMemberBankTransfer.vue')
 const backend=read('functions/api/family-finance/cross-member-bank-transfers.js')
 
-test('original asset transfer form offers account-based family bank transfer without changing old SBI and prepaid options',()=>{
- assert.match(form,/value:'family:cross-bank',label:'家庭成员银行账户间转移（双人确认）'/)
+test('original asset transfer form does not require household bank setup for spouse income',()=>{
+ assert.doesNotMatch(form,/<FamilyCrossMemberBankTransfer/)
+ assert.doesNotMatch(form,/value:'family:cross-bank',label:/)
  assert.match(form,/value:'sbi',label:'SBI証券（投資信託）'/)
  assert.match(form,/props.transferDestinations.map/)
- assert.match(form,/<FamilyCrossMemberBankTransfer v-if="record.type==='transfer' && record.transferTarget==='family:cross-bank'"/)
- assert.match(form,/:record="record"/)
- assert.match(form,/record.transferTarget!=='family:cross-bank'/)
+ assert.match(form,/SPOUSE_INCOME_CATEGORY/)
+ assert.match(form,/配偶からの収入元/)
 })
 test('family cross-member bank transfer NEVER submits through ordinary ledger entries or batch save',()=>{
  assert.match(app,/forms.value.some\(f\s*=>\s*f.type\s*===\s*'transfer'\s*&&\s*f.transferTarget\s*===\s*'family:cross-bank'\)/)

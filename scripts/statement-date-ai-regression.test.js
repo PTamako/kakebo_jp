@@ -110,3 +110,36 @@ test('Gemma accepts Japanese single-digit, full-width-colon and AM/PM time witho
   assert.deepEqual(rows.map(row => row.time), ['09:09', '19:48', '20:05', ''])
   assert.deepEqual(rows.map(row => row.merchant), ['架空書店','架空文具店','架空喫茶店','架空スーパー'])
 })
+
+test('real Sundrug screenshot: weekday suffix parses without inventing time or payment card',()=>{
+ const actual='2026/11/15(日),不明,サンドラッグ 金町東急店,1486,不明'
+ const rows=parseEntries(actual,[],new Date('2026-11-16T08:00:00Z'))
+ assert.equal(rows.length,1)
+ assert.deepEqual(
+  [rows[0].date,rows[0].time,rows[0].merchant,rows[0].amount,rows[0].category,rows[0].paymentSource],
+  ['2026-11-15','','サンドラッグ金町東急店',1486,'日用品','']
+ )
+ assert.match(rows[0].raw,/2026\/11\/15\(日\)/,'weekday is preserved as source evidence')
+ assert.match(rows[0].raw,/サンドラッグ金町東急店,1486,不明$/,'record keeps merchant, amount and explicit unknown payment')
+})
+test('full width Japanese weekday, amount separators, multiple rows, and true printed clocks stay intact',()=>{
+ const rows=parseEntries([
+  '2026年11月15日（日）,不明,サンドラッグ 金町東急店,¥1,486,不明',
+  '2026/11/16(月),19:48,文具店,320,Suica',
+  '2026/11/17（火）,不明,ドラッグストア,300,不明'
+ ].join('\n'),[])
+ assert.equal(rows.length,3)
+ assert.deepEqual(rows.map(x=>x.date),['2026-11-15','2026-11-16','2026-11-17'])
+ assert.deepEqual(rows.map(x=>x.time),['','19:48',''])
+ assert.deepEqual(rows.map(x=>x.amount),[1486,320,300])
+ assert.deepEqual(rows.map(x=>x.paymentSource),['','Suica',''])
+})
+test('Gemma statement prompt strips weekday from date but explicitly preserves unknowns',async()=>{
+ let prompt=''
+ await recognizeWithGemma({async run(_model,opts){prompt=opts.messages[0].content[0].text;
+  return{response:'2026/11/15,不明,サンドラッグ 金町東急店,1486,不明'}}},
+  new Uint8Array([1]).buffer,'image/png','statement')
+ assert.match(prompt,/2026\/11\/15\(日\)/)
+ assert.match(prompt,/年月日だけ/)
+ assert.match(prompt,/印字されていない時刻やカード名は推測せず/)
+})

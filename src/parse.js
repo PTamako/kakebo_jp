@@ -90,7 +90,15 @@ function parseAiCsvRow(raw, rules) {
   const fiveColumn = line.match(new RegExp('^([^,，]+)\\s*[,，]\\s*([^,，]+)\\s*[,，]\\s*(.+?)\\s*[,，]\\s*' + yenAmount + '\\s*(?:円)?\\s*[,，]\\s*([^,，]+)$'))
   const dateToken = '(?:20\\d{2}年\\d{1,2}月\\d{1,2}日?|(?:20)?\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2}|\\d{1,2}月\\d{1,2}日?|\\d{1,2}[/]\\d{1,2})'
   const unknown = /^(?:不明|未記載|記載なし|不詳|[-—ー])$/
-  const validDate = value => unknown.test(value) || isRelativeDateToken(value) || new RegExp('^' + dateToken + '$').test(value)
+  // Japanese payment histories show the weekday after the date.
+  // Accept "2026/11/15(日)" and "2026年11月15日（日）" without
+  // mistaking the weekday for a printed payment or transaction time.
+  const stripWeekday = value => value.replace(/\s*\(\s*(?:月|火|水|木|金|土|日)(?:曜日)?\s*\)\s*$/, '').trim()
+  const validDate = value => {
+    const date = stripWeekday(value)
+    const matched = new RegExp('^' + dateToken).exec(date)
+    return unknown.test(date) || isRelativeDateToken(date) || !!(matched && matched[0] === date)
+  }
   // Gemma can return the printed Japanese clock (19時48分) instead of HH:mm.
   // Require a standalone clock token so merchant/payment text cannot become time.
   const validTime = value => unknown.test(value) || isRelativeTimeToken(value)

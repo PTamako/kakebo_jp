@@ -317,6 +317,10 @@ test('production legacy finance data rejects spouse and old-code-only access wit
   assert.equal((await get()).status,401,'old device secret without HomeFlow is insufficient');
   const verified=await get(ownerCookie);
   assert.equal(verified.status,200,await verified.clone().text());
+  const ownerSsoOnly=await legacyApi({request:new Request(app+'/api/payment-sources',{
+   headers:{Cookie:'__Host-kakeibo_hf='+ownerCookie}
+  }),env:f.env,params:{path:['payment-sources']}});
+  assert.equal(ownerSsoOnly.status,200,'verified owner SSO must open original finance without legacy access code');
   const oldLogin=await legacyApi({request:new Request(app+'/api/auth/login',{
    method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({code:'legacy-code'})}),env:f.env,

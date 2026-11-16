@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 const source=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
 const billing=source.match(/<article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">[\s\S]*?<\/article>/)?.[0] || ''
-const backups=source.match(/<summary>バックアップ・復元<\/summary>[\s\S]*?(?=\n  <\/details>)/)?.[0] || ''
-const privacy=source.match(/<summary>端末のプライバシー設定<\/summary>[\s\S]*?(?=\n  <\/details>)/)?.[0] || ''
+const backups=source.match(/<template #backup>[\s\S]*?<\/template>/)?.[0] || ''
+const privacy=source.match(/<template #privacy>[\s\S]*?<\/template>/)?.[0] || ''
 test('card billing on iPhone has full-width card, with closing month and total in one row',()=>{
   assert.match(source, /\.card-billing-fields > label:first-child \{grid-column:1 \/ -1\}/)
   assert.match(source, /\.card-billing-fields > label:nth-child\(2\) \{grid-column:1\}/)

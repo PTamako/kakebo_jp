@@ -135,7 +135,8 @@ BEFORE DELETE ON entries
 WHEN EXISTS(SELECT 1 FROM family_legacy_card_spends s WHERE s.entry_id=OLD.id)
 BEGIN SELECT RAISE(ABORT,'SHARED_CARD_SPEND_IMMUTABLE'); END;
 CREATE TRIGGER IF NOT EXISTS trg_legacy_card_spend_no_update
-BEFORE UPDATE ON family_legacy_card_spends
+BEFORE UPDATE OF spend_id,household_id,owner_user_id,actor_user_id,entry_id,
+  payload_sha256,amount_jpy,spend_date,created_at ON family_legacy_card_spends
 BEGIN SELECT RAISE(ABORT,'SHARED_CARD_PROVENANCE_IMMUTABLE'); END;
 CREATE TRIGGER IF NOT EXISTS trg_legacy_card_spend_no_delete
 BEFORE DELETE ON family_legacy_card_spends

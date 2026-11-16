@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
+import OriginalOtherManagement from './OriginalOtherManagement.vue'
 import CardManagementControls from './CardManagementControls.vue'
 import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
@@ -1600,7 +1601,14 @@ async function removeCardBill(record) {
     :status="memberView ? memberStatus : (loaded ? '最終更新：'+lastLoadedLabel+' · '+rows.length+'件' : busy ? '明細を読み込み中…' : '未読み込み')"
     :error="memberView ? memberError : loadError"
     @refresh="memberView ? memberRefresh?.() : refreshEverything()" />
-  <slot v-if="memberView" :name="'member-'+managementTab" />
+  <slot v-if="memberView&&managementTab!=='tools'" :name="'member-'+managementTab" />
+  <OriginalOtherManagement v-if="memberView" :active="managementTab==='tools'">
+    <template #jobs><slot name="member-jobs"/></template>
+    <template #privacy><slot name="member-privacy"/></template>
+    <template #backup><slot name="member-backup"/></template>
+    <template #duplicates><slot name="member-duplicates"/></template>
+    <template #trash><slot name="member-trash"/></template>
+  </OriginalOtherManagement>
   <template v-else>
   <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
     <InvestmentTransferReview />
@@ -1623,9 +1631,7 @@ async function removeCardBill(record) {
     @update:mode="next=>next==='edit'?selectCardForEdit():cardMode=next"
     @default="emit('set-default-payment-source',selectedCard)"
     @archive="name=>archivePaymentSource(name,false)" @remove="removePaymentSource" />
-  <MobileMerchantRulesPanel v-if="managementTab === 'tools'"
-    :rules="merchantRulesCombined" :categories="orderedCategories"
-    :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" />
+
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>
     <FixedCostEditorFields :model="plan" v-model:cycleChoice="planCycleChoice"
@@ -1728,14 +1734,31 @@ async function removeCardBill(record) {
       </div>
     </details>
   </article>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
+  
+  
+  
+  
+  
+  <OriginalOtherManagement :active="managementTab==='tools'"
+    :trash-count="trashCount"
+    :trash-status="trashCountReady?trashCount+'件':trashCountLoading?'確認中…':'再読み込みが必要'"
+    :on-open-receipts="refreshLocalReceiptCount"
+    :on-open-duplicates="()=>refreshDuplicateReview({currentTarget:{open:true}})"
+    :on-open-trash="()=>onReviewTrashToggle({currentTarget:{open:true}})">
+    <template #rules>  <MobileMerchantRulesPanel 
+    :rules="merchantRulesCombined" :categories="orderedCategories"
+    :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" /></template>
+    <template #jobs>
+
     <summary>定期処理の実行状況</summary>
     <button type="button" :disabled="jobHealthBusy" @click="loadJobHealth">{{jobHealthBusy?'確認中…':'最新の実行結果を確認'}}</button>
     <p v-if="jobHealthError" role="alert">{{jobHealthError}}</p>
     <p v-if="!jobHealthBusy && jobHealthLoaded && jobHealth.length===0">各処理の実行履歴がまだありません。</p>
     <p v-for="row in jobHealthLoaded ? jobHealthDisplay : []" :key="row.job" :role="row.status==='failed'?'alert':undefined">{{jobNames[row.job]||row.job}}：{{jobHealthText(row)}}</p>
-  </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure device-privacy-panel">
+  
+    </template>
+    <template #privacy>
+
     <summary>端末のプライバシー設定</summary>
     <div class="device-privacy-section">
       <label class="device-login-field"><span>ログイン状態の保存</span>
@@ -1782,8 +1805,10 @@ async function removeCardBill(record) {
       </div>
       
     </div>
-  </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="$event.target.open && refreshLocalReceiptCount()">
+  
+    </template>
+    <template #backup>
+
     <summary>バックアップ・復元</summary>
     <p>JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます。画像は非公開R2に保存し、既存画像は上書きしません。</p>
     <label class="backup-password-label">暗号化パスワード（任意）<input v-model="backupPassword" type="password" autocomplete="off" minlength="10" maxlength="128" placeholder="10文字以上・端末に保存しません" /></label>
@@ -1801,8 +1826,10 @@ async function removeCardBill(record) {
       <button type="button" :disabled="busy||backupBusy" @click="restore">未登録の設定と明細を確認して復元</button>
     </div>
     <p v-if="message && message.startsWith('復元中 ')" role="status">{{message}}</p>
-  </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="refreshDuplicateReview">
+  
+    </template>
+    <template #duplicates>
+
     <summary>重複の可能性</summary>
     <p v-if="busy">重複候補を確認中…</p>
     <p v-else-if="!reviewStateReady" role="status">{{ reviewStateError || '確認履歴を読み込み中…' }}</p>
@@ -1817,8 +1844,10 @@ async function removeCardBill(record) {
     </div>
 
     
-  </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel" @toggle="onReviewTrashToggle">
+  
+    </template>
+    <template #trash>
+
     <summary>ゴミ箱 <span class="review-trash-count" aria-live="polite">{{trashCountReady ? trashCount+'件' : trashCountLoading ? '確認中…' : '再読み込みが必要'}}</span></summary>
     <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>
@@ -1874,7 +1903,9 @@ async function removeCardBill(record) {
       </template>
     </template>
     
-  </details>
+  
+    </template>
+  </OriginalOtherManagement>
   </template>
 </section>
 </template>

@@ -31,3 +31,14 @@ const emit=defineEmits(['update:modelValue','default','edit','add'])
   </button>
  </div>
 </template>
+
+<style scoped>
+.card-main-controls{display:flex;align-items:center;gap:8px;width:100%;min-width:0}
+.card-main-controls :deep(.mobile-choice-trigger){width:100%;min-width:0}
+.card-main-controls> :first-child{flex:1;min-width:0}
+.card-icon-action{display:flex;align-items:center;justify-content:center;flex:none;width:44px;min-width:44px;height:44px;min-height:44px;padding:10px;border:1px solid var(--line,#e8dfe3);border-radius:12px;background:var(--card,#fff);color:var(--blue-dark,#c34c76);cursor:pointer;box-sizing:border-box}
+.card-icon-action svg{display:block;width:20px;min-width:20px;height:20px;min-height:20px;overflow:visible;stroke:currentColor}
+.card-icon-action:disabled{opacity:.38;cursor:not-allowed}
+.card-icon-action:not(:disabled):focus-visible{outline:2px solid var(--blue,#ce668c);outline-offset:2px}
+@media(max-width:370px){.card-main-controls{gap:5px}.card-icon-action{width:40px;min-width:40px;height:44px;padding:9px}}
+</style>

@@ -5,7 +5,7 @@ import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import FamilyCrossMemberBankTransfer from './FamilyCrossMemberBankTransfer.vue'
-const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true} })
+const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, memberTransferOnly: {type:Boolean,default:false} })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
@@ -38,7 +38,10 @@ const autoSbiKind = computed(()=>inferredSbiEntryKind(record.value))
 const autoSbiLabel = computed(()=>({
   point:'ポイント買付',monthly:'毎月の積立',purchase:'追加買付'
 })[autoSbiKind.value]||'追加買付')
-const transferOptions = computed(()=> [
+const transferOptions = computed(()=> props.memberTransferOnly?[
+ {value:'',label:'選択してください'},
+ {value:'family:cross-bank',label:'家庭成员银行账户间转移（双人确认）'}
+] : [
   {value:'',label:'選択してください'},
   {value:'sbi',label:'SBI証券（投資信託）'},
   {value:'family:cross-bank',label:'家庭成员银行账户间转移（双人确认）'},

@@ -16,7 +16,7 @@ const store = () => {
 }
 
 test('trash separates four categories and keeps previously confirmed notices out of original sections',()=>{
-  assert.ok(finance.includes('<summary>ゴミ箱'))
+  assert.ok(sharedTools.includes('<summary>ゴミ箱'))
   assert.ok(finance.includes('<summary>重複確認 <span>'))
   assert.ok(finance.includes('<summary>削除した固定費 <span>'))
   assert.ok(finance.includes('<summary>固定費の月別除外 <span>'))

@@ -368,14 +368,33 @@ async function setRememberDevice(remember) {
 }
 const locked = ref(sessionStorage.getItem('kakeibo-logged-out') === '1')
 const familyIdentity=ref(null)
+let ownerBootstrap=0
 function onFamilyIdentityChange(identity){
  familyIdentity.value=identity?.user_id?identity:null
- // A member must never fall through to the old single-code owner's pages.
- if(identity?.role==='member'){
+ if(identity?.role==='member'||!identity){
+  ownerBootstrap++
   locked.value=true
   token.value=''
+  sessionStorage.removeItem('kakeibo-device-session')
   entries.value=[];stats.value=null;annualStats.value=null
   paymentSources.value=[];paymentSourceMeta.value={};paymentClosingDays.value={}
+  return
+ }
+ if(identity.role==='owner'){
+  const shouldLoad=locked.value
+  locked.value=false
+  // The original UI and account are restored by a verified HomeFlow owner
+  // without another legacy login prompt.
+  if(shouldLoad){
+   const ticket=++ownerBootstrap
+   void (async()=>{
+    try{
+     await restoreAppState()
+     if(ticket!==ownerBootstrap||familyIdentity.value?.user_id!==identity.user_id)return
+     await Promise.allSettled([load(),loadYear(),loadTransfers()])
+    }catch(error){if(ticket===ownerBootstrap)flash(error.message)}
+   })()
+  }
  }
 }
 const PENDING_LOGOUT_KEY='kakeibo-server-logout-pending-v1'
@@ -590,8 +609,11 @@ async function routeNewFamilyMemberToIsolatedLogin(){
     const member=await fetch('/api/homeflow-sso/me',{credentials:'same-origin',cache:'no-store'})
     if(member.ok){
      const proof=await member.json()
-     if(proof.ok===true&&proof.ledger_access===false&&proof.identity?.role==='member'){
-      onFamilyIdentityChange(proof.identity);locked.value=true;return true
+     if(proof.ok===true&&proof.ledger_access===false&&
+       ['member','owner'].includes(proof.identity?.role)){
+      onFamilyIdentityChange(proof.identity)
+      // Owner proceeds with the original page; member never reaches it.
+      return proof.identity.role==='member'
      }
     }
     const old=await fetch('/api/payment-sources',{credentials:'same-origin',cache:'no-store'})

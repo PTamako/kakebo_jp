@@ -136,7 +136,7 @@ async function submitPaidExpense(choice){
    prepaid_account_id:a.account_id,prepaid_version:a.version}:{
    ...base,account_id:a.account_id,account_version:a.version}
   const result=await api(path,request(body))
-  const prepared=prepaid?result.action:result.prepared
+  const prepared=result.prepared
   if(!prepared?.request_id)throw Error('決済申請の準備結果が未確認です')
   pending.requestId=prepared.request_id
   if(prepared.status==='submitted_status_unknown'&&prepared.approval_id){
@@ -160,6 +160,7 @@ async function submitMemberEntry(){
    ?resolveMemberPayment(memberEntry.value.paymentSource,myAccounts.value,sharedCards.value)
    :{kind:'cash'}
   if(!choice)throw Error('支払方法が変更・解除されました。もう一度選択してください')
+  if(pendingPaidEntry&&choice.kind==='cash')throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
   if(choice.kind==='shared'||choice.kind==='personal'){
    const result=await submitPaidExpense(choice)
    memberEntryNotice.value=result.type==='applied'

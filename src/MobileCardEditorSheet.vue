@@ -243,12 +243,10 @@ onBeforeUnmount(()=>{
                     :checked="sharedUsers.includes(person.user_id)"
                     @change="event=>sharedUsers=event.target.checked?
                       [...sharedUsers,person.user_id]:sharedUsers.filter(id=>id!==person.user_id)" />
-                  <span>{{person.display_name}}にこのカードでの記帳を許可</span>
+                  <span>{{person.display_name}}に共有</span>
                 </label>
-                <p class="card-editor-hint">共有された人は支出を記帳できます。カードの設定・振替・請求管理は共有されません。後から解除できます。</p>
               </div>
               <p v-if="isEdit&&shareError" role="status" class="card-editor-error">{{shareError}}</p>
-              <p v-if="isEdit" class="card-editor-hint">名称を変更しても過去の明細と保存済み請求は引き継がれます。</p>
               <p v-if="error" class="card-editor-error" role="alert">{{error}}</p>
               <details v-if="isEdit&&cardName!=='現金'" class="card-editor-danger">
                 <summary>その他の操作</summary>

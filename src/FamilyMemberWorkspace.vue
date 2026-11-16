@@ -111,6 +111,66 @@ const kindLabel=x=>kinds.find(k=>k[0]===x)?.[1]||'账户'
 const yen=n=>n===null||n===undefined?'—':'¥'+Number(n).toLocaleString('ja-JP')
 const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.user.user_id))
 const memberPaymentOptions=computed(()=>buildMemberPaymentChoices(myAccounts.value,sharedCards.value))
+function memberRuleFor(merchant){
+ const text=String(merchant||'').normalize('NFKC').trim().toLowerCase()
+ if(!text)return null
+ return [...memberMerchantRules.value].sort((a,b)=>b.keyword.length-a.keyword.length)
+   .find(r=>text.includes(r.keyword.normalize('NFKC').toLowerCase()))||null
+}
+function applyMemberMerchantRule(form){
+ if(form?.type!=='expense')return
+ const rule=memberRuleFor(form.merchant)
+ if(!rule)return
+ if(rule.category&&memberExpenseCategoryChoices.value.includes(rule.category))form.category=rule.category
+ if(rule.payment_source&&memberPaymentOptions.value.some(c=>c.value===rule.payment_source))
+  form.paymentSource=rule.payment_source
+}
+async function loadMemberMerchantRules(){
+ const actor=props.user.user_id
+ try{
+  const result=await api('member-merchant-rules')
+  if(actor!==props.user.user_id)return
+  if(result.scope!=='personal'||result.viewer_user_id!==actor||!Array.isArray(result.items))
+   throw Error('本人のルールの取得範囲が一致しません')
+  memberMerchantRules.value=result.items
+  memberRuleError.value=''
+ }catch(e){if(actor===props.user.user_id)memberRuleError.value='店舗ルールを読み込めません：'+e.message}
+}
+async function saveMemberMerchantRule({keyword,oldCategory,oldPayment,expectedVersion,category,paymentSource}){
+ const actor=props.user.user_id
+ const previous=memberMerchantRules.value.find(r=>r.keyword===keyword)
+ if((previous?.version||0)!==expectedVersion||
+    (previous?.category||'')!==oldCategory||(previous?.payment_source||'')!==oldPayment)
+  throw Error('別の端末でルールが変更されました。更新してください')
+ if(category&&!memberRuleCategoryOptions.value.includes(category))throw Error('カテゴリを確認してください')
+ if(paymentSource&&!memberPaymentOptions.value.some(o=>o.value===paymentSource))
+  throw Error('支払方法を確認してください')
+ if(!category&&!paymentSource){
+  if(!previous)throw Error('空のルールは作成できません')
+  await api('member-merchant-rules',request({
+   expected_user_id:actor,expected_version:previous.version,keyword
+  },'DELETE'))
+ }else{
+  await api('member-merchant-rules',request({
+   expected_user_id:actor,expected_version:expectedVersion,
+   keyword,category,payment_source:paymentSource
+  }))
+ }
+ await loadMemberMerchantRules()
+ if(actor!==props.user.user_id)throw Error('アカウントが変更されました')
+}
+async function rememberMemberRule(record){
+ const keyword=String(record.merchant||'').trim()
+ if(keyword.length<2)return
+ const previous=memberMerchantRules.value.find(r=>r.keyword===keyword)
+ const category=record.bindRule?record.category:(previous?.category||'')
+ const paymentSource=record.bindPaymentRule?record.paymentSource:(previous?.payment_source||'')
+ if(!category&&!paymentSource)return
+ await saveMemberMerchantRule({keyword,oldCategory:previous?.category||'',
+  oldPayment:previous?.payment_source||'',expectedVersion:previous?.version||0,
+  category,paymentSource})
+}
+
 const selectedEntryType=ref('all')
 const monthlyReport=ref(null),annualReport=ref(null),selectedYear=ref(Number(year.value))
 const sharedMutationRef=ref(null)
@@ -520,6 +580,7 @@ async function refresh(){
   cardSharingError.value=f.share_error||''
   sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
+  await loadMemberMerchantRules()
   monthlyReport.value=d;annualReport.value=e
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
   yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
@@ -596,6 +657,7 @@ watch(()=>props.user.user_id,()=>{pendingPaidEntry=null;memberEntries.value=[];m
 watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
 onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
+ memberMerchantRules.value=[];memberRuleError.value='';
  document.removeEventListener('visibilitychange',foreground)})
 // The original EntryInputPage renders for both identities. All writes here
 // continue through the authenticated member-specific HomeFlow approval adapter.
@@ -638,6 +700,7 @@ const memberExpenseCategoryChoices=computed(()=>[...new Set([
 const memberIncomeCategoryChoices=computed(()=>[...new Set([
  ...entryIncomeCategories,...memberCategoryRecords.value.filter(x=>x.type==='income').map(x=>x.name)
 ])])
+const memberRuleCategoryOptions=computed(()=>[...new Set([...memberExpenseCategoryChoices.value,...memberIncomeCategoryChoices.value])])
 function clearMemberDraft(){
  if(memberEntries.value.length||memberRawText.value.trim()){
   if(!window.confirm('未保存の下書きを破棄しますか？'))return
@@ -727,6 +790,12 @@ watch(()=>props.user.user_id,loadMemberCategories)
     <FamilyRecurringFinance ref="memberRecurringRef" view="investment"
      :key="'personal-sbi:'+user.user_id" :user-id="user.user_id"
      :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+   </template>
+   <template #member-rules>
+     <p v-if="memberRuleError" role="alert" class="member-alert">{{memberRuleError}}</p>
+     <MobileMerchantRulesPanel :rules="memberMerchantRules"
+       :categories="memberRuleCategoryOptions" :payment-sources="memberPaymentOptions"
+       :category-label="x=>x" :on-save="saveMemberMerchantRule"/>
    </template>
    <template #member-jobs>
      <p class="help">本人の定期設定は「固定費」「積立」に保存されます。金融取引は HomeFlow の承認と実際の入出金証拠が必要です。</p>

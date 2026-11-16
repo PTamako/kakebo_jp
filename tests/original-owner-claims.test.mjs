@@ -22,7 +22,8 @@ test('existing personal legacy data owner is explicitly verified, not guessed fr
 });
 
 test('management renders only HomeFlow identity; old card settings and one statistics page remain',()=>{
- assert.match(app,/<FamilyFinanceAccess v-if="tab === 'finance'" identity-only \/>/);
+ assert.match(app,/<FamilyAccountMenu v-if="familyIdentity"/);
+ assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.match(identity,/v-if="person&&!props.identityOnly"/);
  assert.match(app,/<ManagementPage :card-settings-request=/);
  assert.match(app,/<StatisticsPage v-else-if="tab === 'stat'" \/>/);

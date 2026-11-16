@@ -14,7 +14,7 @@ test('missing portfolio tables fail closed without deleting historical SBI value
   assert.match(portfolio,/no such table:/)
   assert.match(api,/if \(a === 'investment-portfolio'\)/)
   assert.match(api,/if \(a === 'investments'\) return json\(/)
-  assert.match(ui,/<SbiPortfolio v-else :api="api" :transfer-loading="transferLoading"/)
+  assert.match(ui,/<SbiPortfolio :key="isPersonal\?'funds:'\+personalUserId:'funds:owner'"/)
   assert.doesNotMatch(ui,/旧評価額|旧評価損益|legacy-investment-details|investment-card/)
   assert.match(component,/投資テーブルの移行が未実施/)
   assert.doesNotMatch(api,/SELECT platform, current_value, pnl, updated_at/)

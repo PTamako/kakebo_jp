@@ -43,8 +43,8 @@ test('long card and merchant names truncate without pushing monetary amounts out
 test('all daily money and investment data still comes from existing summary streams, not samples',()=>{
   assert.match(page,/@summary="onPortfolioSummary"/)
   assert.match(page,/@summary="onPrepaidSummary"/)
-  assert.match(page,/latestUsage = computed\(\(\) => prepaidSummary\.value\?\.latestUsage/)
-  assert.match(page,/latestCharge = computed\(\(\) => prepaidSummary\.value\?\.latestCharge/)
-  assert.match(page,/allocation = computed\(\(\) => portfolioSummary\.value\?\.allocation/)
+  assert.match(page,/latestUsage = computed\(\(\) => isPersonal\.value\?null:prepaidSummary\.value\?\.latestUsage/)
+  assert.match(page,/latestCharge = computed\(\(\) => isPersonal\.value\?null:prepaidSummary\.value\?\.latestCharge/)
+  assert.match(page,/allocation = computed\(\(\) => isPersonal\.value\?\[\]:portfolioSummary\.value\?\.allocation/)
   assert.doesNotMatch(page,/\bINSERT INTO\b|\bUPDATE entries\b|\bCREATE TABLE\b/)
 })

@@ -1,6 +1,8 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
+import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 const props=defineProps({userId:{type:String,required:true},householdId:{type:String,required:true}})
+const spouseQuickMode=ref(false)
 const open=ref(false),busy=ref(false),error=ref(''),message=ref(''),
  proposals=ref([]),rows=ref([]),deleted=ref([]),available=ref(false),
  action=ref('create'),resource=ref(''),prepared=ref(null),stableKey=ref('')
@@ -15,7 +17,7 @@ const canWrite=computed(()=>open.value&&available.value&&
  Number(draft.value.amount)>0&&draft.value.category.trim())))
 const statusText=x=>x.status==='prepared'?'尚未提交':x.status==='submitted_status_unknown'?
  '已提交 HomeFlow，等待管理员审核与执行':x.status
-function reset(){version++;open.value=false;busy.value=false;available.value=false;error.value='';message.value='';
+function reset(){spouseQuickMode.value=false;version++;open.value=false;busy.value=false;available.value=false;error.value='';message.value='';
  rows.value=[];deleted.value=[];proposals.value=[];resource.value='';prepared.value=null;stableKey.value='';
  draft.value={date:new Date(Date.now()+32400000).toISOString().slice(0,10),
  time:'',amount:'',type:'expense',category:'食費',merchant:'',note:''}}
@@ -57,7 +59,22 @@ async function openForEntry(operation,entry){
  if(operation==='update')draft.value={...source.entry,...entry,
   amount:String(entry.amount),payment_source:undefined,transfer_target:undefined}
 }
-defineExpose({openForEntry})
+async function openSpouseIncome(){
+ // The person who received the money is the requester/recipient.
+ // Use the existing member -> HomeFlow owner approval executor, no bank ID.
+ if(busy.value||prepared.value||stableKey.value){
+  error.value='上次申请仍需核对，请先完成或撤回，避免重复记账。'
+  return
+ }
+ spouseQuickMode.value=true
+ action.value='create';resource.value=''
+ draft.value={date:new Date(Date.now()+32400000).toISOString().slice(0,10),
+  time:'',amount:'',type:'income',category:SPOUSE_INCOME_CATEGORY,
+  merchant:SPOUSE_INCOME_SOURCE,note:''}
+ open.value=true
+ await load()
+}
+defineExpose({openForEntry,openSpouseIncome})
 async function toggle(){
  if(busy.value)return
  open.value=!open.value
@@ -141,14 +158,14 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
 </script>
 <template>
 <section class="shared-request" aria-label="家庭共享收支修改审批申请">
- <header><strong>申请修改共享账目</strong>
+ <header><strong>{{spouseQuickMode?'配偶からの収入':'申请修改共享账目'}}</strong>
   <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'收起':'申请'}}</button></header>
  <template v-if="open">
-  <p class="hint">家庭成员可申请新增、修改、删除或恢复普通共享收支。HomeFlow 管理员必须独立批准并执行；既有 SBI、信用卡和银行转账凭证不得直接修改。</p>
+  <p class="hint">{{spouseQuickMode?'由收到钱的人登记本人收入，来源固定为配偶。无需登记任何银行账户；提交后由家庭管理员审批，批准前不会入账。':'家庭成员可申请新增、修改、删除或恢复普通共享收支。HomeFlow 管理员必须独立批准并执行；既有 SBI、信用卡和银行转账凭证不得直接修改。'}}</p>
   <p v-if="error" class="error" role="alert">{{error}}</p>
   <p v-if="message" class="hint" role="status">{{message}}</p>
   <form v-if="available" class="editor" @submit.prevent="prepared?submit():prepare()">
-   <label>申请类型<select v-model="action" :disabled="busy||!!prepared" @change="resource=''">
+   <label v-if="!spouseQuickMode">申请类型<select v-model="action" :disabled="busy||!!prepared" @change="resource=''">
     <option value="create">新增普通账目</option><option value="update">修改普通账目</option>
     <option value="delete">移到回收箱</option><option value="restore">从回收箱恢复</option>
    </select></label>
@@ -160,13 +177,14 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
    </label>
    <template v-if="action==='create'||action==='update'">
     <label>日期<input v-model="draft.date" type="date" :disabled="busy||!!prepared"/></label>
-    <label>收支<select v-model="draft.type" :disabled="busy||!!prepared"><option value="expense">支出</option><option value="income">收入</option></select></label>
+    <label v-if="!spouseQuickMode">收支<select v-model="draft.type" :disabled="busy||!!prepared"><option value="expense">支出</option><option value="income">收入</option></select></label>
     <label>金额（日元）<input v-model="draft.amount" type="number" min="1" max="10000000" required :disabled="busy||!!prepared"/></label>
-    <label>分类<input v-model="draft.category" maxlength="100" required :disabled="busy||!!prepared"/></label>
-    <label>商家或来源<input v-model="draft.merchant" maxlength="120" :disabled="busy||!!prepared"/></label>
+    <label v-if="!spouseQuickMode">分类<input v-model="draft.category" maxlength="100" required :disabled="busy||!!prepared"/></label>
+    <p v-else class="hint">分類：{{SPOUSE_INCOME_CATEGORY}} · 来源：{{SPOUSE_INCOME_SOURCE}}</p>
+    <label v-if="!spouseQuickMode">商家或来源<input v-model="draft.merchant" maxlength="120" :disabled="busy||!!prepared"/></label>
     <label>备注<textarea v-model="draft.note" maxlength="500" :disabled="busy||!!prepared" rows="2"/></label>
    </template>
-   <button type="submit" :disabled="busy||(!prepared&&!canWrite)">{{prepared?'提交原申请审批':'准备加密申请'}}</button>
+   <button type="submit" :disabled="busy||(!prepared&&!canWrite)">{{prepared?'提交 HomeFlow 审批':spouseQuickMode?'登记本人配偶收入':'准备加密申请'}}</button>
    <button v-if="prepared" type="button" :disabled="busy" @click="cancel">撤回未提交草稿</button>
   </form>
   <div v-if="available" class="history"><strong>最近申请</strong>

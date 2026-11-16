@@ -59,7 +59,7 @@ test('new family-member PWA does not get stuck in legacy code modal, with origin
 
 
 test('management does not duplicate the household statistics page or fetch its totals',()=>{
- assert.match(app,/<StatisticsPage v-else-if="tab === 'stat'" \/>/);
+ assert.match(sharedPages,/<StatisticsPage v-else-if="activeTab==='stat'"\/>/);
  assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
  assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/);
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);

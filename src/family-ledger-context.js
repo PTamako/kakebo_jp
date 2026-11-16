@@ -118,8 +118,10 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
   if(expandedEntryDays.value.size===0&&groups.length)
    expandedEntryDays.value=new Set(groups.map(x=>x.date))
  },{immediate:true})
- watch(month,()=>{visibleEntryCount.value=20;selectedDay.value='';calendarExpanded.value=false;expandedEntryDays.value=new Set();void load()})
- function loadMoreEntries(){visibleEntryCount.value+=20;void more()}
+ watch(month,()=>{visibleEntryCount.value=20;selectedDay.value='';calendarExpanded.value=false;expandedEntryDays.value=new Set()})
+ function loadMoreEntries(){visibleEntryCount.value+=20;
+  if(visibleEntryCount.value>(entries.value||[]).length)void more()
+ }
  function loadMoreAnnualEntries(group){annualVisibleCounts.value={...annualVisibleCounts.value,
   [group.month]:group.items.length+listPageSize}}
  function clearDetailFilter(){detailFilter.value=null;prepaidHistoryFilter.value=null}

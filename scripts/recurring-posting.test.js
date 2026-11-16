@@ -133,7 +133,7 @@ test('month end is clipped and future activation is respected',async()=>{
 })
 
 test('UI displays saved mode and dynamic explanation with responsive layout',()=>{
-  const page=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/FixedCostEditorFields.vue',import.meta.url),'utf8')
+  const page=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/FixedCostEditorFields.vue',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/OriginalFixedCostList.vue',import.meta.url),'utf8')
   const api=readFileSync(new URL('../functions/api/[[path]].js',import.meta.url),'utf8')
   assert.match(page,/v-model="model.postingMode"/)
   assert.match(page,/recurringFrequencyLabel\(model\).*?自動で支出明細に登録します。/)

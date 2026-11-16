@@ -514,14 +514,12 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
     </div>
    </template>
    <template #member-plans>
-    <FamilyRecurringFinance :key="'personal-recurring:'+user.user_id"
+    <FamilyRecurringFinance view="plans" :key="'personal-recurring:'+user.user_id"
      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
    </template>
    <template #member-investment>
-   <div class="finance-panel">
-    <p class="help">个人证券账户：仅显示本人创建的账户。真实基金份额及市值在对账前不会自动填写。</p>
-    <div v-for="a in myAccounts.filter(x=>x.account_kind==='securities')" :key="a.account_id">{{a.label}}</div>
-   </div>
+    <FamilyRecurringFinance view="investment" :key="'personal-sbi:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
    </template>
    <template #member-tools>
    <div class="finance-panel"><p class="help">個人の金融口座は本人が直接管理できます。家庭帳簿への入帳時だけ審査が必要です。</p>

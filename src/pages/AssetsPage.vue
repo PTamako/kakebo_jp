@@ -2,56 +2,41 @@
 import { computed, inject, ref } from 'vue'
 import SbiPortfolio from '../SbiPortfolio.vue'
 import PrepaidAssets from '../PrepaidAssets.vue'
-const props=defineProps({personalAssets:{type:Array,default:null},
+const props=defineProps({
+ personalAssets:{type:Array,default:null},
+ personalUserId:{type:String,default:''},
  openPersonalManagement:{type:Function,default:null},
- onCreatePersonalAccount:{type:Function,default:null}})
+ onCreatePersonalAccount:{type:Function,default:null},
+ personalPrepaidApi:{type:Function,default:null},
+ personalPortfolioApi:{type:Function,default:null},
+ onPersonalOpening:{type:Function,default:null},
+ onPersonalHistory:{type:Function,default:null}
+})
 const isPersonal=computed(()=>Array.isArray(props.personalAssets))
 const {tab,openPrepaidHistoryDetails,ledgerRevision,transferLoading,api,openCardSettingsFromWallet}=
  inject('kakeibo-page-context',{})
 const activeView = ref('wallets')
-const creating=ref(false),createOpen=ref(false),assetName=ref(''),createError=ref('')
-const createKind=computed(()=>activeView.value==='funds'?'securities':'prepaid')
-function beginPersonalAsset(){
- createOpen.value=true;assetName.value='';createError.value=''
-}
-async function savePersonalAsset(){
- const label=assetName.value.trim()
- if(!label||label.length>80||creating.value||!props.onCreatePersonalAccount)return
- creating.value=true;createError.value=''
- try{
-  await props.onCreatePersonalAccount(createKind.value,label)
-  assetName.value='';createOpen.value=false
- }catch(e){createError.value='口座を追加できませんでした：'+String(e.message||e)}
- finally{creating.value=false}
-}
 const selectView = value => { activeView.value = value }
 const portfolioSummary = ref(null)
 const prepaidSummary = ref(null)
 const onPortfolioSummary = value => { portfolioSummary.value = value }
 const onPrepaidSummary = value => { prepaidSummary.value = value }
 const openCardSettings = () => isPersonal.value?props.openPersonalManagement?.():openCardSettingsFromWallet()
+const openHistory=(name,mode)=>isPersonal.value?props.onPersonalHistory?.(name,mode):openPrepaidHistoryDetails(name,mode)
+const prepaidApi=(path,options)=>isPersonal.value?props.personalPrepaidApi?.(path,options):api(path,options)
+const portfolioApi=(path,options)=>isPersonal.value?props.personalPortfolioApi?.(path,options):api(path,options)
 const yen = value => value === null || !Number.isFinite(Number(value)) ? '—' : '¥'+Number(value).toLocaleString('ja-JP')
-const investment = computed(() => isPersonal.value?null:portfolioSummary.value?.valuation ?? null)
-const prepaid = computed(() => {
- if(!isPersonal.value)return prepaidSummary.value?.balance ?? null
- const items=props.personalAssets.filter(a=>a.account_kind==='prepaid'&&!a.is_archived)
- if(!items.length||items.some(a=>a.balance_jpy===null||!a.balance_verified))return null
- return items.reduce((sum,a)=>sum+Number(a.balance_jpy),0)
-})
-const latestUsage = computed(() => isPersonal.value?null:prepaidSummary.value?.latestUsage || null)
-const latestCharge = computed(() => isPersonal.value?null:prepaidSummary.value?.latestCharge || null)
+const investment = computed(() => portfolioSummary.value?.valuation ?? null)
+const prepaid = computed(()=>prepaidSummary.value?.balance ?? null)
+const latestUsage = computed(()=>prepaidSummary.value?.latestUsage || null)
+const latestCharge = computed(()=>prepaidSummary.value?.latestCharge || null)
 const shortDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value||'')) ? String(value).slice(5).replace('-', '/') : ''
 // This is a view of *tracked* wallets and funds, not a total net-worth figure.
-const pnl = computed(() => isPersonal.value?null:portfolioSummary.value?.pnl ?? null)
-const acquisition = computed(() => {
- if(!isPersonal.value)return portfolioSummary.value?.acquisition ?? null
- const holdings=props.personalAssets.filter(a=>a.account_kind==='securities'&&!a.is_archived)
- return holdings.length&&holdings.every(a=>a.sbi_confirmed_cost_jpy!==null)
-  ?holdings.reduce((sum,a)=>sum+Number(a.sbi_confirmed_cost_jpy),0):null
-})
-const pnlRatio = computed(() => isPersonal.value?null:portfolioSummary.value?.ratio ?? null)
-const fundCount = computed(() => isPersonal.value?props.personalAssets.filter(a=>a.account_kind==='securities'&&!a.is_archived).length:portfolioSummary.value?.fundCount ?? 0)
-const allocation = computed(() => isPersonal.value?[]:portfolioSummary.value?.allocation ?? [])
+const pnl = computed(()=>portfolioSummary.value?.pnl ?? null)
+const acquisition = computed(()=>portfolioSummary.value?.acquisition ?? null)
+const pnlRatio = computed(()=>portfolioSummary.value?.ratio ?? null)
+const fundCount = computed(()=>portfolioSummary.value?.fundCount ?? 0)
+const allocation = computed(()=>portfolioSummary.value?.allocation ?? [])
 const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '—' : (Number(value) >= 0 ? '+' : '−') + '¥' + Math.abs(Number(value)).toLocaleString('ja-JP')
 </script>
 <template>
@@ -126,42 +111,16 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
       <button type="button" role="tab" :aria-selected="activeView==='funds'" :class="{selected:activeView==='funds'}" @click="selectView('funds')">投資信託</button>
     </nav>
 
-    <div v-if="isPersonal" class="personal-asset-list" aria-label="本人の残高明細">
-      <div class="personal-asset-actions">
-       <button type="button" class="button-secondary" @click="beginPersonalAsset">
-        ＋ {{activeView==='funds'?'証券口座を追加':'電子マネーを追加'}}
-       </button>
-      </div>
-      <form v-if="createOpen" class="personal-asset-create" @submit.prevent="savePersonalAsset">
-       <label>{{activeView==='funds'?'証券口座名':'電子マネー名'}}
-        <input v-model="assetName" maxlength="80" required
-         :placeholder="activeView==='funds'?'例：SBI証券':'例：Suica'"/>
-       </label>
-       <div class="personal-asset-create-actions">
-        <button type="submit" :disabled="creating||!assetName.trim()">追加</button>
-        <button type="button" :disabled="creating" @click="createOpen=false">キャンセル</button>
-       </div>
-       <p v-if="createError" role="alert">{{createError}}</p>
-      </form>
-      <p class="personal-asset-hint">本人の金融口座だけ表示します。未核証の銀行残高や券商市值は「—」のままです。</p>
-      <div v-for="a in personalAssets.filter(a=>!a.is_archived&&
-       (activeView==='wallets'?a.account_kind!=='securities':a.account_kind==='securities'))"
-       :key="a.account_id" class="personal-asset-row">
-       <strong>{{a.label}}</strong>
-       <span v-if="a.account_kind==='prepaid'">{{yen(a.balance_jpy)}}</span>
-       <span v-else-if="a.account_kind==='credit_card'">請求 {{yen(a.credit_liability_jpy)}}</span>
-       <span v-else-if="a.account_kind==='points'">{{a.balance_units??'—'}} pt</span>
-       <span v-else-if="a.account_kind==='securities'">取得 {{yen(a.sbi_confirmed_cost_jpy)}}</span>
-       <span v-else>残高 —</span>
-       <small v-if="a.balance_note">{{a.balance_note}}</small>
-      </div>
-      <p v-if="!personalAssets.filter(a=>!a.is_archived&&
-       (activeView==='funds'?a.account_kind==='securities':a.account_kind!=='securities')).length"
-        class="personal-asset-hint">本人の{{activeView==='funds'?'証券口座':'電子マネー'}}はまだありません。上の「＋」から追加できます。</p>
-    </div>
-    <SbiPortfolio v-else :api="api" :transfer-loading="transferLoading" :active-view="activeView" :refresh-key="ledgerRevision" @summary="onPortfolioSummary">
+    <SbiPortfolio :key="isPersonal?'funds:'+personalUserId:'funds:owner'"
+     :member-mode="isPersonal" :api="portfolioApi"
+     :transfer-loading="transferLoading" :active-view="activeView"
+     :refresh-key="ledgerRevision" @summary="onPortfolioSummary">
       <template #before-holdings>
-        <PrepaidAssets :api="api" :active="true" :revision="ledgerRevision" @summary="onPrepaidSummary" @open-card-settings="openCardSettings" @open-history="openPrepaidHistoryDetails" />
+        <PrepaidAssets :key="isPersonal?'wallet:'+personalUserId:'wallet:owner'"
+         :api="prepaidApi" :member-mode="isPersonal"
+         :on-member-opening="onPersonalOpening" :active="true"
+         :revision="ledgerRevision" @summary="onPrepaidSummary"
+         @open-card-settings="openCardSettings" @open-history="openHistory"/>
       </template>
     </SbiPortfolio>
   </section>

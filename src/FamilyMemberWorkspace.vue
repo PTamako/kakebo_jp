@@ -12,7 +12,7 @@ import {parseEntries,parseReceipt,ocrImage} from './parse.js'
 import {compressReceiptImage} from './receipt-image.js'
 import EntryInputPage from './EntryInputPage.vue'
 import {ICON_LIBRARY} from './icon-library.js'
-import {encryptBackupBlob} from './backup-encryption.js'
+import {encryptBackupBlob,decryptBackupBlob} from './backup-encryption.js'
 import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
@@ -20,6 +20,7 @@ import BottomNavigation from './BottomNavigation.vue'
 import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
 import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
+import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import LedgerEntryContent from './LedgerEntryContent.vue'
@@ -38,6 +39,7 @@ const emit=defineEmits(['logout','theme-change'])
 const tab=ref('add')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
+const memberMerchantRules=ref([]),memberRuleError=ref('')
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
 const year=ref(month.value.slice(0,4))
 const busy=ref(false),error=ref(''),label=ref(''),kind=ref('cash')
@@ -75,17 +77,17 @@ async function saveCard(payload){
     account_kind:kind,expected_user_id:user,
     closing_day:payload.closingDay===undefined?null:payload.closingDay}))
    if(created.owner_user_id!==user||created.ledger_changed!==false)
-    throw Error('卡片归属验证失败')
+    throw Error('カードの所有者を確認できません')
    selectedCardId.value=created.account_id
   }else{
    const a=selectedCard.value
-   if(!a||a.owner_user_id!==user||a.origin!=='member_created')throw Error('只能编辑本人的卡片')
+   if(!a||a.owner_user_id!==user||a.origin!=='member_created')throw Error('本人のカードのみ編集できます')
    if((payload.sourceType==='prepaid')!==(a.account_kind==='prepaid'))
-    throw Error('账户类型更换尚不支持，请创建另一张个人卡片')
+    throw Error('カードの種類は変更できません。新しい個人カードを追加してください')
    const changes={label:payload.name,version:a.version,expected_user_id:user}
    if(payload.closingDay!==undefined)changes.closing_day=payload.closingDay
    const updated=await api('accounts/'+a.account_id,request(changes,'PATCH'))
-   if(updated.ledger_changed!==false)throw Error('卡片更新未完成验证')
+   if(updated.ledger_changed!==false)throw Error('カードの更新結果を確認できません')
   }
   if(revision!==epoch||user!==props.user.user_id)return
   cardMode.value='';await refresh()
@@ -95,20 +97,80 @@ async function saveCard(payload){
 async function cardDanger(action,name){
  const a=selectedCard.value
  if(!a||a.owner_user_id!==props.user.user_id||a.label!==name)
-  throw Error('账户身份已改变')
+  throw Error('口座の所有者が変更されました')
  if(action==='archive'){
   await modify(a,{is_archived:true});cardMode.value='';return
  }
- throw Error('永久删除卡片与余额需要独立核对，目前只能归档')
+ throw Error('カードと残高の完全削除には個別の確認が必要です。現在はアーカイブのみ利用できます')
 }
 
 let epoch=0,alive=true
-const kinds=[['credit_card','信用卡'],['prepaid','储值卡'],['cash','现金'],
- ['bank','银行'],['points','积分'],['securities','证券'],['other','其他']]
-const kindLabel=x=>kinds.find(k=>k[0]===x)?.[1]||'账户'
+const kinds=[['credit_card','クレジットカード'],['prepaid','プリペイドカード'],['cash','現金'],
+ ['bank','銀行'],['points','ポイント'],['securities','証券'],['other','その他']]
+const kindLabel=x=>kinds.find(k=>k[0]===x)?.[1]||'口座'
 const yen=n=>n===null||n===undefined?'—':'¥'+Number(n).toLocaleString('ja-JP')
 const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.user.user_id))
 const memberPaymentOptions=computed(()=>buildMemberPaymentChoices(myAccounts.value,sharedCards.value))
+function memberRuleFor(merchant){
+ const text=String(merchant||'').normalize('NFKC').trim().toLowerCase()
+ if(!text)return null
+ return [...memberMerchantRules.value].sort((a,b)=>b.keyword.length-a.keyword.length)
+   .find(r=>text.includes(r.keyword.normalize('NFKC').toLowerCase()))||null
+}
+function applyMemberMerchantRule(form){
+ if(form?.type!=='expense')return
+ const rule=memberRuleFor(form.merchant)
+ if(!rule)return
+ if(rule.category&&memberExpenseCategoryChoices.value.includes(rule.category))form.category=rule.category
+ if(rule.payment_source&&memberPaymentOptions.value.some(c=>c.value===rule.payment_source))
+  form.paymentSource=rule.payment_source
+}
+async function loadMemberMerchantRules(){
+ const actor=props.user.user_id
+ try{
+  const result=await api('member-merchant-rules')
+  if(actor!==props.user.user_id)return
+  if(result.scope!=='personal'||result.viewer_user_id!==actor||!Array.isArray(result.items))
+   throw Error('本人のルールの取得範囲が一致しません')
+  memberMerchantRules.value=result.items
+  memberRuleError.value=''
+ }catch(e){if(actor===props.user.user_id)memberRuleError.value='店舗ルールを読み込めません：'+e.message}
+}
+async function saveMemberMerchantRule({keyword,oldCategory,oldPayment,expectedVersion,category,paymentSource}){
+ const actor=props.user.user_id
+ const previous=memberMerchantRules.value.find(r=>r.keyword===keyword)
+ if((previous?.version||0)!==expectedVersion||
+    (previous?.category||'')!==oldCategory||(previous?.payment_source||'')!==oldPayment)
+  throw Error('別の端末でルールが変更されました。更新してください')
+ if(category&&!memberRuleCategoryOptions.value.includes(category)&&category!==(previous?.category||''))throw Error('カテゴリを確認してください')
+ if(paymentSource&&!memberPaymentOptions.value.some(o=>o.value===paymentSource))
+  throw Error('支払方法を確認してください')
+ if(!category&&!paymentSource){
+  if(!previous)throw Error('空のルールは作成できません')
+  await api('member-merchant-rules',request({
+   expected_user_id:actor,expected_version:previous.version,keyword
+  },'DELETE'))
+ }else{
+  await api('member-merchant-rules',request({
+   expected_user_id:actor,expected_version:expectedVersion,
+   keyword,category,payment_source:paymentSource
+  }))
+ }
+ await loadMemberMerchantRules()
+ if(actor!==props.user.user_id)throw Error('アカウントが変更されました')
+}
+async function rememberMemberRule(record){
+ const keyword=String(record.merchant||'').trim()
+ if(keyword.length<2)return
+ const previous=memberMerchantRules.value.find(r=>r.keyword===keyword)
+ const category=record.bindRule?record.category:(previous?.category||'')
+ const paymentSource=record.bindPaymentRule?record.paymentSource:(previous?.payment_source||'')
+ if(!category&&!paymentSource)return
+ await saveMemberMerchantRule({keyword,oldCategory:previous?.category||'',
+  oldPayment:previous?.payment_source||'',expectedVersion:previous?.version||0,
+  category,paymentSource})
+}
+
 const selectedEntryType=ref('all')
 const monthlyReport=ref(null),annualReport=ref(null),selectedYear=ref(Number(year.value))
 const sharedMutationRef=ref(null)
@@ -164,12 +226,12 @@ function recognizeMemberText(fromImage=false){
   memberEntryError.value='資産移動を含む明細は支出として保存できません。資産移動メニューで処理してください。';return
  }
  const drafts=parsed.filter(x=>x&&Number.isSafeInteger(Number(x.amount))&&Number(x.amount)>0)
-  .map(x=>({...newEntry(),type:x.type==='income'?'income':'expense',
+  .map(x=>{const draft={...newEntry(),type:x.type==='income'?'income':'expense',
    amount:Number(x.amount),date:String(x.date||newEntry().date),
    time:String(x.time||''),merchant:String(x.merchant||''),
    category:String(x.category||'日用品'),note:String(x.note||''),
    paymentSource:memberPaymentOptions.value.some(c=>c.value===(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value))
-    ?(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value):'cash'}))
+    ?(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value):'cash'};applyMemberMerchantRule(draft);return draft})
  if(!drafts.length){memberEntryError.value='解析できる金額がありません。原文と金額を確認してください。';return}
  if(memberEntries.value.length&& !window.confirm('現在の未保存記録を読み取り結果で置き換えますか？'))return
  memberEntries.value=drafts
@@ -304,6 +366,9 @@ async function submitMemberEntry(){
     const result=await sharedMutationRef.value?.submitEntry(record)
     if(!result?.proposalId)throw Error('申請の受付を確認できません')
    }
+   if(record.type==='expense'&&(record.bindRule||record.bindPaymentRule)){
+    try{await rememberMemberRule(record)}catch(e){memberRuleError.value='店舗ルールの保存に失敗しました：'+e.message}
+   }
    // Remove one draft only after the authenticated backend confirmed receipt.
    // A later failure leaves all unsent rows editable, not silently discarded.
    memberEntries.value.shift();sent++
@@ -375,7 +440,7 @@ async function moreEntries(){
  try{
   const next=await api('shared/entries?limit=100&month='+encodeURIComponent(month.value)+'&offset='+pageOffset.value)
   if(user!==props.user.user_id||ticket!==epoch)return
-  if(next.ledger_scope!=='household')throw Error('家庭账目范围验证失败')
+  if(next.ledger_scope!=='household')throw Error('家庭明細のアクセス範囲を確認できません')
   const current=new Set(sharedEntries.value.map(x=>x.id))
   sharedEntries.value.push(...(next.items||[]).filter(x=>!current.has(x.id)))
   pageOffset.value=next.next_offset
@@ -509,12 +574,13 @@ async function refresh(){
   if(!alive||ticket!==epoch||user!==props.user.user_id)return
   if(a.account_scope!=='personal'||b.scope!=='personal'||b.viewer_user_id!==user||
    c.ledger_scope!=='household'||d.ledger_scope!=='household'||e.ledger_scope!=='household')
-   throw Error('账本权限范围核验失败')
-  if((a.items||[]).some(x=>x.owner_user_id!==user))throw Error('账户归属不一致')
+   throw Error('帳簿のアクセス範囲を確認できません')
+  if((a.items||[]).some(x=>x.owner_user_id!==user))throw Error('口座の所有者が一致しません')
   accounts.value=a.items||[];assets.value=b.accounts||[]
   cardSharingError.value=f.share_error||''
   sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
+  await loadMemberMerchantRules()
   monthlyReport.value=d;annualReport.value=e
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
   yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
@@ -551,7 +617,7 @@ async function createAccount(type,name){
 }
 async function modify(a,changes){
  if(busy.value||a.owner_user_id!==props.user.user_id||a.origin!=='member_created')return
- if(changes.is_archived===true&&!confirm('归档该账户？原有记录不会删除。'))return
+ if(changes.is_archived===true&&!confirm('この口座をアーカイブしますか？記録は削除されません。'))return
  const ticket=epoch,user=props.user.user_id;busy.value=true;error.value=''
  try{
   const r=await api('accounts/'+encodeURIComponent(a.account_id),request(
@@ -566,23 +632,101 @@ function edit(a){if(a.owner_user_id!==props.user.user_id||a.origin==='legacy')re
 const personalBackupBusy=ref(false),personalBackupMessage=ref('')
 async function exportPersonalAccounts(){
  if(personalBackupBusy.value)return
- const password=window.prompt('本人の口座設定を暗号化して保存します。10文字以上の保存用パスワードを入力してください。')
+ const password=window.prompt('本人の設定を暗号化して保存します。10文字以上のパスワードを入力してください。')
  if(password===null)return
  if(password.length<10){personalBackupMessage.value='10文字以上のパスワードが必要です';return}
  personalBackupBusy.value=true;personalBackupMessage.value=''
  try{
   const actor=props.user.user_id
-  const record={format:'kakeibo-member-account-settings-v1',exported_at:new Date().toISOString(),
-   owner_user_id:actor,scope:'personal_account_settings_only',
-   accounts:myAccounts.value.filter(a=>a.owner_user_id===actor)}
+  const [accountsResult,rulesResult,fixedResult]=await Promise.all([
+   api('accounts'),api('member-merchant-rules'),api('member-fixed-costs')
+  ])
+  if(actor!==props.user.user_id)throw Error('バックアップ中にアカウントが変更されました')
+  if(accountsResult.account_scope!=='personal'||
+   rulesResult.scope!=='personal'||rulesResult.viewer_user_id!==actor||
+   fixedResult.scope!=='personal'||!Array.isArray(fixedResult.items)||
+   accountsResult.items?.some(a=>a.owner_user_id!==actor)||
+   fixedResult.items.some(p=>p.owner_user_id!==actor))
+   throw Error('本人の設定を安全に取得できません')
+  const record={format:'kakeibo-member-personal-settings-v2',exported_at:new Date().toISOString(),
+   owner_user_id:actor,scope:'personal_settings_only',
+   accounts:accountsResult.items||[],merchant_rules:rulesResult.items||[],
+   fixed_costs:fixedResult.items||[],categories:memberCategoryRecords.value}
   const blob=await encryptBackupBlob(new Blob([JSON.stringify(record)],{type:'application/json'}),password)
-  if(props.user.user_id!==actor)throw Error('エクスポート中にアカウントが変更されました')
+  if(props.user.user_id!==actor)throw Error('保存中にアカウントが変更されました')
   const url=URL.createObjectURL(blob),link=document.createElement('a')
   link.href=url;link.download='kakeibo-personal-settings-'+new Date().toISOString().slice(0,10)+'.enc'
   document.body.appendChild(link);link.click();link.remove()
   setTimeout(()=>URL.revokeObjectURL(url),60000)
-  personalBackupMessage.value='本人の口座設定のみ暗号化して保存しました。家族の記録・領収書・復元データは含まれません。'
+  personalBackupMessage.value='本人のカード・銀行・固定費・店舗ルール・カテゴリの設定を暗号化して保存しました。家庭共有明細や他人のデータは含まれません。'
  }catch(e){personalBackupMessage.value='保存できませんでした：'+e.message}
+ finally{personalBackupBusy.value=false}
+}
+async function importPersonalBackup(event){
+ const file=event.target?.files?.[0]
+ if(event.target)event.target.value=''
+ if(!file||personalBackupBusy.value)return
+ if(file.size>75*1024*1024){personalBackupMessage.value='バックアップが大きすぎます';return}
+ const password=window.prompt('暗号化バックアップのパスワードを入力してください。')
+ if(password===null)return
+ personalBackupBusy.value=true;personalBackupMessage.value=''
+ try{
+  const actor=props.user.user_id
+  const decrypted=await decryptBackupBlob(file,password)
+  if(decrypted.format!=='json')throw Error('本人用JSONバックアップを選択してください')
+  const data=JSON.parse(await decrypted.blob.text())
+  if(!['kakeibo-member-account-settings-v1','kakeibo-member-personal-settings-v2'].includes(data?.format)||
+   data.owner_user_id!==actor||!['personal_settings_only','personal_account_settings_only'].includes(data.scope)||
+   !Array.isArray(data.accounts)||data.accounts.some(a=>a.owner_user_id!==actor))
+   throw Error('このバックアップは別のユーザーのものか、形式が一致しません')
+  if(data.format==='kakeibo-member-account-settings-v1'){
+   personalBackupMessage.value='旧形式は口座設定の保存専用です。口座と残高の自動復元は行いません。'
+   return
+  }
+  if(!Array.isArray(data.merchant_rules)||data.merchant_rules.length>200||
+     !Array.isArray(data.categories)||data.categories.length>80||
+     !Array.isArray(data.fixed_costs)||data.fixed_costs.some(p=>p.owner_user_id!==actor))
+   throw Error('設定の件数や所有者を確認できません')
+  const existing=await api('member-merchant-rules')
+  if(existing.scope!=='personal'||existing.viewer_user_id!==actor)
+   throw Error('本人のルールを確認できません')
+  const existingKeys=new Set((existing.items||[]).map(r=>r.keyword))
+  const recoverable=data.merchant_rules.filter(r=>r&&typeof r.keyword==='string'&&
+   r.keyword.trim().length>=2&&r.keyword.length<=120&&
+   typeof r.category==='string'&&r.category.length<=100&&
+   typeof r.payment_source==='string'&&r.payment_source.length<=160&&
+   (r.category||r.payment_source)&&!existingKeys.has(r.keyword))
+  if(!confirm('本人の未登録店舗ルール'+recoverable.length+
+     '件とカテゴリ設定を追加しますか？既存のルール、カード、残高、固定費、共有明細は上書きしません。'))return
+  if(actor!==props.user.user_id)throw Error('アカウントが変更されました')
+  let categoriesAdded=0,rulesAdded=0,rulesSkipped=0
+  for(const c of data.categories){
+   if(!c||!['expense','income'].includes(c.type)||typeof c.name!=='string'||
+      !c.name.trim()||c.name.length>20||typeof c.icon!=='string')continue
+   if(memberCategoryRecords.value.some(x=>x.type===c.type&&x.name===c.name))continue
+   if(memberCategoryRecords.value.length>=80)break
+   memberCategoryRecords.value.push({type:c.type,name:c.name,icon:c.icon});categoriesAdded++
+  }
+  localStorage.setItem('kakeibo-personal-categories:'+actor,
+    JSON.stringify(memberCategoryRecords.value))
+  for(const r of recoverable){
+   if(actor!==props.user.user_id)throw Error('アカウントが変更されました')
+   if(r.payment_source&&!memberPaymentOptions.value.some(c=>c.value===r.payment_source)){
+    rulesSkipped++;continue
+   }
+   try{
+    await api('member-merchant-rules',request({
+     expected_user_id:actor,expected_version:0,keyword:r.keyword,
+     category:r.category,payment_source:r.payment_source
+    }))
+    rulesAdded++
+   }catch{rulesSkipped++}
+  }
+  await loadMemberMerchantRules()
+  personalBackupMessage.value='復元：カテゴリ'+categoriesAdded+'件、店舗ルール'+rulesAdded+
+   '件を追加。既存設定・口座・残高・固定費は変更していません。'+
+   (rulesSkipped?'権限切れ・重複等で'+rulesSkipped+'件のルールをスキップしました。':'')
+ }catch(e){personalBackupMessage.value='復元できませんでした：'+e.message}
  finally{personalBackupBusy.value=false}
 }
 
@@ -591,6 +735,7 @@ watch(()=>props.user.user_id,()=>{pendingPaidEntry=null;memberEntries.value=[];m
 watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
 onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
+ memberMerchantRules.value=[];memberRuleError.value='';
  document.removeEventListener('visibilitychange',foreground)})
 // The original EntryInputPage renders for both identities. All writes here
 // continue through the authenticated member-specific HomeFlow approval adapter.
@@ -633,6 +778,7 @@ const memberExpenseCategoryChoices=computed(()=>[...new Set([
 const memberIncomeCategoryChoices=computed(()=>[...new Set([
  ...entryIncomeCategories,...memberCategoryRecords.value.filter(x=>x.type==='income').map(x=>x.name)
 ])])
+const memberRuleCategoryOptions=computed(()=>[...new Set([...memberExpenseCategoryChoices.value,...memberIncomeCategoryChoices.value])])
 function clearMemberDraft(){
  if(memberEntries.value.length||memberRawText.value.trim()){
   if(!window.confirm('未保存の下書きを破棄しますか？'))return
@@ -661,7 +807,7 @@ provide('kakeibo-entry-input',{
  selectDraftReceipt:()=>{},pendingReceiptImage:memberReceiptImage,
  pendingReceiptFileName:memberReceiptFileName,receiptSaveError:memberEntryError,
  setEntryType:(f,type)=>setMemberEntryType(type,f),
- applyMerchantPayment:()=>{},
+ applyMerchantPayment:applyMemberMerchantRule,
  manualPayment:(f,source)=>{f.paymentSource=source},
  onImage:memberScanImage,addBlank:()=>addMemberEntry(),saveAll:submitMemberEntry,
  receiptEnabled:computed(()=>false),
@@ -723,6 +869,12 @@ watch(()=>props.user.user_id,loadMemberCategories)
      :key="'personal-sbi:'+user.user_id" :user-id="user.user_id"
      :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
    </template>
+   <template #member-rules>
+     <p v-if="memberRuleError" role="alert" class="member-alert">{{memberRuleError}}</p>
+     <MobileMerchantRulesPanel :rules="memberMerchantRules"
+       :categories="memberRuleCategoryOptions" :payment-sources="memberPaymentOptions"
+       :category-label="x=>x" :on-save="saveMemberMerchantRule"/>
+   </template>
    <template #member-jobs>
      <p class="help">本人の定期設定は「固定費」「積立」に保存されます。金融取引は HomeFlow の承認と実際の入出金証拠が必要です。</p>
      <button type="button" class="button-secondary" :disabled="busy" @click="refresh">
@@ -732,22 +884,27 @@ watch(()=>props.user.user_id,loadMemberCategories)
    </template>
    <template #member-privacy>
      <div class="device-privacy-section">
-       <div class="device-privacy-row"><strong>ログイン状態の保存</strong>
-         <span class="help">HomeFlow で管理</span></div>
-       <p class="help">この端末のログインは本人の HomeFlow 認証情報で復元します。家族のカード情報や本人の金融データは端末に保存しません。</p>
+       <div class="device-privacy-row"><strong>ログイン状態の保存</strong><span class="help">HomeFlow で管理</span></div>
+       <p class="help">ログイン状態は本人の HomeFlow 認証で管理しています。家族のカード・口座データを端末に保存しません。</p>
+       <button type="button" class="button-secondary" @click="emit('logout')">この端末からログアウト</button>
      </div>
      <div class="device-privacy-section">
-       <strong>保存済みレシート画像</strong>
-       <p class="help">本人の画像は端末OCRで読み取ります。所有権が確認できない家庭共有画像の一括削除はできません。</p>
+       <div class="device-privacy-row"><strong>保存済みレシート画像</strong><span class="help">端末内保存なし</span></div>
+       <p class="help">本人の OCR 画像は端末内で読み取り、一括保存しません。共有レシートは所有権を確認せず削除できません。</p>
      </div>
    </template>
    <template #member-backup>
-     <p class="help">本人のカード・銀行などの口座設定を暗号化して保存します。管理者の私有証券情報や家族全員のレシートは含めません。</p>
+    <p class="help">本人のカード・銀行・固定費・カテゴリ・店舗ルールの設定を暗号化して保存します。家庭共有明細や他人の情報は含めません。</p>
+    <div class="member-backup-actions">
      <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportPersonalAccounts">
-      {{personalBackupBusy?'暗号化中…':'本人の設定を暗号化して保存'}}
+      {{personalBackupBusy?'処理中…':'本人の設定を暗号化して保存'}}
      </button>
-     <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
-     <p class="help">バックアップを使った自動復元は本人の所有権と重複検証が完了するまで実行しません。</p>
+     <label class="member-backup-upload button-secondary">バックアップを選択
+      <input type="file" accept=".enc" :disabled="personalBackupBusy" @change="importPersonalBackup"/>
+     </label>
+    </div>
+    <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
+    <p class="help">復元は本人の未登録店舗ルール・カテゴリのみ追加します。口座・残高・固定費・家庭明細の自動上書きは行いません。</p>
    </template>
    <template #member-duplicates>
      <p v-if="!memberDuplicateGroups.length" class="help">現在表示中の家庭明細に同日・同額・同店の重複候補はありません。</p>
@@ -807,4 +964,11 @@ watch(()=>props.user.user_id,loadMemberCategories)
 
 .member-shell :deep(.bottom-nav){z-index:30}
 @media(max-width:360px){.summary-grid{grid-template-columns:1fr}}
+</style>
+
+<style scoped>
+.member-backup-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.member-backup-actions>button,.member-backup-upload{min-height:46px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13px;font-weight:700;border:1px solid var(--line,#ecdfe3);border-radius:12px;background:var(--tint,#fff1f5);color:var(--ink,#473d46);padding:8px}
+.member-backup-upload input{display:none}
+@media(max-width:360px){.member-backup-actions{grid-template-columns:1fr}}
 </style>

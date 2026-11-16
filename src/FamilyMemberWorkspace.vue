@@ -15,7 +15,7 @@ import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
 import BottomNavigation from './BottomNavigation.vue'
-import AppTopbar from './AppTopbar.vue'
+import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
 import CardManagementControls from './CardManagementControls.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
@@ -563,26 +563,21 @@ watch(()=>props.user.user_id,loadMemberCategories)
 </script>
 <template>
  <div class="member-shell">
-  <AppTopbar :identity="user" :theme="theme" :themes="themes"
-    @change-theme="emit('theme-change',$event)" @logout="emit('logout')" />
   <FamilySharedMutationRequests ref="sharedMutationRef" headless
    :key="'member-ledger-submit:'+user.user_id"
    :user-id="user.user_id" :household-id="user.household_id" />
   <section v-if="error" class="member-alert" role="alert">{{error}}
-   <button type="button" @click="refresh">再试一次</button>
+   <button type="button" @click="refresh">再試行</button>
   </section>
-  <section v-if="tab==='list'" class="member-page">
-   <LedgerPage member />
-  </section>
-  <StatisticsPage v-else-if="tab==='stat'" />
-  <EntryInputPage v-else-if="tab==='add'" />
-    <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
-     :on-create-personal-account="createAccount"
-     :open-personal-management="()=>{tab='finance'}" />
-  <ManagementPage v-else-if="tab==='finance'" class="member-page"
-    :member-view="true" :member-busy="busy" :member-error="error"
-    :member-status="'本人のカード・残高・固定費 · '+myAccounts.length+'口座'"
-    :member-refresh="refresh" :api="api">
+  <OriginalKakeiboPages :identity="user" :theme="theme" :themes="themes"
+   :active-tab="tab" :member="true" :personal-assets="assets"
+   :on-create-personal-account="createAccount"
+   :on-open-personal-management="()=>{tab='finance'}"
+   :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
+    memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
+    memberRefresh:refresh,api}"
+   @update:active-tab="tab=$event" @ledger-open="tab='list'"
+   @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    <template #member-cards>
     <section class="finance-panel">
      <h2>支払方法・カード管理</h2>
@@ -637,8 +632,7 @@ watch(()=>props.user.user_id,loadMemberCategories)
      <p class="help">家庭帳簿の削除と復元は管理者審査が必要です。</p>
     </details>
    </template>
-  </ManagementPage>
-  <BottomNavigation :active-tab="tab" @change="next=>tab=next" />
+  </OriginalKakeiboPages>
  </div>
 </template>
 <style scoped>

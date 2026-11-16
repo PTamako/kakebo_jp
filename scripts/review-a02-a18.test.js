@@ -55,13 +55,13 @@ test('A04/A07/A08: v4 SBI archive still accepts v1-v3 backups and guards restore
 })
 
 test('A05/A09/A10/A11/A12: filters, privacy, quota, local imagery and due transfers',()=>{
-  const app=read('src/App.vue')+'\n'+read('src/pages/AssetsPage.vue')
+  const app=read('src/App.vue')+'\n'+read('src/OcrCapturePanel.vue')+'\n'+read('src/pages/AssetsPage.vue')
   const api=read('functions/api/[[path]].js')
   assert.match(app,/detailFilter\.value\.paymentMethod \|\| ''/)
   assert.match(app,/setRememberDevice\(/)
   assert.match(app,/function clearLocalDraft\(/)
   assert.match(read('functions/api/ai-quota.js'),/ai_ocr_daily_usage/)
-  assert.match(app,/本日のAI残り回数：\{\{aiQuota\.remaining\}\}\/\{\{aiQuota\.limit\}\}回/)
+  assert.match(app,/本日のAI残り回数：\{\{quota\.remaining\}\}\/\{\{quota\.limit\}\}回/)
   assert.doesNotMatch(app,/cdn2\.cdnstep\.com/)
   assert.doesNotMatch(app,/api\('transfers\/process-due',\{method:'POST'\}\)/)
   assert.match(read('workers/fund-nav-cron.js'),/applyDueSbiTransfers\(env\.DB, today\)/)

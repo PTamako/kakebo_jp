@@ -13,6 +13,7 @@ const props=defineProps({
 const open=ref(false), trigger=ref(null), closeButton=ref(null)
 const query=ref(''), limit=ref(8), activeKeyword=ref('')
 const category=ref(''), payment=ref(''), saving=ref(false), error=ref('')
+const creating=ref(false), newKeyword=ref('')
 const themeStyle=ref({})
 let previousOverflow='',handleStartY=null
 function handleTouchStart(event){handleStartY=event.changedTouches?.[0]?.clientY??null}
@@ -35,10 +36,11 @@ const categoryOptions=computed(()=>[
 ])
 const paymentOptions=computed(()=>[
   {value:'',label:'ルールなし'},
-  ...props.paymentSources.map(value=>({value,label:value})),
-  ...(payment.value&&!props.paymentSources.includes(payment.value)?[{value:payment.value,label:payment.value}]:[])
+  ...props.paymentSources.map(source=>typeof source==='string'?{value:source,label:source}:source),
+  ...(payment.value&&!props.paymentSources.some(source=>(typeof source==='string'?source:source.value)===payment.value)?[{value:payment.value,label:payment.value}]:[])
 ])
-const hasChanges=computed(()=>selected.value&&(category.value!==selected.value.category||payment.value!==selected.value.payment_source))
+const hasChanges=computed(()=>creating.value ? (newKeyword.value.trim().length>=2&&(category.value!==''||payment.value!=='')) :
+  selected.value&&(category.value!==selected.value.category||payment.value!==selected.value.payment_source))
 function openPanel(){
   if(open.value)return
   const css=getComputedStyle(trigger.value)
@@ -49,6 +51,8 @@ function clearPanelDraft(){
   query.value=''
   limit.value=8
   activeKeyword.value=''
+  creating.value=false
+  newKeyword.value=''
   category.value=''
   payment.value=''
   error.value=''
@@ -64,7 +68,11 @@ function closePanel(){
   if(saving.value)return
   finishClosePanel()
 }
+function beginNewRule(){
+  creating.value=true;newKeyword.value='';activeKeyword.value='';category.value='';payment.value='';error.value=''
+}
 function edit(rule){
+  creating.value=false
   activeKeyword.value=rule.keyword
   category.value=rule.category||''
   payment.value=rule.payment_source||''
@@ -73,17 +81,22 @@ function edit(rule){
 function back(){
   if(saving.value)return
   activeKeyword.value=''
+  newKeyword.value=''
+  creating.value=false
   category.value=''
   payment.value=''
   error.value=''
   nextTick(()=>closeButton.value?.focus({preventScroll:true}))
 }
 async function save(){
-  if(!selected.value||!hasChanges.value||saving.value)return
+  if(!hasChanges.value||saving.value||(!creating.value&&!selected.value))return
   saving.value=true;error.value=''
   try{
-    await props.onSave({keyword:selected.value.keyword,oldCategory:selected.value.category||'',
-      oldPayment:selected.value.payment_source||'',category:category.value,paymentSource:payment.value})
+    await props.onSave({keyword:creating.value?newKeyword.value.trim():selected.value.keyword,
+      oldCategory:creating.value?'':selected.value.category||'',
+      oldPayment:creating.value?'':selected.value.payment_source||'',
+      expectedVersion:creating.value?0:Number(selected.value.version||0),
+      category:category.value,paymentSource:payment.value})
     // A successful save finishes the operation; do not leave the full sheet
     // open on its list or keep an edited category/payment in component memory.
     finishClosePanel()
@@ -138,17 +151,18 @@ watch(query,()=>{limit.value=8})
         <section class="merchant-sheet" role="dialog" aria-modal="true" aria-label="店舗ルール管理" @keydown="trap">
           <div class="merchant-sheet-handle-area" aria-hidden="true" @touchstart.passive="handleTouchStart" @touchend.passive="handleTouchEnd"><span class="merchant-sheet-handle"></span></div>
           <header class="merchant-sheet-heading">
-            <button v-if="activeKeyword" type="button" class="merchant-sheet-back" :disabled="saving" aria-label="一覧に戻る" @click="back">戻る</button>
-            <h2>{{activeKeyword ? '店舗ルールを編集' : '店舗ルール管理'}}</h2>
+            <button v-if="activeKeyword||creating" type="button" class="merchant-sheet-back" :disabled="saving" aria-label="一覧に戻る" @click="back">戻る</button>
+            <h2>{{creating ? '店舗ルールを追加' : activeKeyword ? '店舗ルールを編集' : '店舗ルール管理'}}</h2>
             <button ref="closeButton" type="button" class="merchant-sheet-close" :disabled="saving" @click="closePanel">閉じる</button>
           </header>
-          <template v-if="!activeKeyword">
+          <template v-if="!activeKeyword&&!creating">
             <div class="merchant-sheet-search">
               <input v-model="query" type="search" inputmode="search" autocomplete="off"
                 placeholder="店舗名・カテゴリ・カードを日本語で検索" aria-label="店舗ルールを日本語で検索" />
               <span>{{matching.length}}件</span>
             </div>
             <div class="merchant-sheet-list">
+              <button type="button" class="merchant-sheet-more" @click="beginNewRule">＋ 新しい店舗ルールを追加</button>
               <p v-if="!rules.length" class="merchant-sheet-empty">記憶した店舗ルールはありません。</p>
               <p v-else-if="!matching.length" class="merchant-sheet-empty">該当するルールはありません。</p>
               <button v-for="rule in displayed" :key="rule.keyword" type="button"
@@ -162,7 +176,8 @@ watch(query,()=>{limit.value=8})
             </div>
           </template>
           <div v-else class="merchant-sheet-editor">
-            <strong class="merchant-sheet-shop">{{activeKeyword}}</strong>
+            <label v-if="creating"><span>店舗名・キーワード</span><input v-model="newKeyword" type="text" maxlength="120" placeholder="例：サンドラッグ" /></label>
+            <strong v-else class="merchant-sheet-shop">{{activeKeyword}}</strong>
             <label><span>カテゴリ</span><MobileChoiceSheet v-model="category" :options="categoryOptions" label="カテゴリ" /></label>
             <label><span>支払方法</span><MobileChoiceSheet v-model="payment" :options="paymentOptions" label="支払方法" /></label>
             <p v-if="!category||!payment" class="merchant-sheet-note">「ルールなし」は、その項目の自動設定を解除します。過去の記帳明細は変更しません。</p>
@@ -205,6 +220,7 @@ watch(query,()=>{limit.value=8})
 .merchant-sheet-empty{padding:25px 12px;text-align:center;font-size:14px;color:var(--muted,#7c828b)}
 .merchant-sheet-editor{display:grid;gap:17px;padding:4px 16px 16px;overflow:auto;min-height:0;overscroll-behavior:contain}
 .merchant-sheet-editor label{display:grid;gap:7px;min-width:0;font-size:13px;font-weight:700;color:var(--muted,#777)}
+.merchant-sheet-editor input{min-height:44px;padding:8px 12px;border:1px solid var(--line,#e3e5e9);border-radius:10px;background:var(--card,#fff);color:var(--ink,#333);font-size:16px}
 .merchant-sheet-shop{font-size:16px;overflow-wrap:anywhere}
 .merchant-sheet-note{font-size:12px;line-height:1.5;color:var(--muted,#777);margin:0}
 .merchant-sheet-error{font-size:12px;color:#b72f51}

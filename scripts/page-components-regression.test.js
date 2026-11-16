@@ -8,13 +8,14 @@ const ledger=read('src/pages/LedgerPage.vue')
 const stats=read('src/pages/StatisticsPage.vue')
 const assets=read('src/pages/AssetsPage.vue')
 const management=read('src/pages/ManagementPage.vue')
+const workspace=read('src/OriginalKakeiboPages.vue')
 const api=read('functions/api/[[path]].js')
 const schema=read('schema.sql')
 
 test('App only coordinates tabs; all four pages own their templates',()=>{
   for(const component of ['LedgerPage','StatisticsPage','AssetsPage','ManagementPage']) {
-    assert.match(app,new RegExp('import '+component+' from [\\x27\\x22]\\./pages/'+component+'\\.vue'))
-    assert.match(app,new RegExp('<'+component+' '))
+    assert.match(workspace,new RegExp('import '+component+' from [\\x27\\x22]\\./pages/'+component+'\\.vue'))
+    assert.match(workspace,new RegExp('<'+component+' '))
   }
   assert.doesNotMatch(app,/<section v-else-if="tab === 'list'"/)
   assert.doesNotMatch(app,/<section v-else-if="tab === 'stat'/)
@@ -29,7 +30,7 @@ test('App only coordinates tabs; all four pages own their templates',()=>{
   assert.doesNotMatch(assets,/旧評価額|旧評価損益|legacy-investment-details/)
   assert.match(management,/<FinanceTools v-bind="\$attrs">/)
   assert.match(management,/<slot name="member-cards"/)
-  assert.match(app,/<ManagementPage [^>]*v-show="tab === 'finance'"/)
+  assert.match(workspace,/<ManagementPage v-show="activeTab==='finance'"/)
 })
 
 test('extracted pages share exactly the parent navigation refs and do not create independent filters',()=>{
@@ -52,9 +53,9 @@ test('extracted pages share exactly the parent navigation refs and do not create
   assert.match(stats,/import PaymentMethodSwitcher from/)
   assert.match(stats,/<PaymentMethodSwitcher :report="annualStats" period="year" :yen="yen" :open-details="openPaymentMethodDetails"/)
   assert.match(read('src/PaymentMethodSwitcher.vue'),/props\.openDetails\(selectedMethod\.value, props\.period\)/)
-  assert.match(app,/@open-duplicate="openDuplicateDate"/)
-  assert.match(app,/<BottomNavigation :active-tab="tab"/)
-  assert.match(app,/openLedgerFromNav\(\)/)
+  assert.match(app,/onOpenDuplicate:openDuplicateDate/)
+  assert.match(workspace,/<BottomNavigation :active-tab="activeTab"/)
+  assert.match(app,/@ledger-open="openLedgerFromNav"/)
   assert.match(ledger,/@click="clearDetailFilter"/)
   assert.match(ledger,/<LedgerTypeFilter[^>]+@change="setEntryTypeFilter"/)
 })

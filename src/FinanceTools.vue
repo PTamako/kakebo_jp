@@ -1,7 +1,9 @@
 <script setup>
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
+import OriginalOtherManagement from './OriginalOtherManagement.vue'
 import CardManagementControls from './CardManagementControls.vue'
+import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
 import { sortOtherLast } from './category-sort.js'
 import ReviewTrashActions from './ReviewTrashActions.vue'
@@ -14,6 +16,7 @@ import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import FixedCostEditorFields from './FixedCostEditorFields.vue'
+import OriginalFixedCostList from './OriginalFixedCostList.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
@@ -32,7 +35,7 @@ import { listR2Receipts, getR2Receipt, uploadR2Receipt, deleteR2ReceiptsByIds, r
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
-const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null} })
+const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null}, memberTrashCount:{type:Number,default:0} })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared', 'receipt-images-removed', 'receipt-images-updated'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -1598,41 +1601,38 @@ async function removeCardBill(record) {
     :status="memberView ? memberStatus : (loaded ? '最終更新：'+lastLoadedLabel+' · '+rows.length+'件' : busy ? '明細を読み込み中…' : '未読み込み')"
     :error="memberView ? memberError : loadError"
     @refresh="memberView ? memberRefresh?.() : refreshEverything()" />
-  <slot v-if="memberView" :name="'member-'+managementTab" />
+  <slot v-if="memberView&&managementTab!=='tools'" :name="'member-'+managementTab" />
+  <OriginalOtherManagement v-if="memberView" :active="managementTab==='tools'"
+    :trash-count="memberTrashCount">
+    <template #jobs><slot name="member-jobs"/></template>
+    <template #privacy><slot name="member-privacy"/></template>
+    <template #backup><slot name="member-backup"/></template>
+    <template #duplicates><slot name="member-duplicates"/></template>
+    <template #trash><slot name="member-trash"/></template>
+  </OriginalOtherManagement>
   <template v-else>
   <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
     <InvestmentTransferReview />
     <SbiPortfolio :api="props.api" active-view="plans" :refresh-key="investmentRefreshKey" />
   </section>
-  <article v-show="managementTab === 'cards'" class="finance-panel">
-    <h2>支払方法・カード管理</h2>
-    <CardManagementControls v-model="selectedCard" :busy="busy"
-      :options="[...orderedPayments.map(source=>({value:source,label:source})),...(selectedCard&&!orderedPayments.includes(selectedCard)?[{value:selectedCard,label:selectedCard}]:[])]"
-      :default-value="defaultPaymentSource"
-      @default="emit('set-default-payment-source',selectedCard)"
-      @edit="selectCardForEdit" @add="cardMode='add'" />
-    <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
-    <MobileCardEditorSheet :mode="cardMode" :card-name="selectedCard"
-      :card="paymentSourceMeta[selectedCard]||null" :closing-day="closingDayFor(selectedCard)"
-      :payment-sources="paymentSources" :share-options="cardShareOptions"
-      :share-ready="cardShareReady" :share-error="cardMessage.startsWith('家庭共有を読み込めません')?cardMessage:''"
-      :busy="busy" :on-save="saveCardFromSheet"
-      :on-danger="runCardDanger" @close="cardMode=''" />
-    <details v-if="archivedPaymentSources.length" class="card-archive-disclosure">
-      <summary>アーカイブ済みのカード <strong>{{archivedPaymentSources.length}}件</strong></summary>
-      <p class="card-type-hint">新しい記帳には表示しません。過去の明細、請求、プリペイド残高はそのまま残ります。</p>
-      <div v-for="name in archivedPaymentSources" :key="name" class="card-archived-item">
-        <span>{{name}} <small>（{{props.paymentSourceMeta[name]?.source_type==='prepaid'?'プリペイド':'カード'}}）</small></span>
-        <div class="card-archive-actions">
-          <button type="button" :disabled="busy" @click="archivePaymentSource(name,false)">復元</button>
-          <button type="button" :disabled="busy" @click="removePaymentSource(name)">完全削除</button>
-        </div>
-      </div>
-    </details>
-  </article>
-  <MobileMerchantRulesPanel v-if="managementTab === 'tools'"
-    :rules="merchantRulesCombined" :categories="orderedCategories"
-    :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" />
+  <OriginalCardManagementPanel v-show="managementTab === 'cards'"
+    :selected="selectedCard"
+    :options="[...orderedPayments.map(source=>({value:source,label:source})),
+      ...(selectedCard&&!orderedPayments.includes(selectedCard)?[{value:selectedCard,label:selectedCard}]:[])]"
+    :default-value="defaultPaymentSource" :busy="busy"
+    :mode="cardMode" :name="selectedCard"
+    :card="paymentSourceMeta[selectedCard]||null" :closing-day="closingDayFor(selectedCard)"
+    :payment-sources="paymentSources" :share-options="cardShareOptions"
+    :share-ready="cardShareReady"
+    :share-error="cardMessage.startsWith('家庭共有を読み込めません')?cardMessage:''"
+    :archived="archivedPaymentSources.map(name=>({value:name,label:name,
+      kind:props.paymentSourceMeta[name]?.source_type}))"
+    :on-save="saveCardFromSheet" :on-danger="runCardDanger"
+    @update:selected="selectedCard=$event"
+    @update:mode="next=>next==='edit'?selectCardForEdit():cardMode=next"
+    @default="emit('set-default-payment-source',selectedCard)"
+    @archive="name=>archivePaymentSource(name,false)" @remove="removePaymentSource" />
+
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>
     <FixedCostEditorFields :model="plan" v-model:cycleChoice="planCycleChoice"
@@ -1702,46 +1702,11 @@ async function removeCardBill(record) {
         <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
       </div>
   </article>
-  <article v-show="managementTab === 'plans'" class="finance-panel recurring-plans-panel">
-    <details class="recurring-list-disclosure">
-      <summary class="recurring-list-summary">
-        <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{plans.length}}件</strong></span>
-        <span class="recurring-list-summary-total">今月対象 {{currentEligiblePlans.length}}件 · 今月予定額 {{yen(recurringMonthlyTotal)}}</span>
-      </summary>
-      <div class="recurring-list-body">
-        <div class="recurring-list-filters">
-          <input v-model="recurringListQuery" type="search" placeholder="名前で検索" aria-label="固定費を検索" />
-          <MobileChoiceSegments v-model="recurringListFilter" label="固定費の状態" :options="[{value:'all',label:'すべて'},{value:'active',label:'有効'},{value:'stopped',label:'停止中'}]" />
-        </div>
-        <div v-if="!filteredRecurringPlans.length" class="recurring-list-empty">{{plans.length ? '該当する固定費はありません' : '固定費はまだありません'}}</div>
-        <div v-else id="recurring-plan-list" class="recurring-plan-scroll" :class="{'is-expanded': recurringListShowAll}" role="list" aria-label="固定費一覧">
-          <div v-for="p in visibleRecurringPlans" :key="p.id" class="recurring-plan-item" role="listitem">
-            <button type="button" class="recurring-plan-toggle" :aria-expanded="expandedRecurringPlanId===p.id" :aria-controls="'recurring-plan-actions-'+p.id" @click="toggleRecurringPlanDetails(p.id)">
-              <span class="recurring-plan-name" :title="p.name">{{p.name}}</span>
-              <span class="recurring-plan-amount">{{yen(p.amount)}}</span>
-              <span class="recurring-plan-chevron" aria-hidden="true">{{expandedRecurringPlanId===p.id ? '⌃' : '⌄'}}</span>
-              <span class="recurring-plan-meta">
-                <span class="recurring-plan-meta-item">{{recurringFrequencyLabel(p)}}</span>
-                <span class="recurring-plan-meta-item recurring-payment-source" :title="p.paymentSource || '未設定'">{{p.paymentSource || '未設定'}}</span>
-                <span class="recurring-plan-meta-item">開始 {{p.startMonth?.replace('-', '/') || '未設定'}}</span>
-                <span class="recurring-plan-meta-item">{{p.postingMode==='auto' ? '自動記帳' : '確認して記帳'}}</span>
-                <span class="recurring-plan-meta-item" :class="{'recurring-plan-overdue':recurringStatusFor(p).state==='missing'}">{{recurringPlanNextLabel(recurringStatusFor(p))}}</span>
-              </span>
-            </button>
-            <div v-if="expandedRecurringPlanId===p.id" :id="'recurring-plan-actions-'+p.id" class="recurring-plan-more">
-              <span class="recurring-plan-category">{{categoryLabel(p.category)}} · {{p.enabled ? '有効' : '停止中'}}</span>
-              <div class="recurring-plan-actions">
-                <button type="button" :disabled="recurringBusy" @click="beginEditPlan(p)">編集</button>
-                <button type="button" :disabled="recurringBusy" @click="togglePlanEnabled(p)">{{p.enabled ? '停止' : '再開'}}</button>
-                <button type="button" :disabled="recurringBusy" @click="removePlan(p.id)">削除</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <button v-if="filteredRecurringPlans.length > 2" type="button" class="recurring-list-more" :aria-expanded="recurringListShowAll" aria-controls="recurring-plan-list" @click="recurringListShowAll = !recurringListShowAll">{{recurringListShowAll ? '折りたたむ' : 'もっと見る'}}</button>
-      </div>
-    </details>
-  </article>
+  <OriginalFixedCostList v-show="managementTab==='plans'"
+    :items="plans" :busy="recurringBusy" :yen="yen"
+    :category-label="categoryLabel" :next-label="p=>recurringPlanNextLabel(recurringStatusFor(p))"
+    :current-count="currentEligiblePlans.length" :monthly-total="recurringMonthlyTotal"
+    @edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan(p.id)" />
   <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">
     <h2>カード別利用額</h2>
     <div class="finance-inputs card-billing-fields">
@@ -1770,15 +1735,32 @@ async function removeCardBill(record) {
       </div>
     </details>
   </article>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure">
-    <summary>定期処理の実行状況</summary>
+  
+  
+  
+  
+  
+  <OriginalOtherManagement :active="managementTab==='tools'"
+    :trash-count="trashCount"
+    :trash-status="trashCountReady?trashCount+'件':trashCountLoading?'確認中…':'再読み込みが必要'"
+    :on-open-receipts="refreshLocalReceiptCount"
+    :on-open-duplicates="()=>refreshDuplicateReview({currentTarget:{open:true}})"
+    :on-open-trash="()=>onReviewTrashToggle({currentTarget:{open:true}})">
+    <template #rules>  <MobileMerchantRulesPanel 
+    :rules="merchantRulesCombined" :categories="orderedCategories"
+    :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" /></template>
+    <template #jobs>
+
+    
     <button type="button" :disabled="jobHealthBusy" @click="loadJobHealth">{{jobHealthBusy?'確認中…':'最新の実行結果を確認'}}</button>
     <p v-if="jobHealthError" role="alert">{{jobHealthError}}</p>
     <p v-if="!jobHealthBusy && jobHealthLoaded && jobHealth.length===0">各処理の実行履歴がまだありません。</p>
     <p v-for="row in jobHealthLoaded ? jobHealthDisplay : []" :key="row.job" :role="row.status==='failed'?'alert':undefined">{{jobNames[row.job]||row.job}}：{{jobHealthText(row)}}</p>
-  </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure device-privacy-panel">
-    <summary>端末のプライバシー設定</summary>
+  
+    </template>
+    <template #privacy>
+
+    
     <div class="device-privacy-section">
       <label class="device-login-field"><span>ログイン状態の保存</span>
         <MobileChoiceSegments :model-value="props.rememberDevice ? 'remember' : 'session'" label="ログイン状態の保存方法"
@@ -1824,9 +1806,11 @@ async function removeCardBill(record) {
       </div>
       
     </div>
-  </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="$event.target.open && refreshLocalReceiptCount()">
-    <summary>バックアップ・復元</summary>
+  
+    </template>
+    <template #backup>
+
+    
     <p>JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます。画像は非公開R2に保存し、既存画像は上書きしません。</p>
     <label class="backup-password-label">暗号化パスワード（任意）<input v-model="backupPassword" type="password" autocomplete="off" minlength="10" maxlength="128" placeholder="10文字以上・端末に保存しません" /></label>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,.zip,.kbe,application/json,application/zip,application/octet-stream" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
@@ -1843,9 +1827,11 @@ async function removeCardBill(record) {
       <button type="button" :disabled="busy||backupBusy" @click="restore">未登録の設定と明細を確認して復元</button>
     </div>
     <p v-if="message && message.startsWith('復元中 ')" role="status">{{message}}</p>
-  </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure" @toggle="refreshDuplicateReview">
-    <summary>重複の可能性</summary>
+  
+    </template>
+    <template #duplicates>
+
+    
     <p v-if="busy">重複候補を確認中…</p>
     <p v-else-if="!reviewStateReady" role="status">{{ reviewStateError || '確認履歴を読み込み中…' }}</p>
     <p v-else-if="!loaded">{{ loadError || '全明細を更新してください。' }}</p>
@@ -1859,9 +1845,11 @@ async function removeCardBill(record) {
     </div>
 
     
-  </details>
-  <details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel" @toggle="onReviewTrashToggle">
-    <summary>ゴミ箱 <span class="review-trash-count" aria-live="polite">{{trashCountReady ? trashCount+'件' : trashCountLoading ? '確認中…' : '再読み込みが必要'}}</span></summary>
+  
+    </template>
+    <template #trash>
+
+    
     <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>
       <p v-if="!trashCountReady" class="review-trash-loading" role="status">{{reviewStateError || (trashCountLoading ? 'ゴミ箱を確認中…' : '件数を取得できませんでした。再読み込みしてください。')}}</p>
@@ -1916,7 +1904,9 @@ async function removeCardBill(record) {
       </template>
     </template>
     
-  </details>
+  
+    </template>
+  </OriginalOtherManagement>
   </template>
 </section>
 </template>

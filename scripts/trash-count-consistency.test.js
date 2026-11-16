@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const finance = readFileSync(new URL('../src/FinanceTools.vue', import.meta.url), 'utf8')
+const sharedOther = readFileSync(new URL('../src/OriginalOtherManagement.vue', import.meta.url), 'utf8')
 const notification = readFileSync(new URL('../src/notifications.js', import.meta.url), 'utf8')
 const sbi = readFileSync(new URL('../src/SbiPortfolio.vue', import.meta.url), 'utf8')
 const prepaid = readFileSync(new URL('../src/PrepaidAssets.vue', import.meta.url), 'utf8')
@@ -82,8 +83,8 @@ test('entering その他 prefetches transfer notices and deleted fixed expenses 
 })
 
 test('trash heading, collapsed detail groups and empty state all require the complete count',()=>{
-  assert.match(finance,/<summary>ゴミ箱 <span class="review-trash-count" aria-live="polite">/)
-  assert.match(finance,/trashCountReady \? trashCount\+'件'/)
+  assert.match(sharedOther,/<summary>ゴミ箱 <span class="review-trash-count" aria-live="polite">/)
+  assert.match(finance,/trashCountReady\?trashCount\+'件'/)
   assert.match(finance,/'確認中…'/)
   assert.match(finance,/<template v-if="trashCountReady">/)
   assert.match(finance,/v-if="trashCount === 0"/)

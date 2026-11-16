@@ -2,6 +2,8 @@
 import {ref,computed,provide,onMounted,onUnmounted,watch} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
+import SbiPortfolio from './SbiPortfolio.vue'
+import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
@@ -15,9 +17,9 @@ import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
 import BottomNavigation from './BottomNavigation.vue'
-import AppTopbar from './AppTopbar.vue'
+import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
-import CardManagementControls from './CardManagementControls.vue'
+import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import LedgerEntryContent from './LedgerEntryContent.vue'
@@ -385,6 +387,44 @@ async function api(path,options={}){
  if(!res.ok||data.ok!==true)throw Error(data.code||'读取失败')
  return data
 }
+const memberDuplicateGroups=computed(()=>{
+ const groups=new Map()
+ for(const e of sharedEntries.value){
+  if(!e||!['expense','income'].includes(e.type)||e.pending_approval)continue
+  const date=String(e.date||''),merchant=String(e.merchant||'').trim().toLowerCase()
+  if(!date||!merchant||!Number.isSafeInteger(Number(e.amount)))continue
+  const key=[date,e.type,Number(e.amount),merchant].join('|')
+  const rows=groups.get(key)||[];rows.push(e);groups.set(key,rows)
+ }
+ return [...groups.values()].filter(g=>g.length>1).slice(0,15)
+})
+const memberArchivedAccounts=computed(()=>myAccounts.value.filter(a=>
+ a.is_archived&&a.origin==='member_created'))
+const memberRecurringRef=ref(null)
+async function memberSbiApi(path,options){
+ if(options?.method&&options.method!=='GET')throw Error('本人の投資設定は HomeFlow の承認手続きから変更してください')
+ const match=/^investment-portfolio\?month=(20\d{2}-(?:0[1-9]|1[0-2]))$/.exec(path)
+ if(!match)throw Error('本人の投資情報は読み取り専用です')
+ const actor=props.user.user_id,ticket=epoch
+ const [planResult,occurrenceResult]=await Promise.allSettled([
+  api('member-recurring-plans'),api('recurring-occurrences')
+ ])
+ if(actor!==props.user.user_id||ticket!==epoch)throw Error('利用者が切り替わりました')
+ if(planResult.status!=='fulfilled'||planResult.value.ok!==true)
+  throw Error('本人の積立設定を読み込めませんでした')
+ if(!Array.isArray(planResult.value.items)||planResult.value.items.some(p=>p.owner_user_id!==actor))
+  throw Error('本人の積立設定の所有者を確認できません')
+ const occurrences=occurrenceResult.status==='fulfilled'&&
+  Array.isArray(occurrenceResult.value.items)?occurrenceResult.value.items:null
+ return memberInvestmentSnapshot({
+  userId:actor,requestedMonth:match[1],plans:planResult.value.items,occurrences
+ })
+}
+function openMemberInvestmentPlan(plan=null){
+ const target=memberRecurringRef.value
+ if(!target?.openPlanEditor)throw Error('積立登録の画面を開けません。管理の積立を再表示してください')
+ target.openPlanEditor(plan)
+}
 async function refresh(){
  const ticket=++epoch,user=props.user.user_id
  error.value='';accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];totals.value=null;yearly.value=null
@@ -563,45 +603,36 @@ watch(()=>props.user.user_id,loadMemberCategories)
 </script>
 <template>
  <div class="member-shell">
-  <AppTopbar :identity="user" :theme="theme" :themes="themes"
-    @change-theme="emit('theme-change',$event)" @logout="emit('logout')" />
   <FamilySharedMutationRequests ref="sharedMutationRef" headless
    :key="'member-ledger-submit:'+user.user_id"
    :user-id="user.user_id" :household-id="user.household_id" />
   <section v-if="error" class="member-alert" role="alert">{{error}}
-   <button type="button" @click="refresh">再试一次</button>
+   <button type="button" @click="refresh">再試行</button>
   </section>
-  <section v-if="tab==='list'" class="member-page">
-   <LedgerPage member />
-  </section>
-  <StatisticsPage v-else-if="tab==='stat'" />
-  <EntryInputPage v-else-if="tab==='add'" />
-    <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
-     :on-create-personal-account="createAccount"
-     :open-personal-management="()=>{tab='finance'}" />
-  <ManagementPage v-else-if="tab==='finance'" class="member-page"
-    :member-view="true" :member-busy="busy" :member-error="error"
-    :member-status="'本人のカード・残高・固定費 · '+myAccounts.length+'口座'"
-    :member-refresh="refresh" :api="api">
+  <OriginalKakeiboPages :identity="user" :theme="theme" :themes="themes"
+   :active-tab="tab" :member="true" :personal-assets="assets"
+   :on-create-personal-account="createAccount"
+   :on-open-personal-management="()=>{tab='finance'}"
+   :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
+    memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
+    memberRefresh:refresh,memberTrashCount:memberArchivedAccounts.length,api}"
+   @update:active-tab="tab=$event" @ledger-open="tab='list'"
+   @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    <template #member-cards>
-    <section class="finance-panel">
-     <h2>支払方法・カード管理</h2>
-     <CardManagementControls v-model="selectedCardId" :busy="busy"
-       :options="cardAccounts.map(a=>({value:a.account_id,label:a.label}))"
-       :default-value="defaultCard" @default="makeDefaultCard"
-       @edit="cardMode='edit'" @add="cardMode='add'" />
-     <MobileCardEditorSheet :mode="cardMode" :card-name="selectedCard?.label||''"
-      :card="cardMeta" :closing-day="selectedCard?.closing_day?String(selectedCard.closing_day)+'日':'末日'"
-      :payment-sources="cardLabels" :busy="busy" :on-save="saveCard" :on-danger="cardDanger"
-      @close="cardMode=''" />
-     <p v-if="!cardAccounts.length" class="help">个人卡片为空白，点击＋创建自己的卡片。</p>
-     <div v-for="a in cardAccounts" :key="a.account_id" class="entry">
-      <div><strong>{{a.label}}</strong><small>{{kindLabel(a.account_kind)}} · {{a.is_archived?'已归档':'使用中'}}</small></div>
-      <button type="button" @click="selectedCardId=a.account_id;cardMode='edit'">编辑</button>
-      <button v-if="a.is_archived" type="button" @click="modify(a,{is_archived:false})">恢复</button>
-     </div>
-    </section>
-
+    <OriginalCardManagementPanel
+      :selected="selectedCardId"
+      :options="cardAccounts.filter(a=>!a.is_archived).map(a=>({value:a.account_id,label:a.label}))"
+      :default-value="defaultCard" :busy="busy"
+      :mode="cardMode" :name="selectedCard?.label||''" :card="cardMeta"
+      :closing-day="selectedCard?.closing_day?String(selectedCard.closing_day)+'日':'末日'"
+      :payment-sources="cardLabels" :share-ready="false"
+      :archived="cardAccounts.filter(a=>a.is_archived).map(a=>({value:a.account_id,
+        label:a.label,kind:a.account_kind}))"
+      :allow-permanent-delete="false" empty-hint="＋から本人のカードを追加できます。"
+      :on-save="saveCard" :on-danger="cardDanger"
+      @update:selected="selectedCardId=$event" @update:mode="cardMode=$event"
+      @default="makeDefaultCard"
+      @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
    </template>
    <template #member-plans>
     <MemberFixedCosts :key="'member-fixed:'+user.user_id" :user-id="user.user_id"
@@ -610,35 +641,56 @@ watch(()=>props.user.user_id,loadMemberCategories)
      :on-submit-entry="submitMemberFixedCost" />
    </template>
    <template #member-investment>
-    <FamilyRecurringFinance view="investment" :key="'personal-sbi:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+    <SbiPortfolio member-mode active-view="plans" :api="memberSbiApi"
+      :on-member-create="()=>openMemberInvestmentPlan()"
+      :on-member-edit="openMemberInvestmentPlan"/>
+    <FamilyRecurringFinance ref="memberRecurringRef" view="investment"
+     :key="'personal-sbi:'+user.user_id" :user-id="user.user_id"
+     :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
    </template>
-   <template #member-tools>
-    <details class="finance-panel finance-disclosure">
-     <summary>端末のプライバシー設定</summary>
-     <p class="help">写真は端末内OCRで読み取り、原画像は自動保存しません。口座情報は本人のログインでのみ取得します。</p>
-    </details>
-    <details class="finance-panel finance-disclosure">
-     <summary>バックアップ・復元</summary>
-     <p class="help">本人の個人口座設定だけ暗号化して書き出せます。家庭帳簿・レシート・全履歴は対象外です。このファイルからの自動復元には未対応です。</p>
+   <template #member-jobs>
+     <p class="help">本人の定期設定は「固定費」「積立」に保存されます。金融取引は HomeFlow の承認と実際の入出金証拠が必要です。</p>
+     <button type="button" class="button-secondary" :disabled="busy" @click="refresh">
+       {{busy?'確認中…':'本人の設定と審査状態を更新'}}
+     </button>
+     <p class="help">審査中の家庭明細 {{pendingMutations.length}}件</p>
+   </template>
+   <template #member-privacy>
+     <div class="device-privacy-section">
+       <div class="device-privacy-row"><strong>ログイン状態の保存</strong>
+         <span class="help">HomeFlow で管理</span></div>
+       <p class="help">この端末のログインは本人の HomeFlow 認証情報で復元します。家族のカード情報や本人の金融データは端末に保存しません。</p>
+     </div>
+     <div class="device-privacy-section">
+       <strong>保存済みレシート画像</strong>
+       <p class="help">本人の画像は端末OCRで読み取ります。所有権が確認できない家庭共有画像の一括削除はできません。</p>
+     </div>
+   </template>
+   <template #member-backup>
+     <p class="help">本人のカード・銀行などの口座設定を暗号化して保存します。管理者の私有証券情報や家族全員のレシートは含めません。</p>
      <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportPersonalAccounts">
       {{personalBackupBusy?'暗号化中…':'本人の設定を暗号化して保存'}}
      </button>
      <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
-    </details>
-    <details class="finance-panel finance-disclosure">
-     <summary>ゴミ箱 · 本人のアーカイブ済み口座 {{myAccounts.filter(a=>a.is_archived&&a.origin==='member_created').length}}件</summary>
-     <div v-for="a in myAccounts.filter(x=>x.is_archived&&x.origin==='member_created')"
-      :key="a.account_id" class="entry">
-      <strong>{{a.label}}</strong>
-      <button type="button" :disabled="busy" @click="modify(a,{is_archived:false})">復元</button>
-     </div>
-     <p v-if="!myAccounts.some(a=>a.is_archived&&a.origin==='member_created')" class="help">アーカイブ済みの口座はありません。</p>
-     <p class="help">家庭帳簿の削除と復元は管理者審査が必要です。</p>
-    </details>
+     <p class="help">バックアップを使った自動復元は本人の所有権と重複検証が完了するまで実行しません。</p>
    </template>
-  </ManagementPage>
-  <BottomNavigation :active-tab="tab" @change="next=>tab=next" />
+   <template #member-duplicates>
+     <p v-if="!memberDuplicateGroups.length" class="help">現在表示中の家庭明細に同日・同額・同店の重複候補はありません。</p>
+     <div v-for="(group,i) in memberDuplicateGroups" :key="i" class="entry">
+       <strong>{{group[0].date}} · {{group[0].merchant}} · ¥{{Number(group[0].amount).toLocaleString('ja-JP')}} · {{group.length}}件</strong>
+       <button type="button" @click="tab='list'">明細を見る</button>
+     </div>
+     <p class="help">共有明細の削除・変更は本人の承認申請から行い、管理者の確認後に反映します。</p>
+   </template>
+   <template #member-trash>
+     <p v-if="!memberArchivedAccounts.length" class="help">本人がアーカイブした口座はありません。</p>
+     <div v-for="a in memberArchivedAccounts" :key="a.account_id" class="entry">
+       <strong>{{a.label}}</strong>
+       <button type="button" :disabled="busy" @click="modify(a,{is_archived:false})">復元</button>
+     </div>
+     <p class="help">このゴミ箱は本人の口座設定だけを扱います。家庭共有明細の完全削除は管理者専用です。</p>
+   </template>
+  </OriginalKakeiboPages>
  </div>
 </template>
 <style scoped>

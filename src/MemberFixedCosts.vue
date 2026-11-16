@@ -1,6 +1,7 @@
 <script setup>
 import {computed,onMounted,watch,ref} from 'vue'
 import FixedCostEditorFields from './FixedCostEditorFields.vue'
+import OriginalFixedCostList from './OriginalFixedCostList.vue'
 import {recurringDatesForPlanInMonth} from './recurring-posting.js'
 const props=defineProps({
  userId:{type:String,required:true},paymentChoices:{type:Array,default:()=>[]},
@@ -109,6 +110,20 @@ async function toggle(item){
  }catch(e){error.value=e.message}
  finally{busy.value=false}
 }
+async function removePersonalPlan(item){
+ if(busy.value||!item?.plan_id)return
+ if(!confirm(item.name+' の固定費設定を削除しますか？既に承認済みの家庭明細は削除されません。'))return
+ busy.value=true;error.value='';notice.value=''
+ try{
+  await api('/'+item.plan_id,{method:'DELETE',
+   headers:{'content-type':'application/json'},
+   body:JSON.stringify({expected_user_id:props.userId,version:item.version})})
+  if(editingId.value===item.plan_id)clear()
+  notice.value='本人の固定費設定を削除しました。家庭帳簿の記録は変更していません。'
+  await load()
+ }catch(e){error.value='削除できませんでした：'+e.message}
+ finally{busy.value=false}
+}
 async function submitDue(item){
  if(!item.enabled||busy.value)return
  if(!confirm(item.name+' '+money(item.amount)+'を記帳しますか？家庭帳簿への記録は HomeFlow で審査が必要です。'))return
@@ -139,26 +154,11 @@ onMounted(load)
    <p v-if="error" class="fixed-cost-error" role="alert">{{error}}</p>
    <p v-if="notice" class="fixed-cost-notice" role="status">{{notice}}</p>
   </article>
-  <article class="finance-panel recurring-list-summary">
-   <h2>登録済みの固定費 <strong>{{count}}件</strong></h2>
-   <p v-if="!loaded" class="help">本人の固定費を読み込み中</p>
-   <p v-else-if="!count" class="help">まだ登録されていません。</p>
-   <div v-for="item in visible" :key="item.plan_id" class="fixed-cost-row">
-    <div class="fixed-cost-row-main">
-     <strong>{{item.name}}</strong>
-     <small>{{item.category}} · {{item.scheduleType==='weekly'?'毎週':item.scheduleType==='workday'?'平日':item.intervalMonths===12?'毎年':item.intervalMonths===1?'毎月':item.intervalMonths+'か月ごと'}} · {{item.enabled?'有効':'停止中'}}</small>
-    </div>
-    <strong>{{money(item.amount)}}</strong>
-    <div class="fixed-cost-row-actions">
-     <button type="button" :disabled="busy" @click="edit(item)">変更</button>
-     <button type="button" :disabled="busy" @click="toggle(item)">{{item.enabled?'停止':'再開'}}</button>
-     <button type="button" :disabled="busy||!item.enabled" @click="submitDue(item)">記帳を申請</button>
-    </div>
-   </div>
-   <button v-if="count>5" type="button" class="fixed-more" @click="showAll=!showAll">
-    {{showAll?'折りたたむ':'もっと見る（残り'+(count-5)+'件）'}}
-   </button>
-  </article>
+  <OriginalFixedCostList :items="items.map(item=>({...item,id:item.plan_id}))"
+    :busy="busy" :yen="money" :category-label="x=>x"
+    :payment-label="source=>paymentChoices.find(p=>p.value===source)?.label||source"
+    :allow-delete="true" :allow-post="true"
+    @edit="edit" @toggle="toggle" @remove="removePersonalPlan" @post="submitDue"/>
  </div>
 </template>
 <style scoped>

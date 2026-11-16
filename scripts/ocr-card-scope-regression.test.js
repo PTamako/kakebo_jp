@@ -29,13 +29,14 @@ test('explicit card overrides OCR payment guesses for both statements and receip
 test('owner and member share one capture component with card before target type', () => {
  const capture = read('src/OcrCapturePanel.vue')
  const member = read('src/FamilyMemberWorkspace.vue')
+ const shared = read('src/OriginalKakeiboPages.vue')
  const card=capture.indexOf(':model-value="paymentSource"')
  const target=capture.indexOf(':model-value="mode"')
  assert.ok(card>=0 && target>card, 'card selection must precede document type')
  assert.match(capture, /label="読み取り対象のカード"/)
  assert.match(capture, /:disabled="busy"/)
  assert.match(app, /<OcrCapturePanel v-if="entryInputMode === 'scan'"/)
- assert.match(member, /<EntryInputPage v-else-if/)
+ assert.match(shared, /<EntryInputPage v-if="activeTab==='add'"/)
 })
 test('manual and image OCR preserve distinct card selection', () => {
  const capture=read('src/OcrCapturePanel.vue')

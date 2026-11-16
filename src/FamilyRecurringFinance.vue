@@ -3,7 +3,7 @@ import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 const props=defineProps({userId:{type:String,required:true},
  householdId:{type:String,required:true},accounts:{type:Array,required:true},view:{type:String,default:'plans'}})
 const emit=defineEmits(['changed'])
-const open=ref(true),busy=ref(false),available=ref(false),executionAvailable=ref(false),error=ref(''),notice=ref('')
+const open=ref(props.view!=='investment'),editorOpen=ref(false),busy=ref(false),available=ref(false),executionAvailable=ref(false),error=ref(''),notice=ref('')
 const plans=ref([]),occurrences=ref([]),policies=ref({})
 const day=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const month=()=>day().slice(0,7)
@@ -44,7 +44,7 @@ async function api(path,options={}){
  return data
 }
 function reset(){
- generation++;open.value=true;busy.value=false;available.value=false;executionAvailable.value=false;
+ generation++;open.value=props.view!=='investment';editorOpen.value=false;busy.value=false;available.value=false;executionAvailable.value=false;
  error.value='';notice.value='';plans.value=[];occurrences.value=[];policies.value={};
  selected.value='';bankRef.value='';brokerRef.value='';units.value='';planRetry='';
  bankPosted.value=false;brokerExecuted.value=false
@@ -111,7 +111,7 @@ async function createPlan(){
   if(ticket!==generation||actor!==props.userId||hh!==props.householdId)return
   if(result.plan?.ledger_applied!==false||result.plan?.policy_approved!==false)
    throw Error('计划创建回执不完整，不能视为已执行')
-  planRetry='';notice.value='计划已冻结保存，请点击「提交家庭授权」由 HomeFlow 管理员审批。'
+  planRetry='';editorOpen.value=false;notice.value='本人の積立計画を保存しました。HomeFlow の承認後、実際の取引証拠を確認して記帳してください。'
   selected.value=result.plan.plan_resource_id
   await refresh()
  }catch(e){if(ticket===generation)error.value=e.message}
@@ -186,6 +186,26 @@ async function perform(o,action='execute'){
  }catch(e){if(ticket===generation)error.value=e.message}
  finally{if(ticket===generation)busy.value=false}
 }
+function openPlanEditor(source=null){
+ if(busy.value)return
+ open.value=true;editorOpen.value=true;error.value='';notice.value=''
+ const bank=banks.value.find(a=>a.account_id===source?.source_account_id)||banks.value[0]
+ const account=securities.value.find(a=>a.account_id===source?.securities_account_id)||securities.value[0]
+ form.value={plan_type:'sbi_tsumitate',
+  source_bank_account_id:bank?.account_id||'',
+  securities_account_id:account?.account_id||'',
+  amount_jpy:source?.monthly_amount||'',due_day:source?.order_day||9,
+  start_month:month(),end_month:month(),category:'積立',
+  merchant:source?.fund_name||'',fund_code:source?.fund_code||'',
+  fund_name:source?.fund_name||''}
+ if(source){
+  notice.value='以前の計画を直接上書きしません。変更後の条件で新しい計画を申請し、元の承認を別途確認してください。'
+ }
+ if(!available.value)void refresh()
+ if(typeof document!=='undefined')queueMicrotask(()=>
+   document.querySelector('.recurring-panel[aria-label="毎月の積立"]')?.scrollIntoView({behavior:'smooth',block:'start'}))
+}
+defineExpose({openPlanEditor})
 function foreground(){
  if(document.visibilityState!=='visible')return
  generation++;policies.value={};bankRef.value='';brokerRef.value='';
@@ -198,36 +218,36 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
 </script>
 <template>
 <section class="recurring-panel finance-panel" :aria-label="view==='investment'?'毎月の積立':'固定費の設定'">
- <header><strong>{{view==='investment'?'毎月の積立':'固定費の設定'}}</strong>
-  <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'收起':'设置'}}</button></header>
+ <header><strong>{{view==='investment'?'積立の承認と実行確認':'固定費の設定'}}</strong>
+  <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'閉じる':'確認・設定'}}</button></header>
  <template v-if="open">
   <p class="help">本功能仅对本人新计划使用。HomeFlow 管理员批准的是计划期限与额度，银行扣款及 SBI 成交不会由本 App 发起；必须核对真实已发生记录后逐月记账。</p>
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="help">{{notice}}</p>
-  <form v-if="available" class="editor" @submit.prevent="createPlan">
-   <strong>{{view==='investment'?'積立設定':'固定費の設定'}}</strong>
+  <form v-if="available&&(!view||view!=='investment'||editorOpen)" class="editor" @submit.prevent="createPlan">
+   <strong>{{view==='investment'?'本人の積立を登録':'固定費の設定'}}</strong>
    <p class="help">{{view==='investment'?'本人の証券口座で行うSBI積立':'本人の銀行口座からの固定費'}} · HomeFlow で計画を一度承認します</p>
-   <label>本人扣款银行<select v-model="form.source_bank_account_id" :disabled="busy" required><option value="">选择账户</option>
+   <label>本人の引落銀行口座<select v-model="form.source_bank_account_id" :disabled="busy" required><option value="">口座を選択</option>
     <option v-for="a in banks" :key="a.account_id" :value="a.account_id">{{a.label}} · v{{a.version}}</option>
    </select></label>
-   <label v-if="form.plan_type==='sbi_tsumitate'">本人证券账户<select v-model="form.securities_account_id" :disabled="busy" required><option value="">选择证券账户</option>
+   <label v-if="form.plan_type==='sbi_tsumitate'">本人の証券口座<select v-model="form.securities_account_id" :disabled="busy" required><option value="">証券口座を選択</option>
     <option v-for="a in securities" :key="a.account_id" :value="a.account_id">{{a.label}} · v{{a.version}}</option>
    </select></label>
    <div class="pair">
-    <label>月额（円）<input v-model="form.amount_jpy" type="number" min="1" max="10000000" required :disabled="busy"/></label>
-    <label>每月扣款日（1～28）<input v-model.number="form.due_day" type="number" min="1" max="28" required :disabled="busy"/></label>
+    <label>毎月の金額（円）<input v-model="form.amount_jpy" type="number" min="1" max="10000000" required :disabled="busy"/></label>
+    <label>引落日（1～28日）<input v-model.number="form.due_day" type="number" min="1" max="28" required :disabled="busy"/></label>
    </div>
    <div class="pair">
-    <label>起始月<input v-model="form.start_month" type="month" required :disabled="busy"/></label>
-    <label>终止月<input v-model="form.end_month" type="month" required :disabled="busy"/></label>
+    <label>開始月<input v-model="form.start_month" type="month" required :disabled="busy"/></label>
+    <label>終了月<input v-model="form.end_month" type="month" required :disabled="busy"/></label>
    </div>
    <label>分类<input v-model="form.category" maxlength="100" required :disabled="busy"/></label>
    <label>商家／项目<input v-model="form.merchant" maxlength="120" required :disabled="busy"/></label>
    <template v-if="form.plan_type==='sbi_tsumitate'">
-    <label>基金代码（8位）<input v-model="form.fund_code" maxlength="8" required :disabled="busy"/></label>
-    <label>基金名称<input v-model="form.fund_name" maxlength="120" required :disabled="busy"/></label>
+    <label>銘柄コード（8文字）<input v-model="form.fund_code" maxlength="8" required :disabled="busy"/></label>
+    <label>銘柄名<input v-model="form.fund_name" maxlength="120" required :disabled="busy"/></label>
    </template>
-   <button type="submit" :disabled="busy||!canPlan">保存计划（不记账）</button>
+   <button type="submit" :disabled="busy||!canPlan">積立計画を保存（未入帳）</button>
   </form>
   <div v-if="available" class="items">
    <strong>{{view==='investment'?'登録済みの積立':'登録済みの固定費'}} · {{visiblePlans.length}}件</strong>

@@ -15,7 +15,10 @@ const props = defineProps({
   api: { type: Function, required: true },
   transferLoading: { type: Boolean, default: false },
   refreshKey: { type: Number, default: 0 },
-  activeView: { type: String, default: 'funds', validator: value => ['funds','wallets','plans'].includes(value) }
+  activeView: { type: String, default: 'funds', validator: value => ['funds','wallets','plans'].includes(value) },
+  memberMode: {type:Boolean,default:false},
+  onMemberCreate: {type:Function,default:null},
+  onMemberEdit: {type:Function,default:null}
 })
 const emit = defineEmits(['summary'])
 // The same persisted AI preference and D1-backed daily budget are shared with
@@ -379,6 +382,11 @@ async function load() {
   }
 }
 function editPlan(p) {
+  if(props.memberMode){
+    if(p)props.onMemberEdit?.(p)
+    else props.onMemberCreate?.()
+    return
+  }
   existingIdentity.value = !!p
   error.value = ''
   editing.value = 'plan'
@@ -408,6 +416,7 @@ function editPrice(h) {
   }
 }
 async function submit(path, body, message) {
+  if(props.memberMode){error.value='本人の積立変更は HomeFlow 承認のある専用設定から行ってください';return}
   saving.value = true
   notice.value = ''
   try{
@@ -496,6 +505,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
       </div>
     </div>
     <p v-if="loading && !data" class="sbi-loading" role="status">残高・積立を読み込み中…</p>
+    <p v-if="memberMode" class="sbi-hint" role="status">本人の積立設定のみ表示しています。証券会社の保有・評価額は未照合です。銀行や SBI への注文は実行しません。</p>
     
     <p v-if="error && /投資テーブルの移行が未実施/.test(error)" class="sbi-hint">投資データを確認してください。既存の家計簿は変更されません。</p>
     
@@ -617,19 +627,20 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
     <template v-if="data">
       <details class="panel sbi-card sbi-investment-manage" open>
         <summary class="sbi-disclosure-summary">
-          <span class="sbi-manage-title"><strong>毎月の積立</strong><small>{{yen(data.reconciliation.monthly_amount)}} / 月 · {{data.plans.filter(p=>p.enabled).length}}銘柄</small></span>
+          <span class="sbi-manage-title"><strong>毎月の積立</strong><small>{{yen(data.reconciliation.monthly_amount)}} / 月 · {{data.plans.filter(p=>p.enabled).length}}件</small></span>
           <span class="sbi-manage-link">設定</span>
           <span class="sbi-chevron" aria-hidden="true">⌄</span>
         </summary>
         <div class="sbi-section-body sbi-management-body">
+          <p v-if="memberMode" class="sbi-hint">本人の投資設定は HomeFlow 承認後、銀行・証券の実際の証拠を照合して記録します。既存計画の変更は別の申請になります。</p>
           <div class="sbi-month-pulse">
             <div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}}</strong></div>
-            <div><span>振替登録済み</span><strong>{{yen(data.reconciliation.registered)}}</strong></div>
+            <div><span>{{memberMode?'内部入帳確認':'振替登録済み'}}</span><strong>{{data.reconciliation.registered===null?'未確認':yen(data.reconciliation.registered)}}</strong></div>
           </div>
-          <div class="sbi-progress" role="progressbar" aria-label="積立予定に対する振替登録済みの割合" :aria-valuemax="Math.max(1,data.reconciliation.monthly_amount)" :aria-valuenow="Math.max(0,Math.min(data.reconciliation.monthly_amount,data.reconciliation.registered))">
+          <div v-if="!memberMode&&data.reconciliation.registered!==null" class="sbi-progress" role="progressbar" aria-label="積立予定に対する振替登録済みの割合" :aria-valuemax="Math.max(1,data.reconciliation.monthly_amount)" :aria-valuenow="Math.max(0,Math.min(data.reconciliation.monthly_amount,data.reconciliation.registered))">
             <span :style="{width:Math.min(100,100*data.reconciliation.registered/Math.max(1,data.reconciliation.monthly_amount))+'%'}"></span>
           </div>
-          <div class="sbi-reconcile-state">
+          <div v-if="!memberMode" class="sbi-reconcile-state">
             <span v-if="data.reconciliation.planned_difference === 0 && data.reconciliation.monthly_amount > 0" class="sbi-positive">登録完了</span>
             <span v-else-if="data.reconciliation.unregistered > 0" class="sbi-hint">未登録 {{yen(data.reconciliation.unregistered)}}</span>
             <span v-else-if="data.reconciliation.planned_difference > 0" class="sbi-hint">超過登録 {{yen(data.reconciliation.planned_difference)}}</span>
@@ -644,9 +655,9 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             </div>
           </div>
           <p v-if="!data.plans.length" class="sbi-empty">積立設定はまだありません</p>
-          <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.fund_code+':'+p.account_type" class="sbi-plan-row">
+          <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.plan_resource_id||p.fund_code+':'+p.account_type" class="sbi-plan-row">
             <div class="sbi-row-main"><strong>{{shortFundName(p)}}</strong><small>{{accountLabel(p.account_type)}} · {{p.order_day}}日</small></div>
-            <div class="sbi-plan-side"><strong>{{p.enabled ? yen(p.monthly_amount) : '停止中'}}</strong><button type="button" class="sbi-row-edit" @click="editPlan(p)" :aria-label="shortFundName(p)+'の積立設定を変更'">変更</button></div>
+            <div class="sbi-plan-side"><strong>{{p.enabled ? yen(p.monthly_amount) : '停止中'}}</strong><button type="button" class="sbi-row-edit" @click="editPlan(p)" :aria-label="shortFundName(p)+'の積立設定を変更'">{{memberMode?'変更申請':'変更'}}</button></div>
           </div>
           <button v-if="data.plans.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllPlans" @click="showAllPlans=!showAllPlans">{{showAllPlans?'閉じる':'あと'+(data.plans.length-2)+'件を表示'}}</button>
 

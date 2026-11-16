@@ -6,6 +6,7 @@ const api=readFileSync(new URL('../functions/api/family-finance/[[path]].js',imp
 const projection=readFileSync(new URL('../functions/api/family-finance/personal-assets.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8');
 const workspace=readFileSync(new URL('../src/FamilyMemberWorkspace.vue',import.meta.url),'utf8');
+const sharedPages=readFileSync(new URL('../src/OriginalKakeiboPages.vue',import.meta.url),'utf8');
 const identity=readFileSync(new URL('../src/FamilyFinanceAccess.vue',import.meta.url),'utf8');
 
 test('authenticated personal accounts cannot return another HomeFlow member accounts',()=>{
@@ -38,7 +39,7 @@ test('HomeFlow member bypasses old legacy access even with an old device session
 });
 test('member workspace keeps five familiar tabs, but uses only SSO personal and shared APIs',()=>{
  for(const tab of ['list','stat','add','investments','finance']){
-  assert.match(workspace,new RegExp("tab==='"+tab+"'"));
+  assert.match(sharedPages,new RegExp("activeTab==='"+tab+"'"));
  }
  assert.match(workspace,/\/api\/family-finance\/'\+path/);
  for(const path of ['accounts','personal/assets','shared/entries']){

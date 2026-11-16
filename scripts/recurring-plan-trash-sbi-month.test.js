@@ -57,9 +57,10 @@ test('archived plan is not shown in active fixed-expense list and its original e
 })
 
 test('four trash categories collapse and separate deleted recurring settings from month exclusions',()=>{
-  const panel=finance.match(/<details v-show="managementTab === 'tools'" class="finance-panel finance-disclosure review-trash-panel"[\s\S]*?<\/details>\n\s*<\/template>\n<\/section>/)?.[0]||''
+  const panel=finance.slice(finance.lastIndexOf('<template #trash>'),finance.lastIndexOf('</OriginalOtherManagement>'))
   assert.ok(panel)
   assert.equal((panel.match(/class="review-trash-category"/g)||[]).length,5)
+  assert.match(read('src/OriginalOtherManagement.vue'),/<summary>ゴミ箱/)
   assert.match(panel,/<summary>重複確認/)
   assert.match(panel,/<summary>削除した明細/)
   assert.match(panel,/<summary>削除した固定費/)

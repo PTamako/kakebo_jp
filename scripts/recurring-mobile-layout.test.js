@@ -6,7 +6,7 @@ const source = readFileSync(new URL('../src/FinanceTools.vue', import.meta.url),
 const fixedFields = readFileSync(new URL('../src/FixedCostEditorFields.vue', import.meta.url),'utf8')
 const fixed = (source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">([\s\S]*?)\n  <\/article>/)?.[1] || '')+'\n'+fixedFields
 const review = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel"[^>]*aria-label="固定費の記帳確認">([\s\S]*?)\n  <\/article>/)?.[1] || ''
-const registered = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-plans-panel">([\s\S]*?)\n  <\/article>/)?.[1] || ''
+const registered = readFileSync(new URL('../src/OriginalFixedCostList.vue',import.meta.url),'utf8')
 
 test('iPhone effective-month input stays within its own grid cell', () => {
   assert.match(fixed, /class="recurring-form-field recurring-start-month"><span>開始月<\/span>\s*<input v-model="model.startMonth" type="month"/)
@@ -32,37 +32,34 @@ test('expense candidates use native 18px checkboxes and readable rows', () => {
   assert.match(review, /@change="toggleRecurringSelection\(candidate,\$event\.target\.checked\)"/)
 })
 
-test('registered-plan disclosure reserves right-hand chevron and keeps amount and metadata tidy', () => {
-  assert.match(registered, /<details class="recurring-list-disclosure">/)
-  assert.match(registered, /<summary class="recurring-list-summary">/)
-  assert.match(source, /\.recurring-list-summary\{display:grid;grid-template-columns:minmax\(0,1fr\) 18px;grid-template-rows:auto auto/)
-  assert.match(source, /\.recurring-list-summary:after\{grid-column:2;grid-row:1;/)
-  assert.match(source, /\.recurring-list-summary-total\{grid-column:1\/-1;grid-row:2;/)
-  assert.match(registered, /class="recurring-plan-name"/)
-  assert.match(registered, /class="recurring-plan-amount"/)
-  assert.match(registered, /class="recurring-plan-chevron"/)
-  assert.match(registered, /class="recurring-plan-meta-item">\{\{recurringFrequencyLabel\(p\)\}\}/)
-  assert.match(registered, /class="recurring-plan-meta-item">開始 \{\{p.startMonth/)
-  assert.match(source, /\.recurring-plan-meta\{grid-column:1\/-1;grid-row:2;display:flex;flex-wrap:wrap/)
-  assert.match(source, /\.recurring-plan-meta-item\{[^}]*white-space:nowrap/)
+test('registered fixed expense list has owner and member shared summary, chevron and metadata',()=>{
+ assert.match(source,/<OriginalFixedCostList v-show="managementTab==='plans'"/)
+ assert.match(registered,/<details class="recurring-list-disclosure"/)
+ assert.match(registered,/<summary class="recurring-list-summary">/)
+ assert.match(registered, /class="recurring-list-summary-total"/)
+ for(const cls of ['recurring-plan-name','recurring-plan-amount','recurring-plan-chevron','recurring-plan-meta-item']) {
+   assert.match(registered,new RegExp('class="'+cls))
+ }
+ assert.match(registered, /recurringFrequencyLabel\(p\)/)
+ assert.match(registered, /class="recurring-plan-meta-item">開始 \{\{p.startMonth/)
+ assert.match(registered,/\.recurring-list-summary\{display:grid;grid-template-columns:minmax\(0,1fr\) 18px/)
 })
-
-test('existing create, edit, preview, selection and explicit posting confirmation stay unchanged', () => {
-  assert.match(fixed, /@click="addPlan"/)
-  assert.match(fixed, /@click="cancelPlanEdit"/)
-  assert.match(review, /@click="reviewRecurring"/)
-  assert.match(review, /@click="applyRecurring"/)
-  assert.match(registered, /@click="beginEditPlan\(p\)"/)
-  assert.match(registered, /@click="togglePlanEnabled\(p\)"/)
-  assert.match(registered, /@click="removePlan\(p.id\)"/)
-  assert.match(registered, /v-model="recurringListQuery"/)
-  assert.match(registered, /v-model="recurringListFilter"/)
-  assert.match(source, /if\(!confirm\(summary\)\)return/)
-  assert.match(source, /postApprovedRecurringEntries\(props.api,safe\)/)
-  assert.match(source, /await props.api\(updated\?'recurring-plans\/'/)
-  assert.doesNotMatch(fixed, /:style="\{.*width:100vw/)
+test('original owner create, review, edit and delete remain wired through shared list events',()=>{
+ assert.match(fixed, /@click="addPlan"/)
+ assert.match(fixed, /@click="cancelPlanEdit"/)
+ assert.match(review, /@click="reviewRecurring"/)
+ assert.match(review, /@click="applyRecurring"/)
+ assert.match(source, /@edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan\(p.id\)"/)
+ assert.match(registered, /@click="emit\('edit',p\)"/)
+ assert.match(registered, /@click="emit\('toggle',p\)"/)
+ assert.match(registered, /@click="emit\('remove',p\)"/)
+ assert.match(registered, /v-model="query"/)
+ assert.match(registered, /v-model="filter"/)
+ assert.match(source, /if\(!confirm\(summary\)\)return/)
+ assert.match(source, /postApprovedRecurringEntries\(props.api,safe\)/)
+ assert.match(source, /await props.api\(updated\?'recurring-plans\/'/)
+ assert.doesNotMatch(fixed, /:style="\{.*width:100vw/)
 })
-
 test('mobile fixed expense form removes redundant text and avoids a tall blank gap', () => {
   assert.doesNotMatch(fixed, /recurring-form-caption|周期・開始月・記帳方法を設定します/)
   assert.match(fixed, /class="recurring-form-field recurring-form-schedule"/)
@@ -102,5 +99,5 @@ test('fixed-expense form, due review and saved plans are separate peer cards', (
   assert.doesNotMatch(fixed, /recurring-review-panel|recurring-list-disclosure/)
   assert.doesNotMatch(review, /recurring-form-layout|recurring-list-disclosure/)
   assert.doesNotMatch(registered, /recurring-form-layout|reviewRecurring/)
-  assert.match(source, /\.recurring-plans-panel \.recurring-list-summary\{display:grid/)
+  assert.match(registered, /\.recurring-list-summary\{display:grid/)
 })

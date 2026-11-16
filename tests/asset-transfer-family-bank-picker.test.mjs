@@ -28,9 +28,11 @@ test('family cross-member bank transfer NEVER submits through ordinary ledger en
 test('only actual bank accounts belonging to active actor and recipient are offered',()=>{
  assert.match(cross,/a.owner_user_id===identity.value\?\.user_id/)
  assert.match(cross,/a.owner_user_id!==identity.value\?\.user_id/)
- assert.match(cross,/a.account_kind==='bank'/)
- assert.match(cross,/a.origin==='member_created'/)
+ assert.match(backend,/a.account_kind='bank'/)
+ assert.match(backend,/a.origin='member_created'/)
  assert.match(cross,/identity.value\?\.role==='member'/)
+ assert.match(cross,/eligible-accounts/)
+ assert.doesNotMatch(cross,/\/api\/family-finance\/accounts/)
  assert.match(cross,/bank_debit_posted:true/)
  assert.match(cross,/bank_credit_posted:true/)
  assert.match(backend,/u.role!=='member'/)

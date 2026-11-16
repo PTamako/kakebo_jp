@@ -14,6 +14,7 @@ import { validateLedgerTextFields } from './ledger-input-validation.js'
 import { getCardBillSnapshots } from './card-bill-snapshots.js'
 import { handleR2Receipts } from './r2-receipts.js'
 import {verifyLegacyOwner} from './legacy-owner-guard.js'
+import {ledgerRecorderColumns,ledgerRecorderJoins} from './ledger-recorder.js'
 import { readScheduledJobStatus } from './scheduled-job-status.js'
 import { comparisonWindow, calculateSpendingComparison, nextCivilDay } from '../../src/stats-period-comparison.js'
 // Cloudflare Pages Functions：/api/*
@@ -1206,12 +1207,16 @@ export async function onRequest({ request, env, params }) {
         const datePrefix = entriesYear || month
         const bounds=entryDateBounds(datePrefix)
         if(!bounds)return json({error:'対象期間が正しくありません'},400)
+        // A creator ID is trustworthy for shared records; the legacy claim
+        // identifies the historical account owner but not the original editor.
+        // This is an optional read-only projection, not a ledger write.
+        const recorderSelect='SELECT e.*,'+ledgerRecorderColumns+' FROM entries e '+ledgerRecorderJoins+' '
         // Stable ID-cursor pagination for full exports. Keep OFFSET for older clients.
         const cursorRaw = url.searchParams.get('cursor')
         if (cursorRaw !== null) {
           const cursor = Number(cursorRaw)
           if (!Number.isSafeInteger(cursor) || cursor < 0) return json({error:'読み込み位置が正しくありません'},400)
-          const {results} = await db.prepare('SELECT * FROM entries WHERE date>=?1 AND date<?2 AND id>?3 ORDER BY id ASC LIMIT 500').bind(bounds.start,bounds.end,cursor).all()
+          const {results} = await db.prepare(recorderSelect+'WHERE e.date>=?1 AND e.date<?2 AND e.id>?3 ORDER BY e.id ASC LIMIT 500').bind(bounds.start,bounds.end,cursor).all()
           return json(results)
         }
         const offsetRaw = url.searchParams.get('offset')
@@ -1220,7 +1225,7 @@ export async function onRequest({ request, env, params }) {
         // Legacy clients get the same list shape; the annual view requests 500-row pages.
         const limit = offsetRaw === null ? 10000 : 500
         const { results } = await db
-          .prepare('SELECT * FROM entries WHERE date>=?1 AND date<?2 ORDER BY date DESC, time DESC, id DESC LIMIT ?3 OFFSET ?4')
+          .prepare(recorderSelect+'WHERE e.date>=?1 AND e.date<?2 ORDER BY e.date DESC, e.time DESC, e.id DESC LIMIT ?3 OFFSET ?4')
           .bind(bounds.start,bounds.end,limit,offset).all()
         return json(results)
       }

@@ -183,7 +183,12 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
 </script>
 <template>
  <div class="member-shell">
-  <header class="member-logo">📒 家計簿 <span>家庭账本</span></header>
+  <header class="topbar member-topbar">
+   <div class="brand">
+    <img class="brand-wordmark" src="/branding/kakeibo-wordmark.png?v=4"
+     alt="家計簿" width="400" height="100"/>
+   </div><span class="member-family-label">家庭账本</span>
+  </header>
   <section v-if="error" class="member-alert" role="alert">{{error}}
    <button type="button" @click="refresh">再试一次</button>
   </section>
@@ -259,8 +264,10 @@ onUnmounted(()=>{alive=false;epoch++;accounts.value=[];assets.value=[];sharedEnt
 </template>
 <style scoped>
 .member-shell{max-width:680px;margin:auto;padding:12px 16px 140px;min-height:76vh;display:grid;gap:14px;align-content:start}
-.member-logo{font-size:25px;font-weight:850;color:var(--blue-dark,#bd5376);padding:10px 4px}
-.member-logo span{display:block;font-size:12px;color:var(--muted,#81777b);font-weight:500}
+.member-topbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.member-topbar .brand{display:flex;align-items:center;min-width:0}
+.member-topbar .brand-wordmark{display:block;width:min(168px,43vw);height:auto;object-fit:contain}
+.member-family-label{font-size:12px;color:var(--muted,#81777b);white-space:nowrap}
 .member-page{display:grid;gap:12px;min-width:0}
 .member-page h1{margin:0;font-size:23px}
 .member-page h2{font-size:16px;margin:8px 0 0}

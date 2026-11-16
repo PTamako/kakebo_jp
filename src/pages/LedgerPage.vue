@@ -2,6 +2,7 @@
 import { inject } from 'vue'
 import TransactionForm from '../TransactionForm.vue'
 import LedgerEntryContent from '../LedgerEntryContent.vue'
+import LedgerTypeFilter from '../LedgerTypeFilter.vue'
 import { isExternalLedgerEntry } from '../ledger-origin.js'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
@@ -10,7 +11,7 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
 <template>
 <section  class="page-section">
       <div class="page-heading"><div><h1>収支明細</h1></div><div class="heading-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div></div>
-      <div class="entry-type-filter" role="group" aria-label="明細の種類"><button v-for="option in [{value: 'all', label: 'すべて'}, {value: 'income', label: '収入'}, {value: 'expense', label: '支出'}, {value: 'transfer', label: '資産移動'}]" :key="option.value" type="button" :class="{ selected: entryTypeFilter === option.value }" :aria-pressed="entryTypeFilter === option.value" @click="setEntryTypeFilter(option.value)">{{ option.label }}</button></div>
+      <LedgerTypeFilter :model-value="entryTypeFilter" @change="setEntryTypeFilter" />
       <section v-if="!detailFilter && !prepaidHistoryFilter" class="month-calendar" aria-label="月間明細カレンダー">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><div class="calendar-actions"><button type="button" class="calendar-reset" @click="calendarExpanded = !calendarExpanded">{{ calendarExpanded ? '週のみ表示' : '月全体を表示' }}</button><button v-if="selectedDay" type="button" class="calendar-reset" @click="selectedDay = ''">選択解除</button></div></div>
         <div class="calendar-legend" aria-label="日付マークの説明"><span><i class="legend-today"></i>今日</span><span><i class="calendar-peak-expense">支</i>支出最多</span><span><i class="calendar-peak-income">収</i>収入最多</span><span><i class="calendar-peak-transfer">移</i>資産移動最多</span></div>

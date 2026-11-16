@@ -29,7 +29,7 @@ const props=defineProps({
  themes:{type:Array,required:true}
 })
 const emit=defineEmits(['logout','theme-change'])
-const tab=ref('list')
+const tab=ref('add')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))

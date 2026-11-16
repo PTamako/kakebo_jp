@@ -3,15 +3,16 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('../src/FinanceTools.vue', import.meta.url), 'utf8')
-const fixed = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">([\s\S]*?)\n  <\/article>/)?.[1] || ''
+const fixedFields = readFileSync(new URL('../src/FixedCostEditorFields.vue', import.meta.url),'utf8')
+const fixed = (source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">([\s\S]*?)\n  <\/article>/)?.[1] || '')+'\n'+fixedFields
 const review = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel"[^>]*aria-label="固定費の記帳確認">([\s\S]*?)\n  <\/article>/)?.[1] || ''
 const registered = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-plans-panel">([\s\S]*?)\n  <\/article>/)?.[1] || ''
 
 test('iPhone effective-month input stays within its own grid cell', () => {
-  assert.match(fixed, /class="recurring-form-field recurring-start-month"><span>開始月<\/span><input v-model="plan.startMonth" type="month"/)
+  assert.match(fixed, /class="recurring-form-field recurring-start-month"><span>開始月<\/span>\s*<input v-model="model.startMonth" type="month"/)
   assert.match(source, /\.recurring-manager-panel \.recurring-form-layout\{display:grid;grid-template-columns:minmax\(0,1fr\)/)
-  assert.match(fixed, /v-model="plan.postingMode" type="radio" value="auto"/)
-  assert.match(fixed, /v-model="plan.postingMode" type="radio" value="manual"/)
+  assert.match(fixed, /v-model="model.postingMode" type="radio" value="auto"/)
+  assert.match(fixed, /v-model="model.postingMode" type="radio" value="manual"/)
   assert.match(source, /\.recurring-manager-panel \.recurring-start-month\{[^}]*grid-template-columns:minmax\(0,1fr\)[^}]*overflow:hidden/)
   assert.match(source, /\.finance-panel \.recurring-start-month input\[type=month\]\{[^}]*width:100%!important;max-width:100%!important;min-width:0!important;min-inline-size:0!important;box-sizing:border-box!important/)
   assert.match(source, /::-webkit-date-and-time-value\{min-width:0/)

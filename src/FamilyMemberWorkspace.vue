@@ -8,7 +8,7 @@ import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
 import BottomNavigation from './BottomNavigation.vue'
 import AppTopbar from './AppTopbar.vue'
-import FinanceManagementHeader from './FinanceManagementHeader.vue'
+import ManagementPage from './pages/ManagementPage.vue'
 import CardManagementControls from './CardManagementControls.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
@@ -25,7 +25,7 @@ const props=defineProps({
  themes:{type:Array,required:true}
 })
 const emit=defineEmits(['logout','theme-change'])
-const tab=ref('list'),managementTab=ref('cards')
+const tab=ref('list')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
@@ -375,12 +375,12 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
    <p v-if="cardSharingError" class="member-alert" role="alert">共有カードの取得に失敗しました：{{cardSharingError}}。更新して再試行してください。</p>
   </section>
     <AssetsPage v-else-if="tab==='investments'" :personal-assets="assets"
-    :open-personal-management="()=>{tab='finance';managementTab='cards'}" />
-  <section v-else-if="tab==='finance'" class="member-page">
-   <FinanceManagementHeader v-model="managementTab" :busy="busy"
-     :status="'本人のカード・残高・固定費のみ · '+myAccounts.length+'口座'"
-     :error="error" @refresh="refresh" />
-   <template v-if="managementTab==='cards'">
+    :open-personal-management="()=>{tab='finance'}" />
+  <ManagementPage v-else-if="tab==='finance'" class="member-page"
+    :member-view="true" :member-busy="busy" :member-error="error"
+    :member-status="'本人のカード・残高・固定費 · '+myAccounts.length+'口座'"
+    :member-refresh="refresh" :api="api">
+   <template #member-cards>
     <section class="finance-panel">
      <h2>支払方法・カード管理</h2>
      <CardManagementControls v-model="selectedCardId" :busy="busy"
@@ -409,21 +409,27 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
      </form>
     </div>
    </template>
-   <FamilyRecurringFinance v-else-if="managementTab==='plans'" :key="'personal-recurring:'+user.user_id"
-    :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
-   <div v-else-if="managementTab==='investment'" class="entry">
+   <template #member-plans>
+    <FamilyRecurringFinance :key="'personal-recurring:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+   </template>
+   <template #member-investment>
+   <div class="finance-panel">
     <p class="help">个人证券账户：仅显示本人创建的账户。真实基金份额及市值在对账前不会自动填写。</p>
     <div v-for="a in myAccounts.filter(x=>x.account_kind==='securities')" :key="a.account_id">{{a.label}}</div>
    </div>
-   <div v-else class="finance-panel"><p class="help">個人の金融口座は本人が直接管理できます。家庭帳簿への入帳時だけ審査が必要です。</p>
+   </template>
+   <template #member-tools>
+   <div class="finance-panel"><p class="help">個人の金融口座は本人が直接管理できます。家庭帳簿への入帳時だけ審査が必要です。</p>
     <button type="button" @click="refresh">すべて更新</button>
    </div>
-  </section>
+   </template>
+  </ManagementPage>
   <BottomNavigation :active-tab="tab" @change="next=>tab=next" />
  </div>
 </template>
 <style scoped>
-.member-shell{max-width:680px;margin:auto;padding:12px 16px 140px;min-height:76vh;display:grid;gap:14px;align-content:start}
+.member-shell{width:100%;max-width:100%;padding:0;margin:0;min-height:76vh;display:grid;gap:0;align-content:start}
 .member-topbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
 .member-topbar .brand{display:flex;align-items:center;min-width:0}
 .spouse-income-shortcut{min-width:0}

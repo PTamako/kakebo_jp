@@ -20,6 +20,7 @@ import BottomNavigation from './BottomNavigation.vue'
 import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
 import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
+import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import LedgerEntryContent from './LedgerEntryContent.vue'
@@ -38,6 +39,7 @@ const emit=defineEmits(['logout','theme-change'])
 const tab=ref('add')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
+const memberMerchantRules=ref([]),memberRuleError=ref('')
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
 const year=ref(month.value.slice(0,4))
 const busy=ref(false),error=ref(''),label=ref(''),kind=ref('cash')
@@ -75,17 +77,17 @@ async function saveCard(payload){
     account_kind:kind,expected_user_id:user,
     closing_day:payload.closingDay===undefined?null:payload.closingDay}))
    if(created.owner_user_id!==user||created.ledger_changed!==false)
-    throw Error('卡片归属验证失败')
+    throw Error('カードの所有者を確認できません')
    selectedCardId.value=created.account_id
   }else{
    const a=selectedCard.value
-   if(!a||a.owner_user_id!==user||a.origin!=='member_created')throw Error('只能编辑本人的卡片')
+   if(!a||a.owner_user_id!==user||a.origin!=='member_created')throw Error('本人のカードのみ編集できます')
    if((payload.sourceType==='prepaid')!==(a.account_kind==='prepaid'))
-    throw Error('账户类型更换尚不支持，请创建另一张个人卡片')
+    throw Error('カードの種類は変更できません。新しい個人カードを追加してください')
    const changes={label:payload.name,version:a.version,expected_user_id:user}
    if(payload.closingDay!==undefined)changes.closing_day=payload.closingDay
    const updated=await api('accounts/'+a.account_id,request(changes,'PATCH'))
-   if(updated.ledger_changed!==false)throw Error('卡片更新未完成验证')
+   if(updated.ledger_changed!==false)throw Error('カードの更新結果を確認できません')
   }
   if(revision!==epoch||user!==props.user.user_id)return
   cardMode.value='';await refresh()
@@ -164,12 +166,12 @@ function recognizeMemberText(fromImage=false){
   memberEntryError.value='資産移動を含む明細は支出として保存できません。資産移動メニューで処理してください。';return
  }
  const drafts=parsed.filter(x=>x&&Number.isSafeInteger(Number(x.amount))&&Number(x.amount)>0)
-  .map(x=>({...newEntry(),type:x.type==='income'?'income':'expense',
+  .map(x=>{const draft={...newEntry(),type:x.type==='income'?'income':'expense',
    amount:Number(x.amount),date:String(x.date||newEntry().date),
    time:String(x.time||''),merchant:String(x.merchant||''),
    category:String(x.category||'日用品'),note:String(x.note||''),
    paymentSource:memberPaymentOptions.value.some(c=>c.value===(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value))
-    ?(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value):'cash'}))
+    ?(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value):'cash'};applyMemberMerchantRule(draft);return draft})
  if(!drafts.length){memberEntryError.value='解析できる金額がありません。原文と金額を確認してください。';return}
  if(memberEntries.value.length&& !window.confirm('現在の未保存記録を読み取り結果で置き換えますか？'))return
  memberEntries.value=drafts
@@ -303,6 +305,9 @@ async function submitMemberEntry(){
    }else{
     const result=await sharedMutationRef.value?.submitEntry(record)
     if(!result?.proposalId)throw Error('申請の受付を確認できません')
+   }
+   if(record.type==='expense'&&(record.bindRule||record.bindPaymentRule)){
+    try{await rememberMemberRule(record)}catch(e){memberRuleError.value='店舗ルールの保存に失敗しました：'+e.message}
    }
    // Remove one draft only after the authenticated backend confirmed receipt.
    // A later failure leaves all unsent rows editable, not silently discarded.
@@ -509,8 +514,8 @@ async function refresh(){
   if(!alive||ticket!==epoch||user!==props.user.user_id)return
   if(a.account_scope!=='personal'||b.scope!=='personal'||b.viewer_user_id!==user||
    c.ledger_scope!=='household'||d.ledger_scope!=='household'||e.ledger_scope!=='household')
-   throw Error('账本权限范围核验失败')
-  if((a.items||[]).some(x=>x.owner_user_id!==user))throw Error('账户归属不一致')
+   throw Error('帳簿のアクセス範囲を確認できません')
+  if((a.items||[]).some(x=>x.owner_user_id!==user))throw Error('口座の所有者が一致しません')
   accounts.value=a.items||[];assets.value=b.accounts||[]
   cardSharingError.value=f.share_error||''
   sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
@@ -551,7 +556,7 @@ async function createAccount(type,name){
 }
 async function modify(a,changes){
  if(busy.value||a.owner_user_id!==props.user.user_id||a.origin!=='member_created')return
- if(changes.is_archived===true&&!confirm('归档该账户？原有记录不会删除。'))return
+ if(changes.is_archived===true&&!confirm('この口座をアーカイブしますか？記録は削除されません。'))return
  const ticket=epoch,user=props.user.user_id;busy.value=true;error.value=''
  try{
   const r=await api('accounts/'+encodeURIComponent(a.account_id),request(
@@ -661,7 +666,7 @@ provide('kakeibo-entry-input',{
  selectDraftReceipt:()=>{},pendingReceiptImage:memberReceiptImage,
  pendingReceiptFileName:memberReceiptFileName,receiptSaveError:memberEntryError,
  setEntryType:(f,type)=>setMemberEntryType(type,f),
- applyMerchantPayment:()=>{},
+ applyMerchantPayment:applyMemberMerchantRule,
  manualPayment:(f,source)=>{f.paymentSource=source},
  onImage:memberScanImage,addBlank:()=>addMemberEntry(),saveAll:submitMemberEntry,
  receiptEnabled:computed(()=>false),

@@ -62,7 +62,7 @@ test('manual posting previews multiple occurrences and rejects changed settings'
 })
 
 test('iPhone recurrence form uses short dropdown + multi-select bottom sheets, not expanded buttons',()=>{
-  const view=source('src/FinanceTools.vue')+'\n'+read('src/FixedCostEditorFields.vue')
+  const view=source('src/FinanceTools.vue')+'\n'+source('src/FixedCostEditorFields.vue')
   const sheet=source('src/MobileMultiChoiceSheet.vue')
   const api=source('functions/api/[[path]].js')
   const migration=source('migrations/0020_recurring_multi_schedule.sql')

@@ -186,7 +186,15 @@ function foreground(){
  void check()
 }
 onMounted(()=>{void check();document.addEventListener('visibilitychange',foreground)})
-onUnmounted(()=>{resetIdentity();document.removeEventListener('visibilitychange',foreground)})
+onUnmounted(()=>{
+ // Unmount is NOT a logout: the verified HomeFlow owner is deliberately
+ // switched from the identity screen to the original ledger by App.vue.
+ // Emitting identity-change(null) here would lock App.vue again, remount
+ // this component, reauthenticate the owner and flash in an infinite loop.
+ // Invalidate pending async reads and scrub this component's local refs only.
+ epoch++;person.value=null;accounts.value=[];advancedOpen.value=false
+ document.removeEventListener('visibilitychange',foreground)
+})
 </script>
 
 <template>

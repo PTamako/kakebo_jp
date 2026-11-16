@@ -398,16 +398,28 @@ function onFamilyIdentityChange(identity){
  }
 }
 const PENDING_LOGOUT_KEY='kakeibo-server-logout-pending-v1'
+const PENDING_HF_LOGOUT_KEY='kakeibo-homeflow-logout-pending-v1'
 const serverLogoutPending=ref((()=>{try{return localStorage.getItem(PENDING_LOGOUT_KEY)==='1'}catch{return false}})())
 let logoutRevocationPromise=null
 async function completeServerLogout(oldSession=''){
   if(logoutRevocationPromise)return logoutRevocationPromise
   logoutRevocationPromise=(async()=>{
     try{
-      const response=await fetch('/api/auth/logout',{
+      // Revocation MUST cover both old device credentials and HomeFlow SSO.
+      // Otherwise logout would be followed by automatic owner re-entry.
+      const legacy=await fetch('/api/auth/logout',{
         method:'POST',credentials:'same-origin',headers:oldSession?{'x-session':oldSession}:{}
       })
-      if(!response.ok)throw Error('HTTP '+response.status)
+      if(!legacy.ok)throw Error('旧会话撤销失败 '+legacy.status)
+      if(localStorage.getItem(PENDING_HF_LOGOUT_KEY)==='1'||familyIdentity.value){
+        const homeflow=await fetch('/api/homeflow-sso/logout',{
+         method:'POST',credentials:'same-origin',
+         headers:{Origin:window.location.origin,'Content-Type':'application/json'},
+         body:JSON.stringify({})
+        })
+        if(!homeflow.ok)throw Error('HomeFlow 撤销失败 '+homeflow.status)
+        localStorage.removeItem(PENDING_HF_LOGOUT_KEY)
+      }
       localStorage.removeItem(PENDING_LOGOUT_KEY)
       serverLogoutPending.value=false
       return true
@@ -447,6 +459,11 @@ async function logout() {
   sessionStorage.removeItem('kakeibo-token')
   sessionStorage.setItem('kakeibo-logged-out', '1')
   locked.value = true
+  // Persist the SSO revocation obligation so a failed network call is retried.
+  if(familyIdentity.value)try{localStorage.setItem(PENDING_HF_LOGOUT_KEY,'1')}catch{}
+  familyIdentity.value=null
+  entries.value=[];stats.value=null;annualStats.value=null
+  paymentSources.value=[];paymentSourceMeta.value={};paymentClosingDays.value={}
   // Persist only a revocation marker (never credentials), then retry on reconnect.
   serverLogoutPending.value=true
   try{localStorage.setItem(PENDING_LOGOUT_KEY,'1')}

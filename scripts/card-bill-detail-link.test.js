@@ -22,7 +22,8 @@ test('save and view buttons stay side by side and share the selected closing per
   assert.match(finance, /@click="viewCardBillDetails">明細を見る/)
   assert.match(finance, /emit\('open-card-bill-details', \{/)
   assert.match(finance, /name: bill\.value\.name, month: bill\.value\.month, start: period\.start, end: period\.end/)
-  assert.match(app, /@open-card-bill-details="openCardBillDetails"/)
+  assert.match(app,/onOpenCardBillDetails:openCardBillDetails/)
+  assert.match(app,/:management-bindings="originalManagementBindings"/)
 })
 
 test('cross-month card statement retrieves both months and excludes wrong cards and dates', async () => {

@@ -133,12 +133,12 @@ test('month end is clipped and future activation is respected',async()=>{
 })
 
 test('UI displays saved mode and dynamic explanation with responsive layout',()=>{
-  const page=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
+  const page=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/FixedCostEditorFields.vue',import.meta.url),'utf8')
   const api=readFileSync(new URL('../functions/api/[[path]].js',import.meta.url),'utf8')
-  assert.match(page,/v-model="plan.postingMode"/)
-  assert.match(page,/recurringFrequencyLabel\(plan\).*?自動で支出明細に登録します。/)
+  assert.match(page,/v-model="model.postingMode"/)
+  assert.match(page,/recurringFrequencyLabel\(model\).*?自動で支出明細に登録します。/)
   assert.match(page,/p.postingMode==='auto' \? '自動記帳' : '確認して記帳'/)
-  assert.match(page,/v-model="planCycleChoice"/)
+  assert.match(page,/v-model:cycleChoice="planCycleChoice"/)
   assert.match(api,/posting_mode=\?8,auto_from_month=\?9,schedule_type=\?10,weekday=\?11,workday_only=\?13/)
   assert.match(api,/nextAutomaticStartMonth\(tokyoToday\(\),item.day,item.startMonth,item.scheduleType\|\|'monthly',item.weekday\|\|0,detail\)/)
   assert.match(api,/postingMode:p.posting_mode\|\|'manual'/)

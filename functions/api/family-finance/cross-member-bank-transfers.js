@@ -270,7 +270,13 @@ export async function familyCrossMemberBankTransfers(req,e,url,u,parts){
    "OR (?='owner' AND m.role='member')) "+
    'ORDER BY a.owner_user_id,a.label LIMIT 100')
    .bind(u.household_id,u.user_id,u.role,u.role).all()).results||[];
-  return reply({ok:true,items:rows});
+  let masked=0;
+  // The other person's bank label is private even when selecting a legitimate
+  // two-person transfer target. A stable opaque account ID is sufficient.
+  const items=rows.map(a=>a.owner_user_id===u.user_id?a:{
+   ...a,label:(u.role==='member'?'管理员收款账户':'家庭成员银行账户')+' '+(++masked)
+  });
+  return reply({ok:true,items});
  }
  if(parts.length===1&&req.method==='POST')return prepare(req,e,url,u);
  if(req.method==='GET'&&parts.length===1){

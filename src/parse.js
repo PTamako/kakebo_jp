@@ -97,7 +97,9 @@ function parseAiCsvRow(raw, rules) {
   const stripWeekday = value => value.replace(/\s*\(\s*(?:月|火|水|木|金|土|日)(?:曜日)?\s*\)\s*$/, '').trim()
   const validDate = value => {
     const date = stripWeekday(value)
-    return unknown.test(date) || isRelativeDateToken(date) || new RegExp('^' + dateToken + '
+    const matched = new RegExp('^' + dateToken).exec(date)
+    return unknown.test(date) || isRelativeDateToken(date) || !!(matched && matched[0] === date)
+  }
   // Gemma can return the printed Japanese clock (19時48分) instead of HH:mm.
   // Require a standalone clock token so merchant/payment text cannot become time.
   const validTime = value => unknown.test(value) || isRelativeTimeToken(value)

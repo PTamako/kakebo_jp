@@ -132,6 +132,17 @@ export async function familyMemberFixedCosts(req,env,url,user,parts){
   if(res.meta?.changes!==1)return reject('FIXED_COST_VERSION_OR_OWNER_CHANGED')
   return json({ok:true,plan:view(await get(env.DB,user,pid)),ledger_applied:false})
  }
+ if(parts.length===2&&id.test(parts[1])&&req.method==='DELETE'){
+  const x=await body(req,url)
+  if(!exact(x,['expected_user_id','version'])||
+   x.expected_user_id!==user.user_id||!Number.isInteger(x.version)||x.version<1)
+   return reject('FIXED_COST_INPUT_INVALID',400)
+  const result=await env.DB.prepare('DELETE FROM family_member_fixed_cost_settings '+
+   'WHERE plan_id=? AND household_id=? AND owner_user_id=? AND version=?')
+   .bind(parts[1],user.household_id,user.user_id,x.version).run()
+  if(result.meta?.changes!==1)return reject('FIXED_COST_VERSION_OR_OWNER_CHANGED')
+  return json({ok:true,removed:true,ledger_applied:false})
+ }
  if(parts.length===3&&id.test(parts[1])&&parts[2]==='toggle'&&req.method==='POST'){
   const x=await body(req,url)
   if(!exact(x,['expected_user_id','version','enabled'])||

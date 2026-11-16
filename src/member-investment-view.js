@@ -5,7 +5,7 @@ const month=/^20\d\d-(0[1-9]|1[0-2])$/
 const safeMoney=n=>Number.isSafeInteger(Number(n))&&Number(n)>=0
 export function memberInvestmentSnapshot({userId,requestedMonth,plans=[],occurrences=[]}){
  if(!userId||!month.test(requestedMonth))throw Error('MEMBER_INVESTMENT_SCOPE_INVALID')
- if(!Array.isArray(plans)||!Array.isArray(occurrences))throw Error('MEMBER_INVESTMENT_SOURCE_INVALID')
+ if(!Array.isArray(plans)||!(occurrences===null||Array.isArray(occurrences)))throw Error('MEMBER_INVESTMENT_SOURCE_INVALID')
  const own=plans.filter(p=>p&&p.owner_user_id===userId&&p.plan_type==='sbi_tsumitate'&&
    /^[A-Z0-9]{8}$/.test(p.fund_code||'')&&safeMoney(p.amount_jpy)&&
    /^20\d\d-(0[1-9]|1[0-2])$/.test(p.start_month||'')&&
@@ -22,7 +22,7 @@ export function memberInvestmentSnapshot({userId,requestedMonth,plans=[],occurre
  }))
  // Only a server-confirmed applied occurrence is an executed internal entry.
  // This number is NOT a claim that the bank or broker independently verified it.
- const applied=occurrences.filter(o=>o&&o.owner_user_id===userId&&
+ const applied=(occurrences||[]).filter(o=>o&&o.owner_user_id===userId&&
   o.plan_type==='sbi_tsumitate'&&o.period_key===requestedMonth&&
   (o.applied===true||o.ledger_applied===true||o.status==='applied')&&
   safeMoney(o.amount_jpy))
@@ -38,10 +38,10 @@ export function memberInvestmentSnapshot({userId,requestedMonth,plans=[],occurre
   institution_verified:false,holdings:[],prices:[],plans:normalized,transfers:[],
   valuation:{value:null,pnl:null},
   reconciliation:{
-   monthly_amount:scheduled,registered:confirmed,
-   unregistered:Math.max(0,scheduled-confirmed),
-   planned_difference:Math.max(0,confirmed-scheduled),
-   funded:confirmed,pending:0,member_internal_only:true
+   monthly_amount:scheduled,registered:occurrences===null?null:confirmed,
+   unregistered:occurrences===null?null:Math.max(0,scheduled-confirmed),
+   planned_difference:occurrences===null?null:Math.max(0,confirmed-scheduled),
+   funded:occurrences===null?null:confirmed,pending:null,member_internal_only:true
   }
  }
 }

@@ -47,6 +47,15 @@ function mock(){
       entries.set(x.plan_id,{...x,version:1,enabled:1})
       return {meta:{changes:1}}
      }
+     if(sql.startsWith('DELETE FROM family_member_fixed_cost_settings')){
+      const [planId,household,user,version]=args
+      const prior=entries.get(planId)
+      if(!prior||prior.household_id!==household||
+         prior.owner_user_id!==user||prior.version!==version)
+       return {meta:{changes:0}}
+      entries.delete(planId)
+      return {meta:{changes:1}}
+     }
      if(sql.startsWith('UPDATE family_member_fixed_cost_settings')){
       const id=args.at(-4),household=args.at(-3),user=args.at(-2),version=args.at(-1)
       const prior=entries.get(id)
@@ -109,4 +118,29 @@ test('original and member fixed-cost UI use exactly the same editor component',(
  assert.match(balance, /activeView==='funds'\?'証券口座を追加'/)
  assert.match(workspace, /:on-create-personal-account="createAccount"/)
  assert.doesNotMatch(workspace, /<FamilyRecurringFinance view="plans"/)
+})
+
+test('only the member who owns a fixed-cost setting can delete it; no ledger is changed',async()=>{
+ const {db}=mock()
+ const oldCrypto=globalThis.crypto
+ if(!globalThis.crypto)Object.defineProperty(globalThis,'crypto',{value:webcrypto,configurable:true})
+ try{
+  const created=await call('POST','',{
+   expected_user_id:member.user_id,
+   idempotency_key:'member-fixed:22222222-2222-4222-8222-222222222222',
+   ...base},member,db)
+  const item=(await created.json()).plan
+  const other={...member,user_id:'other-member'}
+  let result=await call('DELETE','/'+item.plan_id,
+   {expected_user_id:other.user_id,version:item.version},other,db)
+  assert.equal(result.status,409)
+  let rows=(await (await call('GET','',null,member,db)).json()).items
+  assert.equal(rows.length,1)
+  result=await call('DELETE','/'+item.plan_id,
+   {expected_user_id:member.user_id,version:item.version},member,db)
+  assert.equal(result.status,200)
+  assert.deepEqual(await result.json(),{ok:true,removed:true,ledger_applied:false})
+  rows=(await (await call('GET','',null,member,db)).json()).items
+  assert.equal(rows.length,0)
+ }finally{if(!oldCrypto)delete globalThis.crypto}
 })

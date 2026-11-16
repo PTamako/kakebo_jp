@@ -15,6 +15,7 @@ import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import FixedCostEditorFields from './FixedCostEditorFields.vue'
+import OriginalFixedCostList from './OriginalFixedCostList.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
@@ -1694,46 +1695,11 @@ async function removeCardBill(record) {
         <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
       </div>
   </article>
-  <article v-show="managementTab === 'plans'" class="finance-panel recurring-plans-panel">
-    <details class="recurring-list-disclosure">
-      <summary class="recurring-list-summary">
-        <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{plans.length}}件</strong></span>
-        <span class="recurring-list-summary-total">今月対象 {{currentEligiblePlans.length}}件 · 今月予定額 {{yen(recurringMonthlyTotal)}}</span>
-      </summary>
-      <div class="recurring-list-body">
-        <div class="recurring-list-filters">
-          <input v-model="recurringListQuery" type="search" placeholder="名前で検索" aria-label="固定費を検索" />
-          <MobileChoiceSegments v-model="recurringListFilter" label="固定費の状態" :options="[{value:'all',label:'すべて'},{value:'active',label:'有効'},{value:'stopped',label:'停止中'}]" />
-        </div>
-        <div v-if="!filteredRecurringPlans.length" class="recurring-list-empty">{{plans.length ? '該当する固定費はありません' : '固定費はまだありません'}}</div>
-        <div v-else id="recurring-plan-list" class="recurring-plan-scroll" :class="{'is-expanded': recurringListShowAll}" role="list" aria-label="固定費一覧">
-          <div v-for="p in visibleRecurringPlans" :key="p.id" class="recurring-plan-item" role="listitem">
-            <button type="button" class="recurring-plan-toggle" :aria-expanded="expandedRecurringPlanId===p.id" :aria-controls="'recurring-plan-actions-'+p.id" @click="toggleRecurringPlanDetails(p.id)">
-              <span class="recurring-plan-name" :title="p.name">{{p.name}}</span>
-              <span class="recurring-plan-amount">{{yen(p.amount)}}</span>
-              <span class="recurring-plan-chevron" aria-hidden="true">{{expandedRecurringPlanId===p.id ? '⌃' : '⌄'}}</span>
-              <span class="recurring-plan-meta">
-                <span class="recurring-plan-meta-item">{{recurringFrequencyLabel(p)}}</span>
-                <span class="recurring-plan-meta-item recurring-payment-source" :title="p.paymentSource || '未設定'">{{p.paymentSource || '未設定'}}</span>
-                <span class="recurring-plan-meta-item">開始 {{p.startMonth?.replace('-', '/') || '未設定'}}</span>
-                <span class="recurring-plan-meta-item">{{p.postingMode==='auto' ? '自動記帳' : '確認して記帳'}}</span>
-                <span class="recurring-plan-meta-item" :class="{'recurring-plan-overdue':recurringStatusFor(p).state==='missing'}">{{recurringPlanNextLabel(recurringStatusFor(p))}}</span>
-              </span>
-            </button>
-            <div v-if="expandedRecurringPlanId===p.id" :id="'recurring-plan-actions-'+p.id" class="recurring-plan-more">
-              <span class="recurring-plan-category">{{categoryLabel(p.category)}} · {{p.enabled ? '有効' : '停止中'}}</span>
-              <div class="recurring-plan-actions">
-                <button type="button" :disabled="recurringBusy" @click="beginEditPlan(p)">編集</button>
-                <button type="button" :disabled="recurringBusy" @click="togglePlanEnabled(p)">{{p.enabled ? '停止' : '再開'}}</button>
-                <button type="button" :disabled="recurringBusy" @click="removePlan(p.id)">削除</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <button v-if="filteredRecurringPlans.length > 2" type="button" class="recurring-list-more" :aria-expanded="recurringListShowAll" aria-controls="recurring-plan-list" @click="recurringListShowAll = !recurringListShowAll">{{recurringListShowAll ? '折りたたむ' : 'もっと見る'}}</button>
-      </div>
-    </details>
-  </article>
+  <OriginalFixedCostList v-show="managementTab==='plans'"
+    :items="plans" :busy="recurringBusy" :yen="yen"
+    :category-label="categoryLabel" :next-label="p=>recurringPlanNextLabel(recurringStatusFor(p))"
+    :current-count="currentEligiblePlans.length" :monthly-total="recurringMonthlyTotal"
+    @edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan(p.id)" />
   <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">
     <h2>カード別利用額</h2>
     <div class="finance-inputs card-billing-fields">

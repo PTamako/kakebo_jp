@@ -97,17 +97,17 @@ async function saveCard(payload){
 async function cardDanger(action,name){
  const a=selectedCard.value
  if(!a||a.owner_user_id!==props.user.user_id||a.label!==name)
-  throw Error('账户身份已改变')
+  throw Error('口座の所有者が変更されました')
  if(action==='archive'){
   await modify(a,{is_archived:true});cardMode.value='';return
  }
- throw Error('永久删除卡片与余额需要独立核对，目前只能归档')
+ throw Error('カードと残高の完全削除には個別の確認が必要です。現在はアーカイブのみ利用できます')
 }
 
 let epoch=0,alive=true
-const kinds=[['credit_card','信用卡'],['prepaid','储值卡'],['cash','现金'],
- ['bank','银行'],['points','积分'],['securities','证券'],['other','其他']]
-const kindLabel=x=>kinds.find(k=>k[0]===x)?.[1]||'账户'
+const kinds=[['credit_card','クレジットカード'],['prepaid','プリペイドカード'],['cash','現金'],
+ ['bank','銀行'],['points','ポイント'],['securities','証券'],['other','その他']]
+const kindLabel=x=>kinds.find(k=>k[0]===x)?.[1]||'口座'
 const yen=n=>n===null||n===undefined?'—':'¥'+Number(n).toLocaleString('ja-JP')
 const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.user.user_id))
 const memberPaymentOptions=computed(()=>buildMemberPaymentChoices(myAccounts.value,sharedCards.value))
@@ -440,7 +440,7 @@ async function moreEntries(){
  try{
   const next=await api('shared/entries?limit=100&month='+encodeURIComponent(month.value)+'&offset='+pageOffset.value)
   if(user!==props.user.user_id||ticket!==epoch)return
-  if(next.ledger_scope!=='household')throw Error('家庭账目范围验证失败')
+  if(next.ledger_scope!=='household')throw Error('家庭明細のアクセス範囲を確認できません')
   const current=new Set(sharedEntries.value.map(x=>x.id))
   sharedEntries.value.push(...(next.items||[]).filter(x=>!current.has(x.id)))
   pageOffset.value=next.next_offset

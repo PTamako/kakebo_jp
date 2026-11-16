@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
-import FinanceSectionTabs from './FinanceSectionTabs.vue'
+import FinanceManagementHeader from './FinanceManagementHeader.vue'
 import { notify, NOTIFICATION_DURATION } from './notifications.js'
 import { sortOtherLast } from './category-sort.js'
 import ReviewTrashActions from './ReviewTrashActions.vue'
@@ -1541,10 +1541,10 @@ async function removeCardBill(record) {
 </script>
 <template>
 <section class="finance-tools">
-  <div class="finance-page-heading"><h1 class="finance-heading">管理</h1><button type="button" class="finance-global-load" :disabled="busy || refreshingEverything" @click="refreshEverything"><span aria-hidden="true" class="finance-refresh-icon">↻</span>{{busy || refreshingEverything ? "更新中…" : "すべて更新"}}</button></div>
-  <p class="finance-last-loaded" role="status">{{loaded ? "最終更新："+lastLoadedLabel+" · "+rows.length+"件" : busy ? "明細を読み込み中…" : "未読み込み"}}</p>
-  <p v-if="loadError" class="finance-load-error" role="alert">{{ loadError }}</p>
-  <FinanceSectionTabs v-model="managementTab" />
+  <FinanceManagementHeader v-model="managementTab"
+    :busy="!!busy||refreshingEverything"
+    :status="loaded ? '最終更新：'+lastLoadedLabel+' · '+rows.length+'件' : busy ? '明細を読み込み中…' : '未読み込み'"
+    :error="loadError" @refresh="refreshEverything" />
   <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
     <InvestmentTransferReview />
     <SbiPortfolio :api="props.api" active-view="plans" :refresh-key="investmentRefreshKey" />

@@ -106,7 +106,9 @@ async function accounts(request,env,url,user,parts){
   if(!legalLabel(data.label)||!kinds.has(data.account_kind))
    return json({code:'INVALID_ACCOUNT'},400);
   const target=typeof data.owner_user_id==='string'?data.owner_user_id:user.user_id;
-  if(target!==user.user_id&&user.role!=='owner')
+  // Administrator approves family ledger changes, but does not create or
+  // edit another member's private banking and payment-card configuration.
+  if(target!==user.user_id)
    return json({code:'NOT_YOUR_ACCOUNT'},403);
   const targetUser=await first(db,"SELECT user_id FROM homeflow_identity_links "+
     "WHERE user_id=? AND household_id=? AND state='active'",target,user.household_id);

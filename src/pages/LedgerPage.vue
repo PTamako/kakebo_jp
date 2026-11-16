@@ -1,5 +1,6 @@
 <script setup>
 import { inject } from 'vue'
+const props=defineProps({member:{type:Boolean,default:false}})
 import TransactionForm from '../TransactionForm.vue'
 import LedgerEntryContent from '../LedgerEntryContent.vue'
 import LedgerTypeFilter from '../LedgerTypeFilter.vue'
@@ -88,7 +89,8 @@ const { categories, tab, month, resetMonth, selectedYear, input, paymentSources,
           <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
           <div class="edit-dialog-heading"><h2>記録を編集</h2><button type="button" class="icon-button" @click="cancelEdit" aria-label="閉じる">×</button></div>
           <fieldset class="edit-fields" :disabled="editSaving">
-          <TransactionForm :reward-destinations="rewardDestinations" :transfer-destinations="transferDestinations" :record="editingEntry" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :existing-receipt="receiptImageIds.has(Number(editingEntry.id))" :receipt-name="editReceiptFileName" :receipt-enabled="true" edit-mode @change-type="setEntryType(editingEntry, $event)" @payment-change="manualPayment(editingEntry, $event)" @select-receipt="selectEditReceipt" @clear-receipt="editReceiptImage = null; editReceiptFileName = ''" />
+          <TransactionForm :reward-destinations="rewardDestinations" :transfer-destinations="transferDestinations" :record="editingEntry" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :existing-receipt="receiptImageIds.has(Number(editingEntry.id))" :receipt-name="editReceiptFileName" :receipt-enabled="!props.member" :show-payment-source="!props.member"
+            :allowed-types="props.member?['income','expense']:['expense','income','transfer']" edit-mode @change-type="setEntryType(editingEntry, $event)" @payment-change="manualPayment(editingEntry, $event)" @select-receipt="selectEditReceipt" @clear-receipt="editReceiptImage = null; editReceiptFileName = ''" />
           </fieldset>
           <div class="edit-dialog-actions"><button type="button" class="button-secondary" :disabled="editSaving" @click="cancelEdit">キャンセル</button><button type="submit" class="button-primary" :disabled="editSaving">{{ editSaving ? '保存中…' : '変更を保存' }}</button></div>
         </form>

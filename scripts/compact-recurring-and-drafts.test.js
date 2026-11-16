@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { aiDailyLimit, tokyoAiDay } from '../functions/api/ai-quota.js'
 
 const source = p => readFileSync(new URL('../'+p,import.meta.url),'utf8')
-const app = source('src/App.vue')
+const app = source('src/App.vue')+'\n'+source('src/EntryInputPage.vue')
 const finance = source('src/FinanceTools.vue')
 
 test('20 daily AI OCR attempts by default, respecting lower admin restrictions',()=>{

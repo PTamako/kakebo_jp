@@ -6,6 +6,7 @@ import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
 import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 import {parseEntries,parseReceipt,ocrImage} from './parse.js'
+import {encryptBackupBlob} from './backup-encryption.js'
 import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
@@ -386,6 +387,29 @@ async function modify(a,changes){
 }
 function edit(a){if(a.owner_user_id!==props.user.user_id||a.origin==='legacy')return
  renameId.value=a.account_id;rename.value=a.label}
+const personalBackupBusy=ref(false),personalBackupMessage=ref('')
+async function exportPersonalAccounts(){
+ if(personalBackupBusy.value)return
+ const password=window.prompt('本人の口座設定を暗号化して保存します。10文字以上の保存用パスワードを入力してください。')
+ if(password===null)return
+ if(password.length<10){personalBackupMessage.value='10文字以上のパスワードが必要です';return}
+ personalBackupBusy.value=true;personalBackupMessage.value=''
+ try{
+  const actor=props.user.user_id
+  const record={format:'kakeibo-member-account-settings-v1',exported_at:new Date().toISOString(),
+   owner_user_id:actor,scope:'personal_account_settings_only',
+   accounts:myAccounts.value.filter(a=>a.owner_user_id===actor)}
+  const blob=await encryptBackupBlob(new Blob([JSON.stringify(record)],{type:'application/json'}),password)
+  if(props.user.user_id!==actor)throw Error('エクスポート中にアカウントが変更されました')
+  const url=URL.createObjectURL(blob),link=document.createElement('a')
+  link.href=url;link.download='kakeibo-personal-settings-'+new Date().toISOString().slice(0,10)+'.enc'
+  document.body.appendChild(link);link.click();link.remove()
+  setTimeout(()=>URL.revokeObjectURL(url),60000)
+  personalBackupMessage.value='本人の口座設定のみ暗号化して保存しました。家族の記録・領収書・復元データは含まれません。'
+ }catch(e){personalBackupMessage.value='保存できませんでした：'+e.message}
+ finally{personalBackupBusy.value=false}
+}
+
 function foreground(){if(document.visibilityState==='visible')void refresh()}
 watch(()=>props.user.user_id,()=>{pendingPaidEntry=null;memberEntries.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
@@ -522,9 +546,28 @@ onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];ass
      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
    </template>
    <template #member-tools>
-   <div class="finance-panel"><p class="help">個人の金融口座は本人が直接管理できます。家庭帳簿への入帳時だけ審査が必要です。</p>
-    <button type="button" @click="refresh">すべて更新</button>
-   </div>
+    <details class="finance-panel finance-disclosure">
+     <summary>端末のプライバシー設定</summary>
+     <p class="help">写真は端末内OCRで読み取り、原画像は自動保存しません。口座情報は本人のログインでのみ取得します。</p>
+    </details>
+    <details class="finance-panel finance-disclosure">
+     <summary>バックアップ・復元</summary>
+     <p class="help">本人の個人口座設定だけ暗号化して書き出せます。家庭帳簿・レシート・全履歴は対象外です。このファイルからの自動復元には未対応です。</p>
+     <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportPersonalAccounts">
+      {{personalBackupBusy?'暗号化中…':'本人の設定を暗号化して保存'}}
+     </button>
+     <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
+    </details>
+    <details class="finance-panel finance-disclosure">
+     <summary>ゴミ箱 · 本人のアーカイブ済み口座 {{myAccounts.filter(a=>a.is_archived&&a.origin==='member_created').length}}件</summary>
+     <div v-for="a in myAccounts.filter(x=>x.is_archived&&x.origin==='member_created')"
+      :key="a.account_id" class="entry">
+      <strong>{{a.label}}</strong>
+      <button type="button" :disabled="busy" @click="modify(a,{is_archived:false})">復元</button>
+     </div>
+     <p v-if="!myAccounts.some(a=>a.is_archived&&a.origin==='member_created')" class="help">アーカイブ済みの口座はありません。</p>
+     <p class="help">家庭帳簿の削除と復元は管理者審査が必要です。</p>
+    </details>
    </template>
   </ManagementPage>
   <BottomNavigation :active-tab="tab" @change="next=>tab=next" />

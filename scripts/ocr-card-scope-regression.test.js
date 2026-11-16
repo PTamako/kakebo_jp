@@ -25,21 +25,22 @@ test('explicit card overrides OCR payment guesses for both statements and receip
   assert.match(app, /selectedImportCard\(fromImage, importPaymentSource\.value, scanImportPaymentSource\.value\)/)
 })
 
-test('image card selector precedes document type and serves both receipt and statement', () => {
-  const scan = app.slice(app.indexOf('<div v-if="entryInputMode === \'scan\'"'))
-  const card = scan.indexOf('v-model="scanImportPaymentSource"')
-  const target = scan.indexOf('v-model="recognitionMode"')
-  assert.ok(card >= 0 && target > card, 'card selection must appear before document type')
-  const scanCardTag = scan.slice(scan.lastIndexOf('<label', card), scan.indexOf('</label>', card))
-  assert.doesNotMatch(scanCardTag, /v-if=/, 'receipt must also display the card selector')
-  assert.match(scanCardTag, /:disabled="!!busy"/)
+test('owner and member share one capture component with card before target type', () => {
+ const capture = read('src/OcrCapturePanel.vue')
+ const member = read('src/FamilyMemberWorkspace.vue')
+ const card=capture.indexOf(':model-value="paymentSource"')
+ const target=capture.indexOf(':model-value="mode"')
+ assert.ok(card>=0 && target>card, 'card selection must precede document type')
+ assert.match(capture, /label="読み取り対象のカード"/)
+ assert.match(capture, /:disabled="busy"/)
+ assert.match(app, /<OcrCapturePanel v-if="entryInputMode === 'scan'"/)
+ assert.match(member, /<OcrCapturePanel v-else/)
+})
+test('manual and image OCR preserve distinct card selection', () => {
+ const capture=read('src/OcrCapturePanel.vue')
+ assert.match(app,/v-model="importPaymentSource"/)
+ assert.match(app,/:payment-source="scanImportPaymentSource"/)
+ assert.match(capture,/:model-value="paymentSource"/)
+ assert.doesNotMatch(capture,/v-model="importPaymentSource"/)
 })
 
-test('manual text and image OCR each bind to their own card selection', () => {
-  const manual = app.slice(app.indexOf('<div v-if="entryInputMode === \'manual\'"'), app.indexOf('<div v-if="entryInputMode === \'scan\'"'))
-  const scan = app.slice(app.indexOf('<div v-if="entryInputMode === \'scan\'"'), app.indexOf('<div v-if="forms.length || input.trim()"'))
-  assert.match(manual, /v-model="importPaymentSource"/)
-  assert.doesNotMatch(manual, /v-model="scanImportPaymentSource"/)
-  assert.match(scan, /v-model="scanImportPaymentSource"/)
-  assert.doesNotMatch(scan, /v-model="importPaymentSource"/)
-})

@@ -37,7 +37,7 @@ import MobileLoginSheet from './MobileLoginSheet.vue'
 import FamilyFinanceAccess from './FamilyFinanceAccess.vue'
 import FamilyAccountMenu from './FamilyAccountMenu.vue'
 import FamilyMemberWorkspace from './FamilyMemberWorkspace.vue'
-import AppTopbar from './AppTopbar.vue'
+import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import EntryInputPage from './EntryInputPage.vue'
 import BottomNavigation from './BottomNavigation.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
@@ -1946,6 +1946,32 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 // All page links share these same reactive refs and navigation handlers.
 // Child page components never create separate ledger selection state.
 provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, rewardDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, scanImportPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, receiptMigrationInfo, migrateReceiptsNow, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, setRememberDevice, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, openCardBillDetails, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, averageDailySummary, monthlyDayTypeAverages, annualDayTypeAverages, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, maxYearMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
+const originalManagementBindings=computed(()=>({
+ cardSettingsRequest:cardSettingsRequest.value,
+ paymentSourceMeta:paymentSourceMeta.value,
+ ledgerRevision:ledgerRevision.value,
+ api, categories:categories.value,
+ categoryDisplayNames:categoryDisplayNames.value,
+ paymentSources:paymentSources.value,
+ paymentClosingDays:paymentClosingDays.value,
+ defaultPaymentSource:defaultPaymentSource.value,
+ merchantPaymentRules:merchantPaymentRules.value,
+ categoryRules:customCategoryRules.value,
+ rememberDevice:rememberDevice.value,
+ onChangeRememberDevice:setRememberDevice,
+ onReceiptImagesCleared:onReceiptImagesCleared,
+ onReceiptImagesRemoved:onReceiptImagesRemoved,
+ onReceiptImagesUpdated:refreshReceiptImageIds,
+ onMerchantRulesChanged:refreshMerchantRules,
+ onSetDefaultPaymentSource:setDefaultPaymentSource,
+ onSettingsChanged:loadPaymentSettings,
+ onUpdatePaymentSources:updatePaymentSources,
+ onPaymentSettingsRefresh:loadPaymentSettings,
+ onOpenDuplicate:openDuplicateDate,
+ onOpenCardBillDetails:openCardBillDetails,
+ onLedgerUpdated:()=>{ledgerRevision.value++;void load();void loadYear()}
+}))
+
 provide('kakeibo-entry-input', {
  liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,saveCategory,
  categoryEntryType,categoryName,categoryIcon,availableIcons,input,entryInputMode,
@@ -1986,18 +2012,14 @@ provide('kakeibo-entry-input', {
       <button v-else-if="pendingReceiptMarkers.length" type="button" @click="openPendingReceiptMonth">該当する記録を確認</button>
       <button v-else type="button" @click="receiptSaveError = ''" aria-label="通知を閉じる">×</button>
     </div>
-    <AppTopbar :theme="theme" :themes="themes" :identity="familyIdentity"
-      @change-theme="setTheme" @logout="logout" />
-
     <div v-if="(tab === 'list' || (tab === 'stat' && statsPeriod === 'month')) && pageLoadError" class="panel" role="alert"><span>{{pageLoadError}}</span> <button type="button" class="button-secondary" @click="load">再読み込み</button></div>
     <div v-if="tab === 'stat' && statsPeriod === 'year' && annualLoadError" class="panel" role="alert"><span>{{annualLoadError}}</span> <button type="button" class="button-secondary" @click="loadYear">再読み込み</button></div>
 
-    <EntryInputPage v-if="tab === 'add'" />
-    <LedgerPage v-else-if="tab === 'list'" />
-    <StatisticsPage v-else-if="tab === 'stat'" />
-    <AssetsPage v-else-if="tab === 'investments'" />
-    <ManagementPage :card-settings-request="cardSettingsRequest" :payment-source-meta="paymentSourceMeta" v-show="tab === 'finance'" :active="tab === 'finance'" :ledger-revision="ledgerRevision" :api="api" :categories="categories" :category-display-names="categoryDisplayNames" :payment-sources="paymentSources" :payment-closing-days="paymentClosingDays" :default-payment-source="defaultPaymentSource" :merchant-payment-rules="merchantPaymentRules" :category-rules="customCategoryRules" :remember-device="rememberDevice" @change-remember-device="setRememberDevice" @receipt-images-cleared="onReceiptImagesCleared" @receipt-images-removed="onReceiptImagesRemoved" @receipt-images-updated="refreshReceiptImageIds" @merchant-rules-changed="refreshMerchantRules" @set-default-payment-source="setDefaultPaymentSource" @settings-changed="loadPaymentSettings" @update-payment-sources="updatePaymentSources" @payment-settings-refresh="loadPaymentSettings" @open-duplicate="openDuplicateDate" @open-card-bill-details="openCardBillDetails" @ledger-updated="ledgerRevision++; load(); loadYear()" />
-    <BottomNavigation :active-tab="tab" @change="next=>next==='list'?openLedgerFromNav():tab=next" />
+    <OriginalKakeiboPages :identity="familyIdentity" :theme="theme" :themes="themes"
+      :active-tab="tab" :management-bindings="originalManagementBindings"
+      @update:active-tab="tab=$event" @theme-change="setTheme" @logout="logout"
+      @ledger-open="openLedgerFromNav"/>
+
   </main>
 </template>
 

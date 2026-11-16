@@ -55,7 +55,7 @@ test('reject malformed three-line drafts rather than silently inserting wrong da
 })
 
 test('manual text runs structured parsing before fallback without switching to image or saving',()=>{
-  const app=source('src/App.vue')
+  const app=source('src/App.vue')+'\n'+source('src/EntryInputPage.vue')
   const fn=app.match(/function recognize\([\s\S]*?\n\}(?=\nasync function onImage)/)?.[0]
   assert.ok(fn)
   assert.match(fn,/const structured = !append && entryInputMode\.value === 'manual' \? parseNamedExpenseBlocks\(input\.value, referenceTime\) : null/)

@@ -1605,11 +1605,11 @@ async function removeCardBill(record) {
       <button type="button" class="card-icon-action" @click="cardMode = 'add'" aria-label="カードを追加" title="カードを追加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
     <p v-if="defaultPaymentSource">デフォルト：{{ defaultPaymentSource }}</p>
-    <p v-if="cardMessage" class="card-type-hint" role="status">{{cardMessage}}</p>
     <MobileCardEditorSheet :mode="cardMode" :card-name="selectedCard"
       :card="paymentSourceMeta[selectedCard]||null" :closing-day="closingDayFor(selectedCard)"
       :payment-sources="paymentSources" :share-options="cardShareOptions"
-      :share-ready="cardShareReady" :busy="busy" :on-save="saveCardFromSheet"
+      :share-ready="cardShareReady" :share-error="cardMessage.startsWith('家庭共有を読み込めません')?cardMessage:''"
+      :busy="busy" :on-save="saveCardFromSheet"
       :on-danger="runCardDanger" @close="cardMode=''" />
     <details v-if="archivedPaymentSources.length" class="card-archive-disclosure">
       <summary>アーカイブ済みのカード <strong>{{archivedPaymentSources.length}}件</strong></summary>

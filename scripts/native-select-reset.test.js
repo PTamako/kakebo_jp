@@ -16,7 +16,7 @@ const vueFiles = [
   'src/pages/StatisticsPage.vue',
 ]
 const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
-const finance = read('src/FinanceTools.vue')
+const finance = read('src/FinanceTools.vue')+'\n'+read('src/FixedCostEditorFields.vue')
 const controls = read('src/CardManagementControls.vue')
 const selects = vueFiles.flatMap(file =>
   [...read(file).matchAll(/<select\b[\s\S]*?<\/select>/g)].map(match => ({ file, markup: match[0] }))
@@ -46,7 +46,7 @@ test('card management, billing, and recurring category can return to initial lab
   assert.match(finance, /<CardManagementControls v-model="selectedCard"/)
   assert.match(controls, /<MobileChoiceSheet[\s\S]*?支払方法・カードを選択/)
   assert.match(finance, /<MobileChoiceSheet v-model="bill\.name"[^>]*カードを選択/)
-  assert.match(finance, /<MobileChoiceSheet v-model="plan\.category"[^>]*選択してください/)
+  assert.match(finance, /<MobileChoiceSheet v-model="model\.category"[^>]*選択してください/)
   // Other optional selectors must remain resettable too.
   const transaction = read('src/TransactionForm.vue')
   assert.match(transaction, /<MobileChoiceSheet v-model="record\.transferTarget"[^>]*transferOptions/)

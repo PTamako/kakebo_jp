@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 const app=read('src/App.vue')+'\n'+read('src/EntryInputPage.vue')
-const finance=read('src/FinanceTools.vue')
+const finance=read('src/FinanceTools.vue')+'\n'+read('src/FixedCostEditorFields.vue')
 const tabs=read('src/FinanceSectionTabs.vue')
 const managementHeader=read('src/FinanceManagementHeader.vue')
 const stats=read('src/pages/StatisticsPage.vue')

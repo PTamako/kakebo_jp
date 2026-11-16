@@ -27,7 +27,7 @@ test('bottom sheet keeps iPhone accessibility, native dates and Japanese search'
   const component=read('src/MobileChoiceSheet.vue')
   const form=read('src/TransactionForm.vue')
   const app=read('src/App.vue')
-  const finance=read('src/FinanceTools.vue')
+  const finance=read('src/FinanceTools.vue')+'\n'+read('src/FixedCostEditorFields.vue')
   const controls=read('src/CardManagementControls.vue')
   assert.match(component,/<Teleport to="body">/)
   assert.match(component,/role="dialog" aria-modal="true"/)

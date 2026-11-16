@@ -615,7 +615,7 @@ watch(()=>props.user.user_id,loadMemberCategories)
    :on-open-personal-management="()=>{tab='finance'}"
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
-    memberRefresh:refresh,api}"
+    memberRefresh:refresh,memberTrashCount:memberArchivedAccounts.length,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    <template #member-cards>

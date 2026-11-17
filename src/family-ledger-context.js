@@ -7,7 +7,8 @@ import {ledgerPaymentLabel,ledgerTransferTargetLabel,ledgerTransferSourceLabel} 
 import {matchesPaymentStatMethod} from './payment-stat-group.js'
 
 export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTypeFilter,
- load,more,openApproval,onError,paymentEditor=null,memberPaymentChoices=[]}){
+ load,more,openApproval,onError,paymentEditor=null,memberPaymentChoices=[],
+ annualEntries=null,loadAnnual=null}){
  const categories=computed(()=>[...new Set((entries.value||[]).map(e=>e.category).filter(Boolean))])
  const input=ref('')
  const paymentSources=ref([])
@@ -38,15 +39,29 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  const categoryLabel=v=>v||'その他'
  const resetMonth=()=>{month.value=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).slice(0,7)}
  const selectedDateType=(e,kind)=>kind==='all'||(kind==='expense'?(e.type==='expense'||!e.type):e.type===kind)
- const filteredEntries=computed(()=>(entries.value||[]).filter(e=>String(e.date||'').startsWith(month.value) &&
-   selectedDateType(e,entryTypeFilter.value)&&(!selectedDay.value||e.date===selectedDay.value)&&
+ const annualDetailMode=computed(()=>detailFilter.value?.period==='year')
+ const filteredEntries=computed(()=>
+  (annualDetailMode.value?(annualEntries?.value||[]):(entries.value||[])).filter(e=>
+   String(e.date||'').startsWith(annualDetailMode.value?String(selectedYear.value):month.value)&&
+   selectedDateType(e,entryTypeFilter.value)&&
+   (annualDetailMode.value||!selectedDay.value||e.date===selectedDay.value)&&
+   (!detailFilter.value?.category||entryTypeFilter.value==='transfer'||
+    e.category===detailFilter.value.category)&&
    (!detailFilter.value?.paymentMethod||matchesPaymentStatMethod(e,detailFilter.value.paymentMethod))))
  const displayEntries=computed(()=>filteredEntries.value)
  const sortedDisplayEntries=computed(()=>[...displayEntries.value].sort((a,b)=>
   String(b.date||'').localeCompare(String(a.date||'')) ||
   String(b.time||'').localeCompare(String(a.time||''))||String(b.id).localeCompare(String(a.id))))
- const annualDetailMode=computed(()=>false)
- const paymentMethodAnnualTotals=computed(()=>new Map())
+ const paymentMethodAnnualTotals=computed(()=>{
+  const map=new Map()
+  if(!detailFilter.value?.paymentMethod)return map
+  for(const e of sortedDisplayEntries.value){
+   if(e.type!=='expense'&&e.type!=='transfer')continue
+   const key=String(e.date||'').slice(0,7)
+   map.set(key,(map.get(key)||0)+Number(e.amount||0))
+  }
+  return map
+ })
  const annualMonthGroups=computed(()=>groupAnnualEntries(sortedDisplayEntries.value,annualVisibleCounts.value,listPageSize,entryTypeFilter.value))
  const groupedPagedEntries=computed(()=>{
   const map=new Map()
@@ -54,7 +69,9 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
    if(!map.has(e.date))map.set(e.date,{date:e.date,items:[],count:0,total:0})
    const g=map.get(e.date);g.count++
    if(!e.pending_approval||e.pending_operation!=='create')
-    g.total+=e.type==='income'?Number(e.amount||0):e.type==='transfer'&&entryTypeFilter.value==='all'
+    g.total+=detailFilter.value?.paymentMethod?
+     (e.type==='expense'||e.type==='transfer'?Number(e.amount||0):0):
+     e.type==='income'?Number(e.amount||0):e.type==='transfer'&&entryTypeFilter.value==='all'
      ?0:-Number(e.amount||0)
   }
   const shown=new Set(sortedDisplayEntries.value.slice(0,visibleEntryCount.value).map(x=>x.id))
@@ -130,12 +147,30 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  function loadMoreAnnualEntries(group){annualVisibleCounts.value={...annualVisibleCounts.value,
   [group.month]:group.items.length+listPageSize}}
  function clearDetailFilter(){detailFilter.value=null;prepaidHistoryFilter.value=null}
- function openPaymentMethodDetails(method,period){
-  if(period!=='month'){
-   onError('年間の支払方法別明細は月ごとに確認してください');return
+ async function loadYearDetails(period){
+  if(period!=='year')return true
+  if(typeof loadAnnual!=='function'){
+   onError('年間明細を読み込めません');return false
   }
-  detailFilter.value={paymentMethod:method,type:'all',period:'month'}
+  detailLoading.value=true
+  try{await loadAnnual(String(selectedYear.value));return true}
+  catch(e){onError(e.message||'年間明細の取得に失敗しました');return false}
+  finally{detailLoading.value=false}
+ }
+ async function openPaymentMethodDetails(method,period){
+  if(!['month','year'].includes(period))return
+  if(!await loadYearDetails(period))return
+  detailFilter.value={paymentMethod:method,type:'all',period}
   entryTypeFilter.value='all';selectedDay.value='';visibleEntryCount.value=20
+  annualVisibleCounts.value={};expandedMonth.value=''
+  tab.value='list'
+ }
+ async function openCategoryDetails(category,type,period){
+  if(!['income','expense','transfer'].includes(type)||!['month','year'].includes(period))return
+  if(!await loadYearDetails(period))return
+  detailFilter.value={category:type==='transfer'?'':category,type,period}
+  entryTypeFilter.value=type;selectedDay.value='';visibleEntryCount.value=20
+  annualVisibleCounts.value={};expandedMonth.value=''
   tab.value='list'
  }
  function cancelEdit(){editingEntry.value=null;editReceiptImage.value=null}
@@ -199,6 +234,6 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
   setEntryTypeFilter,sortedDisplayEntries,annualDetailMode,expandedMonth,
   annualMonthGroups,paymentMethodAnnualTotals,loadMoreAnnualEntries,
   loadMoreEntries,expandedEntryDays,groupedPagedEntries,toggleEntryDay,
-  clearDetailFilter,openPaymentMethodDetails,visibleCalendarDays,toggleDay,startSwipe,endSwipe,
+  clearDetailFilter,openPaymentMethodDetails,openCategoryDetails,visibleCalendarDays,toggleDay,startSwipe,endSwipe,
   handleEntryClick,monthLabel,formatLedgerTotal}
 }

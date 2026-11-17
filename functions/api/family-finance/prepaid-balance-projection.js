@@ -4,7 +4,7 @@
 export async function memberPrepaidBalances(db,household){
  if(typeof household!=='string'||!household)return null;
  const hasCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
-  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").first();
+  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first();
  const correctionAmount=hasCorrections?
   "+COALESCE((SELECT SUM(c.delta_jpy) FROM family_approved_account_effects c "+
   "WHERE c.account_id=a.account_id AND c.household_id=a.household_id "+

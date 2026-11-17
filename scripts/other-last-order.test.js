@@ -27,7 +27,7 @@ test('the category and card dropdowns use the same stable Other-last order',()=>
   assert.match(form,/orderedPayments\.value\.map\(name=>/)
   assert.match(form,/record\.value\.type==='income'\?orderedIncomeCategories\.value:orderedCategories\.value/)
   assert.match(finance,/:categories="orderedCategories"/)
-  assert.match(finance,/orderedPayments\.value\.map\(source=>/)
+  assert.match(finance,/orderedPayments\.map\(source=>/)
   assert.doesNotMatch(finance,/v-for="source in props\.paymentSources"/)
   assert.doesNotMatch(finance,/v-for="category in props\.categories"/)
 })

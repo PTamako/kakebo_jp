@@ -101,7 +101,7 @@ test('review screen persists D1 confirmations and preserves original transaction
   assert.match(src,/@click="setDuplicateConfirmation\(group, true\)">重複ではない/)
   assert.match(src,/@restore="setDuplicateConfirmation\(group, false\)"/)
   assert.match(readFileSync(new URL('../src/OriginalOtherManagement.vue',import.meta.url),'utf8'),/<summary>ゴミ箱/)
-  assert.match(src,/:on-open-duplicates="memberView\?null:\(\)=>refreshDuplicateReview/)
+  assert.match(src,/:on-open-duplicates="\(\)=>refreshDuplicateReview/)
   assert.match(readFileSync(new URL('../src/OriginalOtherManagement.vue',import.meta.url),'utf8'),/@toggle="\$event.target.open&&onOpenDuplicates/)
   assert.doesNotMatch(src.match(/async function setDuplicateConfirmation\(group, isConfirmed\) \{[\s\S]*?\n\}/)?.[0] || '',/saveConfirmedDuplicateGroups|DELETE FROM entries|UPDATE entries/)
 })

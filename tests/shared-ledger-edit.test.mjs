@@ -53,7 +53,8 @@ test('payment owner provenance locks spouse entries while preserving own edits',
   payment_account_owner_user_id:owner},owner),true,
   'shared-card spender attribution remains protected');
  const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8');
- assert.match(app,/paymentReadOnly:isAnotherMembersPayment\(entry,familyIdentity\.value\?\.user_id\)/);
+ assert.match(app,/const foreignSource=isAnotherMembersPayment\(entry,viewerId\)/);
+ assert.match(app,/paymentReadOnly:foreignSource/);
  assert.match(app,/paymentSource: entry\.payment_source \|\| ''/);
  assert.match(app,/paymentDisplay:entry\.payment_source_display/);
 });

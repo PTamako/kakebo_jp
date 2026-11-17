@@ -16,7 +16,7 @@ test('husband edit form renders the same payment field, read-only with actual ca
  assert.match(form,/record.type==='expense' && showPaymentSource/)
  assert.match(form,/v-if="paymentReadOnly" class="payment-source-readonly"/)
  assert.match(form,/\{\{record.paymentSource\|\|'未設定'\}\}/)
- assert.match(form,/<MobileChoiceSheet v-else/)
+ assert.match(form,/<MobileChoiceSheet :model-value="record.paymentSource" v-else/)
 })
 
 test('shared card is visible only if member projection has authorized label; edit cannot change it',()=>{
@@ -26,7 +26,7 @@ test('shared card is visible only if member projection has authorized label; edi
  assert.equal(ledgerPaymentLabel({type:'expense',payment_source:null,
   payment_source_display:'个人支付方式',shared_entry_requester_user_id:null}),'个人支付方式')
  const form=readFileSync(new URL('../src/TransactionForm.vue',import.meta.url),'utf8')
- assert.match(form,/<MobileChoiceSheet v-else/)
+ assert.match(form,/<MobileChoiceSheet :model-value="record.paymentSource" v-else/)
  const requests=readFileSync(new URL('../src/FamilySharedMutationRequests.vue',import.meta.url),'utf8')
  assert.match(requests,/if\(input\?\.payment_source!=null&&input\.payment_source!==''\)/)
  const ledger=readFileSync(new URL('../src/family-ledger-context.js',import.meta.url),'utf8')

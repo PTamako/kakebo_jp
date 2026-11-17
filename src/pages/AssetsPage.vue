@@ -109,8 +109,6 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
       </div>
     </section>
 
-    <PersonalAccountRegistry v-if="isPersonal" :accounts="personalAccounts"
-     :on-create="onCreatePersonalAccount" :on-update="onUpdatePersonalAccount"/>
     <nav class="balance-view-switch" aria-label="残高の表示切替" role="tablist">
       <button type="button" role="tab" :aria-selected="activeView==='wallets'" :class="{selected:activeView==='wallets'}" @click="selectView('wallets')">電子マネー</button>
       <button type="button" role="tab" :aria-selected="activeView==='funds'" :class="{selected:activeView==='funds'}" @click="selectView('funds')">投資信託</button>
@@ -120,6 +118,10 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
      :member-mode="isPersonal" :api="portfolioApi"
      :transfer-loading="transferLoading" :active-view="activeView"
      :refresh-key="ledgerRevision" @summary="onPortfolioSummary">
+      <template #after-holdings>
+       <PersonalAccountRegistry v-if="isPersonal" :accounts="personalAccounts"
+        :on-create="onCreatePersonalAccount" :on-update="onUpdatePersonalAccount"/>
+      </template>
       <template #before-holdings>
         <PrepaidAssets :key="isPersonal?'wallet:'+personalUserId:'wallet:owner'"
          :api="prepaidApi" :member-mode="isPersonal"

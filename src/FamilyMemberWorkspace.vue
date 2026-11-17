@@ -6,6 +6,7 @@ import MemberPersonalPoints from './MemberPersonalPoints.vue'
 import MemberPointAssetActions from './MemberPointAssetActions.vue'
 import MemberPointAssetReversals from './MemberPointAssetReversals.vue'
 import MemberPrepaidTopups from './MemberPrepaidTopups.vue'
+import MemberCardUsage from './MemberCardUsage.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
@@ -142,6 +143,7 @@ const selectedCardId=ref(''),cardMode=ref('')
 const preferredCardType=ref('standard'),memberCardSettingsRequest=ref(0)
 function openMemberPrepaidAdd(){preferredCardType.value='prepaid';cardMode.value='add';memberCardSettingsRequest.value++;tab.value='finance'}
 function openMemberCardSettings(){preferredCardType.value='standard';memberCardSettingsRequest.value++;tab.value='finance'}
+const memberUsageRevision=ref(0)
 const cardAccounts=computed(()=>myAccounts.value.filter(a=>['credit_card','prepaid'].includes(a.account_kind)))
 const selectedCard=computed(()=>cardAccounts.value.find(a=>a.account_id===selectedCardId.value)||null)
 const defaultCard=computed(()=>cardAccounts.value.find(a=>Number(a.is_default)===1)?.account_id||'')
@@ -759,6 +761,57 @@ const memberDuplicateGroups=computed(()=>{
 })
 const memberArchivedAccounts=computed(()=>myAccounts.value.filter(a=>
  a.is_archived&&a.origin==='member_created'))
+const memberSharedTrash=ref([]),memberTrashBusy=ref(false)
+const memberTrashError=ref(''),memberTrashNotice=ref('')
+async function loadMemberSharedTrash(){
+ if(memberTrashBusy.value)return
+ const actor=props.user.user_id,ticket=epoch
+ memberTrashBusy.value=true;memberTrashError.value=''
+ try{
+  const result=await api('shared-entries?state=deleted')
+  if(ticket!==epoch||actor!==props.user.user_id)return
+  if(!Array.isArray(result.items)||result.items.some(x=>x.state!=='deleted'))
+   throw Error('回収箱の取得範囲を確認できません')
+  memberSharedTrash.value=result.items
+ }catch(e){if(ticket===epoch)memberTrashError.value=e.message}
+ finally{memberTrashBusy.value=false}
+}
+async function restoreMemberSharedTrash(row){
+ if(memberTrashBusy.value)return
+ if(!window.confirm('家庭明細の復元を HomeFlow 管理者へ申請しますか？承認前は復元されません。'))return
+ memberTrashBusy.value=true;memberTrashError.value='';memberTrashNotice.value=''
+ try{
+  const receipt=await sharedMutationRef.value?.submitRestore(row)
+  if(!receipt?.proposalId)throw Error('HomeFlow の申請受付を確認できません')
+  memberTrashNotice.value='復元申請を HomeFlow に提出しました。承認後に明細へ反映されます。'
+ }catch(e){memberTrashError.value=e.message}
+ finally{memberTrashBusy.value=false;await loadMemberSharedTrash()}
+}
+const memberTrashCount=computed(()=>memberArchivedAccounts.value.length+memberSharedTrash.value.length)
+const memberJobs=ref({fixed:[],sbi:[],occurrences:[]}),memberJobsBusy=ref(false),memberJobsError=ref('')
+async function loadMemberJobStatus(){
+ if(memberJobsBusy.value)return
+ const actor=props.user.user_id,ticket=epoch
+ memberJobsBusy.value=true;memberJobsError.value=''
+ try{
+  const [fixed,sbi,occ]=await Promise.allSettled([
+   api('member-fixed-costs'),api('member-sbi-plans'),api('recurring-occurrences')
+  ])
+  if(ticket!==epoch||actor!==props.user.user_id)return
+  if(fixed.status!=='fulfilled'||fixed.value.scope!=='personal'||!Array.isArray(fixed.value.items))
+   throw Error('本人の固定費の状態を確認できません')
+  if(sbi.status!=='fulfilled'||sbi.value.viewer_user_id!==actor||!Array.isArray(sbi.value.items))
+   throw Error('本人の積立の状態を確認できません')
+  const own=rows=>rows.filter(x=>x.owner_user_id===actor)
+  if(own(fixed.value.items).length!==fixed.value.items.length||own(sbi.value.items).length!==sbi.value.items.length)
+   throw Error('他のユーザーの予定が含まれています')
+  memberJobs.value={fixed:own(fixed.value.items),sbi:own(sbi.value.items),
+   occurrences:occ.status==='fulfilled'&&Array.isArray(occ.value.items)?occ.value.items:[]}
+  if(occ.status==='rejected')
+   memberJobsError.value='周期実行履歴は現在利用できません。登録済み予定と家庭明細の実際の入帳は別です。'
+ }catch(e){if(ticket===epoch)memberJobsError.value=e.message}
+ finally{memberJobsBusy.value=false}
+}
 const memberPortfolioVersions=ref(new Map())
 async function memberPrepaidApi(path,options={}){
  if(path!=='prepaid-report'||(options.method&&options.method!=='GET'))
@@ -853,7 +906,9 @@ function openMemberInvestmentPlan(plan=null){
 }
 async function refresh(){
  const ticket=++epoch,user=props.user.user_id
- error.value='';accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];totals.value=null;yearly.value=null
+ // Keep the last verified snapshot while network requests are in flight.
+ // Clearing all five panels on every refresh made the spouse PWA visibly flash.
+ error.value=''
  try{
   const [a,b,c,d,e,f]=await Promise.all([
    api('accounts'),api('personal/assets'),
@@ -873,7 +928,8 @@ async function refresh(){
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
   memberPaymentReassignmentEnabled.value=c.payment_reassignment_enabled===true;
   await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories()])
-  monthlyReport.value=d;annualReport.value=e
+  monthlyReport.value=d;annualReport.value=e;
+  memberUsageRevision.value++
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
   yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
    net_income_expense:Number(e.income||0)-Number(e.total||0)}
@@ -1262,7 +1318,7 @@ async function importPersonalBackup(event){
 // Refresh the original shared ledger only when an approval status actually moves.
 let approvalStatusTimer=null,approvalProbeActive=false
 async function checkPendingLedgerStatus(){
- if(approvalProbeActive||document.visibilityState!=='visible'||tab.value!=='list'||
+ if(approvalProbeActive||document.visibilityState!=='visible'||!['list','stat','investments','finance'].includes(tab.value)||
   !pendingMutations.value.length||!alive)return
  const ticket=epoch,user=props.user.user_id,selectedMonth=month.value
  approvalProbeActive=true
@@ -1421,18 +1477,11 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     cardSettingsRequest:memberCardSettingsRequest,
     memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
-    memberRefresh:refresh,memberTrashCount:memberArchivedAccounts.length,api}"
+    memberRefresh:refresh,memberTrashCount:memberTrashCount,memberLoadTrash:loadMemberSharedTrash,memberLoadJobs:loadMemberJobStatus,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    
    <template #member-cards>
-    <MemberPrepaidTopups :key="'personal-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPersonalPoints :key="'personal-points:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPointAssetActions :key="'points-asset:'+user.user_id" 
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
-    <MemberPointAssetReversals :key="'points-asset-refunds:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
     <OriginalCardManagementPanel
       :selected="selectedCardId"
       :options="cardAccounts.filter(a=>!a.is_archived).map(a=>({value:a.account_id,label:a.label}))"
@@ -1448,6 +1497,16 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
       @update:selected="selectedCardId=$event" @update:mode="next=>{if(next==='add')preferredCardType='standard';cardMode=next}"
       @default="makeDefaultCard"
       @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
+    <MemberCardUsage :user-id="user.user_id" :active="tab==='finance'" :revision="memberUsageRevision"/>
+
+    <MemberPrepaidTopups :key="'personal-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
+    <MemberPersonalPoints :key="'personal-points:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+    <MemberPointAssetActions :key="'points-asset:'+user.user_id" 
+     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+    <MemberPointAssetReversals :key="'points-asset-refunds:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+    
    </template>
    <template #member-plans>
     <MemberFixedCosts :key="'member-fixed:'+user.user_id+':'+personalBackupRevision" :user-id="user.user_id"
@@ -1470,12 +1529,21 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
        :category-label="x=>x" :on-save="saveMemberMerchantRule"/>
    </template>
    <template #member-jobs>
-     <p class="help">固定費・積立は各メニューで管理。家庭明細の変更のみ管理者の承認が必要です。</p>
-     <button type="button" class="button-secondary" :disabled="busy" @click="refresh">
-       {{busy?'確認中…':'本人の設定と審査状態を更新'}}
-     </button>
-     <p class="help">審査中の家庭明細 {{pendingMutations.length}}件</p>
-   </template>
+     <p v-if="memberJobsError" class="help" role="status">{{memberJobsError}}</p>
+     <p v-if="memberJobsBusy" class="help">本人の定期処理を確認中…</p>
+     <p class="help">本人の固定費 {{memberJobs.fixed.length}}件 · 積立 {{memberJobs.sbi.length}}件 · 実行証跡 {{memberJobs.occurrences.length}}件</p>
+     <div v-for="item in memberJobs.fixed.slice(0,10)" :key="item.plan_id" class="entry">
+      <strong>{{item.name}} · {{yen(item.amount)}} · {{item.enabled?'有効':'停止中'}}</strong>
+     </div>
+     <div v-for="item in memberJobs.sbi.slice(0,10)" :key="item.plan_resource_id" class="entry">
+      <strong>{{item.fund_name}} · {{yen(item.amount_jpy)}} · {{item.state}}</strong>
+     </div>
+     <div v-for="item in memberJobs.occurrences.slice(0,10)" :key="item.occurrence_id" class="entry">
+      <strong>{{item.due_date}} · {{yen(item.amount_jpy)}} · {{item.state}}</strong>
+     </div>
+     <button type="button" class="button-secondary" :disabled="memberJobsBusy" @click="loadMemberJobStatus">状態を更新</button>
+     <p class="help">予定・実行証跡の表示であり、金融機関の実取引確認や家庭明細の自動入帳を意味しません。家庭明細の追加・変更のみ HomeFlow 審査へ送信します。</p>
+    </template>
    <template #member-privacy>
      <p v-if="memberReceiptError" class="help" role="alert">{{memberReceiptError}}</p>
      <MemberReceiptManagement :key="'personal-receipts:'+user.user_id"
@@ -1485,7 +1553,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
        @click="retryMemberReceipt">画像を再送（{{memberReceiptRetry.length}}件）</button>
    </template>
    <template #member-backup>
-    <p class="help">個人設定を暗号化して保存（共有明細・画像は対象外）。</p>
+    <p class="help">本人用バックアップは2種類です。「本人の記録・レシート」は私有画像と監査証跡を含む証拠保管、「本人の設定」は個人設定のみです。家庭共有明細の完全復元と証券会社の実取引復元は含みません。</p>
     <div class="member-backup-actions">
      <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportMemberArchive">
      {{personalBackupBusy?'処理中…':'本人の記録・レシート・保有銘柄を暗号化保存'}}
@@ -1509,14 +1577,26 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
      <p class="help">共有明細の変更・削除は承認後に反映。</p>
    </template>
    <template #member-trash>
-     <p v-if="!memberArchivedAccounts.length" class="help">本人がアーカイブした口座はありません。</p>
-     <div v-for="a in memberArchivedAccounts" :key="a.account_id" class="entry">
+     <p v-if="memberTrashError" role="alert" class="help">{{memberTrashError}}</p>
+     <p v-if="memberTrashNotice" role="status" class="help">{{memberTrashNotice}}</p>
+     <p v-if="memberTrashBusy" class="help">ゴミ箱を確認中…</p>
+     <div v-if="memberSharedTrash.length" class="member-trash-section">
+      <strong>削除された家庭明細 · {{memberSharedTrash.length}}件</strong>
+      <div v-for="row in memberSharedTrash" :key="row.resource_id" class="entry">
+       <strong>{{row.entry?.date}} · {{row.entry?.merchant||row.entry?.category}} · {{yen(row.entry?.amount)}}</strong>
+       <button type="button" :disabled="memberTrashBusy" @click="restoreMemberSharedTrash(row)">復元を申請</button>
+      </div>
+      <p class="help">復元は管理者が HomeFlow で承認してから反映されます。</p>
+     </div>
+     <div v-if="memberArchivedAccounts.length" class="member-trash-section">
+      <strong>本人のアーカイブ済み口座 · {{memberArchivedAccounts.length}}件</strong>
+      <div v-for="a in memberArchivedAccounts" :key="a.account_id" class="entry">
        <strong>{{a.label}}</strong>
        <button type="button" :disabled="busy" @click="modify(a,{is_archived:false})">復元</button>
+      </div>
      </div>
-     <p class="help">ここでは本人の口座設定のみ管理。家庭明細の完全削除は管理者のみ。</p>
-   </template>
-  </OriginalKakeiboPages>
+     <p v-if="!memberArchivedAccounts.length&&!memberSharedTrash.length&&!memberTrashBusy" class="help">ゴミ箱は空です。</p>
+    </template></OriginalKakeiboPages>
  </div>
 </template>
 <style scoped>

@@ -7,7 +7,7 @@ import {ledgerPaymentLabel} from './ledger-payment-label.js'
 import {matchesPaymentStatMethod} from './payment-stat-group.js'
 
 export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTypeFilter,
- load,more,openApproval,onError}){
+ load,more,openApproval,onError,paymentEditor=null,memberPaymentChoices=[]}){
  const categories=computed(()=>[...new Set((entries.value||[]).map(e=>e.category).filter(Boolean))])
  const input=ref('')
  const paymentSources=ref([])
@@ -141,7 +141,11 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  function cancelEdit(){editingEntry.value=null;editReceiptImage.value=null}
  function startEdit(entry){
   if(entry?.pending_approval){onError('この明細は HomeFlow 審査中です');return}
-  editingEntry.value={...entry,paymentSource:ledgerPaymentLabel(entry),payment_source:null,transferTarget:''}
+  const payment=typeof paymentEditor==='function'?paymentEditor(entry):null
+  editingEntry.value={...entry,paymentSource:payment?.paymentSource??ledgerPaymentLabel(entry),
+   paymentOriginalChoice:payment?.paymentSource??null,
+   paymentReadOnly:payment?.paymentReadOnly??true,
+   paymentDisplay:ledgerPaymentLabel(entry),payment_source:null,transferTarget:''}
   swipedEntryId.value=null
  }
  function setEntryType(row,type){if(['income','expense'].includes(type)){row.type=type;row.category=''}}
@@ -169,7 +173,7 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  const removeReceiptImage=()=>onError('私人收据不允许跨成员删除')
  const selectEditReceipt=()=>onError('家庭附件必须经过共享审批')
  const loadFull=()=>load()
- return {categories,tab,month,resetMonth,selectedYear,input,paymentSources,
+ return {categories,tab,month,resetMonth,selectedYear,input,paymentSources,memberPaymentChoices,
   transferDestinations,rewardDestinations,editReceiptImage,editReceiptFileName,
   receiptSaveError,selectEditReceipt,receiptImageIds,viewedReceiptUrl,
   viewReceipt,closeReceipt,removeReceiptImage,editingEntry,INCOME_CATEGORIES,

@@ -120,6 +120,7 @@ test('member frozen plan submits signed HMAC to real HomeFlow-only policy route,
  try{
   const p=(await f.api(f.form('fixed_cost'))).data.plan
   const secret='6'.repeat(64)
+  f.env.KAKEIBO_RECURRING_LEGACY_OWNER_REVIEW_ENABLED='true'
   f.env.KAKEIBO_RECURRING_POLICY_SUBMISSION_ENABLED='true'
   f.env.KAKEIBO_RECURRING_POLICY_SUBMISSION_SECRET=secret
   f.env.HOMEFLOW_OAUTH_ORIGIN='https://homeflow.example.test'
@@ -154,5 +155,18 @@ test('member frozen plan submits signed HMAC to real HomeFlow-only policy route,
    ['member-recurring-plans',p.plan_resource_id,'submit-policy'])
   assert.equal(forged.status,403)
   assert.equal(called,1)
+ }finally{f.close()}
+})
+
+test('new personal tsumitate plan never creates an owner approval request',async()=>{
+ const f=fixture()
+ try{
+  const plan=(await f.api(f.form('sbi_tsumitate'))).data.plan
+  const response=await f.api({
+   expected_user_id:member,confirm_plan_resource_id:plan.plan_resource_id
+  },['member-recurring-plans',plan.plan_resource_id,'submit-policy'])
+  assert.equal(response.status,410)
+  assert.equal(response.data.code,'RECURRING_PLAN_OWNER_REVIEW_RETIRED')
+  assert.equal(f.count('entries'),0)
  }finally{f.close()}
 })

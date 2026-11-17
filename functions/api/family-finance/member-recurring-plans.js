@@ -204,6 +204,7 @@ export async function familyMemberRecurringPlans(req,e,url,u,parts){
  if(parts.length===3&&parts[2]==='revoke'&&req.method==='POST')
   return revoke(req,e,url,u,parts[1]);
  if(parts.length===3&&parts[2]==='submit-policy'&&req.method==='POST')
-  return submitPolicy(req,e,url,u,parts[1]);
+  return e.KAKEIBO_RECURRING_LEGACY_OWNER_REVIEW_ENABLED==='true'?
+   submitPolicy(req,e,url,u,parts[1]):fail('RECURRING_PLAN_OWNER_REVIEW_RETIRED',410);
  return fail('NOT_FOUND',404);
 }

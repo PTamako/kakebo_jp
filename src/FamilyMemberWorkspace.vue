@@ -54,11 +54,21 @@ const memberReceiptIndex=computed(()=>{
 async function reloadMemberReceipts(){
  const actor=props.user.user_id
  try{
-  const data=await api('member-receipts')
-  if(actor!==props.user.user_id)return
-  if(data.scope!=='personal'||data.viewer_user_id!==actor||!Array.isArray(data.items))
-   throw Error('画像の所有者を確認できません')
-  memberReceipts.value=data.items;memberReceiptError.value=''
+  const items=[],seen=new Set()
+  let cursor=''
+  for(let page=0;page<50;page++){
+   const data=await api('member-receipts'+(cursor?'?before='+encodeURIComponent(cursor):''))
+   if(actor!==props.user.user_id)return
+   if(data.scope!=='personal'||data.viewer_user_id!==actor||
+      !Array.isArray(data.items)||data.items.length>200)
+    throw Error('画像の所有者を確認できません')
+   items.push(...data.items)
+   if(!data.next_cursor){memberReceipts.value=items;memberReceiptError.value='';return}
+   if(typeof data.next_cursor!=='string'||seen.has(data.next_cursor))
+    throw Error('レシート一覧の読み込み位置を確認できません')
+   seen.add(data.next_cursor);cursor=data.next_cursor
+  }
+  throw Error('一度に表示できる件数を超えました。期間別に管理してください')
  }catch(e){if(actor===props.user.user_id)memberReceiptError.value='レシート画像を読み込めません：'+e.message}
 }
 async function fetchMemberReceipt(id){
@@ -381,14 +391,14 @@ async function submitPaidExpense(choice,record){
  if(!pendingPaidEntry)pendingPaidEntry={snapshot,key:'member-spend:'+crypto.randomUUID(),requestId:null}
  const pending=pendingPaidEntry
  if(choice.kind==='shared'){
-  const result=await api('legacy-card-spends',request({
-   expected_user_id:user,idempotency_key:pending.key,card_name:choice.card.card_name,
-   date:entry.date,time:entry.time,amount_jpy:entry.amount,
-   merchant:entry.merchant,category:entry.category,note:entry.note}))
-  if(result.applied!==true||!Number.isSafeInteger(result.entry_id)||result.entry_id<1)
-   throw Error('共有カードの入帳結果が未確認です')
+  // Card sharing authorizes the payment method, never an immediate household
+  // ledger mutation. The actual expense must be approved in HomeFlow.
+  const result=await sharedMutationRef.value?.submitEntry({
+   ...entry,type:'expense',payment_source:choice.card.card_name
+  })
+  if(!result?.proposalId)throw Error('共有カードの HomeFlow 審査受付を確認できません')
   pendingPaidEntry=null
-  return {type:'applied',entryId:result.entry_id,receiptRef:'entry:'+result.entry_id}
+  return {type:'pending',receiptRef:'proposal:'+result.proposalId}
  }
  if(choice.kind!=='personal')throw Error('支払方法を確認してください')
  const a=choice.account
@@ -470,9 +480,7 @@ async function submitMemberEntry(){
    // A later failure leaves all unsent rows editable, not silently discarded.
    memberEntries.value.shift();sent++
   }
-  memberEntryNotice.value=applied?
-   sent+'件受付（うち'+applied+'件は承認済み共有カードで入帳）':
-   sent+'件を HomeFlow 審査に送信しました。承認・入帳までは待入帳です。'
+  memberEntryNotice.value=sent+'件を HomeFlow 審査に送信しました。承認・入帳までは待入帳です。'
   memberRawText.value=''
   await refresh()
   tab.value='list'
@@ -794,13 +802,14 @@ async function modify(a,changes){
   const r=await api('accounts/'+encodeURIComponent(a.account_id),request(
    {version:a.version,...changes,expected_user_id:user},'PATCH'))
   if(ticket!==epoch||user!==props.user.user_id)return
-  if(r.ledger_changed!==false)throw Error('修改状态需要复核')
+  if(r.ledger_changed!==false)throw Error('変更結果の確認が必要です')
   renameId.value='';rename.value='';await refresh()
  }catch(e){if(ticket===epoch)error.value=e.message}finally{busy.value=false}
 }
 function edit(a){if(a.owner_user_id!==props.user.user_id||a.origin==='legacy')return
  renameId.value=a.account_id;rename.value=a.label}
 const personalBackupBusy=ref(false),personalBackupMessage=ref('')
+const personalBackupRevision=ref(0)
 async function exportPersonalAccounts(){
  if(personalBackupBusy.value)return
  const password=window.prompt('本人の設定を暗号化して保存します。10文字以上のパスワードを入力してください。')
@@ -829,7 +838,7 @@ async function exportPersonalAccounts(){
   link.href=url;link.download='kakeibo-personal-settings-'+new Date().toISOString().slice(0,10)+'.enc'
   document.body.appendChild(link);link.click();link.remove()
   setTimeout(()=>URL.revokeObjectURL(url),60000)
-  personalBackupMessage.value='本人のカード・銀行・固定費・店舗ルール・カテゴリの設定を暗号化して保存しました。家庭共有明細や他人のデータは含まれません。'
+  personalBackupMessage.value='本人の口座・固定費・店舗ルール・カテゴリ設定を暗号化して保存しました。取引履歴・画像・投資約定・他人のデータは含まれません。'
  }catch(e){personalBackupMessage.value='保存できませんでした：'+e.message}
  finally{personalBackupBusy.value=false}
 }
@@ -850,28 +859,111 @@ async function importPersonalBackup(event){
    data.owner_user_id!==actor||!['personal_settings_only','personal_account_settings_only'].includes(data.scope)||
    !Array.isArray(data.accounts)||data.accounts.some(a=>a.owner_user_id!==actor))
    throw Error('このバックアップは別のユーザーのものか、形式が一致しません')
-  if(data.format==='kakeibo-member-account-settings-v1'){
-   personalBackupMessage.value='旧形式は口座設定の保存専用です。口座と残高の自動復元は行いません。'
-   return
-  }
-  if(!Array.isArray(data.merchant_rules)||data.merchant_rules.length>200||
-     !Array.isArray(data.categories)||data.categories.length>80||
-     !Array.isArray(data.fixed_costs)||data.fixed_costs.some(p=>p.owner_user_id!==actor))
+  const newer=data.format==='kakeibo-member-personal-settings-v2'
+  if((newer&&(!Array.isArray(data.merchant_rules)||data.merchant_rules.length>200||
+      !Array.isArray(data.categories)||data.categories.length>80||
+      !Array.isArray(data.fixed_costs)||data.fixed_costs.length>200||
+      data.fixed_costs.some(p=>p.owner_user_id!==actor)))||
+     data.accounts.length>100||data.accounts.some(a=>a.owner_user_id!==actor))
    throw Error('設定の件数や所有者を確認できません')
-  const existing=await api('member-merchant-rules')
-  if(existing.scope!=='personal'||existing.viewer_user_id!==actor)
-   throw Error('本人のルールを確認できません')
+  const [existing,currentAccounts,currentFixed]=await Promise.all([
+   api('member-merchant-rules'),api('accounts'),api('member-fixed-costs')
+  ])
+  if(existing.scope!=='personal'||existing.viewer_user_id!==actor||
+     currentAccounts.account_scope!=='personal'||
+     currentFixed.scope!=='personal'||!Array.isArray(currentFixed.items)||
+     !Array.isArray(currentAccounts.items)||
+     currentAccounts.items.some(a=>a.owner_user_id!==actor))
+   throw Error('本人の設定を安全に確認できません')
+  const rules=newer?data.merchant_rules:[],categories=newer?data.categories:[],
+   oldFixed=newer?data.fixed_costs:[]
   const existingKeys=new Set((existing.items||[]).map(r=>r.keyword))
-  const recoverable=data.merchant_rules.filter(r=>r&&typeof r.keyword==='string'&&
+  const recoverable=rules.filter(r=>r&&typeof r.keyword==='string'&&
    r.keyword.trim().length>=2&&r.keyword.length<=120&&
    typeof r.category==='string'&&r.category.length<=100&&
    typeof r.payment_source==='string'&&r.payment_source.length<=160&&
    (r.category||r.payment_source)&&!existingKeys.has(r.keyword))
-  if(!confirm('本人の未登録店舗ルール'+recoverable.length+
-     '件とカテゴリ設定を追加しますか？既存のルール、カード、残高、固定費、共有明細は上書きしません。'))return
+  const accountCandidates=data.accounts.filter(a=>a.origin==='member_created'&&
+    typeof a.account_id==='string'&&/^[a-f0-9]{32}$/i.test(a.account_id)&&
+    typeof a.label==='string'&&a.label.trim()&&a.label.length<=80&&
+    kinds.some(k=>k[0]===a.account_kind))
+  if(accountCandidates.length!==data.accounts.filter(a=>a.origin==='member_created').length)
+   throw Error('バックアップ内の口座情報が不正です')
+  if(!confirm('不足している本人の口座と固定費・店舗ルール・カテゴリを復元しますか？'+
+   '既存設定と家庭明細は上書きしません。取引履歴・画像・投資約定はこの設定バックアップの対象外です。'))return
   if(actor!==props.user.user_id)throw Error('アカウントが変更されました')
-  let categoriesAdded=0,rulesAdded=0,rulesSkipped=0
-  for(const c of data.categories){
+  let categoriesAdded=0,rulesAdded=0,rulesSkipped=0,accountsAdded=0,accountsSkipped=0,
+      fixedAdded=0,fixedSkipped=0
+  const accountMap=new Map(),nextAccounts=[...currentAccounts.items]
+  const verifyActor=()=>{if(actor!==props.user.user_id)throw Error('復元中にユーザーが変更されました')}
+  for(const a of accountCandidates){
+   verifyActor()
+   const match=nextAccounts.find(x=>x.origin==='member_created'&&
+    x.label===a.label.trim()&&x.account_kind===a.account_kind)
+   if(match){accountMap.set(a.account_id,match.account_id);accountsSkipped++;continue}
+   const closing=Number.isInteger(a.closing_day)&&a.closing_day>=0&&a.closing_day<=31?a.closing_day:null
+   const balance=Number.isSafeInteger(a.opening_balance)&&a.opening_balance>=0&&
+    a.opening_balance<=999999999999?a.opening_balance:0
+   const sort=Number.isInteger(a.sort_order)&&Math.abs(a.sort_order)<=10000?a.sort_order:0
+   const created=await api('accounts',request({
+    expected_user_id:actor,label:a.label.trim(),account_kind:a.account_kind,
+    closing_day:closing,opening_balance:balance,sort_order:sort,
+    is_default:a.is_default===1||a.is_default===true
+   }))
+   if(created.owner_user_id!==actor||created.ledger_changed!==false||
+    !/^[a-f0-9]{32}$/.test(created.account_id||''))
+    throw Error('口座の復元結果を確認できません')
+   accountMap.set(a.account_id,created.account_id);accountsAdded++
+   nextAccounts.push({...a,account_id:created.account_id,label:a.label.trim(),origin:'member_created',
+    is_archived:0,version:1})
+   if(a.is_archived===1||a.is_archived===true){
+    const archived=await api('accounts/'+created.account_id,request({
+     expected_user_id:actor,version:1,is_archived:true
+    },'PATCH'))
+    if(archived.ledger_changed!==false)throw Error('口座の保管状態を確認できません')
+    nextAccounts[nextAccounts.length-1].is_archived=1
+   }
+  }
+  const paymentChoices=buildMemberPaymentChoices(nextAccounts,sharedCards.value)
+  const usableSource=(source)=>paymentChoices.some(p=>p.value===source)
+  const translateSource=(source)=>typeof source!=='string'?'':
+   source.startsWith('personal:')?
+    ('personal:'+(accountMap.get(source.slice(9))||source.slice(9))):source
+  const fixedSeen=new Set(currentFixed.items.map(p=>[
+   p.name,p.amount,p.scheduleType,p.intervalMonths,
+   JSON.stringify(p.monthDays),JSON.stringify(p.weekdays),p.category,
+   p.paymentSource,p.startMonth].join('\u0000')))
+  for(const p of oldFixed){
+   verifyActor()
+   const source=translateSource(p.paymentSource)
+   const stamp=[p.name,p.amount,p.scheduleType,p.intervalMonths,
+    JSON.stringify(p.monthDays),JSON.stringify(p.weekdays),p.category,
+    source,p.startMonth].join('\u0000')
+   if(fixedSeen.has(stamp)){fixedSkipped++;continue}
+   if(!usableSource(source)||!['monthly','weekly','workday'].includes(p.scheduleType)||
+      !Array.isArray(p.monthDays)||!Array.isArray(p.weekdays)||p.monthDays.length<1||
+      p.weekdays.length<1||!Number.isSafeInteger(Number(p.amount))||
+      typeof p.name!=='string'||!p.name.trim()||
+      typeof p.category!=='string'||!p.category.trim()||
+      typeof p.startMonth!=='string'){
+    fixedSkipped++;continue
+   }
+   const saved=await api('member-fixed-costs',request({
+    expected_user_id:actor,idempotency_key:'member-fixed:'+crypto.randomUUID(),
+    name:p.name,amount_jpy:Number(p.amount),schedule_type:p.scheduleType,
+    interval_months:p.intervalMonths,month_days:p.monthDays,weekdays:p.weekdays,
+    category:p.category,payment_source:source,start_month:p.startMonth,posting_mode:'manual'
+   }))
+   if(saved.ledger_applied!==false||saved.plan?.owner_user_id!==actor)
+    throw Error('固定費の復元結果を確認できません')
+   fixedAdded++;fixedSeen.add(stamp)
+   if(p.enabled===false){
+    await api('member-fixed-costs/'+saved.plan.plan_id+'/toggle',request({
+     expected_user_id:actor,version:saved.plan.version,enabled:false
+    }))
+   }
+  }
+  for(const c of categories){
    if(!c||!['expense','income'].includes(c.type)||typeof c.name!=='string'||
       !c.name.trim()||c.name.length>20||typeof c.icon!=='string')continue
    if(memberCategoryRecords.value.some(x=>x.type===c.type&&x.name===c.name))continue
@@ -881,22 +973,25 @@ async function importPersonalBackup(event){
   localStorage.setItem('kakeibo-personal-categories:'+actor,
     JSON.stringify(memberCategoryRecords.value))
   for(const r of recoverable){
-   if(actor!==props.user.user_id)throw Error('アカウントが変更されました')
-   if(r.payment_source&&!memberPaymentOptions.value.some(c=>c.value===r.payment_source)){
-    rulesSkipped++;continue
-   }
+   verifyActor()
+   const payment=translateSource(r.payment_source)
+   if(payment&&!usableSource(payment)){rulesSkipped++;continue}
    try{
     await api('member-merchant-rules',request({
      expected_user_id:actor,expected_version:0,keyword:r.keyword,
-     category:r.category,payment_source:r.payment_source
+     category:r.category,payment_source:payment
     }))
     rulesAdded++
    }catch{rulesSkipped++}
   }
   await loadMemberMerchantRules()
-  personalBackupMessage.value='復元：カテゴリ'+categoriesAdded+'件、店舗ルール'+rulesAdded+
-   '件を追加。既存設定・口座・残高・固定費は変更していません。'+
-   (rulesSkipped?'権限切れ・重複等で'+rulesSkipped+'件のルールをスキップしました。':'')
+  personalBackupRevision.value++
+  await refresh()
+  personalBackupMessage.value='設定を復元しました：口座'+accountsAdded+'件、固定費'+fixedAdded+
+   '件、カテゴリ'+categoriesAdded+'件、店舗ルール'+rulesAdded+'件を追加。'+
+   '既存の口座'+accountsSkipped+'件と固定費'+fixedSkipped+'件は維持。'+
+   (rulesSkipped?'利用できない支払方法などでルール'+rulesSkipped+'件を省略。':'')+
+   '家庭明細・取引履歴・画像・投資約定は変更していません。'
  }catch(e){personalBackupMessage.value='復元できませんでした：'+e.message}
  finally{personalBackupBusy.value=false}
 }
@@ -1039,7 +1134,7 @@ watch(()=>props.user.user_id,loadMemberCategories)
       @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
    </template>
    <template #member-plans>
-    <MemberFixedCosts :key="'member-fixed:'+user.user_id" :user-id="user.user_id"
+    <MemberFixedCosts :key="'member-fixed:'+user.user_id+':'+personalBackupRevision" :user-id="user.user_id"
      :payment-choices="memberPaymentOptions"
      :categories="[...new Set([...entryExpenseCategories,...entryCategories])]"
      :on-submit-entry="submitMemberFixedCost" />
@@ -1084,7 +1179,7 @@ watch(()=>props.user.user_id,loadMemberCategories)
      </label>
     </div>
     <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
-    <p class="help">復元はカテゴリと未登録の店舗ルールのみ。口座・残高は変更しません。</p>
+    <p class="help">本人の口座・固定費・店舗ルール・カテゴリを追加復元。既存設定は上書きせず、取引履歴・画像・投資約定は対象外です。</p>
    </template>
    <template #member-duplicates>
      <p v-if="!memberDuplicateGroups.length" class="help">表示中の明細に重複候補はありません。</p>

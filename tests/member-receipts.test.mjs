@@ -55,8 +55,8 @@ function fixture(){
   })
   return {...bound(),bind:(...args)=>bound(args)}
  }}
- async function send(user=member,method='GET',id='',body=null,headers={}){
-  const url=new URL('https://kakeibo.test/api/family-finance/member-receipts'+(id?'/'+id:''))
+ async function send(user=member,method='GET',id='',body=null,headers={},query=''){
+  const url=new URL('https://kakeibo.test/api/family-finance/member-receipts'+(id?'/'+id:'')+(query?'?'+query:''))
   const init={method,headers,...(body!==null?{body}: {})}
   const response=await familyMemberReceipts(new Request(url,init),{DB:wrapper,RECEIPTS_R2:R2},url,user,
    ['member-receipts',...(id?[id]:[])])
@@ -137,5 +137,35 @@ test('invalid byte size or hash never promotes pending image',async()=>{
    'origin':'https://kakeibo.test','content-type':'image/jpeg'})).status,409)
   assert.equal((await f.send(member,'GET',id)).status,404)
   assert.equal(f.data.size,0)
+ }finally{f.db.close()}
+})
+
+test('receipt inventory paginates over 1000 rows without leaking another member records',async()=>{
+ const f=fixture()
+ try{
+  const insert=f.db.prepare("INSERT INTO family_member_receipts "+
+   "(receipt_id,household_id,owner_user_id,receipt_ref,receipt_date,merchant,idempotency_hash,"+
+   "state,content_type,size_bytes,sha256,created_at,updated_at) "+
+   "VALUES(?,?,?,?,?,?,?,'ready','image/jpeg',20,?,?,?)")
+  for(let i=0;i<1005;i++){
+   const id=(i+1).toString(16).padStart(32,'0')
+   insert.run(id,'family','spouse','proposal:'+proposal,'2026-11-17','テスト',
+    id.padStart(64,'a'),'b'.repeat(64),1794800000000+i,1794800000000+i)
+  }
+  const ids=new Set(),cursors=new Set()
+  let before='',pages=0
+  do{
+   const r=await f.send(member,'GET','',null,{},before?'before='+encodeURIComponent(before):'')
+   assert.equal(r.status,200,JSON.stringify(r.body))
+   assert.ok(r.body.items.length<=200)
+   r.body.items.forEach(x=>ids.add(x.receipt_id))
+   before=r.body.next_cursor
+   if(before){assert.ok(!cursors.has(before));cursors.add(before)}
+   pages++
+  }while(before)
+  assert.equal(ids.size,1005)
+  assert.equal(pages,6)
+  assert.deepEqual((await f.send(another)).body.items,[])
+  assert.equal((await f.send(member,'GET','',null,{},'before=bad')).status,400)
  }finally{f.db.close()}
 })

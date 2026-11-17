@@ -31,7 +31,9 @@ function d1(){
   "creator_user_id TEXT,state TEXT);"+
   "CREATE TABLE IF NOT EXISTS family_legacy_owner_claims ("+
   "record_scope TEXT,record_key TEXT,household_id TEXT,owner_user_id TEXT,"+
-  "PRIMARY KEY(record_scope,record_key));");
+  "PRIMARY KEY(record_scope,record_key));"+
+  "CREATE TABLE IF NOT EXISTS family_shared_mutation_applied ("+
+  "entry_id INTEGER,household_id TEXT,requester_user_id TEXT,action TEXT);");
  sqlite.exec("CREATE TABLE entries (id INTEGER PRIMARY KEY,date TEXT,time TEXT,type TEXT,merchant TEXT,amount INTEGER,category TEXT,note TEXT,payment_source TEXT,transfer_target TEXT,transfer_applied INTEGER,transfer_date TEXT);"+
    "INSERT INTO entries VALUES(1,'2026-11-10','','expense','既存の個人明細',1234,'生活','旧账保留','PayPay Visa',NULL,0,NULL);"+
    "INSERT INTO entries VALUES(2,'2026-11-10','','income','工资到账',100000,'工资','工资保留','银行',NULL,0,NULL);"+

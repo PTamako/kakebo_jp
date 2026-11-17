@@ -56,13 +56,16 @@ async function readIntent(e,p){
     (d.operation==='create'||d.operation==='update')!==!!d.entry)return null;
   if(d.entry){
    const x=d.entry,keys=['date','time','amount','type','category','merchant','note'];
-   if(!exact(x,keys)||!/^20\d{2}-\d\d-\d\d$/.test(x.date)||
+   const paid=exact(x,[...keys,'payment_source']);
+   if(!(exact(x,keys)||paid)||!/^20\d{2}-\d\d-\d\d$/.test(x.date)||
     new Date(x.date+'T00:00:00Z').toISOString().slice(0,10)!==x.date||
     (x.time!==''&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(x.time))||
     !Number.isSafeInteger(x.amount)||x.amount<1||x.amount>10000000||
     !['expense','income'].includes(x.type)||!x.category||x.category.length>100||
     typeof x.merchant!=='string'||x.merchant.length>120||
-    typeof x.note!=='string'||x.note.length>500)return null;
+    typeof x.note!=='string'||x.note.length>500||
+    (paid&&(x.type!=='expense'||typeof x.payment_source!=='string'||
+      !x.payment_source.trim()||x.payment_source.length>80)))return null;
   }
   return d;
  }catch{return null}
@@ -161,15 +164,43 @@ async function write(e,p,b,approval,payload){
     acct.household_id!==p.household_id||acct.is_archived!==0)
    return fail('SHARED_MUTATION_LEGACY_OWNER_OR_PROVENANCE_CHANGED',409);
  }
- const entry=action==='restore'?JSON.parse(registry.snapshot_json):payload.entry;
+ const previous=registry?JSON.parse(registry.snapshot_json):null;
+ const entry=action==='restore'?previous:action==='update'&&previous?.payment_source?
+  {...payload.entry,payment_source:previous.payment_source}:payload.entry;
+ // An approved amendment keeps the original payment method and card bill key.
+ if(action==='restore'&&entry?.payment_source){
+  const active=await db.prepare("SELECT 1 FROM family_legacy_card_shares s "+
+   "JOIN payment_sources card ON card.name=s.card_name "+
+   "WHERE s.card_name=? AND s.household_id=? AND s.grantee_user_id=? "+
+   "AND s.owner_user_id=? AND s.is_active=1 AND card.is_archived=0 "+
+   "AND card.stat_group='card' AND card.source_type IN ('standard','prepaid') LIMIT 1")
+   .bind(entry.payment_source,p.household_id,p.requester_user_id,approval.approver_user_id).first();
+  if(!active)return fail('SHARED_CARD_GRANT_REVOKED',403);
+ }
  const snapshot=action==='delete'?registry.snapshot_json:JSON.stringify(entry);
  const sha=await digest(snapshot);
  const reference='hfshare:'+id;
  const stmts=[];
  if(newRecord){
-  stmts.push(db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
-   "VALUES(?,?,?,?,?,?,'',?,?,'')")
-   .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,reference));
+  if(entry.payment_source){
+   // Recheck the active grant inside the same D1 batch that posts the entry.
+   // A revoked/shared card cannot be posted by an old approved request.
+   stmts.push(db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
+    "SELECT ?,?,?,?,?,?,'',?,?,card.name FROM family_legacy_card_shares s "+
+    "JOIN payment_sources card ON card.name=s.card_name "+
+    "JOIN homeflow_identity_links o ON o.user_id=s.owner_user_id "+
+    "WHERE s.card_name=? AND s.household_id=? AND s.owner_user_id=? "+
+    "AND s.grantee_user_id=? AND s.is_active=1 AND card.is_archived=0 "+
+    "AND card.stat_group='card' AND card.source_type IN ('standard','prepaid') "+
+    "AND o.household_id=s.household_id AND o.role='owner' AND o.state='active'")
+    .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,
+     entry.note,entry.type,reference,entry.payment_source,p.household_id,
+     approval.approver_user_id,p.requester_user_id));
+  }else{
+   stmts.push(db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
+    "VALUES(?,?,?,?,?,?,'',?,?,'')")
+    .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,reference));
+  }
   stmts.push(db.prepare('INSERT INTO family_shared_entry_write_context '+
    '(resource_id,entry_id,actor_user_id,action,expected_version,stamp) '+
    "SELECT ?,id,?,'create',0,? FROM entries WHERE client_request_id=? AND changes()=1")
@@ -203,8 +234,8 @@ async function write(e,p,b,approval,payload){
     columns.map(k=>'"'+k+'"').join(',')+') VALUES('+
     columns.map(()=>'?').join(',')+')').bind(...columns.map(k=>old[k])));
   }else stmts.push(db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
-   "VALUES(?,?,?,?,?,?,?,'',?,?,'')")
-   .bind(registry.entry_id,entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,reference));
+   "VALUES(?,?,?,?,?,?,?,'',?,?,?)")
+   .bind(registry.entry_id,entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,reference,entry.payment_source||''));
   stmts.push(db.prepare('UPDATE family_shared_entry_registry SET version=version+1,'+
    'state=?,snapshot_json=?,payload_sha256=?,last_actor_user_id=?,updated_at=?,'+
    "deleted_at=CASE WHEN ?='delete' THEN ? WHEN ?='restore' THEN NULL ELSE deleted_at END "+

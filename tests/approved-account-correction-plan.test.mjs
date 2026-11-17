@@ -69,3 +69,24 @@ test('neither income nor transfer may enter the card/prepaid expense amendment p
  assert.throws(()=>plan(before,{...before,type:'transfer'}),/CORRECTION_INVALID_ENTRY/);
  assert.throws(()=>plan(before,{...before,amount:0}),/CORRECTION_INVALID_ENTRY/);
 });
+
+test('deleting an approved card purchase creates full reversal without erasing receipt',()=>{
+ const out=plan(before,{...before,amount:0},{operation:'delete'})
+ assert.deepEqual(out.effects,[{accountId:'a',kind:'credit_card',
+  billMonth:'2026-11',deltaJpy:-1000}])
+})
+test('restoring an approved card purchase reinstates the original liability only once',()=>{
+ const voided={...before,amount:0}
+ const out=plan(voided,before,{operation:'restore'})
+ assert.deepEqual(out.effects,[{accountId:'a',kind:'credit_card',
+  billMonth:'2026-11',deltaJpy:1000}])
+})
+test('prepaid deletion refunds and restoration checks current available balance',()=>{
+ const old={...before,accountId:'p',amount:1400}
+ const refunded=plan(old,{...old,amount:0},{operation:'delete',prepaidBalances:{p:1000}})
+ assert.equal(refunded.effects[0].deltaJpy,1400)
+ const restored=plan({...old,amount:0},old,{operation:'restore',prepaidBalances:{p:1500}})
+ assert.equal(restored.effects[0].deltaJpy,-1400)
+ assert.throws(()=>plan({...old,amount:0},old,{
+  operation:'restore',prepaidBalances:{p:1399}}),/CORRECTION_PREPAID_INSUFFICIENT_BALANCE/)
+})

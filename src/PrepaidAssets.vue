@@ -71,8 +71,7 @@ onMounted(()=>{if(props.active)void refresh()})
         <button type="button" class="wallet-add" @click="emit('open-card-settings')">＋ カードを追加</button>
       </div>
       <p v-if="loading && !data" class="wallet-hint" role="status">残高を読み込み中…</p>
-      <p v-if="memberMode" class="wallet-hint">本人が登録した残高と家計簿の入出金から集計しています。電子マネー会社の残高とは自動照合していません。</p>
-      
+
       
       <template v-if="data">
         <p v-if="!data.cards.length" class="wallet-hint">「＋ カードを追加」からプリペイドカードを登録できます。</p>
@@ -111,7 +110,6 @@ onMounted(()=>{if(props.active)void refresh()})
         </div>
         <button v-if="data.cards.length>2" type="button" class="wallet-show-more" :aria-expanded="showAll" @click="showAll=!showAll">{{showAll?'閉じる':'あと'+(data.cards.length-2)+'件を表示'}}</button>
 
-        
       </template>
     </div>
     <div v-if="selected" class="wallet-overlay" @click.self="selected=null">

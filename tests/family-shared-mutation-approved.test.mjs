@@ -441,3 +441,160 @@ test('a sealed-reference replay cannot be previewed before its original physical
   assert.equal(f.count('entries'),1);
  }finally{f.close()}
 });
+
+
+// End-to-end ledger-state regression for the owner's real two-person workflow.
+// These tests use in-memory SQLite with production schema triggers and cryptographic
+// submission/proof/execution, NOT the user's pending production approvals.
+test('family approval matrix: cash purchase stays out of totals before approval, posts once after proof, never charges a card',async()=>{
+ const f=fixture();try{
+  const cash={...sample,date:'2026-11-17',time:'',amount:960,category:'饮食料品',
+   merchant:'長門',note:''};
+  const pending=await f.apply('create',null,0,cash,'approval-matrix-cash-0001');
+  assert.equal(f.count('entries'),0,'pending request cannot affect actual ledger');
+  assert.equal(f.count('family_shared_mutation_applied'),0);
+  assert.equal(f.count('family_shared_entry_registry'),0);
+  const preview=await f.target('preview',{...pending,approver_user_id:owner});
+  assert.equal(preview.status,200,JSON.stringify(preview));
+  assert.deepEqual(preview.data.entry,cash,'review screen sees the exact original fields');
+  assert.equal(f.count('entries'),0,'preview must not post a transaction');
+  const unauthorized=await f.target('execute',pending,true);
+  assert.equal(unauthorized.status,403);
+  assert.equal(f.count('entries'),0);
+  const applied=await f.target('execute',pending);
+  assert.equal(applied.status,200,JSON.stringify(applied));
+  const posted=f.sql.prepare('SELECT * FROM entries').get();
+  assert.equal(posted.amount,960);
+  assert.equal(posted.category,'饮食料品');
+  assert.equal(posted.merchant,'長門');
+  assert.equal(posted.payment_source,'');
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_mutation_applied'),1);
+  assert.equal(f.sql.prepare("SELECT COALESCE(SUM(amount),0) AS expense FROM entries WHERE type='expense'").get().expense,960);
+  const second=await f.target('execute',pending);
+  assert.equal(second.status,200);
+  assert.equal(second.data.already_applied,true);
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_mutation_applied'),1);
+  assert.equal(f.count('family_shared_entry_audit'),1);
+ }finally{f.close()}
+});
+
+test('family approval matrix: shared-card create, update, delete and restore affect the one real ledger row only on approval',async()=>{
+ const f=fixture();try{
+  f.sql.prepare('INSERT INTO family_legacy_card_shares VALUES(?,?,?,?,1)')
+   .run('楽天カード',hh,owner,member);
+  const card={...sample,date:'2026-11-17',time:'',amount:650,category:'饮食料品',
+   merchant:'バーガーキング',note:'',payment_source:'楽天カード'};
+  const create=await f.apply('create',null,0,card,'approval-matrix-card-0001');
+  assert.equal(f.count('entries'),0);
+  const before=await f.target('preview',{...create,approver_user_id:owner});
+  assert.equal(before.status,200,JSON.stringify(before));
+  assert.deepEqual(before.data.entry,card);
+  const created=await f.target('execute',create);
+  assert.equal(created.status,200,JSON.stringify(created));
+  assert.equal(created.data.action,'create');
+  const resource=created.data.resource_id;
+  let physical=f.sql.prepare('SELECT * FROM entries').get();
+  assert.equal(physical.amount,650);
+  assert.equal(physical.payment_source,'楽天カード');
+  const bill=()=>f.sql.prepare("SELECT COALESCE(SUM(amount),0) AS n FROM entries WHERE type='expense' AND payment_source='楽天カード'").get().n;
+  assert.equal(bill(),650);
+  const edited={...card,amount:750,category:'外食',merchant:'バーガーキング・修正'};
+  const pendingEdit=await f.apply('update',resource,1,edited,'approval-matrix-card-edit-0001');
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,650);
+  assert.equal(bill(),650,'pending edit does not alter original card utilization');
+  const editPreview=await f.target('preview',{...pendingEdit,approver_user_id:owner});
+  assert.equal(editPreview.status,200);
+  assert.equal(editPreview.data.entry.amount,750);
+  assert.equal(editPreview.data.before.amount,650);
+  const updated=await f.target('execute',pendingEdit);
+  assert.equal(updated.status,200,JSON.stringify(updated));
+  assert.equal(updated.data.version_after,2);
+  physical=f.sql.prepare('SELECT * FROM entries').get();
+  assert.equal(physical.amount,750);
+  assert.equal(physical.category,'外食');
+  assert.equal(physical.merchant,'バーガーキング・修正');
+  assert.equal(physical.payment_source,'楽天カード');
+  assert.equal(bill(),750);
+  const requestDelete=await f.apply('delete',resource,2,null,'approval-matrix-card-delete-0001');
+  assert.equal(f.count('entries'),1,'pending deletion must not remove transaction');
+  assert.equal(bill(),750);
+  const deleted=await f.target('execute',requestDelete);
+  assert.equal(deleted.status,200,JSON.stringify(deleted));
+  assert.equal(f.count('entries'),0);
+  assert.equal(bill(),0,'approved deletion releases owner card utilization');
+  assert.equal(f.sql.prepare('SELECT state FROM family_shared_entry_registry').get().state,'deleted');
+  const requestRestore=await f.apply('restore',resource,3,null,'approval-matrix-card-restore-0001');
+  assert.equal(f.count('entries'),0,'pending restore is not a posted purchase');
+  const restored=await f.target('execute',requestRestore);
+  assert.equal(restored.status,200,JSON.stringify(restored));
+  assert.equal(f.count('entries'),1);
+  physical=f.sql.prepare('SELECT * FROM entries').get();
+  assert.equal(physical.amount,750);
+  assert.equal(physical.payment_source,'楽天カード');
+  assert.equal(physical.category,'外食');
+  assert.equal(bill(),750);
+  assert.equal(f.count('family_shared_mutation_applied'),4);
+  assert.equal(f.count('family_shared_entry_audit'),4);
+  assert.equal((await f.target('execute',requestRestore)).data.already_applied,true);
+  assert.equal(f.count('entries'),1);
+ }finally{f.close()}
+});
+
+test('family rejection matrix: unapproved creation, edit, deletion cannot touch entries or execution journal',async()=>{
+ for(const operation of ['create','update','delete','restore']){
+  const f=fixture();try{
+   let original=null,resource=null,version=0;
+   if(operation!=='create'){
+    const created=await f.target('execute',await f.apply('create',null,0,sample));
+    assert.equal(created.status,200,JSON.stringify(created));
+    resource=created.data.resource_id;version=1;original=f.sql.prepare('SELECT * FROM entries').get();
+    if(operation==='restore'){
+     assert.equal((await f.target('execute',await f.apply('delete',resource,1,null))).status,200);
+     version=2;original=null;
+    }
+   }
+   const requested=operation==='create'?{...sample,amount:2000}:
+    operation==='update'?{...sample,amount:2000}:null;
+   const pending=await f.apply(operation,resource,version,requested);
+   const beforeCount=f.count('family_shared_mutation_applied');
+   const beforeAudit=f.count('family_shared_entry_audit');
+   f.disableProof(); // HomeFlow does not return an executable owner approval.
+   const denied=await f.target('execute',pending);
+   assert.notEqual(denied.status,200,operation+':'+JSON.stringify(denied));
+   assert.equal(denied.data.applied,false);
+   assert.equal(f.count('family_shared_mutation_applied'),beforeCount);
+   assert.equal(f.count('family_shared_entry_audit'),beforeAudit);
+   const actual=f.sql.prepare('SELECT * FROM entries').get();
+   assert.equal(actual?.amount??null,original?.amount??null,operation);
+   assert.equal(f.count('entries'),original?1:0,operation);
+  }finally{f.close()}
+ }
+});
+
+test('family review matrix: stale update/delete and revoked shared card are never posted',async()=>{
+ const f=fixture();try{
+  f.sql.prepare('INSERT INTO family_legacy_card_shares VALUES(?,?,?,?,1)')
+   .run('楽天カード',hh,owner,member);
+  const card={...sample,payment_source:'楽天カード'};
+  const intent=await f.apply('create',null,0,card);
+  f.sql.prepare("UPDATE family_legacy_card_shares SET is_active=0").run();
+  const revoked=await f.target('execute',intent);
+  assert.notEqual(revoked.status,200);
+  assert.equal(f.count('entries'),0);
+  f.sql.prepare("UPDATE family_legacy_card_shares SET is_active=1").run();
+  const created=await f.target('execute',intent);
+  assert.equal(created.status,200,JSON.stringify(created));
+  const id=created.data.resource_id;
+  const update=await f.apply('update',id,1,{...sample,amount:1300});
+  const deletePending=await f.apply('delete',id,1,null);
+  assert.equal((await f.target('execute',update)).status,200);
+  const staleDelete=await f.target('execute',deletePending);
+  assert.notEqual(staleDelete.status,200);
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,1300);
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'楽天カード');
+  assert.equal(f.count('family_shared_mutation_applied'),2);
+ }finally{f.close()}
+});

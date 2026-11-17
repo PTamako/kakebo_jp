@@ -12,6 +12,7 @@ import { countThroughEditedDay } from './ledger-day-focus.js'
 import { isCardBilledEntry, cardBilledAmount } from './card-billing.js'
 import { ledgerEntryAmount, ledgerEntriesTotal, formatLedgerTotal } from './ledger-totals.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
+import { markSpouseIncome } from './spouse-income.js'
 import { classify, parseReceipt, parseEntries, ocrImage } from './parse.js'
 import { localHHMM } from './entry-time.js'
 import { compressReceiptImage } from './receipt-image.js'
@@ -1024,6 +1025,10 @@ function addBlank(type = 'expense') {
   const category = categoryDefaults.value[type] || ''
   forms.value.push({ date: today, transferDate: type === 'transfer' ? today : '', transferTarget: '', sbiPurpose: type === 'transfer' ? 'auto' : '', rewardDestination: '', time: localHHMM(now), amount: 0, type, category, paymentSource: type === 'expense' ? defaultPaymentSource.value : '', merchant: '', paymentManuallySelected: false, recognizedPayment: '', importPaymentLocked: false, bindPaymentRule: false, note: '', raw: '', suggested: category, keyword: '', bindRule: false })
 }
+function addSpouseIncome(){
+ addBlank('income')
+ markSpouseIncome(forms.value[forms.value.length-1])
+}
 function setEntryType(form, type) {
   if (form.type !== type) {
     if (type !== 'expense') {
@@ -1072,7 +1077,7 @@ async function saveAll() {
   if (busy.value) return
   if (!forms.value.length) return flash('保存する記録がありません')
   if(forms.value.some(f=>f.type==='transfer'&&f.transferTarget==='family:cross-bank'))
-   return flash('跨成员银行转账请在资产转移卡片内发起双人确认；不会直接记账。')
+   return flash('配偶からの受取は「＋ 配偶からの収入」で記録してください。')
   const invalidTransfer = forms.value.findIndex(f => f.type === 'transfer' && (!f.transferTarget || !/^\d{4}-\d{2}-\d{2}$/.test(f.transferDate || '')))
   if (invalidTransfer >= 0) return flash(`${invalidTransfer + 1}件目の振替先と適用日を確認してください`)
   const invalidSbiReward = forms.value.findIndex(f => f.type === 'income' && f.category === 'ポイント還元' &&
@@ -1970,7 +1975,7 @@ provide('kakeibo-entry-input', {
  rewardDestinations,transferDestinations,categories,INCOME_CATEGORIES,
  paymentSources,categoryLabel,selectDraftReceipt,pendingReceiptImage,
  pendingReceiptFileName,receiptSaveError,setEntryType,applyMerchantPayment,
- manualPayment,onImage,addBlank,saveAll,
+ manualPayment,onImage,addBlank,addSpouseIncome,saveAll,
  receiptEnabled:computed(()=>true),allowedTypes:computed(()=>['expense','income','transfer']),
  paymentChoices:computed(()=>[])
 })

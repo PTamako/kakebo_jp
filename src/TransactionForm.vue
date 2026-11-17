@@ -18,7 +18,7 @@ const paymentOptions = computed(()=> {
  const options=props.paymentChoices.length ? props.paymentChoices
   : orderedPayments.value.map(name=>({value:name,label:name}));
  return [
-  {value:'',label:'未設定'},
+  ...(!props.editMode||!props.paymentChoices.length?[{value:'',label:'未設定'}]:[]),
   ...options,
   ...(record.value.paymentSource && !options.some(option=>option.value===record.value.paymentSource)
     ? [{value:record.value.paymentSource,label:record.value.paymentSource+'（既存の設定）'}] : [])

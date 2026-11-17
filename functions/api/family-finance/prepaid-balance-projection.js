@@ -5,6 +5,13 @@ export async function memberPrepaidBalances(db,household){
  if(typeof household!=='string'||!household)return null;
  const hasCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first();
+ const hasTopupCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
+  "WHERE type='table' AND name='family_member_prepaid_topup_corrections' LIMIT 1").bind().first();
+ const topupCorrectionAmount=hasTopupCorrections?
+  '+COALESCE((SELECT SUM((CASE WHEN k.after_account_id=a.account_id THEN k.after_amount_jpy ELSE 0 END) '+
+  '-(CASE WHEN k.before_account_id=a.account_id THEN k.before_amount_jpy ELSE 0 END)) '+
+  'FROM family_member_prepaid_topup_corrections k WHERE k.household_id=a.household_id '+
+  'AND (k.before_account_id=a.account_id OR k.after_account_id=a.account_id)),0) ':'';
  const correctionAmount=hasCorrections?
   "+COALESCE((SELECT SUM(c.delta_jpy) FROM family_approved_account_effects c "+
   "WHERE c.account_id=a.account_id AND c.household_id=a.household_id "+
@@ -13,10 +20,7 @@ export async function memberPrepaidBalances(db,household){
   'COALESCE((SELECT SUM(j.delta_jpy) FROM family_prepaid_balance_journal j '+
   'WHERE j.prepaid_account_id=a.account_id AND j.household_id=a.household_id),0) '+
   '+COALESCE((SELECT SUM(t.amount_jpy) FROM family_member_prepaid_topups t WHERE t.prepaid_account_id=a.account_id AND t.household_id=a.household_id),0) '+
-  '+COALESCE((SELECT SUM((CASE WHEN k.after_account_id=a.account_id THEN k.after_amount_jpy ELSE 0 END) '+
-  '-(CASE WHEN k.before_account_id=a.account_id THEN k.before_amount_jpy ELSE 0 END)) '+
-  'FROM family_member_prepaid_topup_corrections k WHERE k.household_id=a.household_id '+
-  'AND (k.before_account_id=a.account_id OR k.after_account_id=a.account_id)),0) '+
+  topupCorrectionAmount+
   '+COALESCE((SELECT SUM(c.amount_jpy) FROM family_points_prepaid_credits c '+
   'WHERE c.prepaid_account_id=a.account_id AND c.household_id=a.household_id),0) '+
   '-COALESCE((SELECT SUM(r.debited_prepaid_jpy) FROM family_points_prepaid_refunds r '+

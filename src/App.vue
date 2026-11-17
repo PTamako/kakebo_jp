@@ -1265,6 +1265,9 @@ function startEdit(entry) {
     transferDate: entry.transfer_date || (entry.type === 'transfer' ? entry.date : ''),
     category: entry.category || '日用品', paymentSource: entry.payment_source || '',
     paymentReadOnly:foreignSource,
+    // The administrator can still edit own legacy names after a settings
+    // deletion. A foreign account always remains visible but read-only.
+    isOwnRecorded:true,allowUnlistedAccountEdit:!foreignSource&&!foreignTarget,
     paymentDisplay:entry.type==='expense'
      ?(entry.payment_source_display || (!entry.payment_source?'現金':entry.payment_source))
      :ledgerTransferSourceLabel(entry),

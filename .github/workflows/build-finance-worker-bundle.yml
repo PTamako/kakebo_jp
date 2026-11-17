@@ -25,9 +25,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          test -f .wrangler/private-bridge-dryrun/index.js
+          find .wrangler/private-bridge-dryrun -maxdepth 2 -type f -print
+          bundle="$(find .wrangler/private-bridge-dryrun -maxdepth 2 -type f \( -name '*.js' -o -name '*.mjs' \) | head -n 1)"
+          test -n "$bundle"
           mkdir -p .release
-          cp .wrangler/private-bridge-dryrun/index.js .release/kakeibo-private-bundle.mjs
+          cp "$bundle" .release/kakeibo-private-bundle.mjs
           test -s .release/kakeibo-private-bundle.mjs
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

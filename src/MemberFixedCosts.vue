@@ -6,12 +6,14 @@ import {recurringDatesForPlanInMonth} from './recurring-posting.js'
 const props=defineProps({
  userId:{type:String,required:true},paymentChoices:{type:Array,default:()=>[]},
  categories:{type:Array,default:()=>[]},
+ categoryLabel:{type:Function,default:x=>x},
+ defaultCategory:{type:String,default:''},
  onSubmitEntry:{type:Function,required:true}
 })
 const today=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const currentMonth=()=>today().slice(0,7)
 const blank=()=>({name:'',amount:'',scheduleType:'monthly',intervalMonths:1,
- monthDays:[1],weekdays:[1],category:'食費',paymentSource:'cash',startMonth:currentMonth(),
+ monthDays:[1],weekdays:[1],category:props.defaultCategory,paymentSource:'cash',startMonth:currentMonth(),
  postingMode:'manual'})
 const plan=ref(blank()),items=ref([]),loaded=ref(false),busy=ref(false),error=ref(''),notice=ref('')
 const editingId=ref(''),editingVersion=ref(0),showAll=ref(false),retryKey=ref('')
@@ -136,6 +138,9 @@ async function submitDue(item){
  }catch(e){error.value='記帳できませんでした：'+String(e.message||e)}
  finally{busy.value=false}
 }
+watch(()=>props.defaultCategory,category=>{
+ if(!editingId.value&&!plan.value.category&&category)plan.value.category=category
+})
 watch(()=>props.userId,()=>{clear();items.value=[];void load()})
 onMounted(load)
 </script>
@@ -144,7 +149,7 @@ onMounted(load)
   <article class="finance-panel recurring-manager-panel">
    <h2>固定費の設定</h2>
    <FixedCostEditorFields :model="plan" v-model:cycleChoice="cycleChoice"
-    :cycle-options="cycleOptions" :categories="categories" :payment-choices="paymentOptions"
+    :cycle-options="cycleOptions" :categories="categories" :category-label="categoryLabel" :payment-choices="paymentOptions"
     :member="true"/>
    <div class="finance-actions recurring-save-actions">
     <button type="button" :disabled="busy||!valid" @click="save">
@@ -155,7 +160,7 @@ onMounted(load)
    <p v-if="notice" class="fixed-cost-notice" role="status">{{notice}}</p>
   </article>
   <OriginalFixedCostList :items="items.map(item=>({...item,id:item.plan_id}))"
-    :busy="busy" :yen="money" :category-label="x=>x"
+    :busy="busy" :yen="money" :category-label="categoryLabel"
     :payment-label="source=>paymentChoices.find(p=>p.value===source)?.label||source"
     :allow-delete="true" :allow-post="true"
     @edit="edit" @toggle="toggle" @remove="removePersonalPlan" @post="submitDue"/>

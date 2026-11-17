@@ -13,11 +13,19 @@ function fixture(){
   "INSERT INTO homeflow_identity_links VALUES('m1','h','member','active'),"+
   "('m2','h','member','active'),('o1','h','owner','active');")
  sqlite.exec(migration)
- const db={prepare(sql){return {bind(...args){const q=sqlite.prepare(sql);return{
-  first:async()=>q.get(...args)||null,
-  all:async()=>({results:q.all(...args)}),
-  run:async()=>({meta:{changes:q.run(...args).changes}})
- }}}}}
+ sqlite.exec("CREATE TABLE category_source(category TEXT PRIMARY KEY,sort_order INTEGER,icon TEXT,display_name TEXT,entry_type TEXT,is_default INTEGER);"+
+  "INSERT INTO category_source VALUES('餐饮',0,'food','外食','expense',0),"+
+  "('日用品',1,'daily','日用品','expense',1),"+
+  "('工资',10001,'money','給与','income',1),"+
+  "('老公生活费',10002,'money','配偶者からの生活費','income',0);")
+ const db={prepare(sql){const q=sqlite.prepare(sql);return {
+  all:async()=>({results:q.all()}),
+  bind(...args){return{
+   first:async()=>q.get(...args)||null,
+   all:async()=>({results:q.all(...args)}),
+   run:async()=>({meta:{changes:q.run(...args).changes}})
+  }}
+ }}}
  async function send(user=member,method='GET',data=null){
   const url=new URL('https://kakeibo.test/api/family-finance/member-categories')
   const r=await familyMemberCategories(new Request(url,{method,...(method==='GET'?{}:
@@ -34,8 +42,15 @@ test('categories persist in D1 across devices and are scoped to HomeFlow account
   const created=await f.send(member,'POST',f.payload())
   assert.equal(created.status,201)
   assert.equal(created.data.ledger_changed,false)
-  assert.deepEqual((await f.send(member)).data.items,[{type:'expense',name:'美容',icon:'daily'}])
-  assert.deepEqual((await f.send(other)).data.items,[])
+  const self=(await f.send(member)).data
+  const spouse=(await f.send(other)).data
+  assert.deepEqual(self.items,[{type:'expense',name:'美容',icon:'daily'}])
+  assert.deepEqual(spouse.items,[])
+  assert.deepEqual(self.defaults,spouse.defaults,
+   'both identities must receive the same D1 category IDs and Japanese display names')
+  assert.deepEqual(self.defaults.filter(c=>c.entry_type==='income').map(c=>c.display_name),
+   ['給与','配偶者からの生活費'])
+  assert.equal(self.defaults.find(c=>c.category==='日用品')?.is_default,1)
   assert.equal((await f.send(owner)).status,403)
   assert.equal((await f.send(member,'POST',f.payload())).data.created,false)
  }finally{f.sqlite.close()}

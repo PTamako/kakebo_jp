@@ -21,11 +21,20 @@ export async function familyMemberCategories(request,env,url,user,parts){
    .bind(user.user_id,user.household_id).first();
   if(!active)return fail('SESSION_REVOKED',403);
   if(request.method==='GET'){
-   const rows=await env.DB.prepare('SELECT entry_type AS type,category AS name,icon FROM family_member_categories '+
-    'WHERE household_id=? AND owner_user_id=? ORDER BY entry_type,created_at LIMIT 80')
-    .bind(user.household_id,user.user_id).all();
+   const [rows,defaults]=await Promise.all([
+    env.DB.prepare('SELECT entry_type AS type,category AS name,icon FROM family_member_categories '+
+     'WHERE household_id=? AND owner_user_id=? ORDER BY entry_type,created_at LIMIT 80')
+     .bind(user.household_id,user.user_id).all(),
+    // The canonical Japanese labels, IDs, ordering and defaults are shared
+    // with the owner's original form. Only custom categories are personal.
+    env.DB.prepare('SELECT category,sort_order,icon,display_name,entry_type,is_default '+
+     'FROM category_source ORDER BY sort_order,category').all()
+   ]);
+   const source=defaults.results||[];
+   if(!source.some(x=>x.entry_type==='expense')||!source.some(x=>x.entry_type==='income'))
+    return fail('CATEGORY_SOURCE_UNAVAILABLE',503);
    return json({ok:true,scope:'personal',viewer_user_id:user.user_id,
-    items:rows.results||[],ledger_changed:false});
+    items:rows.results||[],defaults:source,ledger_changed:false});
   }
   if(request.method!=='POST'&&request.method!=='DELETE')return fail('METHOD_NOT_ALLOWED',405);
   const x=await payload(request,url);

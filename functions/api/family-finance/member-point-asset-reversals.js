@@ -137,9 +137,6 @@ export async function familyMemberPointAssetReversals(req,e,url,u,parts){
   const source=await owned(db,u,older.points_account_id,'points'),
    target=await owned(db,u,older.target_account_id,targetKind(older.operation));
   if(!source||!target)return fail('PERSONAL_POINT_REFUND_ACCOUNT_ARCHIVED');
-  const originalProof=await db.prepare('SELECT original_request_id FROM family_points_direct_asset_refund_proofs '+
-   'WHERE original_request_id=?').bind(older.homeflow_request_id).first();
-  if(originalProof)return fail('PERSONAL_POINT_REFUND_ALREADY_RECORDED');
   const refundHash=await digest(u.household_id+'\0'+older.points_account_id+'\0'+
    x.issuer_refund_reference.normalize('NFKC').trim());
   const otherHash=await digest(u.household_id+'\0'+older.target_account_id+'\0'+
@@ -165,6 +162,9 @@ export async function familyMemberPointAssetReversals(req,e,url,u,parts){
    .bind(idem).first();
   if(prior)return prior.payload_sha256===sha&&prior.homeflow_request_id?
    receipt(db,prior,u,true):fail('PERSONAL_POINT_REFUND_IDEMPOTENCY_CONFLICT');
+  const originalProof=await db.prepare('SELECT original_request_id FROM family_points_direct_asset_refund_proofs '+
+   'WHERE original_request_id=?').bind(older.homeflow_request_id).first();
+  if(originalProof)return fail('PERSONAL_POINT_REFUND_ALREADY_RECORDED');
   const pointsNow=await current(db,older.points_account_id),restored=-older.delta_units;
   if(pointsNow===null||!Number.isSafeInteger(pointsNow+restored)||pointsNow+restored>1000000000000)
    return fail('PERSONAL_POINT_REFUND_BALANCE_INVALID');

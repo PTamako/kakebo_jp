@@ -1,4 +1,5 @@
 import {resolveSharedMutationSealedReference} from '../../family-finance/shared-mutation-sealed-reference.js';
+import {futureApprovedPaidRevision} from '../future-approved-paid-revision.js';
 // One immutable HOMEFLOW approval -> one D1 mutation, never an external payment.
 // Authentic owner proof, encrypted member intent and receipt are all separate.
 const enc=new TextEncoder(),h64=/^[a-f0-9]{64}$/i,id32=/^[a-f0-9]{32}$/i,
@@ -183,7 +184,23 @@ async function write(e,p,b,approval,payload){
  // member, but remains untouched until HomeFlow's owner proof authorizes it.
  const explicitPayment=action==='update'&&
   Object.hasOwn(payload.entry,'payment_source');
- if(explicitPayment&&e.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED!=='true')
+ // These queries are performed only when the future-only correction gate is
+ // enabled. Legacy adopted account rows retain their original private rules.
+ const paidRevision=!newRecord&&!adopted&&
+  e.KAKEIBO_ACCOUNT_CORRECTIONS_ENABLED==='true'?
+  await futureApprovedPaidRevision(db,{
+   env:e,registry,proposal:p,approval,requestId:b.request_id,
+   entry:payload.entry,action,at}):null;
+ if(paidRevision?.error)return fail(paidRevision.error,409);
+ if(!newRecord&&!adopted&&!paidRevision){
+  const originalAccount=await db.prepare('SELECT family_account_id,client_request_id '+
+   'FROM entries WHERE id=?').bind(registry.entry_id).first();
+  if(originalAccount?.family_account_id&&
+    /^hf(?:card|prepaid):/.test(originalAccount.client_request_id||''))
+   return fail('CORRECTION_EXECUTOR_DISABLED',503);
+ }
+ if(explicitPayment&&!paidRevision&&
+   e.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED!=='true')
   return fail('SHARED_PAYMENT_EXECUTOR_NOT_READY',503);
  let originalPayment='';
  if(action==='update'){
@@ -194,7 +211,7 @@ async function write(e,p,b,approval,payload){
   // A card charge cannot be converted into income without reversing its bill.
   if(physical.type==='expense'&&originalPayment&&payload.entry.type!=='expense')
    return fail('SHARED_MUTATION_CARD_TYPE_LOCKED',409);
-  if(explicitPayment){
+  if(explicitPayment&&!paidRevision){
    const author=await db.prepare("SELECT requester_user_id FROM family_shared_mutation_applied "+
     "WHERE entry_id=? AND action='create' LIMIT 1").bind(registry.entry_id).first();
    if(author?.requester_user_id!==p.requester_user_id||
@@ -217,7 +234,7 @@ async function write(e,p,b,approval,payload){
  const entry=action==='restore'?previous:action==='update'&&!explicitPayment&&previous?.payment_source?
   {...payload.entry,payment_source:previous.payment_source}:payload.entry;
  // Explicit change is approved by HomeFlow; omitted payment keeps the old source.
- if(action==='restore'&&entry?.payment_source){
+ if(action==='restore'&&entry?.payment_source&&!paidRevision){
   const active=await db.prepare("SELECT 1 FROM family_legacy_card_shares s "+
    "JOIN payment_sources card ON card.name=s.card_name "+
    "WHERE s.card_name=? AND s.household_id=? AND s.grantee_user_id=? "+
@@ -274,7 +291,19 @@ async function write(e,p,b,approval,payload){
    'client_request_id=? AND family_account_id IS NULL';
   const sourceArgs=adopted?[adopted.original_client_request_id,adopted.account_id]:[reference];
   const spouseRevision=entry?.type==='transfer'||previous?.type==='transfer';
-  if(action==='update')stmts.push(spouseRevision?
+  if(action==='update'&&paidRevision){
+   // A signed correction receipt and all asset effects MUST commit in the
+   // SAME batch as the changed household row and registry CAS.
+   stmts.push(...paidRevision.commands);
+   stmts.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,'+
+    'category=?,merchant=?,note=?,type=?,payment_source=?,family_account_id=? '+
+    'WHERE id=? AND client_request_id=? AND family_account_id=? '+
+    "AND type='expense' AND date=? AND amount=?")
+    .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,
+     entry.note,'expense',paidRevision.paymentSource,paidRevision.newAccountId,
+     registry.entry_id,paidRevision.originalClientId,
+     paidRevision.originalAccountId,paidRevision.date,paidRevision.amount));
+  }else if(action==='update')stmts.push(spouseRevision?
    db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0'+
     (explicitPayment?',payment_source=?':'')+' '+
     'WHERE id=? AND '+where+' AND family_transfer_target_account_id IS NULL '+

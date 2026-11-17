@@ -1,3 +1,4 @@
+import {futurePaidRegistrationCommands} from '../future-paid-registration.js';
 // P0-4: independent prepaid topup/spend target (not cash or card purchase executor).
 // One D1 batch: entry + immutable applied journal + nonnegative balance + audit.
 // Never call an external bank or infer an already-completed transfer from bill dates.
@@ -203,6 +204,14 @@ export async function approvedPrepaidActionRoute(request,env,parts){
    .bind(makeId(),b.request_id,b.requester_user_id,approved.approver_user_id,
     approved.approver_user_id,x.action==='topup'?'prepaid_topup_applied':'prepaid_spend_applied',at)
  ];
+ if(x.action==='spend'&&env.KAKEIBO_ACCOUNT_CORRECTIONS_ENABLED==='true'){
+  const registered=await futurePaidRegistrationCommands(db,{
+   householdId:b.household_id,memberUserId:b.requester_user_id,
+   requestId:b.request_id,kind:'prepaid',accountId:row.prepaid_account_id,
+   date:x.date,amount:x.amount_jpy,category:x.category,
+   merchant:x.merchant,note:x.note,at});
+  commands.push(...registered.statements);
+ }
  try{
   const results=await db.batch(commands);
   if(results.length!==commands.length||results.some(r=>r.meta?.changes!==1))

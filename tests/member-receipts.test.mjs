@@ -79,9 +79,9 @@ test('only verified member can prepare receipt for their own submitted record',a
   assert.equal((await prepare(f,owner)).status,403)
   assert.equal((await prepare(f,another)).status,403)
   assert.equal((await prepare(f,foreign)).status,403)
-  assert.equal((await prepare(f,member,'entry:123')).status,201)
-  assert.equal((await prepare(f,member,'request:'+'b'.repeat(32))).status,201)
-  assert.equal((await prepare(f,member,'request:'+'c'.repeat(32))).status,201)
+  assert.equal((await prepare(f,member,'entry:123','member-receipt-entry-01')).status,201)
+  assert.equal((await prepare(f,member,'request:'+'b'.repeat(32),'member-receipt-credit-01')).status,201)
+  assert.equal((await prepare(f,member,'request:'+'c'.repeat(32),'member-receipt-prepaid-01')).status,201)
  }finally{f.db.close()}
 })
 test('R2 upload is private, replayable and revoked when account owner changes',async()=>{

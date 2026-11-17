@@ -54,11 +54,21 @@ const memberReceiptIndex=computed(()=>{
 async function reloadMemberReceipts(){
  const actor=props.user.user_id
  try{
-  const data=await api('member-receipts')
-  if(actor!==props.user.user_id)return
-  if(data.scope!=='personal'||data.viewer_user_id!==actor||!Array.isArray(data.items))
-   throw Error('画像の所有者を確認できません')
-  memberReceipts.value=data.items;memberReceiptError.value=''
+  const items=[],seen=new Set()
+  let cursor=''
+  for(let page=0;page<50;page++){
+   const data=await api('member-receipts'+(cursor?'?before='+encodeURIComponent(cursor):''))
+   if(actor!==props.user.user_id)return
+   if(data.scope!=='personal'||data.viewer_user_id!==actor||
+      !Array.isArray(data.items)||data.items.length>200)
+    throw Error('画像の所有者を確認できません')
+   items.push(...data.items)
+   if(!data.next_cursor){memberReceipts.value=items;memberReceiptError.value='';return}
+   if(typeof data.next_cursor!=='string'||seen.has(data.next_cursor))
+    throw Error('レシート一覧の読み込み位置を確認できません')
+   seen.add(data.next_cursor);cursor=data.next_cursor
+  }
+  throw Error('一度に表示できる件数を超えました。期間別に管理してください')
  }catch(e){if(actor===props.user.user_id)memberReceiptError.value='レシート画像を読み込めません：'+e.message}
 }
 async function fetchMemberReceipt(id){

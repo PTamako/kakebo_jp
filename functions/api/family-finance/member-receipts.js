@@ -77,6 +77,10 @@ async function objectKey(user,id){
  return 'member/v1/'+scope+'/'+id;
 }
 async function list(req,e,user){
+ const cursor=new URL(req.url).searchParams.get('before')||'';
+ if(cursor&&!/^[1-9][0-9]{10,15}\.[a-f0-9]{32}$/.test(cursor))
+  return fail('MEMBER_RECEIPTS_CURSOR_INVALID',400);
+ const [beforeTime,beforeId]=cursor?cursor.split('.'):['',''];
  // Read only confirmed posted entry IDs from each origin's OWN journal. A pending
  // credit/prepaid approval never masquerades as a ledger entry.
  const columns=fields.split(',').map(column=>'r.'+column).join(',');
@@ -95,10 +99,13 @@ async function list(req,e,user){
   'AND ma.requester_user_id=r.owner_user_id AND ma.household_id=r.household_id '+
   "AND ma.action='create' "+
   "WHERE r.household_id=? AND r.owner_user_id=? AND r.state='ready' "+
-  'ORDER BY r.created_at DESC,r.receipt_id DESC LIMIT 1001')
-  .bind(user.household_id,user.user_id).all()).results||[];
- if(items.length>1000)return fail('MEMBER_RECEIPTS_LIMIT',413);
- return json({ok:true,scope:'personal',viewer_user_id:user.user_id,items:items.map(exposed)});
+  "AND (?='' OR r.created_at<? OR (r.created_at=? AND r.receipt_id<?)) "+
+  'ORDER BY r.created_at DESC,r.receipt_id DESC LIMIT 201')
+  .bind(user.household_id,user.user_id,cursor,beforeTime||0,beforeTime||0,beforeId).all()).results||[];
+ const page=items.slice(0,200),last=page.at(-1);
+ return json({ok:true,scope:'personal',viewer_user_id:user.user_id,
+  items:page.map(exposed),
+  next_cursor:items.length>200&&last?last.created_at+'.'+last.receipt_id:null});
 }
 async function prepare(req,e,url,user){
  const x=await parse(req,url);

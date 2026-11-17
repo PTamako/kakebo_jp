@@ -15,10 +15,15 @@ export const isCreditPointRedemption = entry =>
 export function paymentMethodForEntry(entry, sourceMeta = {}) {
   const source = String(entry?.payment_source ?? entry?.paymentSource ?? '').trim()
   if (isCreditPointRedemption(entry)) return 'ポイント払い'
+  const kind = entry?.payment_account_kind
+  if (kind === 'points' || entry?.payment_account_stat_group === 'points') return 'ポイント払い'
+  if (kind === 'credit_card' || kind === 'prepaid') return 'カード・電子決済'
+  if (kind === 'cash') return '現金'
   if (entry?.type === 'transfer' && (!source || ['その他','其他'].includes(source)))
     return UNASSIGNED_TRANSFER_METHOD
+  if (entry?.payment_legacy_stat_group === 'points' || sourceMeta[source]?.stat_group === 'points') return 'ポイント払い'
   if (!source || source === '現金') return '現金'
-  return sourceMeta[source]?.stat_group === 'points' ? 'ポイント払い' : 'カード・電子決済'
+  return 'カード・電子決済'
 }
 export function matchesPaymentStatMethod(entry, method, sourceMeta = {}) {
   return (entry?.type === 'expense' || entry?.type === 'transfer' || isCreditPointRedemption(entry))

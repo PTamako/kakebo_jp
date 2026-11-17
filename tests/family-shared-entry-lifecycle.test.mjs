@@ -19,6 +19,8 @@ function fixture(){
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,amount INTEGER,category TEXT,'+
   'merchant TEXT,note TEXT,raw TEXT,type TEXT,client_request_id TEXT UNIQUE,payment_source TEXT,'+
   'family_account_id TEXT,family_transfer_target_account_id TEXT,transfer_target TEXT,transfer_date TEXT,transfer_applied INTEGER DEFAULT 0)')
+ sql.exec('CREATE TABLE payment_sources(name TEXT PRIMARY KEY,source_type TEXT,is_archived INTEGER)')
+ sql.exec("INSERT INTO payment_sources VALUES('現金','standard',0),('テスト共有カード','standard',0),('廃止カード','standard',1)")
  sql.exec(readFileSync(new URL('../migrations/0051_shared_entry_lifecycle.sql',import.meta.url),'utf8'))
  // 0068 preserves current legacy-adoption guards; isolated 0051/0052 fixture
  // must include the read-only tables referenced by those production triggers.
@@ -336,5 +338,76 @@ test('owner edit confirms durable audit after post-commit response loss without 
   assert.equal(f.sql.prepare('SELECT merchant FROM entries').get().merchant,'バーガーキング');
   assert.equal(f.count('entries'),1);
   assert.equal(f.count('family_shared_entry_audit'),2);
+ }finally{f.close()}
+});
+
+
+test('owner edit persists changed payment from cash to registered card, then back to cash without duplicate rows',async()=>{
+ const f=fixture();try{
+  const created=await f.create();
+  const requested={...sample,amount:960,category:'飲食料品',merchant:'長門',
+   payment_source:'テスト共有カード'};
+  const changed=await f.invoke('PUT',['shared-entries',created.resource_id],{
+   expected_user_id:owner,expected_version:1,entry:requested
+  });
+  assert.equal(changed.status,200,JSON.stringify(changed.data));
+  assert.equal(changed.data.action.version,2);
+  assert.deepEqual(changed.data.action.entry,requested);
+  const saved=f.sql.prepare('SELECT * FROM entries').get();
+  assert.equal(saved.amount,960);
+  assert.equal(saved.category,'飲食料品');
+  assert.equal(saved.merchant,'長門');
+  assert.equal(saved.payment_source,'テスト共有カード');
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_entry_audit'),2);
+
+  const cash=await f.invoke('PUT',['shared-entries',created.resource_id],{
+   expected_user_id:owner,expected_version:2,
+   entry:{...requested,category:'外食',payment_source:'現金'}
+  });
+  assert.equal(cash.status,200,JSON.stringify(cash.data));
+  assert.equal(cash.data.action.version,3);
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'現金');
+  assert.equal(f.sql.prepare('SELECT category FROM entries').get().category,'外食');
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_entry_audit'),3);
+
+  // A no-op must not mutate the version or falsely confirm an edit.
+  const noOp=await f.invoke('PUT',['shared-entries',created.resource_id],{
+   expected_user_id:owner,expected_version:3,
+   entry:{...requested,category:'外食',payment_source:'現金'}
+  });
+  assert.equal(noOp.status,409);
+  assert.equal(noOp.data.code,'SHARED_ENTRY_NO_CHANGES');
+  assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,3);
+  assert.equal(f.count('family_shared_entry_audit'),3);
+ }finally{f.close()}
+});
+
+test('unregistered and archived cards fail closed; old card remains valid for unrelated owner edit',async()=>{
+ const f=fixture();try{
+  const created=await f.create();
+  for(const name of ['無登録カード','廃止カード']){
+   const rejected=await f.invoke('PUT',['shared-entries',created.resource_id],{
+    expected_user_id:owner,expected_version:1,
+    entry:{...sample,payment_source:name}
+   });
+   assert.equal(rejected.status,409,JSON.stringify(rejected.data));
+   assert.equal(rejected.data.code,'SHARED_ENTRY_PAYMENT_NOT_AVAILABLE');
+   assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,1);
+  }
+  const paid=await f.invoke('PUT',['shared-entries',created.resource_id],{
+   expected_user_id:owner,expected_version:1,
+   entry:{...sample,payment_source:'テスト共有カード'}
+  });
+  assert.equal(paid.status,200,JSON.stringify(paid.data));
+  f.sql.prepare("UPDATE payment_sources SET is_archived=1 WHERE name='テスト共有カード'").run();
+  const retained=await f.invoke('PUT',['shared-entries',created.resource_id],{
+   expected_user_id:owner,expected_version:2,
+   entry:{...sample,amount:1300}
+  });
+  assert.equal(retained.status,200,JSON.stringify(retained.data));
+  assert.equal(retained.data.action.entry.payment_source,'テスト共有カード');
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'テスト共有カード');
  }finally{f.close()}
 });

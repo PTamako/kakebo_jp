@@ -9,6 +9,7 @@ import { japanTodayKey, spendingAveragesByDayType, spendingAverageOnExpenseDays 
 import { annualExpenseAverageByRecordedMonth } from './annual-monthly-average.js'
 import { highestSpendingRatioMonth } from './stats-ratio-peak.js'
 import { countThroughEditedDay } from './ledger-day-focus.js'
+import {sharedEntryFromEditor,sameSharedEditValues,sharedEditConfirmed} from './shared-ledger-edit.js'
 import { isCardBilledEntry, cardBilledAmount } from './card-billing.js'
 import { ledgerEntryAmount, ledgerEntriesTotal, formatLedgerTotal } from './ledger-totals.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
@@ -1258,14 +1259,9 @@ async function saveEdit() {
       if (target && target.state === 'active') {
         if (editReceiptImage.value)
           throw Error('共有記録の画像は家庭共有明細の添付機能で更新してください')
-        const entry = {
-          date: e.date, time: e.time || '', amount: Number(e.amount),
-          type: e.type, category: e.category, merchant: e.merchant || '',
-          note: e.note || '',
-          ...(e.type === 'transfer' ? {
-            transfer_target: e.transferTarget, transfer_date: e.transferDate
-          } : {})
-        }
+        const entry = sharedEntryFromEditor(e)
+        if (sameSharedEditValues(entry,target.entry))
+          throw Error('変更内容がありません。編集内容を確認してください')
         const response = await fetch('/api/family-finance/shared-entries/' +
           encodeURIComponent(target.resource_id), {
           method: 'PUT', credentials:'same-origin', cache:'no-store',
@@ -1274,8 +1270,13 @@ async function saveEdit() {
             expected_version: target.version, entry })
         })
         const receipt = await response.json().catch(()=>({}))
-        if (!response.ok || receipt.ok !== true || receipt.action?.version !== target.version + 1)
-          throw Error(receipt.code || '共有記録の変更を確認できませんでした')
+        if (!sharedEditConfirmed(entry,receipt,target.version)){
+          if (receipt.code==='SHARED_ENTRY_NO_CHANGES')
+            throw Error('変更内容がありません。編集内容を確認してください')
+          if (!response.ok || receipt.ok !== true)
+            throw Error(receipt.code || '共有記録の変更を確認できませんでした')
+          throw Error('保存した値が記帳結果と一致しません。再読込してください')
+        }
         sharedEdited = true
       }
     }

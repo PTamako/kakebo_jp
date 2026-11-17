@@ -500,7 +500,10 @@ test('family approval matrix: shared-card create, update, delete and restore aff
   assert.equal(physical.payment_source,'楽天カード');
   const bill=()=>f.sql.prepare("SELECT COALESCE(SUM(amount),0) AS n FROM entries WHERE type='expense' AND payment_source='楽天カード'").get().n;
   assert.equal(bill(),650);
-  const edited={...card,amount:750,category:'外食',merchant:'バーガーキング・修正'};
+  // Member edits cannot re-select a card; the existing owner-granted card is
+  // preserved by the target executor without a new payment_source field.
+  const {payment_source:previousCard,...cardFields}=card;
+  const edited={...cardFields,amount:750,category:'外食',merchant:'バーガーキング・修正'};
   const pendingEdit=await f.apply('update',resource,1,edited,'approval-matrix-card-edit-0001');
   assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,650);
   assert.equal(bill(),650,'pending edit does not alter original card utilization');

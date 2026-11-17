@@ -4,39 +4,41 @@ import {readFileSync} from 'node:fs'
 import {familyMemberCardUsage} from '../functions/api/family-finance/member-card-usage.js'
 const source=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8')
 
-test('member personal and shared-card usage stays scope-bound and uses posted rows',async()=>{
+test('member card management displays own cards only and shares stay in payment choices',async()=>{
  const calls=[]
  const db={prepare(sql){return {bind(...args){calls.push({sql,args})
   return {
    all:async()=>{
     if(sql.includes('FROM family_financial_accounts'))return {results:[
      {account_id:'a'.repeat(32),label:'本人カード',closing_day:10}]}
-    if(sql.includes('FROM family_legacy_card_shares'))return {results:[
-     {card_name:'家族共有カード',closing_day:15}]}
     if(sql.includes('SELECT id,date,merchant'))return {results:[
      {id:9,date:'2026-11-05',merchant:'食事',category:'外食',amount:1200}]}
-    if(sql.includes('SELECT e.id,e.date'))return {results:[
-     {id:10,date:'2026-11-06',merchant:'買物',category:'日用品',amount:650}]}
     throw Error('Unexpected query '+sql)
    },
    first:async()=>{
     if(sql.includes('COALESCE(SUM(amount)'))return {count:1,amount:1200}
-    if(sql.includes('COALESCE(SUM(e.amount)'))return {count:1,amount:650}
     throw Error('Unexpected query '+sql)
    }
   }}}
  }}
  const user={user_id:'member',household_id:'household',role:'member'}
- const response=await familyMemberCardUsage(new Request('https://example.com/api/family-finance/member-card-usage?month=2026-11'),{DB:db},
-  new URL('https://example.com/api/family-finance/member-card-usage?month=2026-11'),user,['member-card-usage'])
+ const url=new URL('https://example.com/api/family-finance/member-card-usage?month=2026-11')
+ const response=await familyMemberCardUsage(new Request(url),{DB:db},url,user,['member-card-usage'])
  assert.equal(response.status,200)
  const data=await response.json()
  assert.equal(data.viewer_user_id,'member')
- assert.deepEqual(data.items.map(x=>[x.scope,x.amount_jpy]),[['personal',1200],['shared-own-usage',650]])
+ assert.equal(data.scope,'personal-card-usage')
+ assert.deepEqual(data.items.map(x=>[x.scope,x.amount_jpy,x.owner_user_id]),[['personal',1200,'member']])
  assert.deepEqual(data.items[0].period,{start:'2026-10-11',end:'2026-11-10'})
  assert.ok(calls.some(c=>c.sql.includes('family_account_id=?')&&c.args[0]==='a'.repeat(32)))
- assert.ok(calls.some(c=>c.sql.includes('ls.actor_user_id=?')&&c.args.slice(-2).join(',')==='member,member'))
+ assert.ok(calls.some(c=>c.sql.includes('owner_user_id=?')&&c.args[1]==='member'))
+ assert.ok(calls.every(c=>!c.sql.includes('family_legacy_card_shares')))
  assert.ok(calls.every(c=>!c.sql.includes('SELECT * FROM entries')))
+ const usage=source('src/MemberCardUsage.vue'),member=source('src/FamilyMemberWorkspace.vue')
+ assert.doesNotMatch(usage,/shared-own-usage/)
+ assert.match(usage,/x.owner_user_id!==actor/)
+ assert.match(member,/cardAccounts=computed\(\(\)=>myAccounts.value.filter/)
+ assert.match(member,/buildMemberPaymentChoices\(myAccounts.value,sharedCards.value\)/)
  const invalid=await familyMemberCardUsage(new Request('https://example.com/?month=2026-13'),{DB:db},
   new URL('https://example.com/?month=2026-13'),user,['member-card-usage'])
  assert.equal(invalid.status,400)

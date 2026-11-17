@@ -1,5 +1,5 @@
-// Read-only, account-scoped card statement projection for the member management UI.
-// Never expose a spouse's private account, card bill, or card limit.
+// Card management is strictly owner-only. Spouse-granted cards remain available
+// as payment choices but must never appear in card management or card usage.
 import {billingPeriodForMonth} from '../../../src/card-billing.js'
 const reply=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}})
 const todayMonth=()=>new Date(Date.now()+32400000).toISOString().slice(0,7)
@@ -20,11 +20,6 @@ export async function familyMemberCardUsage(req,env,url,user,parts){
   "WHERE household_id=? AND owner_user_id=? AND account_kind='credit_card' "+
   "AND origin='member_created' AND is_archived=0 ORDER BY sort_order,account_id LIMIT 30")
   .bind(user.household_id,user.user_id).all()).results||[]
- const grants=(await db.prepare("SELECT DISTINCT s.card_name,p.closing_day "+
-  "FROM family_legacy_card_shares s JOIN payment_sources p ON p.name=s.card_name "+
-  "WHERE s.household_id=? AND s.grantee_user_id=? AND s.owner_user_id<>? "+
-  "AND s.is_active=1 AND p.source_type='standard' AND p.is_archived=0 LIMIT 30")
-  .bind(user.household_id,user.user_id,user.user_id).all()).results||[]
  const items=[]
  for(const account of accounts){
   const period=billingPeriodForMonth(month,closingDay(account.closing_day,account.label))
@@ -40,28 +35,10 @@ export async function familyMemberCardUsage(req,env,url,user,parts){
    .bind(account.account_id,period.start,period.end).first()
   const amount=safe(total?.amount),count=safe(total?.count)
   if(amount===null||count===null)return reply({ok:false,code:'CARD_USAGE_INVALID_SUM'},409)
-  items.push({key:'personal:'+account.account_id,label:account.label,scope:'personal',
+  items.push({key:'personal:'+account.account_id,account_id:account.account_id,
+   owner_user_id:user.user_id,label:account.label,scope:'personal',
    period,amount_jpy:amount,count,entries:entries.slice(0,200),truncated:count>200})
  }
- for(const grant of grants){
-  const period=billingPeriodForMonth(month,closingDay(grant.closing_day,grant.card_name))
-  if(!period)continue
-  const predicate="e.payment_source=? AND e.type='expense' AND e.date>=? AND e.date<=? "+
-   "AND (EXISTS(SELECT 1 FROM family_legacy_card_spends ls "+
-   "WHERE ls.entry_id=e.id AND ls.actor_user_id=?) OR "+
-   "EXISTS(SELECT 1 FROM family_shared_mutation_applied sm "+
-   "WHERE sm.entry_id=e.id AND sm.requester_user_id=? AND sm.action='create'))"
-  const args=[grant.card_name,period.start,period.end,user.user_id,user.user_id]
-  const entries=(await db.prepare("SELECT e.id,e.date,e.merchant,e.category,e.amount "+
-   "FROM entries e WHERE "+predicate+" ORDER BY e.date DESC,e.id DESC LIMIT 201")
-   .bind(...args).all()).results||[]
-  const total=await db.prepare("SELECT COUNT(*) count,COALESCE(SUM(e.amount),0) amount "+
-   "FROM entries e WHERE "+predicate).bind(...args).first()
-  const amount=safe(total?.amount),count=safe(total?.count)
-  if(amount===null||count===null)return reply({ok:false,code:'CARD_USAGE_INVALID_SUM'},409)
-  items.push({key:'shared:'+grant.card_name,label:grant.card_name,scope:'shared-own-usage',
-   period,amount_jpy:amount,count,entries:entries.slice(0,200),truncated:count>200})
- }
- return reply({ok:true,scope:'personal-and-own-shared-usage',
+ return reply({ok:true,scope:'personal-card-usage',
   viewer_user_id:user.user_id,month,items,ledger_changed:false})
 }

@@ -18,16 +18,20 @@ async function load(){
    credentials:'same-origin',cache:'no-store'})
   const body=await res.json().catch(()=>({}))
   if(!res.ok||body.ok!==true||body.viewer_user_id!==actor||
-    body.month!==month.value||body.scope!=='personal-and-own-shared-usage'||
-    !Array.isArray(body.items)||body.items.some(x=>!['personal','shared-own-usage'].includes(x.scope)))
+    body.month!==month.value||body.scope!=='personal-card-usage'||
+    !Array.isArray(body.items)||body.items.some(x=>x.scope!=='personal'||x.owner_user_id!==actor))
    throw Error(body.code||'カード利用額を確認できません')
   if(ticket!==epoch||actor!==props.userId)return
   rows.value=body.items;loaded.value=true
- }catch(e){if(ticket===epoch&&actor===props.userId)error.value=e.message}
+ }catch(e){if(ticket===epoch&&actor===props.userId){rows.value=[];loaded.value=false;error.value=e.message}}
  finally{if(ticket===epoch)busy.value=false}
 }
-watch(()=>[props.userId,props.active,props.revision,month.value],()=>{
+watch(()=>[props.userId,props.active,props.revision,month.value],(_,previous)=>{
  epoch++;busy.value=false
+ // Never expose the previous identity's cards during account switch or reload.
+ if(!previous||previous[0]!==props.userId||previous[3]!==month.value){
+  rows.value=[];loaded.value=false;error.value=''
+ }
  if(props.active)void load()
 })
 onMounted(()=>{if(props.active)void load()})
@@ -45,7 +49,7 @@ onMounted(()=>{if(props.active)void load()})
   <details v-for="item in rows" :key="item.key" class="member-card-usage-row">
    <summary>
     <span><strong>{{item.label}}</strong>
-     <small>{{item.scope==='shared-own-usage'?'共有カード・本人利用分':'本人のクレジットカード'}} · {{item.period.start}} ～ {{item.period.end}}</small></span>
+     <small>本人のクレジットカード · {{item.period.start}} ～ {{item.period.end}}</small></span>
     <span class="usage-value">{{yen(item.amount_jpy)}} <small>{{item.count}}件</small></span>
    </summary>
    <p v-if="!item.entries.length" class="card-usage-note">この締め期間の利用記録はありません。</p>
@@ -54,7 +58,7 @@ onMounted(()=>{if(props.active)void load()})
    </div>
    <p v-if="item.truncated" class="card-usage-note">200件を超える場合は表示を省略しています。利用額は全件から計算しています。</p>
   </details>
-  <p class="card-usage-note">承認後に実際に入帳された明細を集計。共有カードは本人が利用した分のみ表示し、管理者のカード全体の利用額・限度額は公開しません。ポイント充当・発行会社の請求額とは一致しない場合があります。</p>
+  <p class="card-usage-note">本人名義のカードだけを表示します。共有された配偶者のカードは記帳時の支払方法から選べますが、ここには表示しません。利用額は入帳済み明細に基づき、発行会社の請求額とは一致しない場合があります。</p>
  </article>
 </template>
 <style scoped>

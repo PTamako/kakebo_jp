@@ -60,7 +60,7 @@ const receipt=(r,replayed)=>({
  balance_after_jpy:r.balance_after_jpy,
  entry_id:r.entry_id,applied_at:r.applied_at,already_applied:replayed
 });
-async function decode(env,p){
+export async function decode(env,p){
  try{
   const iv=Uint8Array.from(atob(p.payload_iv),x=>x.charCodeAt(0)),
    cipher=Uint8Array.from(atob(p.payload_cipher),x=>x.charCodeAt(0));

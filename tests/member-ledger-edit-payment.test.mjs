@@ -81,7 +81,7 @@ test('income, transfer target and transfer source remain visible if spouse owns 
  assert.match(form,/missingSavedCategory/)
  const ledger=readFileSync(new URL('../src/family-ledger-context.js',import.meta.url),'utf8')
  assert.match(ledger,/transferTarget:entry\.transfer_target\|\|''/)
- assert.match(ledger,/transferReadOnly:true,transferSourceReadOnly:true/)
+ assert.match(ledger,/transferReadOnly:payment\?\.transferReadOnly\?\?true,transferSourceReadOnly:true/)
  assert.match(ledger,/rewardDisplay:ledgerTransferTargetLabel\(entry\),rewardReadOnly:true/)
 })
 

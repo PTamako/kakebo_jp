@@ -187,7 +187,7 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
    // different person's private balance/transfer target.
    transferTarget:entry.transfer_target||'',
    transferDisplay:ledgerTransferTargetLabel(entry),
-   transferReadOnly:true,transferSourceReadOnly:true,
+   transferReadOnly:payment?.transferReadOnly??true,transferSourceReadOnly:true,
    rewardDestination:entry.type==='income'&&entry.category==='ポイント還元'?
     (entry.transfer_target||''):'',
    rewardDisplay:ledgerTransferTargetLabel(entry),rewardReadOnly:true,

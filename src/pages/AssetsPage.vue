@@ -55,7 +55,7 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
             <span class="asset-label-icon asset-label-wallet" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M15 15h3"/></svg>
             </span>
-            <span>電子マネー残高<small>{{isPersonal?'本人のプリペイドのみ':'Suica・PASMO など'}}</small></span>
+            <span>電子マネー残高<small>Suica・PASMO など</small></span>
           </div>
           <strong class="asset-wallet-value">{{yen(prepaid)}}</strong>
         </div>
@@ -95,7 +95,7 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
           <span class="asset-label-icon asset-label-investment" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9m6 9V5m6 13v-6m4 6V8"/><path d="M3 21h18"/></svg>
           </span>
-          <span>評価額・損益の内訳<small>{{isPersonal?'本人の証券口座':'SBI証券'}} · {{fundCount}}銘柄</small></span>
+          <span>評価額・損益の内訳<small>SBI証券 · {{fundCount}}銘柄</small></span>
         </div>
         <strong class="asset-investment-value">{{yen(investment)}}</strong>
         <div class="asset-investment-foot">

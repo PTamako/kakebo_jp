@@ -97,7 +97,7 @@ onUnmounted(()=>{alive=false;reset()})
    <button type="button" :disabled="busy" @click="toggle">{{open?'閉じる':'訂正を記録'}}</button>
   </div>
   <template v-if="open">
-   <p class="note">実際に発行元のポイントが戻り、受取先でも入金やSBI注文の取消が確定している場合だけ、元の記録を全額反転します。現金取引・家庭明細は書き換えません。</p>
+   
    <p v-if="error" class="error" role="alert">{{error}}</p>
    <p v-if="notice" class="note" role="status">{{notice}}</p>
    <p v-if="loaded&&!eligible.length" class="note">訂正できる本人の未取消取引はありません。</p>

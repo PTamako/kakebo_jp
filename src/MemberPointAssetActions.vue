@@ -140,7 +140,7 @@ onUnmounted(()=>{alive=false;clear()})
     {{visible?'閉じる':'記録する'}}</button>
   </div>
   <template v-if="visible">
-   <p class="muted">本人の口座間で、発行元側の利用と入金・請求減額・SBI約定の両方が実際に反映された記録だけを登録します。家庭明細の審査は不要です。</p>
+   
    <p v-if="error" class="error" role="alert">{{error}}</p>
    <p v-if="message" role="status" class="muted">{{message}}</p>
    <p v-if="!points.length" class="muted">本人のポイント口座を残高ページで追加してください。</p>
@@ -217,7 +217,7 @@ onUnmounted(()=>{alive=false;clear()})
     <button type="submit" class="primary" :disabled="!canSubmit">
      {{busy?'処理中…':'確認済みのポイント資産取引を保存'}}</button>
    </form>
-   <div class="heading"><strong>本人の資産取引</strong>
+   <div class="heading"><strong>資産取引</strong>
     <button type="button" :disabled="busy" @click="load">更新</button></div>
    <div v-for="r in recent.slice(0,historySize)" :key="r.homeflow_request_id" class="history">
     <strong>{{r.effective_date}} · {{labelOf(r.operation)}}</strong>

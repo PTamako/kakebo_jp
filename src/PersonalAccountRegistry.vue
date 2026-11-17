@@ -21,9 +21,9 @@ async function update(item,changes){
 </script>
 <template>
  <details class="personal-account-registry">
-  <summary>本人の証券口座 <span>{{personal.filter(a=>!a.is_archived).length}}件</span></summary>
+  <summary>証券口座 <span>{{personal.filter(a=>!a.is_archived).length}}件</span></summary>
   <div class="personal-account-body">
-   <p>口座登録は本人専用です。証券会社での実取引や家計簿の明細は変更しません。</p>
+   
    <p v-if="error" class="error" role="alert">{{error}}</p><p v-if="message" role="status">{{message}}</p>
    <div v-for="a in personal.filter(x=>!x.is_archived)" :key="a.account_id" class="account-row">
     <span><strong>{{a.label}}</strong><small>{{label(a)}}</small></span>

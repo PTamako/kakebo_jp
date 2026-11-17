@@ -64,7 +64,7 @@ function validDate(v){
  const stamp=Date.parse(v+'T00:00:00Z')
  return Number.isFinite(stamp)&&new Date(stamp).toISOString().slice(0,10)===v
 }
-function validCash(p,row){
+export function validCash(p,row){
  return p&&typeof p==='object'&&!Array.isArray(p)&&
   Object.keys(p).sort().join(',')===
    ['account_id','amount_jpy','category','date','merchant','note','type'].sort().join(',')&&

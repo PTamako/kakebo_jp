@@ -441,3 +441,49 @@ test('a sealed-reference replay cannot be previewed before its original physical
   assert.equal(f.count('entries'),1);
  }finally{f.close()}
 });
+
+
+test('D1 batch metadata can report zero after a committed household approval without causing false automatic reconciliation',async()=>{
+ const f=fixture();
+ try{
+  const intent=await f.apply('create',null,0,{...sample,amount:960,payment_source:'',merchant:'長門'});
+  const originalBatch=f.env.DB.batch;
+  f.env.DB.batch=async statements=>{
+   const results=await originalBatch(statements);
+   // Simulate a genuine Cloudflare D1 response: the atomic ledger and journal
+   // committed, but a per-statement changes count is not authoritative.
+   return results.map((result,i)=>i===1?{...result,meta:{...result.meta,changes:0}}:result);
+  };
+  const first=await f.target('execute',intent);
+  assert.equal(first.status,200,JSON.stringify(first));
+  assert.equal(first.data.applied,true);
+  assert.equal(first.data.approval_id,intent.request_id);
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_mutation_applied'),1);
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,960);
+  const replay=await f.target('receipt',intent);
+  assert.equal(replay.status,200,JSON.stringify(replay));
+  assert.equal(replay.data.already_applied,true);
+  const again=await f.target('execute',intent);
+  assert.equal(again.status,200,JSON.stringify(again));
+  assert.equal(f.count('entries'),1,'recovery never double-posts the same approval');
+ }finally{f.close()}
+});
+
+test('recovery confirms immutable journal after transaction committed but batch response was lost',async()=>{
+ const f=fixture();
+ try{
+  const intent=await f.apply('create',null,0,sample);
+  const originalBatch=f.env.DB.batch;
+  f.env.DB.batch=async statements=>{
+   await originalBatch(statements);
+   throw Error('response lost after durable commit');
+  };
+  const result=await f.target('execute',intent);
+  assert.equal(result.status,200,JSON.stringify(result));
+  assert.equal(result.data.applied,true);
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_mutation_applied'),1);
+  assert.equal((await f.target('receipt',intent)).status,200);
+ }finally{f.close()}
+});

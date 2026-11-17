@@ -1,6 +1,5 @@
 <script setup>
 import {isExternalLedgerEntry} from './ledger-origin.js'
-import {ledgerPaymentLabel} from './ledger-payment-label.js'
 const props=defineProps({
  entry:{type:Object,required:true},categories:{type:Array,default:()=>[]},
  categoryIconPath:{type:Function,default:()=>''},
@@ -34,7 +33,6 @@ const name=x=>props.categoryLabel(x)||x||'その他'
       · 変更予定 {{yen(entry.pending_preview.amount)}}
      </template>
     </span>
-    <span v-if="ledgerPaymentLabel(entry)" class="ledger-payment-method"> · {{ledgerPaymentLabel(entry)}}</span>
     <span v-if="entry.recorded_by" class="ledger-recorder"
      :title="entry.recorder_basis==='legacy_assigned'?'原账本归属人；旧记录未单独保存实际记账操作人':'由已验证的 HomeFlow 身份创建'">
      · {{entry.recorded_by}}
@@ -55,6 +53,8 @@ const name=x=>props.categoryLabel(x)||x||'その他'
  </div>
 </template>
 <style scoped>
+.ledger-info{min-width:0;overflow:hidden}
+.ledger-info small{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ledger-pending-label{display:inline;color:var(--muted,#777);font-weight:800}
 .ledger-recorder{display:inline;white-space:normal;overflow-wrap:normal;
  font-size:clamp(10px,2.7vw,12px);color:var(--muted,#897b85);font-weight:600}

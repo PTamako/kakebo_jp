@@ -632,7 +632,8 @@ memberLedger.selectEditReceipt=selectMemberEditReceipt
 memberLedger.saveEdit=saveMemberLedgerEdit
 provide('kakeibo-page-context',{
  ...makeFamilyStatsContext({tab,month,selectedYear,stats:monthlyReport,
-   annualStats:annualReport,entryType:selectedEntryType}),
+   annualStats:annualReport,entryType:selectedEntryType,
+   onPaymentMethodDetails:memberLedger.openPaymentMethodDetails}),
  ...memberLedger
 })
 watch(selectedYear,n=>{if(Number.isInteger(n)&&n>=2000&&n<=9998)year.value=String(n)})

@@ -28,5 +28,7 @@ export function paymentMethodForEntry(entry, sourceMeta = {}) {
 export function matchesPaymentStatMethod(entry, method, sourceMeta = {}) {
   return (entry?.type === 'expense' || entry?.type === 'transfer' || isCreditPointRedemption(entry))
     && (PAYMENT_STAT_METHODS.includes(method) || method === UNASSIGNED_TRANSFER_METHOD)
-    && paymentMethodForEntry(entry, sourceMeta) === method
+    && (PAYMENT_STAT_METHODS.includes(entry?.payment_method_group) ||
+      entry?.payment_method_group === UNASSIGNED_TRANSFER_METHOD
+      ? entry.payment_method_group : paymentMethodForEntry(entry, sourceMeta)) === method
 }

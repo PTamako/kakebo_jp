@@ -40,7 +40,7 @@ const emit=defineEmits(['update:selected','update:mode','default','archive','rem
   <p v-if="emptyHint&&!options.length" class="card-type-hint">{{emptyHint}}</p>
   <details v-if="archived.length" class="card-archive-disclosure">
    <summary>アーカイブ済みのカード <strong>{{archived.length}}件</strong></summary>
-   <p class="card-type-hint">新しい記帳には表示しません。過去の明細、請求、プリペイド残高はそのまま残ります。</p>
+   <p class="card-type-hint">新規記帳には非表示。過去の明細・残高は保持されます。</p>
    <div v-for="item in archived" :key="item.value" class="card-archived-item">
     <span>{{item.label}} <small>（{{item.kind==='prepaid'?'プリペイド':'カード'}}）</small></span>
     <div class="card-archive-actions">

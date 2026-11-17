@@ -251,7 +251,7 @@ onUnmounted(()=>{
      <button type="submit" :disabled="busy||!newLabel.trim()">新建</button>
     </form>
     <div class="hf-subhead hf-advanced-head">
-     <strong>更多家庭财务工具</strong>
+     <strong>家庭金融ツール</strong>
      <button type="button" :aria-expanded="advancedOpen" :disabled="busy" @click="advancedOpen=!advancedOpen">
       {{advancedOpen?'收起':'展开'}}
      </button>

@@ -70,6 +70,7 @@ function fixture({accountCorrections=false}={}){
   KAKEIBO_SHARED_MUTATION_APPROVAL_ENABLED:'true',
   KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED:'true',
   KAKEIBO_ACCOUNT_CORRECTIONS_ENABLED:accountCorrections?'true':'false',
+  KAKEIBO_OWNER_ACCOUNT_CORRECTIONS_ENABLED:accountCorrections?'true':'false',
   KAKEIBO_FAMILY_PENDING_KEY:secrets.pending,
   KAKEIBO_SHARED_MUTATION_SUBMISSION_SECRET:secrets.submit,
   KAKEIBO_SHARED_MUTATION_EXECUTION_SECRET:secrets.execution,

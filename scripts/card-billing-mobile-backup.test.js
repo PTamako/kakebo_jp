@@ -6,14 +6,14 @@ const billing=source.match(/<article v-show="managementTab === 'cards'" class="f
 const shared=readFileSync(new URL('../src/CardUsageSummaryFields.vue',import.meta.url),'utf8')
 const backups=source.slice(source.lastIndexOf('<template #backup>'),source.lastIndexOf('<template #duplicates>'))
 const privacy=source.slice(source.lastIndexOf('<template #privacy>'),source.lastIndexOf('<template #backup>'))
-test('card billing on iPhone uses the same full-width selector, month and amount layout for both identities',()=>{
-  assert.match(billing, /<CardUsageSummaryFields :card="bill.name" :month="bill.month"/)
-  assert.match(billing, /@update:card="bill.name=\$event" @update:month="bill.month=\$event"/)
-  assert.match(shared, /grid-template-columns:repeat\\(2,minmax\\(0,1fr\\)\\)/)
-  assert.match(shared, /\\.card-usage-summary-card\\{grid-column:1\\/-1\\}/)
+test('card billing on iPhone has identical shared inputs for both identities',()=>{
+  assert.match(billing, /<CardUsageSummaryFields :card="bill\.name" :month="bill\.month"/)
+  assert.match(billing, /@update:card="bill\.name=\$event" @update:month="bill\.month=\$event"/)
+  assert.match(shared, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
+  assert.match(shared, /\.card-usage-summary-card\{grid-column:1\/-1\}/)
   assert.match(shared, /class="card-usage-summary-field card-usage-summary-month"/)
   assert.match(shared, /class="card-usage-summary-field card-usage-summary-amount"/)
-  assert.match(shared, /<output aria-live="polite">\\{\\{amount\\}\\}<\\/output>/)
+  assert.match(shared, /<output aria-live="polite">\{\{amount\}\}<\/output>/)
 })
 test('blank billing selections do not show redundant instructions or large disabled save action',()=>{
   assert.doesNotMatch(billing,/カードと締め月を選択してください/)

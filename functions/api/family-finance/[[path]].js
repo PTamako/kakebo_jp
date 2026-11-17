@@ -34,6 +34,7 @@ import {familyPersonalAssets} from './personal-assets.js';
 import {familyManualHoldings} from './manual-holdings.js';
 import {familyPrepaidReport} from './prepaid-report.js';
 import {familyHouseholdStats} from './household-stats.js';
+import {paymentMethodForEntry} from '../../../src/payment-stat-group.js';
 import {familyPlanOwnership} from './plan-ownership.js';
 import {familyLegacyResourceOwners} from './resource-owners.js';
 import {auditLegacyFinanceMappings} from './legacy-mapping-audit.js';
@@ -267,12 +268,15 @@ async function entries(env,user,url){
   'e.family_transfer_target_account_id,'+
   'COALESCE(a.label,e.payment_source) AS payment_source_display,'+
   'a.owner_user_id AS payment_account_owner_user_id,'+
+  'a.account_kind AS payment_account_kind,a.stat_group AS payment_account_stat_group,'+
+  'p.stat_group AS payment_legacy_stat_group,'+
   'COALESCE(t.label,e.transfer_target) AS transfer_target_display,'+
   't.owner_user_id AS transfer_target_account_owner_user_id,'+
   ledgerRecorderColumns+',ls.actor_user_id AS shared_card_actor_user_id,'+
   'member_intent.requester_user_id AS shared_entry_requester_user_id '+
   'FROM entries e LEFT JOIN family_financial_accounts a '+
   'ON a.account_id=e.family_account_id '+
+  'LEFT JOIN payment_sources p ON p.name=e.payment_source '+
   'LEFT JOIN family_financial_accounts t '+
   'ON t.account_id=e.family_transfer_target_account_id '+
   ledgerRecorderJoins+' '+
@@ -282,13 +286,14 @@ async function entries(env,user,url){
  // Family members share transaction amounts and categories, not the
  // owner's payment card names or stable account IDs.
  const items=rows.slice(0,limit).map(r=>{
-  if(user.role==='owner')return r;
+  const payment_method_group=paymentMethodForEntry(r);
+  if(user.role==='owner')return {...r,payment_method_group};
   const ownSource=r.payment_account_owner_user_id===user.user_id;
   const grantedSpender=r.shared_card_actor_user_id===user.user_id||
     r.shared_entry_requester_user_id===user.user_id;
   const ownTarget=r.transfer_target_account_owner_user_id===user.user_id;
   const spouseTransfer=r.type==='transfer'&&r.transfer_target==='spouse'&&r.family_transfer_target_account_id==null;
-  return {...r,
+  return {...r,payment_method_group,
    payment_source:ownSource||grantedSpender?r.payment_source:null,
    transfer_target:spouseTransfer?'spouse':ownTarget?r.transfer_target:null,
    family_account_id:ownSource?r.family_account_id:null,

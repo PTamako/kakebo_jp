@@ -1,4 +1,4 @@
-import {resolveSharedMutationSealedReference} from '../family-finance/shared-mutation-sealed-reference.js';
+import {resolveSharedMutationSealedReference} from '../../family-finance/shared-mutation-sealed-reference.js';
 // One immutable HOMEFLOW approval -> one D1 mutation, never an external payment.
 // Authentic owner proof, encrypted member intent and receipt are all separate.
 const enc=new TextEncoder(),h64=/^[a-f0-9]{64}$/i,id32=/^[a-f0-9]{32}$/i,

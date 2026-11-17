@@ -290,6 +290,11 @@ main .finance-tools .recurring-details > label:last-child { grid-column: 1 / -1;
 main .finance-tools .finance-bill-history-row { min-height: 52px; }
 main .finance-tools .finance-bill-history-row button { min-height: 44px; }
 
+/* A ledger dialog must never sit behind the fixed five-tab bar on iPhone.
+   Keep the page navigation hidden while any modal is active, including when
+   its scroll contents exceed the viewport. */
+main:has(.edit-overlay) .bottom-nav { visibility: hidden; pointer-events: none; }
+main .edit-overlay { z-index: 100; }
 /* iPhone edit dialogs are bottom sheets with a reliable safe-area footer. */
 @media (max-width: 560px) {
   main .edit-overlay { align-items: flex-end; padding: 0; }
@@ -302,7 +307,7 @@ main .finance-tools .finance-bill-history-row button { min-height: 44px; }
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
   }
-  main .edit-dialog-actions { position: sticky; bottom: 0; z-index: 2; background: var(--card); padding-block: 8px; }
+  main .edit-dialog-actions { position: sticky; bottom: 0; z-index: 2; background: var(--card); padding: 10px 0 calc(12px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (max-width: 420px) {
   main .today-date { display: none; }

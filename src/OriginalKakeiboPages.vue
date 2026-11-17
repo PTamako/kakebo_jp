@@ -34,7 +34,9 @@ function navigate(next){
        Only injected account data and authorized event adapters differ. -->
   <AppTopbar :identity="identity" :theme="theme" :themes="themes"
    @change-theme="emit('theme-change',$event)" @logout="emit('logout')"/>
-  <EntryInputPage v-if="activeTab==='add'"/>
+  <EntryInputPage v-if="activeTab==='add'">
+   <template #personal-transfer><slot name="personal-transfer"/></template>
+  </EntryInputPage>
   <LedgerPage v-else-if="activeTab==='list'" :member="member"/>
   <StatisticsPage v-else-if="activeTab==='stat'"/>
   <AssetsPage v-else-if="activeTab==='investments'"

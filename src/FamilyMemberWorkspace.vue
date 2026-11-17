@@ -2,6 +2,7 @@
 import {ref,computed,provide,onMounted,onUnmounted,watch} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
+import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
@@ -1147,6 +1148,10 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
     memberRefresh:refresh,memberTrashCount:memberArchivedAccounts.length,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
+   <template #personal-transfer>
+    <FamilyFinanceBankTransfers :key="'personal-bank-transfer:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" />
+   </template>
    <template #member-cards>
     <OriginalCardManagementPanel
       :selected="selectedCardId"

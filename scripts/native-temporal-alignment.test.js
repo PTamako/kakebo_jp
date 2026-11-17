@@ -26,6 +26,13 @@ test('reported closing month and recurring start month retain native pickers', (
   assert.match(shared,/<input class="card-closing-month" type="month" :value="month" aria-label="締め月"/)
   assert.match(shared,/@input="emit\('update:month',\$event\.target\.value\)"/)
   assert.match(finance,/v-model="model\.startMonth" type="month"/)
+  const child=read('src/FixedCostEditorFields.vue')
+  assert.match(child,/\.recurring-start-month input\[type="month"\]/)
+  assert.match(child,/min-inline-size:0!important/)
+  assert.match(child,/max-inline-size:100%!important/)
+  assert.match(child,/box-sizing:border-box!important/)
+  assert.match(child,/overflow:hidden/)
+
   assert.match(finance,/\.finance-panel \.recurring-start-month input\[type=month\]\{display:inline-flex;align-items:center;/)
   assert.doesNotMatch(finance,/input\[type=month\]\{display:block/)
 })

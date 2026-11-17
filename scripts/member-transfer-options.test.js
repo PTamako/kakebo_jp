@@ -38,3 +38,8 @@ test('member operation dispatch is strict and never accepts arbitrary account re
  assert.equal(memberTransferOperation('prepaid:'),null)
  assert.equal(memberTransferOperation('shared:card'),null)
 })
+
+test('point conversion is hidden until both accounts satisfy backend zero-opening-balance requirement',()=>{
+ const rows=[account('points','point1',uid,{opening_balance:100}),account('prepaid','prepaid1')]
+ assert.deepEqual(memberTransferChoices(rows,uid).map(x=>x.value),['spouse','prepaid:prepaid1'])
+})

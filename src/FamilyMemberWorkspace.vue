@@ -212,6 +212,11 @@ const memberLedgerPaymentOptions=computed(()=>memberPaymentOptions.value.filter(
 const memberPaymentReassignmentEnabled=ref(false)
 provide('kakeibo-member-payment-choices',memberLedgerPaymentOptions)
 function memberPaymentEditor(entry){
+ if(entry?.type==='transfer')return {
+  paymentReadOnly:true,paymentSource:'',
+  allReadOnly:entry.transfer_target!=='spouse'||
+   entry.shared_entry_requester_user_id!==props.user.user_id
+ }
  const own=memberPaymentReassignmentEnabled.value&&entry?.type==='expense'&&
   entry.shared_entry_requester_user_id===props.user.user_id&&
   !entry.family_account_id
@@ -626,6 +631,9 @@ async function saveMemberLedgerEdit(){
  const initial=sharedEntries.value.find(row=>String(row.id)===String(edited.id))
  if(!initial||edited.pending_approval){
   memberLedger.receiptSaveError.value='元の明細を確認してください';return
+ }
+ if(edited.allReadOnly){
+  memberLedger.receiptSaveError.value='他の人の資産移動は閲覧のみ可能です';return
  }
  const fields=['date','time','amount','type','category','merchant','note']
  const paymentChanged=edited.type==='expense'&&!edited.paymentReadOnly&&
@@ -1301,12 +1309,14 @@ const memberReceiptImage=ref(null),memberReceiptFileName=ref('')
 const memberDraftRecoveryInfo=ref('')
 const memberPaymentSourceChoices=computed(()=>memberPaymentOptions.value)
 const memberExpenseCategoryChoices=computed(()=>[...new Set([
- ...entryExpenseCategories,...entryCategories.value,
+ ...entryExpenseCategories,
  ...memberCategoryRecords.value.filter(x=>x.type==='expense').map(x=>x.name)
 ])])
 const memberIncomeCategoryChoices=computed(()=>[...new Set([
  ...entryIncomeCategories,...memberCategoryRecords.value.filter(x=>x.type==='income').map(x=>x.name)
 ])])
+provide('kakeibo-member-expense-categories',memberExpenseCategoryChoices)
+provide('kakeibo-member-income-categories',memberIncomeCategoryChoices)
 const memberRuleCategoryOptions=computed(()=>[...new Set([...memberExpenseCategoryChoices.value,...memberIncomeCategoryChoices.value])])
 async function selectMemberDraftReceipt(event,record){
  const file=event.target?.files?.[0];if(event.target)event.target.value=''

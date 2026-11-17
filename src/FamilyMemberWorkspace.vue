@@ -29,7 +29,6 @@ import {isOwnHouseholdEntry} from './shared-ledger-edit.js'
 import BottomNavigation from './BottomNavigation.vue'
 import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
-import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
 import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MemberReceiptManagement from './MemberReceiptManagement.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
@@ -205,6 +204,28 @@ async function cardDanger(action,name){
   await modify(a,{is_archived:true});cardMode.value='';return
  }
  throw Error('カードと残高の完全削除には個別の確認が必要です。現在はアーカイブのみ利用できます')
+}
+
+// The management view is shared with the owner. This adapter only supplies
+// the authenticated member's own cards and authorized mutations.
+function getMemberCardConfig(){
+ return {
+  selected:selectedCardId.value,
+  options:cardAccounts.value.filter(a=>!a.is_archived).map(a=>({value:a.account_id,label:a.label})),
+  defaultValue:defaultCard.value,busy:busy.value,
+  mode:cardMode.value,name:selectedCard.value?.label||'',card:cardMeta.value,
+  closingDay:selectedCard.value?.closing_day?String(selectedCard.value.closing_day)+'日':'末日',
+  paymentSources:cardLabels.value,shareReady:false,
+  archived:cardAccounts.value.filter(a=>a.is_archived).map(a=>({
+   value:a.account_id,label:a.label,kind:a.account_kind})),
+  allowPermanentDelete:false,defaultSourceType:preferredCardType.value,
+  onSave:saveCard,onDanger:cardDanger,
+  onSelect:value=>{selectedCardId.value=value},
+  onMode:next=>{if(next==='add')preferredCardType.value='standard';cardMode.value=next},
+  onDefault:makeDefaultCard,
+  onArchive:id=>{const account=cardAccounts.value.find(a=>a.account_id===id);
+   if(account)void modify(account,{is_archived:false})}
+ }
 }
 
 let epoch=0,alive=true
@@ -1656,7 +1677,7 @@ watch(()=>props.user.user_id,()=>{
    :on-personal-history="openMemberWalletHistory"
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     cardSettingsRequest:memberCardSettingsRequest,
-    memberStatus,
+    memberStatus,memberCardConfig:getMemberCardConfig(),
     memberRefresh:refresh,memberTrashCount:memberTrashCount,memberLoadTrash:loadMemberSharedTrash,memberLoadJobs:loadMemberJobStatus,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
@@ -1665,24 +1686,8 @@ watch(()=>props.user.user_id,()=>{
     <MemberAssetTransferFields :key="'personal-transfer:'+user.user_id"
      :record="record" :user-id="user.user_id" :accounts="myAccounts"/>
    </template>
-   <template #member-cards>
-    <OriginalCardManagementPanel
-      :selected="selectedCardId"
-      :options="cardAccounts.filter(a=>!a.is_archived).map(a=>({value:a.account_id,label:a.label}))"
-      :default-value="defaultCard" :busy="busy"
-      :mode="cardMode" :name="selectedCard?.label||''" :card="cardMeta"
-      :closing-day="selectedCard?.closing_day?String(selectedCard.closing_day)+'日':'末日'"
-      :payment-sources="cardLabels" :share-ready="false"
-      :archived="cardAccounts.filter(a=>a.is_archived).map(a=>({value:a.account_id,
-        label:a.label,kind:a.account_kind}))"
-      :allow-permanent-delete="false" 
-      :default-source-type="preferredCardType"
-      :on-save="saveCard" :on-danger="cardDanger"
-      @update:selected="selectedCardId=$event" @update:mode="next=>{if(next==='add')preferredCardType='standard';cardMode=next}"
-      @default="makeDefaultCard"
-      @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
+   <template #member-card-usage>
     <MemberCardUsage :user-id="user.user_id" :active="tab==='finance'" :revision="memberUsageRevision"/>
-
    </template>
    <template #member-plans>
     <MemberFixedCosts :key="'member-fixed:'+user.user_id+':'+personalBackupRevision" :user-id="user.user_id"

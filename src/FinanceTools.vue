@@ -35,7 +35,7 @@ import { listR2Receipts, getR2Receipt, uploadR2Receipt, deleteR2ReceiptsByIds, r
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
-const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null}, memberTrashCount:{type:Number,default:0}, memberLoadTrash:{type:Function,default:null}, memberLoadJobs:{type:Function,default:null} })
+const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null}, memberTrashCount:{type:Number,default:0}, memberLoadTrash:{type:Function,default:null}, memberLoadJobs:{type:Function,default:null}, memberCardConfig:{type:Object,default:null} })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'receipt-images-cleared', 'receipt-images-removed', 'receipt-images-updated'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -1589,6 +1589,48 @@ async function removeCardBill(record) {
     message.value='請求額を削除しました（明細は保持）'
   } catch(e) { message.value='カード請求額を削除できませんでした：'+e.message }
 }
+// Card controls have exactly one render path for every authenticated identity.
+// Only ownership-scoped data and callbacks are injected by the session adapter.
+const unifiedCardProps=computed(()=>props.memberView ? (props.memberCardConfig||{
+ selected:'',options:[],onSave:async()=>{throw Error('カード情報を取得できません')},
+ onDanger:async()=>{throw Error('カード情報を取得できません')},allowPermanentDelete:false
+}) : {
+ selected:selectedCard.value,
+ options:[...orderedPayments.value.map(source=>({value:source,label:source})),
+  ...(selectedCard.value&&!orderedPayments.value.includes(selectedCard.value)
+   ?[{value:selectedCard.value,label:selectedCard.value}]:[])],
+ defaultValue:props.defaultPaymentSource,busy:busy.value,
+ mode:cardMode.value,name:selectedCard.value,
+ card:props.paymentSourceMeta[selectedCard.value]||null,
+ closingDay:closingDayFor(selectedCard.value),
+ paymentSources:props.paymentSources,shareOptions:cardShareOptions.value,
+ shareReady:cardShareReady.value,
+ shareError:cardMessage.value.startsWith('家庭共有を読み込めません')?cardMessage.value:'',
+ archived:archivedPaymentSources.value.map(name=>({value:name,label:name,
+  kind:props.paymentSourceMeta[name]?.source_type})),
+ onSave:saveCardFromSheet,onDanger:runCardDanger
+})
+function onCardSelect(value){
+ if(props.memberView)props.memberCardConfig?.onSelect?.(value)
+ else selectedCard.value=value
+}
+function onCardMode(value){
+ if(props.memberView)props.memberCardConfig?.onMode?.(value)
+ else if(value==='edit')void selectCardForEdit()
+ else cardMode.value=value
+}
+function onCardDefault(){
+ if(props.memberView)props.memberCardConfig?.onDefault?.()
+ else emit('set-default-payment-source',selectedCard.value)
+}
+function onCardArchive(value){
+ if(props.memberView)props.memberCardConfig?.onArchive?.(value)
+ else void archivePaymentSource(value,false)
+}
+function onCardRemove(value){
+ if(props.memberView)props.memberCardConfig?.onRemove?.(value)
+ else void removePaymentSource(value)
+}
 </script>
 <template>
 <section class="finance-tools">
@@ -1597,7 +1639,7 @@ async function removeCardBill(record) {
     :status="memberView ? memberStatus : (loaded ? '最終更新：'+lastLoadedLabel+' · '+rows.length+'件' : busy ? '明細を読み込み中…' : '未読み込み')"
     :error="memberView ? memberError : loadError"
     @refresh="memberView ? memberRefresh?.() : refreshEverything()" />
-  <slot v-if="memberView&&managementTab!=='tools'" :name="'member-'+managementTab" />
+  <slot v-if="memberView&&['plans','investment'].includes(managementTab)" :name="'member-'+managementTab" />
   <OriginalOtherManagement v-if="memberView" :active="managementTab==='tools'"
     :trash-count="memberTrashCount" :on-open-trash="memberLoadTrash" :on-open-jobs="memberLoadJobs">
     <template #rules><slot name="member-rules"/></template>
@@ -1607,28 +1649,16 @@ async function removeCardBill(record) {
     <template #duplicates><slot name="member-duplicates"/></template>
     <template #trash><slot name="member-trash"/></template>
   </OriginalOtherManagement>
-  <template v-else>
+  <OriginalCardManagementPanel v-show="managementTab === 'cards'"
+    v-bind="unifiedCardProps" @update:selected="onCardSelect"
+    @update:mode="onCardMode" @default="onCardDefault"
+    @archive="onCardArchive" @remove="onCardRemove" />
+  <slot v-if="memberView&&managementTab==='cards'" name="member-card-usage"/>
+  <template v-if="!memberView">
   <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
     <InvestmentTransferReview />
     <SbiPortfolio :api="props.api" active-view="plans" :refresh-key="investmentRefreshKey" />
   </section>
-  <OriginalCardManagementPanel v-show="managementTab === 'cards'"
-    :selected="selectedCard"
-    :options="[...orderedPayments.map(source=>({value:source,label:source})),
-      ...(selectedCard&&!orderedPayments.includes(selectedCard)?[{value:selectedCard,label:selectedCard}]:[])]"
-    :default-value="defaultPaymentSource" :busy="busy"
-    :mode="cardMode" :name="selectedCard"
-    :card="paymentSourceMeta[selectedCard]||null" :closing-day="closingDayFor(selectedCard)"
-    :payment-sources="paymentSources" :share-options="cardShareOptions"
-    :share-ready="cardShareReady"
-    :share-error="cardMessage.startsWith('家庭共有を読み込めません')?cardMessage:''"
-    :archived="archivedPaymentSources.map(name=>({value:name,label:name,
-      kind:props.paymentSourceMeta[name]?.source_type}))"
-    :on-save="saveCardFromSheet" :on-danger="runCardDanger"
-    @update:selected="selectedCard=$event"
-    @update:mode="next=>next==='edit'?selectCardForEdit():cardMode=next"
-    @default="emit('set-default-payment-source',selectedCard)"
-    @archive="name=>archivePaymentSource(name,false)" @remove="removePaymentSource" />
 
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>

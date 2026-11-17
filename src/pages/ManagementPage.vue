@@ -6,7 +6,7 @@ defineOptions({ inheritAttrs: false })
   <!-- Keep the management instance mounted across tab switches so drafts and
        settings state survive. All existing props/events pass through unchanged. -->
   <FinanceTools v-bind="$attrs">
-    <template #member-cards><slot name="member-cards" /></template>
+    <template #member-card-usage><slot name="member-card-usage" /></template>
     <template #member-plans><slot name="member-plans" /></template>
     <template #member-investment><slot name="member-investment" /></template>
     <template #member-rules><slot name="member-rules"/></template>

@@ -12,7 +12,10 @@ test('owner and member use one original balances and management page tree',()=>{
  assert.match(owner,/<OriginalKakeiboPages :identity="familyIdentity"/)
  assert.match(member,/<OriginalKakeiboPages :identity="user"/)
  assert.match(src('FinanceTools.vue'),/<OriginalCardManagementPanel v-show="managementTab === 'cards'"/)
- assert.match(member,/<OriginalCardManagementPanel/)
+ assert.doesNotMatch(member,/<OriginalCardManagementPanel/)
+ assert.match(member,/#member-card-usage/)
+ assert.match(member,/memberCardConfig:getMemberCardConfig\(\)/)
+ assert.equal((src('FinanceTools.vue').match(/<OriginalCardManagementPanel/g)||[]).length,1)
 })
 
 test('member-specific explanatory paragraphs are absent without disabling real actions',()=>{

@@ -2,12 +2,8 @@
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyFinanceCardPurchases from './FamilyFinanceCardPurchases.vue'
-import FamilyFinanceCardSettlements from './FamilyFinanceCardSettlements.vue'
-import FamilyFinancePrepaidActions from './FamilyFinancePrepaidActions.vue'
-import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
 import FamilySharedEntries from './FamilySharedEntries.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
-import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import {validateKakeiboHomeflowAuthorizationUrl} from './homeflow-authorization-url.js'
 import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
@@ -26,7 +22,7 @@ const person=ref(null),pending=ref(null),accounts=ref([]),advancedOpen=ref(false
 const newLabel=ref(''),newKind=ref('credit_card'),editing=ref(null),rename=ref('')
 const kinds=[
  {value:'credit_card',label:'クレジットカード'},{value:'prepaid',label:'プリペイドカード'},
- {value:'cash',label:'現金'},{value:'bank',label:'銀行'},
+ {value:'cash',label:'現金'},
  {value:'points',label:'积分'},{value:'securities',label:'证券'},
  {value:'other',label:'其他'}
 ]
@@ -287,18 +283,6 @@ onUnmounted(()=>{
      :key="'proposals:'+person.user_id" :user-id="person.user_id" :accounts="accounts" />
     <FamilyFinanceCardPurchases v-if="person.role==='member'"
      :key="'card-purchases:'+person.user_id" :user-id="person.user_id"
-     :household-id="person.household_id" :accounts="accounts" />
-    <FamilyFinanceCardSettlements v-if="person.role==='member'"
-     :key="'card-settlement:'+person.user_id" :user-id="person.user_id"
-     :household-id="person.household_id" :accounts="accounts" />
-    <FamilyFinancePrepaidActions v-if="person.role==='member'"
-     :key="'prepaid-actions:'+person.user_id" :user-id="person.user_id"
-     :household-id="person.household_id" :accounts="accounts" />
-    <FamilyRecurringFinance v-if="person.role==='member'"
-      :key="'recurring:'+person.user_id" :user-id="person.user_id"
-      :household-id="person.household_id" :accounts="accounts" @changed="refresh" />
-    <FamilyFinanceBankTransfers v-if="person.role==='member'"
-     :key="'bank-transfers:'+person.user_id" :user-id="person.user_id"
      :household-id="person.household_id" :accounts="accounts" />
     </div>
     <small class="hf-note">共有明細の変更には管理者の承認が必要です。</small>

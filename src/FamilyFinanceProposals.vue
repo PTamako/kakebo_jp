@@ -1,7 +1,6 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 import TransactionForm from './TransactionForm.vue'
-import {SPOUSE_INCOME_CATEGORY} from './spouse-income.js'
 
 const props=defineProps({userId:{type:String,required:true},
  accounts:{type:Array,default:()=>[]}})
@@ -34,7 +33,7 @@ Object.defineProperty(memberDraft,'date',{
 Object.defineProperty(memberDraft,'note',{
  get:()=>note.value,set:value=>{note.value=value},enumerable:true})
 const memberCategories=['食費','日用品','交通','住居','医療','交際費','その他']
-const memberIncomeCategories=['給与','賞与','副収入','ポイント還元',SPOUSE_INCOME_CATEGORY,'その他']
+const memberIncomeCategories=['給与','賞与','副収入','ポイント還元','その他']
 const allowAccountType=()=>{}
 
 // Keep an ambiguous network retry attached to its original stable key and
@@ -243,7 +242,7 @@ onUnmounted(()=>{
       :receipt-enabled="false" :category-label="x=>x"
       @change-type="kind=$event;category=''"
     />
-    <label v-if="kind==='income'&&category!==SPOUSE_INCOME_CATEGORY" class="hf-merchant">
+    <label v-if="kind==='income'" class="hf-merchant">
       收入来源 <input v-model="merchant" maxlength="160" required placeholder="工资、奖金或其他来源"/>
     </label>
     <button type="submit" :disabled="!!busy||loading||!myAccounts.some(a=>a.account_id===accountId)||!merchant.trim()||!category.trim()||!Number.isSafeInteger(Number(amount))||Number(amount)<1">仅保存加密草稿</button>

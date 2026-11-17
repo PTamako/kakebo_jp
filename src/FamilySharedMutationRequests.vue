@@ -1,8 +1,6 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
-import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 const props=defineProps({userId:{type:String,required:true},householdId:{type:String,required:true},headless:{type:Boolean,default:false},onlyWhenOpen:{type:Boolean,default:false}})
-const spouseQuickMode=ref(false)
 const open=ref(false),busy=ref(false),error=ref(''),message=ref(''),
  proposals=ref([]),rows=ref([]),deleted=ref([]),available=ref(false),
  action=ref('create'),resource=ref(''),prepared=ref(null),stableKey=ref('')
@@ -17,7 +15,7 @@ const canWrite=computed(()=>open.value&&available.value&&
  Number(draft.value.amount)>0&&draft.value.category.trim())))
 const statusText=x=>x.status==='prepared'?'未提出':x.status==='submitted_status_unknown'?
  'HomeFlow に提出済み・管理者の審査待ち':x.status
-function reset(){spouseQuickMode.value=false;version++;open.value=false;busy.value=false;available.value=false;error.value='';message.value='';
+function reset(){version++;open.value=false;busy.value=false;available.value=false;error.value='';message.value='';
  rows.value=[];deleted.value=[];proposals.value=[];resource.value='';prepared.value=null;stableKey.value='';
  draft.value={date:new Date(Date.now()+32400000).toISOString().slice(0,10),
  time:'',amount:'',type:'expense',category:'食費',merchant:'',note:''}}
@@ -58,21 +56,6 @@ async function openForEntry(operation,entry){
  error.value='';action.value=operation;resource.value=source.resource_id
  if(operation==='update')draft.value={...source.entry,...entry,
   amount:String(entry.amount),payment_source:undefined,transfer_target:undefined}
-}
-async function openSpouseIncome(){
- // The person who received the money is the requester/recipient.
- // Use the existing member -> HomeFlow owner approval executor, no bank ID.
- if(busy.value||prepared.value||stableKey.value){
-  error.value='前回の申請を確認してから操作してください。二重登録を防ぎます。'
-  return
- }
- spouseQuickMode.value=true
- action.value='create';resource.value=''
- draft.value={date:new Date(Date.now()+32400000).toISOString().slice(0,10),
-  time:'',amount:'',type:'income',category:SPOUSE_INCOME_CATEGORY,
-  merchant:SPOUSE_INCOME_SOURCE,note:''}
- open.value=true
- await load()
 }
 // Only household-ledger mutations enter HomeFlow. Personal accounts, cards
 // and balances use their own owner-scoped APIs without these approvals.
@@ -159,7 +142,7 @@ async function submitMutation(operation,original,edited=null){
  const entry=operation==='update'?canonical(edited):null
  return submitIntent(operation,entry,target)
 }
-defineExpose({submitEntry,submitMutation,openForEntry,openSpouseIncome})
+defineExpose({submitEntry,submitMutation,openForEntry})
 async function toggle(){
  if(busy.value)return
  open.value=!open.value
@@ -243,14 +226,14 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
 </script>
 <template>
 <section v-if="!headless && (!onlyWhenOpen || open)" class="shared-request" aria-label="家庭明細の変更申請">
- <header><strong>{{spouseQuickMode?'配偶からの収入':'家庭明細の変更申請'}}</strong>
+ <header><strong>家庭明細の変更申請</strong>
   <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'閉じる':'申請'}}</button></header>
  <template v-if="open">
-  <p class="hint">{{spouseQuickMode?'受取人が「配偶からの収入」を登録。銀行口座は不要で、承認後に反映。':'家庭明細の追加・変更・削除・復元は管理者の承認後に反映されます。共有カード支出も対象です。'}}</p>
+  <p class="hint">家庭明細の追加・変更・削除・復元は管理者の承認後に反映されます。共有カード支出も対象です。</p>
   <p v-if="error" class="error" role="alert">{{error}}</p>
   <p v-if="message" class="hint" role="status">{{message}}</p>
   <form v-if="available" class="editor" @submit.prevent="prepared?submit():prepare()">
-   <label v-if="!spouseQuickMode">申請内容<select v-model="action" :disabled="busy||!!prepared" @change="resource=''">
+   <label>申請内容<select v-model="action" :disabled="busy||!!prepared" @change="resource=''">
     <option value="create">明細を追加</option><option value="update">明細を変更</option>
     <option value="delete">ゴミ箱へ移動</option><option value="restore">ゴミ箱から復元</option>
    </select></label>
@@ -262,14 +245,13 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
    </label>
    <template v-if="action==='create'||action==='update'">
     <label>日付<input v-model="draft.date" type="date" :disabled="busy||!!prepared"/></label>
-    <label v-if="!spouseQuickMode">収支<select v-model="draft.type" :disabled="busy||!!prepared"><option value="expense">支出</option><option value="income">収入</option></select></label>
+    <label>収支<select v-model="draft.type" :disabled="busy||!!prepared"><option value="expense">支出</option><option value="income">収入</option></select></label>
     <label>金額（円）<input v-model="draft.amount" type="number" min="1" max="10000000" required :disabled="busy||!!prepared"/></label>
-    <label v-if="!spouseQuickMode">カテゴリ<input v-model="draft.category" maxlength="100" required :disabled="busy||!!prepared"/></label>
-    <p v-else class="hint">分類：{{SPOUSE_INCOME_CATEGORY}} · 入金元：{{SPOUSE_INCOME_SOURCE}}</p>
-    <label v-if="!spouseQuickMode">店舗・入金元<input v-model="draft.merchant" maxlength="120" :disabled="busy||!!prepared"/></label>
+    <label>カテゴリ<input v-model="draft.category" maxlength="100" required :disabled="busy||!!prepared"/></label>
+    <label>店舗・入金元<input v-model="draft.merchant" maxlength="120" :disabled="busy||!!prepared"/></label>
     <label>メモ<textarea v-model="draft.note" maxlength="500" :disabled="busy||!!prepared" rows="2"/></label>
    </template>
-   <button type="submit" :disabled="busy||(!prepared&&!canWrite)">{{prepared?'HomeFlow に審査を提出':spouseQuickMode?'配偶からの収入を登録':'審査申請を保存'}}</button>
+   <button type="submit" :disabled="busy||(!prepared&&!canWrite)">{{prepared?'HomeFlow に審査を提出':'審査申請を保存'}}</button>
    <button v-if="prepared" type="button" :disabled="busy" @click="cancel">未提出の申請を取り消す</button>
   </form>
   <div v-if="available" class="history"><strong>最近の申請</strong>

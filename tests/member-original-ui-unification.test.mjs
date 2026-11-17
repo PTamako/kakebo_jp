@@ -67,7 +67,7 @@ test('member investment mutations cannot reach the owner legacy SBI API',()=>{
  const sbi=read('src/SbiPortfolio.vue')
  assert.match(memberView,/const map=\{'investment-portfolio\/holding':'holding'/)
   assert.match(memberView,/api\('manual-holdings\/'\+sub,request\(payload,'PUT'\)\)/)
- assert.match(memberView,/api\('member-recurring-plans'\),api\('recurring-occurrences'\),api\('manual-holdings'\)/)
+ assert.match(memberView,/api\('member-sbi-plans'\),api\('recurring-occurrences'\),api\('manual-holdings'\)/)
  assert.doesNotMatch(memberView,/api\('investment-portfolio\?/)
  assert.match(sbi,/if\(props.memberMode\)\{/)
  assert.match(sbi,/props.onMemberEdit\?\.\(p\)/)

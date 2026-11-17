@@ -70,9 +70,10 @@ async function checkAccounts(db,user,x){
 }
 async function balance(db,prepaidId){
  const r=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal WHERE prepaid_account_id=?),0) '+
+  '+COALESCE((SELECT SUM(amount_jpy) FROM family_member_prepaid_topups WHERE prepaid_account_id=?),0)'+
   '+COALESCE((SELECT SUM(amount_jpy) FROM family_points_prepaid_credits WHERE prepaid_account_id=?),0)'+
   '-COALESCE((SELECT SUM(debited_prepaid_jpy) FROM family_points_prepaid_refunds WHERE prepaid_account_id=?),0)) total')
-  .bind(prepaidId,prepaidId,prepaidId).first();
+  .bind(prepaidId,prepaidId,prepaidId,prepaidId).first();
  return Number.isSafeInteger(r?.total)&&r.total>=0?r.total:null;
 }
 const visible=r=>({request_id:r.request_id,action:r.action,prepaid_account_id:r.prepaid_account_id,

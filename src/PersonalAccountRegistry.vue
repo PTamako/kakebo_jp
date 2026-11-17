@@ -2,9 +2,9 @@
 import {computed,ref} from 'vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 const props=defineProps({accounts:{type:Array,default:()=>[]},onCreate:{type:Function,default:null},onUpdate:{type:Function,default:null}})
-const kinds=[{value:'bank',label:'銀行口座'},{value:'securities',label:'証券口座'}]
-const personal=computed(()=>props.accounts.filter(x=>['bank','securities'].includes(x.account_kind)&&x.origin==='member_created'))
-const kind=ref('bank'),name=ref(''),editing=ref(''),editName=ref(''),busy=ref(false),error=ref(''),message=ref('')
+const kinds=[{value:'securities',label:'証券口座'}]
+const personal=computed(()=>props.accounts.filter(x=>x.account_kind==='securities'&&x.origin==='member_created'))
+const kind=ref('securities'),name=ref(''),editing=ref(''),editName=ref(''),busy=ref(false),error=ref(''),message=ref('')
 const label=x=>kinds.find(k=>k.value===x.account_kind)?.label||'口座'
 async function add(){
  if(busy.value||!name.value.trim()||name.value.length>80||!props.onCreate)return
@@ -21,9 +21,9 @@ async function update(item,changes){
 </script>
 <template>
  <details class="personal-account-registry">
-  <summary>本人の銀行・証券口座 <span>{{personal.filter(a=>!a.is_archived).length}}件</span></summary>
+  <summary>本人の証券口座 <span>{{personal.filter(a=>!a.is_archived).length}}件</span></summary>
   <div class="personal-account-body">
-   <p>口座登録は本人専用です。銀行の残高・証券会社の取引や家計簿の明細は変更しません。</p>
+   <p>口座登録は本人専用です。証券会社での実取引や家計簿の明細は変更しません。</p>
    <p v-if="error" class="error" role="alert">{{error}}</p><p v-if="message" role="status">{{message}}</p>
    <div v-for="a in personal.filter(x=>!x.is_archived)" :key="a.account_id" class="account-row">
     <span><strong>{{a.label}}</strong><small>{{label(a)}}</small></span>
@@ -35,7 +35,7 @@ async function update(item,changes){
      <button type="button" :disabled="busy" @click="update(a,{is_archived:true})">保管</button>
     </div>
    </div>
-   <p v-if="!personal.some(a=>!a.is_archived)">銀行・証券口座はまだありません。</p>
+   <p v-if="!personal.some(a=>!a.is_archived)">証券口座はまだありません。</p>
    <form class="account-create" @submit.prevent="add">
     <MobileChoiceSheet v-model="kind" label="口座の種類" :options="kinds"/>
     <input v-model.trim="name" maxlength="80" required aria-label="本人の口座名" placeholder="口座名" :disabled="busy"/>

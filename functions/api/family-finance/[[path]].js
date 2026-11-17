@@ -6,19 +6,18 @@ import {onRequest as homeflowIdentity, ssoReady} from '../homeflow-sso/[[path]].
 import {financePending} from './pending.js';
 import {familyLegacyCardSharing} from './legacy-card-sharing.js';
 import {familyCardPurchases} from './card-purchases.js';
-import {familyCardSettlements} from './card-settlements.js';
 import {familyPrepaidActions} from './prepaid-actions.js';
 import {familyPointsActions} from './points-actions.js';
 import {familyMemberPersonalPoints} from './member-personal-points.js';
 import {familyMemberPointAssets} from './member-points-asset-actions.js';
 import {familyMemberPointAssetReversals} from './member-point-asset-reversals.js';
 import {familySbiCashActions} from './sbi-cash-actions.js';
-import {familyBankTransfers} from './bank-transfers.js';
-import {familyCrossMemberBankTransfers} from './cross-member-bank-transfers.js';
 import {ledgerRecorderColumns,ledgerRecorderJoins} from '../ledger-recorder.js';
 import {familySharedEntries} from './shared-entries.js';
 import {familySharedMutationRequests} from './shared-mutation-requests.js';
 import {familyMemberRecurringPlans} from './member-recurring-plans.js';
+import {familyMemberSbiPlans} from './member-sbi-plans.js';
+import {familyMemberPrepaidTopups} from './member-prepaid-topups.js';
 import {familyMemberFixedCosts} from './member-fixed-costs.js';
 import {familyMemberMerchantRules} from './member-merchant-rules.js';
 import {familyMemberCategories} from './member-categories.js';
@@ -88,7 +87,7 @@ async function bodyForMutation(request,url){
   return value&&typeof value==='object'&&!Array.isArray(value)?value:null;
  }catch{return null;}
 }
-const kinds=new Set(['credit_card','prepaid','cash','bank','points','securities','other']);
+const kinds=new Set(['credit_card','prepaid','cash','points','securities','other']);
 const accountFields='account_id,household_id,owner_user_id,label,account_kind,source_type,'+
  'stat_group,closing_day,sort_order,is_default,is_archived,opening_balance,'+
  'opening_date,origin,legacy_source_name,version';
@@ -392,18 +391,17 @@ export async function onRequest({request,env,params}){
    return familyLegacyCardSharing(request,env,url,user,parts);
   if(parts[0]==='proposals')return financePending(request,env,url,user,parts);
   if(parts[0]==='card-purchases')return familyCardPurchases(request,env,url,user,parts);
-  if(parts[0]==='card-settlements')return familyCardSettlements(request,env,url,user,parts);
   if(parts[0]==='prepaid-actions')return familyPrepaidActions(request,env,url,user,parts);
   if(parts[0]==='points-actions')return familyPointsActions(request,env,url,user,parts);
    if(parts[0]==='member-personal-points')return familyMemberPersonalPoints(request,env,url,user,parts);
    if(parts[0]==='member-points-asset-actions')return familyMemberPointAssets(request,env,url,user,parts);
    if(parts[0]==='member-point-asset-reversals')return familyMemberPointAssetReversals(request,env,url,user,parts);
    if(parts[0]==='sbi-cash-actions')return familySbiCashActions(request,env,url,user,parts);
-   if(parts[0]==='bank-transfers')return familyBankTransfers(request,env,url,user,parts);
-    if(parts[0]==='cross-member-bank-transfers')return familyCrossMemberBankTransfers(request,env,url,user,parts);
     if(parts[0]==='shared-entries')return familySharedEntries(request,env,url,user,parts);
     if(parts[0]==='shared-mutation-requests')return familySharedMutationRequests(request,env,url,user,parts);
     if(parts[0]==='member-recurring-plans')return familyMemberRecurringPlans(request,env,url,user,parts);
+    if(parts[0]==='member-sbi-plans')return familyMemberSbiPlans(request,env,url,user,parts);
+    if(parts[0]==='member-prepaid-topups')return familyMemberPrepaidTopups(request,env,url,user,parts);
     if(parts[0]==='member-fixed-costs')return familyMemberFixedCosts(request,env,url,user,parts);
   if(parts[0]==='member-merchant-rules')return familyMemberMerchantRules(request,env,url,user,parts);
    if(parts[0]==='member-categories')return familyMemberCategories(request,env,url,user,parts);

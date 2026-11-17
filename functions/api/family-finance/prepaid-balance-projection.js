@@ -6,6 +6,7 @@ export async function memberPrepaidBalances(db,household){
  const query='SELECT a.account_id,a.owner_user_id,a.label,a.version,'+
   'COALESCE((SELECT SUM(j.delta_jpy) FROM family_prepaid_balance_journal j '+
   'WHERE j.prepaid_account_id=a.account_id AND j.household_id=a.household_id),0) '+
+  '+COALESCE((SELECT SUM(t.amount_jpy) FROM family_member_prepaid_topups t WHERE t.prepaid_account_id=a.account_id AND t.household_id=a.household_id),0) '+
   '+COALESCE((SELECT SUM(c.amount_jpy) FROM family_points_prepaid_credits c '+
   'WHERE c.prepaid_account_id=a.account_id AND c.household_id=a.household_id),0) '+
   '-COALESCE((SELECT SUM(r.debited_prepaid_jpy) FROM family_points_prepaid_refunds r '+

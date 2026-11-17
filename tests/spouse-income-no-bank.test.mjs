@@ -20,30 +20,26 @@ test('remove personal bank registration panel, retain original owner cards',()=>
  assert.match(form,/props.transferDestinations.map/)
 })
 
-test('both recipients have an explicit spouse-source income category',()=>{
+test('spouse income shortcut is absent while the original neutral transfer remains',()=>{
  assert.equal(SPOUSE_INCOME_CATEGORY,'配偶からの収入')
  assert.equal(SPOUSE_INCOME_SOURCE,'配偶')
- assert.match(form,/SPOUSE_INCOME_CATEGORY/)
- assert.match(form,/orderedIncomeCategories/)
- assert.match(form,/record.type==='income' && record.category===SPOUSE_INCOME_CATEGORY/)
- assert.match(form,/record.value.merchant=SPOUSE_INCOME_SOURCE/)
- assert.match(proposal,/SPOUSE_INCOME_CATEGORY/)
+ assert.doesNotMatch(form,/SPOUSE_INCOME_CATEGORY/)
+ assert.doesNotMatch(proposal,/SPOUSE_INCOME_CATEGORY/)
+ assert.doesNotMatch(workspace,/SPOUSE_INCOME_CATEGORY/)
+ assert.doesNotMatch(approval,/openSpouseIncome|spouseQuickMode/)
+ assert.match(form,/record.transferTarget==='spouse'/)
+ assert.match(form,/両者の収入・支出に計上せず、口座の指定も不要/)
 })
-
-test('member recipient records spouse income with original form and HomeFlow confirmation',()=>{
- assert.match(workspace,/entryIncomeCategories=\['給与','賞与','副収入','ポイント還元',SPOUSE_INCOME_CATEGORY/)
+test('neutral spouse asset transfer uses one ordinary shared-ledger proposal',()=>{
  assert.match(shared,/<EntryInputPage v-if="activeTab==='add'"/)
  assert.match(read('EntryInputPage.vue'),/<TransactionForm /)
  assert.match(workspace,/sharedMutationRef.value\?\.submitEntry\(record\)/)
  assert.match(approval,/async function submitEntry\(input\)/)
  assert.match(approval,/submitIntent\('create',canonical\(input\)\)/)
- assert.match(approval,/operation,resource_id:target\?\.resource_id\|\|null/)
  assert.match(approval,/\/api\/family-finance\/shared-mutation-requests/)
- assert.match(approval,/encodeURIComponent\(pending.proposalId\)\+'\/submit'/)
+ assert.match(approval,/transfer_target='spouse'/)
  assert.doesNotMatch(approval,/\/api\/entries/)
- assert.doesNotMatch(workspace,/FamilyPersonalBankSettings/)
 })
-
 test('retired UI does not invalidate existing bank consent and approval evidence',()=>{
  assert.match(bank,/bank_debit_posted:true/)
  assert.match(bank,/bank_credit_posted:true/)

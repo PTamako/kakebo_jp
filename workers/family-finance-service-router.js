@@ -6,7 +6,6 @@
 import { onRequest as approvedAction } from '../functions/api/internal/approved-actions/[[path]].js';
 import { approvedBankTransferRoute } from '../functions/api/internal/bank-transfers/[[path]].js';
 import { onRequest as approvedCardPurchase } from '../functions/api/internal/card-purchases/[[path]].js';
-import { onRequest as approvedCardSettlement } from '../functions/api/internal/card-settlements/[[path]].js';
 import { onRequest as approvedPoints } from '../functions/api/internal/points-actions/[[path]].js';
 import { onRequest as approvedPrepaid } from '../functions/api/internal/prepaid-actions/[[path]].js';
 import { onRequest as approvedSbiCash } from '../functions/api/internal/sbi-cash-actions/[[path]].js';
@@ -18,7 +17,6 @@ const actionRoutes=Object.freeze({
  'approved-actions':(request,env,action)=>approvedAction({request,env,params:{path:[action]}}),
  'bank-transfers':(request,env,action)=>approvedBankTransferRoute(request,env,[action]),
  'card-purchases':(request,env,action)=>approvedCardPurchase({request,env,params:{path:[action]}}),
- 'card-settlements':(request,env,action)=>approvedCardSettlement({request,env,params:{path:[action]}}),
  'points-actions':(request,env,action)=>approvedPoints({request,env,params:{path:[action]}}),
  'prepaid-actions':(request,env,action)=>approvedPrepaid({request,env,params:{path:[action]}}),
  'sbi-cash-actions':(request,env,action)=>approvedSbiCash({request,env,params:{path:[action]}}),

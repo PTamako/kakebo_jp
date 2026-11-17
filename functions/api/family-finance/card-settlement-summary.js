@@ -7,7 +7,7 @@ export async function memberCardLiabilities(db,household,settlementEnabled){
  // Keep immutable original charges, then apply ONLY owner-approved,
  // signed adjustment effects. No direct mutation of the purchase evidence.
  const hasCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
-  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").first();
+  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first();
  const common=hasCorrections?
   'SELECT x.account_id,x.bill_month,COALESCE(SUM(x.amount_jpy),0) amount_jpy,'+
    'SUM(x.purchases) purchases FROM ('+

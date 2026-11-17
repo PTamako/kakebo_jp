@@ -6,7 +6,7 @@ const CLIENT='kakeibo';
 const MS=300_000;
 // Same maximum life as the ORIGINAL HomeFlow login. The proof is sealed
 // server-side and /me checks current HomeFlow session, role and household.
-const SESSION_MS=14*86400000;
+const SESSION_MS=30*86400000;
 const encoder=new TextEncoder();
 const json=(value,status=200,headers={})=>Response.json(value,{status,headers:{
   'Cache-Control':'no-store','Referrer-Policy':'no-referrer',...headers}});

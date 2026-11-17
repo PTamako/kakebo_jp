@@ -3,6 +3,7 @@
 import {ref,computed,watch} from 'vue'
 import {groupAnnualEntries} from './detail-pagination.js'
 import {ICON_LIBRARY} from './icon-library.js'
+import {ledgerPaymentLabel} from './ledger-payment-label.js'
 
 export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTypeFilter,
  load,more,openApproval,onError}){
@@ -130,7 +131,7 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  function cancelEdit(){editingEntry.value=null;editReceiptImage.value=null}
  function startEdit(entry){
   if(entry?.pending_approval){onError('この明細は HomeFlow 審査中です');return}
-  editingEntry.value={...entry,paymentSource:'',payment_source:null,transferTarget:''}
+  editingEntry.value={...entry,paymentSource:ledgerPaymentLabel(entry),payment_source:null,transferTarget:''}
   swipedEntryId.value=null
  }
  function setEntryType(row,type){if(['income','expense'].includes(type)){row.type=type;row.category=''}}

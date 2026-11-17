@@ -275,18 +275,19 @@ async function write(e,p,b,approval,payload){
    approval.approver_user_id,approval.approver_user_id,id,action,p.expected_version,
    p.expected_version+1,p.payload_sha256,at,id));
  stmts.push(db.prepare('DELETE FROM family_shared_entry_write_context WHERE resource_id=?').bind(id));
+ // D1 can commit the complete batch while a statement reports an unreliable
+ // affected-row count. Read the immutable, versioned receipt before deciding.
+ let metadataConfirmed=false,batchThrew=false;
  try{
   const result=await db.batch(stmts);
-  if(result.length!==stmts.length||result.some(x=>x.meta?.changes!==1))
-   return fail('SHARED_MUTATION_ATOMIC_CONFIRMATION_REQUIRED',503);
- }catch{
-  const previous=await db.prepare('SELECT * FROM family_shared_mutation_applied WHERE homeflow_request_id=?')
-   .bind(b.request_id).first().catch(()=>null);
-  return same(previous,b)?receipt(db,previous,b,true):fail('SHARED_MUTATION_BATCH_ROLLED_BACK',503);
- }
+  metadataConfirmed=result.length===stmts.length&&result.every(x=>x.meta?.changes===1);
+ }catch{batchThrew=true}
  const saved=await db.prepare('SELECT * FROM family_shared_mutation_applied WHERE homeflow_request_id=?')
-  .bind(b.request_id).first();
- return same(saved,b)?receipt(db,saved,b,false):fail('SHARED_MUTATION_RECEIPT_UNKNOWN',503);
+  .bind(b.request_id).first().catch(()=>null);
+ if(same(saved,b))return receipt(db,saved,b,batchThrew||!metadataConfirmed);
+ if(batchThrew)return fail('SHARED_MUTATION_BATCH_ROLLED_BACK',503);
+ return fail(metadataConfirmed?'SHARED_MUTATION_RECEIPT_UNKNOWN':
+  'SHARED_MUTATION_ATOMIC_CONFIRMATION_REQUIRED',503);
 }
 async function preview(e,b){
  // Private, read-only view of a sealed household ledger proposal for its

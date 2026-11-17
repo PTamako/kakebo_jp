@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
 import {ledgerPaymentLabel} from '../src/ledger-payment-label.js'
 
 test('member-owned approved cash ledger entry explicitly shows cash',()=>{
@@ -33,3 +34,25 @@ test('asset transfer and income do not inherit card or cash labels',()=>{
  assert.equal(ledgerPaymentLabel({type:'transfer',payment_source:'セブンカード・プラス'}),'')
  assert.equal(ledgerPaymentLabel({type:'income',payment_source:'セブンカード・プラス'}),'')
 })
+
+
+test('all ledger detail subtitles stay on one truncated line without payment source',()=>{
+ const cash={id:527,date:'2026-11-17',amount:960,type:'expense',
+  category:'食費',merchant:'長門',payment_source:'現金',recorded_by:'鸡毛大王'};
+ const card={id:528,date:'2026-11-17',amount:650,type:'expense',
+  category:'食費',merchant:'バーガーキング',payment_source:'セブンカード・プラス',recorded_by:'鸡毛大王'};
+ // Payment details are still available to editing and account calculations.
+ assert.equal(ledgerPaymentLabel(cash),'現金');
+ assert.equal(ledgerPaymentLabel(card),'セブンカード・プラス');
+ const component=readFileSync(new URL('../src/LedgerEntryContent.vue',import.meta.url),'utf8');
+ const metadata=component.slice(component.indexOf('<small>'),component.indexOf('</small>'));
+ assert(!metadata.includes('ledgerPaymentLabel(entry)'), 'payment source must not appear in list');
+ assert(metadata.includes('entry.recorded_by'),'nickname remains in subtitle');
+ assert(metadata.includes('entry.pending_approval'),'pending state remains in subtitle');
+ assert(metadata.includes('entry.transfer_target'),'transfer destination remains in subtitle');
+ const style=component.slice(component.indexOf('<style scoped>'));
+ assert.match(style,/\.ledger-info small\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap/);
+ const mobile=readFileSync(new URL('../src/mobile-ui.css',import.meta.url),'utf8');
+ assert.match(mobile,/main \.ledger-info small \{[^}]*white-space:\s*nowrap;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/);
+ assert(!mobile.includes('main .ledger-payment-method'), 'obsolete payment badge CSS removed');
+});

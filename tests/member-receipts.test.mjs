@@ -19,6 +19,7 @@ function fixture(){
   'CREATE TABLE schema_migrations(version TEXT PRIMARY KEY,description TEXT)',
   'CREATE TABLE homeflow_identity_links(user_id TEXT PRIMARY KEY,household_id TEXT,role TEXT,state TEXT)',
   'CREATE TABLE family_shared_mutation_intents(proposal_id TEXT PRIMARY KEY,requester_user_id TEXT,household_id TEXT,operation TEXT,status TEXT)',
+  'CREATE TABLE family_shared_mutation_applied(proposal_id TEXT PRIMARY KEY,requester_user_id TEXT,household_id TEXT,action TEXT,entry_id INTEGER)',
   'CREATE TABLE family_legacy_card_spends(entry_id INTEGER PRIMARY KEY,actor_user_id TEXT,household_id TEXT)',
   'CREATE TABLE family_card_purchase_intents(request_id TEXT PRIMARY KEY,requester_user_id TEXT,household_id TEXT)',
   'CREATE TABLE family_card_purchase_applied(proposal_id TEXT PRIMARY KEY,entry_id INTEGER)',
@@ -111,6 +112,20 @@ test('delete tombstones before R2 removal and cannot destroy another user images
   assert.equal((await f.send(member,'GET',id)).status,404)
   assert.equal(f.data.size,0)
   assert.equal((await f.send(member,'DELETE',id,null,{'origin':'https://kakeibo.test','x-confirm-receipt':id})).status,200)
+ }finally{f.db.close()}
+})
+test('approved shared posting exposes only the same member linked ledger ID',async()=>{
+ const f=fixture()
+ try{
+  const p=await prepare(f),id=p.body.item.receipt_id
+  await f.send(member,'PUT',id,p.bytes,{
+   'origin':'https://kakeibo.test','content-type':'image/jpeg'
+  })
+  f.db.exec("INSERT INTO family_shared_mutation_applied VALUES ('"+proposal+"','spouse','family','create',777)")
+  const list=await f.send(member)
+  assert.equal(list.status,200)
+  assert.equal(list.body.items[0].linked_entry_id,777)
+  assert.deepEqual((await f.send(another)).body.items,[])
  }finally{f.db.close()}
 })
 test('invalid byte size or hash never promotes pending image',async()=>{

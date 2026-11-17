@@ -13,17 +13,22 @@ export function memberOwnActiveAssets(accounts,userId){
   a&&a.owner_user_id===userId&&a.origin==='member_created'&&
   !a.is_archived&&typeof a.account_id==='string'&&a.account_id)
 }
+export function memberPointEligibleAssets(accounts,userId){
+ return memberOwnActiveAssets(accounts,userId).filter(a=>Number(a.opening_balance||0)===0)
+}
 export function memberTransferChoices(accounts,userId){
  const own=memberOwnActiveAssets(accounts,userId)
+ const eligible=memberPointEligibleAssets(accounts,userId)
  const prepaid=own.filter(a=>a.account_kind==='prepaid')
- const points=own.filter(a=>a.account_kind==='points')
- const cards=own.filter(a=>a.account_kind==='credit_card')
- const securities=own.filter(a=>a.account_kind==='securities')
+ const pointPrepaid=eligible.filter(a=>a.account_kind==='prepaid')
+ const points=eligible.filter(a=>a.account_kind==='points')
+ const cards=eligible.filter(a=>a.account_kind==='credit_card')
+ const securities=eligible.filter(a=>a.account_kind==='securities')
  const choices=[{value:'spouse',name:'配偶'}]
  // Prepaid topup is available without a bank or cash-account registration.
  for(const a of prepaid)choices.push({value:'prepaid:'+a.account_id,
   name:a.label+'（チャージ）',label:a.label+'（チャージ）'})
- if(points.length&&prepaid.length)choices.push({value:'points:prepaid',
+ if(points.length&&pointPrepaid.length)choices.push({value:'points:prepaid',
   name:'ポイント → プリペイド',label:'ポイント → プリペイド'})
  if(points.length&&cards.length)choices.push({value:'points:card',
   name:'ポイント → 本人のカード請求',label:'ポイント → 本人のカード請求'})

@@ -40,9 +40,23 @@ async function referenceOwned(db,user,ref){
    "AND status IN('submitted','prepared','applied')",value,user.user_id,user.household_id);
  }
  if(kind==='entry'&&/^[1-9]\d{0,14}$/.test(value)&&Number.isSafeInteger(Number(value))){
-  return !!await first(db,"SELECT 1 FROM family_legacy_card_spends "+
-   "WHERE entry_id=? AND actor_user_id=? AND household_id=?",Number(value),
+  const entryId=Number(value);
+  const old=await first(db,"SELECT 1 FROM family_legacy_card_spends "+
+   "WHERE entry_id=? AND actor_user_id=? AND household_id=?",entryId,
    user.user_id,user.household_id);
+  if(old)return true;
+  const shared=await first(db,"SELECT 1 FROM family_shared_mutation_applied "+
+   "WHERE entry_id=? AND requester_user_id=? AND household_id=? AND action='create'",
+   entryId,user.user_id,user.household_id);
+  if(shared)return true;
+  const credit=await first(db,"SELECT 1 FROM family_card_purchase_applied "+
+   "WHERE entry_id=? AND requester_user_id=? AND household_id=?",
+   entryId,user.user_id,user.household_id);
+  if(credit)return true;
+  const prepaid=await first(db,"SELECT 1 FROM family_prepaid_actions_applied "+
+   "WHERE entry_id=? AND requester_user_id=? AND household_id=? AND action='spend'",
+   entryId,user.user_id,user.household_id);
+  return !!prepaid;
  }
  if(kind==='request'&&ID.test(value)){
   const card=await first(db,"SELECT 1 FROM family_card_purchase_intents WHERE "+

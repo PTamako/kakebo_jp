@@ -1,0 +1,39 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+const src=name=>readFileSync(new URL('../src/'+name,import.meta.url),'utf8')
+
+test('owner and member use one original balances and management page tree',()=>{
+ const shell=src('OriginalKakeiboPages.vue')
+ const member=src('FamilyMemberWorkspace.vue')
+ const owner=src('App.vue')
+ assert.match(shell,/<AssetsPage v-else-if="activeTab==='investments'"/)
+ assert.match(shell,/<ManagementPage v-show="activeTab==='finance'"/)
+ assert.match(owner,/<OriginalKakeiboPages :identity="familyIdentity"/)
+ assert.match(member,/<OriginalKakeiboPages :identity="user"/)
+ assert.match(src('FinanceTools.vue'),/<OriginalCardManagementPanel v-show="managementTab === 'cards'"/)
+ assert.match(member,/<OriginalCardManagementPanel/)
+})
+
+test('member-specific explanatory paragraphs are absent without disabling real actions',()=>{
+ const assets=src('pages/AssetsPage.vue')
+ const prepaid=src('PrepaidAssets.vue')
+ const sbi=src('SbiPortfolio.vue')
+ const registry=src('PersonalAccountRegistry.vue')
+ const member=src('FamilyMemberWorkspace.vue')
+ assert.doesNotMatch(assets,/本人のプリペイドのみ|本人の証券口座/)
+ assert.doesNotMatch(prepaid,/電子マネー会社の残高とは自動照合していません/)
+ assert.doesNotMatch(sbi,/本人の積立設定のみ表示|本人のSBI口座の買付登録は|計画の変更は本人が保存できます/)
+ assert.doesNotMatch(registry,/口座登録は本人専用です。/)
+ assert.doesNotMatch(member,/本人用バックアップは2種類です|共有明細の変更・削除は承認後に反映|銀行口座や基金口数は変更しません/)
+ assert.match(prepaid,/onMemberOpening/)
+ assert.match(sbi,/onMemberCreate/)
+ assert.match(registry,/onCreate/)
+ assert.match(member,/<MemberCardUsage/)
+ assert.match(member,/<MemberFixedCosts/)
+ assert.match(member,/<MemberPointAssetActions/)
+ assert.match(member,/<MemberPrepaidTopups/)
+ assert.match(member,/<MemberPersonalPoints/)
+ assert.match(member,/restoreMemberSharedTrash/)
+ assert.match(member,/exportPersonalAccounts/)
+})

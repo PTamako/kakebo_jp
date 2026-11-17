@@ -2091,7 +2091,7 @@ provide('kakeibo-entry-input', {
  pendingReceiptFileName,receiptSaveError,setEntryType,applyMerchantPayment,
  manualPayment,onImage,addBlank,saveAll,
  receiptEnabled:computed(()=>true),allowedTypes:computed(()=>['expense','income','transfer']),
- paymentChoices:computed(()=>[])
+ paymentChoices:computed(()=>[]),allowSbiTransfer:true
 })
 </script>
 

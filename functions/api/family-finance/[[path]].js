@@ -256,10 +256,13 @@ async function entries(env,user,url){
  const limit=Math.max(1,Math.min(100,Number(url.searchParams.get('limit'))||20));
  const offset=Math.max(0,Math.min(10000,Number(url.searchParams.get('offset'))||0));
  const period=url.searchParams.get('month');
+ const annual=url.searchParams.get('year');
  if(period!==null&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))
   return json({code:'BAD_LEDGER_MONTH'},400);
- const lower=period?period+'-01':null;
- const upper=period?(
+ if(annual!==null&&(!/^[12]\d{3}$/.test(annual)||Number(annual)>9998||period!==null))
+  return json({code:'BAD_LEDGER_YEAR'},400);
+ const lower=annual?annual+'-01-01':period?period+'-01':null;
+ const upper=annual?String(Number(annual)+1).padStart(4,'0')+'-01-01':period?(
   period.endsWith('-12')?String(Number(period.slice(0,4))+1).padStart(4,'0')+'-01-01':
   period.slice(0,5)+String(Number(period.slice(5))+1).padStart(2,'0')+'-01'):null;
  const rows=await all(env.DB,'SELECT e.id,e.date,e.time,e.type,e.amount,'+
@@ -280,30 +283,37 @@ async function entries(env,user,url){
   'LEFT JOIN family_financial_accounts t '+
   'ON t.account_id=e.family_transfer_target_account_id '+
   ledgerRecorderJoins+' '+
-  (period?'WHERE e.date >= ? AND e.date < ? ':'')+
+  ((period||annual)?'WHERE e.date >= ? AND e.date < ? ':'')+
   'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',
-  ...(period?[lower,upper]:[]),limit+1,offset);
+  ...((period||annual)?[lower,upper]:[]),limit+1,offset);
  // Household ledger payment names are visible to both spouses for
  // read-only transparency. Private account IDs, card management, transfer
  // targets and ownership permissions remain isolated to the actual owner.
  const items=rows.slice(0,limit).map(r=>{
   const payment_method_group=paymentMethodForEntry(r);
   if(user.role==='owner')return {...r,payment_method_group};
-  const paymentLabel=r.type==='expense'
-   ? String(r.payment_source_display||r.payment_source||'現金').trim()||'現金'
-   : '';
+  const originalSource=String(r.payment_source_display||r.payment_source||'').trim();
+  const paymentLabel=r.type==='expense'? originalSource||'現金'
+   :r.type==='transfer'
+    ?(originalSource.startsWith('family:')?'個人口座':originalSource):'';
   const ownSource=r.payment_account_owner_user_id===user.user_id;
   const grantedSpender=r.shared_card_actor_user_id===user.user_id||
     r.shared_entry_requester_user_id===user.user_id;
   const ownTarget=r.transfer_target_account_owner_user_id===user.user_id;
   const spouseTransfer=r.type==='transfer'&&r.transfer_target==='spouse'&&r.family_transfer_target_account_id==null;
+  const rawTarget=String(r.transfer_target_display||r.transfer_target||'').trim();
+  const visibleTarget=spouseTransfer?'配偶':
+   rawTarget.startsWith('family:')?'個人口座':
+   rawTarget.startsWith('prepaid:')?rawTarget.slice(8):
+   rawTarget.startsWith('credit:')?rawTarget.slice(7):
+   rawTarget==='sbi'?'SBI証券（投資信託）':rawTarget;
   return {...r,payment_method_group,
    payment_source:ownSource||grantedSpender?r.payment_source:null,
    transfer_target:spouseTransfer?'spouse':ownTarget?r.transfer_target:null,
    family_account_id:ownSource?r.family_account_id:null,
    family_transfer_target_account_id:ownTarget?r.family_transfer_target_account_id:null,
    payment_source_display:paymentLabel,
-   transfer_target_display:spouseTransfer?'配偶':ownTarget?r.transfer_target_display:'个人账户',
+   transfer_target_display:visibleTarget||'未設定',
    payment_account_owner_user_id:ownSource?user.user_id:null,
    transfer_target_account_owner_user_id:ownTarget?user.user_id:null};
  });

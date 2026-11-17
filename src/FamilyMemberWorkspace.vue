@@ -876,7 +876,7 @@ watch(()=>props.user.user_id,loadMemberCategories)
        :category-label="x=>x" :on-save="saveMemberMerchantRule"/>
    </template>
    <template #member-jobs>
-     <p class="help">本人の定期設定は「固定費」「積立」に保存されます。金融取引は HomeFlow の承認と実際の入出金証拠が必要です。</p>
+     <p class="help">固定費・積立は各メニューで管理。金融取引は承認と証拠確認が必要です。</p>
      <button type="button" class="button-secondary" :disabled="busy" @click="refresh">
        {{busy?'確認中…':'本人の設定と審査状態を更新'}}
      </button>
@@ -885,11 +885,11 @@ watch(()=>props.user.user_id,loadMemberCategories)
    <template #member-privacy>
      <div class="device-privacy-section">
        <div class="device-privacy-row"><strong>レシート画像</strong><span class="help">OCR のみ対応</span></div>
-       <p class="help">画像から文字を読み取れますが、本人の画像を保存・再表示・一括ダウンロードする機能は未対応です。共有画像は他の利用者の許可なく削除できません。</p>
+       <p class="help">OCR のみ対応。画像の保存・表示・ダウンロードは未対応です。</p>
      </div>
    </template>
    <template #member-backup>
-    <p class="help">本人のカード・銀行・固定費・カテゴリ・店舗ルールの設定を暗号化して保存します。家庭共有明細や他人の情報は含めません。</p>
+    <p class="help">個人設定を暗号化して保存（共有明細・画像は対象外）。</p>
     <div class="member-backup-actions">
      <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportPersonalAccounts">
       {{personalBackupBusy?'処理中…':'本人の設定を暗号化して保存'}}
@@ -899,15 +899,15 @@ watch(()=>props.user.user_id,loadMemberCategories)
      </label>
     </div>
     <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
-    <p class="help">復元は本人の未登録店舗ルール・カテゴリのみ追加します。口座・残高・固定費・家庭明細の自動上書きは行いません。</p>
+    <p class="help">復元はカテゴリと未登録の店舗ルールのみ。口座・残高は変更しません。</p>
    </template>
    <template #member-duplicates>
-     <p v-if="!memberDuplicateGroups.length" class="help">現在表示中の家庭明細に同日・同額・同店の重複候補はありません。</p>
+     <p v-if="!memberDuplicateGroups.length" class="help">表示中の明細に重複候補はありません。</p>
      <div v-for="(group,i) in memberDuplicateGroups" :key="i" class="entry">
        <strong>{{group[0].date}} · {{group[0].merchant}} · ¥{{Number(group[0].amount).toLocaleString('ja-JP')}} · {{group.length}}件</strong>
        <button type="button" @click="tab='list'">明細を見る</button>
      </div>
-     <p class="help">共有明細の削除・変更は本人の承認申請から行い、管理者の確認後に反映します。</p>
+     <p class="help">共有明細の変更・削除は承認後に反映。</p>
    </template>
    <template #member-trash>
      <p v-if="!memberArchivedAccounts.length" class="help">本人がアーカイブした口座はありません。</p>
@@ -915,7 +915,7 @@ watch(()=>props.user.user_id,loadMemberCategories)
        <strong>{{a.label}}</strong>
        <button type="button" :disabled="busy" @click="modify(a,{is_archived:false})">復元</button>
      </div>
-     <p class="help">このゴミ箱は本人の口座設定だけを扱います。家庭共有明細の完全削除は管理者専用です。</p>
+     <p class="help">ここでは本人の口座設定のみ管理。家庭明細の完全削除は管理者のみ。</p>
    </template>
   </OriginalKakeiboPages>
  </div>

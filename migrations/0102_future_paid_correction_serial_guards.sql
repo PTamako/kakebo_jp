@@ -29,23 +29,34 @@ CREATE TRIGGER IF NOT EXISTS trg_future_prepaid_effect_nonnegative
 -- its liability / bill date / card while any such allocation is outstanding.
 CREATE TRIGGER IF NOT EXISTS trg_future_correction_no_allocated_purchase
  BEFORE INSERT ON family_approved_account_corrections
- WHEN (
-  CAST(json_extract(NEW.after_json,'$.amount') AS INTEGER) <>
-   CAST(json_extract(NEW.before_json,'$.amount') AS INTEGER)
-  OR json_extract(NEW.after_json,'$.date') <>
-   json_extract(NEW.before_json,'$.date')
-  OR json_extract(NEW.after_json,'$.accountId') IS NOT
-   json_extract(NEW.before_json,'$.accountId')
- ) AND EXISTS(
+ WHEN EXISTS(
   SELECT 1 FROM family_card_purchase_applied c
   WHERE c.entry_id=NEW.entry_id AND (
    EXISTS(SELECT 1 FROM family_card_settlement_allocations alloc
     WHERE alloc.purchase_request_id=c.homeflow_request_id)
    OR EXISTS(SELECT 1 FROM family_points_card_offsets offset
-    WHERE offset.purchase_request_id=c.homeflow_request_id AND
-     offset.amount_jpy>COALESCE((SELECT SUM(ref.restored_jpy)
+    WHERE offset.purchase_request_id=c.homeflow_request_id
+     AND offset.amount_jpy>COALESCE((SELECT SUM(ref.restored_jpy)
       FROM family_points_card_offset_refunds ref
       WHERE ref.original_request_id=offset.homeflow_request_id),0))
+  )
+ ) AND (
+  -- Moving the original payment to a different card or day requires signed
+  -- independent allocation reversal, never silently reclassify the payment.
+  json_extract(NEW.after_json,'$.date') IS NOT json_extract(NEW.before_json,'$.date')
+  OR json_extract(NEW.after_json,'$.accountId') IS NOT
+     json_extract(NEW.before_json,'$.accountId')
+  OR CAST(json_extract(NEW.after_json,'$.amount') AS INTEGER) < (
+    COALESCE((SELECT SUM(alloc.amount_jpy) FROM family_card_purchase_applied c
+      JOIN family_card_settlement_allocations alloc
+        ON alloc.purchase_request_id=c.homeflow_request_id
+      WHERE c.entry_id=NEW.entry_id),0)
+    +COALESCE((SELECT SUM(offset.amount_jpy-
+       COALESCE((SELECT SUM(ref.restored_jpy) FROM family_points_card_offset_refunds ref
+        WHERE ref.original_request_id=offset.homeflow_request_id),0))
+      FROM family_card_purchase_applied c JOIN family_points_card_offsets offset
+       ON offset.purchase_request_id=c.homeflow_request_id
+      WHERE c.entry_id=NEW.entry_id),0)
   )
  )
  BEGIN SELECT RAISE(ABORT,'APPROVED_CORRECTION_ALLOCATION_REVERSAL_REQUIRED'); END;

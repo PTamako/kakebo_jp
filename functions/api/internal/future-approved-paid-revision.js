@@ -32,9 +32,17 @@ export async function futureApprovedPaidRevision(db,{env,registry,proposal,appro
   'SELECT id,date,amount,type,payment_source,family_account_id,'+
   'client_request_id FROM entries WHERE id=? LIMIT 1')
   .bind(registry.entry_id).first();
- if(!physical||physical.type!=='expense'||!physical.family_account_id||
-  !spendSource(physical.payment_source)||
-  physical.payment_source.slice(physical.payment_source.indexOf(':')+1)!==physical.family_account_id||
+ // A zero-account row is valid only if the immediately preceding immutable,
+ // owner-approved correction moved this SAME paid receipt to cash. Never
+ // mistake an arbitrary legacy cash record for an eligible paid entry.
+ const validCard=!!physical?.family_account_id&&spendSource(physical.payment_source)&&
+  physical.payment_source.split(':')[1]===physical.family_account_id;
+ const validCash=physical?.family_account_id===null&&physical?.payment_source===''&&
+  !!await db.prepare('SELECT 1 FROM family_approved_account_corrections '+
+   "WHERE entry_id=? AND version_after=? AND json_extract(after_json,'$.accountId') IS NULL "+
+   "AND CAST(json_extract(after_json,'$.amount') AS INTEGER)=? LIMIT 1")
+   .bind(registry.entry_id,registry.version,physical.amount).first();
+ if(!physical||physical.type!=='expense'||!(validCard||validCash)||
   physical.client_request_id!=='hf'+(source.kind==='credit_card'?'card':'prepaid')+':'+source.receipt_id)
   return fail('CORRECTION_ORIGINAL_ENTRY_CHANGED');
  let previous;
@@ -50,8 +58,8 @@ export async function futureApprovedPaidRevision(db,{env,registry,proposal,appro
   return fail('CORRECTION_INVALID_NEXT_ENTRY');
  const explicit=action==='update'&&Object.hasOwn(next,'payment_source');
  const newSource=explicit?next.payment_source:physical.payment_source;
- if(!spendSource(newSource))return fail('CORRECTION_TARGET_MUST_BE_PERSONAL_ACCOUNT');
- const newAccountId=newSource.split(':')[1];
+ if(newSource!==''&&!spendSource(newSource))return fail('CORRECTION_TARGET_MUST_BE_PERSONAL_ACCOUNT');
+ const newAccountId=newSource===''?null:newSource.split(':')[1];
  if(explicit&&newAccountId!==physical.family_account_id&&
   proposal.requester_user_id!==source.spender)
   return fail('CORRECTION_OTHER_PERSON_ACCOUNT_READ_ONLY');
@@ -60,8 +68,8 @@ export async function futureApprovedPaidRevision(db,{env,registry,proposal,appro
   'FROM family_financial_accounts WHERE household_id=? AND owner_user_id=?')
   .bind(proposal.household_id,source.spender).all();
  const accounts=rows.results||[];
- const target=accounts.find(x=>x.account_id===newAccountId);
- if(!target||newSource!==(target.account_kind==='credit_card'?'cc:':'prepaid:')+newAccountId)
+ const target=newAccountId?accounts.find(x=>x.account_id===newAccountId):null;
+ if(newAccountId&&(!target||newSource!==(target.account_kind==='credit_card'?'cc:':'prepaid:')+newAccountId))
   return fail('CORRECTION_ACCOUNT_KIND_MISMATCH');
  const prepaid=await memberPrepaidBalances(db,proposal.household_id);
  if(!prepaid)return fail('CORRECTION_PREPAID_BALANCE_UNKNOWN');
@@ -97,7 +105,7 @@ export async function futureApprovedPaidRevision(db,{env,registry,proposal,appro
  const originalAccount=accounts.find(x=>x.account_id===physical.family_account_id);
  const oldMonth=originalAccount?.account_kind==='credit_card'?
   closingMonth(physical.date,originalAccount.closing_day):null;
- const nextMonth=target.account_kind==='credit_card'?
+ const nextMonth=target?.account_kind==='credit_card'?
   closingMonth(next.date,target.closing_day):null;
  for(const x of planned.effects){
   const beforeCount=Number(before.amount)>0&&x.kind==='credit_card'&&

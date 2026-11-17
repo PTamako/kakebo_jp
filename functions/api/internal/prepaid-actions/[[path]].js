@@ -119,7 +119,7 @@ async function proof(env,b,p){
 }
 async function currentBalance(db,id){
  const corrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
-  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").first()
+  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first()
  const effect=corrections?
   "+COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects WHERE account_id=? AND account_kind='prepaid'),0)":""
  const r=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal WHERE prepaid_account_id=?),0) '+effect+

@@ -175,17 +175,12 @@ async function write(e,p,b,approval,payload){
    return fail('SHARED_MUTATION_LEGACY_OWNER_OR_PROVENANCE_CHANGED',409);
  }
  const previous=registry?JSON.parse(registry.snapshot_json):null;
- if(!newRecord&&previous?.type==='transfer'){
-  if(previous.transfer_target!=='spouse'||(action==='update'&&
-   (payload.entry.type!=='transfer'||payload.entry.transfer_target!=='spouse')))
-   return fail('SHARED_MUTATION_TRANSFER_TYPE_LOCKED',409);
-  const originalRequester=registry.creator_user_id===p.requester_user_id?null:
-   await db.prepare("SELECT requester_user_id FROM family_shared_mutation_applied "+
-    "WHERE entry_id=? AND action='create' LIMIT 1").bind(registry.entry_id).first();
-  if(registry.creator_user_id!==p.requester_user_id&&
-   originalRequester?.requester_user_id!==p.requester_user_id)
-   return fail('SHARED_MUTATION_TRANSFER_NOT_CREATOR',403);
- }
+ if(!newRecord&&previous?.type==='transfer'&&
+  (previous.transfer_target!=='spouse'||(action==='update'&&
+   (payload.entry.type!=='transfer'||payload.entry.transfer_target!=='spouse'))))
+  return fail('SHARED_MUTATION_TRANSFER_TYPE_LOCKED',409);
+ // A spouse-created transfer's amount/date/note can be proposed by either
+ // member, but remains untouched until HomeFlow's owner proof authorizes it.
  const explicitPayment=action==='update'&&
   Object.hasOwn(payload.entry,'payment_source');
  if(explicitPayment&&e.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED!=='true')

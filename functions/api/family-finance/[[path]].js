@@ -87,7 +87,7 @@ async function bodyForMutation(request,url){
   return value&&typeof value==='object'&&!Array.isArray(value)?value:null;
  }catch{return null;}
 }
-const kinds=new Set(['credit_card','prepaid','cash','bank','points','securities','other']);
+const kinds=new Set(['credit_card','prepaid','cash','points','securities','other']);
 const accountFields='account_id,household_id,owner_user_id,label,account_kind,source_type,'+
  'stat_group,closing_day,sort_order,is_default,is_archived,opening_balance,'+
  'opening_date,origin,legacy_source_name,version';

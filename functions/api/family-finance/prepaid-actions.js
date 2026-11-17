@@ -70,7 +70,7 @@ async function checkAccounts(db,user,x){
 }
 async function balance(db,prepaidId){
  const corrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
-  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").first()
+  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first()
  const effect=corrections?
   "+COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects WHERE account_id=? AND account_kind='prepaid'),0)":""
  const r=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal WHERE prepaid_account_id=?),0) '+effect+
@@ -192,7 +192,7 @@ export async function familyPrepaidActions(req,env,url,user,parts){
  if(user.role!=='member')return fail('ONLY_MEMBER_CAN_PROPOSE',403);
  if(req.method==='GET'&&parts.length===2&&parts[1]==='balances'){
   const corrections=!!await env.DB.prepare("SELECT 1 FROM sqlite_master "+
-   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").first()
+   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first()
   const effect=corrections?
    "+COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects c "+
    "WHERE c.account_id=a.account_id AND c.account_kind='prepaid'),0)":""

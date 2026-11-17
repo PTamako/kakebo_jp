@@ -265,7 +265,8 @@ async function entries(env,user,url){
   'a.owner_user_id AS payment_account_owner_user_id,'+
   'COALESCE(t.label,e.transfer_target) AS transfer_target_display,'+
   't.owner_user_id AS transfer_target_account_owner_user_id,'+
-  ledgerRecorderColumns+',ls.actor_user_id AS shared_card_actor_user_id '+
+  ledgerRecorderColumns+',ls.actor_user_id AS shared_card_actor_user_id,'+
+  'member_intent.requester_user_id AS shared_entry_requester_user_id '+
   'FROM entries e LEFT JOIN family_financial_accounts a '+
   'ON a.account_id=e.family_account_id '+
   'LEFT JOIN family_financial_accounts t '+
@@ -279,7 +280,8 @@ async function entries(env,user,url){
  const items=rows.slice(0,limit).map(r=>{
   if(user.role==='owner')return r;
   const ownSource=r.payment_account_owner_user_id===user.user_id;
-  const grantedSpender=r.shared_card_actor_user_id===user.user_id;
+  const grantedSpender=r.shared_card_actor_user_id===user.user_id||
+    r.shared_entry_requester_user_id===user.user_id;
   const ownTarget=r.transfer_target_account_owner_user_id===user.user_id;
   return {...r,
    payment_source:ownSource||grantedSpender?r.payment_source:null,

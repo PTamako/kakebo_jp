@@ -199,7 +199,7 @@ async function modify(req,e,url,u,id,action){
     // spend log rather than the newer approved-mutation provenance journal.
     const spendLogTable=await e.DB.prepare(
      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='family_legacy_card_spends' LIMIT 1"
-    ).first();
+    ).bind().first();
     if(spendLogTable){
      const spender=await e.DB.prepare('SELECT actor_user_id FROM family_legacy_card_spends '+
       'WHERE entry_id=? LIMIT 1').bind(r.entry_id).first();

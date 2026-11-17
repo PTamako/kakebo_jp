@@ -1,3 +1,13 @@
+// Payment belongs to its verified owner. An administrator must not silently
+// become the owner of a spouse's historical card or cash selection.
+export function isAnotherMembersPayment(entry,viewerUserId){
+ if(!entry||typeof viewerUserId!=='string'||!viewerUserId)return true
+ const ids=['shared_entry_requester_user_id','shared_card_actor_user_id',
+  'payment_account_owner_user_id']
+  .map(key=>entry[key]).filter(x=>typeof x==='string'&&x)
+ return ids.some(id=>id!==viewerUserId)
+}
+
 // Owner-side original ledger editor -> protected household CAS write.
 // Include the visible payment selection; omitting it silently kept the old
 // card/cash even though the UI reported a successful revision.

@@ -45,10 +45,19 @@ export function planAccountLinkedExpenseCorrection(input){
   fail('CORRECTION_OTHER_PERSON_ACCOUNT_READ_ONLY');
  const changed=before.amount!==after.amount||before.date!==after.date||
   before.accountId!==after.accountId;
- // A previously settled or points-offset card charge must be reversed and
- // reallocated by a separate institutional/journal reconciliation first.
- if(changed&&(settledJpy!==0||offsetJpy!==0))
-  fail('CORRECTION_EXISTING_ALLOCATION_REQUIRES_REVERSAL');
+ // Preserve immutable settlement and points receipts only if their actual
+ // card and billing date remain unchanged, and the remaining gross charge
+ // still covers the full allocated amount. Cross-card or date transfers
+ // require separately approved immutable allocation reversals.
+ if(changed&&(settledJpy!==0||offsetJpy!==0)){
+  if(!Number.isSafeInteger(settledJpy)||settledJpy<0||
+     !Number.isSafeInteger(offsetJpy)||offsetJpy<0)
+   fail('CORRECTION_ALLOCATION_INVALID');
+  if(!old||old.account_kind!=='credit_card'||!newer||
+     newer.account_id!==old.account_id||before.date!==after.date||
+     Number(after.amount)<settledJpy+offsetJpy)
+   fail('CORRECTION_EXISTING_ALLOCATION_REQUIRES_REVERSAL');
+ }
  const effects=new Map();
  function post(a,amount,when,reverse){
   if(!a)return;

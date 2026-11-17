@@ -35,7 +35,7 @@ export async function familyPersonalAssets(env,user){
    env.KAKEIBO_POINTS_ACTIONS_ENABLED==='true'
     ?memberPointsBalances(db,user.household_id):Promise.resolve({accounts:[]}),
    env.KAKEIBO_CARD_PURCHASES_ENABLED==='true'
-    ?memberCardLiabilities(db,user.household_id,env.KAKEIBO_CARD_SETTLEMENTS_ENABLED==='true')
+    ?memberCardLiabilities(db,user.household_id,true)
     :Promise.resolve({items:[]}),
    env.KAKEIBO_SBI_CASH_ENABLED==='true'
     ?memberSbiCashPositions(db,user.household_id):Promise.resolve({positions:[]})

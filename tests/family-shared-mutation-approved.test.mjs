@@ -604,7 +604,7 @@ test('non-admin may propose edits to the administrator neutral spouse transfer; 
   const applied=await f.target('execute',proposal)
   assert.equal(applied.status,200,JSON.stringify(applied))
   const edited=f.sql.prepare('SELECT type,date,amount,note,transfer_target,transfer_applied FROM entries').get()
-  assert.deepEqual(edited,{type:'transfer',date:'2026-11-16',amount:26000,
+  assert.deepEqual({...edited},{type:'transfer',date:'2026-11-16',amount:26000,
    note:'双方确认后的修改',transfer_target:'spouse',transfer_applied:0})
   const totals=f.sql.prepare("SELECT SUM(CASE WHEN type='income' THEN amount ELSE 0 END) AS income,"+
    "SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) AS expense FROM entries").get()

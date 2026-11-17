@@ -62,7 +62,7 @@ async function save(){
  try{
   const r=await api('',post({...payload,idempotency_key:pending.key}))
   if(r.ledger_changed!==false||r.plan?.owner_user_id!==actor)throw Error('記録結果を確認できません')
-  pending=null;editorOpen.value=false;notice.value='積立予定を保存しました。承認不要・買付未実行です。'
+  pending=null;editorOpen.value=false;notice.value='積立予定を保存しました。管理者の承認は不要です。'
   await refresh();emit('changed')
  }catch(e){error.value=e.message}finally{busy.value=false}
 }

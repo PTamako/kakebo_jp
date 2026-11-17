@@ -9,7 +9,7 @@ import { japanTodayKey, spendingAveragesByDayType, spendingAverageOnExpenseDays 
 import { annualExpenseAverageByRecordedMonth } from './annual-monthly-average.js'
 import { highestSpendingRatioMonth } from './stats-ratio-peak.js'
 import { countThroughEditedDay } from './ledger-day-focus.js'
-import {sharedEntryFromEditor,sameSharedEditValues,sharedEditConfirmed} from './shared-ledger-edit.js'
+import {sharedEntryFromEditor,sameSharedEditValues,sharedEditConfirmed,sharedDeleteConfirmed} from './shared-ledger-edit.js'
 import { isCardBilledEntry, cardBilledAmount } from './card-billing.js'
 import { ledgerEntryAmount, ledgerEntriesTotal, formatLedgerTotal } from './ledger-totals.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
@@ -1192,20 +1192,53 @@ async function remove(id,visibleSnapshot=null) {
   if (!confirm(deletePrompt)) return
   pendingEntryIds.value = new Set([...pendingEntryIds.value, id])
   try {
-    const expected=Object.fromEntries(
-      ['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_applied','transfer_date','client_request_id','payment_source']
-        .map(k=>[k,targetEntry[k]??null]))
-    const removal = await api('entries/' + id, {
-      method: 'DELETE', headers: { 'x-confirm-delete': String(id) },
-      body:JSON.stringify({expected})
-    })
+    // Family-approved entries have a D1 write guard and MUST go through the
+    // owner-only shared-entry CAS endpoint, not legacy DELETE entries/:id.
+    // The same page is reused by both household accounts; the member route
+    // remains HomeFlow approval only in family-ledger-context.js.
+    let removal=null
+    let sharedRemoved=false
+    if(familyIdentity.value?.role==='owner'){
+      const lookupResponse=await fetch('/api/family-finance/shared-entries?entry_id='+
+        encodeURIComponent(String(id)),{credentials:'same-origin',cache:'no-store'})
+      const lookup=await lookupResponse.json().catch(()=>({}))
+      if(!lookupResponse.ok||lookup.ok!==true)
+        throw Error('共有記録の削除先を確認できませんでした。再読込してください')
+      const target=lookup.action
+      if(target){
+        if(target.state!=='active')
+          throw Error('この共有明細はすでに削除されています。再読込してください')
+        const response=await fetch('/api/family-finance/shared-entries/'+
+          encodeURIComponent(target.resource_id),{
+          method:'DELETE',credentials:'same-origin',cache:'no-store',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({
+            expected_user_id:familyIdentity.value.user_id,
+            expected_version:target.version
+          })
+        })
+        const receipt=await response.json().catch(()=>({}))
+        if(!response.ok||!sharedDeleteConfirmed(receipt,id,target.version))
+          throw Error(receipt.code||'共有記録の削除結果を確認できませんでした')
+        sharedRemoved=true
+      }
+    }
+    if(!sharedRemoved){
+      const expected=Object.fromEntries(
+        ['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_applied','transfer_date','client_request_id','payment_source']
+          .map(k=>[k,targetEntry[k]??null]))
+      removal=await api('entries/' + id, {
+        method:'DELETE',headers:{'x-confirm-delete':String(id)},
+        body:JSON.stringify({expected})
+      })
+    }
     ledgerRevision.value++
     // Keep the original local receipt image under the same ledger entry ID.
     // Restoring from trash reuses that ID, so the photo remains retrievable.
     if (Number(viewedReceiptId.value) === Number(id)) closeReceipt()
     preserveOperatedDay.value = operatedDate || ''
     await Promise.allSettled([load(), refreshDetailSource(), loadYear(), loadTransfers()])
-    flash(removal.skippedRecurring ? '固定費を削除し、今回の記帳を対象外にしました' : '記録をゴミ箱に移動しました（レシート画像も保持）')
+    flash(removal?.skippedRecurring ? '固定費を削除し、今回の記帳を対象外にしました' : '記録をゴミ箱に移動しました（レシート画像も保持）')
   } catch (error) { flash('削除に失敗しました：' + error.message) }
   finally { const next = new Set(pendingEntryIds.value); next.delete(id); pendingEntryIds.value = next }
 }

@@ -156,7 +156,8 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
    rewardDestination:entry.type==='income'&&entry.category==='ポイント還元'?
     (entry.transfer_target||''):'',
    rewardDisplay:ledgerTransferTargetLabel(entry),rewardReadOnly:true,
-   originalType:entry.type,payment_source:null}
+   originalType:entry.type,allReadOnly:payment?.allReadOnly??false,
+   payment_source:null}
   swipedEntryId.value=null
  }
  function setEntryType(row,type){if(row.originalType==='transfer')return

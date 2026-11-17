@@ -11,7 +11,7 @@ async function canonicalMemberCashId(householdId,userId){
  return Array.from(bytes.slice(0,16),x=>x.toString(16).padStart(2,'0')).join('');
 }
 const canonicalCash=async db=>{
- try{return await db.prepare("SELECT name FROM payment_sources WHERE name='現金' AND is_archived=0 LIMIT 1").first();}
+ try{return await db.prepare("SELECT name FROM payment_sources WHERE name='現金' AND is_archived=0 LIMIT 1").bind().first();}
  catch(error){
   // Older isolated ledger fixtures have no payment_sources schema.
   // Never synthesize a default cash name when the canonical table is absent.

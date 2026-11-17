@@ -363,6 +363,9 @@ const token = ref('')
 // Purge credentials from previously installed PWA versions at startup.
 try{sessionStorage.removeItem('kakeibo-device-session');sessionStorage.removeItem('kakeibo-token')}catch{}
 const locked = ref(sessionStorage.getItem('kakeibo-logged-out') === '1')
+// Never render the unverified legacy page while HomeFlow SSO is still being
+// checked: on iPhone it appeared interactive but belonged to no actor.
+const identityBootstrapping=ref(!locked.value)
 const familyIdentity=ref(null)
 let ownerBootstrap=0
 function onFamilyIdentityChange(identity){
@@ -629,40 +632,53 @@ async function loadYear() {
     }
   }
 }
-// When the HomeFlow pilot is enabled, a new family member has no legacy
-// access code. An old-ledger 401 should show the isolated HomeFlow entry
-// instead of trapping their first PWA launch in the legacy login dialog.
-// No new identity cookie is ever accepted by the old ledger endpoint.
+// When HomeFlow SSO is enabled, every user must be verified before rendering
+// the shared ledger. In particular, an expired member cookie must NEVER
+// fall back to the old owner page just because a legacy cookie remains.
 async function routeNewFamilyMemberToIsolatedLogin(){
   try{
     const status=await fetch('/api/homeflow-sso/status',{credentials:'same-origin',cache:'no-store'})
-    if(!status.ok||(await status.json()).enabled!==true)return false
-    const member=await fetch('/api/homeflow-sso/me',{credentials:'same-origin',cache:'no-store'})
-    if(member.ok){
-     const proof=await member.json()
-     if(proof.ok===true&&proof.ledger_access===false&&
-       ['member','owner'].includes(proof.identity?.role)){
-      onFamilyIdentityChange(proof.identity)
-      // Owner proceeds with the original page; member never reaches it.
-      return proof.identity.role==='member'
-     }
+    if(!status.ok)throw Error('HomeFlow 認証状態を確認できません')
+    if((await status.json()).enabled!==true)return false // Deployment without SSO.
+    const response=await fetch('/api/homeflow-sso/me',{credentials:'same-origin',cache:'no-store'})
+    if(response.ok){
+      const proof=await response.json()
+      if(proof.ok===true&&proof.ledger_access===false&&
+         typeof proof.identity?.user_id==='string'&&
+         ['member','owner'].includes(proof.identity?.role)){
+        onFamilyIdentityChange(proof.identity)
+        // The owner gets the original UI only after verified owner identity;
+        // a member always opens the identity-scoped member controller.
+        return proof.identity.role==='member'
+      }
     }
-    const old=await fetch('/api/payment-sources',{credentials:'same-origin',cache:'no-store'})
-    if(old.status===401){locked.value=true;return true}
-  }catch{/* Keep the previous legacy login flow on service errors. */}
-  return false
+    // Missing, stale, invalid or unverified SSO identity: require HomeFlow.
+    // Do NOT guess an identity from an old ledger cookie.
+    onFamilyIdentityChange(null)
+    return true
+  }catch{
+    // Fail closed on network/SSO errors rather than displaying someone else's
+    // original ledger with the old logout arrow.
+    onFamilyIdentityChange(null)
+    return true
+  }
 }
 onMounted(async () => {
   window.addEventListener('online',onConnectionRestored)
-  if(serverLogoutPending.value)await completeServerLogout()
-  cleanupReceiptImages().catch(() => {}) // Legacy photos are never deleted automatically.
-  if (!locked.value && !await routeNewFamilyMemberToIsolatedLogin()) {
-    // Recover D1 preferences and drafts before loading the ledger.
-    await restoreAppState()
-    await load()
-    // Legacy photo migration is manual from 管理 → その他 only.
-    // Opening the PWA never uploads to or downloads from R2.
-    await Promise.allSettled([loadYear(), loadTransfers()])
+  try{
+    if(serverLogoutPending.value)await completeServerLogout()
+    cleanupReceiptImages().catch(() => {}) // Never silently delete images.
+    if(!locked.value && !await routeNewFamilyMemberToIsolatedLogin()){
+      // A verified HomeFlow owner may read the original legacy ledger.
+      await restoreAppState()
+      await load()
+      await Promise.allSettled([loadYear(),loadTransfers()])
+    }
+  }catch(e){
+    onFamilyIdentityChange(null)
+    flash('HomeFlow の確認に失敗しました。再ログインしてください。')
+  }finally{
+    identityBootstrapping.value=false
   }
 })
 
@@ -2111,7 +2127,10 @@ provide('kakeibo-entry-input', {
   <GlobalToast />
   <MobileLoginSheet :open="loginSheetOpen" :busy="loginSheetBusy" :error="loginSheetError"
     @submit="submitLoginSheet" @cancel="cancelLoginSheet" />
-  <main v-if="locked" :class="`theme-${theme}`">
+  <main v-if="identityBootstrapping" :class="`theme-${theme}`">
+    <div class="empty-state" role="status">HomeFlow のログイン状態を確認中…</div>
+  </main>
+  <main v-else-if="locked" :class="`theme-${theme}`">
     <FamilyFinanceAccess v-if="!familyIdentity" identity-only
       @identity-change="onFamilyIdentityChange" />
     <FamilyMemberWorkspace v-if="familyIdentity?.role==='member'"

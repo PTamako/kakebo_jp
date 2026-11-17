@@ -221,5 +221,5 @@ export async function familyMemberPointAssetReversals(req,e,url,u,parts){
   const done=await db.prepare('SELECT * FROM family_points_journal '+
    'WHERE homeflow_request_id=?').bind(approvalId).first();
   return done?receipt(db,done,u,false):fail('PERSONAL_POINT_REFUND_RECEIPT_MISSING',503);
- }catch{return fail('PERSONAL_POINT_REFUND_SERVICE_UNAVAILABLE',503)}
+ }catch(error){if(e.TEST_POINTS_REFUND_DEBUG===true)console.error('POINT_ASSET_REFUND_TEST_DEBUG',error);return fail('PERSONAL_POINT_REFUND_SERVICE_UNAVAILABLE',503)}
 }

@@ -65,7 +65,7 @@ function fixture(){
   }
  }
  const env={APP_ENV:'production',KAKEIBO_FAMILY_FINANCE_ENABLED:'true',
-  KAKEIBO_POINTS_ACTIONS_ENABLED:'true',KAKEIBO_FAMILY_PENDING_KEY:'1'.repeat(64),DB:db}
+  KAKEIBO_POINTS_ACTIONS_ENABLED:'true',KAKEIBO_FAMILY_PENDING_KEY:'1'.repeat(64),DB:db,TEST_POINTS_REFUND_DEBUG:true}
  const who={role:'member',user_id:member,household_id:hh}
  async function call(handler,input=null,as=who,method='POST'){
   const name=handler===familyMemberPointAssets?'member-points-asset-actions':

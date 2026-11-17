@@ -96,7 +96,7 @@ test('all prepaid projections and original form include owner-correction account
   'functions/api/family-finance/prepaid-actions.js','functions/api/family-finance/prepaid-report.js']){
   assert.match(source(file),/family_member_prepaid_topup_corrections/);
  }
- const migration=source('migrations/0074_member_prepaid_topup_corrections.sql');
+ const migration=source('migrations/0075_member_prepaid_topup_corrections.sql');
  assert.match(migration,/UNIQUE\(topup_request_id,revision\)/);
  assert.match(migration,/trg_member_topup_correction_guard/);
  assert.match(migration,/PERSONAL_TOPUP_CORRECTION_STALE_OR_OVERDRAW/);
@@ -129,7 +129,7 @@ test('real SQLite trigger atomically reverses old prepaid account and recredits 
     '0036_points_card_offset.sql','0037_points_transfer_exchange.sql',
     '0038_points_earn_expiry_reversals.sql','0040_points_sbi_lots.sql',
     '0041_points_transfer_atomic_refund.sql','0042_points_prepaid_refund.sql',
-    '0072_member_personal_prepaid_topups.sql','0074_member_prepaid_topup_corrections.sql'])
+    '0072_member_personal_prepaid_topups.sql','0075_member_prepaid_topup_corrections.sql'])
    sql.exec(source('migrations/'+name));
   const actor='22222222-2222-4222-8222-222222222222',house='primary',
     first='a'.repeat(32),second='b'.repeat(32),tid='c'.repeat(32);

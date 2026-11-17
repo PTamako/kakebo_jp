@@ -44,6 +44,8 @@ test('member uses the same TransactionForm while only household ledger mutations
  assert.match(family,/ref="sharedMutationRef" headless/)
  assert.match(family,/sharedMutationRef.value\?\.submitEntry\(record\)/)
  assert.match(family,/sharedMutationRef.value\?\.submitMutation\(action,original,/)
+ assert.match(family,/submitNeutralSpouseTransfer\(record\)/)
+ assert.match(family,/api\('shared-entries',request\(/)
  assert.match(family,/api\('accounts',request\(/)
  assert.doesNotMatch(family,/<FamilyFinanceProposals :key=/)
  assert.doesNotMatch(family,/spouseIncomeRequestRef/)

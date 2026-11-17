@@ -81,6 +81,10 @@ async function prepare(req,e,url,u){
  if((x.operation==='create'||x.operation==='update')&&!entry||
     ['delete','restore'].includes(x.operation)&&x.entry!==null)
   return fail('SHARED_MUTATION_INVALID_ENTRY',400);
+ // Neutral spouse transfers are applied via the one-row shared-entry path,
+ // never converted into a pending owner review by an old cached PWA.
+ if(x.operation==='create'&&entry?.type==='transfer')
+  return fail('NEUTRAL_SPOUSE_TRANSFER_NO_OWNER_REVIEW',410);
  if(entry?.payment_source){
   if(x.operation!=='create')return fail('SHARED_CARD_PAYMENT_CHANGE_FORBIDDEN',403);
   const granted=await e.DB.prepare("SELECT 1 FROM family_legacy_card_shares s "+

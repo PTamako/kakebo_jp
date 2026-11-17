@@ -84,3 +84,12 @@ test('approval-sensitive statistics and wallet remain reactive beyond list tab, 
  assert.doesNotMatch(member,/error\.value='';accounts\.value=\[\];assets\.value=\[\];sharedEntries\.value=\[\]/)
  assert.match(member,/<MemberCardUsage /)
 })
+
+test('production Pages and private worker advertise the same guarded payment reassignment capability',()=>{
+ const pages=source('wrangler.toml')
+ const worker=source('wrangler.homeflow-bridge.toml')
+ assert.match(pages,/KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED = "true"/)
+ assert.match(worker,/KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED = "true"/)
+ const preview=pages.split('[env.preview.vars]')[1]||''
+ assert.doesNotMatch(preview,/KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED/)
+})

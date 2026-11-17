@@ -3,6 +3,22 @@
 const enc=new TextEncoder();
 const hex64=/^[a-f0-9]{64}$/i;
 const hex32=/^[a-f0-9]{32}$/i;
+// Resolve the canonical D1 cash payment source to an identity reserved for this
+// verified HomeFlow member. A listing must not create a financial resource.
+async function canonicalMemberCashId(householdId,userId){
+ const input=new TextEncoder().encode('jpda:member-cash:v1\n'+householdId+'\n'+userId);
+ const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',input));
+ return Array.from(bytes.slice(0,16),x=>x.toString(16).padStart(2,'0')).join('');
+}
+const canonicalCash=async db=>{
+ try{return await db.prepare("SELECT name FROM payment_sources WHERE name='現金' AND is_archived=0 LIMIT 1").bind().first();}
+ catch(error){
+  // Older isolated ledger fixtures have no payment_sources schema.
+  // Never synthesize a default cash name when the canonical table is absent.
+  if(/no such table: payment_sources/i.test(String(error)))return null;
+  throw error;
+ }
+};
 // Use the existing paired document-finance key when a separate account
 // proof key has not been configured. Each route has a unique HMAC domain.
 const accountProofSecret=env=>hex64.test(env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET||'')
@@ -63,8 +79,6 @@ export async function verifyDocumentFinanceAccount(request,env,parts=['verify'])
     (!listOnly&&!['expense','income'].includes(body.entry_type)))
     return deny('INVALID_INPUT',400);
   if(listOnly){
-    // This is NOT a name-to-ID resolver. Show the caller only the cash
-    // accounts already associated with its verified HomeFlow subject.
     const active=await env.DB.prepare(
       'SELECT role,state FROM homeflow_identity_links '+
       'WHERE user_id=? AND household_id=? LIMIT 1'
@@ -74,23 +88,77 @@ export async function verifyDocumentFinanceAccount(request,env,parts=['verify'])
     const selected=await env.DB.prepare(
       'SELECT account_id,label,account_kind,version AS account_version '+
       'FROM family_financial_accounts WHERE household_id=? '+
-      'AND owner_user_id=? AND origin=\'member_created\' '+
-      'AND account_kind=\'cash\' AND is_archived=0 '+
+      "AND owner_user_id=? AND origin='member_created' "+
+      "AND account_kind='cash' AND is_archived=0 "+
       'ORDER BY sort_order,account_id LIMIT 101'
     ).bind(body.household_id,body.requester_user_id).all();
     const rows=selected.results||[];
     if(rows.length>100)return deny('ACCOUNT_LIST_LIMIT',409);
-    return reply({ok:true,verified:true,applied:false,accounts:rows});
+    const cash=await canonicalCash(env.DB);
+    if(cash?.name){
+      const accountId=await canonicalMemberCashId(body.household_id,body.requester_user_id);
+      // Virtual picker row: no mutation and no additional payment/card row.
+      if(!rows.some(x=>x.account_id===accountId)){
+        if(rows.length===100)return deny('ACCOUNT_LIST_LIMIT',409);
+        rows.unshift({account_id:accountId,label:cash.name,account_kind:'cash',account_version:1});
+      }
+    }
+    // Canonical Japanese category labels and their stable database values.
+    // The client must choose a database category, not invent a free-text label.
+    let categories=[];
+    try{
+      const found=await env.DB.prepare(
+        "SELECT category,display_name,entry_type FROM category_source "+
+        "WHERE entry_type IN ('income','expense') ORDER BY entry_type,sort_order LIMIT 100"
+      ).bind().all();
+      categories=(found.results||[]).filter(x=>
+        ['income','expense'].includes(x.entry_type)&&
+        typeof x.category==='string'&&x.category.length>0&&x.category.length<=80)
+        .map(x=>({value:x.category,label:x.display_name||x.category,entry_type:x.entry_type}));
+    }catch(error){
+      // Initial isolated approval fixtures predate the canonical category table.
+      if(!/no such table: category_source/i.test(String(error)))throw error;
+    }
+    return reply({ok:true,verified:true,applied:false,accounts:rows,categories});
   }
   // The mapping must exist in the TARGET database and belong to the
   // exact currently linked member. Duplicate labels carry no authority.
-  const account=await env.DB.prepare(
+  let account=await env.DB.prepare(
     'SELECT a.account_id,a.household_id,a.owner_user_id,a.label,'+
     'a.account_kind,a.origin,a.is_archived,a.version,l.role,l.state '+
     'FROM family_financial_accounts a JOIN homeflow_identity_links l '+
     'ON l.user_id=a.owner_user_id AND l.household_id=a.household_id '+
     'WHERE a.account_id=? AND a.household_id=? AND a.owner_user_id=? LIMIT 1'
   ).bind(body.account_id,body.household_id,body.requester_user_id).first();
+  // Only the signed, explicitly confirmed approval proof may materialize
+  // its stable cash accounting identity. No new bank/card/payment source and
+  // no cash balance or income/expense transaction are created here.
+  const canonicalId=await canonicalMemberCashId(body.household_id,body.requester_user_id);
+  if(body.account_id===canonicalId){
+    const cash=await canonicalCash(env.DB);
+    if(!cash?.name)return deny('CANONICAL_CASH_NOT_AVAILABLE',409);
+    if(!account){
+      await env.DB.prepare(
+        'INSERT OR IGNORE INTO family_financial_accounts '+
+        '(account_id,household_id,owner_user_id,label,account_kind,origin,'+
+        'created_by_user_id,updated_by_user_id) '+
+        "SELECT ?,?,?,ps.name,'cash','member_created',?,? FROM payment_sources ps "+
+        'JOIN homeflow_identity_links l ON l.user_id=? AND l.household_id=? '+
+        "AND l.role='member' AND l.state='active' "+
+        "WHERE ps.name='現金' AND ps.is_archived=0 LIMIT 1"
+      ).bind(canonicalId,body.household_id,body.requester_user_id,
+        body.requester_user_id,body.requester_user_id,
+        body.requester_user_id,body.household_id).run();
+      account=await env.DB.prepare(
+        'SELECT a.account_id,a.household_id,a.owner_user_id,a.label,'+
+        'a.account_kind,a.origin,a.is_archived,a.version,l.role,l.state '+
+        'FROM family_financial_accounts a JOIN homeflow_identity_links l '+
+        'ON l.user_id=a.owner_user_id AND l.household_id=a.household_id '+
+        'WHERE a.account_id=? AND a.household_id=? AND a.owner_user_id=? LIMIT 1'
+      ).bind(body.account_id,body.household_id,body.requester_user_id).first();
+    }
+    if(account?.label!==cash.name)return deny('CANONICAL_CASH_CHANGED',409);
+  }
   if(!account||account.role!=='member'||account.state!=='active'||
     account.is_archived!==0||account.origin!=='member_created')
     return deny('ACCOUNT_OWNER_NOT_VERIFIED',409);

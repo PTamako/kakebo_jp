@@ -21,6 +21,7 @@ import {prepareMemberRecurringRestores} from './member-recurring-restore.js'
 import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
+import {ledgerPaymentLabel} from './ledger-payment-label.js'
 import BottomNavigation from './BottomNavigation.vue'
 import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
@@ -203,6 +204,18 @@ const kindLabel=x=>kinds.find(k=>k[0]===x)?.[1]||'口座'
 const yen=n=>n===null||n===undefined?'—':'¥'+Number(n).toLocaleString('ja-JP')
 const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.user.user_id))
 const memberPaymentOptions=computed(()=>buildMemberPaymentChoices(myAccounts.value,sharedCards.value))
+// Household ledger edit can reassign this member's own cash/shared-card charge.
+// Personal card purchases carry a separate immutable liability journal and
+// must never be relabeled by the ordinary shared-entry approval endpoint.
+const memberLedgerPaymentOptions=computed(()=>memberPaymentOptions.value.filter(
+ x=>x.value==='cash'||x.value.startsWith('shared:')))
+function memberPaymentEditor(entry){
+ const own=entry?.type==='expense'&&entry.shared_entry_requester_user_id===props.user.user_id&&
+  !entry.family_account_id
+ if(!own)return {paymentReadOnly:true,paymentSource:ledgerPaymentLabel(entry)}
+ const source=typeof entry.payment_source==='string'?entry.payment_source:''
+ return {paymentReadOnly:false,paymentSource:source?'shared:'+source:'cash'}
+}
 function memberRuleFor(merchant){
  const text=String(merchant||'').normalize('NFKC').trim().toLowerCase()
  if(!text)return null
@@ -555,7 +568,8 @@ async function openApproval(action,entry){
 }
 const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:ledgerEntries,
  entryTypeFilter:selectedEntryType,load:()=>refresh(),more:()=>moreEntries(),
- openApproval,onError:message=>{error.value=message}})
+ openApproval,paymentEditor:memberPaymentEditor,memberPaymentChoices:memberLedgerPaymentOptions,
+ onError:message=>{error.value=message}})
 const memberReceiptLedgerIds=computed(()=>new Set(memberReceipts.value.flatMap(item=>{
  const ref=item.receipt_ref
  if(Number.isSafeInteger(Number(item.linked_entry_id))&&Number(item.linked_entry_id)>0)
@@ -611,7 +625,21 @@ async function saveMemberLedgerEdit(){
   memberLedger.receiptSaveError.value='元の明細を確認してください';return
  }
  const fields=['date','time','amount','type','category','merchant','note']
- const ledgerChanged=fields.some(key=>String(initial[key]??'')!==String(edited[key]??''))
+ const paymentChanged=edited.type==='expense'&&!edited.paymentReadOnly&&
+  edited.paymentSource!==edited.paymentOriginalChoice
+ if(paymentChanged){
+  if(initial.shared_entry_requester_user_id!==props.user.user_id||
+   initial.family_account_id||edited.paymentReadOnly)
+  {memberLedger.receiptSaveError.value='他の人の支払方法を変更できません';return}
+  const selected=resolveMemberPayment(edited.paymentSource,myAccounts.value,sharedCards.value)
+  if(!selected||!['cash','shared'].includes(selected.kind))
+  {memberLedger.receiptSaveError.value='現金または有効な共有カードを選択してください';return}
+  edited.payment_source=selected.kind==='shared'?selected.card.card_name:''
+ }
+ if(initial.type==='expense'&&initial.payment_source&&edited.type!=='expense'){
+  memberLedger.receiptSaveError.value='カード決済を収入に変更できません';return
+ }
+ const ledgerChanged=fields.some(key=>String(initial[key]??'')!==String(edited[key]??''))||paymentChanged
  if(!ledgerChanged&&!edited.receiptImage){memberLedger.cancelEdit();return}
  memberLedger.editSaving.value=true;memberLedger.receiptSaveError.value=''
  try{

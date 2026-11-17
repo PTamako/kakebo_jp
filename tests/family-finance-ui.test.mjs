@@ -22,7 +22,8 @@ test('independent family account UI is gated and does not unlock shared legacy l
  assert.match(source,/api\/family-finance\/status/);
  assert.match(source,/financeEnabled\.value=feature\.enabled===true/);
  assert.match(source,/user\.ledger_access===false/);
- assert.match(app,/<main v-if="locked"/);
+ assert.match(app,/<main v-if="identityBootstrapping"/);
+ assert.match(app,/<main v-else-if="locked"/);
  assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity" identity-only[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
  assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
  assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/);
@@ -49,12 +50,14 @@ test('member account management respects server actor and version; no direct led
  assert.doesNotMatch(source,/\/api\/family-finance\/shared\/entries.{0,60}POST/);
 });
 
-test('new family-member PWA does not get stuck in legacy code modal, with original path preserved while SSO OFF',()=>{
+test('new family-member PWA requires verified HomeFlow identity rather than legacy fallback',()=>{
  assert.match(app,/async function routeNewFamilyMemberToIsolatedLogin\(\)/);
- assert.match(app,/status\.ok\|\|\(await status\.json\(\)\)\.enabled!==true\)return false/);
- assert.match(app,/if\(old\.status===401\)\{locked\.value=true;return true\}/);
- assert.match(app,/if \(!locked\.value && !await routeNewFamilyMemberToIsolatedLogin\(\)\)/);
- assert.match(app,/const old=await fetch\('\/api\/payment-sources',\{credentials:'same-origin',cache:'no-store'\}\)/);
+ assert.match(app,/if\(!status\.ok\)throw Error/);
+ assert.match(app,/if\(\(await status\.json\(\)\)\.enabled!==true\)return false/);
+ assert.match(app,/onFamilyIdentityChange\(null\)\s+return true/);
+ assert.match(app,/if\(!locked\.value && !await routeNewFamilyMemberToIsolatedLogin\(\)\)/);
+ assert.doesNotMatch(app,/if\(old\.status===401\)/);
+ assert.doesNotMatch(app,/fetch\('\/api\/payment-sources',\{credentials:'same-origin',cache:'no-store'\}\)/);
 });
 
 

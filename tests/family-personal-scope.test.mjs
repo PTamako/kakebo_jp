@@ -28,7 +28,8 @@ test('no member route can return the original owner\'s prepaid cards and SBI sna
  assert.match(api,/payment_sources:user\.role==='owner'\?paymentSources:\[\]/);
 });
 test('HomeFlow member bypasses old legacy access even with an old device session',()=>{
- assert.match(app,/const member=await fetch\('\/api\/homeflow-sso\/me'/);
+ assert.match(app,/const response=await fetch\('\/api\/homeflow-sso\/me'/);
+ assert.match(app,/onFamilyIdentityChange\(null\)\s+return true/);
  assert.match(app,/\['member','owner'\]\.includes\(proof\.identity\?\.role\)/);
  assert.match(app,/onFamilyIdentityChange\(proof\.identity\)/);
  assert.match(app,/return proof\.identity\.role==='member'/);

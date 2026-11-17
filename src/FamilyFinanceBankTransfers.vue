@@ -28,7 +28,7 @@ function edited(){if(!prepared.value)stableKey=''}
 async function api(path,opt={}){
  const response=await fetch(path,{credentials:'same-origin',cache:'no-store',...opt})
  const data=await response.json().catch(()=>({}))
- if(!response.ok||data.ok!==true)throw Error(data.code||'银行转账审批服务不可用')
+ if(!response.ok||data.ok!==true)throw Error(data.code||'銀行振替サービスを利用できません')
  return data
 }
 const post=data=>({method:'POST',headers:{'content-type':'application/json'},
@@ -45,7 +45,7 @@ async function load(){
   if(generation===epoch&&open.value){
    serviceAvailable.value=false;history.value=[]
    error.value=e.message==='BANK_TRANSFER_DISABLED'
-    ?'银行双向已到账转账功能暂未开放，现有账本不受影响。':e.message
+    ?'銀行間振替の記録は利用できません。既存の明細は保持されます。':e.message
   }
  }
 }
@@ -82,9 +82,9 @@ async function prepare(){
   if(result.prepared?.status!=='prepared'||
    result.prepared.source_account_id!==first.account_id||
    result.prepared.target_account_id!==second.account_id||
-   result.prepared.applied!==false)throw Error('申请回执未确认，不会修改正式账本')
+   result.prepared.applied!==false)throw Error('申請受付を確認できません。家庭明細は変更しません')
   prepared.value=result.prepared
-  notice.value='双方银行流水证据已加密保存，尚未发生家庭账本入账。'
+  notice.value='両側の入出金証拠を暗号化して保存しました。家庭明細にはまだ反映されていません。'
   await load()
  }catch(e){if(alive&&generation===epoch&&user===props.userId)error.value=e.message}
  finally{if(alive&&generation===epoch)busy.value=false}
@@ -102,7 +102,7 @@ function resume(item){
  stableKey=''
  sourceRef.value='';targetRef.value=''
  sourcePosted.value=false;targetPosted.value=false
- notice.value='已恢复原加密申请。仅提交原申请 ID，不会重复创建银行转账。'
+ notice.value='元の暗号化申請を再開しました。同じ申請番号を使用し、重複登録しません。'
  error.value=''
 }
 async function submit(){
@@ -114,8 +114,8 @@ async function submit(){
    post({expected_user_id:user}))
   if(!alive||generation!==epoch||user!==props.userId||hh!==props.householdId)return
   if(result.applied!==false||result.status!=='submitted_status_unknown')
-   throw Error('HomeFlow 状态不明确，需按原申请 ID 核对，不能创建新转账')
-  notice.value='已提交 HomeFlow。管理员批准后仍须独立执行并确认银行间转账记账回执。'
+   throw Error('HomeFlowの確認が未完了です。元の申請番号で確認し、二重登録しないでください')
+  notice.value='HomeFlowに送信しました。管理者の承認後に振替の入帳処理と結果照合が必要です。'
   prepared.value=null;stableKey=''
   amount.value='';sourceRef.value='';targetRef.value=''
   sourcePosted.value=false;targetPosted.value=false
@@ -131,8 +131,8 @@ async function cancel(){
   const r=await api('/api/family-finance/bank-transfers/'+p.request_id+'/cancel',
    post({expected_user_id:user}))
   if(!alive||generation!==epoch||user!==props.userId)return
-  if(r.status!=='cancelled')throw Error('仅能撤回未提交 HomeFlow 的申请')
-  prepared.value=null;stableKey='';notice.value='尚未提交的草稿已撤回，原银行流水不受影响'
+  if(r.status!=='cancelled')throw Error('HomeFlowへの提出前の申請のみ取り消せます')
+  prepared.value=null;stableKey='';notice.value='未提出の下書きを取り消しました。銀行側の取引には影響しません'
   await load()
  }catch(e){if(alive&&generation===epoch)error.value=e.message}
  finally{if(alive&&generation===epoch)busy.value=false}
@@ -150,55 +150,55 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
 <template>
 <section class="bank-transfers" aria-label="家庭银行已到账资产转移">
  <div class="head">
-  <strong>银行↔银行 · 已到账转账</strong>
-  <button type="button" :disabled="busy" :aria-expanded="open" @click="toggle">{{open?'收起':'记录转账'}}</button>
+  <strong>銀行間振替 · 入出金確認済み</strong>
+  <button type="button" :disabled="busy" :aria-expanded="open" @click="toggle">{{open?'閉じる':'振替を記録'}}</button>
  </div>
  <template v-if="open">
-  <p class="hint">仅记录本人两个稳定银行账户之间，转出已扣款且转入已到账的转账。不会发起真实银行汇款，不算收入或消费。</p>
+  <p class="hint">本人名義の２つの銀行口座で、実際に引き落としと入金が確認された振替だけを記録します。銀行送金は行わず、収入・支出には含めません。</p>
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="hint">{{notice}}</p>
-  <p v-if="banks.length<2" class="hint">请先建立至少两个本人银行账户。跨家庭成员、证券、储值卡和现金转账尚未开放。</p>
+  <p v-if="banks.length<2" class="hint">まず残高画面で本人の銀行口座を２つ登録してください。家族間や証券・電子マネー・現金との振替には対応していません。</p>
   <form v-if="serviceAvailable&&banks.length>=2" class="form" :novalidate="!!prepared"
    @submit.prevent="prepared?submit():prepare()">
    <div class="two">
-    <label>转出银行
+    <label>振替元の銀行
      <select v-model="sourceId" :disabled="busy||!!prepared" @change="edited">
       <option v-for="a in banks" :key="a.account_id" :value="a.account_id">{{a.label}}</option>
      </select>
     </label>
-    <label>转入银行
+    <label>振替先の銀行
      <select v-model="targetId" :disabled="busy||!!prepared" @change="edited">
       <option v-for="a in banks" :key="a.account_id" :value="a.account_id">{{a.label}}</option>
      </select>
     </label>
    </div>
-   <p v-if="sourceId===targetId" role="alert" class="error">转入与转出必须是两个不同银行账户。</p>
+   <p v-if="sourceId===targetId" role="alert" class="error">振替元と振替先は別々の銀行口座にしてください。</p>
    <div class="two">
-    <label>实际扣款日<input v-model="debitDate" type="date" required
+    <label>実際の引落日<input v-model="debitDate" type="date" required
      :disabled="busy||!!prepared" @input="edited"/></label>
-    <label>实际到账日<input v-model="creditDate" type="date" required
+    <label>実際の入金日<input v-model="creditDate" type="date" required
      :disabled="busy||!!prepared" @input="edited"/></label>
    </div>
-   <label>准确转账金额（日元）
+   <label>振替金額（円）
     <input v-model="amount" type="number" min="1" max="10000000" step="1" required
      :disabled="busy||!!prepared" @input="edited"/></label>
-   <label>转出银行已扣款的参考号
+   <label>振替元の銀行已扣款的参考号
     <input v-model="sourceRef" maxlength="160" minlength="8" required
-     placeholder="根据银行扣款明细填写" :disabled="busy||!!prepared" @input="edited"/></label>
-   <label>转入银行已到账的参考号
+     placeholder="銀行の引落明細に記載された番号" :disabled="busy||!!prepared" @input="edited"/></label>
+   <label>振替先の銀行已到账的参考号
     <input v-model="targetRef" maxlength="160" minlength="8" required
-     placeholder="根据转入银行的入账明细填写" :disabled="busy||!!prepared" @input="edited"/></label>
+     placeholder="根据振替先の銀行的入账明细填写" :disabled="busy||!!prepared" @input="edited"/></label>
    <label class="check"><input v-model="sourcePosted" type="checkbox" :disabled="busy||!!prepared"/>
-    我已核实转出银行实际完成扣款，不是待处理请求</label>
+    我已核实振替元の銀行实际完成扣款，不是待处理请求</label>
    <label class="check"><input v-model="targetPosted" type="checkbox" :disabled="busy||!!prepared"/>
-    我已核实转入银行实际完成入账，不是预计到账</label>
-   <p class="hint">这是一笔内部双向资产移动。保存申请不会增加银行余额；批准后执行器还会核验版本、余额与双边流水。</p>
+    我已核实振替先の銀行实际完成入账，不是预计到账</label>
+   <p class="hint">これは家庭帳簿の資産移動です。申請だけでは残高は変わりません。承認後も口座状態と両側の入出金証拠を確認します。</p>
    <button type="submit" :disabled="busy||!(prepared||ready)">
-    {{prepared?'提交 HomeFlow 家庭审批':'加密保存已到账转账证据'}}
+    {{prepared?'HomeFlowで明細変更の承認を申請':'入出金証拠を暗号化して保存'}}
    </button>
-   <button v-if="prepared" type="button" :disabled="busy" @click="cancel">撤回未提交草稿</button>
+   <button v-if="prepared" type="button" :disabled="busy" @click="cancel">未提出の下書きを取り消す</button>
   </form>
-  <div class="head"><strong>转账申请记录</strong>
+  <div class="head"><strong>振替申請履歴</strong>
    <button type="button" :disabled="busy||!serviceAvailable" @click="load">刷新</button>
   </div>
   <div v-for="r in history" :key="r.request_id" class="history">
@@ -210,7 +210,7 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
    <button v-if="r.status==='prepared'" type="button" :disabled="busy||!!prepared||!serviceAvailable"
     @click="resume(r)">继续原申请</button>
   </div>
-  <p v-if="!history.length&&serviceAvailable" class="hint">暂无本人已到账转账记录。</p>
+  <p v-if="!history.length&&serviceAvailable" class="hint">振替記録はまだありません。</p>
  </template>
 </section>
 </template>

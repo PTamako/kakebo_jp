@@ -47,7 +47,7 @@ function harness(){
    assert.equal(new URL(req.url).pathname,'/api/internal/approvals/shared-entry-status')
    const raw=await req.text(),stamp=req.headers.get('x-approval-timestamp')
    const expected=createHmac('sha256',Buffer.from(secret,'hex'))
-    .update('kakeibo-shared-entry:status\\n'+stamp+'\\n'+raw).digest('hex')
+    .update('kakeibo-shared-entry:status\n'+stamp+'\n'+raw).digest('hex')
    assert.equal(req.headers.get('x-approval-signature'),expected)
    const body=JSON.parse(raw)
    assert.equal(body.requester_user_id,member)

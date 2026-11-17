@@ -106,7 +106,7 @@ test('owner/other account spoof, forged actor and revoked member cannot issue po
   assert.equal((await f.send(f.payload(),{role:'owner',user_id:owner,household_id:hh})).status,403)
   assert.equal((await f.send(f.payload(),{role:'member',user_id:other,household_id:hh})).status,403)
   assert.equal((await f.send({...f.payload(),points_account_id:otherPoints})).status,409)
-  f.sql.exec("UPDATE homeflow_identity_links SET state='revoked' WHERE user_id='"+member+"'")
+  f.sql.exec("UPDATE homeflow_identity_links SET state='disabled' WHERE user_id='"+member+"'")
   assert.equal((await f.send(f.payload())).status,403)
   assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_points_journal').get().n,0)
  }finally{f.close()}

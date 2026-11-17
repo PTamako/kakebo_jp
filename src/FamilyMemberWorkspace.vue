@@ -759,6 +759,33 @@ const memberDuplicateGroups=computed(()=>{
 })
 const memberArchivedAccounts=computed(()=>myAccounts.value.filter(a=>
  a.is_archived&&a.origin==='member_created'))
+const memberSharedTrash=ref([]),memberTrashBusy=ref(false)
+const memberTrashError=ref(''),memberTrashNotice=ref('')
+async function loadMemberSharedTrash(){
+ if(memberTrashBusy.value)return
+ const actor=props.user.user_id,ticket=epoch
+ memberTrashBusy.value=true;memberTrashError.value=''
+ try{
+  const result=await api('shared-entries?state=deleted')
+  if(ticket!==epoch||actor!==props.user.user_id)return
+  if(!Array.isArray(result.items)||result.items.some(x=>x.state!=='deleted'))
+   throw Error('回収箱の取得範囲を確認できません')
+  memberSharedTrash.value=result.items
+ }catch(e){if(ticket===epoch)memberTrashError.value=e.message}
+ finally{memberTrashBusy.value=false}
+}
+async function restoreMemberSharedTrash(row){
+ if(memberTrashBusy.value)return
+ if(!window.confirm('家庭明細の復元を HomeFlow 管理者へ申請しますか？承認前は復元されません。'))return
+ memberTrashBusy.value=true;memberTrashError.value='';memberTrashNotice.value=''
+ try{
+  const receipt=await sharedMutationRef.value?.submitRestore(row)
+  if(!receipt?.proposalId)throw Error('HomeFlow の申請受付を確認できません')
+  memberTrashNotice.value='復元申請を HomeFlow に提出しました。承認後に明細へ反映されます。'
+ }catch(e){memberTrashError.value=e.message}
+ finally{memberTrashBusy.value=false;await loadMemberSharedTrash()}
+}
+const memberTrashCount=computed(()=>memberArchivedAccounts.value.length+memberSharedTrash.value.length)
 const memberPortfolioVersions=ref(new Map())
 async function memberPrepaidApi(path,options={}){
  if(path!=='prepaid-report'||(options.method&&options.method!=='GET'))
@@ -1424,7 +1451,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     cardSettingsRequest:memberCardSettingsRequest,
     memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
-    memberRefresh:refresh,memberTrashCount:memberArchivedAccounts.length,api}"
+    memberRefresh:refresh,memberTrashCount:memberTrashCount,memberLoadTrash:loadMemberSharedTrash,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    
@@ -1512,14 +1539,26 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
      <p class="help">共有明細の変更・削除は承認後に反映。</p>
    </template>
    <template #member-trash>
-     <p v-if="!memberArchivedAccounts.length" class="help">本人がアーカイブした口座はありません。</p>
-     <div v-for="a in memberArchivedAccounts" :key="a.account_id" class="entry">
+     <p v-if="memberTrashError" role="alert" class="help">{{memberTrashError}}</p>
+     <p v-if="memberTrashNotice" role="status" class="help">{{memberTrashNotice}}</p>
+     <p v-if="memberTrashBusy" class="help">ゴミ箱を確認中…</p>
+     <div v-if="memberSharedTrash.length" class="member-trash-section">
+      <strong>削除された家庭明細 · {{memberSharedTrash.length}}件</strong>
+      <div v-for="row in memberSharedTrash" :key="row.resource_id" class="entry">
+       <strong>{{row.entry?.date}} · {{row.entry?.merchant||row.entry?.category}} · {{yen(row.entry?.amount)}}</strong>
+       <button type="button" :disabled="memberTrashBusy" @click="restoreMemberSharedTrash(row)">復元を申請</button>
+      </div>
+      <p class="help">復元は管理者が HomeFlow で承認してから反映されます。</p>
+     </div>
+     <div v-if="memberArchivedAccounts.length" class="member-trash-section">
+      <strong>本人のアーカイブ済み口座 · {{memberArchivedAccounts.length}}件</strong>
+      <div v-for="a in memberArchivedAccounts" :key="a.account_id" class="entry">
        <strong>{{a.label}}</strong>
        <button type="button" :disabled="busy" @click="modify(a,{is_archived:false})">復元</button>
+      </div>
      </div>
-     <p class="help">ここでは本人の口座設定のみ管理。家庭明細の完全削除は管理者のみ。</p>
-   </template>
-  </OriginalKakeiboPages>
+     <p v-if="!memberArchivedAccounts.length&&!memberSharedTrash.length&&!memberTrashBusy" class="help">ゴミ箱は空です。</p>
+    </template></OriginalKakeiboPages>
  </div>
 </template>
 <style scoped>

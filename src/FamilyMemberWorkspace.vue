@@ -209,6 +209,7 @@ const memberPaymentOptions=computed(()=>buildMemberPaymentChoices(myAccounts.val
 // must never be relabeled by the ordinary shared-entry approval endpoint.
 const memberLedgerPaymentOptions=computed(()=>memberPaymentOptions.value.filter(
  x=>x.value==='cash'||x.value.startsWith('shared:')))
+provide('kakeibo-member-payment-choices',memberLedgerPaymentOptions)
 function memberPaymentEditor(entry){
  const own=entry?.type==='expense'&&entry.shared_entry_requester_user_id===props.user.user_id&&
   !entry.family_account_id

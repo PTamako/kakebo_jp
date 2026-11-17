@@ -750,3 +750,44 @@ test('insufficient prepaid balance rejects approval without modifying ledger or 
   assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,1)
  }finally{f.close()}
 })
+
+test('future linked credit entry deletion and restoration change liability only after each owner approval',async()=>{
+ const f=fixture({accountCorrections:true})
+ try{
+  const {resourceId,entryId,receipt}=await seedFuturePaid(f)
+  const request=await f.apply('delete',resourceId,1,null)
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,1000)
+  const deleted=await f.target('execute',request)
+  assert.equal(deleted.status,200,JSON.stringify(deleted))
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,0)
+  assert.equal(f.sql.prepare('SELECT state FROM family_shared_entry_registry').get().state,'deleted')
+  assert.equal((await memberCardLiabilities(f.env.DB,hh,false)).total,0)
+  assert.equal(f.sql.prepare('SELECT amount_jpy FROM family_card_purchase_applied WHERE homeflow_request_id=?').get(receipt).amount_jpy,1000)
+  const again=await f.target('execute',request)
+  assert.equal(again.status,200,JSON.stringify(again))
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_approved_account_corrections').get().n,1)
+  const restore=await f.apply('restore',resourceId,2,null)
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,0)
+  const restored=await f.target('execute',restore)
+  assert.equal(restored.status,200,JSON.stringify(restored))
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,1000)
+  assert.equal(f.sql.prepare('SELECT state FROM family_shared_entry_registry').get().state,'active')
+  assert.equal((await memberCardLiabilities(f.env.DB,hh,false)).total,1000)
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_approved_account_corrections').get().n,2)
+  assert.equal(f.sql.prepare('SELECT COALESCE(SUM(delta_jpy),0) n FROM family_approved_account_effects').get().n,0)
+ }finally{f.close()}
+})
+test('future linked prepaid deletion refunds balance and restore debits again atomically',async()=>{
+ const f=fixture({accountCorrections:true})
+ try{
+  const {resourceId,entryId}=await seedFuturePaid(f,'prepaid',500)
+  const deleted=await f.target('execute',await f.apply('delete',resourceId,1,null))
+  assert.equal(deleted.status,200,JSON.stringify(deleted))
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,0)
+  assert.equal((await memberPrepaidBalances(f.env.DB,hh)).total_jpy,1500)
+  const restored=await f.target('execute',await f.apply('restore',resourceId,2,null))
+  assert.equal(restored.status,200,JSON.stringify(restored))
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,1000)
+  assert.equal((await memberPrepaidBalances(f.env.DB,hh)).total_jpy,500)
+ }finally{f.close()}
+})

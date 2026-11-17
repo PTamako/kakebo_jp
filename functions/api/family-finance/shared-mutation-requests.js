@@ -105,6 +105,10 @@ async function prepare(req,e,url,u){
   if(reg?.version!==x.expected_version||reg.state!==(x.operation==='restore'?'deleted':'active'))
    return fail('SHARED_MUTATION_RESOURCE_CHANGED');
   if(x.operation==='update'&&Object.hasOwn(entry,'payment_source')){
+   // The private HomeFlow receiver must be deployed before accepting
+   // requests that would otherwise be acknowledged but not applied.
+   if(e.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED!=='true')
+    return fail('SHARED_PAYMENT_EXECUTOR_NOT_READY',503);
    // Only the original posting member may propose a payment-source revision.
    // Administrator authority and an unrelated member's ledger visibility do
    // not grant ownership of another person's card.

@@ -9,6 +9,7 @@ import MemberPrepaidTopups from './MemberPrepaidTopups.vue'
 import MemberAssetTransferFields from './MemberAssetTransferFields.vue'
 import {submitMemberPersonalTransfer} from './member-asset-transfer-submit.js'
 import MemberCardUsage from './MemberCardUsage.vue'
+import SbiPortfolio from './SbiPortfolio.vue'
 import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
@@ -46,7 +47,6 @@ const props=defineProps({
 })
 const emit=defineEmits(['logout','theme-change'])
 const tab=ref('add')
-const memberFixedCostRef=ref(null)
 const memberLastRefreshAt=ref(null)
 const memberStatus=computed(()=>memberLastRefreshAt.value
  ?'最終更新：'+new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit'}).format(memberLastRefreshAt.value)
@@ -1667,12 +1667,6 @@ watch(()=>props.user.user_id,()=>{
    記帳は受付済みですが画像の再送が必要です（{{memberReceiptRetry.length}}件）。
    <button type="button" @click="retryMemberReceipt">画像を再送</button>
   </section>
-  <MemberFixedCosts ref="memberFixedCostRef"
-    :key="'member-fixed:'+user.user_id+':'+personalBackupRevision" :user-id="user.user_id"
-    :payment-choices="memberPaymentOptions" :category-label="memberCategoryLabel"
-    :default-category="defaultMemberCategory('expense')"
-    :categories="[...new Set([...memberExpenseCategoryChoices,...entryCategories])]"
-    :on-submit-entry="submitMemberFixedCost" />
   <OriginalKakeiboPages :identity="user" :theme="theme" :themes="themes"
    :active-tab="tab" :member="true" :personal-assets="assets" :personal-accounts="myAccounts" :on-update-personal-account="modify"
    :on-create-personal-account="createAccount"
@@ -1684,9 +1678,6 @@ watch(()=>props.user.user_id,()=>{
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     cardSettingsRequest:memberCardSettingsRequest,
     memberStatus,memberCardConfig:getMemberCardConfig(),
-    memberPlanConfig:memberFixedCostRef?.managementConfig||null,
-    memberInvestmentConfig:{api:memberSbiApi,
-     onCreate:()=>openMemberInvestmentPlan(),onEdit:openMemberInvestmentPlan},
     memberRefresh:refresh,memberTrashCount:memberTrashCount,memberLoadTrash:loadMemberSharedTrash,memberLoadJobs:loadMemberJobStatus,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
@@ -1698,7 +1689,16 @@ watch(()=>props.user.user_id,()=>{
    <template #member-card-usage>
     <MemberCardUsage :user-id="user.user_id" :active="tab==='finance'" :revision="memberUsageRevision"/>
    </template>
+   <template #member-plans>
+    <MemberFixedCosts :key="'member-fixed:'+user.user_id+':'+personalBackupRevision" :user-id="user.user_id"
+     :payment-choices="memberPaymentOptions" :category-label="memberCategoryLabel" :default-category="defaultMemberCategory('expense')"
+     :categories="[...new Set([...memberExpenseCategoryChoices,...entryCategories])]"
+     :on-submit-entry="submitMemberFixedCost" />
+   </template>
    <template #member-investment>
+    <SbiPortfolio member-mode active-view="plans" :api="memberSbiApi"
+      :on-member-create="()=>openMemberInvestmentPlan()"
+      :on-member-edit="openMemberInvestmentPlan"/>
     <FamilyRecurringFinance ref="memberRecurringRef" view="investment" embedded
      :key="'personal-sbi:'+user.user_id" :user-id="user.user_id"
      :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>

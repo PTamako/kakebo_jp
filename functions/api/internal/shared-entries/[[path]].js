@@ -29,7 +29,9 @@ async function signed(req,e,mode){
  let raw,b;try{raw=await req.text();b=raw.length<=1200?JSON.parse(raw):null}catch{return null}
  if(!exact(b,mode==='execute'?['request_id','resource_id','household_id',
    'requester_user_id','payload_sha256','execution_nonce']:
-  ['request_id','resource_id','household_id','requester_user_id','payload_sha256'])||
+   mode==='preview'?['request_id','resource_id','household_id','requester_user_id',
+    'payload_sha256','approver_user_id']:
+    ['request_id','resource_id','household_id','requester_user_id','payload_sha256'])||
   !uuid.test(b.request_id)||!id32.test(b.resource_id)||!h64.test(b.payload_sha256)||
   mode==='execute'&&!h64.test(b.execution_nonce)||!b.household_id||!b.requester_user_id)
   return null;
@@ -283,11 +285,49 @@ async function write(e,p,b,approval,payload){
   .bind(b.request_id).first();
  return same(saved,b)?receipt(db,saved,b,false):fail('SHARED_MUTATION_RECEIPT_UNKNOWN',503);
 }
+async function preview(e,b){
+ // Private, read-only view of a sealed household ledger proposal for its
+ // current owner. The HomeFlow endpoint authenticates the owner browser.
+ // Kakeibo independently checks roles and immutable proposal identity.
+ const db=e.DB;
+ const owner=await db.prepare('SELECT role,state FROM homeflow_identity_links '+
+  'WHERE user_id=? AND household_id=? LIMIT 1')
+  .bind(b.approver_user_id,b.household_id).first();
+ const member=await db.prepare('SELECT role,state FROM homeflow_identity_links '+
+  'WHERE user_id=? AND household_id=? LIMIT 1')
+  .bind(b.requester_user_id,b.household_id).first();
+ if(owner?.role!=='owner'||owner.state!=='active'||
+  member?.role!=='member'||member.state!=='active'||
+  b.approver_user_id===b.requester_user_id)return fail('SHARED_MUTATION_PREVIEW_FORBIDDEN',403);
+ const p=await db.prepare('SELECT * FROM family_shared_mutation_intents '+
+  'WHERE proposal_id=? AND homeflow_approval_id=? AND household_id=? '+
+  'AND requester_user_id=? AND payload_sha256=? LIMIT 1')
+  .bind(b.resource_id,b.request_id,b.household_id,b.requester_user_id,b.payload_sha256).first();
+ if(!p||p.status!=='submitted')return fail('SHARED_MUTATION_PREVIEW_NOT_FOUND',404);
+ const intent=await readIntent(e,p);
+ if(!intent)return fail('SHARED_MUTATION_PREVIEW_UNAVAILABLE',503);
+ let before=null;
+ if(p.operation!=='create'){
+  const r=await db.prepare('SELECT snapshot_json,state,version FROM family_shared_entry_registry '+
+   'WHERE resource_id=? AND household_id=? LIMIT 1')
+   .bind(p.resource_id,p.household_id).first();
+  if(r?.snapshot_json){
+   try{before=JSON.parse(r.snapshot_json)}
+   catch{return fail('SHARED_MUTATION_PREVIEW_UNAVAILABLE',503)}
+  }
+ }
+ return reply({ok:true,approval_id:b.request_id,proposal_id:p.proposal_id,
+  operation:'finance.entry.'+p.operation,ledger_changed:false,
+  entry:intent.entry||null,before,expected_version:p.expected_version});
+}
 export async function approvedSharedMutationRoute(req,e,parts){
  if(!ready(e))return fail('SHARED_MUTATION_EXECUTION_DISABLED',503);
- if(parts.length!==1||!['execute','receipt'].includes(parts[0]))return fail('NOT_FOUND',404);
+ if(parts.length!==1||!['execute','receipt','preview'].includes(parts[0]))return fail('NOT_FOUND',404);
  const mode=parts[0],b=await signed(req,e,mode);
- if(!b)return fail('SHARED_MUTATION_SIGNATURE_REQUIRED',403);
+ if(!b||mode==='preview'&&(!b.approver_user_id||
+   typeof b.approver_user_id!=='string'||b.approver_user_id.length>128))
+  return fail('SHARED_MUTATION_SIGNATURE_REQUIRED',403);
+ if(mode==='preview')return preview(e,b);
  const db=e.DB;
  const prev=await db.prepare('SELECT * FROM family_shared_mutation_applied '+
   'WHERE homeflow_request_id=? OR proposal_id=? LIMIT 1').bind(b.request_id,b.resource_id).first();

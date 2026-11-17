@@ -37,7 +37,7 @@ const name=x=>props.categoryLabel(x)||x||'その他'
      :title="entry.recorder_basis==='legacy_assigned'?'原账本归属人；旧记录未单独保存实际记账操作人':'由已验证的 HomeFlow 身份创建'">
      · {{entry.recorded_by}}
     </span>
-    <template v-if="prepaidUsage&&entry.payment_source"> · {{entry.payment_source}}</template>
+    <template v-if="entry.payment_source&&entry.type==='expense'"> · {{entry.payment_source}}</template>
     <template v-if="entry.type==='income'&&entry.category==='ポイント還元'&&entry.transfer_target">
      · → {{entry.transfer_target.startsWith('prepaid:')?entry.transfer_target.slice(8):
        entry.transfer_target.startsWith('credit:')?entry.transfer_target.slice(7):entry.transfer_target}}

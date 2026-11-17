@@ -10,7 +10,7 @@ WHEN NEW.state<>'active' OR NEW.version<>1
  OR NOT EXISTS(SELECT 1 FROM homeflow_identity_links actor
   WHERE actor.user_id=NEW.creator_user_id AND actor.household_id=NEW.household_id
   AND actor.state='active' AND (actor.role='owner' OR
-    (actor.role='member' AND EXISTS(
+    (actor.role='member' AND (EXISTS(
       SELECT 1 FROM entries m WHERE m.id=NEW.entry_id
       AND m.type='transfer' AND m.transfer_target='spouse'
       AND COALESCE(m.transfer_applied,0)=0
@@ -25,7 +25,7 @@ WHEN NEW.state<>'active' OR NEW.version<>1
  WHERE paid.entry_id=NEW.entry_id AND paid.household_id=NEW.household_id
  AND paid.requester_user_id=NEW.creator_user_id
  AND paid.action='spend'
- AND m.client_request_id='hfprepaid:'||paid.homeflow_request_id))))
+ AND m.client_request_id='hfprepaid:'||paid.homeflow_request_id)))))
  OR NOT EXISTS(SELECT 1 FROM entries e WHERE e.id=NEW.entry_id
   AND (e.type IN('expense','income') OR (e.type='transfer' AND e.transfer_target='spouse' AND COALESCE(e.transfer_applied,0)=0 AND e.family_account_id IS NULL AND e.client_request_id LIKE 'hfshare:%')) AND e.amount>0
   AND e.family_transfer_target_account_id IS NULL

@@ -6,6 +6,8 @@ import MemberPersonalPoints from './MemberPersonalPoints.vue'
 import MemberPointAssetActions from './MemberPointAssetActions.vue'
 import MemberPointAssetReversals from './MemberPointAssetReversals.vue'
 import MemberPrepaidTopups from './MemberPrepaidTopups.vue'
+import MemberAssetTransferFields from './MemberAssetTransferFields.vue'
+import {submitMemberPersonalTransfer} from './member-asset-transfer-submit.js'
 import MemberCardUsage from './MemberCardUsage.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import {memberInvestmentSnapshot} from './member-investment-view.js'
@@ -512,8 +514,6 @@ async function submitMemberEntry(){
  try{
   while(memberEntries.value.length){
    const record=memberEntries.value[0]
-   if(record.type==='transfer'&&record.transferTarget!=='spouse')
-    throw Error('配偶への資産移動以外はこの記帳画面から申請できません')
    const choice=record.type==='expense'
     ?resolveMemberPayment(record.paymentSource,myAccounts.value,sharedCards.value)
     :{kind:'cash'}
@@ -522,9 +522,12 @@ async function submitMemberEntry(){
     throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
    let receiptRef=''
    if(record.type==='transfer'){
-    const result=await submitNeutralSpouseTransfer(record)
+    const result=record.transferTarget==='spouse'
+     ?await submitNeutralSpouseTransfer(record)
+     :await submitMemberPersonalTransfer({record,userId:props.user.user_id,
+       accounts:myAccounts.value})
     applied++
-    receiptRef='entry:'+result.entryId
+    receiptRef=result.entryId?'entry:'+result.entryId:''
    }else if(choice.kind==='shared'||choice.kind==='personal'){
     const result=await submitPaidExpense(choice,record)
     if(result.type==='applied')applied++
@@ -1594,14 +1597,9 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    
-   <template #personal-transfer>
-    <MemberPrepaidTopups :key="'entry-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPersonalPoints :key="'entry-points:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPointAssetActions :key="'entry-points-asset:'+user.user_id" 
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
-    <MemberPointAssetReversals :key="'entry-points-asset-reversals:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+   <template #custom-transfer-fields="{record}">
+    <MemberAssetTransferFields :key="'personal-transfer:'+user.user_id"
+     :record="record" :user-id="user.user_id" :accounts="myAccounts"/>
    </template>
    <template #member-cards>
     <OriginalCardManagementPanel
@@ -1636,6 +1634,16 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
     <FamilyRecurringFinance ref="memberRecurringRef" view="investment"
      :key="'personal-sbi:'+user.user_id" :user-id="user.user_id"
      :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+    <details class="member-asset-history">
+     <summary>本人のポイント・チャージ履歴と訂正</summary>
+     <MemberPrepaidTopups :key="'history-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
+     <MemberPersonalPoints :key="'history-points:'+user.user_id"
+      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+     <MemberPointAssetActions :key="'history-point-assets:'+user.user_id"
+      :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+     <MemberPointAssetReversals :key="'history-point-reversals:'+user.user_id"
+      :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+    </details>
    </template>
    <template #member-rules>
      <p v-if="memberRuleError" role="alert" class="member-alert">{{memberRuleError}}</p>

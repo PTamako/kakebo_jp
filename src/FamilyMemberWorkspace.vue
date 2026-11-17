@@ -564,18 +564,44 @@ const ledgerEntries=computed(()=>{
    pending_status:change.status,pending_preview:change.entry||null}:entry
  }),...drafts]
 })
+const annualLedgerEntries=ref([])
+async function loadAnnualLedgerYear(annualYear){
+ const requested=String(annualYear||'')
+ if(!/^[12]\d{3}$/.test(requested))throw Error('集計年を確認してください')
+ const actor=props.user.user_id,ticket=epoch,all=[]
+ let offset=0
+ for(let page=0;page<101;page++){
+  const result=await api('shared/entries?year='+encodeURIComponent(requested)+
+   '&limit=100&offset='+offset)
+  if(!alive||ticket!==epoch||actor!==props.user.user_id)
+   throw Error('アカウントまたは集計期間が変更されました')
+  if(result.ledger_scope!=='household'||!Array.isArray(result.items)||
+   result.items.some(x=>!String(x.date||'').startsWith(requested)))
+   throw Error('年間明細の取得範囲が一致しません')
+  all.push(...result.items)
+  if(result.next_offset==null){annualLedgerEntries.value=all;return}
+  if(!Number.isInteger(result.next_offset)||result.next_offset<=offset)
+   throw Error('年間明細のページ情報が無効です')
+  offset=result.next_offset
+ }
+ throw Error('年間明細が多いため取得を完了できません')
+}
 async function openApproval(action,entry){
  if(!entry||entry.pending_approval)throw Error('審査中の記録は変更できません')
- const original=sharedEntries.value.find(x=>String(x.id)===String(entry.id))
+ const original=sharedEntries.value.find(x=>String(x.id)===String(entry.id))||
+  annualLedgerEntries.value.find(x=>String(x.id)===String(entry.id))
  if(!original)throw Error('元の明細を確認できません')
  const result=await sharedMutationRef.value?.submitMutation(action,original,
   action==='update'?entry:null)
  if(!result?.proposalId)throw Error('HomeFlow の審査受付を確認できません')
  await refresh()
+ if(annualLedgerEntries.value.some(x=>String(x.id)===String(entry.id)))
+  await loadAnnualLedgerYear(String(selectedYear.value)).catch(e=>{error.value=e.message})
  return result
 }
 const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:ledgerEntries,
  entryTypeFilter:selectedEntryType,load:()=>refresh(),more:()=>moreEntries(),
+ annualEntries:annualLedgerEntries,loadAnnual:loadAnnualLedgerYear,
  openApproval,paymentEditor:memberPaymentEditor,memberPaymentChoices:memberLedgerPaymentOptions,
  onError:message=>{error.value=message}})
 const memberReceiptLedgerIds=computed(()=>new Set(memberReceipts.value.flatMap(item=>{
@@ -628,7 +654,8 @@ async function selectMemberEditReceipt(event){
 async function saveMemberLedgerEdit(){
  const edited=memberLedger.editingEntry.value
  if(!edited||memberLedger.editSaving.value)return
- const initial=sharedEntries.value.find(row=>String(row.id)===String(edited.id))
+ const initial=sharedEntries.value.find(row=>String(row.id)===String(edited.id))||
+  annualLedgerEntries.value.find(row=>String(row.id)===String(edited.id))
  if(!initial||edited.pending_approval){
   memberLedger.receiptSaveError.value='元の明細を確認してください';return
  }
@@ -672,7 +699,8 @@ memberLedger.saveEdit=saveMemberLedgerEdit
 provide('kakeibo-page-context',{
  ...makeFamilyStatsContext({tab,month,selectedYear,stats:monthlyReport,
    annualStats:annualReport,entryType:selectedEntryType,
-   onPaymentMethodDetails:memberLedger.openPaymentMethodDetails}),
+   onPaymentMethodDetails:memberLedger.openPaymentMethodDetails,
+   onCategoryDetails:memberLedger.openCategoryDetails}),
  ...memberLedger
 })
 watch(selectedYear,n=>{if(Number.isInteger(n)&&n>=2000&&n<=9998)year.value=String(n)})

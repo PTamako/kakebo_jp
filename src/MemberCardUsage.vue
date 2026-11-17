@@ -1,6 +1,6 @@
 <script setup>
 import {computed,ref,watch,onMounted} from 'vue'
-import MobileChoiceSheet from './MobileChoiceSheet.vue'
+import CardUsageSummaryFields from './CardUsageSummaryFields.vue'
 const props=defineProps({
  userId:{type:String,required:true},
  active:{type:Boolean,default:false},
@@ -47,17 +47,9 @@ onMounted(()=>{if(props.active)void load()})
 <template>
  <article class="member-card-usage finance-panel card-billing-panel" aria-label="カード別利用額">
   <h2>カード別利用額</h2>
-  <div class="finance-inputs card-billing-fields">
-   <label>カード
-    <MobileChoiceSheet v-model="selectedKey" label="カード名" :options="options"/>
-   </label>
-   <label>締め月
-    <input class="card-closing-month" v-model="month" type="month" aria-label="締め月"/>
-   </label>
-   <label>利用額
-    <output class="card-usage-total" aria-live="polite">{{loaded&&selected?yen(selected.amount_jpy):'—'}}</output>
-   </label>
-  </div>
+  <CardUsageSummaryFields :card="selectedKey" :month="month"
+   :card-options="options" :amount="loaded&&selected?yen(selected.amount_jpy):'—'"
+   @update:card="selectedKey=$event" @update:month="month=$event" />
   <p v-if="error" role="alert" class="card-usage-error">{{error}}</p>
   <p v-else-if="selected" class="card-billing-period">{{selected.period.start}} ～ {{selected.period.end}} · {{selected.count}}件</p>
   <details v-if="selected?.entries?.length" class="member-card-usage-detail">
@@ -71,12 +63,6 @@ onMounted(()=>{if(props.active)void load()})
 </template>
 <style scoped>
 .member-card-usage{display:grid;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;min-width:0}
-.member-card-usage h2{font-size:17px;margin:0}
-.finance-inputs.card-billing-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-.card-billing-fields>label{display:grid;gap:6px;min-width:0;color:var(--muted);font-size:12px}
-.card-billing-fields>label:first-child{grid-column:1/-1}
-.card-closing-month,.card-usage-total{box-sizing:border-box;display:flex;align-items:center;width:100%;min-height:44px;border:1px solid var(--line);border-radius:11px;padding:8px 12px;background:var(--card);color:var(--ink);font-size:16px}
-.card-usage-total{font-weight:750}
 .card-billing-period,.card-usage-error{margin:0;font-size:12px;color:var(--muted)}
 .card-usage-error{color:#b33b49}
 .member-card-usage-detail summary{cursor:pointer;font-size:13px;font-weight:700}

@@ -47,7 +47,7 @@ function fixture({accountCorrections=false}={}){
    'CREATE TABLE family_points_prepaid_refunds(prepaid_account_id TEXT,household_id TEXT,debited_prepaid_jpy INTEGER)',
   ])sql.exec(s)
  }
- for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql',...(accountCorrections?['0073_approved_account_corrections.sql','0074_future_paid_entry_registration.sql']:[])])
+ for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql',...(accountCorrections?['0073_approved_account_corrections.sql','0074_future_paid_entry_registration.sql','0075_future_paid_correction_serial_guards.sql']:[])])
   sql.exec(readFileSync(new URL('../migrations/'+version,import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,?,'active')").run(u,hh,role)

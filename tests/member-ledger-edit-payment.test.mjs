@@ -44,3 +44,19 @@ test('cash is explicit only for changes; an unchanged approved card remains unto
  assert.match(execution,/SHARED_MUTATION_PAYMENT_OWNER_MISMATCH/)
  assert.match(execution,/SHARED_CARD_GRANT_REVOKED/)
 })
+
+
+test('member views spouse payment label without gaining source IDs or edit access',()=>{
+ const api=readFileSync(new URL('../functions/api/family-finance/[[path]].js',import.meta.url),'utf8')
+ assert.match(api,/payment_source_display:paymentLabel/)
+ assert.match(api,/family_account_id:ownSource\?r\.family_account_id:null/)
+ assert.match(api,/payment_account_owner_user_id:ownSource\?user\.user_id:null/)
+ assert.match(api,/payment_source:ownSource\|\|grantedSpender\?r\.payment_source:null/)
+ const form=readFileSync(new URL('../src/TransactionForm.vue',import.meta.url),'utf8')
+ assert.match(form,/!props\.editMode\|\|!props\.paymentChoices\.length/)
+ assert.match(form,/<MobileChoiceSheet :model-value="record.paymentSource" v-else/)
+ const owner=readFileSync(new URL('../functions/api/family-finance/shared-entries.js',import.meta.url),'utf8')
+ assert.match(owner,/ACCOUNT_LINKED_PAYMENT_REQUIRES_JOURNAL_CORRECTION/)
+ assert.match(owner,/FROM family_legacy_card_spends/)
+ assert.match(owner,/OTHER_MEMBERS_PAYMENT_READ_ONLY/)
+})

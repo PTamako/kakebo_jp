@@ -296,3 +296,45 @@ test('household scoped revision changes after owner CAS update and avoids full l
   assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,1600)
  }finally{f.close()}
 })
+
+
+test('owner edit reports success when D1 changes metadata is zero after a committed batch',async()=>{
+ const f=fixture();try{
+  const first=await f.create();
+  const originalBatch=f.env.DB.batch;
+  f.env.DB.batch=async statements=>{
+   const result=await originalBatch(statements);
+   // Cloudflare may report an unhelpful affected-row count after a real commit.
+   return result.map((x,i)=>i===2?{...x,meta:{...x.meta,changes:0}}:x);
+  };
+  const updated=await f.invoke('PUT',['shared-entries',first.resource_id],{
+   expected_user_id:owner,expected_version:1,
+   entry:{...sample,amount:960,category:'飲食料品',merchant:'長門'}
+  });
+  assert.equal(updated.status,200,JSON.stringify(updated.data));
+  assert.equal(updated.data.applied,true);
+  assert.equal(updated.data.action.version,2);
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,960);
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_entry_audit'),2);
+ }finally{f.close()}
+});
+
+test('owner edit confirms durable audit after post-commit response loss without duplicate writes',async()=>{
+ const f=fixture();try{
+  const first=await f.create();
+  const originalBatch=f.env.DB.batch;
+  f.env.DB.batch=async statements=>{
+   await originalBatch(statements);
+   throw Error('connection interrupted after commit');
+  };
+  const updated=await f.invoke('PUT',['shared-entries',first.resource_id],{
+   expected_user_id:owner,expected_version:1,entry:{...sample,merchant:'バーガーキング'}
+  });
+  assert.equal(updated.status,200,JSON.stringify(updated.data));
+  assert.equal(updated.data.action.version,2);
+  assert.equal(f.sql.prepare('SELECT merchant FROM entries').get().merchant,'バーガーキング');
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_entry_audit'),2);
+ }finally{f.close()}
+});

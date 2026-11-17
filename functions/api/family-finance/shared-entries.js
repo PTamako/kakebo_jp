@@ -60,6 +60,32 @@ function context(db,r,u,action,now){
 const clear=(db,resource)=>db.prepare('DELETE FROM family_shared_entry_write_context WHERE resource_id=?').bind(resource);
 const auditCount=(db,id)=>db.prepare('SELECT COUNT(*) AS n FROM family_shared_entry_audit WHERE resource_id=?').bind(id).first();
 function changesOk(result,count){return result.length===count&&result.every(r=>r.meta?.changes===1);}
+
+// D1 batch results are not a durable transaction receipt: affected-row counts
+// can be imprecise even when the batch committed. Verify immutable CAS evidence
+// before replying success or failure. Do not retry merely on an ambiguous count.
+async function committedRevision(db,resource,u,original,action,next,snapshot,digest,stamp){
+ const r=await get(db,resource,u);
+ if(!r||r.version!==original.version+1||r.updated_at!==stamp||
+  r.state!==(action==='delete'?'deleted':'active')||
+  r.last_actor_user_id!==u.user_id||
+  r.payload_sha256!==digest||r.snapshot_json!==snapshot)return null;
+ const audit=await db.prepare('SELECT actor_user_id,action,from_version,to_version,'+
+  'payload_sha256,occurred_at FROM family_shared_entry_audit '+
+  'WHERE resource_id=? AND to_version=? LIMIT 1').bind(resource,r.version).first();
+ if(!audit||audit.actor_user_id!==u.user_id||audit.action!==action||
+  audit.from_version!==original.version||audit.to_version!==r.version||
+  audit.payload_sha256!==digest||audit.occurred_at!==stamp)return null;
+ const entry=await db.prepare('SELECT id,date,time,amount,type,category,merchant,note,'+
+  'payment_source FROM entries WHERE id=? LIMIT 1').bind(original.entry_id).first();
+ if(action==='delete')return entry?null:visible(r);
+ if(!entry||!next||entry.id!==original.entry_id||
+  ['date','time','amount','type','category','merchant','note'].some(
+   key=>entry[key]!==next[key])||
+  (next.payment_source&&entry.payment_source!==next.payment_source))return null;
+ return visible(r);
+}
+
 async function create(req,e,url,u,role){
  const x=await parse(req,url);
  if(x?.expected_user_id!==u.user_id)return fail('SHARED_ENTRY_ACTOR_CHANGED',403);
@@ -179,12 +205,18 @@ async function modify(req,e,url,u,id,action){
   .bind(action==='delete'?'deleted':'active',snapshot,digest,u.user_id,at,action,at,action,
    id,r.version,action==='restore'?'deleted':'active'));
  statements.push(clear(db,id));
+ let batchFailed=false;
  try{
-  const out=await db.batch(statements);
-  if(!changesOk(out,4))return fail('SHARED_ENTRY_ATOMIC_CONFIRMATION_REQUIRED',503);
-  const saved=await get(db,id,u);
-  return json({ok:true,action:visible(saved),applied:true});
- }catch{return fail('SHARED_ENTRY_MUTATION_ROLLED_BACK')}
+  await db.batch(statements);
+ }catch{
+  // A lost response is not evidence of rollback: check the same CAS receipt.
+  batchFailed=true;
+ }
+ const committed=await committedRevision(db,id,u,r,action,next,snapshot,digest,at)
+  .catch(()=>null);
+ if(committed)return json({ok:true,action:committed,applied:true});
+ return batchFailed?fail('SHARED_ENTRY_MUTATION_ROLLED_BACK'):
+  fail('SHARED_ENTRY_ATOMIC_CONFIRMATION_REQUIRED',503);
 }
 async function purge(req,e,url,u,id){
  const x=await parse(req,url);

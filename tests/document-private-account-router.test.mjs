@@ -13,7 +13,7 @@ const env={
  KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET:secret,
  DB:{prepare(sql){return {bind(...args){return {
   async first(){
-   if(sql.includes('homeflow_identity_links'))
+   if(!sql.includes('FROM family_financial_accounts a'))
     return args[0]===member?{role:'member',state:'active'}:null;
    return args[0]===account&&args[2]===member?
     {account_id:account,household_id:'primary',owner_user_id:member,

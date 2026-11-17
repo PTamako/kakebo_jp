@@ -369,3 +369,75 @@ test('owner HMAC preview decrypts original submitted entry without applying it',
   assert.equal(f.count('entries'),0)
  }finally{f.close()}
 })
+
+
+test('operator replay of a deleted original uses a NEW pending approval and original sealed payload, with no duplicate debit',async()=>{
+ const f=fixture();
+ try{
+  const old=await f.apply('create',null,0,sample);
+  const first=await f.target('execute',old);
+  assert.equal(first.status,200,JSON.stringify(first));
+  const originalResource=first.data.resource_id;
+  const deletion=await f.apply('delete',originalResource,1,null);
+  assert.equal((await f.target('execute',deletion)).status,200);
+  assert.equal(f.count('entries'),0);
+
+  const proposal=crypto.randomUUID().replaceAll('-','');
+  const requestId=crypto.randomUUID();
+  const oldIntent=f.sql.prepare('SELECT * FROM family_shared_mutation_intents WHERE proposal_id=?')
+   .get(old.resource_id);
+  f.sql.prepare('INSERT INTO family_shared_mutation_intents '+
+   '(proposal_id,household_id,requester_user_id,operation,resource_id,expected_version,'+
+   'payload_sha256,payload_cipher,payload_iv,idempotency_hash,status,homeflow_approval_id,'+
+   'created_at,expires_at,submitted_at) VALUES(?,?,?, ?,NULL,0, ?,?,?,?, ?,?,?,?,?)')
+   .run(proposal,hh,member,'create',old.payload_sha256,'sealed-ref:'+old.resource_id,
+    'sealed-ref',createHash('sha256').update('replay:'+proposal).digest('hex'),
+    'submitted',requestId,Date.now(),Date.now()+86400000,Date.now());
+  const replacement={request_id:requestId,resource_id:proposal,
+   household_id:hh,requester_user_id:member,payload_sha256:old.payload_sha256};
+  f.approvals.set(proposal,{id:requestId,payload:old.payload_sha256,operation:'finance.entry.create'});
+  // A replay only prepares a pending request. Nothing is posted until an
+  // authenticated owner later reviews and the executor sends a signed proof.
+  assert.equal(f.count('entries'),0);
+  const preview=await f.target('preview',{...replacement,approver_user_id:owner});
+  assert.equal(preview.status,200,JSON.stringify(preview));
+  assert.deepEqual(preview.data.entry,sample);
+  assert.equal(f.count('entries'),0);
+  const applied=await f.target('execute',replacement);
+  assert.equal(applied.status,200,JSON.stringify(applied));
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.sql.prepare('SELECT merchant FROM entries').get().merchant,sample.merchant);
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,sample.amount);
+  assert.equal(f.count('family_shared_mutation_applied'),3);
+  assert.equal(f.count('family_shared_entry_registry'),2);
+  assert.equal(f.sql.prepare('SELECT state FROM family_shared_entry_registry WHERE resource_id=?')
+   .get(originalResource).state,'deleted');
+  const replay=await f.target('execute',replacement);
+  assert.equal(replay.status,200,JSON.stringify(replay));
+  assert.equal(replay.data.already_applied,true);
+  assert.equal(f.count('entries'),1);
+ }finally{f.close()}
+});
+
+test('a sealed-reference replay cannot be previewed before its original physical entry is deleted',async()=>{
+ const f=fixture();
+ try{
+  const old=await f.apply('create',null,0,sample);
+  assert.equal((await f.target('execute',old)).status,200);
+  const proposal=crypto.randomUUID().replaceAll('-','');
+  const requestId=crypto.randomUUID();
+  f.sql.prepare('INSERT INTO family_shared_mutation_intents '+
+   '(proposal_id,household_id,requester_user_id,operation,resource_id,expected_version,'+
+   'payload_sha256,payload_cipher,payload_iv,idempotency_hash,status,homeflow_approval_id,'+
+   'created_at,expires_at,submitted_at) VALUES(?,?,?, ?,NULL,0, ?,?,?,?, ?,?,?,?,?)')
+   .run(proposal,hh,member,'create',old.payload_sha256,'sealed-ref:'+old.resource_id,
+    'sealed-ref',createHash('sha256').update('replay:'+proposal).digest('hex'),
+    'submitted',requestId,Date.now(),Date.now()+86400000,Date.now());
+  f.approvals.set(proposal,{id:requestId,payload:old.payload_sha256,operation:'finance.entry.create'});
+  const replacement={request_id:requestId,resource_id:proposal,
+   household_id:hh,requester_user_id:member,payload_sha256:old.payload_sha256};
+  const result=await f.target('preview',{...replacement,approver_user_id:owner});
+  assert.notEqual(result.status,200);
+  assert.equal(f.count('entries'),1);
+ }finally{f.close()}
+});

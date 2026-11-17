@@ -2103,3 +2103,33 @@ test('historical fixed fee and SBI plan ownership is owner-private, read-only an
   assert.equal((await finance(f,'shared/plan-ownership?kind=investment_plan','GET',null,memberCookie)).status,401)
  }finally{f.DB.sqlite.close()}
 })
+
+test('annual household ledger pages contain only the selected year and preserve read-only labels',async()=>{
+ const f=await setup()
+ try{
+  await loginOwner(f)
+  const spouse=await loginMember(f)
+  f.DB.sqlite.prepare("INSERT INTO entries(date,time,type,merchant,amount,category,note,payment_source,transfer_target,transfer_applied,transfer_date) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
+   .run('2025-12-31','','income','昨年',333,'給与','','',null,0,null)
+  const first=await finance(f,'shared/entries?year=2026&limit=1&offset=0','GET',null,spouse)
+  assert.equal(first.status,200,await first.clone().text())
+  const a=await first.json()
+  assert.equal(a.items.length,1)
+  assert.equal(a.next_offset,1)
+  const next=await finance(f,'shared/entries?year=2026&limit=1&offset=1','GET',null,spouse)
+  assert.equal(next.status,200,await next.clone().text())
+  const b=await next.json()
+  assert.equal(b.items.length,1)
+  assert.equal(b.next_offset,null)
+  assert.ok([...a.items,...b.items].every(x=>x.date.startsWith('2026-')))
+  assert.ok([...a.items,...b.items].some(x=>x.payment_source_display==='PayPay Visa'))
+  assert.equal([...a.items,...b.items].find(x=>x.type==='expense').family_account_id,null)
+  const old=await finance(f,'shared/entries?year=2025','GET',null,spouse)
+  assert.equal(old.status,200,await old.clone().text())
+  assert.equal((await old.json()).items.length,1)
+  for(const query of ['year=202x','month=2026-11&year=2026']){
+   const invalid=await finance(f,'shared/entries?'+query,'GET',null,spouse)
+   assert.equal(invalid.status,400)
+  }
+ }finally{f.DB.sqlite.close()}
+})

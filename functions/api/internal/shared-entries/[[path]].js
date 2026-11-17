@@ -183,8 +183,6 @@ async function write(e,p,b,approval,payload){
  // member, but remains untouched until HomeFlow's owner proof authorizes it.
  const explicitPayment=action==='update'&&
   Object.hasOwn(payload.entry,'payment_source');
- if(explicitPayment&&e.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED!=='true')
-  return fail('SHARED_PAYMENT_EXECUTOR_NOT_READY',503);
  let originalPayment='';
  if(action==='update'){
   const physical=await db.prepare('SELECT type,payment_source,family_account_id FROM entries WHERE id=? LIMIT 1')

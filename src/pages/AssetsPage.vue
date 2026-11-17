@@ -2,8 +2,11 @@
 import { computed, inject, ref } from 'vue'
 import SbiPortfolio from '../SbiPortfolio.vue'
 import PrepaidAssets from '../PrepaidAssets.vue'
+import PersonalAccountRegistry from '../PersonalAccountRegistry.vue'
 const props=defineProps({
  personalAssets:{type:Array,default:null},
+  personalAccounts:{type:Array,default:()=>[]},
+  onUpdatePersonalAccount:{type:Function,default:null},
  personalUserId:{type:String,default:''},
  openPersonalManagement:{type:Function,default:null},
  onCreatePersonalAccount:{type:Function,default:null},
@@ -106,6 +109,8 @@ const gainYen = value => value === null || !Number.isFinite(Number(value)) ? '�
       </div>
     </section>
 
+    <PersonalAccountRegistry v-if="isPersonal" :accounts="personalAccounts"
+     :on-create="onCreatePersonalAccount" :on-update="onUpdatePersonalAccount"/>
     <nav class="balance-view-switch" aria-label="残高の表示切替" role="tablist">
       <button type="button" role="tab" :aria-selected="activeView==='wallets'" :class="{selected:activeView==='wallets'}" @click="selectView('wallets')">電子マネー</button>
       <button type="button" role="tab" :aria-selected="activeView==='funds'" :class="{selected:activeView==='funds'}" @click="selectView('funds')">投資信託</button>

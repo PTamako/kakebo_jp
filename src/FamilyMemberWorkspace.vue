@@ -132,9 +132,9 @@ const year=ref(month.value.slice(0,4))
 const busy=ref(false),error=ref(''),label=ref(''),kind=ref('cash')
 const renameId=ref(''),rename=ref(''),notice=ref('')
 const selectedCardId=ref(''),cardMode=ref('')
-const preferredCardType=ref('standard')
-function openMemberPrepaidAdd(){preferredCardType.value='prepaid';cardMode.value='add';tab.value='finance'}
-function openMemberCardSettings(){preferredCardType.value='standard';tab.value='finance'}
+const preferredCardType=ref('standard'),memberCardSettingsRequest=ref(0)
+function openMemberPrepaidAdd(){preferredCardType.value='prepaid';cardMode.value='add';memberCardSettingsRequest.value++;tab.value='finance'}
+function openMemberCardSettings(){preferredCardType.value='standard';memberCardSettingsRequest.value++;tab.value='finance'}
 const cardAccounts=computed(()=>myAccounts.value.filter(a=>['credit_card','prepaid'].includes(a.account_kind)))
 const selectedCard=computed(()=>cardAccounts.value.find(a=>a.account_id===selectedCardId.value)||null)
 const defaultCard=computed(()=>cardAccounts.value.find(a=>Number(a.is_default)===1)?.account_id||'')
@@ -686,7 +686,7 @@ async function memberSbiApi(path,options={}){
    'investment-portfolio/price':'price',
    'investment-portfolio/holdings-bulk':'holdings-bulk'}
   const sub=map[path]
-  if(!sub)throw Error('買付や積立の変更には HomeFlow 承認が必要です')
+  if(!sub)throw Error('積立計画の設定は管理の「積立」から本人が変更できます。管理者承認は不要です')
   const body=JSON.parse(options.body||'{}')
   const key=(x)=>x.fundCode+':'+x.accountType
   const versions=memberPortfolioVersions.value
@@ -1104,7 +1104,7 @@ watch(()=>props.user.user_id,loadMemberCategories)
    <button type="button" @click="retryMemberReceipt">画像を再送</button>
   </section>
   <OriginalKakeiboPages :identity="user" :theme="theme" :themes="themes"
-   :active-tab="tab" :member="true" :personal-assets="assets"
+   :active-tab="tab" :member="true" :personal-assets="assets" :personal-accounts="myAccounts" :on-update-personal-account="modify"
    :on-create-personal-account="createAccount"
    :on-open-personal-management="openMemberPrepaidAdd"
    :personal-prepaid-api="memberPrepaidApi"
@@ -1112,6 +1112,7 @@ watch(()=>props.user.user_id,loadMemberCategories)
    :on-personal-opening="saveMemberPrepaidOpening"
    :on-personal-history="openMemberWalletHistory"
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
+    cardSettingsRequest:memberCardSettingsRequest,
     memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
     memberRefresh:refresh,memberTrashCount:memberArchivedAccounts.length,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"

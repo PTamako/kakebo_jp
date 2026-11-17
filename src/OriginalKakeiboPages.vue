@@ -14,6 +14,8 @@ const props=defineProps({
   member:{type:Boolean,default:false},
   managementBindings:{type:Object,default:()=>({})},
   personalAssets:{type:Array,default:null},
+  personalAccounts:{type:Array,default:()=>[]},
+  onUpdatePersonalAccount:{type:Function,default:null},
   personalPrepaidApi:{type:Function,default:null},
   personalPortfolioApi:{type:Function,default:null},
   onPersonalOpening:{type:Function,default:null},
@@ -37,6 +39,8 @@ function navigate(next){
   <StatisticsPage v-else-if="activeTab==='stat'"/>
   <AssetsPage v-else-if="activeTab==='investments'"
    :personal-assets="member?personalAssets:null"
+   :personal-accounts="member?personalAccounts:[]"
+   :on-update-personal-account="member?onUpdatePersonalAccount:null"
    :personal-user-id="member?identity?.user_id||'':''"
    :personal-prepaid-api="member?personalPrepaidApi:null"
    :personal-portfolio-api="member?personalPortfolioApi:null"

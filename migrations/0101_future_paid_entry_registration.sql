@@ -186,10 +186,10 @@ CREATE TRIGGER trg_family_prepaid_applied_entry_no_update
  AND context.actor_user_id=correction.approver_user_id
  AND json_extract(correction.before_json,'$.amount')=OLD.amount
  AND json_extract(correction.before_json,'$.date')=OLD.date
- AND json_extract(correction.before_json,'$.accountId')=OLD.family_account_id
+ AND json_extract(correction.before_json,'$.accountId') IS OLD.family_account_id
  AND json_extract(correction.after_json,'$.amount')=NEW.amount
  AND json_extract(correction.after_json,'$.date')=NEW.date
- AND json_extract(correction.after_json,'$.accountId')=NEW.family_account_id
+ AND json_extract(correction.after_json,'$.accountId') IS NEW.family_account_id
  )
  BEGIN SELECT RAISE(ABORT,'PREPAID_ENTRY_IMMUTABLE'); END;
 -- Authorized future-paid delete/restore uses a zero-value physical
@@ -213,8 +213,8 @@ AND NOT EXISTS(
      AND json_extract(correction.after_json,'$.amount')=NEW.amount
      AND json_extract(correction.before_json,'$.date')=OLD.date
      AND json_extract(correction.after_json,'$.date')=NEW.date
-     AND json_extract(correction.before_json,'$.accountId')=OLD.family_account_id
-     AND json_extract(correction.after_json,'$.accountId')=NEW.family_account_id
+     AND json_extract(correction.before_json,'$.accountId') IS OLD.family_account_id
+     AND json_extract(correction.after_json,'$.accountId') IS NEW.family_account_id
      AND (EXISTS(SELECT 1 FROM family_card_purchase_applied paid
       WHERE paid.entry_id=OLD.id AND OLD.client_request_id='hfcard:'||paid.homeflow_request_id)
       OR EXISTS(SELECT 1 FROM family_prepaid_actions_applied paid

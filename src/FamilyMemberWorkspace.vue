@@ -48,6 +48,10 @@ const props=defineProps({
 })
 const emit=defineEmits(['logout','theme-change'])
 const tab=ref('add')
+const memberLastRefreshAt=ref(null)
+const memberStatus=computed(()=>memberLastRefreshAt.value
+ ?'最終更新：'+new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit'}).format(memberLastRefreshAt.value)
+ :'未読み込み')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
 const personalDocumentSbi=ref([]),annualPersonalDocumentSbi=ref([])
@@ -1048,6 +1052,7 @@ async function refresh(){
   yearly.value={totals:{income:e.income,expense:e.total,
    transfer:Number(e.transferTotal||0)+personalYearResult.transfer_total_jpy},
    net_income_expense:Number(e.income||0)-Number(e.total||0)}
+  memberLastRefreshAt.value=new Date()
   // Only the requesting member receives these read-only pending previews.
   try{
    const pending=await api('shared-mutation-requests?view=ledger&month='+
@@ -1592,7 +1597,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    :on-personal-history="openMemberWalletHistory"
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     cardSettingsRequest:memberCardSettingsRequest,
-    memberStatus:'',
+    memberStatus,
     memberRefresh:refresh,memberTrashCount:memberTrashCount,memberLoadTrash:loadMemberSharedTrash,memberLoadJobs:loadMemberJobStatus,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">

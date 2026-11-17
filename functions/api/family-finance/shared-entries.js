@@ -15,19 +15,23 @@ const enabled=e=>e.APP_ENV==='production'&&e.KAKEIBO_FAMILY_FINANCE_ENABLED==='t
 const schema=['date','time','amount','type','category','merchant','note'];
 function canon(input){
  const spouse=exact(input,[...schema,'transfer_target','transfer_date']);
- if(!(exact(input,schema)||spouse)||!validDay(input.date)||!validTime(input.time)||
+ const paid=exact(input,[...schema,'payment_source']);
+ if(!(exact(input,schema)||spouse||paid)||!validDay(input.date)||!validTime(input.time)||
   !Number.isSafeInteger(input.amount)||input.amount<1||input.amount>10000000||
   !['income','expense','transfer'].includes(input.type)||
   (input.type==='transfer'&&(!spouse||input.transfer_target!=='spouse'||
    input.transfer_date!==input.date||input.category!=='投資・資産移動'||
    input.merchant!=='配偶への振替'))||
   (input.type!=='transfer'&&spouse)||
+  (paid&&(input.type!=='expense'||typeof input.payment_source!=='string'||
+   input.payment_source.length>80||input.payment_source!==input.payment_source.trim()))||
   typeof input.category!=='string'||!input.category.trim()||input.category.length>100||
   typeof input.merchant!=='string'||input.merchant.length>120||
   typeof input.note!=='string'||input.note.length>500) return null;
  return {date:input.date,time:input.time,amount:input.amount,type:input.type,
   category:input.category.trim(),merchant:input.merchant.trim(),note:input.note.trim(),
-  ...(spouse?{transfer_target:'spouse',transfer_date:input.transfer_date}:{})};
+  ...(spouse?{transfer_target:'spouse',transfer_date:input.transfer_date}:{}),
+  ...(paid?{payment_source:input.payment_source}:{})};
 }
 function parse(req,url){
  if(req.headers.get('origin')!==url.origin||req.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()!=='application/json')return Promise.resolve(null);
@@ -52,6 +56,18 @@ function visible(r){
 }
 const entryArgs=x=>[x.date,x.time,x.amount,x.category,x.merchant,x.note,x.type];
 const requireVersion=x=>Number.isSafeInteger(x)&&x>=1;
+// Only active, actually registered owner payment methods can be selected.
+// The already-posted method may remain unchanged even if later archived.
+async function availablePayment(db,name){
+ if(!name)return true;
+ const row=await db.prepare('SELECT name FROM payment_sources WHERE name=? AND is_archived=0 LIMIT 1')
+  .bind(name).first();
+ return row?.name===name;
+}
+const sameLedgerValues=(a,b)=>['date','time','amount','type','category','merchant','note',
+ 'payment_source','transfer_target','transfer_date'].every(key=>
+  (a?.[key]??(key==='payment_source'?'':null))===
+  (b?.[key]??(key==='payment_source'?'':null)));
 function context(db,r,u,action,now){
  return db.prepare('INSERT INTO family_shared_entry_write_context'+
   '(resource_id,entry_id,actor_user_id,action,expected_version,stamp) VALUES(?,?,?,?,?,?)')
@@ -82,7 +98,7 @@ async function committedRevision(db,resource,u,original,action,next,snapshot,dig
  if(!entry||!next||entry.id!==original.entry_id||
   ['date','time','amount','type','category','merchant','note'].some(
    key=>entry[key]!==next[key])||
-  (next.payment_source&&entry.payment_source!==next.payment_source))return null;
+  (typeof next.payment_source==='string'&&entry.payment_source!==next.payment_source))return null;
  return visible(r);
 }
 
@@ -93,6 +109,8 @@ async function create(req,e,url,u,role){
   typeof x.idempotency_key!=='string'||!/^[a-z0-9._:-]{12,128}$/i.test(x.idempotency_key))
   return fail('SHARED_ENTRY_INVALID_CREATE',400);
  const entry=canon(x.entry);if(!entry)return fail('SHARED_ENTRY_INVALID_FIELDS',400);
+ if(entry.payment_source&&!await availablePayment(e.DB,entry.payment_source))
+  return fail('SHARED_ENTRY_PAYMENT_NOT_AVAILABLE',409);
  // A member can directly create only an account-free, neutral spouse transfer.
  // Income/expense and every subsequent shared-ledger revision still require review.
  if(role!=='owner'&&!(role==='member'&&entry.type==='transfer'&&entry.transfer_target==='spouse'))
@@ -111,8 +129,8 @@ async function create(req,e,url,u,role){
      "VALUES(?,?,?,?,?,?,'',?,?,'','spouse',?,0) ON CONFLICT(client_request_id) DO NOTHING")
      .bind(...entryArgs(entry),client,entry.date):
     db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
-     "VALUES(?,?,?,?,?,?,'',?,?,'') ON CONFLICT(client_request_id) DO NOTHING")
-     .bind(...entryArgs(entry),client)),
+     "VALUES(?,?,?,?,?,?,'',?,?,?) ON CONFLICT(client_request_id) DO NOTHING")
+     .bind(...entryArgs(entry),client,entry.payment_source||'')),
    db.prepare('INSERT INTO family_shared_entry_write_context '+
     '(resource_id,entry_id,actor_user_id,action,expected_version,stamp) '+
     "SELECT ?,id,?,'create',0,? FROM entries WHERE client_request_id=? AND changes()=1")
@@ -150,11 +168,20 @@ async function modify(req,e,url,u,id,action){
  let next=action==='update'?canon(x.entry):null;
  if(action==='update'&&!next)return fail('SHARED_ENTRY_INVALID_FIELDS',400);
  const previousSnapshot=JSON.parse(r.snapshot_json);
- if(action==='update'&&previousSnapshot.payment_source){
-  // Keep a previously approved shared card fixed on owner edits. The card
-  // liability remains attached to the same payment source and billing period.
-  if(next.type!=='expense')return fail('SHARED_CARD_CHANGE_TYPE_FORBIDDEN',409);
-  next={...next,payment_source:previousSnapshot.payment_source};
+ if(action==='update'){
+  const originalPayment=previousSnapshot.payment_source||'';
+  // A previously approved card purchase may be reclassified to a different
+  // active payment method by its owner, but never silently converted to income.
+  if(originalPayment&&next.type!=='expense')
+   return fail('SHARED_CARD_CHANGE_TYPE_FORBIDDEN',409);
+  if(next.type==='expense'){
+   const payment=Object.hasOwn(next,'payment_source')?next.payment_source:originalPayment;
+   if(payment!==originalPayment&&!await availablePayment(e.DB,payment))
+    return fail('SHARED_ENTRY_PAYMENT_NOT_AVAILABLE',409);
+   next={...next,payment_source:payment};
+  }
+  // A no-op must not increase the immutable audit version or say "saved".
+  if(sameLedgerValues(previousSnapshot,next))return fail('SHARED_ENTRY_NO_CHANGES',409);
  }
  if(action==='restore')next=previousSnapshot;
  const snapshot=next?JSON.stringify(next):r.snapshot_json;
@@ -173,12 +200,12 @@ async function modify(req,e,url,u,id,action){
   const allowed=adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL';
   const source=adopted?[adopted.original_client_request_id,adopted.account_id]:[ref];
   statements.push(spouseRevision?
-   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0 '+
+   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0,payment_source=? '+
     'WHERE id=? AND '+allowed+" AND (type IN('expense','income') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL")
-    .bind(...entryArgs(next),next.type==='transfer'?'spouse':null,next.type==='transfer'?next.date:null,r.entry_id,...source):
-   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=? '+
+    .bind(...entryArgs(next),next.type==='transfer'?'spouse':null,next.type==='transfer'?next.date:null,next.payment_source||'',r.entry_id,...source):
+   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,payment_source=? '+
     'WHERE id=? AND '+allowed+" AND type IN('expense','income') AND family_transfer_target_account_id IS NULL")
-    .bind(...entryArgs(next),r.entry_id,...source));
+    .bind(...entryArgs(next),next.payment_source||'',r.entry_id,...source));
  }else if(action==='delete'){
   statements.push(db.prepare('DELETE FROM entries WHERE id=? AND '+
    (adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL')+

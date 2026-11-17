@@ -4,7 +4,7 @@ import { sortOtherLast } from './category-sort.js'
 import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
-const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentReadOnly: {type:Boolean,default:false}, categoryReadOnly: {type:Boolean,default:false}, allowUnlistedCategoryEdit: {type:Boolean,default:false}, transferReadOnly: {type:Boolean,default:false}, transferSourceReadOnly: {type:Boolean,default:false}, rewardReadOnly: {type:Boolean,default:false}, paymentChoices: {type:Array,default:()=>[]}, allowSbiTransfer: {type:Boolean,default:true} })
+const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentReadOnly: {type:Boolean,default:false}, categoryReadOnly: {type:Boolean,default:false}, allowUnlistedCategoryEdit: {type:Boolean,default:false}, allowUnlistedAccountEdit: {type:Boolean,default:false}, transferReadOnly: {type:Boolean,default:false}, transferSourceReadOnly: {type:Boolean,default:false}, rewardReadOnly: {type:Boolean,default:false}, paymentChoices: {type:Array,default:()=>[]}, allowSbiTransfer: {type:Boolean,default:true} })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
@@ -28,16 +28,19 @@ const missingSavedCategory = computed(()=>props.editMode&&!!record.value.categor
 const categoryLocked = computed(()=>props.editMode&&(props.categoryReadOnly||missingSavedCategory.value))
 const missingSavedReward = computed(()=>props.editMode&&!!record.value.rewardDestination&&
  !props.rewardDestinations.some(x=>x.value===record.value.rewardDestination))
-const rewardLocked = computed(()=>props.editMode&&(props.rewardReadOnly||missingSavedReward.value))
+const rewardLocked = computed(()=>props.editMode&&(props.rewardReadOnly||
+ (missingSavedReward.value&&!props.allowUnlistedAccountEdit)))
 const missingSavedTransfer = computed(()=>props.editMode&&!!record.value.transferTarget&&
  record.value.transferTarget!=='sbi'&&
  !props.transferDestinations.some(x=>x.value===record.value.transferTarget))
-const transferLocked = computed(()=>props.editMode&&(props.transferReadOnly||missingSavedTransfer.value))
+const transferLocked = computed(()=>props.editMode&&(props.transferReadOnly||
+ (missingSavedTransfer.value&&!props.allowUnlistedAccountEdit)))
 const missingSavedSource = computed(()=>props.editMode&&!!record.value.paymentSource&&
  !(props.paymentChoices.length?props.paymentChoices.some(x=>x.value===record.value.paymentSource):
   props.paymentSources.includes(record.value.paymentSource)))
 const transferSourceLocked = computed(()=>props.editMode&&
- (props.transferSourceReadOnly||props.paymentReadOnly||missingSavedSource.value))
+ (props.transferSourceReadOnly||props.paymentReadOnly||
+ (missingSavedSource.value&&!props.allowUnlistedAccountEdit)))
 const paymentOptions = computed(()=> {
  const options=props.paymentChoices.length ? props.paymentChoices
   : orderedPayments.value.map(name=>({value:name,label:name}));

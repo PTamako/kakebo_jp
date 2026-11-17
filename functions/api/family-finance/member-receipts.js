@@ -14,7 +14,8 @@ const randomId=()=>[...crypto.getRandomValues(new Uint8Array(16))]
 const fields='receipt_id,receipt_ref,receipt_date,merchant,state,content_type,size_bytes,sha256,created_at,updated_at';
 const exposed=r=>({receipt_id:r.receipt_id,receipt_ref:r.receipt_ref,date:r.receipt_date,
  merchant:r.merchant,state:r.state,content_type:r.content_type,
- size_bytes:r.size_bytes,created_at:r.created_at,updated_at:r.updated_at});
+ size_bytes:r.size_bytes,created_at:r.created_at,updated_at:r.updated_at,
+ linked_entry_id:Number(r.linked_entry_id)||null});
 const isDate=s=>typeof s==='string'&&/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s)&&
  new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
 const safeString=(x,n)=>typeof x==='string'&&x.length<=n&&[...x].every(y=>y.charCodeAt(0)>=32);
@@ -62,9 +63,20 @@ async function objectKey(user,id){
  return 'member/v1/'+scope+'/'+id;
 }
 async function list(req,e,user){
- const items=(await e.DB.prepare('SELECT '+fields+' FROM family_member_receipts '+
-  "WHERE household_id=? AND owner_user_id=? AND state='ready' "+
-  'ORDER BY created_at DESC,receipt_id DESC LIMIT 1001')
+ // Read only confirmed posted entry IDs from each origin's OWN journal. A pending
+ // credit/prepaid approval never masquerades as a ledger entry.
+ const columns=fields.split(',').map(column=>'r.'+column).join(',');
+ const items=(await e.DB.prepare('SELECT '+columns+','+
+  'COALESCE(cp.entry_id,pp.entry_id) AS linked_entry_id '+
+  'FROM family_member_receipts r '+
+  "LEFT JOIN family_card_purchase_intents ci ON r.receipt_ref='request:'||ci.request_id "+
+  'AND ci.requester_user_id=r.owner_user_id AND ci.household_id=r.household_id '+
+  'LEFT JOIN family_card_purchase_applied cp ON cp.proposal_id=ci.request_id '+
+  "LEFT JOIN family_prepaid_action_intents pi ON r.receipt_ref='request:'||pi.request_id "+
+  "AND pi.requester_user_id=r.owner_user_id AND pi.household_id=r.household_id AND pi.action='spend' "+
+  'LEFT JOIN family_prepaid_actions_applied pp ON pp.proposal_id=pi.request_id '+
+  "WHERE r.household_id=? AND r.owner_user_id=? AND r.state='ready' "+
+  'ORDER BY r.created_at DESC,r.receipt_id DESC LIMIT 1001')
   .bind(user.household_id,user.user_id).all()).results||[];
  if(items.length>1000)return fail('MEMBER_RECEIPTS_LIMIT',413);
  return json({ok:true,scope:'personal',viewer_user_id:user.user_id,items:items.map(exposed)});

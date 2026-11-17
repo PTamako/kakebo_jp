@@ -10,7 +10,7 @@ const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'u
 test('privacy and backup no longer repeat receipt count, expiry or refresh controls',()=>{
   const privacy=finance.slice(finance.lastIndexOf('<template #privacy>'),finance.lastIndexOf('<template #backup>'))
   const backup=finance.slice(finance.lastIndexOf('<template #backup>'),finance.lastIndexOf('<template #duplicates>'))
-  assert.match(privacy,/ログイン状態の保存/)
+  assert.doesNotMatch(privacy,/ログイン状態の保存/)
   assert.match(privacy,/保存済みレシート画像/)
   assert.doesNotMatch(privacy,/非公開R2で保管・自動削除なし/)
   assert.doesNotMatch(privacy,/件数を更新/)

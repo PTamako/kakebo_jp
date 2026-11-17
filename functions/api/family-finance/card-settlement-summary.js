@@ -44,7 +44,9 @@ export async function memberCardLiabilities(db,household,settlementEnabled){
   'JOIN family_financial_accounts a ON a.account_id=g.account_id '+
   'LEFT JOIN paid ON paid.account_id=g.account_id AND paid.bill_month=g.bill_month '+
   'LEFT JOIN offsets ON offsets.account_id=g.account_id AND offsets.bill_month=g.bill_month '+
-  'WHERE a.household_id=? AND g.amount_jpy>0 AND g.purchases>0 ORDER BY g.bill_month DESC,g.account_id LIMIT 200':
+  'WHERE a.household_id=? AND (g.amount_jpy>0 AND g.purchases>0 '+
+  'OR COALESCE(paid.settled_jpy,0)>0 OR COALESCE(offsets.points_offset_jpy,0)>0) '+
+  'ORDER BY g.bill_month DESC,g.account_id LIMIT 200':
   'WITH gross AS ('+common+') '+
   'SELECT g.account_id,g.bill_month,g.amount_jpy,g.purchases,a.label,a.owner_user_id,'+
   '0 settled_jpy,0 points_offset_jpy FROM gross g JOIN family_financial_accounts a ON a.account_id=g.account_id '+
@@ -53,20 +55,26 @@ export async function memberCardLiabilities(db,household,settlementEnabled){
  const args=settlementEnabled?
   [...commonArgs,household,household,household,household]:[...commonArgs,household];
  const rows=(await db.prepare(sql).bind(...args).all()).results||[];
- const items=[];let total=0;
+ const items=[];let total=0,totalCredit=0;
  for(const x of rows){
   const gross=safe(x.amount_jpy),settled=safe(x.settled_jpy),pointsOffset=safe(x.points_offset_jpy),count=safe(x.purchases);
-  if(gross===null||settled===null||pointsOffset===null||count===null||
-   settled+pointsOffset>gross)return null;
-  const outstanding=gross-settled-pointsOffset;
-  total+=outstanding;
-  if(!Number.isSafeInteger(total))return null;
+  if(gross===null||settled===null||pointsOffset===null||count===null)return null;
+  // Real bank payments and redeemed points remain CREDIT on their real
+  // source card after a correction moves the purchase elsewhere. No fake
+  // bank refund or points issuance. Positive liability and unapplied credit
+  // are reported separately, so neither disappears from the balance sheet.
+  const net=gross-settled-pointsOffset;
+  const outstanding=Math.max(0,net),unappliedCredit=Math.max(0,-net);
+  total+=outstanding;totalCredit+=unappliedCredit;
+  if(!Number.isSafeInteger(total)||!Number.isSafeInteger(totalCredit))return null;
   items.push({account_id:x.account_id,account_label:x.label,owner_user_id:x.owner_user_id,
    closing_month:x.bill_month,gross_charges_jpy:gross,settled_jpy:settled,
-   points_offset_jpy:pointsOffset,
-   liability_jpy:outstanding,purchases:count,payment_due_date:null,
+   points_offset_jpy:pointsOffset,unapplied_card_credit_jpy:unappliedCredit,
+   liability_jpy:outstanding,net_position_jpy:net,purchases:count,payment_due_date:null,
    settlement_status:!settlementEnabled?'not_reconciled':
+    unappliedCredit>0?'unapplied_credit':
     outstanding===0?'settled':settled+pointsOffset>0?'partially_settled':'unsettled'});
  }
- return {items,total};
+ return {items,total,total_unapplied_card_credit_jpy:totalCredit,
+  net_card_position_jpy:total-totalCredit};
 }

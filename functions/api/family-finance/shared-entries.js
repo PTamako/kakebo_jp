@@ -257,6 +257,13 @@ export async function familySharedEntries(req,e,url,u,parts){
  if(!role)return fail('SHARED_ENTRY_CURRENT_IDENTITY_REQUIRED',403);
  const p=parts.slice(1),method=req.method;
  if(p.length>=2&&p[1]==='attachments')return familySharedAttachments(req,e,url,u,p);
+ if(!p.length&&method==='GET'&&url.searchParams.get('view')==='revision'){
+  const row=await e.DB.prepare('SELECT COUNT(*) AS count,COALESCE(MAX(updated_at),0) AS last,'+
+   'COALESCE(SUM(version),0) AS total_version FROM family_shared_entry_registry '+
+   'WHERE household_id=?').bind(u.household_id).first();
+  return json({ok:true,revision:String(row?.count||0)+':'+String(row?.last||0)+
+   ':'+String(row?.total_version||0),ledger_changed:false});
+ }
  if(!p.length&&method==='GET'&&url.searchParams.has('entry_id')){
   // The original owner editor can resolve a shared approval-backed row by
   // its immutable ledger ID before choosing the audited shared-write route.

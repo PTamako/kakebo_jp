@@ -12,7 +12,7 @@ function fixture(){
  const db=new DatabaseSync(':memory:')
  db.exec(`
  CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,merchant TEXT,family_account_id TEXT);
- CREATE TABLE family_financial_accounts(account_id TEXT PRIMARY KEY,owner_user_id TEXT);\n CREATE TABLE homeflow_identity_links(user_id TEXT PRIMARY KEY,household_id TEXT,display_name TEXT,role TEXT,state TEXT);
+ CREATE TABLE family_financial_accounts(account_id TEXT PRIMARY KEY,owner_user_id TEXT,account_kind TEXT,stat_group TEXT);\n CREATE TABLE homeflow_identity_links(user_id TEXT PRIMARY KEY,household_id TEXT,display_name TEXT,role TEXT,state TEXT);
  CREATE TABLE family_legacy_owner_claims(record_scope TEXT,record_key TEXT,household_id TEXT,owner_user_id TEXT,PRIMARY KEY(record_scope,record_key));
  CREATE TABLE family_shared_entry_registry(resource_id TEXT PRIMARY KEY,household_id TEXT,entry_id INTEGER,creator_user_id TEXT,state TEXT);
  CREATE TABLE family_legacy_card_spends(entry_id INTEGER PRIMARY KEY,household_id TEXT,actor_user_id TEXT);

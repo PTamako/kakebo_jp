@@ -51,7 +51,7 @@ function fixture({accountCorrections=false}={}){
  if(accountCorrections)sql.exec("CREATE TRIGGER trg_family_card_purchase_entry_no_update BEFORE UPDATE ON entries "+
   "WHEN EXISTS(SELECT 1 FROM family_card_purchase_applied p WHERE p.entry_id=OLD.id) "+
   "BEGIN SELECT RAISE(ABORT,'CARD_PURCHASE_ENTRY_IMMUTABLE'); END");
- for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql','0074_member_neutral_spouse_revision.sql',...(accountCorrections?['0100_approved_account_corrections.sql','0101_future_paid_entry_registration.sql','0102_future_paid_correction_serial_guards.sql','0105_future_card_correction_entry_guard.sql']:[])])
+ for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql','0074_member_neutral_spouse_revision.sql',...(accountCorrections?['0100_approved_account_corrections.sql','0101_future_paid_entry_registration.sql','0102_future_paid_correction_serial_guards.sql','0105_future_card_correction_entry_guard.sql','0106_owner_account_correction_journal.sql']:[])])
   sql.exec(readFileSync(new URL('../migrations/'+version,import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,?,'active')").run(u,hh,role)
@@ -865,5 +865,45 @@ test('future prepaid card to cash refunds and later recharges without changing o
   assert.equal((await f.target('execute',back)).status,200)
   assert.equal((await memberPrepaidBalances(f.env.DB,hh)).total_jpy,200)
   assert.equal(f.sql.prepare('SELECT SUM(delta_jpy) v FROM family_approved_account_effects').get().v,-100)
+ }finally{f.close()}
+})
+
+
+test('administrator edits spouse private card household expense without changing card ownership',async()=>{
+ const f=fixture({accountCorrections:true})
+ try{
+  const {resourceId,entryId,accountId}=await seedFuturePaid(f)
+  const url=new URL('https://kakeibo.example.test/api/family-finance/shared-entries/'+resourceId)
+  const send=async (method,body,suffix='')=>{
+   const target=new URL(url.href+suffix)
+   const res=await familySharedEntries(new Request(target,{method,
+    headers:{origin:target.origin,'content-type':'application/json'},
+    body:JSON.stringify({expected_user_id:owner,...body})}),f.env,target,f.ownerUser,
+     ['shared-entries',resourceId,...(suffix?['restore']:[])])
+   return {status:res.status,data:await res.json()}
+  }
+  const corrected={date:'2026-11-19',time:'',amount:1350,type:'expense',
+   category:'日用品',merchant:'新交易',note:'管理员核验'}
+  const response=await send('PUT',{expected_version:1,entry:corrected})
+  assert.equal(response.status,200,JSON.stringify(response))
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,1350)
+  assert.equal(f.sql.prepare('SELECT family_account_id FROM entries WHERE id=?').get(entryId).family_account_id,accountId)
+  assert.equal((await memberCardLiabilities(f.env.DB,hh,false)).total,1350)
+  assert.equal(f.count('family_owner_account_corrections'),1)
+  assert.equal(f.sql.prepare('SELECT SUM(delta_jpy) n FROM family_owner_account_effects').get().n,350)
+  const denied=await send('PUT',{expected_version:2,entry:{...corrected,payment_source:''}})
+  assert.equal(denied.status,409)
+  assert.equal(f.count('family_owner_account_corrections'),1)
+  const deleted=await send('DELETE',{expected_version:2})
+  assert.equal(deleted.status,200,JSON.stringify(deleted))
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,0)
+  assert.equal((await memberCardLiabilities(f.env.DB,hh,false)).total,0)
+  const restored=await send('POST',{expected_version:3},'/restore')
+  assert.equal(restored.status,200,JSON.stringify(restored))
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,1350)
+  assert.equal((await memberCardLiabilities(f.env.DB,hh,false)).total,1350)
+  assert.equal(f.count('family_owner_account_corrections'),3)
+  assert.equal(f.sql.prepare('SELECT SUM(delta_jpy) n FROM family_owner_account_effects').get().n,350)
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_card_purchase_applied').get().n,1)
  }finally{f.close()}
 })

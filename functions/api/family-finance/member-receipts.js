@@ -37,7 +37,7 @@ async function referenceOwned(db,user,ref){
  if(kind==='proposal'&&ID.test(value)){
   return !!await first(db,"SELECT 1 FROM family_shared_mutation_intents WHERE "+
    "proposal_id=? AND requester_user_id=? AND household_id=? AND operation='create' "+
-   "AND status IN('submitted','prepared')",value,user.user_id,user.household_id);
+   "AND status IN('submitted','prepared','applied')",value,user.user_id,user.household_id);
  }
  if(kind==='entry'&&/^[1-9]\d{0,14}$/.test(value)&&Number.isSafeInteger(Number(value))){
   return !!await first(db,"SELECT 1 FROM family_legacy_card_spends "+
@@ -67,7 +67,7 @@ async function list(req,e,user){
  // credit/prepaid approval never masquerades as a ledger entry.
  const columns=fields.split(',').map(column=>'r.'+column).join(',');
  const items=(await e.DB.prepare('SELECT '+columns+','+
-  'COALESCE(cp.entry_id,pp.entry_id) AS linked_entry_id '+
+  'COALESCE(cp.entry_id,pp.entry_id,ma.entry_id) AS linked_entry_id '+
   'FROM family_member_receipts r '+
   "LEFT JOIN family_card_purchase_intents ci ON r.receipt_ref='request:'||ci.request_id "+
   'AND ci.requester_user_id=r.owner_user_id AND ci.household_id=r.household_id '+
@@ -75,6 +75,11 @@ async function list(req,e,user){
   "LEFT JOIN family_prepaid_action_intents pi ON r.receipt_ref='request:'||pi.request_id "+
   "AND pi.requester_user_id=r.owner_user_id AND pi.household_id=r.household_id AND pi.action='spend' "+
   'LEFT JOIN family_prepaid_actions_applied pp ON pp.proposal_id=pi.request_id '+
+  "LEFT JOIN family_shared_mutation_intents mi ON r.receipt_ref='proposal:'||mi.proposal_id "+
+  "AND mi.requester_user_id=r.owner_user_id AND mi.household_id=r.household_id AND mi.operation='create' "+
+  'LEFT JOIN family_shared_mutation_applied ma ON ma.proposal_id=mi.proposal_id '+
+  'AND ma.requester_user_id=r.owner_user_id AND ma.household_id=r.household_id '+
+  "AND ma.action='create' "+
   "WHERE r.household_id=? AND r.owner_user_id=? AND r.state='ready' "+
   'ORDER BY r.created_at DESC,r.receipt_id DESC LIMIT 1001')
   .bind(user.household_id,user.user_id).all()).results||[];

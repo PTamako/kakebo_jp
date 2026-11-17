@@ -279,8 +279,7 @@ async function write(e,p,b,approval,payload){
   const result=await db.batch(stmts);
   if(result.length!==stmts.length||result.some(x=>x.meta?.changes!==1))
    return fail('SHARED_MUTATION_ATOMIC_CONFIRMATION_REQUIRED',503);
- }catch(cause){
-  console.error('SHARED_MUTATION_SQL_BATCH_ERROR',String(cause?.message||'unavailable'));
+ }catch{
   const previous=await db.prepare('SELECT * FROM family_shared_mutation_applied WHERE homeflow_request_id=?')
    .bind(b.request_id).first().catch(()=>null);
   return same(previous,b)?receipt(db,previous,b,true):fail('SHARED_MUTATION_BATCH_ROLLED_BACK',503);

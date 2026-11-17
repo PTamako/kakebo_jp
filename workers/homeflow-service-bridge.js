@@ -20,7 +20,7 @@ async function envSafeSum(db,start,end){
   const row=await db.prepare(`SELECT
     COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) AS income,
     COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense
-    FROM entries WHERE date>=?1 AND date<=?2 AND type IN ('income','expense')`)
+    FROM entries WHERE NOT (amount=0 AND (COALESCE(client_request_id,\'\') LIKE \'hfcard:%\' OR COALESCE(client_request_id,\'\') LIKE \'hfprepaid:%\')) AND date>=?1 AND date<=?2 AND type IN ('income','expense')`)
     .bind(start,end).first()
   const income=Number(row?.income||0),expense=Number(row?.expense||0)
   if(!Number.isSafeInteger(income)||!Number.isSafeInteger(expense))

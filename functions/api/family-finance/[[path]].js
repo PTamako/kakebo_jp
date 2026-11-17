@@ -280,14 +280,17 @@ async function entries(env,user,url){
   't.owner_user_id AS transfer_target_account_owner_user_id,'+
   ledgerRecorderColumns+',ls.actor_user_id AS shared_card_actor_user_id,'+
   'member_intent.requester_user_id AS shared_entry_requester_user_id,'+
-  'sr.creator_user_id AS shared_record_creator_user_id '+
+  'sr.creator_user_id AS shared_record_creator_user_id,'+
+  "CASE WHEN e.client_request_id LIKE 'hfcard:%' OR e.client_request_id LIKE 'hfprepaid:%' "+
+  'THEN sr.creator_user_id ELSE NULL END AS future_paid_owner_user_id '+
   'FROM entries e LEFT JOIN family_financial_accounts a '+
   'ON a.account_id=e.family_account_id '+
   'LEFT JOIN payment_sources p ON p.name=e.payment_source '+
   'LEFT JOIN family_financial_accounts t '+
   'ON t.account_id=e.family_transfer_target_account_id '+
   ledgerRecorderJoins+' '+
-  ((period||annual)?'WHERE e.date >= ? AND e.date < ? ':'')+
+  'WHERE NOT (e.amount=0 AND (COALESCE(e.client_request_id,\'\') LIKE \'hfcard:%\' OR COALESCE(e.client_request_id,\'\') LIKE \'hfprepaid:%\')) '+
+  ((period||annual)?'AND e.date >= ? AND e.date < ? ':'')+
   'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',
   ...((period||annual)?[lower,upper]:[]),limit+1,offset);
  // Household ledger payment names are visible to both spouses for
@@ -320,11 +323,13 @@ async function entries(env,user,url){
    transfer_target_display:visibleTarget||'未設定',
    payment_account_owner_user_id:ownSource?user.user_id:null,
    transfer_target_account_owner_user_id:ownTarget?user.user_id:null,
-   shared_record_creator_user_id:r.shared_record_creator_user_id===user.user_id?user.user_id:null};
+   shared_record_creator_user_id:r.shared_record_creator_user_id===user.user_id?user.user_id:null,
+   future_paid_owner_user_id:r.future_paid_owner_user_id===user.user_id?user.user_id:null};
  });
  return json({ok:true,household_id:user.household_id,items,
   next_offset:rows.length>limit?offset+limit:null,ledger_scope:'household',
   payment_reassignment_enabled:env.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED==='true',
+  account_corrections_enabled:env.KAKEIBO_ACCOUNT_CORRECTIONS_ENABLED==='true',
   private_payment_sources_redacted:user.role!=='owner'});
 }
 async function totals(env,user,url){
@@ -332,7 +337,7 @@ async function totals(env,user,url){
  if(!/^(19|20)\d{2}-(0[1-9]|1[0-2])$/.test(month||''))
   return json({code:'INVALID_MONTH'},400);
  const types=await all(env.DB,'SELECT type,COALESCE(SUM(amount),0) amount,'+
-  'COUNT(*) count FROM entries WHERE substr(date,1,7)=? GROUP BY type',month);
+  'COUNT(*) count FROM entries WHERE NOT (amount=0 AND (COALESCE(client_request_id,\'\') LIKE \'hfcard:%\' OR COALESCE(client_request_id,\'\') LIKE \'hfprepaid:%\')) AND substr(date,1,7)=? GROUP BY type',month);
  const byType={income:0,expense:0,transfer:0};
  const count={income:0,expense:0,transfer:0};
  for(const x of types)if(Object.hasOwn(byType,x.type)){
@@ -361,15 +366,15 @@ async function yearSummary(env,user,url){
  const [monthly,byCategory,byPayment]=await Promise.all([
   all(env.DB,`SELECT substr(date,1,7) month,type,
     COALESCE(SUM(amount),0) amount,COUNT(*) count
-    FROM entries WHERE date>=? AND date<?
+    FROM entries WHERE NOT (amount=0 AND (COALESCE(client_request_id,\'\') LIKE \'hfcard:%\' OR COALESCE(client_request_id,\'\') LIKE \'hfprepaid:%\')) AND date>=? AND date<?
     GROUP BY substr(date,1,7),type ORDER BY month,type`,start,end),
   all(env.DB,`SELECT type,COALESCE(category,'') category,
     COALESCE(SUM(amount),0) amount,COUNT(*) count
-    FROM entries WHERE date>=? AND date<? AND type IN ('income','expense')
+    FROM entries WHERE NOT (amount=0 AND (COALESCE(client_request_id,\'\') LIKE \'hfcard:%\' OR COALESCE(client_request_id,\'\') LIKE \'hfprepaid:%\')) AND date>=? AND date<? AND type IN ('income','expense')
     GROUP BY type,category ORDER BY type,category`,start,end),
   all(env.DB,`SELECT type,COALESCE(payment_source,'') payment_source,
     COALESCE(SUM(amount),0) amount,COUNT(*) count
-    FROM entries WHERE date>=? AND date<? AND type IN ('income','expense')
+    FROM entries WHERE NOT (amount=0 AND (COALESCE(client_request_id,\'\') LIKE \'hfcard:%\' OR COALESCE(client_request_id,\'\') LIKE \'hfprepaid:%\')) AND date>=? AND date<? AND type IN ('income','expense')
     GROUP BY type,payment_source ORDER BY type,payment_source`,start,end)
  ]);
  const safeValue=v=>{

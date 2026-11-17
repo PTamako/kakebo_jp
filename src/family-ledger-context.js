@@ -193,6 +193,8 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
    rewardDisplay:ledgerTransferTargetLabel(entry),rewardReadOnly:true,
    originalType:entry.type,allReadOnly:payment?.allReadOnly??false,
    isOwnRecorded:payment?.isOwnRecorded??false,
+   restrictToPersonalPayment:payment?.restrictToPersonalPayment??false,
+   restrictToSharedCash:payment?.restrictToSharedCash??false,
    payment_source:null}
   swipedEntryId.value=null
  }

@@ -27,11 +27,11 @@ export async function familyMemberCardUsage(req,env,url,user,parts){
   // The current, actually posted physical row is authoritative after approved edits
   // and deletes. Never sum the immutable original intent as a second expense.
   const entries=(await db.prepare("SELECT id,date,merchant,category,amount FROM entries "+
-   "WHERE family_account_id=? AND type='expense' AND date>=? AND date<=? "+
+   "WHERE family_account_id=? AND type='expense' AND amount>0 AND date>=? AND date<=? "+
    "ORDER BY date DESC,id DESC LIMIT 201")
    .bind(account.account_id,period.start,period.end).all()).results||[]
   const total=await db.prepare("SELECT COUNT(*) count,COALESCE(SUM(amount),0) amount "+
-   "FROM entries WHERE family_account_id=? AND type='expense' AND date>=? AND date<=?")
+   "FROM entries WHERE family_account_id=? AND type='expense' AND amount>0 AND date>=? AND date<=?")
    .bind(account.account_id,period.start,period.end).first()
   const amount=safe(total?.amount),count=safe(total?.count)
   if(amount===null||count===null)return reply({ok:false,code:'CARD_USAGE_INVALID_SUM'},409)

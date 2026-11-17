@@ -4,7 +4,19 @@
 const safe=x=>Number.isSafeInteger(Number(x))&&Number(x)>=0?Number(x):null;
 export async function memberCardLiabilities(db,household,settlementEnabled){
  if(!household||typeof household!=='string')return null;
- const common='SELECT p.account_id,p.bill_month,COALESCE(SUM(p.amount_jpy),0) amount_jpy,'+
+ // Keep immutable original charges, then apply ONLY owner-approved,
+ // signed adjustment effects. No direct mutation of the purchase evidence.
+ const hasCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
+  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first();
+ const common=hasCorrections?
+  'SELECT x.account_id,x.bill_month,COALESCE(SUM(x.amount_jpy),0) amount_jpy,'+
+   'SUM(x.purchases) purchases FROM ('+
+   'SELECT p.account_id,p.bill_month,p.amount_jpy,1 purchases '+
+   'FROM family_card_purchase_applied p WHERE p.household_id=? UNION ALL '+
+   "SELECT e.account_id,e.bill_month,e.delta_jpy,e.purchase_count_delta "+
+   "FROM family_approved_account_effects e WHERE e.household_id=? AND e.account_kind='credit_card'"+
+   ') x GROUP BY x.account_id,x.bill_month':
+  'SELECT p.account_id,p.bill_month,COALESCE(SUM(p.amount_jpy),0) amount_jpy,'+
    'COUNT(*) purchases FROM family_card_purchase_applied p '+
    'WHERE p.household_id=? GROUP BY p.account_id,p.bill_month';
  const sql=settlementEnabled?
@@ -27,12 +39,14 @@ export async function memberCardLiabilities(db,household,settlementEnabled){
   'JOIN family_financial_accounts a ON a.account_id=g.account_id '+
   'LEFT JOIN paid ON paid.account_id=g.account_id AND paid.bill_month=g.bill_month '+
   'LEFT JOIN offsets ON offsets.account_id=g.account_id AND offsets.bill_month=g.bill_month '+
-  'WHERE a.household_id=? ORDER BY g.bill_month DESC,g.account_id LIMIT 200':
+  'WHERE a.household_id=? AND g.amount_jpy>0 AND g.purchases>0 ORDER BY g.bill_month DESC,g.account_id LIMIT 200':
   'WITH gross AS ('+common+') '+
   'SELECT g.account_id,g.bill_month,g.amount_jpy,g.purchases,a.label,a.owner_user_id,'+
   '0 settled_jpy,0 points_offset_jpy FROM gross g JOIN family_financial_accounts a ON a.account_id=g.account_id '+
-  'WHERE a.household_id=? ORDER BY g.bill_month DESC,g.account_id LIMIT 200';
- const args=settlementEnabled?[household,household,household,household,household]:[household,household];
+  'WHERE a.household_id=? AND g.amount_jpy>0 AND g.purchases>0 ORDER BY g.bill_month DESC,g.account_id LIMIT 200';
+ const commonArgs=hasCorrections?[household,household]:[household];
+ const args=settlementEnabled?
+  [...commonArgs,household,household,household,household]:[...commonArgs,household];
  const rows=(await db.prepare(sql).bind(...args).all()).results||[];
  const items=[];let total=0;
  for(const x of rows){

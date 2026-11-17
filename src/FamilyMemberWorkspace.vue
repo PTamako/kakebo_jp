@@ -214,12 +214,12 @@ const kindLabel=x=>kinds.find(k=>k[0]===x)?.[1]||'口座'
 const yen=n=>n===null||n===undefined?'—':'¥'+Number(n).toLocaleString('ja-JP')
 const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.user.user_id))
 const memberPaymentOptions=computed(()=>buildMemberPaymentChoices(myAccounts.value,sharedCards.value))
-// Household ledger edit can reassign this member's own cash/shared-card charge.
-// Personal card purchases carry a separate immutable liability journal and
-// must never be relabeled by the ordinary shared-entry approval endpoint.
-const memberLedgerPaymentOptions=computed(()=>memberPaymentOptions.value.filter(
- x=>x.value==='cash'||x.value.startsWith('shared:')))
+// Same original ledger editor for both spouses. Personal account selection
+// is allowed only for its authenticated creator and goes through the signed
+// account-correction executor, never ordinary text relabeling.
+const memberLedgerPaymentOptions=computed(()=>memberPaymentOptions.value)
 const memberPaymentReassignmentEnabled=ref(false)
+const memberAccountCorrectionEnabled=ref(false)
 provide('kakeibo-member-payment-choices',memberLedgerPaymentOptions)
 function memberPaymentEditor(entry){
  if(entry?.document_personal_sbi)return {paymentReadOnly:true,paymentSource:'',
@@ -231,14 +231,22 @@ function memberPaymentEditor(entry){
   // Neutral transfers are personal: a member cannot change the other person's.
   allReadOnly:entry.transfer_target!=='spouse'||!isOwn
  }
+ if(entry?.type==='expense'&&memberAccountCorrectionEnabled.value&&
+   entry.future_paid_owner_user_id===props.user.user_id){
+  const a=myAccounts.value.find(x=>x.account_id===entry.family_account_id&&
+   ['credit_card','prepaid'].includes(x.account_kind)&&!x.is_archived);
+  if(a||!entry.family_account_id)return {paymentReadOnly:false,
+   paymentSource:a?'personal:'+a.account_id:'cash',isOwnRecorded:true,
+   restrictToPersonalPayment:true};
+ }
  const own=memberPaymentReassignmentEnabled.value&&entry?.type==='expense'&&
   entry.shared_entry_requester_user_id===props.user.user_id&&
   !entry.family_account_id
  if(!own)return {paymentReadOnly:true,paymentSource:ledgerPaymentLabel(entry),
-  isOwnRecorded:isOwn}
+  isOwnRecorded:isOwn,restrictToSharedCash:true}
  const source=typeof entry.payment_source==='string'?entry.payment_source:''
  return {paymentReadOnly:false,paymentSource:source?'shared:'+source:'cash',
-  isOwnRecorded:isOwn}
+  isOwnRecorded:isOwn,restrictToSharedCash:true}
 }
 function memberRuleFor(merchant){
  const text=String(merchant||'').normalize('NFKC').trim().toLowerCase()
@@ -726,13 +734,22 @@ async function saveMemberLedgerEdit(){
  const paymentChanged=edited.type==='expense'&&!edited.paymentReadOnly&&
   edited.paymentSource!==edited.paymentOriginalChoice
  if(paymentChanged){
-  if(initial.shared_entry_requester_user_id!==props.user.user_id||
-   initial.family_account_id||edited.paymentReadOnly)
-  {memberLedger.receiptSaveError.value='他の人の支払方法を変更できません';return}
   const selected=resolveMemberPayment(edited.paymentSource,myAccounts.value,sharedCards.value)
-  if(!selected||!['cash','shared'].includes(selected.kind))
-  {memberLedger.receiptSaveError.value='現金または有効な共有カードを選択してください';return}
-  edited.payment_source=selected.kind==='shared'?selected.card.card_name:''
+  if(initial.future_paid_owner_user_id===props.user.user_id&&
+     memberAccountCorrectionEnabled.value){
+   if(edited.paymentReadOnly||!selected||!['personal','cash'].includes(selected.kind))
+   {memberLedger.receiptSaveError.value='本人のカードまたは現金を選択してください';return}
+   edited.payment_source=selected.kind==='cash'?'':(
+    (selected.account.account_kind==='credit_card'?'cc:':'prepaid:')+
+    selected.account.account_id)
+  }else if(initial.family_account_id){
+   memberLedger.receiptSaveError.value='個人カードの変更権限がありません';return
+  }else{
+   if(initial.shared_entry_requester_user_id!==props.user.user_id||
+     edited.paymentReadOnly||!selected||!['cash','shared'].includes(selected.kind))
+   {memberLedger.receiptSaveError.value='他の人の支払方法を変更できません';return}
+   edited.payment_source=selected.kind==='shared'?selected.card.card_name:''
+  }
  }
  if(initial.type==='expense'&&initial.payment_source&&edited.type!=='expense'){
   memberLedger.receiptSaveError.value='カード決済を収入に変更できません';return
@@ -1039,6 +1056,7 @@ async function refresh(){
   if(nextPersonalOffset!==null)throw Error('本人の資産移動履歴の件数が多すぎます')
   personalDocumentSbi.value=personalTransfers;
   memberPaymentReassignmentEnabled.value=c.payment_reassignment_enabled===true;
+  memberAccountCorrectionEnabled.value=c.account_corrections_enabled===true;
   await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories()])
   monthlyReport.value={...d,
    transferTotal:Number(d.transferTotal||0)+personalSbiResult.transfer_total_jpy,

@@ -144,12 +144,17 @@ async function reversibleOriginal(db,user,x){
    "AND origin='member_created' AND opening_balance=0 AND is_archived=0 AND version=?")
    .bind(old.target_account_id,user.household_id,user.user_id,old.prepaid_version).first();
   if(!target)return false;
+  const corrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
+   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first()
+  const effect=corrections?
+   "+COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects WHERE account_id=? AND account_kind='prepaid'),0)":""
   const balance=await db.prepare('SELECT COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal '+
-   'WHERE prepaid_account_id=?),0)+COALESCE((SELECT SUM(amount_jpy) '+
+   'WHERE prepaid_account_id=?),0)'+effect+'+COALESCE((SELECT SUM(amount_jpy) '+
    'FROM family_points_prepaid_credits WHERE prepaid_account_id=?),0)'+
    '-COALESCE((SELECT SUM(debited_prepaid_jpy) FROM family_points_prepaid_refunds '+
    'WHERE prepaid_account_id=?),0) AS jpy')
-   .bind(old.target_account_id,old.target_account_id,old.target_account_id).first();
+   .bind(old.target_account_id,...(corrections?[old.target_account_id]:[]),
+    old.target_account_id,old.target_account_id).first();
   return Number.isSafeInteger(balance?.jpy)&&balance.jpy>=old.prepaid_refund_amount;
  }
  if(old.operation==='offset_card'){

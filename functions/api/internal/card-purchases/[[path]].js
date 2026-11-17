@@ -1,3 +1,4 @@
+import {futurePaidRegistrationCommands} from '../future-paid-registration.js';
 // P0-4: signed HomeFlow-approved member credit-card purchase.
 // A card charge is a shared EXPENSE plus a separate account-scoped LIABILITY,
 // NOT a cash debit, card settlement, prepaid deposit, points credit or SBI buy.
@@ -157,6 +158,11 @@ export async function approvedCardPurchaseRoute(req,env,parts){
  const billMonth=cardClosingMonth(p.date,row.closing_day),
   clientId='hfcard:'+b.request_id,at=Date.now();
  if(!billMonth)return fail('CARD_BILL_PERIOD_INVALID');
+ const registry=env.KAKEIBO_ACCOUNT_CORRECTIONS_ENABLED==='true'?
+  await futurePaidRegistrationCommands(db,{householdId:b.household_id,
+   memberUserId:b.requester_user_id,requestId:b.request_id,kind:'credit_card',
+   accountId:row.account_id,date:p.date,amount:p.amount_jpy,category:p.category,
+   merchant:p.merchant,note:p.note,at}):null;
  try{
   const changes=await db.batch([
    db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,'+
@@ -190,9 +196,11 @@ export async function approvedCardPurchaseRoute(req,env,parts){
     'event_id,homeflow_request_id,requester_user_id,approver_user_id,action,created_at) '+
     "SELECT ?,?,?,?,'credit_card_purchase_applied',? "+
     'WHERE changes()=1')
-    .bind(newid(),b.request_id,b.requester_user_id,approved.approver_user_id,at)
+    .bind(newid(),b.request_id,b.requester_user_id,approved.approver_user_id,at),
+   ...(registry?.statements||[])
   ]);
-  if(changes.length!==3||changes.some(x=>x.meta?.changes!==1))
+  if(changes.length!==(3+(registry?.statements.length||0))||
+    changes.some(x=>x.meta?.changes!==1))
    return fail('CARD_TRANSACTION_UNCONFIRMED',503);
  }catch{
   const raced=await db.prepare('SELECT * FROM family_card_purchase_applied WHERE homeflow_request_id=?')

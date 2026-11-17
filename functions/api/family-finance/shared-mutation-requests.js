@@ -138,10 +138,14 @@ async function prepare(req,e,url,u){
     return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
   }
   if(x.operation==='update'&&Object.hasOwn(entry,'payment_source')&&!personalPayment){
-   const applied=await e.DB.prepare(
+   const current=await e.DB.prepare('SELECT client_request_id FROM entries WHERE id=? LIMIT 1')
+    .bind(reg.entry_id).first();
+   const signedPaid=/^hf(?:card|prepaid):[a-f0-9-]{36}$/.test(current?.client_request_id||'');
+   const applied=signedPaid?await e.DB.prepare(
     "SELECT requester_user_id FROM (SELECT entry_id,requester_user_id FROM family_card_purchase_applied "+
     "UNION ALL SELECT entry_id,requester_user_id FROM family_prepaid_actions_applied WHERE action='spend') "+
-    "WHERE entry_id=? LIMIT 1").bind(reg.entry_id).first();
+    "WHERE entry_id=? LIMIT 1").bind(reg.entry_id).first():null;
+   if(signedPaid&&!applied)return fail('CORRECTION_ORIGINAL_RECEIPT_MISSING',409);
    if(applied){
     // The immutable paid receipt remains the owner after a card -> cash move.
     // Only its original spending member may request cash; no shared-card

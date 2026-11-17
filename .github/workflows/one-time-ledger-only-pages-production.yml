@@ -8,7 +8,7 @@ permissions:
   contents: read
 jobs:
   production:
-    if: ${{ startsWith(github.event.head_commit.message, 'deploy(kakeibo): publish ledger-only release') }}
+    if: "${{ startsWith(github.event.head_commit.message, 'deploy(kakeibo): publish ledger-only release') }}"
     environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 30

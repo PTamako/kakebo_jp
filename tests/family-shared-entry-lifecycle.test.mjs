@@ -265,3 +265,34 @@ test('one spouse transfer is exactly one shared transfer row, never spouse incom
   assert.equal(f.count('family_shared_entry_audit'),4);
  }finally{f.close()}
 });
+
+test('original owner editor resolves a shared protected entry ID without changing the ledger',async()=>{
+ const f=fixture();try{
+  const item=await f.create();
+  const target=new URL(url);target.searchParams.set('entry_id',String(item.entry_id))
+  const response=await familySharedEntries(new Request(target),f.env,target,f.owner,['shared-entries'])
+  assert.equal(response.status,200)
+  const value=await response.json()
+  assert.equal(value.action.entry_id,item.entry_id)
+  assert.equal(value.action.resource_id,item.resource_id)
+  assert.equal(value.ledger_changed,false)
+  assert.equal(f.count('entries'),1)
+ }finally{f.close()}
+})
+test('household scoped revision changes after owner CAS update and avoids full ledger transfer',async()=>{
+ const f=fixture();try{
+  const target=new URL(url);target.searchParams.set('view','revision')
+  const read=async()=>{const r=await familySharedEntries(new Request(target),f.env,target,f.owner,['shared-entries']);return r.json()}
+  const start=await read()
+  const item=await f.create(),afterCreate=await read()
+  assert.notEqual(start.revision,afterCreate.revision)
+  await f.invoke('PUT',['shared-entries',item.resource_id],{
+   expected_user_id:owner,expected_version:item.version,
+   entry:{...sample,amount:1600}
+  })
+  const afterUpdate=await read()
+  assert.notEqual(afterCreate.revision,afterUpdate.revision)
+  assert.equal(afterUpdate.ledger_changed,false)
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,1600)
+ }finally{f.close()}
+})

@@ -88,7 +88,22 @@ async function prepare(req,e,url,u){
  // never converted into a pending owner review by an old cached PWA.
  if(x.operation==='create'&&entry?.type==='transfer')
   return fail('NEUTRAL_SPOUSE_TRANSFER_NO_OWNER_REVIEW',410);
- if(entry?.payment_source){
+ const personalPayment=entry?.payment_source&&
+  /^(?:cc|prepaid):[a-f0-9]{32}$/.test(entry.payment_source);
+ if(personalPayment){
+  if(x.operation!=='update'||e.KAKEIBO_ACCOUNT_CORRECTIONS_ENABLED!=='true')
+   return fail('CORRECTION_EXECUTOR_DISABLED',503);
+  const selected=await e.DB.prepare(
+   'SELECT account_id,account_kind FROM family_financial_accounts '+
+   "WHERE account_id=? AND household_id=? AND owner_user_id=? "+
+   "AND account_kind IN ('credit_card','prepaid') AND origin='member_created' "+
+   'AND is_archived=0 LIMIT 1')
+   .bind(entry.payment_source.split(':')[1],u.household_id,u.user_id).first();
+  if(!selected||entry.payment_source!==
+   (selected.account_kind==='credit_card'?'cc:':'prepaid:')+selected.account_id)
+   return fail('CORRECTION_ACCOUNT_NOT_OWNED',403);
+ }
+ if(entry?.payment_source&&!personalPayment){
   const granted=await e.DB.prepare("SELECT 1 FROM family_legacy_card_shares s "+
    "JOIN payment_sources card ON card.name=s.card_name "+
    "JOIN homeflow_identity_links o ON o.user_id=s.owner_user_id "+
@@ -112,7 +127,17 @@ async function prepare(req,e,url,u){
   if(before?.type==='transfer'&&(before.transfer_target!=='spouse'||
    x.operation==='update'&&(entry.type!=='transfer'||entry.transfer_target!=='spouse')))
    return fail('SHARED_MUTATION_TRANSFER_TYPE_LOCKED',409);
-  if(x.operation==='update'&&Object.hasOwn(entry,'payment_source')){
+  if(x.operation==='update'&&personalPayment){
+   // Editing another person's card source is never granted by mere visibility.
+   const origin=await e.DB.prepare('SELECT requester_user_id FROM '+
+    "(SELECT entry_id,requester_user_id FROM family_card_purchase_applied "+
+    "UNION ALL SELECT entry_id,requester_user_id FROM family_prepaid_actions_applied "+
+    "WHERE action='spend') WHERE entry_id=? LIMIT 1")
+    .bind(reg.entry_id).first();
+   if(origin?.requester_user_id!==u.user_id)
+    return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
+  }
+  if(x.operation==='update'&&Object.hasOwn(entry,'payment_source')&&!personalPayment){
    // The private HomeFlow receiver must be deployed before accepting
    // requests that would otherwise be acknowledged but not applied.
    if(e.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED!=='true')

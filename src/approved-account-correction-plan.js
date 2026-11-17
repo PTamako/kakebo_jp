@@ -45,19 +45,18 @@ export function planAccountLinkedExpenseCorrection(input){
   fail('CORRECTION_OTHER_PERSON_ACCOUNT_READ_ONLY');
  const changed=before.amount!==after.amount||before.date!==after.date||
   before.accountId!==after.accountId;
- // Preserve immutable settlement and points receipts only if their actual
- // card and billing date remain unchanged, and the remaining gross charge
- // still covers the full allocated amount. Cross-card or date transfers
- // require separately approved immutable allocation reversals.
- if(changed&&(settledJpy!==0||offsetJpy!==0)){
-  if(!Number.isSafeInteger(settledJpy)||settledJpy<0||
-     !Number.isSafeInteger(offsetJpy)||offsetJpy<0)
-   fail('CORRECTION_ALLOCATION_INVALID');
-  if(!old||old.account_kind!=='credit_card'||!newer||
-     newer.account_id!==old.account_id||before.date!==after.date||
-     Number(after.amount)<settledJpy+offsetJpy)
-   fail('CORRECTION_EXISTING_ALLOCATION_REQUIRES_REVERSAL');
- }
+ // A bank transfer or redeemed points credit is an IMMUTABLE asset event,
+ // independent from the expense. If a later signed expense correction removes
+ // or moves the charge, the old card must show an unapplied CREDIT. It is not
+ // a bank refund and it is not a points refund: neither is fabricated here.
+ // Reversing the purchase liability is the only accounting effect in this
+ // plan; original settlement/points records remain on their real source card.
+ if(!Number.isSafeInteger(settledJpy)||settledJpy<0||
+    !Number.isSafeInteger(offsetJpy)||offsetJpy<0||
+    settledJpy>100000000||offsetJpy>100000000)
+  fail('CORRECTION_ALLOCATION_INVALID');
+ if((settledJpy>0||offsetJpy>0)&&old?.account_kind!=='credit_card')
+  fail('CORRECTION_ALLOCATION_SOURCE_INVALID');
  const effects=new Map();
  function post(a,amount,when,reverse){
   if(!a)return;
@@ -84,5 +83,6 @@ export function planAccountLinkedExpenseCorrection(input){
  return {changed,effects:deltas,
   ledgerAfter:{...after,amount:Number(after.amount)},
   // This plan is not itself a permission to post.
+  allocationPolicy:'preserve-original-bank-and-point-credit',
   requiresHomeFlowApproval:true,immutableOriginal:true};
 }

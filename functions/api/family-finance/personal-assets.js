@@ -35,7 +35,7 @@ export async function familyPersonalAssets(env,user){
    env.KAKEIBO_POINTS_ACTIONS_ENABLED==='true'
     ?memberPointsBalances(db,user.household_id):Promise.resolve({accounts:[]}),
    env.KAKEIBO_CARD_PURCHASES_ENABLED==='true'
-    ?memberCardLiabilities(db,user.household_id,env.KAKEIBO_CARD_SETTLEMENTS_ENABLED==='true')
+    ?memberCardLiabilities(db,user.household_id,true)
     :Promise.resolve({items:[]}),
    env.KAKEIBO_SBI_CASH_ENABLED==='true'
     ?memberSbiCashPositions(db,user.household_id):Promise.resolve({positions:[]})
@@ -65,6 +65,11 @@ export async function familyPersonalAssets(env,user){
     balance_units:pointAccount?.balance_units??null,
     credit_liability_jpy:a.account_kind==='credit_card'
      ?bills.reduce((sum,b)=>sum+b.liability_jpy,0):null,
+    // A real settlement/points offset on an original card may exceed the
+    // corrected card charge. Expose the unapplied asset credit separately;
+    // no fabricated bank/points refunds or spouse-private card access.
+    unapplied_card_credit_jpy:a.account_kind==='credit_card'
+     ?bills.reduce((sum,b)=>sum+(b.unapplied_card_credit_jpy||0),0):null,
     sbi_confirmed_cost_jpy:a.account_kind==='securities'
      ?lots.reduce((sum,l)=>sum+l.acquisition_cost_jpy,0):null,
     sbi_market_value_jpy:null,
@@ -75,6 +80,7 @@ export async function familyPersonalAssets(env,user){
   });
   if(accountRows.some(a=>(a.balance_jpy!==null&&!money(a.balance_jpy))||
       (a.credit_liability_jpy!==null&&!money(a.credit_liability_jpy))||
+      (a.unapplied_card_credit_jpy!==null&&!money(a.unapplied_card_credit_jpy))||
       (a.sbi_confirmed_cost_jpy!==null&&!money(a.sbi_confirmed_cost_jpy))))
    return json({code:'UNSAFE_PERSONAL_BALANCE'},409);
   return json({ok:true,scope:'personal',viewer_user_id:user.user_id,

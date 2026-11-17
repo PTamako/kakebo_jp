@@ -172,7 +172,7 @@ async function modify(req,e,url,u,id,action){
  if(action==='update'){
   // The original entry is authoritative for migrated legacy payment labels:
   // their protected snapshot may not contain payment_source at all.
-  const physical=await e.DB.prepare('SELECT payment_source FROM entries WHERE id=? LIMIT 1')
+  const physical=await e.DB.prepare('SELECT payment_source,family_account_id FROM entries WHERE id=? LIMIT 1')
    .bind(r.entry_id).first();
   if(!physical)return fail('SHARED_ENTRY_NOT_FOUND',404);
   const originalPayment=String(physical.payment_source||'');
@@ -186,11 +186,26 @@ async function modify(req,e,url,u,id,action){
    // Administrative authority to edit household totals does not transfer the
    // original member's right to choose their own payment source.
    if(paymentAfter!==originalPayment){
+    // Account-linked entries have a separate cash/card asset journal; a
+    // household-ledger revision may not silently reallocate that liability.
+    if(physical.family_account_id!==null)
+     return fail('ACCOUNT_LINKED_PAYMENT_REQUIRES_JOURNAL_CORRECTION',409);
     const origin=await e.DB.prepare('SELECT requester_user_id AS member_user_id '+
      "FROM family_shared_mutation_applied WHERE entry_id=? AND action='create' LIMIT 1")
      .bind(r.entry_id).first();
     if(origin?.member_user_id&&origin.member_user_id!==u.user_id)
      return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
+    // Older delegated-card purchases carry the spouse actor in the immutable
+    // spend log rather than the newer approved-mutation provenance journal.
+    const spendLogTable=await e.DB.prepare(
+     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='family_legacy_card_spends' LIMIT 1"
+    ).first();
+    if(spendLogTable){
+     const spender=await e.DB.prepare('SELECT actor_user_id FROM family_legacy_card_spends '+
+      'WHERE entry_id=? LIMIT 1').bind(r.entry_id).first();
+     if(spender?.actor_user_id&&spender.actor_user_id!==u.user_id)
+      return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
+    }
    }
    if(paymentAfter!==originalPayment&&!await availablePayment(e.DB,paymentAfter))
     return fail('SHARED_ENTRY_PAYMENT_NOT_AVAILABLE',409);

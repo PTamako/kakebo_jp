@@ -1553,7 +1553,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
        @click="retryMemberReceipt">画像を再送（{{memberReceiptRetry.length}}件）</button>
    </template>
    <template #member-backup>
-    <p class="help">個人設定を暗号化して保存（共有明細・画像は対象外）。</p>
+    <p class="help">本人用バックアップは2種類です。「本人の記録・レシート」は私有画像と監査証跡を含む証拠保管、「本人の設定」は個人設定のみです。家庭共有明細の完全復元と証券会社の実取引復元は含みません。</p>
     <div class="member-backup-actions">
      <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportMemberArchive">
      {{personalBackupBusy?'処理中…':'本人の記録・レシート・保有銘柄を暗号化保存'}}

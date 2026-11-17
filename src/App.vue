@@ -531,7 +531,13 @@ async function api(path, opt = {}) {
       paymentSources.value=[];paymentSourceMeta.value={}
       throw Error('请先以管理员 HomeFlow 账号重新登录，才能查看原有个人资产')
     }
-    // A different request may already have refreshed the session.
+    // Unified HomeFlow sessions must never fall back to a legacy access-code
+    // prompt when an ordinary API returns 401. Re-enter HomeFlow safely.
+    if (familyIdentity.value?.role === 'owner') {
+      onFamilyIdentityChange(null)
+      throw Error('HomeFlow の認証が切れました。もう一度ログインしてください')
+    }
+    // A different legacy request may already have refreshed the session.
     if (token.value !== requestToken) return api(path, opt)
     if (rejectedSession !== requestToken) {
       rejectedSession = requestToken

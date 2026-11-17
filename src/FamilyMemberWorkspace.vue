@@ -216,9 +216,10 @@ function memberPaymentEditor(entry){
  const isOwn=isOwnHouseholdEntry(entry,props.user.user_id)
  if(entry?.type==='transfer')return {
   paymentReadOnly:true,paymentSource:'',isOwnRecorded:isOwn,
-  // Only a neutral spouse transfer can be revised in the ordinary
-  // household ledger. It has no separately posted card/bank journal.
-  allReadOnly:!isOwn||entry.transfer_target!=='spouse'
+  transferReadOnly:!isOwn,
+  // Foreign neutral transfers still accept ordinary amount/date/note changes
+  // through HomeFlow review. Their spouse target remains read-only.
+  allReadOnly:entry.transfer_target!=='spouse'
  }
  const own=memberPaymentReassignmentEnabled.value&&entry?.type==='expense'&&
   entry.shared_entry_requester_user_id===props.user.user_id&&

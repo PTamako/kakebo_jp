@@ -209,9 +209,11 @@ const memberPaymentOptions=computed(()=>buildMemberPaymentChoices(myAccounts.val
 // must never be relabeled by the ordinary shared-entry approval endpoint.
 const memberLedgerPaymentOptions=computed(()=>memberPaymentOptions.value.filter(
  x=>x.value==='cash'||x.value.startsWith('shared:')))
+const memberPaymentReassignmentEnabled=ref(false)
 provide('kakeibo-member-payment-choices',memberLedgerPaymentOptions)
 function memberPaymentEditor(entry){
- const own=entry?.type==='expense'&&entry.shared_entry_requester_user_id===props.user.user_id&&
+ const own=memberPaymentReassignmentEnabled.value&&entry?.type==='expense'&&
+  entry.shared_entry_requester_user_id===props.user.user_id&&
   !entry.family_account_id
  if(!own)return {paymentReadOnly:true,paymentSource:ledgerPaymentLabel(entry)}
  const source=typeof entry.payment_source==='string'?entry.payment_source:''
@@ -827,6 +829,7 @@ async function refresh(){
   cardSharingError.value=f.share_error||''
   sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
+  memberPaymentReassignmentEnabled.value=c.payment_reassignment_enabled===true;
   await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories()])
   monthlyReport.value=d;annualReport.value=e
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}

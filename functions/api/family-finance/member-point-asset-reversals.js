@@ -140,7 +140,7 @@ export async function familyMemberPointAssetReversals(req,e,url,u,parts){
   const originalProof=await db.prepare('SELECT original_request_id FROM family_points_direct_asset_refund_proofs '+
    'WHERE original_request_id=?').bind(older.homeflow_request_id).first();
   if(originalProof)return fail('PERSONAL_POINT_REFUND_ALREADY_RECORDED');
-  const reference=await digest(u.household_id+'\0'+older.points_account_id+'\0'+
+  const refundHash=await digest(u.household_id+'\0'+older.points_account_id+'\0'+
    x.issuer_refund_reference.normalize('NFKC').trim());
   const otherHash=await digest(u.household_id+'\0'+older.target_account_id+'\0'+
    x.counterpart_reversal_reference.normalize('NFKC').trim());
@@ -152,7 +152,7 @@ export async function familyMemberPointAssetReversals(req,e,url,u,parts){
    target_version:target.version,units:-older.delta_units,
    yen_value:older.yen_value,rate_numerator:older.yen_per_unit_numerator,
    rate_denominator:older.yen_per_unit_denominator,
-   effective_date:x.effective_date,source_reference_hash:reference,
+   effective_date:x.effective_date,source_reference_hash:refundHash,
    counterpart_reference_hash:otherHash,
    ...(sbi?{broker_cancel_hash:brokerHash,
     broker_cancel_date:x.broker_cancel_date,
@@ -177,7 +177,7 @@ export async function familyMemberPointAssetReversals(req,e,url,u,parts){
    'sbi_refund_broker_date','sbi_refund_points_date'];
   const values=[requestId,u.household_id,u.user_id,older.points_account_id,
    source.version,'reversal',sha,cipher,iv,idem,'prepared',at,at+14*86400000,
-   older.homeflow_request_id,sbi?target.version:null,brokerHash,sbi?reference:null,
+   older.homeflow_request_id,sbi?target.version:null,brokerHash,sbi?refundHash:null,
    sbi?x.broker_cancel_date:null,sbi?x.points_returned_date:null];
   try{
    const results=await db.batch([
@@ -193,7 +193,7 @@ export async function familyMemberPointAssetReversals(req,e,url,u,parts){
      'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
      .bind(approvalId,requestId,older.homeflow_request_id,u.household_id,u.user_id,
       older.points_account_id,source.version,older.operation,older.target_account_id,
-      target.version,restored,older.yen_value,sha,reference,at),
+      target.version,restored,older.yen_value,sha,refundHash,at),
     db.prepare('INSERT INTO family_points_journal ('+
      'homeflow_request_id,proposal_id,household_id,requester_user_id,'+
      'approver_user_id,actor_user_id,points_account_id,account_version,operation,'+
@@ -204,7 +204,7 @@ export async function familyMemberPointAssetReversals(req,e,url,u,parts){
      .bind(approvalId,requestId,u.household_id,u.user_id,u.user_id,u.user_id,
       older.points_account_id,source.version,'reversal',restored,pointsNow+restored,
       older.yen_value,older.yen_per_unit_numerator,older.yen_per_unit_denominator,
-      older.target_account_id,older.linked_entry_id,null,reference,
+      older.target_account_id,older.linked_entry_id,null,refundHash,
       older.homeflow_request_id,sha,x.effective_date,at)
    ]);
    if(results.length!==4||results.some(z=>z.meta?.changes!==1))

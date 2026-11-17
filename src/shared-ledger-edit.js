@@ -27,3 +27,11 @@ export function sharedEditConfirmed(requested,response,beforeVersion){
   response.action?.state==='active'&&
   sameSharedEditValues(requested,response.action?.entry)
 }
+
+export function sharedDeleteConfirmed(receipt,expectedEntryId,beforeVersion){
+ return receipt?.ok===true&&receipt?.applied===true&&
+  receipt.action?.entry_id===Number(expectedEntryId)&&
+  receipt.action?.state==='deleted'&&
+  receipt.action?.version===beforeVersion+1&&
+  receipt.action?.entry!==null
+}

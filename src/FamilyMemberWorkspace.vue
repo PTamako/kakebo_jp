@@ -547,6 +547,43 @@ memberLedger.receiptImageIds=memberReceiptLedgerIds
 memberLedger.viewReceipt=viewMemberLedgerReceipt
 memberLedger.closeReceipt=closeMemberLedgerReceipt
 memberLedger.removeReceiptImage=removeMemberLedgerReceipt
+async function selectMemberEditReceipt(event){
+ const file=event.target?.files?.[0];if(event.target)event.target.value=''
+ const entry=memberLedger.editingEntry.value
+ if(!file||!entry||memberLedger.editSaving.value)return
+ try{
+  entry.receiptImage=await compressReceiptImage(file)
+  entry.receiptFileName=file.name
+  memberLedger.receiptSaveError.value=''
+ }catch(e){memberLedger.receiptSaveError.value='画像を添付できません：'+e.message}
+}
+async function saveMemberLedgerEdit(){
+ const edited=memberLedger.editingEntry.value
+ if(!edited||memberLedger.editSaving.value)return
+ const initial=sharedEntries.value.find(row=>String(row.id)===String(edited.id))
+ if(!initial||edited.pending_approval){
+  memberLedger.receiptSaveError.value='元の明細を確認してください';return
+ }
+ const fields=['date','time','amount','type','category','merchant','note']
+ const ledgerChanged=fields.some(key=>String(initial[key]??'')!==String(edited[key]??''))
+ if(!ledgerChanged&&!edited.receiptImage){memberLedger.cancelEdit();return}
+ memberLedger.editSaving.value=true;memberLedger.receiptSaveError.value=''
+ try{
+  if(edited.receiptImage){
+   const current=memberReceiptIndex.value.get('entry:'+edited.id)
+   await saveMemberReceipt(edited,'entry:'+edited.id)
+   if(current){
+    try{await deleteMemberReceipt(current.receipt_id)}
+    catch(e){memberReceiptError.value='古い画像を削除できません：'+e.message}
+   }
+  }
+  if(ledgerChanged)await openApproval('update',edited)
+  memberLedger.cancelEdit()
+ }catch(e){memberLedger.receiptSaveError.value=e.message||'変更を保存できません'}
+ finally{memberLedger.editSaving.value=false}
+}
+memberLedger.selectEditReceipt=selectMemberEditReceipt
+memberLedger.saveEdit=saveMemberLedgerEdit
 provide('kakeibo-page-context',{
  ...makeFamilyStatsContext({tab,month,selectedYear,stats:monthlyReport,
    annualStats:annualReport,entryType:selectedEntryType}),

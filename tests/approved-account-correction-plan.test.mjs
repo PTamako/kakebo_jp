@@ -56,10 +56,15 @@ test('deny overdrafts and unauthorized spouse account selection',()=>{
  assert.throws(()=>plan(before,{...before,accountId:'b'},{
   editorUserId:admin}),/CORRECTION_OTHER_PERSON_ACCOUNT_READ_ONLY/);
 });
-test('attached settlements or point offsets prevent an unsafe ordinary amendment',()=>{
- for(const field of ['settledJpy','offsetJpy'])
-  assert.throws(()=>plan(before,{...before,amount:1500},{[field]:200}),
-   /CORRECTION_EXISTING_ALLOCATION_REQUIRES_REVERSAL/);
+test('settled and points-offset amounts allow only covered same-card changes',()=>{
+ for(const field of ['settledJpy','offsetJpy']){
+  const safe=plan(before,{...before,amount:1500},{[field]:200});
+  assert.equal(safe.effects[0].deltaJpy,500);
+  for(const next of [{...before,amount:100},{...before,accountId:'b'},
+   {...before,date:'2026-11-11'},{...before,accountId:null}])
+   assert.throws(()=>plan(before,next,{[field]:200}),
+    /CORRECTION_EXISTING_ALLOCATION_REQUIRES_REVERSAL/);
+ }
 });
 test('editing merchant/category alone never invents a financial delta',()=>{
  const out=plan(before,{...before,merchant:'New merchant',category:'Food'});
@@ -90,3 +95,18 @@ test('prepaid deletion refunds and restoration checks current available balance'
  assert.throws(()=>plan({...old,amount:0},old,{
   operation:'restore',prepaidBalances:{p:1399}}),/CORRECTION_PREPAID_INSUFFICIENT_BALANCE/)
 })
+
+test('card and prepaid to cash produce immutable reversals without inventing cash accounts',()=>{
+ assert.deepEqual(plan(before,{...before,amount:1250,accountId:null}).effects,
+  [{accountId:'a',kind:'credit_card',billMonth:'2026-11',deltaJpy:-1000}]);
+ assert.deepEqual(plan({...before,accountId:null},
+  {...before,accountId:'a',amount:1400}).effects,
+  [{accountId:'a',kind:'credit_card',billMonth:'2026-11',deltaJpy:1400}]);
+ assert.deepEqual(plan({...before,accountId:'p'},
+  {...before,accountId:null}).effects,
+  [{accountId:'p',kind:'prepaid',billMonth:null,deltaJpy:1000}]);
+ assert.deepEqual(plan({...before,accountId:null},
+  {...before,accountId:null,amount:1400}).effects,[]);
+ assert.throws(()=>plan(before,{...before,accountId:'b'},{editorUserId:admin}),
+  /CORRECTION_OTHER_PERSON_ACCOUNT_READ_ONLY/);
+});

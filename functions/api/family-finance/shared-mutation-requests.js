@@ -138,21 +138,31 @@ async function prepare(req,e,url,u){
     return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
   }
   if(x.operation==='update'&&Object.hasOwn(entry,'payment_source')&&!personalPayment){
-   // The private executor and Pages must both explicitly permit this operation.
-   if(e.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED!=='true')
-    return fail('SHARED_PAYMENT_EXECUTOR_NOT_READY',503);
-   // Only the original posting member may propose a payment-source revision.
-   // Administrator authority and an unrelated member's ledger visibility do
-   // not grant ownership of another person's card.
-   const [author,physical]=await Promise.all([
-    e.DB.prepare("SELECT requester_user_id FROM family_shared_mutation_applied "+
-     "WHERE entry_id=? AND action='create' LIMIT 1").bind(reg.entry_id).first(),
-    e.DB.prepare('SELECT family_account_id,type FROM entries WHERE id=? LIMIT 1')
-     .bind(reg.entry_id).first()
-   ]);
-   if(author?.requester_user_id!==u.user_id||!physical||
-    physical.family_account_id!==null||physical.type!=='expense'||entry.type!=='expense')
-    return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
+   const applied=await e.DB.prepare(
+    "SELECT requester_user_id FROM (SELECT entry_id,requester_user_id FROM family_card_purchase_applied "+
+    "UNION ALL SELECT entry_id,requester_user_id FROM family_prepaid_actions_applied WHERE action='spend') "+
+    "WHERE entry_id=? LIMIT 1").bind(reg.entry_id).first();
+   if(applied){
+    // The immutable paid receipt remains the owner after a card -> cash move.
+    // Only its original spending member may request cash; no shared-card
+    // label may impersonate a personal card in this correction path.
+    if(e.KAKEIBO_ACCOUNT_CORRECTIONS_ENABLED!=='true'||
+       applied.requester_user_id!==u.user_id||entry.payment_source!=='')
+     return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
+   }else{
+    // Existing cash/shared-card records retain their own permission route.
+    if(e.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED!=='true')
+     return fail('SHARED_PAYMENT_EXECUTOR_NOT_READY',503);
+    const [author,physical]=await Promise.all([
+     e.DB.prepare("SELECT requester_user_id FROM family_shared_mutation_applied "+
+      "WHERE entry_id=? AND action='create' LIMIT 1").bind(reg.entry_id).first(),
+     e.DB.prepare('SELECT family_account_id,type FROM entries WHERE id=? LIMIT 1')
+      .bind(reg.entry_id).first()
+    ]);
+    if(author?.requester_user_id!==u.user_id||!physical||
+       physical.family_account_id!==null||physical.type!=='expense'||entry.type!=='expense')
+     return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
+   }
   }
  }
  const payload={operation:x.operation,resource_id:x.resource_id,expected_version:x.expected_version,entry};

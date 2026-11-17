@@ -74,7 +74,8 @@ async function readIntent(e,p){
     typeof x.merchant!=='string'||x.merchant.length>120||
     typeof x.note!=='string'||x.note.length>500||
     (paid&&(x.type!=='expense'||typeof x.payment_source!=='string'||
-      !x.payment_source.trim()||x.payment_source.length>80)))return null;
+      (d.operation!=='update'&&!x.payment_source.trim())||
+      x.payment_source.length>80||x.payment_source!==x.payment_source.trim())))return null;
   }
   return d;
  }catch{return null}
@@ -174,9 +175,40 @@ async function write(e,p,b,approval,payload){
    return fail('SHARED_MUTATION_LEGACY_OWNER_OR_PROVENANCE_CHANGED',409);
  }
  const previous=registry?JSON.parse(registry.snapshot_json):null;
- const entry=action==='restore'?previous:action==='update'&&previous?.payment_source?
+ const explicitPayment=action==='update'&&
+  Object.hasOwn(payload.entry,'payment_source');
+ let originalPayment='';
+ if(action==='update'){
+  const physical=await db.prepare('SELECT type,payment_source,family_account_id FROM entries WHERE id=? LIMIT 1')
+   .bind(registry.entry_id).first();
+  if(!physical)return fail('SHARED_MUTATION_ENTRY_MISSING',409);
+  originalPayment=String(physical.payment_source||'');
+  // A card charge cannot be converted into income without reversing its bill.
+  if(physical.type==='expense'&&originalPayment&&payload.entry.type!=='expense')
+   return fail('SHARED_MUTATION_CARD_TYPE_LOCKED',409);
+  if(explicitPayment){
+   const author=await db.prepare("SELECT requester_user_id FROM family_shared_mutation_applied "+
+    "WHERE entry_id=? AND action='create' LIMIT 1").bind(registry.entry_id).first();
+   if(author?.requester_user_id!==p.requester_user_id||
+    physical.family_account_id!==null||physical.type!=='expense'||
+    payload.entry.type!=='expense'||adopted)
+    return fail('SHARED_MUTATION_PAYMENT_OWNER_MISMATCH',403);
+   if(payload.entry.payment_source){
+    // Recheck the grant at execution, not just when the request was prepared.
+    const granted=await db.prepare("SELECT 1 FROM family_legacy_card_shares s "+
+     "JOIN payment_sources card ON card.name=s.card_name "+
+     "WHERE s.card_name=? AND s.household_id=? AND s.grantee_user_id=? "+
+     "AND s.owner_user_id=? AND s.is_active=1 AND card.is_archived=0 "+
+     "AND card.stat_group='card' AND card.source_type IN ('standard','prepaid') LIMIT 1")
+     .bind(payload.entry.payment_source,p.household_id,p.requester_user_id,
+      approval.approver_user_id).first();
+    if(!granted)return fail('SHARED_CARD_GRANT_REVOKED',403);
+   }
+  }
+ }
+ const entry=action==='restore'?previous:action==='update'&&!explicitPayment&&previous?.payment_source?
   {...payload.entry,payment_source:previous.payment_source}:payload.entry;
- // An approved amendment keeps the original payment method and card bill key.
+ // Explicit change is approved by HomeFlow; omitted payment keeps the old source.
  if(action==='restore'&&entry?.payment_source){
   const active=await db.prepare("SELECT 1 FROM family_legacy_card_shares s "+
    "JOIN payment_sources card ON card.name=s.card_name "+
@@ -235,15 +267,19 @@ async function write(e,p,b,approval,payload){
   const sourceArgs=adopted?[adopted.original_client_request_id,adopted.account_id]:[reference];
   const spouseRevision=entry?.type==='transfer'||previous?.type==='transfer';
   if(action==='update')stmts.push(spouseRevision?
-   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0 '+
+   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0'+
+    (explicitPayment?',payment_source=?':'')+' '+
     'WHERE id=? AND '+where+' AND family_transfer_target_account_id IS NULL '+
     "AND (type IN('income','expense') OR (type='transfer' AND transfer_target='spouse'))")
     .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,
-     entry.type==='transfer'?'spouse':null,entry.type==='transfer'?entry.date:null,registry.entry_id,...sourceArgs):
-   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=? '+
+     entry.type==='transfer'?'spouse':null,entry.type==='transfer'?entry.date:null,
+     ...(explicitPayment?[entry.payment_source]:[]),registry.entry_id,...sourceArgs):
+   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?'+
+    (explicitPayment?',payment_source=?':'')+' '+
     'WHERE id=? AND '+where+' AND family_transfer_target_account_id IS NULL '+
     "AND type IN('income','expense')")
-    .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,registry.entry_id,...sourceArgs));
+    .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,
+     ...(explicitPayment?[entry.payment_source]:[]),registry.entry_id,...sourceArgs));
   else if(action==='delete')stmts.push(db.prepare('DELETE FROM entries WHERE id=? AND '+where+
    (spouseRevision?" AND (type IN('income','expense') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL":
     " AND type IN('income','expense') AND family_transfer_target_account_id IS NULL"))

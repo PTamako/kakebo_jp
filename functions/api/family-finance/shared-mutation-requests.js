@@ -100,10 +100,26 @@ async function prepare(req,e,url,u){
   if(!granted)return fail('SHARED_CARD_GRANT_REQUIRED',403);
  }
  if(x.operation!=='create'){
-  const reg=await e.DB.prepare('SELECT state,version,entry_id FROM family_shared_entry_registry '+
+  const reg=await e.DB.prepare('SELECT state,version,entry_id,creator_user_id,snapshot_json FROM family_shared_entry_registry '+
    'WHERE resource_id=? AND household_id=?').bind(x.resource_id,u.household_id).first();
   if(reg?.version!==x.expected_version||reg.state!==(x.operation==='restore'?'deleted':'active'))
    return fail('SHARED_MUTATION_RESOURCE_CHANGED');
+  // A neutral household transfer has an authenticated creator even when it
+  // was posted directly without HomeFlow review. Never use the absence of
+  // a family_shared_mutation_applied(create) event to deny its real author.
+  let before;
+  try{before=JSON.parse(reg.snapshot_json)}catch{return fail('SHARED_MUTATION_RESOURCE_CHANGED')}
+  if(before?.type==='transfer'){
+   if(before.transfer_target!=='spouse'||(x.operation==='update'&&
+    (entry.type!=='transfer'||entry.transfer_target!=='spouse')))
+    return fail('SHARED_MUTATION_TRANSFER_TYPE_LOCKED',409);
+   const originalRequester=reg.creator_user_id===u.user_id?null:
+    await e.DB.prepare("SELECT requester_user_id FROM family_shared_mutation_applied "+
+     "WHERE entry_id=? AND action='create' LIMIT 1").bind(reg.entry_id).first();
+   if(reg.creator_user_id!==u.user_id&&
+    originalRequester?.requester_user_id!==u.user_id)
+    return fail('SHARED_MUTATION_TRANSFER_NOT_CREATOR',403);
+  }
   if(x.operation==='update'&&Object.hasOwn(entry,'payment_source')){
    // The private HomeFlow receiver must be deployed before accepting
    // requests that would otherwise be acknowledged but not applied.

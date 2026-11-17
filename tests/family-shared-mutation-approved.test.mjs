@@ -43,6 +43,7 @@ function fixture({accountCorrections=false}={}){
    'CREATE TABLE family_points_card_offset_refunds(original_request_id TEXT,restored_jpy INTEGER)',
    'CREATE TABLE family_prepaid_balance_journal(prepaid_account_id TEXT,household_id TEXT,delta_jpy INTEGER)',
    'CREATE TABLE family_member_prepaid_topups(prepaid_account_id TEXT,household_id TEXT,amount_jpy INTEGER)',
+   'CREATE TABLE family_member_prepaid_topup_corrections(household_id TEXT,before_account_id TEXT,before_amount_jpy INTEGER,after_account_id TEXT,after_amount_jpy INTEGER)',
    'CREATE TABLE family_points_prepaid_credits(prepaid_account_id TEXT,household_id TEXT,amount_jpy INTEGER)',
    'CREATE TABLE family_points_prepaid_refunds(prepaid_account_id TEXT,household_id TEXT,debited_prepaid_jpy INTEGER)',
   ])sql.exec(s)

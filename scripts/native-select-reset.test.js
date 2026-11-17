@@ -75,7 +75,7 @@ test('blank billing card hides totals, saved bill and actions instead of mutatin
   assert.match(finance, /<div v-if="bill\.name" class="card-billing-actions">/)
   assert.match(finance, /<div v-if="selectedSavedBill" class="finance-saved-bill">/)
   assert.match(finance, /:amount="loaded && bill\.name && cardPeriod \? yen\(cardTotal\) : '—'"/)
-  assert.match(read('src/CardUsageSummaryFields.vue'), /<output aria-live="polite">\{\{amount\}\}<\/output>/)
+  assert.match(read('src/CardUsageSummaryFields.vue'), /<output class="card-usage-total" aria-live="polite">\{\{amount\}\}<\/output>/)
 })
 
 test('clearing a required recurring category is reversible without saving invalid settings', () => {

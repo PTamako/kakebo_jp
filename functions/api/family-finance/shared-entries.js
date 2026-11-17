@@ -205,15 +205,18 @@ async function modify(req,e,url,u,id,action){
   .bind(action==='delete'?'deleted':'active',snapshot,digest,u.user_id,at,action,at,action,
    id,r.version,action==='restore'?'deleted':'active'));
  statements.push(clear(db,id));
+ let batchFailed=false;
  try{
   await db.batch(statements);
  }catch{
   // A lost response is not evidence of rollback: check the same CAS receipt.
+  batchFailed=true;
  }
  const committed=await committedRevision(db,id,u,r,action,next,snapshot,digest,at)
   .catch(()=>null);
  if(committed)return json({ok:true,action:committed,applied:true});
- return fail('SHARED_ENTRY_ATOMIC_CONFIRMATION_REQUIRED',503);
+ return batchFailed?fail('SHARED_ENTRY_MUTATION_ROLLED_BACK'):
+  fail('SHARED_ENTRY_ATOMIC_CONFIRMATION_REQUIRED',503);
 }
 async function purge(req,e,url,u,id){
  const x=await parse(req,url);

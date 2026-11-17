@@ -27,7 +27,7 @@ const env={
 function request(path,payload,opts={}){
  const stamp=String(Date.now()),raw=JSON.stringify(payload);
  const signature=createHmac('sha256',Buffer.from(secret,'hex'))
-   .update('jpda:finance-account\\n'+stamp+'\\n'+raw).digest('hex');
+   .update('jpda:finance-account\n'+stamp+'\n'+raw).digest('hex');
  return new Request('https://kakeibo.internal/api/internal/document-accounts/'+path,{
   method:'POST',headers:{'content-type':'application/json',
    'x-approval-client':'jp-document-assistant',

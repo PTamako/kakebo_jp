@@ -10,14 +10,14 @@ test('device privacy belongs only to management Other; not a separate panel belo
   const management = source('src/FinanceTools.vue')
   const shared = source('src/OriginalOtherManagement.vue')
   assert.doesNotMatch(app, /class="panel device-security-settings"/)
-  assert.match(app,/rememberDevice:rememberDevice.value/)
-  assert.match(app,/onChangeRememberDevice:setRememberDevice/)
+  assert.doesNotMatch(app,/rememberDevice:rememberDevice.value/)
+  assert.doesNotMatch(app,/onChangeRememberDevice:setRememberDevice/)
   assert.match(app,/onReceiptImagesCleared:onReceiptImagesCleared/)
   assert.match(app, /function onReceiptImagesCleared\(\)\s*\{[\s\S]*?closeReceipt\(\)[\s\S]*?receiptImageIds\.value = new Set\(\)/)
   assert.match(management, /<OriginalOtherManagement :active="managementTab==='tools'"/)
   assert.match(shared, /<details class="finance-panel finance-disclosure device-privacy-panel">/)
   assert.match(shared, /端末のプライバシー設定/)
-  assert.match(management, /@change="emit\('change-remember-device',/)
+  assert.doesNotMatch(management, /@change="emit\('change-remember-device',/)
 })
 
 test('image clearing confirms R2 and device deletion without touching financial D1 records', () => {

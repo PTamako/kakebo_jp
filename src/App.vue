@@ -9,7 +9,7 @@ import { japanTodayKey, spendingAveragesByDayType, spendingAverageOnExpenseDays 
 import { annualExpenseAverageByRecordedMonth } from './annual-monthly-average.js'
 import { highestSpendingRatioMonth } from './stats-ratio-peak.js'
 import { countThroughEditedDay } from './ledger-day-focus.js'
-import {sharedEntryFromEditor,sameSharedEditValues,sharedEditConfirmed,sharedDeleteConfirmed} from './shared-ledger-edit.js'
+import {sharedEntryFromEditor,sameSharedEditValues,sharedEditConfirmed,sharedDeleteConfirmed,isAnotherMembersPayment} from './shared-ledger-edit.js'
 import { isCardBilledEntry, cardBilledAmount } from './card-billing.js'
 import { ledgerEntryAmount, ledgerEntriesTotal, formatLedgerTotal } from './ledger-totals.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
@@ -1253,7 +1253,10 @@ function startEdit(entry) {
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
     transferTarget: entry.transfer_target || '', rewardDestination: entry.type==='income' && entry.category==='ポイント還元' ? (entry.transfer_target || '') : '', transferDate: entry.transfer_date || (entry.type === 'transfer' ? entry.date : ''),
-    category: entry.category || '日用品', paymentSource: entry.payment_source || '', merchant: entry.merchant || '',
+    category: entry.category || '日用品', paymentSource: entry.payment_source || '',
+    paymentReadOnly:isAnotherMembersPayment(entry,familyIdentity.value?.user_id),
+    paymentDisplay:entry.payment_source_display || (entry.type==='expense'&&!entry.payment_source?'現金':entry.payment_source||''),
+    merchant: entry.merchant || '',
     note: entry.note || '', raw: entry.raw || ''
   }
 }

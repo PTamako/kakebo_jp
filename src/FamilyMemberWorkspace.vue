@@ -1683,7 +1683,6 @@ watch(()=>props.user.user_id,()=>{
       @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
     <MemberCardUsage :user-id="user.user_id" :active="tab==='finance'" :revision="memberUsageRevision"/>
 
-    
    </template>
    <template #member-plans>
     <MemberFixedCosts :key="'member-fixed:'+user.user_id+':'+personalBackupRevision" :user-id="user.user_id"
@@ -1739,20 +1738,20 @@ watch(()=>props.user.user_id,()=>{
        @click="retryMemberReceipt">画像を再送（{{memberReceiptRetry.length}}件）</button>
    </template>
    <template #member-backup>
-    <p class="help">本人用バックアップは2種類です。「本人の記録・レシート」は私有画像と監査証跡を含む証拠保管、「本人の設定」は個人設定のみです。家庭共有明細の完全復元と証券会社の実取引復元は含みません。</p>
+    
     <div class="member-backup-actions">
      <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportMemberArchive">
-     {{personalBackupBusy?'処理中…':'本人の記録・レシート・保有銘柄を暗号化保存'}}
+     {{personalBackupBusy?'処理中…':'記録・レシートを保存'}}
     </button>
     <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportPersonalAccounts">
-      {{personalBackupBusy?'処理中…':'本人の設定を暗号化して保存'}}
+      {{personalBackupBusy?'処理中…':'設定を保存'}}
      </button>
      <label class="member-backup-upload button-secondary">バックアップを選択
       <input type="file" accept=".enc" :disabled="personalBackupBusy" @change="importPersonalBackup"/>
      </label>
     </div>
     <p v-if="personalBackupMessage" class="help" role="status">{{personalBackupMessage}}</p>
-    <p class="help">本人の口座・固定費・店舗ルール・カテゴリを追加復元。既存設定は上書きせず、取引履歴・画像・投資約定は対象外です。</p>
+    
    </template>
    <template #member-duplicates>
      <p v-if="!memberDuplicateGroups.length" class="help">表示中の明細に重複候補はありません。</p>
@@ -1760,7 +1759,7 @@ watch(()=>props.user.user_id,()=>{
        <strong>{{group[0].date}} · {{group[0].merchant}} · ¥{{Number(group[0].amount).toLocaleString('ja-JP')}} · {{group.length}}件</strong>
        <button type="button" @click="tab='list'">明細を見る</button>
      </div>
-     <p class="help">共有明細の変更・削除は承認後に反映。</p>
+     
    </template>
    <template #member-trash>
      <p v-if="memberTrashError" role="alert" class="help">{{memberTrashError}}</p>
@@ -1772,7 +1771,7 @@ watch(()=>props.user.user_id,()=>{
        <strong>{{row.entry?.date}} · {{row.entry?.merchant||row.entry?.category}} · {{yen(row.entry?.amount)}}</strong>
        <button type="button" :disabled="memberTrashBusy" @click="restoreMemberSharedTrash(row)">復元を申請</button>
       </div>
-      <p class="help">復元は管理者が HomeFlow で承認してから反映されます。</p>
+      
      </div>
      <div v-if="memberPersonalDocumentSbiTrash.length" class="member-trash-section">
       <strong>本人のSBI資産移動 · {{memberPersonalDocumentSbiTrash.length}}件</strong>
@@ -1780,7 +1779,7 @@ watch(()=>props.user.user_id,()=>{
        <strong>{{row.date}} · {{row.merchant}} · {{yen(row.amount)}}</strong>
        <button type="button" :disabled="memberTrashBusy" @click="restoreMemberPersonalSbi(row)">復元</button>
       </div>
-      <p class="help">本人の資産移動は本人が直接復元できます。銀行口座や基金口数は変更しません。</p>
+      
      </div>
      <div v-if="memberArchivedAccounts.length" class="member-trash-section">
       <strong>本人のアーカイブ済み口座 · {{memberArchivedAccounts.length}}件</strong>

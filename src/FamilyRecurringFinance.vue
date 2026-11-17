@@ -40,10 +40,10 @@ const canPlan=computed(()=>banks.value.some(a=>a.account_id===form.value.source_
 const online=()=>typeof navigator!=='undefined'&&navigator.onLine!==false
 const post=data=>({method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)})
 async function api(path,options={}){
- if(!online())throw Error('当前离线，金融操作暂不可提交；不会进入离线重放队列')
+ if(!online())throw Error('オフライン中は金融操作を送信できません。通信回復後にお試しください')
  const response=await fetch(path,{credentials:'same-origin',cache:'no-store',...options})
  const data=await response.json().catch(()=>({}))
- if(!response.ok||data.ok!==true)throw Error(data.code||'金融授权请求未确认，请使用原申请 ID 复核')
+ if(!response.ok||data.ok!==true)throw Error(data.code||'元の申請番号で操作結果を確認してください')
  return data
 }
 function reset(){
@@ -99,7 +99,7 @@ async function createPlan(){
   const result=await api('/api/family-finance/member-recurring-plans',post(payload))
   if(ticket!==generation||actor!==props.userId||hh!==props.householdId)return
   if(result.plan?.ledger_applied!==false||result.plan?.policy_approved!==false)
-   throw Error('计划创建回执不完整，不能视为已执行')
+   throw Error('計画の登録結果を確認できません')
   planRetry='';editorOpen.value=false;notice.value='本人の積立計画を保存しました。計画には管理者承認は不要です。実際の取引は残高・明細から別途記録してください。'
   selected.value=result.plan.plan_resource_id
   await refresh()
@@ -116,11 +116,11 @@ async function submitPolicy(p){
     expected_user_id:actor,confirm_plan_resource_id:p.plan_resource_id}))
   if(ticket!==generation||actor!==props.userId)return
   if(result.ledger_applied!==false||result.policy?.plan_resource_id!==p.plan_resource_id)
-   throw Error('HomeFlow 月度审批回执不完整')
+   throw Error('HomeFlow の確認結果を取得できません')
   policies.value={...policies.value,[p.plan_resource_id]:result.policy}
   notice.value=result.owner_approved?
-   '管理员已授权该计划；实际资金流水需逐个月独立确认。':
-   '原 HomeFlow 授权申请已送达，等待管理员批准，尚无任何正式记账。'
+   '以前の承認記録です。銀行の実際の取引とは別です。':
+   '過去の申請です。家計簿の明細にはまだ反映されていません。'
  }catch(e){if(ticket===generation)error.value=e.message}
  finally{if(ticket===generation)busy.value=false}
 }
@@ -130,7 +130,7 @@ async function prepareOccurrence(){
   !bankPosted.value||!bankRef.value.trim()||bankRef.value.trim().length<8||
   p.plan_type==='sbi_tsumitate'&&(!brokerExecuted.value||brokerRef.value.trim().length<8||
    !Number.isSafeInteger(Number(units.value))||Number(units.value)<=0))return
- if(!window.confirm('银行实际扣款和证券实际成交已由你核对？将保存已发生事项的证据，不发起真实扣款或买单。'))return
+ if(!window.confirm('銀行の引落しと実際の約定を確認しましたか？証拠のみ記録し、取引は実行しません。'))return
  const ticket=generation,actor=props.userId
  const isSbi=p.plan_type==='sbi_tsumitate'
  busy.value=true;error.value='';notice.value=''
@@ -147,15 +147,15 @@ async function prepareOccurrence(){
   if(result.prepared?.ledger_applied!==false)throw Error('周期证据准备回执异常')
   bankRef.value='';brokerRef.value='';units.value=''
   bankPosted.value=false;brokerExecuted.value=false
-  notice.value='已保存本月唯一凭证，尚未修改正式账本；下方可依管理员授权单独核对执行。'
+  notice.value='今月の証拠を保存しました。家庭明細は変更されていません。'
   await refresh()
  }catch(e){if(ticket===generation)error.value=e.message}
  finally{if(ticket===generation)busy.value=false}
 }
 async function perform(o,action='execute'){
  if(!executionAvailable.value||busy.value||!available.value||!window.confirm(
-  action==='execute'?'确认按本月已发生、已核验的银行／证券证据执行一次内部记账？不会向机构发送支付命令。':
-  '仅按原凭证核对 HomeFlow 与家計簿的不可变回执，不再执行新的扣款。'))return
+  action==='execute'?'実際の取引に基づき内部明細へ記録しますか？銀行・証券会社には送信しません。':
+  '元の記録で HomeFlow と家計簿の結果を確認します。'))return
  const ticket=generation,actor=props.userId,hh=props.householdId
  busy.value=true;error.value='';notice.value=''
  try{
@@ -166,9 +166,9 @@ async function perform(o,action='execute'){
   if(result.ledger_applied!==true||result.applied!==true)
    throw Error('账目仍未取得真实不可变入账回执')
   if(result.homeflow_receipt_confirmed!==true){
-   notice.value='家計簿已记账，但 HomeFlow 回执仍待复核。只能按原 ID 核对，不能再创建第二笔。'
+   notice.value='家計簿への記録は完了しましたが、HomeFlow 側の確認が必要です。二重登録しないでください。'
   }else{
-   notice.value='家計簿和 HomeFlow 已按同一凭证确认内部记账；银行/SBI 机构级核验尚未完成。'
+   notice.value='家計簿と HomeFlow の記録を照合しました。金融機関による直接照合ではありません。'
    emit('changed')
   }
   await refresh()

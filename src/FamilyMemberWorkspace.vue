@@ -802,7 +802,7 @@ async function modify(a,changes){
   const r=await api('accounts/'+encodeURIComponent(a.account_id),request(
    {version:a.version,...changes,expected_user_id:user},'PATCH'))
   if(ticket!==epoch||user!==props.user.user_id)return
-  if(r.ledger_changed!==false)throw Error('修改状态需要复核')
+  if(r.ledger_changed!==false)throw Error('変更結果の確認が必要です')
   renameId.value='';rename.value='';await refresh()
  }catch(e){if(ticket===epoch)error.value=e.message}finally{busy.value=false}
 }

@@ -25,14 +25,14 @@ const enabled=ref(false),financeEnabled=ref(false),busy=ref(false),error=ref('')
 const person=ref(null),pending=ref(null),accounts=ref([]),advancedOpen=ref(false)
 const newLabel=ref(''),newKind=ref('credit_card'),editing=ref(null),rename=ref('')
 const kinds=[
- {value:'credit_card',label:'信用卡'},{value:'prepaid',label:'储值卡'},
- {value:'cash',label:'现金'},{value:'bank',label:'银行'},
+ {value:'credit_card',label:'クレジットカード'},{value:'prepaid',label:'プリペイドカード'},
+ {value:'cash',label:'現金'},{value:'bank',label:'銀行'},
  {value:'points',label:'积分'},{value:'securities',label:'证券'},
  {value:'other',label:'其他'}
 ]
 let epoch=0
 const canManage=a=>!!person.value&&a.owner_user_id===person.value.user_id
-const role=computed(()=>person.value?.role==='owner'?'管理员':'家庭成员')
+const role=computed(()=>person.value?.role==='owner'?'管理者':'家族メンバー')
 function clearPending(){
  try{localStorage.removeItem(STORAGE)}catch{}
  pending.value=null
@@ -99,7 +99,7 @@ async function start(){
  try{
   const result=await call('/api/homeflow-sso/start',{method:'POST'})
   if(!hex.test(result.state)||!hex.test(result.resume_secret)||
-   typeof result.authorization_url!=='string')throw Error('授权数据无效')
+   typeof result.authorization_url!=='string')throw Error('認証情報が不正です')
   const destination=validateKakeiboHomeflowAuthorizationUrl(result.authorization_url,result.state,window.location.origin)
   const proof={state:result.state,resume_secret:result.resume_secret,
    expires_at:Date.now()+Math.min(300,Math.max(1,Number(result.expires_in)||300))*1000}
@@ -112,7 +112,7 @@ async function start(){
 async function complete(){
  if(busy.value||!pending.value)return
  if(pending.value.expires_at<=Date.now()){
-  clearPending();error.value='授权已过期，请重新登录';return
+  clearPending();error.value='認証の有効期限が切れました。再度ログインしてください';return
  }
  busy.value=true;error.value=''
  try{
@@ -120,10 +120,10 @@ async function complete(){
    method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({state:pending.value.state,resume_secret:pending.value.resume_secret})
   })
-  if(data.ok!==true||data.ledger_access!==false)throw Error('身份授权未完成')
+  if(data.ok!==true||data.ledger_access!==false)throw Error('本人確認が完了していません')
   clearPending()
   await check()
-  if(!person.value)throw Error('请重新打开应用检查登录状态')
+  if(!person.value)throw Error('アプリを開き直してログイン状態を確認してください')
  }catch(e){error.value=e.message}
  finally{busy.value=false}
 }
@@ -143,7 +143,7 @@ async function createAccount(){
  if(busy.value||!person.value||!financeEnabled.value)return
  const revision=epoch,actor=person.value.user_id
  const label=newLabel.value.trim()
- if(!label||label.length>80){error.value='账户名称需为 1～80 个字符';return}
+ if(!label||label.length>80){error.value='口座名は1～80文字で入力してください';return}
  busy.value=true;error.value=''
  try{
   const data=await call('/api/family-finance/accounts',{
@@ -151,7 +151,7 @@ async function createAccount(){
    body:JSON.stringify({label,account_kind:newKind.value,expected_user_id:actor})
   })
   if(revision!==epoch||person.value?.user_id!==actor)return
-  if(data.ledger_changed!==false)throw Error('账户状态需要复核')
+  if(data.ledger_changed!==false)throw Error('口座の状態を確認できません')
   newLabel.value=''
   await refresh()
  }catch(e){if(revision===epoch)error.value=e.message}
@@ -160,7 +160,7 @@ async function createAccount(){
 async function mutate(a,change){
  if(busy.value||!canManage(a)||a.origin==='legacy'||!financeEnabled.value)return
  const revision=epoch,actor=person.value.user_id
- if(change.is_archived===true&&!window.confirm('确认归档此账户？不会删除家庭账务记录。'))return
+ if(change.is_archived===true&&!window.confirm('この口座を保管しますか？家庭明細は削除されません。'))return
  busy.value=true;error.value=''
  try{
   const data=await call('/api/family-finance/accounts/'+encodeURIComponent(a.account_id),{
@@ -168,7 +168,7 @@ async function mutate(a,change){
    body:JSON.stringify({version:a.version,...change,expected_user_id:actor})
   })
   if(revision!==epoch||person.value?.user_id!==actor)return
-  if(data.ledger_changed!==false)throw Error('账户修改结果需要复核')
+  if(data.ledger_changed!==false)throw Error('口座の変更結果を確認できません')
   editing.value=null;rename.value=''
   await refresh()
  }catch(e){if(revision===epoch)error.value=e.message}
@@ -198,8 +198,8 @@ onUnmounted(()=>{
 </script>
 
 <template>
- <section v-if="enabled" class="hf-finance" aria-label="HomeFlow 家庭账户">
-  <div class="hf-head"><strong>HomeFlow 家庭账户</strong>
+ <section v-if="enabled" class="hf-finance" aria-label="HomeFlow 家族アカウント">
+  <div class="hf-head"><strong>HomeFlow 家族アカウント</strong>
    <span v-if="person" class="hf-state">已关联</span>
   </div>
   <p v-if="person" class="hf-note">{{person.display_name}} · {{role}}</p>
@@ -210,44 +210,44 @@ onUnmounted(()=>{
    <button v-if="person" type="button" :disabled="busy" @click="logout">退出家庭身份</button>
    <template v-else>
     <button v-if="pending" type="button" :disabled="busy" @click="complete">完成登录</button>
-    <button type="button" :disabled="busy" @click="start">{{pending?'重新授权':'使用 HomeFlow 登录'}}</button>
+    <button type="button" :disabled="busy" @click="start">{{pending?'再認証':'HomeFlow でログイン'}}</button>
    </template>
   </div>
   <template v-if="person&&!props.identityOnly">
    <p v-if="!financeEnabled" class="hf-note">家庭金融機能は利用できません。</p>
    <template v-else>
-    <div class="hf-subhead"><strong>家庭账户</strong>
+    <div class="hf-subhead"><strong>家族アカウント</strong>
      <button type="button" :disabled="busy" @click="refresh">刷新</button>
     </div>
     <p v-if="!accounts.length" class="hf-note">口座は未登録です。既存の明細は保持されています。</p>
     <ul v-else class="hf-list">
      <li v-for="a in accounts" :key="a.account_id">
       <div><strong>{{a.label}}</strong>
-       <small>{{kinds.find(k=>k.value===a.account_kind)?.label||'账户'}} ·
-        {{a.owner_user_id===person.user_id?'本人':'家庭成员'}} ·
+       <small>{{kinds.find(k=>k.value===a.account_kind)?.label||'口座'}} ·
+        {{a.owner_user_id===person.user_id?'本人':'家族メンバー'}} ·
         {{a.is_archived?'已归档':'使用中'}}
        </small>
       </div>
       <div v-if="canManage(a)&&!a.is_archived" class="hf-actions">
-       <button v-if="a.origin==='legacy'" type="button" disabled title="旧账户待无损迁移">旧账户只读</button>
+       <button v-if="a.origin==='legacy'" type="button" disabled title="旧口座の移行待ち">旧口座は閲覧のみ</button>
        <template v-else>
         <button type="button" :disabled="busy" @click="openRename(a)">改名</button>
         <button type="button" :disabled="busy" @click="mutate(a,{is_archived:true})">归档</button>
        </template>
       </div>
       <form v-if="editing===a.account_id" class="hf-inline" @submit.prevent="mutate(a,{label:rename.trim()})">
-       <input v-model="rename" maxlength="80" required :disabled="busy" aria-label="账户名称"/>
+       <input v-model="rename" maxlength="80" required :disabled="busy" aria-label="口座名称"/>
        <button :disabled="busy||!rename.trim()">保存</button>
        <button type="button" @click="editing=null">取消</button>
       </form>
      </li>
     </ul>
     <form class="hf-create" @submit.prevent="createAccount">
-     <strong>新建本人账户</strong>
-     <select v-model="newKind" aria-label="账户类型" :disabled="busy">
+     <strong>本人の口座を追加</strong>
+     <select v-model="newKind" aria-label="口座类型" :disabled="busy">
       <option v-for="kind in kinds" :key="kind.value" :value="kind.value">{{kind.label}}</option>
      </select>
-     <input v-model="newLabel" maxlength="80" placeholder="账户名称" aria-label="账户名称" required :disabled="busy"/>
+     <input v-model="newLabel" maxlength="80" placeholder="口座名称" aria-label="口座名称" required :disabled="busy"/>
      <button type="submit" :disabled="busy||!newLabel.trim()">新建</button>
     </form>
     <div class="hf-subhead hf-advanced-head">

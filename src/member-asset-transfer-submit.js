@@ -35,6 +35,7 @@ export async function submitMemberPersonalTransfer({record,userId,accounts}){
  })
  if(record.memberAssetPending&&record.memberAssetPending.fingerprint!==fingerprint)
   throw Error('前回の資産処理の送信結果が未確認です。内容を変更せず同じ申請を再送してください')
+ const wasPending=!!record.memberAssetPending
  let pending=record.memberAssetPending
  if(!pending){
   let payload
@@ -107,8 +108,10 @@ export async function submitMemberPersonalTransfer({record,userId,accounts}){
  }
  if(!window.confirm(operation==='prepaid'
   ?'このチャージが本人のカード残高へ実際に反映済みであることを確認しますか？'
-  :'ポイント発行元と受取先の両方に実際に反映された内容を記録します。外部の金融取引は実行しません。よろしいですか？'))
+  :'ポイント発行元と受取先の両方に実際に反映された内容を記録します。外部の金融取引は実行しません。よろしいですか？')){
+  if(!wasPending)record.memberAssetPending=null
   throw Error('確認がキャンセルされました')
+ }
  const path=operation==='prepaid'?'member-prepaid-topups':'member-points-asset-actions'
  const result=await familyApi(path,{method:'POST',headers:{'content-type':'application/json'},
   body:JSON.stringify({...pending.payload,idempotency_key:pending.key})})

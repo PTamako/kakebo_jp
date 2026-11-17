@@ -16,6 +16,7 @@ import {ledgerRecorderColumns,ledgerRecorderJoins} from '../ledger-recorder.js';
 import {familySharedEntries} from './shared-entries.js';
 import {familySharedMutationRequests} from './shared-mutation-requests.js';
 import {familyMemberRecurringPlans} from './member-recurring-plans.js';
+import {familyMemberSbiPlans} from './member-sbi-plans.js';
 import {familyMemberFixedCosts} from './member-fixed-costs.js';
 import {familyMemberMerchantRules} from './member-merchant-rules.js';
 import {familyMemberCategories} from './member-categories.js';
@@ -398,6 +399,7 @@ export async function onRequest({request,env,params}){
     if(parts[0]==='shared-entries')return familySharedEntries(request,env,url,user,parts);
     if(parts[0]==='shared-mutation-requests')return familySharedMutationRequests(request,env,url,user,parts);
     if(parts[0]==='member-recurring-plans')return familyMemberRecurringPlans(request,env,url,user,parts);
+    if(parts[0]==='member-sbi-plans')return familyMemberSbiPlans(request,env,url,user,parts);
     if(parts[0]==='member-fixed-costs')return familyMemberFixedCosts(request,env,url,user,parts);
   if(parts[0]==='member-merchant-rules')return familyMemberMerchantRules(request,env,url,user,parts);
    if(parts[0]==='member-categories')return familyMemberCategories(request,env,url,user,parts);

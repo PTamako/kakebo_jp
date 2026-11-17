@@ -4,7 +4,6 @@ import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyFinanceCardPurchases from './FamilyFinanceCardPurchases.vue'
 import FamilySharedEntries from './FamilySharedEntries.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
-import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import {validateKakeiboHomeflowAuthorizationUrl} from './homeflow-authorization-url.js'
 import FamilyFinanceMappingAudit from './FamilyFinanceMappingAudit.vue'
 import FamilyFinanceLegacyLink from './FamilyFinanceLegacyLink.vue'
@@ -285,9 +284,6 @@ onUnmounted(()=>{
     <FamilyFinanceCardPurchases v-if="person.role==='member'"
      :key="'card-purchases:'+person.user_id" :user-id="person.user_id"
      :household-id="person.household_id" :accounts="accounts" />
-    <FamilyRecurringFinance v-if="person.role==='member'"
-      :key="'recurring:'+person.user_id" :user-id="person.user_id"
-      :household-id="person.household_id" :accounts="accounts" @changed="refresh" />
     </div>
     <small class="hf-note">共有明細の変更には管理者の承認が必要です。</small>
    </template>

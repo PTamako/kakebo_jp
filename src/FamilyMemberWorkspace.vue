@@ -3,6 +3,7 @@ import {ref,computed,provide,onMounted,onUnmounted,watch} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
+import MemberPersonalPoints from './MemberPersonalPoints.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
@@ -1276,6 +1277,8 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" />
    </template>
    <template #member-cards>
+    <MemberPersonalPoints :key="'personal-points:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
     <OriginalCardManagementPanel
       :selected="selectedCardId"
       :options="cardAccounts.filter(a=>!a.is_archived).map(a=>({value:a.account_id,label:a.label}))"

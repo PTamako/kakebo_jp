@@ -76,14 +76,8 @@ const emit=defineEmits(['update:card','update:month'])
  line-height:normal;
  font-variant-numeric:tabular-nums;
 }
-.card-usage-summary-month input{
- appearance:none;
- -webkit-appearance:none;
- display:block;
-}
-.card-usage-summary-month input::-webkit-date-and-time-value{text-align:left;min-height:0}
-.card-usage-summary-month input::-webkit-datetime-edit{padding:0;line-height:42px}
-.card-usage-summary-month input::-webkit-calendar-picker-indicator{margin:0;max-width:16px;padding:0}
+.card-usage-summary-month input{display:inline-flex;align-items:center}
+/* Global mobile-ui.css applies the same Safari date/month alignment to both identities. */
 .card-usage-summary-amount output{
  font-weight:700;
  overflow:hidden;

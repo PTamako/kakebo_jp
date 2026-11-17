@@ -956,17 +956,21 @@ async function refresh(){
  // Clearing all five panels on every refresh made the spouse PWA visibly flash.
  error.value=''
  try{
-  const [a,b,c,d,e,f,personalSbiResult]=await Promise.all([
+  const [a,b,c,d,e,f,personalSbiResult,personalYearResult]=await Promise.all([
    api('accounts'),api('personal/assets'),
    api('shared/entries?limit=100&month='+encodeURIComponent(month.value)),
    api('shared/stats?month='+month.value),
    api('shared/stats?year='+year.value),
    api('legacy-card-shares').catch(e=>({incoming:[],share_error:e.message})),
-   api('personal-document-sbi?month='+encodeURIComponent(month.value))
+   api('personal-document-sbi?month='+encodeURIComponent(month.value)),
+   api('personal-document-sbi?year='+encodeURIComponent(year.value))
   ])
   if(!alive||ticket!==epoch||user!==props.user.user_id)return
   if(personalSbiResult.scope!=='personal'||personalSbiResult.viewer_user_id!==user||
-   !Array.isArray(personalSbiResult.items))
+   personalYearResult.scope!=='personal'||personalYearResult.viewer_user_id!==user||
+   !Array.isArray(personalSbiResult.items)||
+   !Number.isSafeInteger(personalSbiResult.transfer_total_jpy)||
+   !Number.isSafeInteger(personalYearResult.transfer_total_jpy))
    throw Error('本人のSBI資産移動履歴が不完整です')
   if(a.account_scope!=='personal'||b.scope!=='personal'||b.viewer_user_id!==user||
    c.ledger_scope!=='household'||d.ledger_scope!=='household'||e.ledger_scope!=='household')
@@ -976,14 +980,35 @@ async function refresh(){
   cardSharingError.value=f.share_error||''
   sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
-  personalDocumentSbi.value=personalSbiResult.items;
+  const personalTransfers=[...personalSbiResult.items]
+  let nextPersonalOffset=personalSbiResult.next_offset
+  for(let page=0;nextPersonalOffset!==null&&page<100;page++){
+   const further=await api('personal-document-sbi?month='+encodeURIComponent(month.value)+
+    '&offset='+nextPersonalOffset)
+   if(!alive||ticket!==epoch||user!==props.user.user_id)return
+   if(further.scope!=='personal'||further.viewer_user_id!==user||
+    !Array.isArray(further.items)||further.transfer_total_jpy!==personalSbiResult.transfer_total_jpy)
+    throw Error('本人の資産移動履歴が更新されました。再読込してください')
+   personalTransfers.push(...further.items)
+   if(further.next_offset!==null&&further.next_offset<=nextPersonalOffset)
+    throw Error('本人の資産移動履歴の位置が無効です')
+   nextPersonalOffset=further.next_offset
+  }
+  if(nextPersonalOffset!==null)throw Error('本人の資産移動履歴の件数が多すぎます')
+  personalDocumentSbi.value=personalTransfers;
   memberPaymentReassignmentEnabled.value=c.payment_reassignment_enabled===true;
   await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories()])
-  monthlyReport.value=d;annualReport.value=e;
+  monthlyReport.value={...d,
+   transferTotal:Number(d.transferTotal||0)+personalSbiResult.transfer_total_jpy,
+   transferCount:Number(d.transferCount||0)+personalSbiResult.transfer_count};
+  annualReport.value={...e,
+   transferTotal:Number(e.transferTotal||0)+personalYearResult.transfer_total_jpy,
+   transferCount:Number(e.transferCount||0)+personalYearResult.transfer_count};
   memberUsageRevision.value++
-  totals.value={income:d.income,expense:d.total,transfer:Number(d.transferTotal||0)+
-   personalDocumentSbi.value.reduce((sum,t)=>sum+Number(t.amount||0),0)}
-  yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
+  totals.value={income:d.income,expense:d.total,
+   transfer:Number(d.transferTotal||0)+personalSbiResult.transfer_total_jpy}
+  yearly.value={totals:{income:e.income,expense:e.total,
+   transfer:Number(e.transferTotal||0)+personalYearResult.transfer_total_jpy},
    net_income_expense:Number(e.income||0)-Number(e.total||0)}
   // Only the requesting member receives these read-only pending previews.
   try{

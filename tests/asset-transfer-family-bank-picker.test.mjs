@@ -17,7 +17,7 @@ test('original asset transfer form does not require household bank setup for spo
 })
 test('family cross-member bank transfer NEVER submits through ordinary ledger entries or batch save',()=>{
  assert.match(app,/forms.value.some\(f\s*=>\s*f.type\s*===\s*'transfer'\s*&&\s*f.transferTarget\s*===\s*'family:cross-bank'\)/)
- assert.match(app,/配偶からの受取は「＋ 配偶からの収入」で記録してください/)
+ assert.match(app,/配偶間の資産移動は入出金として二重計上しません/)
  assert.match(app,/:disabled="!!busy \|\| !forms.length \|\| forms.some\(/)
  assert.match(cross,/\/api\/family-finance\/cross-member-bank-transfers/)
  assert.match(cross,/request-consent/)

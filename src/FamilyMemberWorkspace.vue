@@ -8,7 +8,7 @@ import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
-import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE,markSpouseIncome} from './spouse-income.js'
+import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 import {parseEntries,parseReceipt,ocrImage} from './parse.js'
 import {compressReceiptImage} from './receipt-image.js'
 import EntryInputPage from './EntryInputPage.vue'
@@ -293,11 +293,6 @@ const memberImportPaymentOptions=computed(()=>
 const memberTodayLabel=computed(()=>new Date().toLocaleString('ja-JP',{
  timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'}))
 function addMemberEntry(){memberEntries.value.push(newEntry())}
-function addMemberSpouseIncome(){
- if(memberEntryPending.value)return
- memberInputMode.value='manual'
- memberEntries.value.push(markSpouseIncome(newEntry()))
-}
 function removeMemberEntry(index){if(!memberEntryPending.value)memberEntries.value.splice(index,1)}
 function setMemberEntryType(type,entry){
  if(!['expense','income'].includes(type))return
@@ -1236,8 +1231,7 @@ provide('kakeibo-entry-input',{
  setEntryType:(f,type)=>setMemberEntryType(type,f),
  applyMerchantPayment:applyMemberMerchantRule,
  manualPayment:(f,source)=>{f.paymentSource=source},
- onImage:memberScanImage,addBlank:()=>addMemberEntry(),
- addSpouseIncome:addMemberSpouseIncome,saveAll:submitMemberEntry,
+ onImage:memberScanImage,addBlank:()=>addMemberEntry(),saveAll:submitMemberEntry,
  receiptEnabled:computed(()=>true),
  allowedTypes:computed(()=>['expense','income']),
  paymentChoices:memberPaymentSourceChoices

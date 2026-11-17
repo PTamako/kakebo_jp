@@ -6,6 +6,9 @@ import {createHmac,createHash,webcrypto} from 'node:crypto'
 import {familySharedMutationRequests} from '../functions/api/family-finance/shared-mutation-requests.js'
 import {familySharedEntries} from '../functions/api/family-finance/shared-entries.js'
 import {approvedSharedMutationRoute} from '../functions/api/internal/shared-entries/[[path]].js'
+import {futurePaidRegistrationCommands} from '../functions/api/internal/future-paid-registration.js'
+import {memberCardLiabilities} from '../functions/api/family-finance/card-settlement-summary.js'
+import {memberPrepaidBalances} from '../functions/api/family-finance/prepaid-balance-projection.js'
 if(!globalThis.crypto)globalThis.crypto=webcrypto
 const owner='11111111-1111-4111-8111-111111111111'
 const member='22222222-2222-4222-8222-222222222222'
@@ -15,12 +18,14 @@ const makeMac=(domain,secret,stamp,raw)=>createHmac('sha256',Buffer.from(secret,
  .update(domain+'\n'+stamp+'\n'+raw).digest('hex')
 const sample={date:'2026-11-14',time:'12:00',amount:1100,type:'expense',
  category:'食費',merchant:'スーパー',note:'普通の家庭費用'}
-function fixture(){
+function fixture({accountCorrections=false}={}){
  const sql=new DatabaseSync(':memory:')
  sql.exec('PRAGMA foreign_keys=ON')
  sql.exec('CREATE TABLE schema_migrations(version TEXT PRIMARY KEY,description TEXT)')
  sql.exec('CREATE TABLE homeflow_identity_links(user_id TEXT PRIMARY KEY,household_id TEXT,role TEXT,state TEXT)')
- sql.exec('CREATE TABLE family_financial_accounts(account_id TEXT PRIMARY KEY,household_id TEXT,owner_user_id TEXT,is_archived INTEGER)')
+ sql.exec(accountCorrections?
+  'CREATE TABLE family_financial_accounts(account_id TEXT PRIMARY KEY,household_id TEXT,owner_user_id TEXT,is_archived INTEGER,account_kind TEXT,origin TEXT,closing_day INTEGER,label TEXT,version INTEGER,created_at INTEGER)':
+  'CREATE TABLE family_financial_accounts(account_id TEXT PRIMARY KEY,household_id TEXT,owner_user_id TEXT,is_archived INTEGER)')
  sql.exec('CREATE TABLE family_finance_legacy_entry_links(entry_id INTEGER PRIMARY KEY,household_id TEXT,actor_user_id TEXT,account_id TEXT,original_source TEXT,source_digest TEXT)')
  sql.exec('CREATE TABLE receipt_r2_state(entry_id INTEGER PRIMARY KEY,deleted INTEGER,size_bytes INTEGER)')
  sql.exec("CREATE TABLE payment_sources(name TEXT PRIMARY KEY,is_archived INTEGER DEFAULT 0,stat_group TEXT DEFAULT 'card',source_type TEXT DEFAULT 'standard')")
@@ -29,7 +34,20 @@ function fixture(){
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY AUTOINCREMENT,date TEXT,time TEXT,amount INTEGER,category TEXT,'+
   'merchant TEXT,note TEXT,raw TEXT,type TEXT,client_request_id TEXT UNIQUE,payment_source TEXT,'+
   'family_account_id TEXT,family_transfer_target_account_id TEXT,transfer_target TEXT,transfer_date TEXT,transfer_applied INTEGER DEFAULT 0)')
- for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql'])
+ if(accountCorrections){
+  for(const s of [
+   'CREATE TABLE family_card_purchase_applied(entry_id INTEGER PRIMARY KEY,household_id TEXT,requester_user_id TEXT,homeflow_request_id TEXT,account_id TEXT)',
+   'CREATE TABLE family_prepaid_actions_applied(entry_id INTEGER PRIMARY KEY,household_id TEXT,requester_user_id TEXT,homeflow_request_id TEXT,action TEXT,prepaid_account_id TEXT)',
+   'CREATE TABLE family_card_settlement_allocations(purchase_request_id TEXT,amount_jpy INTEGER)',
+   'CREATE TABLE family_points_card_offsets(homeflow_request_id TEXT,purchase_request_id TEXT,amount_jpy INTEGER)',
+   'CREATE TABLE family_points_card_offset_refunds(original_request_id TEXT,restored_jpy INTEGER)',
+   'CREATE TABLE family_prepaid_balance_journal(prepaid_account_id TEXT,household_id TEXT,delta_jpy INTEGER)',
+   'CREATE TABLE family_member_prepaid_topups(prepaid_account_id TEXT,household_id TEXT,amount_jpy INTEGER)',
+   'CREATE TABLE family_points_prepaid_credits(prepaid_account_id TEXT,household_id TEXT,amount_jpy INTEGER)',
+   'CREATE TABLE family_points_prepaid_refunds(prepaid_account_id TEXT,household_id TEXT,debited_prepaid_jpy INTEGER)',
+  ])sql.exec(s)
+ }
+ for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql',...(accountCorrections?['0073_approved_account_corrections.sql','0074_future_paid_entry_registration.sql']:[])])
   sql.exec(readFileSync(new URL('../migrations/'+version,import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,?,'active')").run(u,hh,role)
@@ -47,6 +65,7 @@ function fixture(){
   KAKEIBO_SHARED_ENTRY_ENABLED:'true',KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED:'true',
   KAKEIBO_SHARED_MUTATION_APPROVAL_ENABLED:'true',
   KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED:'true',
+  KAKEIBO_ACCOUNT_CORRECTIONS_ENABLED:accountCorrections?'true':'false',
   KAKEIBO_FAMILY_PENDING_KEY:secrets.pending,
   KAKEIBO_SHARED_MUTATION_SUBMISSION_SECRET:secrets.submit,
   KAKEIBO_SHARED_MUTATION_EXECUTION_SECRET:secrets.execution,

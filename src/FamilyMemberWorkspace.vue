@@ -451,6 +451,29 @@ async function submitMemberFixedCost(item){
  await refresh()
  return result
 }
+async function submitNeutralSpouseTransfer(record){
+ const actor=props.user.user_id
+ if(record.type!=='transfer'||record.transferTarget!=='spouse')
+  throw Error('配偶への資産移動だけを記録できます')
+ // Keep the key on the unsent draft so a lost HTTP response never duplicates
+ // an actual transfer on retry. A transfer has no payment card or bank account.
+ if(!record.neutralSpouseTransferKey)
+  record.neutralSpouseTransferKey='neutral-spouse:'+crypto.randomUUID()
+ const entry={date:String(record.date||''),time:String(record.time||''),
+  amount:Number(record.amount),type:'transfer',category:'投資・資産移動',
+  merchant:'配偶への振替',note:String(record.note||'').trim(),
+  transfer_target:'spouse',transfer_date:String(record.date||'')}
+ const receipt=await api('shared-entries',request({
+  expected_user_id:actor,idempotency_key:record.neutralSpouseTransferKey,entry
+ }))
+ const row=receipt.action
+ if(actor!==props.user.user_id||row?.creator_user_id!==actor||
+  row?.state!=='active'||row?.entry?.type!=='transfer'||
+  row.entry.transfer_target!=='spouse'||row.entry.amount!==entry.amount||
+  !Number.isSafeInteger(row.entry_id)||row.entry_id<1)
+  throw Error('配偶への資産移動の記録を確認できません')
+ return {type:'applied',entryId:row.entry_id}
+}
 async function submitMemberEntry(){
  if(memberEntryPending.value||memberOcrBusy.value||!memberEntries.value.length)return
  memberEntryPending.value=true;memberEntryError.value='';memberEntryNotice.value=''
@@ -467,7 +490,11 @@ async function submitMemberEntry(){
    if(pendingPaidEntry&&choice.kind==='cash')
     throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
    let receiptRef=''
-   if(choice.kind==='shared'||choice.kind==='personal'){
+   if(record.type==='transfer'){
+    const result=await submitNeutralSpouseTransfer(record)
+    applied++
+    receiptRef='entry:'+result.entryId
+   }else if(choice.kind==='shared'||choice.kind==='personal'){
     const result=await submitPaidExpense(choice,record)
     if(result.type==='applied')applied++
     receiptRef=result.receiptRef||''
@@ -490,7 +517,8 @@ async function submitMemberEntry(){
    // A later failure leaves all unsent rows editable, not silently discarded.
    memberEntries.value.shift();sent++
   }
-  memberEntryNotice.value=sent+'件を HomeFlow 審査に送信しました。承認・入帳までは待入帳です。'
+  memberEntryNotice.value=(applied?applied+'件の資産移動を記録しました。':'')+
+   (sent-applied?sent-applied+'件を HomeFlow 審査に送信しました。承認・入帳までは待入帳です。':'')
   memberRawText.value=''
   await refresh()
   tab.value='list'
@@ -620,7 +648,7 @@ const entryDays=computed(()=>{
   byDay.get(entry.date).push(entry)
  }
  return [...byDay].map(([date,items])=>({date,items,
-  amount:items.reduce((sum,row)=>sum+(row.type==='income'?Number(row.amount||0):-Number(row.amount||0)),0)}))
+  amount:items.reduce((sum,row)=>sum+(row.type==='income'?Number(row.amount||0):row.type==='expense'?-Number(row.amount||0):0),0)}))
 })
 async function moreEntries(){
  if(ledgerLoading.value||pageOffset.value===null)return

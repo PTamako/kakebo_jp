@@ -23,15 +23,19 @@ async function read(req,url){
 const date=s=>typeof s==='string'&&/^20\d\d-\d\d-\d\d$/.test(s)&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
 const entryKeys=['date','time','amount','type','category','merchant','note'];
 function cleanEntry(x){
- if(!exact(x,entryKeys)||!date(x.date)||
+ const paid=exact(x,[...entryKeys,'payment_source']);
+ if(!(exact(x,entryKeys)||paid)||!date(x.date)||
   typeof x.time!=='string'||(x.time!==''&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(x.time))||
   !Number.isSafeInteger(x.amount)||x.amount<1||x.amount>10000000||
   !['income','expense'].includes(x.type)||
   typeof x.category!=='string'||!x.category.trim()||x.category.length>100||
   typeof x.merchant!=='string'||x.merchant.length>120||
-  typeof x.note!=='string'||x.note.length>500)return null;
+  typeof x.note!=='string'||x.note.length>500||
+  (paid&&(x.type!=='expense'||typeof x.payment_source!=='string'||
+   !x.payment_source.trim()||x.payment_source.length>80)))return null;
  return {date:x.date,time:x.time,amount:x.amount,type:x.type,
-  category:x.category.trim(),merchant:x.merchant.trim(),note:x.note.trim()};
+  category:x.category.trim(),merchant:x.merchant.trim(),note:x.note.trim(),
+  ...(paid?{payment_source:x.payment_source}:{})};
 }
 const shape=p=>({proposal_id:p.proposal_id,operation:p.operation,resource_id:p.resource_id,
  expected_version:p.expected_version,payload_sha256:p.payload_sha256,
@@ -72,6 +76,18 @@ async function prepare(req,e,url,u){
  if((x.operation==='create'||x.operation==='update')&&!entry||
     ['delete','restore'].includes(x.operation)&&x.entry!==null)
   return fail('SHARED_MUTATION_INVALID_ENTRY',400);
+ if(entry?.payment_source){
+  if(x.operation!=='create')return fail('SHARED_CARD_PAYMENT_CHANGE_FORBIDDEN',403);
+  const granted=await e.DB.prepare("SELECT 1 FROM family_legacy_card_shares s "+
+   "JOIN payment_sources card ON card.name=s.card_name "+
+   "JOIN homeflow_identity_links o ON o.user_id=s.owner_user_id "+
+   "WHERE s.card_name=? AND s.household_id=? AND s.grantee_user_id=? "+
+   "AND s.is_active=1 AND card.is_archived=0 AND card.stat_group='card' "+
+   "AND card.source_type IN ('standard','prepaid') "+
+   "AND o.household_id=s.household_id AND o.role='owner' AND o.state='active' LIMIT 1")
+   .bind(entry.payment_source,u.household_id,u.user_id).first();
+  if(!granted)return fail('SHARED_CARD_GRANT_REQUIRED',403);
+ }
  if(x.operation!=='create'){
   const reg=await e.DB.prepare('SELECT state,version FROM family_shared_entry_registry '+
    'WHERE resource_id=? AND household_id=?').bind(x.resource_id,u.household_id).first();

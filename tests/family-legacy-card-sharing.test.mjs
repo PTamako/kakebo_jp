@@ -41,12 +41,13 @@ function fixture(){
    }catch(e){sqlite.exec('ROLLBACK');throw e}
   }
  }
+ const env={DB:db,KAKEIBO_LEGACY_CARD_DIRECT_SPEND_ENABLED:'true'};
  async function send(path,user,data){
   const url=new URL('https://kakeibo.example/api/family-finance/'+path)
   const request=new Request(url,{method:data?'POST':'GET',
    ...(data?{headers:{origin:url.origin,'content-type':'application/json'},
     body:JSON.stringify(data)}:{})})
-  const res=await familyLegacyCardSharing(request,{DB:db},url,user,path.split('/'))
+  const res=await familyLegacyCardSharing(request,env,url,user,path.split('/'))
   return {status:res.status,data:await res.json()}
  }
  const share=(enabled=true,card='楽天カード',version=0,user=owner,target=spouse)=>
@@ -56,7 +57,7 @@ function fixture(){
   send('legacy-card-spends',user,{expected_user_id:user.user_id,
    idempotency_key:key,card_name:card,date:'2026-11-16',time:'17:35',
    amount_jpy:2000,merchant:'スーパー',category:'食費',note:''})
- return {sqlite,send,share,spend}
+ return {sqlite,env,send,share,spend}
 }
 test('only verified owner can grant; spouse sees only the granted card',async()=>{
  const f=fixture()
@@ -124,5 +125,17 @@ test('cash, points and archived cards cannot be shared; impersonation forbidden'
   f.sqlite.exec("UPDATE payment_sources SET is_archived=1 WHERE name='楽天カード'")
   assert.deepEqual((await f.send('legacy-card-shares',spouse)).data.incoming,[])
   assert.equal((await f.spend('test:card:0000005')).status,403)
+ }finally{f.sqlite.close()}
+})
+
+test('new delegated card spending cannot bypass HomeFlow ledger approval',async()=>{
+ const f=fixture()
+ try{
+  await f.share()
+  f.env.KAKEIBO_LEGACY_CARD_DIRECT_SPEND_ENABLED='false'
+  const res=await f.spend('approval-required-20261117')
+  assert.equal(res.status,409)
+  assert.equal(res.data.code,'SHARED_CARD_LEDGER_APPROVAL_REQUIRED')
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM entries').get().n,0)
  }finally{f.sqlite.close()}
 })

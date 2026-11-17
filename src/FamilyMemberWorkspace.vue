@@ -381,14 +381,14 @@ async function submitPaidExpense(choice,record){
  if(!pendingPaidEntry)pendingPaidEntry={snapshot,key:'member-spend:'+crypto.randomUUID(),requestId:null}
  const pending=pendingPaidEntry
  if(choice.kind==='shared'){
-  const result=await api('legacy-card-spends',request({
-   expected_user_id:user,idempotency_key:pending.key,card_name:choice.card.card_name,
-   date:entry.date,time:entry.time,amount_jpy:entry.amount,
-   merchant:entry.merchant,category:entry.category,note:entry.note}))
-  if(result.applied!==true||!Number.isSafeInteger(result.entry_id)||result.entry_id<1)
-   throw Error('共有カードの入帳結果が未確認です')
+  // Card sharing authorizes the payment method, never an immediate household
+  // ledger mutation. The actual expense must be approved in HomeFlow.
+  const result=await sharedMutationRef.value?.submitEntry({
+   ...entry,type:'expense',payment_source:choice.card.card_name
+  })
+  if(!result?.proposalId)throw Error('共有カードの HomeFlow 審査受付を確認できません')
   pendingPaidEntry=null
-  return {type:'applied',entryId:result.entry_id,receiptRef:'entry:'+result.entry_id}
+  return {type:'pending',receiptRef:'proposal:'+result.proposalId}
  }
  if(choice.kind!=='personal')throw Error('支払方法を確認してください')
  const a=choice.account
@@ -470,9 +470,7 @@ async function submitMemberEntry(){
    // A later failure leaves all unsent rows editable, not silently discarded.
    memberEntries.value.shift();sent++
   }
-  memberEntryNotice.value=applied?
-   sent+'件受付（うち'+applied+'件は承認済み共有カードで入帳）':
-   sent+'件を HomeFlow 審査に送信しました。承認・入帳までは待入帳です。'
+  memberEntryNotice.value=sent+'件を HomeFlow 審査に送信しました。承認・入帳までは待入帳です。'
   memberRawText.value=''
   await refresh()
   tab.value='list'

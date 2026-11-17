@@ -22,6 +22,9 @@ function fixture(){
  sql.exec('CREATE TABLE family_financial_accounts(account_id TEXT PRIMARY KEY,household_id TEXT,owner_user_id TEXT,is_archived INTEGER)')
  sql.exec('CREATE TABLE family_finance_legacy_entry_links(entry_id INTEGER PRIMARY KEY,household_id TEXT,actor_user_id TEXT,account_id TEXT,original_source TEXT,source_digest TEXT)')
  sql.exec('CREATE TABLE receipt_r2_state(entry_id INTEGER PRIMARY KEY,deleted INTEGER,size_bytes INTEGER)')
+ sql.exec("CREATE TABLE payment_sources(name TEXT PRIMARY KEY,is_archived INTEGER DEFAULT 0,stat_group TEXT DEFAULT 'card',source_type TEXT DEFAULT 'standard')")
+ sql.exec('CREATE TABLE family_legacy_card_shares(card_name TEXT,household_id TEXT,owner_user_id TEXT,grantee_user_id TEXT,is_active INTEGER)')
+ sql.exec("INSERT INTO payment_sources(name) VALUES('楽天カード')")
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,amount INTEGER,category TEXT,'+
   'merchant TEXT,note TEXT,raw TEXT,type TEXT,client_request_id TEXT UNIQUE,payment_source TEXT,'+
   'family_account_id TEXT,family_transfer_target_account_id TEXT)')
@@ -263,5 +266,33 @@ test('adopted history cannot execute when source financial account archived, and
   assert.equal(f.count('family_shared_mutation_applied'),0)
   assert.equal(f.count('family_shared_entry_audit'),1)
   assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,1)
+ }finally{f.close()}
+})
+
+test('delegated credit card purchase stays pending until owner approves and retains original bill on restore',async()=>{
+ const f=fixture()
+ try{
+  const purchase={...sample,payment_source:'楽天カード'}
+  const denied=await f.source(['shared-mutation-requests'],{
+   expected_user_id:member,idempotency_key:'new-shared-card-denied',
+   operation:'create',resource_id:null,expected_version:0,entry:purchase})
+  assert.equal(denied.status,403)
+  assert.equal(f.count('entries'),0)
+  f.sql.prepare('INSERT INTO family_legacy_card_shares VALUES(?,?,?,?,1)')
+   .run('楽天カード',hh,owner,member)
+  const intent=await f.apply('create',null,0,purchase)
+  assert.equal(f.count('entries'),0,'the card grant is not posting permission')
+  const applied=await f.target('execute',intent)
+  assert.equal(applied.status,200,JSON.stringify(applied))
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'楽天カード')
+  const id=applied.data.resource_id
+  const revised=await f.target('execute',await f.apply('update',id,1,{...sample,amount:1200}))
+  assert.equal(revised.status,200,JSON.stringify(revised))
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'楽天カード')
+  await f.target('execute',await f.apply('delete',id,2,null))
+  const restored=await f.target('execute',await f.apply('restore',id,3,null))
+  assert.equal(restored.status,200,JSON.stringify(restored))
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'楽天カード')
+  assert.equal(f.count('entries'),1)
  }finally{f.close()}
 })

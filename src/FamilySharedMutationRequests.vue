@@ -83,6 +83,11 @@ function canonical(input){
   amount:Number(input?.amount),type:String(input?.type||''),
   category:String(input?.category||'').trim(),
   merchant:String(input?.merchant||'').trim(),note:String(input?.note||'').trim()}
+ if(input?.payment_source!==undefined){
+  const card=String(input.payment_source)
+  if(e.type!=='expense'||!card||card.length>80)throw Error('共有カードを確認してください')
+  e.payment_source=card
+ }
  if(!/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(e.date)||
   !/^([01]\d|2[0-3]):[0-5]\d$|^$/.test(e.time)||
   !Number.isSafeInteger(e.amount)||e.amount<1||e.amount>10000000||

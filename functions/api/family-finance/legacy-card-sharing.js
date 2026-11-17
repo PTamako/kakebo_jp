@@ -119,7 +119,7 @@ async function share(req,db,url,u){
   return json({ok:true,changed:true,version:x.expected_version+1,ledger_changed:false});
  }catch{return fail('CARD_SHARE_WRITE_FAILED',503);}
 }
-async function spend(req,db,url,u){
+async function spend(req,env,db,url,u){
  if(u.role!=='member')return fail('SHARED_CARD_MEMBER_REQUIRED',403);
  const x=await body(req,url);
  if(x?.expected_user_id!==u.user_id)return fail('ACTOR_CHANGED',403);
@@ -146,6 +146,10 @@ async function spend(req,db,url,u){
   existing.payload_sha256===digest&&existing.card_name===x.card_name?
   json({ok:true,entry_id:existing.entry_id,card_name:existing.card_name,
    applied:true,replayed:true,ledger_changed:true}):fail('CARD_SPEND_IDEMPOTENCY_CONFLICT');
+ // Historical idempotent receipts remain readable; NEW delegated purchases
+ // must use HomeFlow approval via shared-mutation-requests instead.
+ if(env.KAKEIBO_LEGACY_CARD_DIRECT_SPEND_ENABLED!=='true')
+  return fail('SHARED_CARD_LEDGER_APPROVAL_REQUIRED',409);
  const at=Date.now();
  try{
   // Cloudflare D1 batch commits atomically; the AFTER INSERT trigger writes
@@ -206,6 +210,6 @@ export async function familyLegacyCardSharing(req,env,url,user,parts){
   if(method==='POST'&&parts.length===1)return share(req,env.DB,url,user);
  }
  if(p==='legacy-card-spends'&&method==='POST'&&parts.length===1)
-  return spend(req,env.DB,url,user);
+  return spend(req,env,env.DB,url,user);
  return fail('NOT_FOUND',404);
 }

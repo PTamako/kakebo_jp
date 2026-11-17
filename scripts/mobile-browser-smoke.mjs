@@ -243,6 +243,29 @@ try{
     // multiple weekdays/dates. Never expand all frequency options inline.
     const recurringForm=page.locator('.recurring-manager-panel')
     await assertNativeTemporalLayout(recurringForm.locator('input[type=month]'),'固定費の開始月',width)
+    const startMonthLayout=await recurringForm.locator('.recurring-start-month').evaluate(label=>{
+      const input=label.querySelector('input[type=month]').getBoundingClientRect()
+      const frame=label.getBoundingClientRect()
+      const form=label.closest('.recurring-form-layout').getBoundingClientRect()
+      const standard=label.closest('.recurring-form-layout')
+        .querySelector('.recurring-form-field:not(.recurring-start-month)').getBoundingClientRect()
+      return {inputLeft:input.left,inputRight:input.right,inputWidth:input.width,
+        frameLeft:frame.left,frameRight:frame.right,
+        formLeft:form.left,formRight:form.right,
+        standardLeft:standard.left,standardRight:standard.right}
+    })
+    assert.ok(startMonthLayout.inputWidth>=100,
+      'Start month picker must remain readable at '+width+'px: '+JSON.stringify(startMonthLayout))
+    assert.ok(startMonthLayout.inputLeft>=startMonthLayout.frameLeft-1 &&
+      startMonthLayout.inputRight<=startMonthLayout.frameRight+1,
+      'Start month control must stay within its own label at '+width+'px: '+JSON.stringify(startMonthLayout))
+    assert.ok(startMonthLayout.frameLeft>=startMonthLayout.formLeft-1 &&
+      startMonthLayout.frameRight<=startMonthLayout.formRight+1,
+      'Start month label must not escape the form grid at '+width+'px: '+JSON.stringify(startMonthLayout))
+    assert.ok(startMonthLayout.inputLeft>=startMonthLayout.standardLeft-2 &&
+      startMonthLayout.inputRight<=startMonthLayout.standardRight+2,
+      'Start month width must match the other fixed-cost fields at '+width+'px: '+JSON.stringify(startMonthLayout))
+
     await recurringForm.getByRole('button',{name:/記帳周期：/}).click()
     const cycleSheet=page.getByRole('dialog',{name:'記帳周期'})
     await cycleSheet.getByRole('option',{name:'毎週'}).click()

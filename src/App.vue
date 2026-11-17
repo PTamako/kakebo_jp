@@ -1251,6 +1251,8 @@ function startEdit(entry) {
   const foreignSource=isAnotherMembersPayment(entry,viewerId)
   const foreignTarget=!!entry.transfer_target_account_owner_user_id&&
    entry.transfer_target_account_owner_user_id!==viewerId
+  const foreignCreator=!!entry.shared_record_creator_user_id&&
+   entry.shared_record_creator_user_id!==viewerId
   editingEntry.value = {
     // Send an immutable snapshot for optimistic concurrency in D1.
     expected: Object.fromEntries(['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_date','payment_source']
@@ -1258,16 +1260,17 @@ function startEdit(entry) {
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
     transferTarget: entry.transfer_target || '', transferDisplay:ledgerTransferTargetLabel(entry),
-    transferReadOnly:foreignSource||foreignTarget,
+    transferReadOnly:foreignSource||foreignTarget||foreignCreator,
     transferSourceReadOnly:foreignSource,
     rewardDestination: entry.type==='income' && entry.category==='ポイント還元' ? (entry.transfer_target || '') : '',
-    rewardDisplay:ledgerTransferTargetLabel(entry),rewardReadOnly:foreignSource||foreignTarget,
+    rewardDisplay:ledgerTransferTargetLabel(entry),rewardReadOnly:foreignSource||foreignTarget||foreignCreator,
     transferDate: entry.transfer_date || (entry.type === 'transfer' ? entry.date : ''),
     category: entry.category || '日用品', paymentSource: entry.payment_source || '',
     paymentReadOnly:foreignSource,
     // The administrator can still edit own legacy names after a settings
     // deletion. A foreign account always remains visible but read-only.
-    isOwnRecorded:true,allowUnlistedAccountEdit:!foreignSource&&!foreignTarget,
+    isOwnRecorded:!foreignSource&&!foreignCreator,
+    allowUnlistedAccountEdit:!foreignSource&&!foreignTarget&&!foreignCreator,
     paymentDisplay:entry.type==='expense'
      ?(entry.payment_source_display || (!entry.payment_source?'現金':entry.payment_source))
      :ledgerTransferSourceLabel(entry),

@@ -36,19 +36,23 @@ test('asset transfer and income do not inherit card or cash labels',()=>{
 })
 
 
-test('real approved owner cash and shared card sources are displayed by the original ledger component',()=>{
+test('all ledger detail subtitles stay on one truncated line without payment source',()=>{
  const cash={id:527,date:'2026-11-17',amount:960,type:'expense',
-  category:'餐饮',merchant:'長門',payment_source:'現金',recorded_by:'家庭成员'};
+  category:'食費',merchant:'長門',payment_source:'現金',recorded_by:'鸡毛大王'};
  const card={id:528,date:'2026-11-17',amount:650,type:'expense',
-  category:'食費',merchant:'バーガーキング',payment_source:'セブンカード・プラス',recorded_by:'家庭成员'};
+  category:'食費',merchant:'バーガーキング',payment_source:'セブンカード・プラス',recorded_by:'鸡毛大王'};
+ // Payment details are still available to editing and account calculations.
  assert.equal(ledgerPaymentLabel(cash),'現金');
  assert.equal(ledgerPaymentLabel(card),'セブンカード・プラス');
  const component=readFileSync(new URL('../src/LedgerEntryContent.vue',import.meta.url),'utf8');
  const metadata=component.slice(component.indexOf('<small>'),component.indexOf('</small>'));
- assert(metadata.includes('ledgerPaymentLabel(entry)'));
- assert(metadata.indexOf('class="ledger-payment-method"')<metadata.indexOf('class="ledger-recorder"'),
-  'payment method appears before potentially long nickname');
- const css=readFileSync(new URL('../src/mobile-ui.css',import.meta.url),'utf8');
- assert.match(css,/main \.ledger-info small \{[^}]*white-space:\s*normal;/);
- assert.match(css,/main \.ledger-payment-method \{[^}]*white-space:\s*nowrap;/);
+ assert(!metadata.includes('ledgerPaymentLabel(entry)'), 'payment source must not appear in list');
+ assert(metadata.includes('entry.recorded_by'),'nickname remains in subtitle');
+ assert(metadata.includes('entry.pending_approval'),'pending state remains in subtitle');
+ assert(metadata.includes('entry.transfer_target'),'transfer destination remains in subtitle');
+ const style=component.slice(component.indexOf('<style scoped>'));
+ assert.match(style,/\.ledger-info small\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap/);
+ const mobile=readFileSync(new URL('../src/mobile-ui.css',import.meta.url),'utf8');
+ assert.match(mobile,/main \.ledger-info small \{[^}]*white-space:\s*nowrap;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/);
+ assert(!mobile.includes('main .ledger-payment-method'), 'obsolete payment badge CSS removed');
 });

@@ -193,8 +193,8 @@ export async function familyPrepaidActions(req,env,url,user,parts){
  if(req.method==='GET'&&parts.length===2&&parts[1]==='balances'){
   const corrections=!!await env.DB.prepare("SELECT 1 FROM sqlite_master "+
    "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").first()
-  const effect=corrections?"+
-   COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects c "+
+  const effect=corrections?
+   "+COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects c "+
    "WHERE c.account_id=a.account_id AND c.account_kind='prepaid'),0)":""
   const rows=(await env.DB.prepare('SELECT a.account_id,a.label,'+
    'COALESCE((SELECT SUM(j.delta_jpy) FROM family_prepaid_balance_journal j '+

@@ -4,7 +4,7 @@ import { sortOtherLast } from './category-sort.js'
 import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
-const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentReadOnly: {type:Boolean,default:false}, paymentChoices: {type:Array,default:()=>[]} })
+const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentReadOnly: {type:Boolean,default:false}, categoryReadOnly: {type:Boolean,default:false}, transferReadOnly: {type:Boolean,default:false}, transferSourceReadOnly: {type:Boolean,default:false}, rewardReadOnly: {type:Boolean,default:false}, paymentChoices: {type:Array,default:()=>[]} })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
@@ -14,6 +14,22 @@ const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
 const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receiptName || props.existingReceipt)
 const categoryOptions = computed(()=> (record.value.type==='income'?orderedIncomeCategories.value:orderedCategories.value)
   .map(c=>({value:c,label:props.categoryLabel(c)})))
+// Historic values are never inferred from the current viewer's personal options.
+const missingSavedCategory = computed(()=>props.editMode&&!!record.value.category&&
+ !categoryOptions.value.some(x=>x.value===record.value.category))
+const categoryLocked = computed(()=>props.editMode&&(props.categoryReadOnly||missingSavedCategory.value))
+const missingSavedReward = computed(()=>props.editMode&&!!record.value.rewardDestination&&
+ !props.rewardDestinations.some(x=>x.value===record.value.rewardDestination))
+const rewardLocked = computed(()=>props.editMode&&(props.rewardReadOnly||missingSavedReward.value))
+const missingSavedTransfer = computed(()=>props.editMode&&!!record.value.transferTarget&&
+ record.value.transferTarget!=='sbi'&&
+ !props.transferDestinations.some(x=>x.value===record.value.transferTarget))
+const transferLocked = computed(()=>props.editMode&&(props.transferReadOnly||missingSavedTransfer.value))
+const missingSavedSource = computed(()=>props.editMode&&!!record.value.paymentSource&&
+ !(props.paymentChoices.length?props.paymentChoices.some(x=>x.value===record.value.paymentSource):
+  props.paymentSources.includes(record.value.paymentSource)))
+const transferSourceLocked = computed(()=>props.editMode&&
+ (props.transferSourceReadOnly||props.paymentReadOnly||missingSavedSource.value))
 const paymentOptions = computed(()=> {
  const options=props.paymentChoices.length ? props.paymentChoices
   : orderedPayments.value.map(name=>({value:name,label:name}));
@@ -58,15 +74,15 @@ const transferOptions = computed(()=> [
   <div v-if="!(Number(record.amount)>0)" class="amount-warning" role="alert">金額を確認してください。</div>
   <div class="field-grid">
     <label class="form-field"><span>日付</span><input v-model="record.date" type="date" required /><small v-if="!record.date" class="amount-warning">日付を確認してください</small></label>
-    <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><MobileChoiceSheet v-model="record.category" :options="categoryOptions" label="カテゴリ" /></label>
-    <label v-if="record.type==='income' && record.category==='ポイント還元'" class="form-field reward-destination-field"><span>還元先（任意）</span><MobileChoiceSheet v-model="record.rewardDestination" :options="rewardOptions" label="還元先" /><small>プリペイド・SBI証券は資産移動を自動作成、クレジットカードは利用額から差し引きます。</small></label>
+    <label v-if="record.type!=='transfer'" class="form-field"><span>カテゴリ</span><span v-if="categoryLocked" class="payment-source-readonly" role="status">{{props.categoryLabel(record.category)||record.category||'未設定'}}</span><MobileChoiceSheet v-else v-model="record.category" :options="categoryOptions" label="カテゴリ" /></label>
+    <label v-if="record.type==='income' && record.category==='ポイント還元'" class="form-field reward-destination-field"><span>還元先（任意）</span><span v-if="rewardLocked" class="payment-source-readonly" role="status">{{record.rewardDisplay||record.rewardDestination||'未設定'}}</span><MobileChoiceSheet v-else v-model="record.rewardDestination" :options="rewardOptions" label="還元先" /><small>プリペイド・SBI証券は資産移動を自動作成、クレジットカードは利用額から差し引きます。</small></label>
     <label v-if="record.type==='income' && record.category==='ポイント還元' && record.rewardDestination==='sbi'" class="form-field sbi-reward-date-field"><span>SBI証券への適用日（必須）</span><input v-model="record.transferDate" type="date" required /><small>収入の日付とは別に、投資への反映日を選択してください。未来の日付は当日まで未反映です。</small></label>
     <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
     <label v-if="record.type==='expense' && showPaymentSource" class="form-field"><span>支払方法・カード</span><span v-if="paymentReadOnly" class="payment-source-readonly" role="status">{{record.paymentDisplay||record.paymentSource||'未設定'}}</span><MobileChoiceSheet :model-value="record.paymentSource" v-else :options="paymentOptions" label="支払方法・カード" @change="emit('payment-change',$event)" /></label>
   </div>
   <div v-if="record.type==='transfer'" class="field-grid transfer-schedule-fields">
     <label class="form-field"><span>转移方式／振替先</span>
-      <MobileChoiceSheet v-model="record.transferTarget" :options="transferOptions" label="振替先" />
+      <span v-if="transferLocked" class="payment-source-readonly" role="status">{{record.transferDisplay||record.transferTarget||'未設定'}}</span><MobileChoiceSheet v-else v-model="record.transferTarget" :options="transferOptions" label="振替先" />
     </label>
     <label v-if="record.transferTarget!=='family:cross-bank'&&record.transferTarget!=='spouse'" class="form-field"><span>反映日</span>
       <input v-model="record.transferDate" type="date" required />
@@ -84,7 +100,7 @@ const transferOptions = computed(()=> [
   </label>
   <label v-if="record.type==='transfer' && record.transferTarget!=='family:cross-bank'&&record.transferTarget!=='spouse'" class="form-field">
     <span>{{record.transferTarget?.startsWith('prepaid:') ? 'チャージ元（任意）' : '振替元（任意）'}}</span>
-    <MobileChoiceSheet v-model="record.paymentSource" :options="transferSourceOptions" label="振替元" />
+    <span v-if="transferSourceLocked" class="payment-source-readonly" role="status">{{record.paymentDisplay||record.paymentSource||'未設定'}}</span><MobileChoiceSheet v-else v-model="record.paymentSource" :options="transferSourceOptions" label="振替元" />
   </label>
   <div v-if="record.type==='expense' && receiptEnabled" class="receipt-attachment-field" role="group" aria-label="レシート画像の添付"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{hasReceipt?'画像を変更する':'画像を追加'}}<input type="file" accept="image/*" @change="emit('select-receipt',$event)" hidden /></label><span class="receipt-attachment-status">{{record.receiptImage?'選択済み'+(record.receiptFileName?'：'+record.receiptFileName:''):receiptName?'選択済み：'+receiptName:existingReceipt?'保存済み':'未選択'}}</span><button v-if="record.receiptImage || receiptName" type="button" class="receipt-attachment-clear" @click="emit('clear-receipt')">選択を解除</button></div>
   <div v-if="!editMode && record.type==='expense'" class="merchant-rule-options" role="group" aria-label="店舗の自動設定">

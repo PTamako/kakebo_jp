@@ -227,7 +227,7 @@ onUnmounted(()=>{
    </button>
   </div>
   <div v-if="open" class="hf-body">
-   <p class="muted">本人の申請のみ表示。HomeFlow の承認後、入帳結果を反映します。</p>
+   <p class="muted">本人の申請のみ表示。HomeFlow の承認と実際の入帳結果を区別します。</p>
    <p v-if="error" class="error" role="alert">{{error}}</p>
    <p v-if="message" class="muted" role="status">{{message}}</p>
    <form class="hf-new-request" @submit.prevent="createProposal" aria-label="创建本人加密家庭收支草稿">

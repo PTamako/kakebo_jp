@@ -77,7 +77,18 @@ WHEN NOT EXISTS (
  AND paid.action='spend'
  AND e.client_request_id='hfprepaid:'||paid.homeflow_request_id))))
   OR (OLD.state='active' AND NEW.state='deleted' AND c.action='delete'
-   AND NOT EXISTS(SELECT 1 FROM entries e WHERE e.id=OLD.entry_id))
+   AND (NOT EXISTS(SELECT 1 FROM entries e WHERE e.id=OLD.entry_id)
+    OR EXISTS(SELECT 1 FROM entries e
+      JOIN family_approved_account_corrections correction ON correction.entry_id=e.id
+      WHERE e.id=OLD.entry_id AND e.type='expense' AND e.amount=0
+       AND correction.version_before=OLD.version
+       AND correction.version_after=NEW.version
+       AND correction.approver_user_id=c.actor_user_id
+       AND (EXISTS(SELECT 1 FROM family_card_purchase_applied paid
+         WHERE paid.entry_id=e.id AND e.client_request_id='hfcard:'||paid.homeflow_request_id)
+        OR EXISTS(SELECT 1 FROM family_prepaid_actions_applied paid
+         WHERE paid.entry_id=e.id AND paid.action='spend'
+          AND e.client_request_id='hfprepaid:'||paid.homeflow_request_id)))))
   OR (OLD.state='deleted' AND NEW.state='active' AND c.action='restore'
    AND EXISTS(SELECT 1 FROM entries e WHERE e.id=OLD.entry_id
     AND ((e.client_request_id='hfshare:'||OLD.resource_id AND e.family_account_id IS NULL)
@@ -146,7 +157,13 @@ WHEN NOT EXISTS(
  AND paid.action='spend'
  AND e.client_request_id='hfprepaid:'||paid.homeflow_request_id))))
   OR (NEW.action='delete' AND r.state='deleted'
-   AND NOT EXISTS(SELECT 1 FROM entries e WHERE e.id=r.entry_id))
+   AND (NOT EXISTS(SELECT 1 FROM entries e WHERE e.id=r.entry_id)
+    OR EXISTS(SELECT 1 FROM entries e
+     JOIN family_approved_account_corrections correction ON correction.entry_id=e.id
+     WHERE e.id=r.entry_id AND e.amount=0 AND e.type='expense'
+      AND correction.proposal_id=NEW.proposal_id
+      AND correction.homeflow_request_id=NEW.homeflow_request_id
+      AND correction.version_after=NEW.version_after)))
  )
 )
 BEGIN SELECT RAISE(ABORT,'SHARED_MUTATION_APPLIED_COUNTERPART_INVALID'); END;
@@ -165,7 +182,7 @@ CREATE TRIGGER trg_family_prepaid_applied_entry_no_update
  WHERE correction.entry_id=OLD.id
  AND correction.version_before=registry.version
  AND correction.version_after=registry.version+1
- AND context.entry_id=OLD.id AND context.action='update'
+ AND context.entry_id=OLD.id AND context.action IN('update','delete','restore')
  AND context.actor_user_id=correction.approver_user_id
  AND json_extract(correction.before_json,'$.amount')=OLD.amount
  AND json_extract(correction.before_json,'$.date')=OLD.date

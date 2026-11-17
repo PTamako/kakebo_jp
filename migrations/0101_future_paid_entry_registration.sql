@@ -1,5 +1,5 @@
--- 0075 future-only personal card/prepaid charge registration.
--- Requires migration 0074. Never adopts or changes old charges.
+-- 0101 future-only personal card/prepaid charge registration.
+-- Requires migration 0100. Never adopts or changes old charges.
 -- Preserve all neutral-spouse and legacy-adoption restrictions.
 DROP TRIGGER IF EXISTS trg_shared_entry_registry_guard;
 CREATE TRIGGER trg_shared_entry_registry_guard BEFORE INSERT ON family_shared_entry_registry
@@ -225,5 +225,5 @@ AND NOT EXISTS(
 BEGIN SELECT RAISE(ABORT,'SHARED_ENTRY_APPROVAL_CONTEXT_REQUIRED'); END;
 
 INSERT OR IGNORE INTO schema_migrations(version,description)
- VALUES('schema-0075-future-paid-entry-registration',
+ VALUES('schema-0101-future-paid-entry-registration',
  'Future-only member credit/prepaid purchase registry with authenticated owner-reviewed correction precondition');

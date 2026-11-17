@@ -18,7 +18,7 @@ function fixture(){
  sql.exec('CREATE TABLE family_card_purchase_applied(entry_id INTEGER PRIMARY KEY,household_id TEXT,requester_user_id TEXT,homeflow_request_id TEXT,account_id TEXT)');
  sql.exec('CREATE TABLE family_prepaid_actions_applied(entry_id INTEGER PRIMARY KEY,household_id TEXT,requester_user_id TEXT,homeflow_request_id TEXT,action TEXT,prepaid_account_id TEXT)');
  sql.exec('CREATE TABLE family_legacy_shared_adoptions(resource_id TEXT,entry_id INTEGER,household_id TEXT,original_owner_user_id TEXT,original_client_request_id TEXT,account_id TEXT)');
- for(const file of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql','0074_approved_account_corrections.sql','0075_future_paid_entry_registration.sql']){
+ for(const file of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql','0100_approved_account_corrections.sql','0101_future_paid_entry_registration.sql']){
   sql.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
  }
  sql.prepare('INSERT INTO homeflow_identity_links VALUES(?,?,?,?)').run(member,'primary','member','active');

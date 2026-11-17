@@ -1,4 +1,4 @@
--- 0074: Future-only approved correction journal for MEMBER-CREATED credit
+-- 0100: Future-only approved correction journal for MEMBER-CREATED credit
 -- and prepaid purchases. Immutable original purchase/charge/points evidence
 -- remains unchanged. No historical replay, no default-enabled writer.
 -- Every new effect is signed by an authorized HomeFlow entry.update workflow;
@@ -100,5 +100,5 @@ CREATE TRIGGER IF NOT EXISTS trg_approved_account_effect_no_delete
  BEFORE DELETE ON family_approved_account_effects
  BEGIN SELECT RAISE(ABORT,'ACCOUNT_EFFECT_IMMUTABLE'); END;
 INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(
- 'schema-0074-approved-account-corrections',
+ 'schema-0100-approved-account-corrections',
  'Future-only approved credit/prepaid expense amendment and signed immutable balance/liability effects; execution disabled until audited HomeFlow route ships');

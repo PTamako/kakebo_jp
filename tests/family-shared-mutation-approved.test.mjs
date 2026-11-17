@@ -487,3 +487,66 @@ test('recovery confirms immutable journal after transaction committed but batch 
   assert.equal((await f.target('receipt',intent)).status,200);
  }finally{f.close()}
 });
+
+
+test('member cash to shared card and back is owner-approved and changes exactly one bill source',async()=>{
+ const f=fixture()
+ try{
+  // Card must be actively shared. A UI-selected label alone cannot authorize it.
+  const created=await f.target('execute',await f.apply('create',null,0,sample))
+  assert.equal(created.status,200,JSON.stringify(created))
+  const id=created.data.resource_id
+  const denied=await f.source(['shared-mutation-requests'],{
+   expected_user_id:member,idempotency_key:'member-cannot-use-ungranted-card',
+   operation:'update',resource_id:id,expected_version:1,
+   entry:{...sample,payment_source:'楽天カード'}})
+  assert.equal(denied.status,403)
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'')
+  f.sql.prepare('INSERT INTO family_legacy_card_shares VALUES(?,?,?,?,1)')
+   .run('楽天カード',hh,owner,member)
+  const cardRequest=await f.apply('update',id,1,{...sample,payment_source:'楽天カード'})
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'',
+   'pending review must not alter payment method')
+  const card=await f.target('execute',cardRequest)
+  assert.equal(card.status,200,JSON.stringify(card))
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'楽天カード')
+  assert.equal(f.count('entries'),1)
+  assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,2)
+
+  const cashRequest=await f.apply('update',id,2,{...sample,payment_source:''})
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'楽天カード',
+   'payment is unchanged until the second approval')
+  const cash=await f.target('execute',cashRequest)
+  assert.equal(cash.status,200,JSON.stringify(cash))
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'')
+  assert.equal(f.count('entries'),1)
+  assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,3)
+  assert.equal((await f.target('receipt',cashRequest)).data.already_applied,true)
+  assert.equal(f.count('family_shared_mutation_applied'),3)
+  const restoredCard=await f.target('execute',await f.apply('update',id,3,{...sample,payment_source:'楽天カード'}))
+  assert.equal(restoredCard.status,200,JSON.stringify(restoredCard))
+  await f.target('execute',await f.apply('delete',id,4,null))
+  await f.target('execute',await f.apply('restore',id,5,null))
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'楽天カード')
+  assert.equal(f.count('entries'),1)
+ }finally{f.close()}
+})
+test('other member payment and account-linked records reject source changes even if owner would approve',async()=>{
+ const f=fixture()
+ try{
+  const ownerEntry=await f.source(['shared-mutation-requests'],{
+   expected_user_id:member,idempotency_key:'modify-other-person-payment-1',
+   operation:'update',resource_id:'c'.repeat(32),expected_version:1,
+   entry:{...sample,payment_source:''}})
+  assert.equal(ownerEntry.status,409)
+  const adopted=seedAdopted(f)
+  const bad=await f.source(['shared-mutation-requests'],{
+   expected_user_id:member,idempotency_key:'modify-owner-account-payment',
+   operation:'update',resource_id:adopted.resource,expected_version:1,
+   entry:{...sample,payment_source:''}})
+  assert.equal(bad.status,403)
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries WHERE id=?')
+   .get(adopted.oldId).payment_source,'Bank')
+  assert.equal(f.count('family_shared_mutation_intents'),0)
+ }finally{f.close()}
+})

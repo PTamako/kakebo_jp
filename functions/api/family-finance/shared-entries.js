@@ -178,7 +178,7 @@ async function modify(req,e,url,u,id,action){
   const originalPayment=String(physical.payment_source||'');
   paymentAfter=originalPayment;
   // A previously approved card purchase cannot be turned into income.
-  if(originalPayment&&next.type!=='expense')
+  if(previousSnapshot.type==='expense'&&originalPayment&&next.type!=='expense')
    return fail('SHARED_CARD_CHANGE_TYPE_FORBIDDEN',409);
   if(next.type==='expense'){
    const explicit=Object.hasOwn(next,'payment_source');
@@ -192,7 +192,9 @@ async function modify(req,e,url,u,id,action){
   }
   const before={...previousSnapshot,...(next.type==='expense'?
    {payment_source:originalPayment}:{})};
-  if(sameLedgerValues(before,next))return fail('SHARED_ENTRY_NO_CHANGES',409);
+  const after={...next,...(next.type==='expense'?
+   {payment_source:paymentAfter}:{})};
+  if(sameLedgerValues(before,after))return fail('SHARED_ENTRY_NO_CHANGES',409);
  }
  if(action==='restore')next=previousSnapshot;
  const snapshot=next?JSON.stringify(next):r.snapshot_json;

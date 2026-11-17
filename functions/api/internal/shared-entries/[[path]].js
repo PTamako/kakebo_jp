@@ -299,7 +299,7 @@ async function write(e,p,b,approval,payload){
    stmts.push(...paidRevision.commands);
    stmts.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,'+
     'category=?,merchant=?,note=?,type=?,payment_source=?,family_account_id=? '+
-    'WHERE id=? AND client_request_id=? AND family_account_id=? '+
+    'WHERE id=? AND client_request_id=? AND family_account_id IS ? '+
     "AND type='expense' AND date=? AND amount=?")
     .bind(revised.date,revised.time,revised.amount,revised.category,
      revised.merchant,revised.note,'expense',

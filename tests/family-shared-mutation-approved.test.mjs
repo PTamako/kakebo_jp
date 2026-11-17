@@ -620,3 +620,32 @@ test('non-admin may propose edits to the administrator neutral spouse transfer; 
  }finally{f.close()}
 })
 
+
+test('new member income is editable via new approvals without rewriting past rows',async()=>{
+ const f=fixture()
+ try{
+  // Existing historical entry stays untouched; this test exercises only
+  // freshly submitted and approved household-ledger records.
+  f.sql.prepare("INSERT INTO entries(date,time,amount,type,category,merchant,note,raw,client_request_id,payment_source) "+
+   "VALUES(?,?,?,?,?,?,?,?,?,?)").run('2026-11-01','',10000,'income','給与','履歴','','',
+   'immutable-old-income','')
+  const fresh={date:'2026-11-18',time:'09:10',type:'income',
+   amount:180000,category:'給与',merchant:'勤務先',note:''}
+  const proposed=await f.apply('create',null,0,fresh)
+  assert.equal(f.sql.prepare("SELECT COUNT(*) n FROM entries WHERE date='2026-11-18'").get().n,0)
+  const accepted=await f.target('execute',proposed)
+  assert.equal(accepted.status,200,JSON.stringify(accepted))
+  const id=accepted.data.resource_id
+  const changed=await f.apply('update',id,1,{...fresh,
+   amount:185000,note:'追加確認'})
+  assert.equal(f.sql.prepare("SELECT amount FROM entries WHERE date='2026-11-18'").get().amount,180000)
+  const applied=await f.target('execute',changed)
+  assert.equal(applied.status,200,JSON.stringify(applied))
+  assert.equal(f.sql.prepare("SELECT amount FROM entries WHERE date='2026-11-18'").get().amount,185000)
+  const historical=f.sql.prepare("SELECT date,amount,note FROM entries WHERE client_request_id='immutable-old-income'").get()
+  assert.equal(historical.date,'2026-11-01')
+  assert.equal(historical.amount,10000)
+  assert.equal(historical.note,'')
+  assert.equal(f.count('family_shared_mutation_applied'),2)
+ }finally{f.close()}
+})

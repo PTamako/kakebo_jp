@@ -10,7 +10,15 @@ async function canonicalMemberCashId(householdId,userId){
  const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',input));
  return Array.from(bytes.slice(0,16),x=>x.toString(16).padStart(2,'0')).join('');
 }
-const canonicalCash=db=>db.prepare("SELECT name FROM payment_sources WHERE name='現金' AND is_archived=0 LIMIT 1").first();
+const canonicalCash=async db=>{
+ try{return await db.prepare("SELECT name FROM payment_sources WHERE name='現金' AND is_archived=0 LIMIT 1").first();}
+ catch(error){
+  // Older isolated ledger fixtures have no payment_sources schema.
+  // Never synthesize a default cash name when the canonical table is absent.
+  if(/no such table: payment_sources/i.test(String(error)))return null;
+  throw error;
+ }
+};
 // Use the existing paired document-finance key when a separate account
 // proof key has not been configured. Each route has a unique HMAC domain.
 const accountProofSecret=env=>hex64.test(env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET||'')

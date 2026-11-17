@@ -56,5 +56,6 @@ test('payment owner provenance locks spouse entries while preserving own edits',
  assert.match(app,/const foreignSource=isAnotherMembersPayment\(entry,viewerId\)/);
  assert.match(app,/paymentReadOnly:foreignSource/);
  assert.match(app,/paymentSource: entry\.payment_source \|\| ''/);
- assert.match(app,/paymentDisplay:entry\.payment_source_display/);
+ assert.match(app,/paymentDisplay:entry\.type==='expense'/);
+ assert.match(app,/ledgerTransferSourceLabel\(entry\)/);
 });

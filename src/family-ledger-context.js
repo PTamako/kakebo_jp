@@ -4,6 +4,7 @@ import {ref,computed,watch} from 'vue'
 import {groupAnnualEntries} from './detail-pagination.js'
 import {ICON_LIBRARY} from './icon-library.js'
 import {ledgerPaymentLabel} from './ledger-payment-label.js'
+import {matchesPaymentStatMethod} from './payment-stat-group.js'
 
 export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTypeFilter,
  load,more,openApproval,onError}){
@@ -38,7 +39,8 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  const resetMonth=()=>{month.value=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).slice(0,7)}
  const selectedDateType=(e,kind)=>kind==='all'||(kind==='expense'?(e.type==='expense'||!e.type):e.type===kind)
  const filteredEntries=computed(()=>(entries.value||[]).filter(e=>String(e.date||'').startsWith(month.value) &&
-   selectedDateType(e,entryTypeFilter.value)&&(!selectedDay.value||e.date===selectedDay.value)))
+   selectedDateType(e,entryTypeFilter.value)&&(!selectedDay.value||e.date===selectedDay.value)&&
+   (!detailFilter.value?.paymentMethod||matchesPaymentStatMethod(e,detailFilter.value.paymentMethod))))
  const displayEntries=computed(()=>filteredEntries.value)
  const sortedDisplayEntries=computed(()=>[...displayEntries.value].sort((a,b)=>
   String(b.date||'').localeCompare(String(a.date||'')) ||
@@ -128,6 +130,14 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  function loadMoreAnnualEntries(group){annualVisibleCounts.value={...annualVisibleCounts.value,
   [group.month]:group.items.length+listPageSize}}
  function clearDetailFilter(){detailFilter.value=null;prepaidHistoryFilter.value=null}
+ function openPaymentMethodDetails(method,period){
+  if(period!=='month'){
+   onError('年間の支払方法別明細は月ごとに確認してください');return
+  }
+  detailFilter.value={paymentMethod:method,type:'all',period:'month'}
+  entryTypeFilter.value='all';selectedDay.value='';visibleEntryCount.value=20
+  tab.value='list'
+ }
  function cancelEdit(){editingEntry.value=null;editReceiptImage.value=null}
  function startEdit(entry){
   if(entry?.pending_approval){onError('この明細は HomeFlow 審査中です');return}
@@ -170,6 +180,6 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
   setEntryTypeFilter,sortedDisplayEntries,annualDetailMode,expandedMonth,
   annualMonthGroups,paymentMethodAnnualTotals,loadMoreAnnualEntries,
   loadMoreEntries,expandedEntryDays,groupedPagedEntries,toggleEntryDay,
-  clearDetailFilter,visibleCalendarDays,toggleDay,startSwipe,endSwipe,
+  clearDetailFilter,openPaymentMethodDetails,visibleCalendarDays,toggleDay,startSwipe,endSwipe,
   handleEntryClick,monthLabel,formatLedgerTotal}
 }

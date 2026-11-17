@@ -1,3 +1,4 @@
+import {resolveSharedMutationSealedReference} from './shared-mutation-sealed-reference.js';
 // DRAFT: member-originated ordinary shared ledger mutation proposals.
 // This module stores AES-GCM encrypted intent, NOT an executed entry.
 const enc=new TextEncoder(),hex=/^[a-f0-9]{64}$/i,id=/^[a-f0-9]{32}$/i,uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -175,6 +176,8 @@ async function submit(req,e,url,u,proposal){
 const pendingStates=new Set(['pending','approved','executing','failed_retryable','failed_final','conflict']);
 async function decryptIntent(e,record){
  try{
+  record=await resolveSharedMutationSealedReference(e.DB,record);
+  if(!record)return null;
   const iv=Uint8Array.from(atob(record.payload_iv),x=>x.charCodeAt(0));
   const ciphertext=Uint8Array.from(atob(record.payload_cipher),x=>x.charCodeAt(0));
   if(iv.length!==12||ciphertext.length<16||ciphertext.length>2500)return null;

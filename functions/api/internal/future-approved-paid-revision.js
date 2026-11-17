@@ -22,9 +22,11 @@ export async function futureApprovedPaidRevision(db,{env,registry,proposal,appro
  if(original.results.length!==1)return fail('CORRECTION_AMBIGUOUS_ORIGINAL');
  if(env.KAKEIBO_ACCOUNT_CORRECTIONS_ENABLED!=='true')
   return fail('CORRECTION_EXECUTOR_DISABLED');
- // Posted finance journals are immutable; deletion/restoration requires a
- // separate tombstone-and-reversal path, never the ordinary DELETE statement.
- if(action!=='update')return fail('CORRECTION_USE_SIGNED_REVERSAL_FLOW');
+ // Deletion is an approved ZERO-value tombstone while the immutable original
+ // receipt and its foreign keys remain intact. Restoration reauthorizes the
+ // original expense only after current balance and approval checks.
+ if(!['update','delete','restore'].includes(action))
+  return fail('CORRECTION_UNKNOWN_ACTION');
  const source=original.results[0];
  const physical=await db.prepare(
   'SELECT id,date,amount,type,payment_source,family_account_id,'+
@@ -37,12 +39,17 @@ export async function futureApprovedPaidRevision(db,{env,registry,proposal,appro
   return fail('CORRECTION_ORIGINAL_ENTRY_CHANGED');
  let previous;
  try{previous=JSON.parse(registry.snapshot_json)}catch{return fail('CORRECTION_SNAPSHOT_INVALID')}
- if(previous?.type!=='expense'||previous.amount!==physical.amount||
-  previous.date!==physical.date||
-  (previous.payment_source||'')!==physical.payment_source)
+ if(previous?.type!=='expense'||previous.date!==physical.date||
+  (previous.payment_source||'')!==physical.payment_source||
+  (action==='restore'?physical.amount!==0:
+   previous.amount!==physical.amount||physical.amount<1))
   return fail('CORRECTION_SNAPSHOT_CHANGED');
- const explicit=Object.hasOwn(entry,'payment_source');
- const newSource=explicit?entry.payment_source:physical.payment_source;
+ const next=action==='delete'?{...previous,amount:0}:
+  action==='restore'?previous:entry;
+ if(!next||next.type!=='expense'||(action!=='delete'&&next.amount<1))
+  return fail('CORRECTION_INVALID_NEXT_ENTRY');
+ const explicit=action==='update'&&Object.hasOwn(next,'payment_source');
+ const newSource=explicit?next.payment_source:physical.payment_source;
  if(!spendSource(newSource))return fail('CORRECTION_TARGET_MUST_BE_PERSONAL_ACCOUNT');
  const newAccountId=newSource.split(':')[1];
  if(explicit&&newAccountId!==physical.family_account_id&&
@@ -71,13 +78,14 @@ export async function futureApprovedPaidRevision(db,{env,registry,proposal,appro
   .bind(source.receipt_id).first();
  const before={type:'expense',date:physical.date,amount:physical.amount,
   accountId:physical.family_account_id};
- const after={type:'expense',date:entry.date,amount:entry.amount,
+ const after={type:'expense',date:next.date,amount:next.amount,
   accountId:newAccountId};
  let planned;
  try{planned=planAccountLinkedExpenseCorrection({
   before,after,accounts,spenderUserId:source.spender,
   editorUserId:proposal.requester_user_id,prepaidBalances:balances,
-  settledJpy:Number(settlement?.amount||0),offsetJpy:Number(points?.amount||0)
+  settledJpy:Number(settlement?.amount||0),offsetJpy:Number(points?.amount||0),
+  operation:action
  })}catch(err){return fail(err.code||'CORRECTION_PLAN_INVALID')}
  const commands=[db.prepare('INSERT INTO family_approved_account_corrections '+
   '(homeflow_request_id,proposal_id,household_id,entry_id,spender_user_id,'+
@@ -90,11 +98,13 @@ export async function futureApprovedPaidRevision(db,{env,registry,proposal,appro
  const oldMonth=originalAccount?.account_kind==='credit_card'?
   closingMonth(physical.date,originalAccount.closing_day):null;
  const nextMonth=target.account_kind==='credit_card'?
-  closingMonth(entry.date,target.closing_day):null;
+  closingMonth(next.date,target.closing_day):null;
  for(const x of planned.effects){
-  const beforeCount=x.kind==='credit_card'&&x.accountId===physical.family_account_id&&
+  const beforeCount=Number(before.amount)>0&&x.kind==='credit_card'&&
+   x.accountId===physical.family_account_id&&
    x.billMonth===oldMonth?1:0;
-  const afterCount=x.kind==='credit_card'&&x.accountId===newAccountId&&
+  const afterCount=Number(after.amount)>0&&x.kind==='credit_card'&&
+   x.accountId===newAccountId&&
    x.billMonth===nextMonth?1:0;
   const count=afterCount-beforeCount;
   commands.push(db.prepare('INSERT INTO family_approved_account_effects '+

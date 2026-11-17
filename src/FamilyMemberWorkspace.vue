@@ -44,7 +44,11 @@ const memberMerchantRules=ref([]),memberRuleError=ref('')
 const memberReceipts=ref([]),memberReceiptError=ref(''),memberReceiptRetry=ref([])
 const memberReceiptIndex=computed(()=>{
  const map=new Map()
- for(const r of [...memberReceipts.value].reverse())map.set(r.receipt_ref,r)
+ for(const r of [...memberReceipts.value].reverse()){
+  map.set(r.receipt_ref,r)
+  if(Number.isSafeInteger(Number(r.linked_entry_id))&&Number(r.linked_entry_id)>0)
+   map.set('entry:'+r.linked_entry_id,r)
+ }
  return map
 })
 async function reloadMemberReceipts(){
@@ -508,6 +512,8 @@ const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:ledge
  openApproval,onError:message=>{error.value=message}})
 const memberReceiptLedgerIds=computed(()=>new Set(memberReceipts.value.flatMap(item=>{
  const ref=item.receipt_ref
+ if(Number.isSafeInteger(Number(item.linked_entry_id))&&Number(item.linked_entry_id)>0)
+  return [String(item.linked_entry_id)]
  if(ref.startsWith('entry:'))return [ref.slice(6)]
  if(ref.startsWith('proposal:'))return ['pending:'+ref.slice(9)]
  return []

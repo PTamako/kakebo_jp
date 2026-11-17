@@ -6,6 +6,7 @@
 // strictly validated entries. Neither path exports raw notes, OCR, or credentials.
 import { onRequestPost as documentAssistantPost } from '../functions/api/bridge/document-assistant.js'
 import { routeInternalFinance } from './family-finance-service-router.js'
+import { approvalPreviewRoute } from './approval-preview.js'
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{
   'content-type':'application/json; charset=utf-8','cache-control':'no-store',
   'x-content-type-options':'nosniff','referrer-policy':'no-referrer'
@@ -87,6 +88,7 @@ export default {
     // The only new write paths are preexisting signed Kakeibo execution
     // handlers. This Worker has workers_dev=false and no public route.
     // Never route these to Pages URL or skip target verification.
+    if(path==='/api/internal/approval-preview')return approvalPreviewRoute(request,env)
     if(path.startsWith('/api/internal/')){
       const response=await routeInternalFinance(request,env)
       if(response)return response

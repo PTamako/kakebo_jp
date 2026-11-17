@@ -613,7 +613,8 @@ test('non-admin may propose edits to the administrator neutral spouse transfer; 
   const incompatible=await f.source(['shared-mutation-requests'],{
    expected_user_id:member,idempotency_key:'blocked-member-transfer-conversion',
    operation:'update',resource_id:action.resource_id,expected_version:2,
-   entry:{...spouse,type:'income',amount:50000}})
+   entry:{date:spouse.date,time:spouse.time,amount:50000,
+    type:'income',category:'給与',merchant:'給与',note:''}})
   assert.equal(incompatible.status,409)
   assert.equal(incompatible.data.code,'SHARED_MUTATION_TRANSFER_TYPE_LOCKED')
  }finally{f.close()}

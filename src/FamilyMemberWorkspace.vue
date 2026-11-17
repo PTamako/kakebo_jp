@@ -6,6 +6,7 @@ import MemberPersonalPoints from './MemberPersonalPoints.vue'
 import MemberPointAssetActions from './MemberPointAssetActions.vue'
 import MemberPointAssetReversals from './MemberPointAssetReversals.vue'
 import MemberPrepaidTopups from './MemberPrepaidTopups.vue'
+import MemberCardUsage from './MemberCardUsage.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
@@ -142,6 +143,7 @@ const selectedCardId=ref(''),cardMode=ref('')
 const preferredCardType=ref('standard'),memberCardSettingsRequest=ref(0)
 function openMemberPrepaidAdd(){preferredCardType.value='prepaid';cardMode.value='add';memberCardSettingsRequest.value++;tab.value='finance'}
 function openMemberCardSettings(){preferredCardType.value='standard';memberCardSettingsRequest.value++;tab.value='finance'}
+const memberUsageRevision=ref(0)
 const cardAccounts=computed(()=>myAccounts.value.filter(a=>['credit_card','prepaid'].includes(a.account_kind)))
 const selectedCard=computed(()=>cardAccounts.value.find(a=>a.account_id===selectedCardId.value)||null)
 const defaultCard=computed(()=>cardAccounts.value.find(a=>Number(a.is_default)===1)?.account_id||'')
@@ -903,7 +905,8 @@ async function refresh(){
   // Safe member-owned cash/shared-card payment edits use server-verified immutable approval.
    memberPaymentReassignmentEnabled.value=true;
   await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories()])
-  monthlyReport.value=d;annualReport.value=e
+  monthlyReport.value=d;annualReport.value=e;
+  memberUsageRevision.value++
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
   yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
    net_income_expense:Number(e.income||0)-Number(e.total||0)}
@@ -1456,13 +1459,6 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    
    <template #member-cards>
-    <MemberPrepaidTopups :key="'personal-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPersonalPoints :key="'personal-points:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPointAssetActions :key="'points-asset:'+user.user_id" 
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
-    <MemberPointAssetReversals :key="'points-asset-refunds:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
     <OriginalCardManagementPanel
       :selected="selectedCardId"
       :options="cardAccounts.filter(a=>!a.is_archived).map(a=>({value:a.account_id,label:a.label}))"
@@ -1478,6 +1474,16 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
       @update:selected="selectedCardId=$event" @update:mode="next=>{if(next==='add')preferredCardType='standard';cardMode=next}"
       @default="makeDefaultCard"
       @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
+    <MemberCardUsage :user-id="user.user_id" :active="tab==='finance'" :revision="memberUsageRevision"/>
+
+    <MemberPrepaidTopups :key="'personal-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
+    <MemberPersonalPoints :key="'personal-points:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+    <MemberPointAssetActions :key="'points-asset:'+user.user_id" 
+     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+    <MemberPointAssetReversals :key="'points-asset-refunds:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+    
    </template>
    <template #member-plans>
     <MemberFixedCosts :key="'member-fixed:'+user.user_id+':'+personalBackupRevision" :user-id="user.user_id"

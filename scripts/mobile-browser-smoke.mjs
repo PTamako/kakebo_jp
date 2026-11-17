@@ -196,6 +196,25 @@ try{
     assert.ok(Math.abs((await panel.evaluate(el=>el.getBoundingClientRect().height))-heightBefore)<2)
     await assertNativeTemporalLayout(page.locator('.card-billing-panel .card-usage-summary-month input[type=month]'),'締め月',width)
 
+    // Regression for the owner's ORIGINAL card layout. The shared controls must
+    // fit within their two grid cells without the month input overflowing into
+    // the adjacent usage amount on any supported iPhone viewport.
+    const usageLayout=await page.locator('.card-billing-panel .card-usage-summary').evaluate(el=>{
+      const month=el.querySelector('.card-usage-summary-month input').getBoundingClientRect()
+      const amount=el.querySelector('.card-usage-summary-amount output').getBoundingClientRect()
+      const grid=el.getBoundingClientRect()
+      return {monthRight:month.right,amountLeft:amount.left,
+        amountRight:amount.right,gridRight:grid.right,
+        monthWidth:month.width,amountWidth:amount.width}
+    })
+    assert.ok(usageLayout.monthWidth>=90 && usageLayout.amountWidth>=90,
+      'Card month and amount fields must remain usable at '+width+'px: '+JSON.stringify(usageLayout))
+    assert.ok(usageLayout.amountLeft-usageLayout.monthRight>=7,
+      'Card month must not overlap the usage amount at '+width+'px: '+JSON.stringify(usageLayout))
+    assert.ok(usageLayout.amountRight<=usageLayout.gridRight+1,
+      'Usage amount must stay inside the original card width at '+width+'px: '+JSON.stringify(usageLayout))
+
+
     // Fixed-expense search spans the panel width and all three statuses stay on one row.
     await page.locator('.finance-section-tabs').getByRole('button',{name:'固定費'}).click()
     const recurringPanel=page.locator('.recurring-plans-panel')

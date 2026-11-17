@@ -12,6 +12,7 @@ import { onRequest as approvedSbiCash } from '../functions/api/internal/sbi-cash
 import { onRequest as approvedSharedEntry } from '../functions/api/internal/shared-entries/[[path]].js';
 import { onRequest as recurringFinanceReceipt } from '../functions/api/internal/recurring-finance/receipt.js';
 import { onRequest as documentFinance } from '../functions/api/internal/document-finance/[[path]].js';
+import { verifyDocumentFinanceAccount } from '../functions/api/internal/document-accounts/[[path]].js';
 
 const actionRoutes=Object.freeze({
  'approved-actions':(request,env,action)=>approvedAction({request,env,params:{path:[action]}}),
@@ -30,7 +31,8 @@ export async function routeInternalFinance(request,env){
  // Never accept GETs or arbitrary user-chosen routes as a target executor.
  const path=/^\/api\/internal\/([a-z-]+)\/(execute|receipt|preview)$/.exec(url.pathname);
  const recurring=url.pathname==='/api/internal/recurring-finance/receipt';
- if(!path&&!recurring)return null;
+ const accountPath=/^\/api\/internal\/document-accounts\/(list|verify)$/.exec(url.pathname);
+ if(!path&&!recurring&&!accountPath)return null;
  if(request.method!=='POST'||url.search||url.hash||
    request.headers.has('cookie')||request.headers.has('authorization')||
    request.headers.has('origin')||
@@ -38,6 +40,9 @@ export async function routeInternalFinance(request,env){
   return denied('INTERNAL_EXECUTION_BACKCHANNEL_ONLY');
  if(!env?.DB?.prepare)return denied('INTERNAL_EXECUTION_DB_UNAVAILABLE',503);
  if(recurring)return recurringFinanceReceipt({request,env});
+ // Signed, member-scoped account ID lookup: no browser access or mutation.
+ // The receiving handler independently verifies its dedicated HMAC and owner ID.
+ if(accountPath)return verifyDocumentFinanceAccount(request,env,[accountPath[1]]);
  const router=Object.hasOwn(actionRoutes,path[1])?actionRoutes[path[1]]:null;
  if(!router||path[2]==='preview'&&path[1]!=='shared-entries')return denied('INTERNAL_EXECUTION_ROUTE_UNKNOWN',404);
  // No privileged actor is fabricated: only target handler can authenticate

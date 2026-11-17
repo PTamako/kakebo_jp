@@ -708,6 +708,8 @@ test('approved correction updates new card expense, liability, household totals 
   assert.equal(approved.status,200,JSON.stringify(approved))
   assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,1450)
   assert.equal(f.sql.prepare('SELECT SUM(amount) n FROM entries WHERE type=\'expense\'').get().n,1450)
+  assert.equal(f.sql.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table' AND name='family_approved_account_effects'").get().n,1)
+  assert.equal(f.sql.prepare('SELECT COALESCE(SUM(delta_jpy),0) n FROM family_approved_account_effects').get().n,450)
   assert.equal((await memberCardLiabilities(f.env.DB,hh,false)).total,1450)
   assert.equal(f.sql.prepare('SELECT SUM(delta_jpy) n FROM family_approved_account_effects').get().n,450)
   assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_card_purchase_applied').get().n,1)

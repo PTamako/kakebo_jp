@@ -551,3 +551,35 @@ test('other member payment and account-linked records reject source changes even
   assert.equal(f.count('family_shared_mutation_intents'),0)
  }finally{f.close()}
 })
+
+
+test('mixed deployment cannot queue or apply payment revision until private executor is enabled',async()=>{
+ const f=fixture()
+ try{
+  const first=await f.target('execute',await f.apply('create',null,0,sample))
+  assert.equal(first.status,200,JSON.stringify(first))
+  const id=first.data.resource_id
+  f.env.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED='false'
+  const refused=await f.source(['shared-mutation-requests'],{
+   expected_user_id:member,idempotency_key:'blocked-old-executor-edit',
+   operation:'update',resource_id:id,expected_version:1,
+   entry:{...sample,payment_source:''}
+  })
+  assert.equal(refused.status,503,JSON.stringify(refused))
+  assert.equal(refused.data.code,'SHARED_PAYMENT_EXECUTOR_NOT_READY')
+  assert.equal(f.count('family_shared_mutation_intents'),1,'only original creation intent exists')
+  f.env.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED='true'
+  f.sql.prepare('INSERT INTO family_legacy_card_shares VALUES(?,?,?,?,1)')
+   .run('楽天カード',hh,owner,member)
+  const intent=await f.apply('update',id,1,{...sample,payment_source:'楽天カード'})
+  f.env.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED='false'
+  const blocked=await f.target('execute',intent)
+  assert.equal(blocked.status,503,JSON.stringify(blocked))
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'')
+  assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,1)
+  f.env.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED='true'
+  const approved=await f.target('execute',intent)
+  assert.equal(approved.status,200,JSON.stringify(approved))
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'楽天カード')
+ }finally{f.close()}
+})

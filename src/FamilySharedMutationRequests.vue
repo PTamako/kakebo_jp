@@ -234,7 +234,7 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
  <header><strong>{{spouseQuickMode?'配偶からの収入':'申请修改共享账目'}}</strong>
   <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'收起':'申请'}}</button></header>
  <template v-if="open">
-  <p class="hint">{{spouseQuickMode?'由收到钱的人登记本人收入，来源固定为配偶。无需登记任何银行账户；提交后由家庭管理员审批，批准前不会入账。':'家庭成员可申请新增、修改、删除或恢复普通共享收支。HomeFlow 管理员必须独立批准并执行；既有 SBI、信用卡和银行转账凭证不得直接修改。'}}</p>
+  <p class="hint">{{spouseQuickMode?'受取人が「配偶からの収入」を登録。銀行口座は不要で、承認後に反映。':'共有明細の追加・変更・削除・復元は HomeFlow 承認後に反映。SBI・カード・振替は対象外。'}}</p>
   <p v-if="error" class="error" role="alert">{{error}}</p>
   <p v-if="message" class="hint" role="status">{{message}}</p>
   <form v-if="available" class="editor" @submit.prevent="prepared?submit():prepare()">
@@ -253,7 +253,7 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
     <label v-if="!spouseQuickMode">收支<select v-model="draft.type" :disabled="busy||!!prepared"><option value="expense">支出</option><option value="income">收入</option></select></label>
     <label>金额（日元）<input v-model="draft.amount" type="number" min="1" max="10000000" required :disabled="busy||!!prepared"/></label>
     <label v-if="!spouseQuickMode">分类<input v-model="draft.category" maxlength="100" required :disabled="busy||!!prepared"/></label>
-    <p v-else class="hint">分類：{{SPOUSE_INCOME_CATEGORY}} · 来源：{{SPOUSE_INCOME_SOURCE}}</p>
+    <p v-else class="hint">分類：{{SPOUSE_INCOME_CATEGORY}} · 入金元：{{SPOUSE_INCOME_SOURCE}}</p>
     <label v-if="!spouseQuickMode">商家或来源<input v-model="draft.merchant" maxlength="120" :disabled="busy||!!prepared"/></label>
     <label>备注<textarea v-model="draft.note" maxlength="500" :disabled="busy||!!prepared" rows="2"/></label>
    </template>

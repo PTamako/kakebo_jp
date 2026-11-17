@@ -231,14 +231,12 @@ function memberPaymentEditor(entry){
   // Neutral transfers are personal: a member cannot change the other person's.
   allReadOnly:entry.transfer_target!=='spouse'||!isOwn
  }
- if(entry?.type==='expense'&&entry.family_account_id&&
-   entry.payment_account_owner_user_id===props.user.user_id&&
-   entry.shared_record_creator_user_id===props.user.user_id&&
-   memberAccountCorrectionEnabled.value){
+ if(entry?.type==='expense'&&memberAccountCorrectionEnabled.value&&
+   entry.future_paid_owner_user_id===props.user.user_id){
   const a=myAccounts.value.find(x=>x.account_id===entry.family_account_id&&
    ['credit_card','prepaid'].includes(x.account_kind)&&!x.is_archived);
-  if(a)return {paymentReadOnly:false,
-   paymentSource:'personal:'+a.account_id,isOwnRecorded:true,
+  if(a||!entry.family_account_id)return {paymentReadOnly:false,
+   paymentSource:a?'personal:'+a.account_id:'cash',isOwnRecorded:true,
    restrictToPersonalPayment:true};
  }
  const own=memberPaymentReassignmentEnabled.value&&entry?.type==='expense'&&
@@ -737,14 +735,15 @@ async function saveMemberLedgerEdit(){
   edited.paymentSource!==edited.paymentOriginalChoice
  if(paymentChanged){
   const selected=resolveMemberPayment(edited.paymentSource,myAccounts.value,sharedCards.value)
-  if(initial.family_account_id){
-   if(!memberAccountCorrectionEnabled.value||
-    initial.payment_account_owner_user_id!==props.user.user_id||
-    initial.shared_record_creator_user_id!==props.user.user_id||
-    edited.paymentReadOnly||selected?.kind!=='personal')
-   {memberLedger.receiptSaveError.value='本人の有効なカードのみ変更できます';return}
-   edited.payment_source=(selected.account.account_kind==='credit_card'?'cc:':'prepaid:')+
-    selected.account.account_id
+  if(initial.future_paid_owner_user_id===props.user.user_id&&
+     memberAccountCorrectionEnabled.value){
+   if(edited.paymentReadOnly||!selected||!['personal','cash'].includes(selected.kind))
+   {memberLedger.receiptSaveError.value='本人のカードまたは現金を選択してください';return}
+   edited.payment_source=selected.kind==='cash'?'':(
+    (selected.account.account_kind==='credit_card'?'cc:':'prepaid:')+
+    selected.account.account_id)
+  }else if(initial.family_account_id){
+   memberLedger.receiptSaveError.value='個人カードの変更権限がありません';return
   }else{
    if(initial.shared_entry_requester_user_id!==props.user.user_id||
      edited.paymentReadOnly||!selected||!['cash','shared'].includes(selected.kind))

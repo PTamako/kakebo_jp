@@ -13,7 +13,7 @@ const emit=defineEmits(['update:card','update:month'])
 </script>
 
 <template>
- <div class="card-usage-summary" role="group" aria-label="カード別利用額の確認">
+ <div class="finance-inputs card-billing-fields card-usage-summary" role="group" aria-label="カード別利用額の確認">
   <label class="card-usage-summary-field card-usage-summary-card">
    <span>カード</span>
    <MobileChoiceSheet :model-value="card" label="カード名" :options="cardOptions"
@@ -21,12 +21,12 @@ const emit=defineEmits(['update:card','update:month'])
   </label>
   <label class="card-usage-summary-field card-usage-summary-month">
    <span>締め月</span>
-   <input type="month" :value="month" aria-label="締め月"
+   <input class="card-closing-month" type="month" :value="month" aria-label="締め月"
     @input="emit('update:month',$event.target.value)"/>
   </label>
   <label class="card-usage-summary-field card-usage-summary-amount">
    <span>利用額</span>
-   <output aria-live="polite">{{amount}}</output>
+   <output class="card-usage-total" aria-live="polite">{{amount}}</output>
   </label>
  </div>
 </template>
@@ -36,7 +36,7 @@ const emit=defineEmits(['update:card','update:month'])
  display:grid;
  grid-template-columns:repeat(2,minmax(0,1fr));
  align-items:end;
- gap:9px;
+ gap:10px;
  width:100%;
  min-width:0;
 }
@@ -55,6 +55,15 @@ const emit=defineEmits(['update:card','update:month'])
  line-height:1.3;
 }
 .card-usage-summary-card{grid-column:1/-1}
+/* iOS month inputs have an intrinsic minimum that can paint over the
+   neighboring usage field. The original card layout clipped it to its own
+   grid column; restore that behavior for both identities. */
+.card-usage-summary-month{
+ min-width:0;
+ max-width:100%;
+ overflow:hidden;
+}
+.card-usage-summary-amount{min-width:0;max-width:100%}
 .card-usage-summary-month input,
 .card-usage-summary-amount output{
  display:flex;
@@ -68,7 +77,7 @@ const emit=defineEmits(['update:card','update:month'])
  margin:0;
  padding:0 8px;
  border:1px solid var(--line);
- border-radius:11px;
+ border-radius:8px;
  background:var(--card);
  color:var(--ink);
  font-size:16px!important;
@@ -76,8 +85,29 @@ const emit=defineEmits(['update:card','update:month'])
  line-height:normal;
  font-variant-numeric:tabular-nums;
 }
-.card-usage-summary-month input{display:inline-flex;align-items:center}
-/* Global mobile-ui.css applies the same Safari date/month alignment to both identities. */
+.card-usage-summary-month input{
+ display:inline-flex;
+ align-items:center;
+ -webkit-appearance:none;
+ appearance:none;
+ width:100%!important;
+ min-width:0!important;
+ max-width:100%!important;
+ padding-inline:8px!important;
+ overflow:hidden;
+}
+.card-usage-summary-month input::-webkit-date-and-time-value{
+ min-width:0;
+ max-width:100%;
+ text-align:left;
+}
+.card-usage-summary-month input::-webkit-calendar-picker-indicator{
+ flex:none;
+ max-width:16px;
+ margin:0;
+ padding:0;
+}
+/* Preserve the global iPhone native month control alignment rules. */
 .card-usage-summary-amount output{
  font-weight:700;
  overflow:hidden;

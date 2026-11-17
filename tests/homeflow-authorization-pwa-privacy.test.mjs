@@ -38,7 +38,7 @@ test('PWA workbox shell never precaches /api ledger and finance actions cannot e
  const recurring=readFileSync(new URL('../src/FamilyRecurringFinance.vue',import.meta.url),'utf8')
  const shared=readFileSync(new URL('../src/FamilySharedMutationRequests.vue',import.meta.url),'utf8')
  assert.match(config,/navigateFallbackDenylist:\s*\[\/\^\\\/api\//)
- assert.match(recurring,/navigator\.onLine!==false/)
+ assert.match(recurring,/navigator\.onLine===false/)
  assert.match(recurring,/cache:'no-store'/)
  assert.match(shared,/cache:'no-store'/)
  assert.doesNotMatch(recurring,/localStorage\.setItem|indexedDB\.open/)

@@ -188,7 +188,7 @@ function openPlanEditor(source=null){
   merchant:source?.fund_name||'',fund_code:source?.fund_code||'',
   fund_name:source?.fund_name||''}
  if(source){
-  notice.value='以前の計画を直接上書きしません。変更後の条件で新しい計画を申請し、元の承認を別途確認してください。'
+  notice.value='以前の計画を直接上書きせず、本人が新しい条件で保存します。管理者の承認は不要です。'
  }
  if(!available.value)void refresh()
  if(typeof document!=='undefined')queueMicrotask(()=>

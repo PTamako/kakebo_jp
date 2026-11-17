@@ -68,5 +68,6 @@ const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,sa
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length || forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank')">{{ busy === 'saving' ? '保存中…' : forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank') ? '请在家庭转账卡片中提交' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>
+      <slot name="personal-transfer"/>
     </section>
 </template>

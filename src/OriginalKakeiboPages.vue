@@ -14,6 +14,8 @@ const props=defineProps({
   member:{type:Boolean,default:false},
   managementBindings:{type:Object,default:()=>({})},
   personalAssets:{type:Array,default:null},
+  personalAccounts:{type:Array,default:()=>[]},
+  onUpdatePersonalAccount:{type:Function,default:null},
   personalPrepaidApi:{type:Function,default:null},
   personalPortfolioApi:{type:Function,default:null},
   onPersonalOpening:{type:Function,default:null},
@@ -32,11 +34,15 @@ function navigate(next){
        Only injected account data and authorized event adapters differ. -->
   <AppTopbar :identity="identity" :theme="theme" :themes="themes"
    @change-theme="emit('theme-change',$event)" @logout="emit('logout')"/>
-  <EntryInputPage v-if="activeTab==='add'"/>
+  <EntryInputPage v-if="activeTab==='add'">
+   <template #personal-transfer><slot name="personal-transfer"/></template>
+  </EntryInputPage>
   <LedgerPage v-else-if="activeTab==='list'" :member="member"/>
   <StatisticsPage v-else-if="activeTab==='stat'"/>
   <AssetsPage v-else-if="activeTab==='investments'"
    :personal-assets="member?personalAssets:null"
+   :personal-accounts="member?personalAccounts:[]"
+   :on-update-personal-account="member?onUpdatePersonalAccount:null"
    :personal-user-id="member?identity?.user_id||'':''"
    :personal-prepaid-api="member?personalPrepaidApi:null"
    :personal-portfolio-api="member?personalPortfolioApi:null"

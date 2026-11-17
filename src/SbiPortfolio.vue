@@ -419,7 +419,7 @@ function editPrice(h) {
 }
 async function submit(path, body, message) {
   if(props.memberMode&&!['holding','price'].includes(path)){
-    error.value='本人の積立変更は HomeFlow 承認のある専用設定から行ってください';return
+    error.value='本人の積立設定は「管理 → 積立」で変更してください。計画に管理者承認は不要です';return
   }
   saving.value = true
   notice.value = ''
@@ -636,7 +636,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           <span class="sbi-chevron" aria-hidden="true">⌄</span>
         </summary>
         <div class="sbi-section-body sbi-management-body">
-          <p v-if="memberMode" class="sbi-hint">計画変更は再申請が必要です。実績は取引証拠を確認してください。</p>
+          <p v-if="memberMode" class="sbi-hint">計画の変更は本人が保存できます。家庭明細への入帳のみ承認が必要です。</p>
           <div class="sbi-month-pulse">
             <div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}}</strong></div>
             <div><span>{{memberMode?'内部入帳確認':'振替登録済み'}}</span><strong>{{data.reconciliation.registered===null?'未確認':yen(data.reconciliation.registered)}}</strong></div>
@@ -661,7 +661,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           <p v-if="!data.plans.length" class="sbi-empty">積立設定はまだありません</p>
           <div v-for="p in (showAllPlans ? data.plans : data.plans.slice(0,2))" :key="p.plan_resource_id||p.fund_code+':'+p.account_type" class="sbi-plan-row">
             <div class="sbi-row-main"><strong>{{shortFundName(p)}}</strong><small>{{accountLabel(p.account_type)}} · {{p.order_day}}日</small></div>
-            <div class="sbi-plan-side"><strong>{{p.enabled ? yen(p.monthly_amount) : '停止中'}}</strong><button type="button" class="sbi-row-edit" @click="editPlan(p)" :aria-label="shortFundName(p)+'の積立設定を変更'">{{memberMode?'変更申請':'変更'}}</button></div>
+            <div class="sbi-plan-side"><strong>{{p.enabled ? yen(p.monthly_amount) : '停止中'}}</strong><button type="button" class="sbi-row-edit" @click="editPlan(p)" :aria-label="shortFundName(p)+'の積立設定を変更'">変更</button></div>
           </div>
           <button v-if="data.plans.length>2" type="button" class="sbi-show-more" :aria-expanded="showAllPlans" @click="showAllPlans=!showAllPlans">{{showAllPlans?'閉じる':'あと'+(data.plans.length-2)+'件を表示'}}</button>
 

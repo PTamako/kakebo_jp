@@ -1,24 +1,25 @@
 <script setup>
 import {computed,ref,watch,onUnmounted} from 'vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
-import {memberOwnActiveAssets,memberTransferChoices,memberTransferOperation} from './member-transfer-options.js'
+import {memberOwnActiveAssets,memberPointEligibleAssets,memberTransferChoices,memberTransferOperation} from './member-transfer-options.js'
 const props=defineProps({
  record:{type:Object,required:true},
  accounts:{type:Array,required:true},
  userId:{type:String,required:true}
 })
 const own=computed(()=>memberOwnActiveAssets(props.accounts,props.userId))
+const pointEligible=computed(()=>memberPointEligibleAssets(props.accounts,props.userId))
 const options=computed(()=>memberTransferChoices(props.accounts,props.userId).map(x=>({
  value:x.value,label:x.label||x.name})))
 const operation=computed(()=>memberTransferOperation(props.record.transferTarget))
 const isPoint=computed(()=>typeof props.record.transferTarget==='string'&&
  props.record.transferTarget.startsWith('points:'))
-const points=computed(()=>own.value.filter(a=>a.account_kind==='points'))
+const points=computed(()=>pointEligible.value.filter(a=>a.account_kind==='points'))
 const targetKind=computed(()=>({
  'points:prepaid':'prepaid','points:card':'credit_card',
  'points:sbi':'securities','points:move':'points','points:exchange':'points'
 })[props.record.transferTarget]||'')
-const targets=computed(()=>own.value.filter(a=>a.account_kind===targetKind.value&&
+const targets=computed(()=>pointEligible.value.filter(a=>a.account_kind===targetKind.value&&
  a.account_id!==props.record.pointSourceId))
 const purchases=ref([]),loading=ref(false),error=ref('')
 let seq=0

@@ -21,6 +21,7 @@ import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
 import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
 import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
+import MemberReceiptManagement from './MemberReceiptManagement.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import LedgerEntryContent from './LedgerEntryContent.vue'
@@ -40,6 +41,82 @@ const tab=ref('add')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
 const memberMerchantRules=ref([]),memberRuleError=ref('')
+const memberReceipts=ref([]),memberReceiptError=ref(''),memberReceiptRetry=ref([])
+const memberReceiptIndex=computed(()=>{
+ const map=new Map()
+ for(const r of [...memberReceipts.value].reverse()){
+  map.set(r.receipt_ref,r)
+  if(Number.isSafeInteger(Number(r.linked_entry_id))&&Number(r.linked_entry_id)>0)
+   map.set('entry:'+r.linked_entry_id,r)
+ }
+ return map
+})
+async function reloadMemberReceipts(){
+ const actor=props.user.user_id
+ try{
+  const data=await api('member-receipts')
+  if(actor!==props.user.user_id)return
+  if(data.scope!=='personal'||data.viewer_user_id!==actor||!Array.isArray(data.items))
+   throw Error('画像の所有者を確認できません')
+  memberReceipts.value=data.items;memberReceiptError.value=''
+ }catch(e){if(actor===props.user.user_id)memberReceiptError.value='レシート画像を読み込めません：'+e.message}
+}
+async function fetchMemberReceipt(id){
+ if(!/^[a-f0-9]{32}$/.test(id))throw Error('画像の番号を確認してください')
+ const response=await fetch('/api/family-finance/member-receipts/'+id,
+  {credentials:'same-origin',cache:'no-store'})
+ if(!response.ok)throw Error('HTTP '+response.status)
+ const blob=await response.blob()
+ if(!['image/jpeg','image/webp'].includes(blob.type)||!blob.size||blob.size>204800)
+  throw Error('画像の形式・サイズを確認できません')
+ return blob
+}
+async function deleteMemberReceipt(id){
+ if(!/^[a-f0-9]{32}$/.test(id))throw Error('画像の番号を確認してください')
+ const response=await fetch('/api/family-finance/member-receipts/'+id,{
+  method:'DELETE',credentials:'same-origin',cache:'no-store',
+  headers:{'x-confirm-receipt':id}
+ })
+ const data=await response.json().catch(()=>({}))
+ if(!response.ok||data.ok!==true||data.purged!==true)
+  throw Error(data.code||'画像を削除できませんでした')
+ memberReceipts.value=memberReceipts.value.filter(x=>x.receipt_id!==id)
+}
+async function saveMemberReceipt(record,receiptRef){
+ if(record.type!=='expense'||!record.receiptImage||!receiptRef)return
+ const actor=props.user.user_id,blob=record.receiptImage
+ if(!['image/jpeg','image/webp'].includes(blob.type)||!blob.size||blob.size>204800)
+  throw Error('レシート画像を200KB以下にしてください')
+ if(!record.receiptIdempotencyKey)record.receiptIdempotencyKey='receipt:'+crypto.randomUUID()
+ const sha256=[...new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))]
+  .map(b=>b.toString(16).padStart(2,'0')).join('')
+ const prepared=await api('member-receipts',request({
+   expected_user_id:actor,idempotency_key:record.receiptIdempotencyKey,
+   receipt_ref:receiptRef,receipt_date:record.date,merchant:String(record.merchant||'').slice(0,120),
+   content_type:blob.type,size_bytes:blob.size,sha256
+ }))
+ if(actor!==props.user.user_id)throw Error('別のアカウントへ画像を保存できません')
+ if(prepared.item?.state!=='ready'){
+  const id=prepared.item?.receipt_id
+  if(!/^[a-f0-9]{32}$/.test(id))throw Error('画像の保存先を確認できません')
+  const res=await fetch('/api/family-finance/member-receipts/'+id,{
+   method:'PUT',credentials:'same-origin',cache:'no-store',
+   headers:{'content-type':blob.type},body:blob})
+  const result=await res.json().catch(()=>({}))
+  if(!res.ok||result.ok!==true||result.item?.state!=='ready')
+   throw Error(result.code||'画像保存に失敗しました')
+ }
+ await reloadMemberReceipts()
+ return prepared.item?.receipt_id
+}
+async function retryMemberReceipt(){
+ if(!memberReceiptRetry.value.length)return
+ const attempts=[...memberReceiptRetry.value];memberReceiptRetry.value=[]
+ for(const item of attempts){
+  try{await saveMemberReceipt(item.record,item.receiptRef)}
+  catch(e){memberReceiptRetry.value.push(item);memberReceiptError.value='画像の再送が必要です：'+e.message}
+ }
+}
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
 const year=ref(month.value.slice(0,4))
 const busy=ref(false),error=ref(''),label=ref(''),kind=ref('cash')
@@ -272,6 +349,14 @@ async function memberScanImage(event){
   }
   if(!memberRawText.value.trim())throw Error('文字が読み取れませんでした')
   recognizeMemberText(true)
+  if(originalMode==='receipt'&&memberEntries.value.length===1&&memberEntries.value[0].type==='expense'){
+   const draft=memberEntries.value[0]
+   try{
+    draft.receiptImage=await compressReceiptImage(file)
+    draft.receiptFileName=file.name
+    draft.showReceiptAttachment=true
+   }catch(e){memberOcrWarning.value='画像を添付できません：'+e.message}
+  }
   memberInputMode.value='scan'
  }catch(e){memberEntryError.value='画像を読み取れませんでした：'+e.message}
  finally{memberOcrBusy.value=false}
@@ -303,7 +388,7 @@ async function submitPaidExpense(choice,record){
   if(result.applied!==true||!Number.isSafeInteger(result.entry_id)||result.entry_id<1)
    throw Error('共有カードの入帳結果が未確認です')
   pendingPaidEntry=null
-  return {type:'applied',entryId:result.entry_id}
+  return {type:'applied',entryId:result.entry_id,receiptRef:'entry:'+result.entry_id}
  }
  if(choice.kind!=='personal')throw Error('支払方法を確認してください')
  const a=choice.account
@@ -320,17 +405,19 @@ async function submitPaidExpense(choice,record){
   if(!prepared?.request_id)throw Error('決済申請の準備結果が未確認です')
   pending.requestId=prepared.request_id
   if(prepared.status==='submitted_status_unknown'&&prepared.approval_id){
+   const requestId=pending.requestId
    pendingPaidEntry=null
-   return {type:'pending'}
+   return {type:'pending',receiptRef:'request:'+requestId}
   }
   if(prepared.status!=='prepared')throw Error('決済申請の状態を確認してください')
  }
- const response=await api(path+'/'+encodeURIComponent(pending.requestId)+'/submit',
+ const requestId=pending.requestId
+ const response=await api(path+'/'+encodeURIComponent(requestId)+'/submit',
   request({expected_user_id:user}))
  if(response.applied!==false||response.status!=='submitted_status_unknown')
   throw Error('HomeFlow 承認依頼の受付を確認できません')
  pendingPaidEntry=null
- return {type:'pending'}
+ return {type:'pending',receiptRef:'request:'+requestId}
 }
 async function submitMemberFixedCost(item){
  if(memberEntryPending.value||busy.value)throw Error('別の操作が進行中です')
@@ -359,12 +446,22 @@ async function submitMemberEntry(){
    if(!choice)throw Error('支払方法が変更・解除されました。もう一度選択してください')
    if(pendingPaidEntry&&choice.kind==='cash')
     throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
+   let receiptRef=''
    if(choice.kind==='shared'||choice.kind==='personal'){
     const result=await submitPaidExpense(choice,record)
     if(result.type==='applied')applied++
+    receiptRef=result.receiptRef||''
    }else{
     const result=await sharedMutationRef.value?.submitEntry(record)
     if(!result?.proposalId)throw Error('申請の受付を確認できません')
+    receiptRef='proposal:'+result.proposalId
+   }
+   if(record.receiptImage&&receiptRef){
+    try{await saveMemberReceipt(record,receiptRef)}
+    catch(e){
+     memberReceiptRetry.value.push({record,receiptRef})
+     memberReceiptError.value='記帳は送信済みです。画像は再送してください：'+e.message
+    }
    }
    if(record.type==='expense'&&(record.bindRule||record.bindPaymentRule)){
     try{await rememberMemberRule(record)}catch(e){memberRuleError.value='店舗ルールの保存に失敗しました：'+e.message}
@@ -413,6 +510,80 @@ async function openApproval(action,entry){
 const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:ledgerEntries,
  entryTypeFilter:selectedEntryType,load:()=>refresh(),more:()=>moreEntries(),
  openApproval,onError:message=>{error.value=message}})
+const memberReceiptLedgerIds=computed(()=>new Set(memberReceipts.value.flatMap(item=>{
+ const ref=item.receipt_ref
+ if(Number.isSafeInteger(Number(item.linked_entry_id))&&Number(item.linked_entry_id)>0)
+  return [String(item.linked_entry_id)]
+ if(ref.startsWith('entry:'))return [ref.slice(6)]
+ if(ref.startsWith('proposal:'))return ['pending:'+ref.slice(9)]
+ return []
+})))
+let memberReceiptViewingId=''
+function memberReceiptRefForId(id){
+ return String(id).startsWith('pending:')?'proposal:'+String(id).slice(8):'entry:'+id
+}
+function closeMemberLedgerReceipt(){
+ const current=memberLedger.viewedReceiptUrl.value
+ if(current)URL.revokeObjectURL(current)
+ memberLedger.viewedReceiptUrl.value=null;memberReceiptViewingId=''
+}
+async function viewMemberLedgerReceipt(id){
+ const item=memberReceiptIndex.value.get(memberReceiptRefForId(id))
+ if(!item){memberReceiptError.value='本人の保存画像が見つかりません';return}
+ try{
+  const blob=await fetchMemberReceipt(item.receipt_id)
+  closeMemberLedgerReceipt()
+  memberReceiptViewingId=item.receipt_id
+  memberLedger.viewedReceiptUrl.value=URL.createObjectURL(blob)
+ }catch(e){memberReceiptError.value='画像を表示できません：'+e.message}
+}
+async function removeMemberLedgerReceipt(){
+ const id=memberReceiptViewingId
+ if(!id||!confirm('画像を完全削除しますか？元の明細は残ります。'))return
+ try{await deleteMemberReceipt(id);closeMemberLedgerReceipt()}
+ catch(e){memberReceiptError.value='画像を削除できません：'+e.message}
+}
+memberLedger.receiptImageIds=memberReceiptLedgerIds
+memberLedger.viewReceipt=viewMemberLedgerReceipt
+memberLedger.closeReceipt=closeMemberLedgerReceipt
+memberLedger.removeReceiptImage=removeMemberLedgerReceipt
+async function selectMemberEditReceipt(event){
+ const file=event.target?.files?.[0];if(event.target)event.target.value=''
+ const entry=memberLedger.editingEntry.value
+ if(!file||!entry||memberLedger.editSaving.value)return
+ try{
+  entry.receiptImage=await compressReceiptImage(file)
+  entry.receiptFileName=file.name
+  memberLedger.receiptSaveError.value=''
+ }catch(e){memberLedger.receiptSaveError.value='画像を添付できません：'+e.message}
+}
+async function saveMemberLedgerEdit(){
+ const edited=memberLedger.editingEntry.value
+ if(!edited||memberLedger.editSaving.value)return
+ const initial=sharedEntries.value.find(row=>String(row.id)===String(edited.id))
+ if(!initial||edited.pending_approval){
+  memberLedger.receiptSaveError.value='元の明細を確認してください';return
+ }
+ const fields=['date','time','amount','type','category','merchant','note']
+ const ledgerChanged=fields.some(key=>String(initial[key]??'')!==String(edited[key]??''))
+ if(!ledgerChanged&&!edited.receiptImage){memberLedger.cancelEdit();return}
+ memberLedger.editSaving.value=true;memberLedger.receiptSaveError.value=''
+ try{
+  if(edited.receiptImage){
+   const current=memberReceiptIndex.value.get('entry:'+edited.id)
+   await saveMemberReceipt(edited,'entry:'+edited.id)
+   if(current){
+    try{await deleteMemberReceipt(current.receipt_id)}
+    catch(e){memberReceiptError.value='古い画像を削除できません：'+e.message}
+   }
+  }
+  if(ledgerChanged)await openApproval('update',edited)
+  memberLedger.cancelEdit()
+ }catch(e){memberLedger.receiptSaveError.value=e.message||'変更を保存できません'}
+ finally{memberLedger.editSaving.value=false}
+}
+memberLedger.selectEditReceipt=selectMemberEditReceipt
+memberLedger.saveEdit=saveMemberLedgerEdit
 provide('kakeibo-page-context',{
  ...makeFamilyStatsContext({tab,month,selectedYear,stats:monthlyReport,
    annualStats:annualReport,entryType:selectedEntryType}),
@@ -580,7 +751,7 @@ async function refresh(){
   cardSharingError.value=f.share_error||''
   sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
-  await loadMemberMerchantRules()
+  await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts()])
   monthlyReport.value=d;annualReport.value=e
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
   yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
@@ -731,10 +902,10 @@ async function importPersonalBackup(event){
 }
 
 function foreground(){if(document.visibilityState==='visible')void refresh()}
-watch(()=>props.user.user_id,()=>{pendingPaidEntry=null;memberEntries.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
+watch(()=>props.user.user_id,()=>{closeMemberLedgerReceipt();pendingPaidEntry=null;memberEntries.value=[];memberReceipts.value=[];memberReceiptRetry.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
-onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
+onUnmounted(()=>{closeMemberLedgerReceipt();memberReceipts.value=[];memberReceiptRetry.value=[];alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
  memberMerchantRules.value=[];memberRuleError.value='';
  document.removeEventListener('visibilitychange',foreground)})
 // The original EntryInputPage renders for both identities. All writes here
@@ -779,6 +950,14 @@ const memberIncomeCategoryChoices=computed(()=>[...new Set([
  ...entryIncomeCategories,...memberCategoryRecords.value.filter(x=>x.type==='income').map(x=>x.name)
 ])])
 const memberRuleCategoryOptions=computed(()=>[...new Set([...memberExpenseCategoryChoices.value,...memberIncomeCategoryChoices.value])])
+async function selectMemberDraftReceipt(event,record){
+ const file=event.target?.files?.[0];if(event.target)event.target.value=''
+ if(!file||!record||memberEntryPending.value)return
+ try{record.receiptImage=await compressReceiptImage(file)
+  record.receiptFileName=file.name;record.showReceiptAttachment=true
+  memberEntryError.value=''
+ }catch(e){memberEntryError.value='画像を添付できません：'+e.message}
+}
 function clearMemberDraft(){
  if(memberEntries.value.length||memberRawText.value.trim()){
   if(!window.confirm('未保存の下書きを破棄しますか？'))return
@@ -804,13 +983,13 @@ provide('kakeibo-entry-input',{
  transferDestinations:computed(()=>[]),categories:memberExpenseCategoryChoices,
  INCOME_CATEGORIES:memberIncomeCategoryChoices,
  paymentSources:computed(()=>[]),categoryLabel:(x)=>x,
- selectDraftReceipt:()=>{},pendingReceiptImage:memberReceiptImage,
+ selectDraftReceipt:selectMemberDraftReceipt,pendingReceiptImage:memberReceiptImage,
  pendingReceiptFileName:memberReceiptFileName,receiptSaveError:memberEntryError,
  setEntryType:(f,type)=>setMemberEntryType(type,f),
  applyMerchantPayment:applyMemberMerchantRule,
  manualPayment:(f,source)=>{f.paymentSource=source},
  onImage:memberScanImage,addBlank:()=>addMemberEntry(),saveAll:submitMemberEntry,
- receiptEnabled:computed(()=>false),
+ receiptEnabled:computed(()=>true),
  allowedTypes:computed(()=>['expense','income']),
  paymentChoices:memberPaymentSourceChoices
 })
@@ -824,6 +1003,10 @@ watch(()=>props.user.user_id,loadMemberCategories)
    :user-id="user.user_id" :household-id="user.household_id" />
   <section v-if="error" class="member-alert" role="alert">{{error}}
    <button type="button" @click="refresh">再試行</button>
+  </section>
+  <section v-if="memberReceiptRetry.length" class="member-alert" role="alert">
+   記帳は受付済みですが画像の再送が必要です（{{memberReceiptRetry.length}}件）。
+   <button type="button" @click="retryMemberReceipt">画像を再送</button>
   </section>
   <OriginalKakeiboPages :identity="user" :theme="theme" :themes="themes"
    :active-tab="tab" :member="true" :personal-assets="assets"
@@ -883,10 +1066,12 @@ watch(()=>props.user.user_id,loadMemberCategories)
      <p class="help">審査中の家庭明細 {{pendingMutations.length}}件</p>
    </template>
    <template #member-privacy>
-     <div class="device-privacy-section">
-       <div class="device-privacy-row"><strong>レシート画像</strong><span class="help">OCR のみ対応</span></div>
-       <p class="help">OCR のみ対応。画像の保存・表示・ダウンロードは未対応です。</p>
-     </div>
+     <p v-if="memberReceiptError" class="help" role="alert">{{memberReceiptError}}</p>
+     <MemberReceiptManagement :key="'personal-receipts:'+user.user_id"
+       :items="memberReceipts" :on-fetch="fetchMemberReceipt"
+       :on-delete="deleteMemberReceipt" :on-refresh="reloadMemberReceipts"/>
+     <button v-if="memberReceiptRetry.length" class="button-secondary" type="button"
+       @click="retryMemberReceipt">画像を再送（{{memberReceiptRetry.length}}件）</button>
    </template>
    <template #member-backup>
     <p class="help">個人設定を暗号化して保存（共有明細・画像は対象外）。</p>

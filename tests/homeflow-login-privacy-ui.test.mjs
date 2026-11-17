@@ -21,9 +21,12 @@ test('owner login still requires HomeFlow and legacy compatibility does not sile
  assert.match(app,/async function logout\(\)/)
  assert.match(app,/async function logoutFamilyMember\(\)/)
 })
-test('privacy remains available for actual receipts without misrepresenting disabled member image storage',()=>{
+test('the same input form enables receipt attachments for both verified family identities',()=>{
  assert.match(tools,/<strong>保存済みレシート画像<\/strong>/)
- assert.match(member,/OCR のみ対応/)
- assert.match(member,/receiptEnabled:computed\(\(\)=>false\)/)
- assert.match(member,/画像の保存・表示・ダウンロードは未対応/)
+ assert.match(member,/MemberReceiptManagement/)
+ assert.match(member,/receiptEnabled:computed\(\(\)=>true\)/)
+ assert.match(member,/selectDraftReceipt:selectMemberDraftReceipt/)
+ assert.match(member,/await saveMemberReceipt\(record,receiptRef\)/)
+ assert.match(member,/memberReceiptLedgerIds/)
+ assert.doesNotMatch(member,/OCR のみ対応/)
 })

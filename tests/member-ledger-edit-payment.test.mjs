@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {ledgerPaymentLabel,ledgerTransferTargetLabel,ledgerTransferSourceLabel} from '../src/ledger-payment-label.js'
+import {isOwnHouseholdEntry} from '../src/shared-ledger-edit.js'
 
 test('member payment editor is writable only for own approved cash or shared-card row',()=>{
  const workspace=readFileSync(new URL('../src/FamilyMemberWorkspace.vue',import.meta.url),'utf8')
@@ -24,7 +25,7 @@ test('different users never gain edit permission from a displayed payment label'
  assert.equal(ledgerPaymentLabel({type:'expense',payment_source:null,
   payment_source_display:'个人支付方式'}),'个人支付方式')
  const workspace=readFileSync(new URL('../src/FamilyMemberWorkspace.vue',import.meta.url),'utf8')
- assert.match(workspace,/if\(!own\)return \{paymentReadOnly:true,paymentSource:ledgerPaymentLabel\(entry\)\}/)
+ assert.match(workspace,/if\(!own\)return \{paymentReadOnly:true,paymentSource:ledgerPaymentLabel\(entry\),/)
  assert.match(workspace,/memberLedgerPaymentOptions=computed\(\(\)=>memberPaymentOptions\.value\.filter/)
  const form=readFileSync(new URL('../src/TransactionForm.vue',import.meta.url),'utf8')
  assert.match(form,/v-if="paymentReadOnly" class="payment-source-readonly"/)
@@ -99,4 +100,32 @@ test('stat category details are genuinely filtered for both month and year',()=>
  assert.match(work,/onCategoryDetails:memberLedger\.openCategoryDetails/)
  assert.match(api,/const annual=url\.searchParams\.get\('year'\)/)
  assert.doesNotMatch(page,/categoryDetail\?\.period/)
+})
+
+
+test('the authenticated direct creator of a neutral spouse transfer may edit and request review',()=>{
+ const user='22222222-2222-4222-8222-222222222222'
+ const other='11111111-1111-4111-8111-111111111111'
+ const direct={type:'transfer',transfer_target:'spouse',shared_record_creator_user_id:user,
+  shared_entry_requester_user_id:null}
+ assert.equal(isOwnHouseholdEntry(direct,user),true)
+ assert.equal(isOwnHouseholdEntry(direct,other),false)
+ assert.equal(isOwnHouseholdEntry({type:'income',shared_entry_requester_user_id:user},user),true)
+ assert.equal(isOwnHouseholdEntry({type:'expense',shared_card_actor_user_id:user},user),true)
+ assert.equal(isOwnHouseholdEntry({type:'transfer',recorded_by:'鸡毛'},user),false,
+  'display nickname is never sufficient to grant editing permission')
+ const workspace=readFileSync(new URL('../src/FamilyMemberWorkspace.vue',import.meta.url),'utf8')
+ assert.match(workspace,/isOwnHouseholdEntry\(entry,props\.user\.user_id\)/)
+ assert.match(workspace,/allReadOnly:!isOwn\|\|entry\.transfer_target!=='spouse'/)
+ assert.match(workspace,/if\(ledgerChanged\)await openApproval\('update',edited\)/)
+ const ledger=readFileSync(new URL('../src/family-ledger-context.js',import.meta.url),'utf8')
+ assert.match(ledger,/isOwnRecorded:payment\?\.isOwnRecorded\?\?false/)
+ const form=readFileSync(new URL('../src/TransactionForm.vue',import.meta.url),'utf8')
+ assert.match(form,/props\.allowUnlistedCategoryEdit/)
+ const api=readFileSync(new URL('../functions/api/family-finance\/[[path]].js',import.meta.url),'utf8')
+ assert.match(api,/sr\.creator_user_id AS shared_record_creator_user_id/)
+ assert.match(api,/shared_record_creator_user_id:r\.shared_record_creator_user_id===user\.user_id\?user\.user_id:null/)
+ const requests=readFileSync(new URL('../src/FamilySharedMutationRequests.vue',import.meta.url),'utf8')
+ assert.match(requests,/shared-entries\?entry_id='/)
+ assert.doesNotMatch(requests,/shared-entries\?state=active'\)\n const target=/)
 })

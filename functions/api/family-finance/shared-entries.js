@@ -183,6 +183,21 @@ async function modify(req,e,url,u,id,action){
   if(next.type==='expense'){
    const explicit=Object.hasOwn(next,'payment_source');
    paymentAfter=explicit?next.payment_source:originalPayment;
+   // Administrative authority to edit household totals does not transfer the
+   // original member's right to choose their own payment source.
+   if(paymentAfter!==originalPayment){
+    const origin=await e.DB.prepare('SELECT '+
+     '(SELECT requester_user_id FROM family_shared_mutation_applied '+
+     "WHERE entry_id=? AND action='create' LIMIT 1) AS member_user_id,"+
+     '(SELECT actor_user_id FROM family_legacy_card_spends '+
+     'WHERE entry_id=? LIMIT 1) AS spender_user_id,'+
+     '(SELECT owner_user_id FROM family_financial_accounts '+
+     'WHERE account_id=(SELECT family_account_id FROM entries WHERE id=?) LIMIT 1) AS card_owner_user_id')
+     .bind(r.entry_id,r.entry_id,r.entry_id).first();
+    if([origin?.member_user_id,origin?.spender_user_id,origin?.card_owner_user_id]
+     .some(id=>typeof id==='string'&&id&&id!==u.user_id))
+     return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
+   }
    if(paymentAfter!==originalPayment&&!await availablePayment(e.DB,paymentAfter))
     return fail('SHARED_ENTRY_PAYMENT_NOT_AVAILABLE',409);
    // Preserve the legacy snapshot shape if no payment choice was supplied.

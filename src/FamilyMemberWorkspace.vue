@@ -312,10 +312,30 @@ const selectedEntryType=ref('all')
 const monthlyReport=ref(null),annualReport=ref(null),selectedYear=ref(Number(year.value))
 const sharedMutationRef=ref(null)
 const memberEntryPending=ref(false),memberEntryError=ref(''),memberEntryNotice=ref('')
-const entryExpenseCategories=['食費','日用品','交通','住居','医療','交際費','その他']
-const entryIncomeCategories=['給与','賞与','副収入','ポイント還元','その他']
+// Both identities read the same canonical D1 category_source. The category
+// key is the ledger ID; display_name is the Japanese label, not a new ID.
+const memberCategorySource=ref([])
+const entryExpenseCategories=computed(()=>memberCategorySource.value
+ .filter(x=>x.entry_type==='expense').map(x=>x.category))
+const entryIncomeCategories=computed(()=>memberCategorySource.value
+ .filter(x=>x.entry_type==='income').map(x=>x.category))
+const memberCategoryLabels=computed(()=>Object.fromEntries(memberCategorySource.value
+ .map(x=>[x.category,x.display_name||x.category])))
+const memberCategoryLabel=value=>memberCategoryLabels.value[value]||value
+function defaultMemberCategory(type){
+ const rows=memberCategorySource.value.filter(x=>x.entry_type===type)
+ return rows.find(x=>Number(x.is_default)===1)?.category||rows[0]?.category||''
+}
+function normalizedMemberCategory(type,value){
+ const name=String(value||'').trim()
+ const row=memberCategorySource.value.find(x=>x.entry_type===type&&
+  (x.category===name||x.display_name===name))
+ if(row)return row.category
+ if(memberCategoryRecords.value.some(x=>x.type===type&&x.name===name))return name
+ return defaultMemberCategory(type)
+}
 function newEntry(){return {type:'expense',amount:'',date:new Date(Date.now()+9*3600000).toISOString().slice(0,10),
- time:'',category:'食費',merchant:'',note:'',paymentSource:'cash',transferTarget:'',
+ time:'',category:defaultMemberCategory('expense'),merchant:'',note:'',paymentSource:'cash',transferTarget:'',
  bindRule:false,bindPaymentRule:false}}
 const memberEntries=ref([])
 const memberInputMode=ref('manual'),memberRawText=ref(''),memberScanMode=ref('statement')
@@ -340,12 +360,15 @@ const memberImportPaymentOptions=computed(()=>
  [{value:'cash',label:'自動判定（現金）'},...memberPaymentOptions.value.filter(x=>x.value!=='cash')])
 const memberTodayLabel=computed(()=>new Date().toLocaleString('ja-JP',{
  timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'}))
-function addMemberEntry(){memberEntries.value.push(newEntry())}
+function addMemberEntry(){
+ if(!entryExpenseCategories.value.length){memberEntryError.value='カテゴリを読み込めません。再読み込みしてください';void loadMemberCategories();return}
+ memberEntries.value.push(newEntry())
+}
 function removeMemberEntry(index){if(!memberEntryPending.value)memberEntries.value.splice(index,1)}
 function setMemberEntryType(type,entry){
  if(!['expense','income','transfer'].includes(type))return
  entry.type=type
- entry.category=type==='expense'?'食費':type==='income'?'給与':'投資・資産移動'
+ entry.category=type==='transfer'?'投資・資産移動':defaultMemberCategory(type)
  entry.merchant=''
  entry.transferTarget=type==='transfer'?'spouse':''
  entry.transferDate=type==='transfer'?entry.date:''
@@ -369,7 +392,7 @@ function recognizeMemberText(fromImage=false){
   .map(x=>{const draft={...newEntry(),type:x.type==='income'?'income':'expense',
    amount:Number(x.amount),date:String(x.date||newEntry().date),
    time:String(x.time||''),merchant:String(x.merchant||''),
-   category:String(x.category||'日用品'),note:String(x.note||''),
+   category:normalizedMemberCategory(x.type==='income'?'income':'expense',x.category),note:String(x.note||''),
    paymentSource:memberPaymentOptions.value.some(c=>c.value===(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value))
     ?(fromImage?memberScanPaymentSource.value:memberImportPaymentSource.value):'cash'};applyMemberMerchantRule(draft);return draft})
  if(!drafts.length){memberEntryError.value='解析できる金額がありません。原文と金額を確認してください。';return}
@@ -521,6 +544,9 @@ async function submitNeutralSpouseTransfer(record){
 }
 async function submitMemberEntry(){
  if(memberEntryPending.value||memberOcrBusy.value||!memberEntries.value.length)return
+ if(!entryExpenseCategories.value.length||!entryIncomeCategories.value.length){
+  memberEntryError.value='カテゴリの読み込みが必要です。再読み込みしてください';return
+ }
  memberEntryPending.value=true;memberEntryError.value='';memberEntryNotice.value=''
  let sent=0,applied=0
  try{
@@ -778,7 +804,9 @@ provide('kakeibo-page-context',{
    annualStats:annualReport,entryType:selectedEntryType,
    onPaymentMethodDetails:memberLedger.openPaymentMethodDetails,
    onCategoryDetails:memberLedger.openCategoryDetails}),
- ...memberLedger
+ ...memberLedger,
+ // Ledger details, edit dialogs and reports use the same Japanese labels.
+ categoryLabel:memberCategoryLabel
 })
 watch(selectedYear,n=>{if(Number.isInteger(n)&&n>=2000&&n<=9998)year.value=String(n)})
 
@@ -1490,9 +1518,17 @@ async function loadMemberCategories(){
  const actor=props.user.user_id
  try{
   const result=await api('member-categories')
-  if(result.scope!=='personal'||result.viewer_user_id!==actor||!Array.isArray(result.items))
-   throw Error('本人のカテゴリ情報を確認できません')
+  if(result.scope!=='personal'||result.viewer_user_id!==actor||!Array.isArray(result.items)||
+   !Array.isArray(result.defaults)||
+   !result.defaults.some(x=>x.entry_type==='expense')||
+   !result.defaults.some(x=>x.entry_type==='income'))
+   throw Error('D1 の共通カテゴリ情報を確認できません')
   if(actor!==props.user.user_id)return
+  memberCategorySource.value=result.defaults
+  for(const entry of memberEntries.value){
+   if(['expense','income'].includes(entry.type)&&!entry.category)
+    entry.category=defaultMemberCategory(entry.type)
+  }
   const items=[...result.items],key='kakeibo-personal-categories:'+actor
   let legacy=[]
   try{const old=JSON.parse(localStorage.getItem(key)||'[]');if(Array.isArray(old))legacy=old}catch{}
@@ -1517,7 +1553,9 @@ async function loadMemberCategories(){
 async function saveMemberCategory(){
  const actor=props.user.user_id,name=memberCategoryName.value.trim(),type=memberCategoryEntryType.value
  if(memberCategorySaving.value||!name||name.length>20||!['income','expense'].includes(type))return
- if(memberCategoryRecords.value.some(x=>x.type===type&&x.name===name)){
+ if(memberCategoryRecords.value.some(x=>x.type===type&&x.name===name)||
+  memberCategorySource.value.some(x=>x.entry_type===type&&
+   (x.category===name||x.display_name===name))){
   memberEntryError.value='すでに同じカテゴリがあります';return
  }
  memberCategorySaving.value=true;memberEntryError.value=''
@@ -1537,11 +1575,12 @@ const memberReceiptImage=ref(null),memberReceiptFileName=ref('')
 const memberDraftRecoveryInfo=ref('')
 const memberPaymentSourceChoices=computed(()=>memberPaymentOptions.value)
 const memberExpenseCategoryChoices=computed(()=>[...new Set([
- ...entryExpenseCategories,
+ ...entryExpenseCategories.value,
  ...memberCategoryRecords.value.filter(x=>x.type==='expense').map(x=>x.name)
 ])])
 const memberIncomeCategoryChoices=computed(()=>[...new Set([
- ...entryIncomeCategories,...memberCategoryRecords.value.filter(x=>x.type==='income').map(x=>x.name)
+ ...entryIncomeCategories.value,
+ ...memberCategoryRecords.value.filter(x=>x.type==='income').map(x=>x.name)
 ])])
 provide('kakeibo-member-expense-categories',memberExpenseCategoryChoices)
 provide('kakeibo-member-income-categories',memberIncomeCategoryChoices)
@@ -1578,7 +1617,7 @@ provide('kakeibo-entry-input',{
  removeDraft:removeMemberEntry,rewardDestinations:computed(()=>[]),
  transferDestinations:computed(()=>[{value:'spouse',name:'配偶'}]),categories:memberExpenseCategoryChoices,
  INCOME_CATEGORIES:memberIncomeCategoryChoices,
- paymentSources:computed(()=>[]),categoryLabel:(x)=>x,
+ paymentSources:computed(()=>[]),categoryLabel:memberCategoryLabel,
  selectDraftReceipt:selectMemberDraftReceipt,pendingReceiptImage:memberReceiptImage,
  pendingReceiptFileName:memberReceiptFileName,receiptSaveError:memberEntryError,
  setEntryType:(f,type)=>setMemberEntryType(type,f),
@@ -1591,7 +1630,9 @@ provide('kakeibo-entry-input',{
   personalAssetActionsEnabled:computed(()=>true)
 })
 void loadMemberCategories()
-watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMemberCategories()})
+watch(()=>props.user.user_id,()=>{
+ memberCategorySource.value=[];memberCategoryRecords.value=[];void loadMemberCategories()
+})
 </script>
 <template>
  <div class="member-shell">
@@ -1646,8 +1687,8 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    </template>
    <template #member-plans>
     <MemberFixedCosts :key="'member-fixed:'+user.user_id+':'+personalBackupRevision" :user-id="user.user_id"
-     :payment-choices="memberPaymentOptions"
-     :categories="[...new Set([...entryExpenseCategories,...entryCategories])]"
+     :payment-choices="memberPaymentOptions" :category-label="memberCategoryLabel"
+     :categories="[...new Set([...memberExpenseCategoryChoices,...entryCategories])]"
      :on-submit-entry="submitMemberFixedCost" />
    </template>
    <template #member-investment>
@@ -1662,7 +1703,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
      <p v-if="memberRuleError" role="alert" class="member-alert">{{memberRuleError}}</p>
      <MobileMerchantRulesPanel :rules="memberMerchantRules"
        :categories="memberRuleCategoryOptions" :payment-sources="memberPaymentOptions"
-       :category-label="x=>x" :on-save="saveMemberMerchantRule"/>
+       :category-label="memberCategoryLabel" :on-save="saveMemberMerchantRule"/>
    </template>
    <template #member-jobs>
      <p v-if="memberJobsError" class="help" role="status">{{memberJobsError}}</p>

@@ -5,6 +5,7 @@ import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
 import MemberPersonalPoints from './MemberPersonalPoints.vue'
 import MemberPointAssetActions from './MemberPointAssetActions.vue'
+import MemberPointAssetReversals from './MemberPointAssetReversals.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
@@ -1306,6 +1307,8 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
     <MemberPersonalPoints :key="'personal-points:'+user.user_id"
      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
     <MemberPointAssetActions :key="'points-asset:'+user.user_id" 
+     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+    <MemberPointAssetReversals :key="'points-asset-refunds:'+user.user_id"
      :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
     <OriginalCardManagementPanel
       :selected="selectedCardId"

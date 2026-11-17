@@ -54,10 +54,11 @@ test('0104 top-up correction CAS accounts for already-approved prepaid expense a
   db.prepare('INSERT INTO family_approved_account_effects VALUES(?,?,?,?)')
    .run(a,'prepaid',house,-4500);
   const stmt=db.prepare('INSERT INTO family_member_prepaid_topup_corrections VALUES(?,?,?,?,?,?,?,?,?,?,?)');
-  assert.throws(()=>stmt.run('receipt-1',house,owner,1,a,b,1,5000,4000,'2026-11-15','2026-11-16'),
+  assert.throws(()=>stmt.run('receipt-1',house,owner,1,a,a,1,5000,4000,'2026-11-15','2026-11-16'),
    /PERSONAL_TOPUP_CORRECTION_STALE_OR_OVERDRAW/);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM family_member_prepaid_topup_corrections').get().n,0);
-  stmt.run('receipt-1',house,owner,1,a,b,1,5000,4600,'2026-11-15','2026-11-16');
+  // A same-wallet reduction of 400 retains 100 yen after an approved 4500-yen debit.
+  stmt.run('receipt-1',house,owner,1,a,a,1,5000,4600,'2026-11-15','2026-11-16');
   assert.equal(db.prepare('SELECT COUNT(*) n FROM family_member_prepaid_topup_corrections').get().n,1);
  }finally{db.close()}
 });

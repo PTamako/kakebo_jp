@@ -14,6 +14,7 @@ import {compressReceiptImage} from './receipt-image.js'
 import EntryInputPage from './EntryInputPage.vue'
 import {ICON_LIBRARY} from './icon-library.js'
 import {encryptBackupBlob,decryptBackupBlob} from './backup-encryption.js'
+import {collectMemberArchive,verifiedArchiveImage} from './member-private-archive.js'
 import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
@@ -848,6 +849,42 @@ async function exportPersonalAccounts(){
  }catch(e){personalBackupMessage.value='保存できませんでした：'+e.message}
  finally{personalBackupBusy.value=false}
 }
+// Private portable archive: historic entries are evidence, never a direct
+// request to re-post household entries without the ordinary HomeFlow review.
+async function exportMemberArchive(){
+ if(personalBackupBusy.value)return
+ const password=window.prompt('本人の取引履歴・画像を暗号化して保存します。10文字以上のパスワードを入力してください。')
+ if(password===null)return
+ if(password.length<10){personalBackupMessage.value='10文字以上のパスワードが必要です';return}
+ personalBackupBusy.value=true;personalBackupMessage.value=''
+ const actor=props.user.user_id,household=props.user.household_id,ticket=epoch
+ const check=()=>{if(!alive||props.user.user_id!==actor||
+   props.user.household_id!==household||epoch!==ticket)
+   throw Error('アーカイブ中に本人のログイン状態が変更されました')}
+ try{
+  const archive=await collectMemberArchive({actor,household,check,get:path=>api(path),
+   image:async receiptId=>{
+    check()
+    const response=await fetch('/api/family-finance/member-receipts/'+
+     encodeURIComponent(receiptId),{credentials:'same-origin',cache:'no-store'})
+    if(!response.ok)throw Error('画像を取得できません：'+receiptId)
+    return response.blob()
+   }})
+  check()
+  const body=new Blob([JSON.stringify(archive)],{type:'application/json'})
+  if(body.size>73*1024*1024)throw Error('暗号化サイズ上限を超えています')
+  const encrypted=await encryptBackupBlob(body,password)
+  check()
+  const url=URL.createObjectURL(encrypted),link=document.createElement('a')
+  link.href=url;link.download='kakeibo-personal-archive-'+new Date().toISOString().slice(0,10)+'.enc'
+  document.body.appendChild(link);link.click();link.remove()
+  setTimeout(()=>URL.revokeObjectURL(url),60000)
+  personalBackupMessage.value='本人の設定・'+archive.receipts.length+'件の画像・本人取引の監査記録・'+
+   archive.manual_holdings.length+'件の手動保有情報を暗号化しました。'+
+   '実際の銀行・証券会社の履歴照合と家庭明細の復元は別途必要です。'
+ }catch(e){personalBackupMessage.value='アーカイブを保存できませんでした：'+e.message}
+ finally{personalBackupBusy.value=false}
+}
 async function importPersonalBackup(event){
  const file=event.target?.files?.[0]
  if(event.target)event.target.value=''
@@ -861,11 +898,21 @@ async function importPersonalBackup(event){
   const decrypted=await decryptBackupBlob(file,password)
   if(decrypted.format!=='json')throw Error('本人用JSONバックアップを選択してください')
   const data=JSON.parse(await decrypted.blob.text())
-  if(!['kakeibo-member-account-settings-v1','kakeibo-member-personal-settings-v2'].includes(data?.format)||
-   data.owner_user_id!==actor||!['personal_settings_only','personal_account_settings_only'].includes(data.scope)||
+  if(!['kakeibo-member-account-settings-v1','kakeibo-member-personal-settings-v2',
+   'kakeibo-member-private-archive-v3'].includes(data?.format)||
+   data.owner_user_id!==actor||!['personal_settings_only','personal_account_settings_only',
+   'personal_history_evidence_and_settings'].includes(data.scope)||
    !Array.isArray(data.accounts)||data.accounts.some(a=>a.owner_user_id!==actor))
    throw Error('このバックアップは別のユーザーのものか、形式が一致しません')
-  const newer=data.format==='kakeibo-member-personal-settings-v2'
+  const archiveV3=data.format==='kakeibo-member-private-archive-v3'
+  const newer=data.format!=='kakeibo-member-account-settings-v1'
+  if(archiveV3&&(data.household_id!==props.user.household_id||
+    !Array.isArray(data.manual_holdings)||data.manual_holdings.length>100||
+    !Array.isArray(data.receipts)||data.receipts.length>500||
+    !data.history||typeof data.history!=='object'||Array.isArray(data.history)||
+    data.manual_holdings.some(h=>h.owner_user_id!==actor)||
+    data.receipts.some(r=>typeof r.receipt_ref!=='string'||r.receipt_ref.length>96)))
+   throw Error('本人のアーカイブの所有者または形式を確認できません')
   if((newer&&(!Array.isArray(data.merchant_rules)||data.merchant_rules.length>200||
       !Array.isArray(data.categories)||data.categories.length>80||
       !Array.isArray(data.fixed_costs)||data.fixed_costs.length>200||
@@ -897,8 +944,9 @@ async function importPersonalBackup(event){
     kinds.some(k=>k[0]===a.account_kind))
   if(accountCandidates.length!==data.accounts.filter(a=>a.origin==='member_created').length)
    throw Error('バックアップ内の口座情報が不正です')
-  if(!confirm('不足している本人の口座と固定費・店舗ルール・カテゴリを復元しますか？'+
-   '既存設定と家庭明細は上書きしません。取引履歴・画像・投資約定はこの設定バックアップの対象外です。'))return
+  if(!confirm(archiveV3?
+   '本人の不足している設定・手動保有銘柄・有効な画像を復元しますか？家庭明細や銀行・証券の実取引は直接復元しません。':
+   '不足している本人の口座・固定費・店舗ルール・カテゴリを復元しますか？既存設定と家庭明細は上書きしません。'))return
   if(actor!==props.user.user_id)throw Error('アカウントが変更されました')
   let categoriesAdded=0,rulesAdded=0,rulesSkipped=0,accountsAdded=0,accountsSkipped=0,
       fixedAdded=0,fixedSkipped=0
@@ -998,6 +1046,73 @@ async function importPersonalBackup(event){
     rulesAdded++
    }catch{rulesSkipped++}
   }
+  let restoredHoldings=0,skippedHoldings=0,restoredImages=0,skippedImages=0
+  if(archiveV3){
+   verifyActor()
+   const existing=await api('manual-holdings')
+   if(existing.scope!=='personal'||existing.owner_user_id!==actor||!Array.isArray(existing.holdings))
+    throw Error('本人の投資情報の状態を確認できません')
+   const known=new Set(existing.holdings.map(h=>h.fund_code+':'+h.account_type))
+   for(const h of data.manual_holdings){
+    verifyActor()
+    const key=h.fund_code+':'+h.account_type
+    if(known.has(key)){skippedHoldings++;continue}
+    if(!/^[A-Z0-9]{8}$/.test(h.fund_code||'')||
+      !['growth','tsumitate','combined'].includes(h.account_type)||
+      typeof h.fund_name!=='string'||!h.fund_name.trim()||h.fund_name.length>120||
+      !Number.isSafeInteger(h.units)||!Number.isSafeInteger(h.acquisition_cost)||
+      h.units<0||h.acquisition_cost<0||(h.units===0)!==(h.acquisition_cost===0))
+     throw Error('投資記録の形式が不正です')
+    const saved=await api('manual-holdings/holding',request({expected_user_id:actor,
+     fundCode:h.fund_code,fundName:h.fund_name,accountType:h.account_type,
+     units:h.units,acquisitionCost:h.acquisition_cost,expectedVersion:0},'PUT'))
+    if(saved.ledger_changed!==false||saved.holding?.owner_user_id!==actor)
+     throw Error('本人の保有銘柄の復元結果を確認できません')
+    if(h.nav_per_10000!=null&&h.price_date&&Number.isSafeInteger(h.nav_per_10000)&&
+      h.nav_per_10000>0){
+     const price=await api('manual-holdings/price',request({expected_user_id:actor,
+      fundCode:h.fund_code,navPer10000:h.nav_per_10000,priceDate:h.price_date},'PUT'))
+     if(price.ledger_changed!==false)throw Error('基準価額の復元を確認できません')
+    }
+    known.add(key);restoredHoldings++
+   }
+   await reloadMemberReceipts()
+   const currentIds=new Set(memberReceipts.value.map(x=>x.receipt_id))
+   for(const item of data.receipts){
+    verifyActor()
+    // Validate all archive bytes even if the original exists. Any tampering
+    // aborts restoration; never silently overwrite or replay transactions.
+    const blob=await verifiedArchiveImage(item)
+    if(currentIds.has(item.receipt_id)){skippedImages++;continue}
+    if(!/^(entry|proposal|request):/.test(item.receipt_ref||'')){
+     skippedImages++;continue
+    }
+    let created
+    try{
+     created=await api('member-receipts',request({expected_user_id:actor,
+      idempotency_key:'receipt:portable:'+item.receipt_id,receipt_ref:item.receipt_ref,
+      receipt_date:item.date,merchant:item.merchant||'',content_type:blob.type,
+      size_bytes:blob.size,sha256:item.sha256}))
+    }catch(e){
+     if(/MEMBER_RECEIPT_REFERENCE_FORBIDDEN|MEMBER_RECEIPT_REFERENCE_REVOKED/.test(e.message)){
+      skippedImages++;continue
+     }
+     throw e
+    }
+    const newId=created.item?.receipt_id
+    if(!/^[a-f0-9]{32}$/.test(newId||''))throw Error('画像の復元先が不明です')
+    if(created.item.state!=='ready'){
+     const up=await fetch('/api/family-finance/member-receipts/'+newId,{
+      method:'PUT',credentials:'same-origin',cache:'no-store',
+      headers:{'content-type':blob.type},body:blob})
+     const receipt=await up.json().catch(()=>({}))
+     if(!up.ok||receipt.ok!==true||receipt.item?.state!=='ready')
+      throw Error(receipt.code||'画像を復元できません')
+    }
+    currentIds.add(item.receipt_id);restoredImages++
+   }
+   await reloadMemberReceipts()
+  }
   await loadMemberMerchantRules()
   personalBackupRevision.value++
   await refresh()
@@ -1005,7 +1120,9 @@ async function importPersonalBackup(event){
    '件、カテゴリ'+categoriesAdded+'件、店舗ルール'+rulesAdded+'件を追加。'+
    '既存の口座'+accountsSkipped+'件と固定費'+fixedSkipped+'件は維持。'+
    (rulesSkipped?'利用できない支払方法などでルール'+rulesSkipped+'件を省略。':'')+
-   '家庭明細・取引履歴・画像・投資約定は変更していません。'
+   (archiveV3?'手動保有銘柄'+restoredHoldings+'件・画像'+restoredImages+'件を復元。既存保有'+
+     skippedHoldings+'件、関連取引が存在しない画像等'+skippedImages+'件は保留。':'')+
+   '家庭明細と銀行・証券の実取引は直接書き換えていません。'
  }catch(e){personalBackupMessage.value='復元できませんでした：'+e.message}
  finally{personalBackupBusy.value=false}
 }
@@ -1213,7 +1330,10 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    <template #member-backup>
     <p class="help">個人設定を暗号化して保存（共有明細・画像は対象外）。</p>
     <div class="member-backup-actions">
-     <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportPersonalAccounts">
+     <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportMemberArchive">
+     {{personalBackupBusy?'処理中…':'本人の記録・レシート・保有銘柄を暗号化保存'}}
+    </button>
+    <button type="button" class="button-secondary" :disabled="personalBackupBusy" @click="exportPersonalAccounts">
       {{personalBackupBusy?'処理中…':'本人の設定を暗号化して保存'}}
      </button>
      <label class="member-backup-upload button-secondary">バックアップを選択

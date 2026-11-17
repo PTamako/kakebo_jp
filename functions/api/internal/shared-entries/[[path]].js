@@ -1,3 +1,4 @@
+import {resolveSharedMutationSealedReference} from '../../family-finance/shared-mutation-sealed-reference.js';
 // One immutable HOMEFLOW approval -> one D1 mutation, never an external payment.
 // Authentic owner proof, encrypted member intent and receipt are all separate.
 const enc=new TextEncoder(),h64=/^[a-f0-9]{64}$/i,id32=/^[a-f0-9]{32}$/i,
@@ -41,6 +42,8 @@ async function signed(req,e,mode){
 }
 async function readIntent(e,p){
  try{
+  p=await resolveSharedMutationSealedReference(e.DB,p);
+  if(!p)return null;
   const iv=Uint8Array.from(atob(p.payload_iv),x=>x.charCodeAt(0));
   const cipher=Uint8Array.from(atob(p.payload_cipher),x=>x.charCodeAt(0));
   if(iv.length!==12||cipher.length<16||cipher.length>2500)return null;

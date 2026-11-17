@@ -283,11 +283,15 @@ async function entries(env,user,url){
   (period?'WHERE e.date >= ? AND e.date < ? ':'')+
   'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',
   ...(period?[lower,upper]:[]),limit+1,offset);
- // Family members share transaction amounts and categories, not the
- // owner's payment card names or stable account IDs.
+ // Household ledger payment names are visible to both spouses for
+ // read-only transparency. Private account IDs, card management, transfer
+ // targets and ownership permissions remain isolated to the actual owner.
  const items=rows.slice(0,limit).map(r=>{
   const payment_method_group=paymentMethodForEntry(r);
   if(user.role==='owner')return {...r,payment_method_group};
+  const paymentLabel=r.type==='expense'
+   ? String(r.payment_source_display||r.payment_source||'現金').trim()||'現金'
+   : '';
   const ownSource=r.payment_account_owner_user_id===user.user_id;
   const grantedSpender=r.shared_card_actor_user_id===user.user_id||
     r.shared_entry_requester_user_id===user.user_id;
@@ -298,7 +302,7 @@ async function entries(env,user,url){
    transfer_target:spouseTransfer?'spouse':ownTarget?r.transfer_target:null,
    family_account_id:ownSource?r.family_account_id:null,
    family_transfer_target_account_id:ownTarget?r.family_transfer_target_account_id:null,
-   payment_source_display:ownSource||grantedSpender?r.payment_source_display:'个人支付方式',
+   payment_source_display:paymentLabel,
    transfer_target_display:spouseTransfer?'配偶':ownTarget?r.transfer_target_display:'个人账户',
    payment_account_owner_user_id:ownSource?user.user_id:null,
    transfer_target_account_owner_user_id:ownTarget?user.user_id:null};

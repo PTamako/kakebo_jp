@@ -17,7 +17,7 @@ test('card billing on iPhone has identical shared inputs for both identities',()
   assert.match(shared, /class="card-closing-month" type="month"/)
   assert.match(shared, /class="card-usage-total" aria-live="polite"/)
   assert.match(shared, /max-width:100%!important/)
-  assert.match(shared, /<output aria-live="polite">\{\{amount\}\}<\/output>/)
+  assert.match(shared, /<output class="card-usage-total" aria-live="polite">\{\{amount\}\}<\/output>/)
 })
 test('blank billing selections do not show redundant instructions or large disabled save action',()=>{
   assert.doesNotMatch(billing,/カードと締め月を選択してください/)

@@ -1244,10 +1244,47 @@ async function saveEdit() {
   }
   editSaving.value = true
   try {
-    await api('entries/' + e.id, {
-      method: 'PUT',
-      body: JSON.stringify({ ...e, amount: Number(e.amount) })
-    })
+    // An approved household row is protected by the immutable shared-entry
+    // registry. Original editor must use its owner-scoped audited CAS route;
+    // the generic entries/:id endpoint is blocked by the D1 write guard.
+    let sharedEdited = false
+    if (familyIdentity.value?.role === 'owner') {
+      const lookupResponse = await fetch('/api/family-finance/shared-entries?entry_id=' +
+        encodeURIComponent(String(e.id)), { credentials:'same-origin', cache:'no-store' })
+      const lookup = await lookupResponse.json().catch(()=>({}))
+      if (!lookupResponse.ok || lookup.ok !== true)
+        throw Error('共有記録の更新先を確認できませんでした。再読込してください')
+      const target = lookup.action
+      if (target && target.state === 'active') {
+        if (editReceiptImage.value)
+          throw Error('共有記録の画像は家庭共有明細の添付機能で更新してください')
+        const entry = {
+          date: e.date, time: e.time || '', amount: Number(e.amount),
+          type: e.type, category: e.category, merchant: e.merchant || '',
+          note: e.note || '',
+          ...(e.type === 'transfer' ? {
+            transfer_target: e.transferTarget, transfer_date: e.transferDate
+          } : {})
+        }
+        const response = await fetch('/api/family-finance/shared-entries/' +
+          encodeURIComponent(target.resource_id), {
+          method: 'PUT', credentials:'same-origin', cache:'no-store',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ expected_user_id: familyIdentity.value.user_id,
+            expected_version: target.version, entry })
+        })
+        const receipt = await response.json().catch(()=>({}))
+        if (!response.ok || receipt.ok !== true || receipt.action?.version !== target.version + 1)
+          throw Error(receipt.code || '共有記録の変更を確認できませんでした')
+        sharedEdited = true
+      }
+    }
+    if (!sharedEdited) {
+      await api('entries/' + e.id, {
+        method: 'PUT',
+        body: JSON.stringify({ ...e, amount: Number(e.amount) })
+      })
+    }
     ledgerRevision.value++
     if (editReceiptImage.value) {
       try { await persistReceipt(e.id, editReceiptImage.value, true, editReceiptVersion.value); editReceiptImage.value = null; editReceiptVersion.value = null }

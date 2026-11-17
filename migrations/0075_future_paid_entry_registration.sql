@@ -192,6 +192,38 @@ CREATE TRIGGER trg_family_prepaid_applied_entry_no_update
  AND json_extract(correction.after_json,'$.accountId')=NEW.family_account_id
  )
  BEGIN SELECT RAISE(ABORT,'PREPAID_ENTRY_IMMUTABLE'); END;
+-- Authorized future-paid delete/restore uses a zero-value physical
+-- tombstone, not DELETE or INSERT: the original immutable purchase references
+-- entries.id via a RESTRICT foreign key. Never relax owner-approved UPDATE.
+DROP TRIGGER IF EXISTS trg_shared_entry_guard_update;
+CREATE TRIGGER trg_shared_entry_guard_update BEFORE UPDATE ON entries
+WHEN EXISTS(SELECT 1 FROM family_shared_entry_registry r WHERE r.entry_id=OLD.id)
+AND NOT EXISTS(
+ SELECT 1 FROM family_shared_entry_write_context c
+ JOIN family_shared_entry_registry r ON r.resource_id=c.resource_id
+ WHERE c.entry_id=OLD.id AND r.entry_id=OLD.id
+ AND (c.action='update' OR
+   (c.action IN('delete','restore') AND EXISTS(
+    SELECT 1 FROM family_approved_account_corrections correction
+    WHERE correction.entry_id=OLD.id AND correction.version_before=r.version
+     AND correction.version_after=r.version+1
+     AND correction.approver_user_id=c.actor_user_id
+     AND correction.version_before=c.expected_version
+     AND json_extract(correction.before_json,'$.amount')=OLD.amount
+     AND json_extract(correction.after_json,'$.amount')=NEW.amount
+     AND json_extract(correction.before_json,'$.date')=OLD.date
+     AND json_extract(correction.after_json,'$.date')=NEW.date
+     AND json_extract(correction.before_json,'$.accountId')=OLD.family_account_id
+     AND json_extract(correction.after_json,'$.accountId')=NEW.family_account_id
+     AND (EXISTS(SELECT 1 FROM family_card_purchase_applied paid
+      WHERE paid.entry_id=OLD.id AND OLD.client_request_id='hfcard:'||paid.homeflow_request_id)
+      OR EXISTS(SELECT 1 FROM family_prepaid_actions_applied paid
+      WHERE paid.entry_id=OLD.id AND paid.action='spend'
+       AND OLD.client_request_id='hfprepaid:'||paid.homeflow_request_id))
+   )))
+)
+BEGIN SELECT RAISE(ABORT,'SHARED_ENTRY_APPROVAL_CONTEXT_REQUIRED'); END;
+
 INSERT OR IGNORE INTO schema_migrations(version,description)
  VALUES('schema-0075-future-paid-entry-registration',
  'Future-only member credit/prepaid purchase registry with authenticated owner-reviewed correction precondition');

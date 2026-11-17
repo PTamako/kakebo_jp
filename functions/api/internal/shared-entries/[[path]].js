@@ -291,16 +291,19 @@ async function write(e,p,b,approval,payload){
    'client_request_id=? AND family_account_id IS NULL';
   const sourceArgs=adopted?[adopted.original_client_request_id,adopted.account_id]:[reference];
   const spouseRevision=entry?.type==='transfer'||previous?.type==='transfer';
-  if(action==='update'&&paidRevision){
-   // A signed correction receipt and all asset effects MUST commit in the
-   // SAME batch as the changed household row and registry CAS.
+  if(paidRevision){
+   // The original receipt stays immutable even after the household expense
+   // is deleted. Ledger tombstone and signed liability/balance reversal are
+   // one approval-proven D1 transaction; restore posts a new positive effect.
+   const revised=action==='delete'?{...previous,amount:0}:entry;
    stmts.push(...paidRevision.commands);
    stmts.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,'+
     'category=?,merchant=?,note=?,type=?,payment_source=?,family_account_id=? '+
     'WHERE id=? AND client_request_id=? AND family_account_id=? '+
     "AND type='expense' AND date=? AND amount=?")
-    .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,
-     entry.note,'expense',paidRevision.paymentSource,paidRevision.newAccountId,
+    .bind(revised.date,revised.time,revised.amount,revised.category,
+     revised.merchant,revised.note,'expense',
+     paidRevision.paymentSource,paidRevision.newAccountId,
      registry.entry_id,paidRevision.originalClientId,
      paidRevision.originalAccountId,paidRevision.date,paidRevision.amount));
   }else if(action==='update')stmts.push(spouseRevision?

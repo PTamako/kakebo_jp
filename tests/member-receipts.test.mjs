@@ -22,9 +22,9 @@ function fixture(){
   'CREATE TABLE family_shared_mutation_applied(proposal_id TEXT PRIMARY KEY,requester_user_id TEXT,household_id TEXT,action TEXT,entry_id INTEGER)',
   'CREATE TABLE family_legacy_card_spends(entry_id INTEGER PRIMARY KEY,actor_user_id TEXT,household_id TEXT)',
   'CREATE TABLE family_card_purchase_intents(request_id TEXT PRIMARY KEY,requester_user_id TEXT,household_id TEXT)',
-  'CREATE TABLE family_card_purchase_applied(proposal_id TEXT PRIMARY KEY,entry_id INTEGER)',
+  'CREATE TABLE family_card_purchase_applied(proposal_id TEXT PRIMARY KEY,entry_id INTEGER,requester_user_id TEXT,household_id TEXT)',
   'CREATE TABLE family_prepaid_action_intents(request_id TEXT PRIMARY KEY,requester_user_id TEXT,household_id TEXT,action TEXT)',
-  'CREATE TABLE family_prepaid_actions_applied(proposal_id TEXT PRIMARY KEY,entry_id INTEGER)',
+  'CREATE TABLE family_prepaid_actions_applied(proposal_id TEXT PRIMARY KEY,entry_id INTEGER,requester_user_id TEXT,household_id TEXT,action TEXT)',
   "INSERT INTO homeflow_identity_links VALUES ('spouse','family','member','active'),('another','family','member','active'),('foreign','other','member','active'),('owner','family','owner','active')",
   "INSERT INTO family_shared_mutation_intents VALUES ('"+proposal+"','spouse','family','create','submitted')",
   "INSERT INTO family_legacy_card_spends VALUES (123,'spouse','family')",
@@ -122,6 +122,7 @@ test('approved shared posting exposes only the same member linked ledger ID',asy
    'origin':'https://kakeibo.test','content-type':'image/jpeg'
   })
   f.db.exec("INSERT INTO family_shared_mutation_applied VALUES ('"+proposal+"','spouse','family','create',777)")
+  assert.equal((await prepare(f,member,'entry:777','member-receipt-approved-entry')).status,201)
   const list=await f.send(member)
   assert.equal(list.status,200)
   assert.equal(list.body.items[0].linked_entry_id,777)

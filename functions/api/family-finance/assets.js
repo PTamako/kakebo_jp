@@ -111,8 +111,10 @@ export async function familyAssetSummary(env,url,user,request){
   if(!ownership)return reply({code:'ASSET_IDENTITY_REVIEW_REQUIRED',ledger_changed:false},409)
   // Credit-card purchases are expenses once. Bank settlement allocations
   // change ONLY the remaining liability; bank transfers are not new expenses.
-  // With the settlement flag OFF, preserve gross/unreconciled legacy behavior.
-  const settlementEnabled=env.KAKEIBO_CARD_SETTLEMENTS_ENABLED==='true';
+  // Read-only reconciliation uses real, already recorded allocations even
+  // when NEW settlement creation is feature-disabled. Turning creation off
+  // cannot hide actual paid funds or redeemed-point card credits.
+  const settlementEnabled=true;
   let memberCreditCharges=[],memberCreditTotal=0;
   if(env.KAKEIBO_CARD_PURCHASES_ENABLED==='true'){
    const snapshot=await memberCardLiabilities(env.DB,user.household_id,settlementEnabled);

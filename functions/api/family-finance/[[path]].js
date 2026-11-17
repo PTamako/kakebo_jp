@@ -11,6 +11,7 @@ import {familyPrepaidActions} from './prepaid-actions.js';
 import {familyPointsActions} from './points-actions.js';
 import {familyMemberPersonalPoints} from './member-personal-points.js';
 import {familyMemberPointAssets} from './member-points-asset-actions.js';
+import {familyMemberPointAssetReversals} from './member-point-asset-reversals.js';
 import {familySbiCashActions} from './sbi-cash-actions.js';
 import {familyBankTransfers} from './bank-transfers.js';
 import {familyCrossMemberBankTransfers} from './cross-member-bank-transfers.js';
@@ -396,6 +397,7 @@ export async function onRequest({request,env,params}){
   if(parts[0]==='points-actions')return familyPointsActions(request,env,url,user,parts);
    if(parts[0]==='member-personal-points')return familyMemberPersonalPoints(request,env,url,user,parts);
    if(parts[0]==='member-points-asset-actions')return familyMemberPointAssets(request,env,url,user,parts);
+   if(parts[0]==='member-point-asset-reversals')return familyMemberPointAssetReversals(request,env,url,user,parts);
    if(parts[0]==='sbi-cash-actions')return familySbiCashActions(request,env,url,user,parts);
    if(parts[0]==='bank-transfers')return familyBankTransfers(request,env,url,user,parts);
     if(parts[0]==='cross-member-bank-transfers')return familyCrossMemberBankTransfers(request,env,url,user,parts);

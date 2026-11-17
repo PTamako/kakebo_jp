@@ -5,6 +5,7 @@ import {DatabaseSync} from 'node:sqlite'
 import {webcrypto} from 'node:crypto'
 import {familyMemberPersonalPoints} from '../functions/api/family-finance/member-personal-points.js'
 import {familyMemberPointAssets} from '../functions/api/family-finance/member-points-asset-actions.js'
+import {familyMemberPointAssetReversals} from '../functions/api/family-finance/member-point-asset-reversals.js'
 import {memberPointsBalances} from '../functions/api/family-finance/points-balance-projection.js'
 if(!globalThis.crypto)globalThis.crypto=webcrypto
 const hh='primary',owner='11111111-1111-4111-8111-111111111111',
@@ -33,7 +34,8 @@ function fixture(){
   '0042_points_prepaid_refund.sql','0043_points_card_offset_refund.sql',
   '0044_sbi_cash_purchases.sql','0045_sbi_cash_reversals.sql',
   '0046_sbi_legacy_holding_review.sql','0047_sbi_point_full_refund.sql',
-  '0067_member_personal_points.sql','0069_member_self_asset_points.sql'])
+  '0067_member_personal_points.sql','0069_member_self_asset_points.sql',
+  '0070_member_self_asset_points_reversal.sql'])
    s.exec(readFileSync(new URL('../migrations/'+n,import.meta.url),'utf8'))
  for(const [id,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   stmt(s,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
@@ -66,7 +68,8 @@ function fixture(){
   KAKEIBO_POINTS_ACTIONS_ENABLED:'true',KAKEIBO_FAMILY_PENDING_KEY:'1'.repeat(64),DB:db}
  const who={role:'member',user_id:member,household_id:hh}
  async function call(handler,input=null,as=who,method='POST'){
-  const name=handler===familyMemberPointAssets?'member-points-asset-actions':'member-personal-points'
+  const name=handler===familyMemberPointAssets?'member-points-asset-actions':
+   handler===familyMemberPointAssetReversals?'member-point-asset-reversals':'member-personal-points'
   const url=new URL('https://kakeibo.test/api/family-finance/'+name)
   const request=new Request(url,{method,
    ...(method==='POST'?{headers:{origin:url.origin,'content-type':'application/json'},
@@ -188,3 +191,105 @@ test('personal point asset list hides all other household member accounts and ca
   assert.equal((await f.call(familyMemberPointAssets,null,{...f.who,user_id:other},'GET')).data.accounts.some(x=>x.account_id===card),false)
  }finally{f.close()}
 })
+
+test('prepaid refund reverses original units and target yen atomically, exactly once',async()=>{
+ const f=fixture();try{
+  await f.earn()
+  const used=await f.call(familyMemberPointAssets,f.input('transfer_prepaid','PREPAID-A-001'))
+  assert.equal(used.status,201,JSON.stringify(used.data))
+  const p=refundInput(used.data.journal_id,'REFUND-PREPAID-001')
+  const out=await f.call(familyMemberPointAssetReversals,p)
+  assert.equal(out.status,201,JSON.stringify(out.data))
+  assert.equal(out.data.counterpart_refunded,true)
+  assert.equal(out.data.balance_after_units,1000)
+  assert.equal(f.s.prepare('SELECT debited_prepaid_jpy,balance_after_jpy FROM family_points_prepaid_refunds').get().debited_prepaid_jpy,100)
+  assert.equal((await f.call(familyMemberPointAssetReversals,p)).data.replayed,true)
+  assert.equal((await f.call(familyMemberPointAssetReversals,refundInput(used.data.journal_id,'REFUND-PREPAID-002'))).status,409)
+  assert.equal(f.s.prepare('SELECT COUNT(*) n FROM family_points_journal').get().n,3)
+ }finally{f.close()}
+})
+test('card points offset refund restores full liability without family second expense',async()=>{
+ const f=fixture();try{
+  await f.earn()
+  const use=await f.call(familyMemberPointAssets,f.input('offset_card','CARD-A-001'))
+  assert.equal(use.status,201,JSON.stringify(use.data))
+  const back=await f.call(familyMemberPointAssetReversals,refundInput(use.data.journal_id,'CARD-REFUND-001'))
+  assert.equal(back.status,201,JSON.stringify(back.data))
+  assert.equal(back.data.balance_after_units,1000)
+  const refund=f.s.prepare('SELECT restored_jpy,liability_after_jpy FROM family_points_card_offset_refunds').get()
+  assert.equal(refund.restored_jpy,100)
+  assert.equal(refund.liability_after_jpy,1000)
+  assert.equal(f.s.prepare('SELECT COUNT(*) n FROM entries').get().n,1)
+ }finally{f.close()}
+})
+test('same-owner point transfer and exchange refund must have exact target balance',async()=>{
+ const f=fixture();try{
+  await f.earn()
+  for(const [operation,key] of [['transfer_out','MOVE-B-001'],['exchange_out','EXCHANGE-B-001']]){
+   const moved=await f.call(familyMemberPointAssets,f.input(operation,key))
+   assert.equal(moved.status,201,JSON.stringify(moved.data))
+   const reverse=await f.call(familyMemberPointAssetReversals,refundInput(moved.data.journal_id,'RETURN-'+key))
+   assert.equal(reverse.status,201,JSON.stringify(reverse.data))
+  }
+  assert.equal(f.s.prepare('SELECT COUNT(*) n FROM family_points_transfer_refunds').get().n,2)
+  const values=await memberPointsBalances(f.db,hh)
+  assert.equal(values.accounts.find(a=>a.account_id===points).balance_units,1000)
+  assert.equal(values.accounts.find(a=>a.account_id===points2).balance_units,0)
+ }finally{f.close()}
+})
+test('SBI exact broker cancellation and issuer point return self-reverse lot without bank charge',async()=>{
+ const f=fixture();try{
+  await f.earn()
+  const buy=await f.call(familyMemberPointAssets,f.input('redeem_asset','SBI-BUY-C-001'))
+  assert.equal(buy.status,201,JSON.stringify(buy.data))
+  const reversed=await f.call(familyMemberPointAssetReversals,{
+   ...refundInput(buy.data.journal_id,'SBI-RETURN-C-001'),
+   broker_cancel_reference:'SBI-CANCEL-C-001',broker_cancel_date:today(),
+   points_returned_date:today(),broker_cancel_confirmed:true
+  })
+  assert.equal(reversed.status,201,JSON.stringify(reversed.data))
+  assert.equal(reversed.data.broker_ordered,false)
+  assert.equal(reversed.data.balance_after_units,1000)
+  assert.equal(f.s.prepare('SELECT COUNT(*) n FROM family_sbi_point_refunds').get().n,1)
+  assert.equal(f.s.prepare('SELECT COUNT(*) n FROM entries').get().n,1)
+ }finally{f.close()}
+})
+test('cross-user fake reversal, absent issuer proof and forced audit rollback leave originals untouched',async()=>{
+ const f=fixture();try{
+  await f.earn()
+  const transfer=await f.call(familyMemberPointAssets,f.input('transfer_prepaid','PREPAID-D-001'))
+  assert.equal(transfer.status,201)
+  const p=refundInput(transfer.data.journal_id,'REFUND-PREPAID-D-001')
+  assert.equal((await f.call(familyMemberPointAssetReversals,{...p,issuer_points_returned_confirmed:false})).status,400)
+  assert.equal((await f.call(familyMemberPointAssetReversals,p,{role:'member',user_id:other,household_id:hh})).status,403)
+  f.s.exec("CREATE TRIGGER force_asset_refund_audit_fail BEFORE INSERT ON family_points_actor_audit "+
+   "WHEN NEW.operation='reversal' BEGIN SELECT RAISE(ABORT,'FORCED_REFUND_AUDIT_FAIL'); END")
+  const denied=await f.call(familyMemberPointAssetReversals,p)
+  assert.equal(denied.status,409,JSON.stringify(denied.data))
+  assert.equal(f.s.prepare('SELECT COUNT(*) n FROM family_points_direct_asset_refund_proofs').get().n,0)
+  assert.equal(f.s.prepare('SELECT COUNT(*) n FROM family_points_prepaid_refunds').get().n,0)
+  f.s.exec('DROP TRIGGER force_asset_refund_audit_fail')
+  assert.equal((await f.call(familyMemberPointAssetReversals,p)).status,201)
+ }finally{f.close()}
+})
+test('member direct refund list only returns own unrefunded entries',async()=>{
+ const f=fixture();try{
+  await f.earn()
+  const original=await f.call(familyMemberPointAssets,f.input('transfer_prepaid','PREPAID-LIST-001'))
+  const before=await f.call(familyMemberPointAssetReversals,null,f.who,'GET')
+  assert.equal(before.status,200)
+  assert.equal(before.data.eligible.length,1)
+  await f.call(familyMemberPointAssetReversals,refundInput(original.data.journal_id,'REFUND-LIST-001'))
+  const after=await f.call(familyMemberPointAssetReversals,null,f.who,'GET')
+  assert.equal(after.data.eligible.length,0)
+  const foreignList=await f.call(familyMemberPointAssetReversals,null,{role:'member',user_id:other,household_id:hh},'GET')
+  assert.equal(foreignList.data.eligible.length,0)
+ }finally{f.close()}
+})
+function refundInput(original,key){
+ return {expected_user_id:member,idempotency_key:'personal-asset-refund:'+key,
+  original_request_id:original,effective_date:today(),
+  issuer_refund_reference:'POINTS-RETURN-'+key,
+  counterpart_reversal_reference:'TARGET-RETURN-'+key,
+  issuer_points_returned_confirmed:true,counterpart_reverted_confirmed:true}
+}

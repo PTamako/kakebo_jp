@@ -50,7 +50,7 @@ CREATE TRIGGER IF NOT EXISTS trg_account_correction_approved_source
    AND json_extract(NEW.before_json,'$.type')='expense'
    AND json_extract(NEW.before_json,'$.amount')=entry.amount
    AND json_extract(NEW.before_json,'$.date')=entry.date
-   AND json_extract(NEW.before_json,'$.accountId')=entry.family_account_id
+   AND json_extract(NEW.before_json,'$.accountId') IS entry.family_account_id
    AND json_extract(NEW.after_json,'$.type')='expense'
    AND CAST(json_extract(NEW.after_json,'$.amount') AS INTEGER) BETWEEN 0 AND 10000000
    AND (

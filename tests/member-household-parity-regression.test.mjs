@@ -60,7 +60,7 @@ test('member payment reassignment requires both deployment gates plus owner and 
  const member=source('src/FamilyMemberWorkspace.vue')
  const memberApi=source('functions/api/family-finance/shared-mutation-requests.js')
  const executor=source('functions/api/internal/shared-entries/[[path]].js')
- assert.match(member,/memberPaymentReassignmentEnabled=ref\(true\)/)
+ assert.match(member,/memberPaymentReassignmentEnabled=ref\(false\)/)
  assert.match(memberApi,/OTHER_MEMBERS_PAYMENT_READ_ONLY/)
  assert.match(executor,/SHARED_CARD_GRANT_REVOKED/)
  assert.match(executor,/SHARED_MUTATION_PAYMENT_OWNER_MISMATCH/)

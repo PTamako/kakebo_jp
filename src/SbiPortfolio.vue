@@ -589,6 +589,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         </div>
       </details>
 
+      <slot name="after-holdings" />
       <details class="panel sbi-card sbi-investment-activity" open>
         <summary class="sbi-disclosure-summary">
           <span class="sbi-manage-title"><strong>買付履歴</strong><small>追加買付・ポイント買付</small></span>

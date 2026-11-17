@@ -47,7 +47,9 @@ test('card management, billing, and recurring category can return to initial lab
   assert.match(finance, /<OriginalCardManagementPanel v-show="managementTab === 'cards'"/)
   assert.match(cardPanel, /<CardManagementControls :model-value="selected"/)
   assert.match(controls, /<MobileChoiceSheet[\s\S]*?支払方法・カードを選択/)
-  assert.match(finance, /<MobileChoiceSheet v-model="bill\.name"[^>]*カードを選択/)
+  assert.match(finance, /<CardUsageSummaryFields :card="bill\.name" :month="bill\.month"/)
+  assert.match(finance, /:card-options="\[\{value:'',label:'カードを選択'\}/)
+  assert.match(read('src/CardUsageSummaryFields.vue'), /<MobileChoiceSheet :model-value="card" label="カード名" :options="cardOptions"/)
   assert.match(finance, /<MobileChoiceSheet v-model="model\.category"[^>]*選択してください/)
   // Other optional selectors must remain resettable too.
   const transaction = read('src/TransactionForm.vue')
@@ -72,7 +74,8 @@ test('blank billing card hides totals, saved bill and actions instead of mutatin
   assert.match(finance, /const selectedSavedBill = computed\(\(\) => isCreditCard\(bill\.value\.name\)/)
   assert.match(finance, /<div v-if="bill\.name" class="card-billing-actions">/)
   assert.match(finance, /<div v-if="selectedSavedBill" class="finance-saved-bill">/)
-  assert.match(finance, /<output class="card-usage-total"[^>]*>\{\{loaded && bill\.name && cardPeriod \? yen\(cardTotal\) : "—"\}\}<\/output>/)
+  assert.match(finance, /:amount="loaded && bill\.name && cardPeriod \? yen\(cardTotal\) : '—'"/)
+  assert.match(read('src/CardUsageSummaryFields.vue'), /<output aria-live="polite">\{\{amount\}\}<\/output>/)
 })
 
 test('clearing a required recurring category is reversible without saving invalid settings', () => {

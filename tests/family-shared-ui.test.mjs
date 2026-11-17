@@ -40,7 +40,7 @@ test('member uses the same TransactionForm while only household ledger mutations
  assert.match(app,/<TransactionForm /)
  assert.match(shared,/<EntryInputPage v-if="activeTab==='add'"/)
  assert.match(form,/allowedTypes/)
- assert.match(family,/allowedTypes:computed\(\(\)=>\['expense','income'\]\)/)
+ assert.match(family,/allowedTypes:computed\(\(\)=>\['expense','income','transfer'\]\)/)
  assert.match(family,/ref="sharedMutationRef" headless/)
  assert.match(family,/sharedMutationRef.value\?\.submitEntry\(record\)/)
  assert.match(family,/sharedMutationRef.value\?\.submitMutation\(action,original,/)

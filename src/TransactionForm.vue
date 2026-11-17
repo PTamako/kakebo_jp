@@ -49,7 +49,7 @@ const autoSbiLabel = computed(()=>({
 const transferOptions = computed(()=> [
   {value:'',label:'選択してください'},
   {value:'sbi',label:'SBI証券（投資信託）'},
-  ...props.transferDestinations.map(dest=>({value:dest.value,label:dest.name+'（チャージ）'})),
+  ...props.transferDestinations.map(dest=>({value:dest.value,label:dest.value==='spouse'?dest.name:dest.name+'（チャージ）'})),
   ...(record.value.transferTarget && record.value.transferTarget!=='sbi' && record.value.transferTarget!=='family:cross-bank' && !props.transferDestinations.some(dest=>dest.value===record.value.transferTarget)
     ? [{value:record.value.transferTarget,label:'既存の振替先：'+record.value.transferTarget}] : [])
 ])
@@ -78,10 +78,11 @@ const transferOptions = computed(()=> [
     <label class="form-field"><span>转移方式／振替先</span>
       <MobileChoiceSheet v-model="record.transferTarget" :options="transferOptions" label="振替先" />
     </label>
-    <label v-if="record.transferTarget!=='family:cross-bank'" class="form-field"><span>反映日</span>
+    <label v-if="record.transferTarget!=='family:cross-bank'&&record.transferTarget!=='spouse'" class="form-field"><span>反映日</span>
       <input v-model="record.transferDate" type="date" required />
     </label>
   </div>
+  <p v-if="record.type==='transfer'&&record.transferTarget==='spouse'" class="form-field"><small>家庭内の資産移動は1件だけ記録。両者の収入・支出に計上せず、口座の指定も不要です。</small></p>
   <label v-if="record.type==='transfer' && record.transferTarget==='sbi' && !editMode" class="form-field">
     <span>SBIの取引区分</span>
     <MobileChoiceSheet v-model="record.sbiPurpose" :options="sbiPurposeOptions" label="SBIの取引区分" />
@@ -91,7 +92,7 @@ const transferOptions = computed(()=> [
     <span>取引名（任意）</span>
     <input v-model="record.merchant" maxlength="500" placeholder="SBI証券 投信積立サービス" />
   </label>
-  <label v-if="record.type==='transfer' && record.transferTarget!=='family:cross-bank'" class="form-field">
+  <label v-if="record.type==='transfer' && record.transferTarget!=='family:cross-bank'&&record.transferTarget!=='spouse'" class="form-field">
     <span>{{record.transferTarget?.startsWith('prepaid:') ? 'チャージ元（任意）' : '振替元（任意）'}}</span>
     <MobileChoiceSheet v-model="record.paymentSource" :options="transferSourceOptions" label="振替元" />
   </label>

@@ -57,11 +57,15 @@ async function readIntent(e,p){
   if(d.entry){
    const x=d.entry,keys=['date','time','amount','type','category','merchant','note'];
    const paid=exact(x,[...keys,'payment_source']);
-   if(!(exact(x,keys)||paid)||!/^20\d{2}-\d\d-\d\d$/.test(x.date)||
+   const spouse=exact(x,[...keys,'transfer_target','transfer_date']);
+   if(!(exact(x,keys)||paid||spouse)||!/^20\d{2}-\d\d-\d\d$/.test(x.date)||
     new Date(x.date+'T00:00:00Z').toISOString().slice(0,10)!==x.date||
     (x.time!==''&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(x.time))||
     !Number.isSafeInteger(x.amount)||x.amount<1||x.amount>10000000||
-    !['expense','income'].includes(x.type)||!x.category||x.category.length>100||
+    !['expense','income','transfer'].includes(x.type)||
+    (x.type==='transfer'&&(!spouse||x.transfer_target!=='spouse'||x.transfer_date!==x.date||
+     x.category!=='投資・資産移動'||x.merchant!=='配偶への振替'))||
+    (x.type!=='transfer'&&spouse)||!x.category||x.category.length>100||
     typeof x.merchant!=='string'||x.merchant.length>120||
     typeof x.note!=='string'||x.note.length>500||
     (paid&&(x.type!=='expense'||typeof x.payment_source!=='string'||
@@ -196,6 +200,10 @@ async function write(e,p,b,approval,payload){
     .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,
      entry.note,entry.type,reference,entry.payment_source,p.household_id,
      approval.approver_user_id,p.requester_user_id));
+  }else if(entry.type==='transfer'){
+   stmts.push(db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source,transfer_target,transfer_date,transfer_applied) '+
+    "VALUES(?,?,?,?,?,?,'',?,?,'','spouse',?,0)")
+    .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,'transfer',reference,entry.date));
   }else{
    stmts.push(db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
     "VALUES(?,?,?,?,?,?,'',?,?,'')")
@@ -220,22 +228,33 @@ async function write(e,p,b,approval,payload){
    'client_request_id IS ? AND family_account_id=?':
    'client_request_id=? AND family_account_id IS NULL';
   const sourceArgs=adopted?[adopted.original_client_request_id,adopted.account_id]:[reference];
-  if(action==='update')stmts.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=? '+
-   'WHERE id=? AND '+where+' AND family_transfer_target_account_id IS NULL '+
-   "AND type IN('income','expense')")
-   .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,
-    registry.entry_id,...sourceArgs));
+  const spouseRevision=entry?.type==='transfer'||previous?.type==='transfer';
+  if(action==='update')stmts.push(spouseRevision?
+   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0 '+
+    'WHERE id=? AND '+where+' AND family_transfer_target_account_id IS NULL '+
+    "AND (type IN('income','expense') OR (type='transfer' AND transfer_target='spouse'))")
+    .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,
+     entry.type==='transfer'?'spouse':null,entry.type==='transfer'?entry.date:null,registry.entry_id,...sourceArgs):
+   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=? '+
+    'WHERE id=? AND '+where+' AND family_transfer_target_account_id IS NULL '+
+    "AND type IN('income','expense')")
+    .bind(entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,registry.entry_id,...sourceArgs));
   else if(action==='delete')stmts.push(db.prepare('DELETE FROM entries WHERE id=? AND '+where+
-   " AND type IN('income','expense') AND family_transfer_target_account_id IS NULL")
+   (spouseRevision?" AND (type IN('income','expense') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL":
+    " AND type IN('income','expense') AND family_transfer_target_account_id IS NULL"))
    .bind(registry.entry_id,...sourceArgs));
   else if(adopted){
    const old={...original,...entry},columns=Object.keys(old);
    stmts.push(db.prepare('INSERT INTO entries('+
     columns.map(k=>'"'+k+'"').join(',')+') VALUES('+
     columns.map(()=>'?').join(',')+')').bind(...columns.map(k=>old[k])));
-  }else stmts.push(db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
-   "VALUES(?,?,?,?,?,?,?,'',?,?,?)")
-   .bind(registry.entry_id,entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,reference,entry.payment_source||''));
+  }else stmts.push(entry.type==='transfer'?
+   db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source,transfer_target,transfer_date,transfer_applied) '+
+    "VALUES(?,?,?,?,?,?,?,'',?,?,?,?,?,0)")
+    .bind(registry.entry_id,entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,reference,entry.payment_source||'','spouse',entry.date):
+   db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
+    "VALUES(?,?,?,?,?,?,?,'',?,?,?)")
+    .bind(registry.entry_id,entry.date,entry.time,entry.amount,entry.category,entry.merchant,entry.note,entry.type,reference,entry.payment_source||''));
   stmts.push(db.prepare('UPDATE family_shared_entry_registry SET version=version+1,'+
    'state=?,snapshot_json=?,payload_sha256=?,last_actor_user_id=?,updated_at=?,'+
    "deleted_at=CASE WHEN ?='delete' THEN ? WHEN ?='restore' THEN NULL ELSE deleted_at END "+

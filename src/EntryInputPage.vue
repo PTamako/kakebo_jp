@@ -8,7 +8,7 @@ import OcrCapturePanel from './OcrCapturePanel.vue'
 // authenticated data/actions adapter is identity-specific.
 const ctx=inject('kakeibo-entry-input')
 if(!ctx)throw Error('記帳ページのデータ接続がありません')
-const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,saveCategory,categoryEntryType,categoryName,categoryIcon,availableIcons,input,entryInputMode,recognitionMode,importPaymentSource,importPaymentOptions,recognize,aiOcrEnabled,aiQuota,scanImportPaymentSource,ocrEngine,ocrWarning,setAiOcrEnabled,forms,draftRecoveryInfo,clearLocalDraft,removeDraft,rewardDestinations,transferDestinations,categories,INCOME_CATEGORIES,paymentSources,categoryLabel,selectDraftReceipt,pendingReceiptImage,pendingReceiptFileName,receiptSaveError,setEntryType,applyMerchantPayment,manualPayment,onImage,addBlank,addSpouseIncome,saveAll,receiptEnabled,allowedTypes,paymentChoices}=ctx
+const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,saveCategory,categoryEntryType,categoryName,categoryIcon,availableIcons,input,entryInputMode,recognitionMode,importPaymentSource,importPaymentOptions,recognize,aiOcrEnabled,aiQuota,scanImportPaymentSource,ocrEngine,ocrWarning,setAiOcrEnabled,forms,draftRecoveryInfo,clearLocalDraft,removeDraft,rewardDestinations,transferDestinations,categories,INCOME_CATEGORIES,paymentSources,categoryLabel,selectDraftReceipt,pendingReceiptImage,pendingReceiptFileName,receiptSaveError,setEntryType,applyMerchantPayment,manualPayment,onImage,addBlank,saveAll,receiptEnabled,allowedTypes,paymentChoices}=ctx
 </script>
 <template>
 <section class="page-section">
@@ -62,20 +62,13 @@ const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,sa
         <TransactionForm :reward-destinations="rewardDestinations" :transfer-destinations="transferDestinations" :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="receiptEnabled && (entryInputMode === 'manual' || f.showReceiptAttachment === true)" :allowed-types="allowedTypes" :payment-choices="paymentChoices" @change-type="setEntryType(f, $event)" @merchant-change="applyMerchantPayment(f)" @payment-change="manualPayment(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''" />
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
-      <div v-if="entryInputMode==='manual'" class="spouse-income-shortcut">
-        <button type="button" class="button-secondary" :disabled="!!busy" @click="addSpouseIncome">＋ 配偶からの収入</button>
-      </div>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
         <button v-if="entryInputMode === 'manual'" type="button" class="button-secondary" :disabled="!!busy" @click="addBlank('expense')">＋ 記録を追加</button>
         <label v-else class="button-secondary upload-button" :class="{ 'upload-disabled': !!busy }" :aria-disabled="!!busy">{{ forms.length ? '別の画像を読み取る' : recognitionMode === 'statement' ? '明細を読み取る' : 'レシートを読み取る' }}<input type="file" accept="image/*" @change="onImage($event, recognitionMode)" :disabled="!!busy" hidden /></label>
-        <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length || forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank')">{{ busy === 'saving' ? '保存中…' : forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank') ? '配偶からの収入として記録してください' : `保存 ${forms.length}件` }}</button>
+        <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length || forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank')">{{ busy === 'saving' ? '保存中…' : forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank') ? '配偶間の資産移動は別途確認' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>
       <slot name="personal-transfer"/>
     </section>
 </template>
 
-<style scoped>
-.spouse-income-shortcut{display:flex;align-items:center;justify-content:flex-start;margin:9px 0 10px}
-.spouse-income-shortcut button{min-height:44px;padding:9px 13px;font-size:13px;font-weight:700}
-</style>

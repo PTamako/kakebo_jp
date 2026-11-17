@@ -24,10 +24,14 @@ const date=s=>typeof s==='string'&&/^20\d\d-\d\d-\d\d$/.test(s)&&new Date(s+'T00
 const entryKeys=['date','time','amount','type','category','merchant','note'];
 function cleanEntry(x){
  const paid=exact(x,[...entryKeys,'payment_source']);
- if(!(exact(x,entryKeys)||paid)||!date(x.date)||
+ const spouse=exact(x,[...entryKeys,'transfer_target','transfer_date']);
+ if(!(exact(x,entryKeys)||paid||spouse)||!date(x.date)||
   typeof x.time!=='string'||(x.time!==''&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(x.time))||
   !Number.isSafeInteger(x.amount)||x.amount<1||x.amount>10000000||
-  !['income','expense'].includes(x.type)||
+  !['income','expense','transfer'].includes(x.type)||
+  (x.type==='transfer'&&(!spouse||x.transfer_target!=='spouse'||x.transfer_date!==x.date||
+   x.category!=='投資・資産移動'||x.merchant!=='配偶への振替'))||
+  (x.type!=='transfer'&&spouse)||
   typeof x.category!=='string'||!x.category.trim()||x.category.length>100||
   typeof x.merchant!=='string'||x.merchant.length>120||
   typeof x.note!=='string'||x.note.length>500||
@@ -35,7 +39,8 @@ function cleanEntry(x){
    !x.payment_source.trim()||x.payment_source.length>80)))return null;
  return {date:x.date,time:x.time,amount:x.amount,type:x.type,
   category:x.category.trim(),merchant:x.merchant.trim(),note:x.note.trim(),
-  ...(paid?{payment_source:x.payment_source}:{})};
+  ...(paid?{payment_source:x.payment_source}:{}),
+  ...(spouse?{transfer_target:'spouse',transfer_date:x.transfer_date}:{})};
 }
 const shape=p=>({proposal_id:p.proposal_id,operation:p.operation,resource_id:p.resource_id,
  expected_version:p.expected_version,payload_sha256:p.payload_sha256,

@@ -83,6 +83,13 @@ function canonical(input){
   amount:Number(input?.amount),type:String(input?.type||''),
   category:String(input?.category||'').trim(),
   merchant:String(input?.merchant||'').trim(),note:String(input?.note||'').trim()}
+ if(e.type==='transfer'){
+  if(input?.transferTarget!=='spouse')throw Error('配偶のみ振替先として選択できます')
+  e.category='投資・資産移動'
+  e.merchant='配偶への振替'
+  e.transfer_target='spouse'
+  e.transfer_date=e.date
+ }
  if(input?.payment_source!==undefined){
   const card=String(input.payment_source)
   if(e.type!=='expense'||!card||card.length>80)throw Error('共有カードを確認してください')
@@ -91,7 +98,7 @@ function canonical(input){
  if(!/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(e.date)||
   !/^([01]\d|2[0-3]):[0-5]\d$|^$/.test(e.time)||
   !Number.isSafeInteger(e.amount)||e.amount<1||e.amount>10000000||
-  !['expense','income'].includes(e.type)||
+  !['expense','income','transfer'].includes(e.type)||
   !e.category||e.category.length>100||e.merchant.length>120||e.note.length>500)
   throw Error('日付・金額・カテゴリ・内容を確認してください')
  return e

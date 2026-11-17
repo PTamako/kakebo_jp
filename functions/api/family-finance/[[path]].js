@@ -286,13 +286,14 @@ async function entries(env,user,url){
   const grantedSpender=r.shared_card_actor_user_id===user.user_id||
     r.shared_entry_requester_user_id===user.user_id;
   const ownTarget=r.transfer_target_account_owner_user_id===user.user_id;
+  const spouseTransfer=r.type==='transfer'&&r.transfer_target==='spouse'&&r.family_transfer_target_account_id==null;
   return {...r,
    payment_source:ownSource||grantedSpender?r.payment_source:null,
-   transfer_target:ownTarget?r.transfer_target:null,
+   transfer_target:spouseTransfer?'spouse':ownTarget?r.transfer_target:null,
    family_account_id:ownSource?r.family_account_id:null,
    family_transfer_target_account_id:ownTarget?r.family_transfer_target_account_id:null,
    payment_source_display:ownSource||grantedSpender?r.payment_source_display:'个人支付方式',
-   transfer_target_display:ownTarget?r.transfer_target_display:'个人账户',
+   transfer_target_display:spouseTransfer?'配偶':ownTarget?r.transfer_target_display:'个人账户',
    payment_account_owner_user_id:ownSource?user.user_id:null,
    transfer_target_account_owner_user_id:ownTarget?user.user_id:null};
  });

@@ -11,14 +11,14 @@ const householdApi=readFileSync(new URL('../functions/api/family-finance/[[path]
 function fixture(){
  const db=new DatabaseSync(':memory:')
  db.exec(`
- CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,merchant TEXT);
- CREATE TABLE homeflow_identity_links(user_id TEXT PRIMARY KEY,household_id TEXT,display_name TEXT,role TEXT,state TEXT);
+ CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,merchant TEXT,family_account_id TEXT);
+ CREATE TABLE family_financial_accounts(account_id TEXT PRIMARY KEY,owner_user_id TEXT);\n CREATE TABLE homeflow_identity_links(user_id TEXT PRIMARY KEY,household_id TEXT,display_name TEXT,role TEXT,state TEXT);
  CREATE TABLE family_legacy_owner_claims(record_scope TEXT,record_key TEXT,household_id TEXT,owner_user_id TEXT,PRIMARY KEY(record_scope,record_key));
  CREATE TABLE family_shared_entry_registry(resource_id TEXT PRIMARY KEY,household_id TEXT,entry_id INTEGER,creator_user_id TEXT,state TEXT);
  CREATE TABLE family_legacy_card_spends(entry_id INTEGER PRIMARY KEY,household_id TEXT,actor_user_id TEXT);
  CREATE TABLE family_shared_mutation_applied(entry_id INTEGER,household_id TEXT,requester_user_id TEXT,action TEXT);
  INSERT INTO homeflow_identity_links VALUES ('owner','family','白ちゃん','owner','active'),('spouse','family','鸡毛大王','member','active'),('stranger','else','外部者','owner','active');
- INSERT INTO entries VALUES (12,'2026-11-15','旧交通费'),(13,'2026-11-16','家庭记账'),(14,'2026-11-17','来源未保存'),(15,'2026-11-18','夫妻共用卡支出'),(16,'2026-11-19','承認された共用カード');
+ INSERT INTO entries(id,date,merchant) VALUES (12,'2026-11-15','旧交通费'),(13,'2026-11-16','家庭记账'),(14,'2026-11-17','来源未保存'),(15,'2026-11-18','夫妻共用卡支出'),(16,'2026-11-19','承認された共用カード');
  INSERT INTO family_legacy_owner_claims VALUES ('ledger','12','family','owner'),('ledger','13','family','owner');
  INSERT INTO family_shared_entry_registry VALUES ('shared-13','family',13,'spouse','active');
  INSERT INTO family_legacy_card_spends VALUES (15,'family','spouse');

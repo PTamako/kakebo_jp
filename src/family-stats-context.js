@@ -9,7 +9,7 @@ import {highestSpendingRatioMonth} from './stats-ratio-peak.js'
 import {ICON_LIBRARY} from './icon-library.js'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
-export function makeFamilyStatsContext({tab,month,selectedYear,stats,annualStats,entryType}){
+export function makeFamilyStatsContext({tab,month,selectedYear,stats,annualStats,entryType,onPaymentMethodDetails}){
  const statsPeriod=ref('month'),selectedRatioMonth=ref('')
  const input=ref('')
  const yen=n=>'¥'+Number(n||0).toLocaleString('ja-JP')
@@ -20,7 +20,10 @@ export function makeFamilyStatsContext({tab,month,selectedYear,stats,annualStats
  const openCategoryDetails=(category,type,period)=>{if(type==='income'||type==='expense'||type==='transfer')entryType.value=type
   if(period==='year')month.value=String(selectedYear.value)+'-01'
   tab.value='list'}
- const openPaymentMethodDetails=()=>{entryType.value='all';tab.value='list'}
+ const openPaymentMethodDetails=(method,period)=>{
+  if(typeof onPaymentMethodDetails==='function')return onPaymentMethodDetails(method,period)
+  entryType.value='all';tab.value='list'
+ }
 const maxCat = computed(() => Math.max(1, ...(stats.value?.byCategory || []).map(c => c.amount)))
 const maxDay = computed(() => Math.max(1, ...(stats.value?.byDay || []).map(c => c.amount)))
 const categoryRows = computed(() => [...(stats.value?.byCategory || [])].sort((a, b) => b.amount - a.amount))

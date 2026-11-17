@@ -14,7 +14,9 @@ export const ledgerRecorderColumns=[
  " ELSE NULL END AS recorder_basis,",
  "member_intent.requester_user_id AS shared_entry_requester_user_id,",
  "ls.actor_user_id AS shared_card_actor_user_id,",
- "paid_account.owner_user_id AS payment_account_owner_user_id"
+ "paid_account.owner_user_id AS payment_account_owner_user_id,",
+ "paid_account.account_kind AS payment_account_kind,",
+ "paid_account.stat_group AS payment_account_stat_group"
 ].join(' ');
 
 export const ledgerRecorderJoins=[

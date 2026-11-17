@@ -1292,7 +1292,7 @@ async function importPersonalBackup(event){
 // Refresh the original shared ledger only when an approval status actually moves.
 let approvalStatusTimer=null,approvalProbeActive=false
 async function checkPendingLedgerStatus(){
- if(approvalProbeActive||document.visibilityState!=='visible'||tab.value!=='list'||
+ if(approvalProbeActive||document.visibilityState!=='visible'||!['list','stat','investments','finance'].includes(tab.value)||
   !pendingMutations.value.length||!alive)return
  const ticket=epoch,user=props.user.user_id,selectedMonth=month.value
  approvalProbeActive=true

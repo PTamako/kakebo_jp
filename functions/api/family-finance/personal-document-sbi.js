@@ -28,8 +28,9 @@ export async function familyPersonalDocumentSbi(request,env,url,user,parts){
   if((month&&year)||!Number.isInteger(offset)||offset<0||offset>100000||
    (month&&!/^20\d\d-(0[1-9]|1[0-2])$/.test(month))||
    (year&&!/^20\d\d$/.test(year))||
-   (!month&&!year))return deny('INVALID_RANGE',400);
-  const start=month?month+'-01':year+'-01-01',end=month?month+'-31':year+'-12-31';
+   (!month&&!year&&selectedState!=='trashed'))return deny('INVALID_RANGE',400);
+  const start=month?month+'-01':year?year+'-01-01':'2000-01-01',
+   end=month?month+'-31':year?year+'-12-31':'2099-12-31';
   const [page,total]=await Promise.all([
    db.prepare('SELECT * FROM family_document_personal_sbi_transfers '+
     "WHERE household_id=? AND owner_user_id=? AND date>=? AND date<=? AND state=? "+

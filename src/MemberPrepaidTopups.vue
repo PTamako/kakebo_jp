@@ -96,10 +96,10 @@ watch(()=>props.userId,()=>{epoch++;opened.value=false;pending=null;pendingCorre
 </script>
 <template>
 <section class="member-topup">
- <header><strong>本人の電子マネー・チャージ</strong>
+ <header><strong>電子マネー・チャージ</strong>
   <button type="button" @click="toggle">{{opened?'閉じる':'記録を追加'}}</button></header>
  <template v-if="opened">
-  <p class="hint">銀行口座不要。カードに実際に反映されたチャージだけを記録します。収入・支出には計上されません。</p>
+  
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="message" role="status" class="hint">{{message}}</p>
   <form @submit.prevent="save">

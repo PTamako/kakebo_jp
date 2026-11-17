@@ -1782,7 +1782,8 @@ test('legacy transfer dual-sided mapping attaches both original-owner IDs once a
   const view=(await memberLedger.json()).items.find(x=>x.id===intent.entry_id)
   assert.equal(view.family_account_id,null,'original owner stable IDs are private')
   assert.equal(view.family_transfer_target_account_id,null)
-  assert.equal(view.payment_source_display,'个人支付方式')
+  assert.equal(view.payment_source_display,'',
+   'asset transfers are not expenses; private payment card names are not needed here')
   assert.equal(view.transfer_target_display,'个人账户')
   assert.equal(view.payment_account_owner_user_id,null)
   assert.equal(view.transfer_target_account_owner_user_id,null)

@@ -788,6 +788,30 @@ async function restoreMemberSharedTrash(row){
  finally{memberTrashBusy.value=false;await loadMemberSharedTrash()}
 }
 const memberTrashCount=computed(()=>memberArchivedAccounts.value.length+memberSharedTrash.value.length)
+const memberJobs=ref({fixed:[],sbi:[],occurrences:[]}),memberJobsBusy=ref(false),memberJobsError=ref('')
+async function loadMemberJobStatus(){
+ if(memberJobsBusy.value)return
+ const actor=props.user.user_id,ticket=epoch
+ memberJobsBusy.value=true;memberJobsError.value=''
+ try{
+  const [fixed,sbi,occ]=await Promise.allSettled([
+   api('member-fixed-costs'),api('member-sbi-plans'),api('recurring-occurrences')
+  ])
+  if(ticket!==epoch||actor!==props.user.user_id)return
+  if(fixed.status!=='fulfilled'||fixed.value.scope!=='personal'||!Array.isArray(fixed.value.items))
+   throw Error('本人の固定費の状態を確認できません')
+  if(sbi.status!=='fulfilled'||sbi.value.viewer_user_id!==actor||!Array.isArray(sbi.value.items))
+   throw Error('本人の積立の状態を確認できません')
+  const own=rows=>rows.filter(x=>x.owner_user_id===actor)
+  if(own(fixed.value.items).length!==fixed.value.items.length||own(sbi.value.items).length!==sbi.value.items.length)
+   throw Error('他のユーザーの予定が含まれています')
+  memberJobs.value={fixed:own(fixed.value.items),sbi:own(sbi.value.items),
+   occurrences:occ.status==='fulfilled'&&Array.isArray(occ.value.items)?occ.value.items:[]}
+  if(occ.status==='rejected')
+   memberJobsError.value='周期実行履歴は現在利用できません。登録済み予定と家庭明細の実際の入帳は別です。'
+ }catch(e){if(ticket===epoch)memberJobsError.value=e.message}
+ finally{memberJobsBusy.value=false}
+}
 const memberPortfolioVersions=ref(new Map())
 async function memberPrepaidApi(path,options={}){
  if(path!=='prepaid-report'||(options.method&&options.method!=='GET'))
@@ -1454,7 +1478,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     cardSettingsRequest:memberCardSettingsRequest,
     memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
-    memberRefresh:refresh,memberTrashCount:memberTrashCount,memberLoadTrash:loadMemberSharedTrash,api}"
+    memberRefresh:refresh,memberTrashCount:memberTrashCount,memberLoadTrash:loadMemberSharedTrash,memberLoadJobs:loadMemberJobStatus,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    
@@ -1506,12 +1530,21 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
        :category-label="x=>x" :on-save="saveMemberMerchantRule"/>
    </template>
    <template #member-jobs>
-     <p class="help">固定費・積立は各メニューで管理。家庭明細の変更のみ管理者の承認が必要です。</p>
-     <button type="button" class="button-secondary" :disabled="busy" @click="refresh">
-       {{busy?'確認中…':'本人の設定と審査状態を更新'}}
-     </button>
-     <p class="help">審査中の家庭明細 {{pendingMutations.length}}件</p>
-   </template>
+     <p v-if="memberJobsError" class="help" role="status">{{memberJobsError}}</p>
+     <p v-if="memberJobsBusy" class="help">本人の定期処理を確認中…</p>
+     <p class="help">本人の固定費 {{memberJobs.fixed.length}}件 · 積立 {{memberJobs.sbi.length}}件 · 実行証跡 {{memberJobs.occurrences.length}}件</p>
+     <div v-for="item in memberJobs.fixed.slice(0,10)" :key="item.plan_id" class="entry">
+      <strong>{{item.name}} · {{yen(item.amount)}} · {{item.enabled?'有効':'停止中'}}</strong>
+     </div>
+     <div v-for="item in memberJobs.sbi.slice(0,10)" :key="item.plan_resource_id" class="entry">
+      <strong>{{item.fund_name}} · {{yen(item.amount_jpy)}} · {{item.state}}</strong>
+     </div>
+     <div v-for="item in memberJobs.occurrences.slice(0,10)" :key="item.occurrence_id" class="entry">
+      <strong>{{item.due_date}} · {{yen(item.amount_jpy)}} · {{item.state}}</strong>
+     </div>
+     <button type="button" class="button-secondary" :disabled="memberJobsBusy" @click="loadMemberJobStatus">状態を更新</button>
+     <p class="help">予定・実行証跡の表示であり、金融機関の実取引確認や家庭明細の自動入帳を意味しません。家庭明細の追加・変更のみ HomeFlow 審査へ送信します。</p>
+    </template>
    <template #member-privacy>
      <p v-if="memberReceiptError" class="help" role="alert">{{memberReceiptError}}</p>
      <MemberReceiptManagement :key="'personal-receipts:'+user.user_id"

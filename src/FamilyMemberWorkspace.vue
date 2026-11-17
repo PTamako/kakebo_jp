@@ -1687,7 +1687,7 @@ watch(()=>props.user.user_id,()=>{
    </template>
    <template #member-plans>
     <MemberFixedCosts :key="'member-fixed:'+user.user_id+':'+personalBackupRevision" :user-id="user.user_id"
-     :payment-choices="memberPaymentOptions" :category-label="memberCategoryLabel"
+     :payment-choices="memberPaymentOptions" :category-label="memberCategoryLabel" :default-category="defaultMemberCategory('expense')"
      :categories="[...new Set([...memberExpenseCategoryChoices,...entryCategories])]"
      :on-submit-entry="submitMemberFixedCost" />
    </template>

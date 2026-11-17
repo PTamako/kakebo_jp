@@ -56,6 +56,6 @@ const name=x=>props.categoryLabel(x)||x||'その他'
 .ledger-info{min-width:0;overflow:hidden}
 .ledger-info small{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ledger-pending-label{display:inline;color:var(--muted,#777);font-weight:800}
-.ledger-recorder{display:inline;white-space:normal;overflow-wrap:normal;
+.ledger-recorder{display:inline;white-space:nowrap;overflow-wrap:normal;
  font-size:clamp(10px,2.7vw,12px);color:var(--muted,#897b85);font-weight:600}
 </style>

@@ -56,15 +56,24 @@ test('deny overdrafts and unauthorized spouse account selection',()=>{
  assert.throws(()=>plan(before,{...before,accountId:'b'},{
   editorUserId:admin}),/CORRECTION_OTHER_PERSON_ACCOUNT_READ_ONLY/);
 });
-test('settled and points-offset amounts allow only covered same-card changes',()=>{
+test('settled and points credits remain attached to real old card, creating unapplied credit after reassignment',()=>{
  for(const field of ['settledJpy','offsetJpy']){
-  const safe=plan(before,{...before,amount:1500},{[field]:200});
-  assert.equal(safe.effects[0].deltaJpy,500);
-  for(const next of [{...before,amount:100},{...before,accountId:'b'},
-   {...before,date:'2026-11-11'},{...before,accountId:null}])
-   assert.throws(()=>plan(before,next,{[field]:200}),
-    /CORRECTION_EXISTING_ALLOCATION_REQUIRES_REVERSAL/);
+  const same=plan(before,{...before,amount:1500},{[field]:200});
+  assert.equal(same.effects[0].deltaJpy,500);
+  const less=plan(before,{...before,amount:100},{[field]:500});
+  assert.equal(less.effects[0].deltaJpy,-900);
+  const moved=plan(before,{...before,accountId:'b'},{[field]:1000});
+  assert.equal(moved.effects.reduce((sum,x)=>sum+x.deltaJpy,0));
+  assert.deepEqual(moved.effects.map(x=>[x.accountId,x.deltaJpy]),
+   [['a',-1000],['b',1000]]);
+  assert.equal(moved.allocationPolicy,'preserve-original-bank-and-point-credit');
+  const shifted=plan(before,{...before,date:'2026-12-11'},{[field]:1000});
+  assert.equal(shifted.effects.length,2);
+  const cashed=plan(before,{...before,accountId:null},{[field]:1000});
+  assert.equal(cashed.effects[0].deltaJpy,-1000);
  }
+ assert.throws(()=>plan(before,{...before,accountId:'b'},{settledJpy:-1}),
+  /CORRECTION_ALLOCATION_INVALID/);
 });
 test('editing merchant/category alone never invents a financial delta',()=>{
  const out=plan(before,{...before,merchant:'New merchant',category:'Food'});

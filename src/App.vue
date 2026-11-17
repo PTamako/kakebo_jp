@@ -2114,7 +2114,7 @@ provide('kakeibo-entry-input', {
     <div v-else class="empty-state"><strong>ログアウトしました</strong>
     <p v-if="serverLogoutPending" role="alert">サーバー側のログアウトはまだ確認できません。通信回復後に再試行します。</p>
     <button v-if="serverLogoutPending" type="button" class="button-secondary" @click="completeServerLogout()">サーバーのログアウトを再確認</button>
-    <p>旧账户需要原访问码；家庭成员请使用下方 HomeFlow 入口。</p><button type="button" class="button-primary" @click="unlock">旧账户登录</button></div>
+    <p>HomeFlow でログインしてください。旧アクセスコードでの通常ログインは終了しました。</p></div>
    </main>
   <main v-else :class="`theme-${theme}`">
     <div v-if="receiptSaveError || pendingReceiptUploads.length || pendingReceiptMarkers.length" role="alert" class="receipt-error-banner">

@@ -44,7 +44,7 @@ test('verified shared creator wins over legacy owner, legacy rows never claim to
 })
 test('ledger queries use the same attribution source in original and spouse pages',()=>{
  assert.match(legacyApi,/recorderSelect='SELECT e\.\*,'\+ledgerRecorderColumns/)
- assert.match(legacyApi,/recorderSelect\+'WHERE e\.date/)
+ assert.match(legacyApi,/recorderSelect\+'e\.date/)
  assert.match(householdApi,/ledgerRecorderJoins\+' '/)
  assert.match(householdApi,/ledgerRecorderColumns\+',ls\.actor_user_id AS shared_card_actor_user_id,'/)
  assert.match(householdApi,/member_intent\.requester_user_id AS shared_entry_requester_user_id/)

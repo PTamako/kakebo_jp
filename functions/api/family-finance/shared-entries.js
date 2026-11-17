@@ -60,13 +60,17 @@ function context(db,r,u,action,now){
 const clear=(db,resource)=>db.prepare('DELETE FROM family_shared_entry_write_context WHERE resource_id=?').bind(resource);
 const auditCount=(db,id)=>db.prepare('SELECT COUNT(*) AS n FROM family_shared_entry_audit WHERE resource_id=?').bind(id).first();
 function changesOk(result,count){return result.length===count&&result.every(r=>r.meta?.changes===1);}
-async function create(req,e,url,u){
+async function create(req,e,url,u,role){
  const x=await parse(req,url);
  if(x?.expected_user_id!==u.user_id)return fail('SHARED_ENTRY_ACTOR_CHANGED',403);
  if(!exact(x,['expected_user_id','idempotency_key','entry'])||
   typeof x.idempotency_key!=='string'||!/^[a-z0-9._:-]{12,128}$/i.test(x.idempotency_key))
   return fail('SHARED_ENTRY_INVALID_CREATE',400);
  const entry=canon(x.entry);if(!entry)return fail('SHARED_ENTRY_INVALID_FIELDS',400);
+ // A member can directly create only an account-free, neutral spouse transfer.
+ // Income/expense and every subsequent shared-ledger revision still require review.
+ if(role!=='owner'&&!(role==='member'&&entry.type==='transfer'&&entry.transfer_target==='spouse'))
+  return fail('SHARED_ENTRY_OWNER_REVIEW_REQUIRED',403);
  const resource=await hash([u.household_id,u.user_id,'shared-entry',x.idempotency_key].join('\0'));
  const id=resource.slice(0,32),snapshot=JSON.stringify(entry),digest=await hash(snapshot);
  const prior=await get(e.DB,id,u);
@@ -251,8 +255,8 @@ export async function familySharedEntries(req,e,url,u,parts){
   const r=await get(e.DB,p[0],u);
   return r?json({ok:true,action:visible(r)}):fail('SHARED_ENTRY_NOT_FOUND',404);
  }
+ if(!p.length&&method==='POST')return create(req,e,url,u,role);
  if(role!=='owner')return fail('SHARED_ENTRY_OWNER_REVIEW_REQUIRED',403);
- if(!p.length&&method==='POST')return create(req,e,url,u);
  if(p.length===1&&id32.test(p[0])&&method==='PUT')return modify(req,e,url,u,p[0],'update');
  if(p.length===1&&id32.test(p[0])&&method==='DELETE')return modify(req,e,url,u,p[0],'delete');
  if(p.length===2&&id32.test(p[0])&&method==='POST'){

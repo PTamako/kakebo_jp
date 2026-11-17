@@ -32,7 +32,7 @@ test('restore future independent personal SBI plan with destination account rema
 test('never duplicate a previously restored plan or restart historical/archived plans',()=>{
  const a=run([plan('fixed_cost','e'.repeat(32))])
  assert.equal(a.restore.length,1)
- assert.equal(run([plan('fixed_cost','e'.repeat(32))],a.restore).restore.length,0)
+ assert.equal(run([plan('fixed_cost','e'.repeat(32))],a.restore.map(x=>({...x,owner_user_id:owner}))).restore.length,0)
  assert.equal(run([{...plan(),start_month:'2025-01'}]).restore.length,0)
  assert.equal(run([{...plan(),state:'revoked'}]).restore.length,0)
  assert.equal(run([plan('fixed_cost','1'.repeat(32)),plan('fixed_cost','2'.repeat(32))]).restore.length,1)

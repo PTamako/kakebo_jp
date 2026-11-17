@@ -10,6 +10,7 @@ import { annualExpenseAverageByRecordedMonth } from './annual-monthly-average.js
 import { highestSpendingRatioMonth } from './stats-ratio-peak.js'
 import { countThroughEditedDay } from './ledger-day-focus.js'
 import {sharedEntryFromEditor,sameSharedEditValues,sharedEditConfirmed,sharedDeleteConfirmed,isAnotherMembersPayment} from './shared-ledger-edit.js'
+import {ledgerTransferTargetLabel,ledgerTransferSourceLabel} from './ledger-payment-label.js'
 import { isCardBilledEntry, cardBilledAmount } from './card-billing.js'
 import { ledgerEntryAmount, ledgerEntriesTotal, formatLedgerTotal } from './ledger-totals.js'
 import { normalizedDraftType, editedEntryMonth } from './entry-type.js'
@@ -1246,16 +1247,27 @@ function startEdit(entry) {
   editReceiptImage.value = null
   editReceiptVersion.value = null
   editReceiptFileName.value = ''
+  const viewerId=familyIdentity.value?.user_id
+  const foreignSource=isAnotherMembersPayment(entry,viewerId)
+  const foreignTarget=!!entry.transfer_target_account_owner_user_id&&
+   entry.transfer_target_account_owner_user_id!==viewerId
   editingEntry.value = {
     // Send an immutable snapshot for optimistic concurrency in D1.
     expected: Object.fromEntries(['date','time','amount','category','merchant','note','raw','type','transfer_target','transfer_date','payment_source']
       .map(key=>[key,entry[key]??null])),
     id: entry.id, date: entry.date, time: entry.time || '',
     amount: Number(entry.amount), type: ['income', 'transfer'].includes(entry.type) ? entry.type : 'expense',
-    transferTarget: entry.transfer_target || '', rewardDestination: entry.type==='income' && entry.category==='ポイント還元' ? (entry.transfer_target || '') : '', transferDate: entry.transfer_date || (entry.type === 'transfer' ? entry.date : ''),
+    transferTarget: entry.transfer_target || '', transferDisplay:ledgerTransferTargetLabel(entry),
+    transferReadOnly:foreignSource||foreignTarget,
+    transferSourceReadOnly:foreignSource,
+    rewardDestination: entry.type==='income' && entry.category==='ポイント還元' ? (entry.transfer_target || '') : '',
+    rewardDisplay:ledgerTransferTargetLabel(entry),rewardReadOnly:foreignSource||foreignTarget,
+    transferDate: entry.transfer_date || (entry.type === 'transfer' ? entry.date : ''),
     category: entry.category || '日用品', paymentSource: entry.payment_source || '',
-    paymentReadOnly:isAnotherMembersPayment(entry,familyIdentity.value?.user_id),
-    paymentDisplay:entry.payment_source_display || (entry.type==='expense'&&!entry.payment_source?'現金':entry.payment_source||''),
+    paymentReadOnly:foreignSource,
+    paymentDisplay:entry.type==='expense'
+     ?(entry.payment_source_display || (!entry.payment_source?'現金':entry.payment_source))
+     :ledgerTransferSourceLabel(entry),
     merchant: entry.merchant || '',
     note: entry.note || '', raw: entry.raw || ''
   }

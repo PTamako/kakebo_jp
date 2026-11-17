@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('../src/FinanceTools.vue', import.meta.url), 'utf8')
 const fixedFields = readFileSync(new URL('../src/FixedCostEditorFields.vue', import.meta.url),'utf8')
-const fixed = (source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">([\s\S]*?)\n  <\/article>/)?.[1] || '')+'\n'+fixedFields
+const unified=readFileSync(new URL('../src/UnifiedFixedCostManagement.vue',import.meta.url),'utf8')
+const fixed=unified+'\n'+fixedFields
 const review = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel"[^>]*aria-label="固定費の記帳確認">([\s\S]*?)\n  <\/article>/)?.[1] || ''
 const registered = readFileSync(new URL('../src/OriginalFixedCostList.vue',import.meta.url),'utf8')
 
@@ -33,7 +34,8 @@ test('expense candidates use native 18px checkboxes and readable rows', () => {
 })
 
 test('registered fixed expense list has owner and member shared summary, chevron and metadata',()=>{
- assert.match(source,/<OriginalFixedCostList v-show="managementTab==='plans'"/)
+ assert.match(source,/<UnifiedFixedCostManagement v-show="managementTab === 'plans'"/)
+ assert.match(unified,/<OriginalFixedCostList/)
  assert.match(registered,/<details class="recurring-list-disclosure"/)
  assert.match(registered,/<summary class="recurring-list-summary">/)
  assert.match(registered, /class="recurring-list-summary-total"/)
@@ -45,11 +47,13 @@ test('registered fixed expense list has owner and member shared summary, chevron
  assert.match(registered,/\.recurring-list-summary\{display:grid;grid-template-columns:minmax\(0,1fr\) 18px/)
 })
 test('original owner create, review, edit and delete remain wired through shared list events',()=>{
- assert.match(fixed, /@click="addPlan"/)
- assert.match(fixed, /@click="cancelPlanEdit"/)
+ assert.match(source,/onSave:addPlan,onCancel:cancelPlanEdit/)
+ assert.match(unified,/@click="invoke\('onSave'\)"/)
+ assert.match(unified,/@click="invoke\('onCancel'\)"/)
  assert.match(review, /@click="reviewRecurring"/)
  assert.match(review, /@click="applyRecurring"/)
- assert.match(source, /@edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan\(p.id\)"/)
+ assert.match(source,/onEdit:beginEditPlan,onToggle:togglePlanEnabled,onRemove:p=>removePlan\(p.id\)/)
+ assert.match(unified,/@edit="invoke\('onEdit',\$event\)"/)
  assert.match(registered, /@click="emit\('edit',p\)"/)
  assert.match(registered, /@click="emit\('toggle',p\)"/)
  assert.match(registered, /@click="emit\('remove',p\)"/)
@@ -77,11 +81,11 @@ test('review card stays distinct from the background and collapses into a compac
   assert.match(review, /過去分・明日の予定/)
   assert.match(review, /aria-controls="recurring-candidate-list"/)
   assert.match(review, /未記帳分を確認/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel\{\s*background:#fff;[^}]*border-left:3px solid var\(--blue\)/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel:not\(\.is-expanded\)\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(120px,auto\)/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions\{[^}]*grid-column:2/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel \.recurring-review-results\{grid-column:1\/-1\}/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions button\{[^}]*min-height:44px/)
+  assert.match(source, /\.finance-tools \.recurring-review-panel\{\s*background:#fff;[^}]*border-left:3px solid var\(--blue\)/)
+  assert.match(source, /\.finance-tools \.recurring-review-panel:not\(\.is-expanded\)\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(120px,auto\)/)
+  assert.match(source, /\.finance-tools \.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions\{[^}]*grid-column:2/)
+  assert.match(source, /\.finance-tools \.recurring-review-panel \.recurring-review-results\{grid-column:1\/-1\}/)
+  assert.match(source, /\.finance-tools \.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions button\{[^}]*min-height:44px/)
 })
 
 test('posting method options are compact horizontal touch targets with native-size radio inputs', () => {

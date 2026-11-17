@@ -59,7 +59,7 @@ test('review helper does not mutate D1 rows or use strict backup transactionKey'
   const component=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
   const helper=readFileSync(new URL('../src/duplicate-review.js',import.meta.url),'utf8')
   assert.match(component,/computed\(\(\) => findLedgerDuplicateGroups\(rows\.value\)\)/)
-  assert.match(component,/:on-open-duplicates="\(\)=>refreshDuplicateReview/)
+  assert.match(component,/:on-open-duplicates="memberView\?null:\(\)=>refreshDuplicateReview/)
   assert.match(component,/function refreshDuplicateReview\(event\)/)
   assert.match(component,/v-if="busy"/)
   assert.match(component,/重複候補を確認中/)

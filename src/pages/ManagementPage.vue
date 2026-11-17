@@ -7,7 +7,6 @@ defineOptions({ inheritAttrs: false })
        settings state survive. All existing props/events pass through unchanged. -->
   <FinanceTools v-bind="$attrs">
     <template #member-card-usage><slot name="member-card-usage" /></template>
-    <template #member-plans><slot name="member-plans" /></template>
     <template #member-investment><slot name="member-investment" /></template>
     <template #member-rules><slot name="member-rules"/></template>
     <template #member-jobs><slot name="member-jobs"/></template>

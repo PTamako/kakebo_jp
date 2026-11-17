@@ -52,7 +52,7 @@ test('member approval-based trash restoration preserves immutable registry CAS',
  assert.match(workspace,/async function restoreMemberSharedTrash\(/)
  assert.match(workspace,/submitRestore\(row\)/)
  assert.match(workspace,/memberLoadTrash:loadMemberSharedTrash/)
- assert.match(finance,/:on-open-trash="memberLoadTrash"/)
+  assert.match(finance,/:on-open-trash="memberView\?memberLoadTrash:/)
  assert.match(request,/submitIntent\('restore',null,target\)/)
  assert.match(request,/target\.version!==record\.version/)
  assert.match(request,/target\.state!=='deleted'/)

@@ -17,6 +17,7 @@ import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import FixedCostEditorFields from './FixedCostEditorFields.vue'
 import OriginalFixedCostList from './OriginalFixedCostList.vue'
+import UnifiedFixedCostManagement from './UnifiedFixedCostManagement.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
@@ -35,7 +36,7 @@ import { listR2Receipts, getR2Receipt, uploadR2Receipt, deleteR2ReceiptsByIds, r
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
-const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null}, memberTrashCount:{type:Number,default:0}, memberLoadTrash:{type:Function,default:null}, memberLoadJobs:{type:Function,default:null}, memberCardConfig:{type:Object,default:null} })
+const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null}, memberTrashCount:{type:Number,default:0}, memberLoadTrash:{type:Function,default:null}, memberLoadJobs:{type:Function,default:null}, memberCardConfig:{type:Object,default:null}, memberPlanConfig:{type:Object,default:null}, memberInvestmentConfig:{type:Object,default:null} })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'receipt-images-cleared', 'receipt-images-removed', 'receipt-images-updated'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -1631,6 +1632,28 @@ function onCardRemove(value){
  if(props.memberView)props.memberCardConfig?.onRemove?.(value)
  else void removePaymentSource(value)
 }
+// Identical fixed-cost editor and list for every identity; only the
+// current-user controller supplies scoped records, permissions and actions.
+const unifiedPlanConfig=computed(()=>props.memberView ? props.memberPlanConfig : {
+ memberMode:false,
+ model:plan.value,cycleChoice:planCycleChoice.value,cycleOptions:planCycleOptions,
+ categories:orderedCategories.value,categoryLabel,
+ paymentChoices:[...orderedPayments.value.map(source=>({value:source,label:source})),
+  ...(plan.value.paymentSource&&!props.paymentSources.includes(plan.value.paymentSource)
+   ?[{value:plan.value.paymentSource,label:plan.value.paymentSource+'（既存の設定）'}]:[])],
+ items:plans.value,busy:recurringBusy.value,canSave:!recurringBusy.value&&settingsReady.value,
+ editingId:editingPlanId.value,error:'',notice:'',
+ yen,paymentLabel:source=>source,
+ nextLabel:p=>recurringPlanNextLabel(recurringStatusFor(p)),
+ currentCount:currentEligiblePlans.value.length,monthlyTotal:recurringMonthlyTotal.value,allowPost:false,
+ onCycleChange:value=>{planCycleChoice.value=value},
+ onSave:addPlan,onCancel:cancelPlanEdit,
+ onEdit:beginEditPlan,onToggle:togglePlanEnabled,onRemove:p=>removePlan(p.id)
+})
+const missingMemberInvestment=async()=>{throw Error('投資口座の認証情報を取得できません')}
+const unifiedInvestmentApi=(path,options)=>props.memberView
+ ? (props.memberInvestmentConfig?.api||missingMemberInvestment)(path,options)
+ : props.api(path,options)
 </script>
 <template>
 <section class="finance-tools">
@@ -1639,38 +1662,25 @@ function onCardRemove(value){
     :status="memberView ? memberStatus : (loaded ? '最終更新：'+lastLoadedLabel+' · '+rows.length+'件' : busy ? '明細を読み込み中…' : '未読み込み')"
     :error="memberView ? memberError : loadError"
     @refresh="memberView ? memberRefresh?.() : refreshEverything()" />
-  <slot v-if="memberView&&['plans','investment'].includes(managementTab)" :name="'member-'+managementTab" />
-  <OriginalOtherManagement v-if="memberView" :active="managementTab==='tools'"
-    :trash-count="memberTrashCount" :on-open-trash="memberLoadTrash" :on-open-jobs="memberLoadJobs">
-    <template #rules><slot name="member-rules"/></template>
-    <template #jobs><slot name="member-jobs"/></template>
-    <template #privacy><slot name="member-privacy"/></template>
-    <template #backup><slot name="member-backup"/></template>
-    <template #duplicates><slot name="member-duplicates"/></template>
-    <template #trash><slot name="member-trash"/></template>
-  </OriginalOtherManagement>
+
   <OriginalCardManagementPanel v-show="managementTab === 'cards'"
     v-bind="unifiedCardProps" @update:selected="onCardSelect"
     @update:mode="onCardMode" @default="onCardDefault"
     @archive="onCardArchive" @remove="onCardRemove" />
   <slot v-if="memberView&&managementTab==='cards'" name="member-card-usage"/>
-  <template v-if="!memberView">
   <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
-    <InvestmentTransferReview />
-    <SbiPortfolio :api="props.api" active-view="plans" :refresh-key="investmentRefreshKey" />
+    <InvestmentTransferReview v-if="!memberView" />
+    <SbiPortfolio :member-mode="memberView"
+      :api="unifiedInvestmentApi" active-view="plans"
+      :on-member-create="memberInvestmentConfig?.onCreate"
+      :on-member-edit="memberInvestmentConfig?.onEdit"
+      :refresh-key="investmentRefreshKey" />
+    <slot v-if="memberView" name="member-investment" />
   </section>
 
-  <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
-    <h2>固定費の設定</h2>
-    <FixedCostEditorFields :model="plan" v-model:cycleChoice="planCycleChoice"
-      :cycle-options="planCycleOptions" :categories="orderedCategories"
-      :payment-choices="[...orderedPayments.map(source=>({value:source,label:source})),
-        ...(plan.paymentSource&&!props.paymentSources.includes(plan.paymentSource)
-         ?[{value:plan.paymentSource,label:plan.paymentSource+'（既存の設定）'}]:[])]"
-      :category-label="categoryLabel" />
-    <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
-    <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
-  </article>
+  <UnifiedFixedCostManagement v-show="managementTab === 'plans'" :config="unifiedPlanConfig">
+    <template #after-editor>
+      <template v-if="!memberView">
   <article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringListOpen }" aria-label="固定費の記帳確認">
       <div class="recurring-review-heading">
         <div>
@@ -1729,12 +1739,10 @@ function onCardRemove(value){
         <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
       </div>
   </article>
-  <OriginalFixedCostList v-show="managementTab==='plans'"
-    :items="plans" :busy="recurringBusy" :yen="yen"
-    :category-label="categoryLabel" :next-label="p=>recurringPlanNextLabel(recurringStatusFor(p))"
-    :current-count="currentEligiblePlans.length" :monthly-total="recurringMonthlyTotal"
-    @edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan(p.id)" />
-  <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">
+      </template>
+    </template>
+  </UnifiedFixedCostManagement>
+  <article v-show="managementTab === 'cards'" v-if="!memberView" class="finance-panel card-billing-panel">
     <h2>カード別利用額</h2>
     <CardUsageSummaryFields :card="bill.name" :month="bill.month"
       :card-options="[{value:'',label:'カードを選択'},...creditCardSources.map(source=>({value:source,label:source+(props.paymentSourceMeta[source]?.is_archived?'（アーカイブ済み）':'')}))]"
@@ -1767,27 +1775,33 @@ function onCardRemove(value){
   
   
   <OriginalOtherManagement :active="managementTab==='tools'"
-    :trash-count="trashCount"
-    :trash-status="trashCountReady?trashCount+'件':trashCountLoading?'確認中…':'再読み込みが必要'"
-    :on-open-receipts="refreshLocalReceiptCount"
-    :on-open-duplicates="()=>refreshDuplicateReview({currentTarget:{open:true}})"
-    :on-open-trash="()=>onReviewTrashToggle({currentTarget:{open:true}})">
-    <template #rules>  <MobileMerchantRulesPanel 
+    :trash-count="memberView?memberTrashCount:trashCount"
+    :trash-status="memberView?'':trashCountReady?trashCount+'件':trashCountLoading?'確認中…':'再読み込みが必要'"
+    :on-open-jobs="memberView?memberLoadJobs:null"
+    :on-open-receipts="memberView?null:refreshLocalReceiptCount"
+    :on-open-duplicates="memberView?null:()=>refreshDuplicateReview({currentTarget:{open:true}})"
+    :on-open-trash="memberView?memberLoadTrash:()=>onReviewTrashToggle({currentTarget:{open:true}})">
+    <template #rules>
+      <slot v-if="memberView" name="member-rules" />
+      <template v-else>
+<MobileMerchantRulesPanel 
     :rules="merchantRulesCombined" :categories="orderedCategories"
-    :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" /></template>
+    :payment-sources="orderedPayments" :category-label="categoryLabel" :on-save="saveMerchantRule" />
+      </template>
+    </template>
     <template #jobs>
-
-    
-    <button type="button" :disabled="jobHealthBusy" @click="loadJobHealth">{{jobHealthBusy?'確認中…':'最新の実行結果を確認'}}</button>
+      <slot v-if="memberView" name="member-jobs" />
+      <template v-else>
+<button type="button" :disabled="jobHealthBusy" @click="loadJobHealth">{{jobHealthBusy?'確認中…':'最新の実行結果を確認'}}</button>
     <p v-if="jobHealthError" role="alert">{{jobHealthError}}</p>
     <p v-if="!jobHealthBusy && jobHealthLoaded && jobHealth.length===0">各処理の実行履歴がまだありません。</p>
     <p v-for="row in jobHealthLoaded ? jobHealthDisplay : []" :key="row.job" :role="row.status==='failed'?'alert':undefined">{{jobNames[row.job]||row.job}}：{{jobHealthText(row)}}</p>
-  
+      </template>
     </template>
     <template #privacy>
-
-    
-    <div class="device-privacy-section">
+      <slot v-if="memberView" name="member-privacy" />
+      <template v-else>
+<div class="device-privacy-section">
       <div class="device-privacy-row">
         <strong>保存済みレシート画像</strong>
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
@@ -1824,12 +1838,12 @@ function onCardRemove(value){
       </div>
       
     </div>
-  
+      </template>
     </template>
     <template #backup>
-
-    
-    <p>JSON：帳簿のみ／ZIP：帳簿と画像。画像は非公開で、既存画像は上書きしません。</p>
+      <slot v-if="memberView" name="member-backup" />
+      <template v-else>
+<p>JSON：帳簿のみ／ZIP：帳簿と画像。画像は非公開で、既存画像は上書きしません。</p>
     <label class="backup-password-label">暗号化パスワード（任意）<input v-model="backupPassword" type="password" autocomplete="off" minlength="10" maxlength="128" placeholder="10文字以上・端末に保存しません" /></label>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,.zip,.kbe,application/json,application/zip,application/octet-stream" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
@@ -1845,12 +1859,12 @@ function onCardRemove(value){
       <button type="button" :disabled="busy||backupBusy" @click="restore">未登録の設定と明細を確認して復元</button>
     </div>
     <p v-if="message && message.startsWith('復元中 ')" role="status">{{message}}</p>
-  
+      </template>
     </template>
     <template #duplicates>
-
-    
-    <p v-if="busy">重複候補を確認中…</p>
+      <slot v-if="memberView" name="member-duplicates" />
+      <template v-else>
+<p v-if="busy">重複候補を確認中…</p>
     <p v-else-if="!reviewStateReady" role="status">{{ reviewStateError || '確認履歴を読み込み中…' }}</p>
     <p v-else-if="!loaded">{{ loadError || '全明細を更新してください。' }}</p>
     <p v-else-if="!pendingDuplicates.length && reviewStateReady">重複候補はありません。</p>
@@ -1861,14 +1875,12 @@ function onCardRemove(value){
         <button type="button" class="duplicate-review-ignore" :disabled="reviewStateBusy || !reviewStateReady || !duplicateReviewSignature(group)" @click="setDuplicateConfirmation(group, true)">重複ではない</button>
       </div>
     </div>
-
-    
-  
+      </template>
     </template>
     <template #trash>
-
-    
-    <p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
+      <slot v-if="memberView" name="member-trash" />
+      <template v-else>
+<p v-if="!loaded">{{loadError || '全明細を更新してください。'}}</p>
     <template v-else>
       <p v-if="!trashCountReady" class="review-trash-loading" role="status">{{reviewStateError || (trashCountLoading ? 'ゴミ箱を確認中…' : '件数を取得できませんでした。再読み込みしてください。')}}</p>
       <button v-if="!trashCountReady && !trashCountLoading" type="button" class="review-trash-retry" @click="onReviewTrashToggle({currentTarget:{open:true}})">再読み込み</button>
@@ -1919,11 +1931,9 @@ function onCardRemove(value){
       <p v-if="trashCount" class="review-trash-note">削除済みの明細・固定費は完全削除されます。確認状態と記帳済み明細は残ります。</p>
       </template>
     </template>
-    
-  
+      </template>
     </template>
   </OriginalOtherManagement>
-  </template>
 </section>
 </template>
 <style scoped>
@@ -2135,10 +2145,10 @@ function onCardRemove(value){
 .recurring-plans-panel .recurring-list-summary:after{grid-column:2;grid-row:1 / span 2;justify-self:center;margin:0}
 .recurring-plans-panel .recurring-list-body{padding:0 4px 6px}
 @media(max-width:679px){
-  .finance-tools>.recurring-review-panel{padding:12px}
+  .finance-tools .recurring-review-panel{padding:12px}
   .finance-tools>.recurring-plans-panel{padding:5px 10px}
 }
-@media(max-width:380px){.finance-tools>.recurring-review-panel{padding:10px}}
+@media(max-width:380px){.finance-tools .recurring-review-panel{padding:10px}}
 
 /* Fixed expenses: iPhone-first form, review cards and stable disclosure headers. */
 .recurring-manager-panel{min-width:0;max-width:100%;box-sizing:border-box}
@@ -2166,7 +2176,7 @@ function onCardRemove(value){
 
 /* Keep the review shortcut distinct from the page background in all four themes.
    When collapsed, keep its action beside the heading on iPhones. */
-.finance-tools>.recurring-review-panel{
+.finance-tools .recurring-review-panel{
   background:#fff;
   border:1px solid color-mix(in srgb,var(--blue) 46%,#c9d8ce);
   border-left:3px solid var(--blue);
@@ -2178,9 +2188,9 @@ function onCardRemove(value){
   font-size:11px;
   line-height:1.4;
 }
-.finance-tools>.recurring-review-panel .recurring-review-heading{min-width:0}
-.finance-tools>.recurring-review-panel .recurring-window-note{grid-column:1/-1}
-.finance-tools>.recurring-review-panel .recurring-review-results{grid-column:1/-1}
+.finance-tools .recurring-review-panel .recurring-review-heading{min-width:0}
+.finance-tools .recurring-review-panel .recurring-window-note{grid-column:1/-1}
+.finance-tools .recurring-review-panel .recurring-review-results{grid-column:1/-1}
 .finance-panel .recurring-review-actions button:disabled{
   opacity:1;
   color:color-mix(in srgb,var(--ink) 65%,var(--muted));
@@ -2188,22 +2198,22 @@ function onCardRemove(value){
   border-color:color-mix(in srgb,var(--blue) 28%,var(--line));
 }
 @media(max-width:679px){
-  .finance-tools>.recurring-review-panel:not(.is-expanded){
+  .finance-tools .recurring-review-panel:not(.is-expanded){
     grid-template-columns:minmax(0,1fr) minmax(120px,auto);
     align-items:center;
     gap:7px 10px;
     padding:10px 12px;
   }
-  .finance-tools>.recurring-review-panel:not(.is-expanded) .recurring-review-heading{
+  .finance-tools .recurring-review-panel:not(.is-expanded) .recurring-review-heading{
     grid-column:1;
     grid-row:1;
   }
-  .finance-tools>.recurring-review-panel:not(.is-expanded) .recurring-review-actions{
+  .finance-tools .recurring-review-panel:not(.is-expanded) .recurring-review-actions{
     grid-column:2;
     grid-row:1;
     min-width:0;
   }
-  .finance-tools>.recurring-review-panel:not(.is-expanded) .recurring-review-actions button{
+  .finance-tools .recurring-review-panel:not(.is-expanded) .recurring-review-actions button{
     min-height:44px;
     padding:8px;
     font-size:12px;

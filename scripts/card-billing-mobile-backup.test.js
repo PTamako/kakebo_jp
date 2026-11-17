@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 const source=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
-const billing=source.match(/<article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">[\s\S]*?<\/article>/)?.[0] || ''
+const billing=source.match(/<article v-show="managementTab === 'cards'"[^>]*class="finance-panel card-billing-panel">[\s\S]*?<\/article>/)?.[0] || ''
 const shared=readFileSync(new URL('../src/CardUsageSummaryFields.vue',import.meta.url),'utf8')
 const backups=source.slice(source.lastIndexOf('<template #backup>'),source.lastIndexOf('<template #duplicates>'))
 const privacy=source.slice(source.lastIndexOf('<template #privacy>'),source.lastIndexOf('<template #backup>'))

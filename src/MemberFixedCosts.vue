@@ -1,8 +1,5 @@
 <script setup>
 import {computed,onMounted,watch,ref} from 'vue'
-import FixedCostEditorFields from './FixedCostEditorFields.vue'
-import OriginalFixedCostList from './OriginalFixedCostList.vue'
-import {recurringDatesForPlanInMonth} from './recurring-posting.js'
 const props=defineProps({
  userId:{type:String,required:true},paymentChoices:{type:Array,default:()=>[]},
  categories:{type:Array,default:()=>[]},
@@ -143,44 +140,23 @@ watch(()=>props.defaultCategory,category=>{
 })
 watch(()=>props.userId,()=>{clear();items.value=[];void load()})
 onMounted(load)
+// Controller only: the single FinanceTools/UnifiedFixedCostManagement component
+// owns the visible form and list for both the owner and every family member.
+const managementConfig=computed(()=>({
+ memberMode:true,
+ model:plan.value,cycleChoice:cycleChoice.value,cycleOptions,
+ categories:props.categories,categoryLabel:props.categoryLabel,
+ paymentChoices:paymentOptions.value,
+ items:items.value.map(item=>({...item,id:item.plan_id})),
+ busy:busy.value,canSave:!busy.value&&!!valid.value,
+ editingId:editingId.value,
+ error:error.value,notice:notice.value,
+ yen:money,paymentLabel:source=>props.paymentChoices.find(p=>p.value===source)?.label||source,
+ nextLabel:()=>'',currentCount:null,monthlyTotal:null,allowPost:true,
+ onCycleChange:value=>{cycleChoice.value=value},
+ onSave:save,onCancel:clear,onEdit:edit,onToggle:toggle,
+ onRemove:removePersonalPlan,onPost:submitDue
+}))
+defineExpose({managementConfig,load})
 </script>
-<template>
- <div class="member-fixed-costs">
-  <article class="finance-panel recurring-manager-panel">
-   <h2>固定費の設定</h2>
-   <FixedCostEditorFields :model="plan" v-model:cycleChoice="cycleChoice"
-    :cycle-options="cycleOptions" :categories="categories" :category-label="categoryLabel" :payment-choices="paymentOptions"
-    :member="true"/>
-   <div class="finance-actions recurring-save-actions">
-    <button type="button" :disabled="busy||!valid" @click="save">
-     {{busy?'保存中…':editingId?'変更を保存':'固定費を登録'}}</button>
-    <button v-if="editingId" type="button" :disabled="busy" @click="clear">編集をやめる</button>
-   </div>
-   <p v-if="error" class="fixed-cost-error" role="alert">{{error}}</p>
-   <p v-if="notice" class="fixed-cost-notice" role="status">{{notice}}</p>
-  </article>
-  <OriginalFixedCostList :items="items.map(item=>({...item,id:item.plan_id}))"
-    :busy="busy" :yen="money" :category-label="categoryLabel"
-    :payment-label="source=>paymentChoices.find(p=>p.value===source)?.label||source"
-    :allow-delete="true" :allow-post="true"
-    @edit="edit" @toggle="toggle" @remove="removePersonalPlan" @post="submitDue"/>
- </div>
-</template>
-<style scoped>
-.member-fixed-costs{display:grid;gap:12px;min-width:0}
-.finance-panel{display:grid;gap:12px;min-width:0;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:16px}
-.finance-panel h2{margin:0;font-size:17px}
-.finance-actions{display:flex;gap:8px;flex-wrap:wrap}
-.finance-actions button{flex:1;min-height:44px;border:1px solid var(--line);border-radius:11px;background:var(--tint);color:var(--blue-dark);font-weight:750}
-.finance-actions button:disabled{opacity:.5}
-.fixed-cost-error{color:#b43c4a;font-size:12px}
-.fixed-cost-notice,.help{font-size:12px;color:var(--muted)}
-.fixed-cost-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:7px;padding:10px 0;border-top:1px solid var(--line)}
-.fixed-cost-row-main{display:grid;gap:4px;min-width:0}
-.fixed-cost-row-main strong{overflow-wrap:anywhere;font-size:13px}
-.fixed-cost-row-main small{color:var(--muted);font-size:11px}
-.fixed-cost-row>strong{font-size:14px}
-.fixed-cost-row-actions{grid-column:1/-1;display:flex;gap:7px;flex-wrap:wrap}
-.fixed-cost-row-actions button,.fixed-more{min-height:40px;background:var(--card);border:1px solid var(--line);border-radius:10px;color:var(--blue-dark);font-size:12px;padding:8px}
-.fixed-more{width:100%}
-</style>
+<template><span v-if="false" aria-hidden="true"></span></template>

@@ -93,7 +93,7 @@ function canonical(input){
 }
 async function submitIntent(operation,entry,target=null){
  if(busy.value)throw Error('前の申請を処理中です')
- if(!['create','update','delete'].includes(operation))throw Error('操作が無効です')
+ if(!['create','update','delete','restore'].includes(operation))throw Error('操作が無効です')
  const snapshot=JSON.stringify({operation,entry,resource_id:target?.resource_id||null,
   expected_version:target?.version||0})
  if(inlineRequest&&inlineRequest.snapshot!==snapshot)
@@ -151,7 +151,19 @@ async function submitMutation(operation,original,edited=null){
  const entry=operation==='update'?canonical(edited):null
  return submitIntent(operation,entry,target)
 }
-defineExpose({submitEntry,submitMutation,openForEntry})
+async function submitRestore(record){
+ const id=String(record?.resource_id||'')
+ if(!/^[a-f0-9]{32}$/.test(id)||record?.state!=='deleted')
+  throw Error('削除した家庭明細を再読み込みしてください')
+ // Resolve current immutable version on the server, not from the displayed trash.
+ const current=await api('/api/family-finance/shared-entries/'+encodeURIComponent(id))
+ const target=current.action
+ if(!target||target.resource_id!==id||target.state!=='deleted'||
+  target.entry_id!==record.entry_id||target.version!==record.version)
+  throw Error('この明細の状態が変更されました。ゴミ箱を更新してください')
+ return submitIntent('restore',null,target)
+}
+defineExpose({submitEntry,submitMutation,submitRestore,openForEntry})
 async function toggle(){
  if(busy.value)return
  open.value=!open.value

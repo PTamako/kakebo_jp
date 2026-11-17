@@ -589,6 +589,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         </div>
       </details>
 
+      <slot name="after-holdings" />
       <details class="panel sbi-card sbi-investment-activity" open>
         <summary class="sbi-disclosure-summary">
           <span class="sbi-manage-title"><strong>買付履歴</strong><small>追加買付・ポイント買付</small></span>
@@ -596,9 +597,10 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         </summary>
         <div class="sbi-section-body sbi-activity-body">
           <div class="sbi-activity-actions">
-            <button type="button" class="sbi-activity-main" @click="openActivity('purchase')">＋ 買付を記録</button>
+            <button v-if="!memberMode" type="button" class="sbi-activity-main" @click="openActivity('purchase')">＋ 買付を記録</button>
             <a class="sbi-activity-external" href="https://www.sbisec.co.jp/" target="_blank" rel="noopener noreferrer" aria-label="SBI証券の公式サイトで買付を操作">SBIで買付 ↗</a>
           </div>
+          <p v-if="memberMode" class="sbi-hint">本人のSBI口座の買付登録は、証券会社の取引証拠に基づく本人資産操作から行ってください。この画面では実行できない旧記帳ボタンを表示しません。</p>
           <div class="sbi-activity-month">
             <span>対象月</span>
             <input v-model="month" type="month" aria-label="買付履歴の対象月" @change="load" />
@@ -613,7 +615,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             </div>
             <div class="sbi-activity-side">
               <strong>{{yen(t.amount)}}</strong>
-              <button v-if="t.kind!=='point'" type="button" class="sbi-row-edit" @click="editPurpose(t)">区分変更</button>
+              <button v-if="!memberMode&&t.kind!=='point'" type="button" class="sbi-row-edit" @click="editPurpose(t)">区分変更</button>
             </div>
           </div>
           <button v-if="investmentActivities.length>5" type="button" class="sbi-show-more" :aria-expanded="showAllActivity" @click="showAllActivity=!showAllActivity">{{showAllActivity?'閉じる':'あと'+(investmentActivities.length-5)+'件を表示'}}</button>

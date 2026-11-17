@@ -138,8 +138,7 @@ async function prepare(req,e,url,u){
     return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
   }
   if(x.operation==='update'&&Object.hasOwn(entry,'payment_source')&&!personalPayment){
-   // The private HomeFlow receiver must be deployed before accepting
-   // requests that would otherwise be acknowledged but not applied.
+   // The private executor and Pages must both explicitly permit this operation.
    if(e.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED!=='true')
     return fail('SHARED_PAYMENT_EXECUTOR_NOT_READY',503);
    // Only the original posting member may propose a payment-source revision.

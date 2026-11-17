@@ -104,3 +104,13 @@ test('signed list returns only current member cash account IDs, including duplic
   assert.equal(data.applied,false);
  }finally{sql.close()}
 });
+
+test('account proof accepts existing paired document-finance execution key, but not a missing secret',async()=>{
+ const {sql,env}=fixture();try{
+  env.KAKEIBO_DOCUMENT_FINANCE_SECRET=env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET;
+  delete env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET;
+  assert.equal((await request(env,intent())).status,200);
+  delete env.KAKEIBO_DOCUMENT_FINANCE_SECRET;
+  assert.equal((await request(env,intent())).body.code,'ACCOUNT_PROOF_DISABLED');
+ }finally{sql.close()}
+});

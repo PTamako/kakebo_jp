@@ -3,6 +3,11 @@
 const enc=new TextEncoder();
 const hex64=/^[a-f0-9]{64}$/i;
 const hex32=/^[a-f0-9]{32}$/i;
+// Use the existing paired document-finance key when a separate account
+// proof key has not been configured. Each route has a unique HMAC domain.
+const accountProofSecret=env=>hex64.test(env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET||'')
+ ?env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET
+ :env.KAKEIBO_DOCUMENT_FINANCE_SECRET;
 const reply=(data,status=200)=>Response.json(data,{status,headers:{
   'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
   'X-Content-Type-Options':'nosniff'
@@ -23,7 +28,7 @@ function same(a,b){
 export async function verifyDocumentFinanceAccount(request,env,parts=['verify']){
   if(env.APP_ENV!=='production'||env.KAKEIBO_FAMILY_FINANCE_ENABLED!=='true'||
     env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFY_ENABLED!=='true'||
-    !hex64.test(env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET||'')||
+    !hex64.test(accountProofSecret(env)||'')||
     typeof env.DB?.prepare!=='function')
     return deny('ACCOUNT_PROOF_DISABLED',503);
   const listOnly=parts.length===1&&parts[0]==='list';
@@ -45,7 +50,7 @@ export async function verifyDocumentFinanceAccount(request,env,parts=['verify'])
     if(raw.length>600)throw Error('too large');
     body=JSON.parse(raw);
   }catch{return deny('INVALID_INPUT',400);}
-  if(!same(await mac(env.KAKEIBO_DOCUMENT_ACCOUNT_VERIFICATION_SECRET,stamp,raw),signature))
+  if(!same(await mac(accountProofSecret(env),stamp,raw),signature))
     return deny('INVALID_SIGNATURE');
   if(!body||typeof body!=='object'||Array.isArray(body)||
     Object.keys(body).sort().join(',')!==

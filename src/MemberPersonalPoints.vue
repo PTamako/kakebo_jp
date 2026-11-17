@@ -101,7 +101,7 @@ onUnmounted(()=>{alive=false;reset()})
    <button type="button" :disabled="busy" :aria-expanded="open" @click="toggle">{{open?'閉じる':'取引を記録'}}</button>
   </div>
   <template v-if="open">
-   <p class="hint">本人のポイント獲得・失効・訂正は管理者承認不要。発行元の明細を確認して記録します。実際の残高照会や交換は行いません。</p>
+   
    <p v-if="error" role="alert" class="error">{{error}}</p>
    <p v-if="message" role="status" class="hint">{{message}}</p>
    <p v-if="!points.length" class="hint">残高ページから本人のポイント口座を登録してください。</p>
@@ -128,9 +128,9 @@ onUnmounted(()=>{alive=false;reset()})
     </label>
     <label class="check"><input v-model="confirmed" type="checkbox" :disabled="busy"/>
      発行元の実際の獲得・失効・返還を確認しました</label>
-    <button type="submit" :disabled="!ready||!available">{{busy?'保存中…':'本人のポイント記録を保存'}}</button>
+    <button type="submit" :disabled="!ready||!available">{{busy?'保存中…':'ポイント記録を保存'}}</button>
    </form>
-   <div class="head"><strong>本人の記録</strong><button type="button" :disabled="busy" @click="load()">更新</button></div>
+   <div class="head"><strong>取引履歴</strong><button type="button" :disabled="busy" @click="load()">更新</button></div>
    <div v-for="r in rows.slice(0,visible)" :key="r.homeflow_request_id" class="history">
     <span>{{r.effective_date}} · {{messageFor(r.operation)}}</span>
     <strong>{{r.delta_units>0?'+':''}}{{r.delta_units}} pt</strong>

@@ -20,6 +20,10 @@ function fixture(){
   'merchant TEXT,note TEXT,raw TEXT,type TEXT,client_request_id TEXT UNIQUE,payment_source TEXT,'+
   'family_account_id TEXT,family_transfer_target_account_id TEXT,transfer_target TEXT,transfer_date TEXT,transfer_applied INTEGER DEFAULT 0)')
  sql.exec(readFileSync(new URL('../migrations/0051_shared_entry_lifecycle.sql',import.meta.url),'utf8'))
+ // 0068 preserves current legacy-adoption guards; isolated 0051/0052 fixture
+ // must include the read-only tables referenced by those production triggers.
+ sql.exec('CREATE TABLE family_legacy_shared_adoptions(resource_id TEXT,entry_id INTEGER,household_id TEXT,original_owner_user_id TEXT,original_client_request_id TEXT,account_id TEXT)')
+ sql.exec('CREATE TABLE family_financial_accounts(account_id TEXT,owner_user_id TEXT,household_id TEXT,is_archived INTEGER)')
  sql.exec(readFileSync(new URL('../migrations/0052_shared_mutation_approved_execution.sql',import.meta.url),'utf8'))
  sql.exec(readFileSync(new URL('../migrations/0068_neutral_spouse_transfer.sql',import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])

@@ -25,5 +25,5 @@ test('privacy remains available for actual receipts without misrepresenting disa
  assert.match(tools,/<strong>保存済みレシート画像<\/strong>/)
  assert.match(member,/OCR のみ対応/)
  assert.match(member,/receiptEnabled:computed\(\(\)=>false\)/)
- assert.match(member,/本人の画像を保存・再表示・一括ダウンロードする機能は未対応/)
+ assert.match(member,/画像の保存・表示・ダウンロードは未対応/)
 })

@@ -58,7 +58,7 @@ const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,sa
         <span class="count-pill">{{ forms.length }}件</span>
       </div>
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
-        <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新しい記録' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
+        <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ personalAssetActionsEnabled&&f.type==='transfer'?'資産移動':(f.merchant || '新しい記録') }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
         <TransactionForm :reward-destinations="rewardDestinations" :transfer-destinations="transferDestinations" :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="receiptEnabled && (entryInputMode === 'manual' || f.showReceiptAttachment === true)" :allowed-types="allowedTypes" :payment-choices="paymentChoices" :allow-sbi-transfer="allowSbiTransfer" :custom-transfer-form="personalAssetActionsEnabled" @change-type="setEntryType(f, $event)" @merchant-change="applyMerchantPayment(f)" @payment-change="manualPayment(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''"><template #custom-transfer-fields><slot name="custom-transfer-fields" :record="f"/></template></TransactionForm>
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>

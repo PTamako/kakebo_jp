@@ -1,4 +1,4 @@
--- 0075 serialized final-delta constraints, future-only correction rows.
+-- 0076 serialized final-delta constraints, future-only correction rows.
 -- Reject an overdraft at the EXACT D1 INSERT that books the correction, not
 -- just from a preapproval balance displayed in another request.
 CREATE TRIGGER IF NOT EXISTS trg_future_prepaid_effect_nonnegative
@@ -45,5 +45,5 @@ CREATE TRIGGER IF NOT EXISTS trg_future_correction_no_allocated_purchase
  )
  BEGIN SELECT RAISE(ABORT,'APPROVED_CORRECTION_ALLOCATION_REVERSAL_REQUIRED'); END;
 INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(
- 'schema-0075-future-approved-correction-serial-guards',
+ 'schema-0076-future-approved-correction-serial-guards',
  'Atomic prepaid overdraft and already-allocated card correction guards');

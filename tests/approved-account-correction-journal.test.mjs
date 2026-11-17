@@ -20,7 +20,7 @@ test('future correction journal requires submitted owner-review provenance and i
   db.exec('CREATE TABLE family_shared_mutation_intents(proposal_id TEXT PRIMARY KEY,resource_id TEXT,household_id TEXT,requester_user_id TEXT,operation TEXT,status TEXT,homeflow_approval_id TEXT,expected_version INTEGER)');
   db.exec('CREATE TABLE family_card_purchase_applied(entry_id INTEGER PRIMARY KEY,requester_user_id TEXT,household_id TEXT)');
   db.exec('CREATE TABLE family_prepaid_actions_applied(entry_id INTEGER PRIMARY KEY,requester_user_id TEXT,household_id TEXT,action TEXT)');
-  db.exec(readFileSync(new URL('../migrations/0073_approved_account_corrections.sql',import.meta.url),'utf8'));
+  db.exec(readFileSync(new URL('../migrations/0074_approved_account_corrections.sql',import.meta.url),'utf8'));
   db.prepare('INSERT INTO homeflow_identity_links VALUES(?,?,?,?)').run(actor,'primary','member','active');
   db.prepare('INSERT INTO homeflow_identity_links VALUES(?,?,?,?)').run(owner,'primary','owner','active');
   db.prepare('INSERT INTO entries VALUES(?,?,?,?,?)').run(1,'2026-11-18','expense',1000,original);

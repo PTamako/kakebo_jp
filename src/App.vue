@@ -2034,7 +2034,7 @@ const ratioLabel = ratio => ratio === null ? '収入データなし' : Math.roun
 let ownerLedgerRevision='',ownerLedgerProbeBusy=false,ownerLedgerTimer=null
 async function pollOwnerLedgerRevision(){
  if(ownerLedgerProbeBusy||document.visibilityState!=='visible'||
-  familyIdentity.value?.role!=='owner'||tab.value!=='list'||editSaving.value)return
+  familyIdentity.value?.role!=='owner'||!['list','stat','investments','finance'].includes(tab.value)||editSaving.value)return
  const actor=familyIdentity.value.user_id
  ownerLedgerProbeBusy=true
  try{

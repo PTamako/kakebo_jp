@@ -1,4 +1,5 @@
 import {familySharedAttachments} from './shared-entry-attachments.js';
+import {prepareOwnerAccountCorrection} from './owner-account-corrections.js';
 // Household income/expense remains owner-reviewed for non-admin members.
 // Self-created account-free spouse transfers permit direct audited CAS revisions.
 // Signed finance journals, SBI lots and account transfers stay separate.
@@ -81,7 +82,7 @@ function changesOk(result,count){return result.length===count&&result.every(r=>r
 // D1 batch results are not a durable transaction receipt: affected-row counts
 // can be imprecise even when the batch committed. Verify immutable CAS evidence
 // before replying success or failure. Do not retry merely on an ambiguous count.
-async function committedRevision(db,resource,u,original,action,next,snapshot,digest,stamp,paymentAfter){
+async function committedRevision(db,resource,u,original,action,next,snapshot,digest,stamp,paymentAfter,ownerPaid=false){
  const r=await get(db,resource,u);
  if(!r||r.version!==original.version+1||r.updated_at!==stamp||
   r.state!==(action==='delete'?'deleted':'active')||
@@ -95,7 +96,7 @@ async function committedRevision(db,resource,u,original,action,next,snapshot,dig
   audit.payload_sha256!==digest||audit.occurred_at!==stamp)return null;
  const entry=await db.prepare('SELECT id,date,time,amount,type,category,merchant,note,'+
   'payment_source FROM entries WHERE id=? LIMIT 1').bind(original.entry_id).first();
- if(action==='delete')return entry?null:visible(r);
+ if(action==='delete')return ownerPaid?(entry?.id===original.entry_id&&entry.type==='expense'&&entry.amount===0?visible(r):null):entry?null:visible(r);
  if(!entry||!next||entry.id!==original.entry_id||
   ['date','time','amount','type','category','merchant','note'].some(
    key=>entry[key]!==next[key])||
@@ -259,9 +260,34 @@ async function modify(req,e,url,u,id,action,role){
   await db.prepare('SELECT original_row_json,original_client_request_id,account_id '+
    'FROM family_legacy_shared_adoptions WHERE resource_id=? AND entry_id=?').bind(id,r.entry_id).first():null;
  const original=adopted?JSON.parse(adopted.original_row_json):null;
+ const ownerPaid=role==='owner'&&e.KAKEIBO_OWNER_ACCOUNT_CORRECTIONS_ENABLED==='true'?
+  await prepareOwnerAccountCorrection(db,{registry:r,householdId:u.household_id,
+   actorUserId:u.user_id,action,entry:next,at,
+   correctionId:(await hash(['owner-private-household',id,r.version,u.user_id,action].join('\\0'))).slice(0,32)}):null;
+ if(ownerPaid?.error)return fail(ownerPaid.error,ownerPaid.error.includes('PRIVATE_PAYMENT')?403:409);
+ // A disabled owner-finance executor must fail closed instead of falling
+ // through to the old update/delete path that cannot reconcile private funds.
+ if(!ownerPaid&&role==='owner'){
+  const physical=await db.prepare('SELECT client_request_id FROM entries WHERE id=? LIMIT 1')
+   .bind(r.entry_id).first();
+  if(/^hf(?:card|prepaid):/.test(physical?.client_request_id||''))
+   return fail('OWNER_ACCOUNT_CORRECTION_EXECUTOR_NOT_READY',503);
+ }
  const statements=[context(db,r,u,action,at)];
+ if(ownerPaid)statements.push(...ownerPaid.commands);
  const spouseRevision=next?.type==='transfer'||JSON.parse(r.snapshot_json)?.type==='transfer';
- if(action==='update'){
+ if(ownerPaid){
+  const target=ownerPaid.entryAfter;
+  // Never physically delete an immutable card/prepaid purchase. A zero-value
+  // tombstone and exact asset delta are committed atomically in this batch.
+  statements.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=? '+
+   'WHERE id=? AND client_request_id=? AND family_account_id=? AND type=\'expense\' '+
+   'AND amount=? AND date=? AND payment_source=?')
+   .bind(target.date,target.time,target.amount,target.category,target.merchant,target.note,
+    'expense',r.entry_id,ownerPaid.clientRequestId,ownerPaid.accountId,
+    ownerPaid.amountBefore,ownerPaid.dateBefore,ownerPaid.paymentSource));
+  paymentAfter=ownerPaid.paymentSource;
+ }else if(action==='update'){
   const allowed=adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL';
   const source=adopted?[adopted.original_client_request_id,adopted.account_id]:[ref];
   statements.push(spouseRevision?
@@ -304,7 +330,7 @@ async function modify(req,e,url,u,id,action,role){
   // A lost response is not evidence of rollback: check the same CAS receipt.
   batchFailed=true;
  }
- const committed=await committedRevision(db,id,u,r,action,next,snapshot,digest,at,paymentAfter)
+ const committed=await committedRevision(db,id,u,r,action,next,snapshot,digest,at,paymentAfter,!!ownerPaid)
   .catch(()=>null);
  if(committed)return json({ok:true,action:committed,applied:true});
  return batchFailed?fail('SHARED_ENTRY_MUTATION_ROLLED_BACK'):

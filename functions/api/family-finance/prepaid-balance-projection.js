@@ -5,6 +5,8 @@ export async function memberPrepaidBalances(db,household){
  if(typeof household!=='string'||!household)return null;
  const hasCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first();
+ const hasOwnerCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
+  "WHERE type='table' AND name='family_owner_account_effects' LIMIT 1").bind().first();
  const hasTopupCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
   "WHERE type='table' AND name='family_member_prepaid_topup_corrections' LIMIT 1").bind().first();
  const topupCorrectionAmount=hasTopupCorrections?
@@ -16,6 +18,10 @@ export async function memberPrepaidBalances(db,household){
   "+COALESCE((SELECT SUM(c.delta_jpy) FROM family_approved_account_effects c "+
   "WHERE c.account_id=a.account_id AND c.household_id=a.household_id "+
   "AND c.account_kind='prepaid'),0) ": '';
+ const ownerCorrectionAmount=hasOwnerCorrections?
+  "+COALESCE((SELECT SUM(o.delta_jpy) FROM family_owner_account_effects o "+
+  "WHERE o.account_id=a.account_id AND o.household_id=a.household_id "+
+  "AND o.account_kind='prepaid'),0) ": '';
  const query='SELECT a.account_id,a.owner_user_id,a.label,a.version,'+
   'COALESCE((SELECT SUM(j.delta_jpy) FROM family_prepaid_balance_journal j '+
   'WHERE j.prepaid_account_id=a.account_id AND j.household_id=a.household_id),0) '+
@@ -24,7 +30,7 @@ export async function memberPrepaidBalances(db,household){
   '+COALESCE((SELECT SUM(c.amount_jpy) FROM family_points_prepaid_credits c '+
   'WHERE c.prepaid_account_id=a.account_id AND c.household_id=a.household_id),0) '+
   '-COALESCE((SELECT SUM(r.debited_prepaid_jpy) FROM family_points_prepaid_refunds r '+
-  'WHERE r.prepaid_account_id=a.account_id AND r.household_id=a.household_id),0) '+correctionAmount+' balance_jpy '+
+  'WHERE r.prepaid_account_id=a.account_id AND r.household_id=a.household_id),0) '+correctionAmount+ownerCorrectionAmount+' balance_jpy '+
   'FROM family_financial_accounts a WHERE a.household_id=? '+
   "AND a.account_kind='prepaid' AND a.origin='member_created' AND a.is_archived=0 "+
   'ORDER BY a.created_at DESC,a.account_id LIMIT 200';

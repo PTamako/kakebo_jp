@@ -349,3 +349,23 @@ test('member posts one neutral spouse transfer without approval; later ledger ch
   assert.equal(fraud.status,400);
  }finally{f.close()}
 });
+
+test('owner HMAC preview decrypts original submitted entry without applying it',async()=>{
+ const f=fixture();try{
+  const b=await f.apply('create',null,0,sample)
+  const preview=await f.target('preview',{...b,approver_user_id:owner})
+  assert.equal(preview.status,200,JSON.stringify(preview))
+  assert.equal(preview.data.entry.amount,sample.amount)
+  assert.equal(preview.data.entry.merchant,sample.merchant)
+  assert.equal(preview.data.entry.note,sample.note)
+  assert.equal(preview.data.approval_id,b.request_id)
+  assert.equal(preview.data.ledger_changed,false)
+  assert.equal(f.count('entries'),0)
+  assert.equal(f.count('family_shared_mutation_applied'),0)
+  const unauthenticated=await f.target('preview',{...b,approver_user_id:owner},true)
+  assert.equal(unauthenticated.status,403)
+  const notOwner=await f.target('preview',{...b,approver_user_id:member})
+  assert.equal(notOwner.status,403)
+  assert.equal(f.count('entries'),0)
+ }finally{f.close()}
+})

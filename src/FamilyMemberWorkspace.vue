@@ -1183,11 +1183,32 @@ async function importPersonalBackup(event){
  finally{personalBackupBusy.value=false}
 }
 
+// Lightweight status probe while a member has visible pending household entries.
+// Refresh the original shared ledger only when an approval status actually moves.
+let approvalStatusTimer=null,approvalProbeActive=false
+async function checkPendingLedgerStatus(){
+ if(approvalProbeActive||document.visibilityState!=='visible'||tab.value!=='list'||
+  !pendingMutations.value.length||!alive)return
+ const ticket=epoch,user=props.user.user_id,selectedMonth=month.value
+ approvalProbeActive=true
+ try{
+  const result=await api('shared-mutation-requests?view=ledger&month='+
+   encodeURIComponent(selectedMonth))
+  if(ticket!==epoch||user!==props.user.user_id||selectedMonth!==month.value||
+   result.ledger_scope!=='member_pending_only'||!Array.isArray(result.items))return
+  const digest=items=>JSON.stringify(items.map(x=>[x.proposal_id,x.status,x.operation]))
+  if(digest(pendingMutations.value)!==digest(result.items))await refresh()
+ }catch{/* Preserve visible entries and use the existing foreground/manual recovery. */}
+ finally{approvalProbeActive=false}
+}
 function foreground(){if(document.visibilityState==='visible')void refresh()}
 watch(()=>props.user.user_id,()=>{closeMemberLedgerReceipt();pendingPaidEntry=null;memberEntries.value=[];memberReceipts.value=[];memberReceiptRetry.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
-onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
-onUnmounted(()=>{closeMemberLedgerReceipt();memberReceipts.value=[];memberReceiptRetry.value=[];alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
+onMounted(()=>{
+ void refresh();document.addEventListener('visibilitychange',foreground)
+ approvalStatusTimer=setInterval(()=>{void checkPendingLedgerStatus()},20000)
+})
+onUnmounted(()=>{if(approvalStatusTimer)clearInterval(approvalStatusTimer);closeMemberLedgerReceipt();memberReceipts.value=[];memberReceiptRetry.value=[];alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
  memberMerchantRules.value=[];memberRuleError.value='';
  document.removeEventListener('visibilitychange',foreground)})
 // The original EntryInputPage renders for both identities. All writes here

@@ -73,7 +73,9 @@ function canonical(input){
   e.transfer_target='spouse'
   e.transfer_date=e.date
  }
- if(input?.payment_source!==undefined){
+ // The normal ledger editor passes null for an unchanged/no-card payment.
+ // Never turn that sentinel into the literal card name "null" on an update.
+ if(input?.payment_source!=null&&input.payment_source!==''){
   const card=String(input.payment_source)
   if(e.type!=='expense'||!card||card.length>80)throw Error('共有カードを確認してください')
   e.payment_source=card

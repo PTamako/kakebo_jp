@@ -123,7 +123,14 @@ async function modify(req,e,url,u,id,action){
    action==='restore'&&r.state!=='deleted')return fail('SHARED_ENTRY_STATE_CONFLICT');
  let next=action==='update'?canon(x.entry):null;
  if(action==='update'&&!next)return fail('SHARED_ENTRY_INVALID_FIELDS',400);
- if(action==='restore')next=JSON.parse(r.snapshot_json);
+ const previousSnapshot=JSON.parse(r.snapshot_json);
+ if(action==='update'&&previousSnapshot.payment_source){
+  // Keep a previously approved shared card fixed on owner edits. The card
+  // liability remains attached to the same payment source and billing period.
+  if(next.type!=='expense')return fail('SHARED_CARD_CHANGE_TYPE_FORBIDDEN',409);
+  next={...next,payment_source:previousSnapshot.payment_source};
+ }
+ if(action==='restore')next=previousSnapshot;
  const snapshot=next?JSON.stringify(next):r.snapshot_json;
  const digest=await hash(snapshot);
  const at=Date.now(),db=e.DB,ref='hfshare:'+id;
@@ -250,6 +257,24 @@ export async function familySharedEntries(req,e,url,u,parts){
  if(!role)return fail('SHARED_ENTRY_CURRENT_IDENTITY_REQUIRED',403);
  const p=parts.slice(1),method=req.method;
  if(p.length>=2&&p[1]==='attachments')return familySharedAttachments(req,e,url,u,p);
+ if(!p.length&&method==='GET'&&url.searchParams.get('view')==='revision'){
+  const row=await e.DB.prepare('SELECT COUNT(*) AS count,COALESCE(MAX(updated_at),0) AS last,'+
+   'COALESCE(SUM(version),0) AS total_version FROM family_shared_entry_registry '+
+   'WHERE household_id=?').bind(u.household_id).first();
+  return json({ok:true,revision:String(row?.count||0)+':'+String(row?.last||0)+
+   ':'+String(row?.total_version||0),ledger_changed:false});
+ }
+ if(!p.length&&method==='GET'&&url.searchParams.has('entry_id')){
+  // The original owner editor can resolve a shared approval-backed row by
+  // its immutable ledger ID before choosing the audited shared-write route.
+  const raw=url.searchParams.get('entry_id')||'';
+  if(!/^[1-9][0-9]{0,12}$/.test(raw)||!Number.isSafeInteger(Number(raw)))
+   return fail('SHARED_ENTRY_BAD_ENTRY_ID',400);
+  const r=await e.DB.prepare(select+'FROM family_shared_entry_registry r '+
+   'WHERE household_id=? AND entry_id=? LIMIT 1')
+   .bind(u.household_id,Number(raw)).first();
+  return json({ok:true,action:visible(r),ledger_changed:false});
+ }
  if(!p.length&&method==='GET')return list(e.DB,u,url);
  if(p.length===1&&id32.test(p[0])&&method==='GET'){
   const r=await get(e.DB,p[0],u);

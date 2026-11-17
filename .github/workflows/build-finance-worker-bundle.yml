@@ -1,0 +1,37 @@
+name: Build auditable private finance Worker bundle
+on:
+  push:
+    branches: [ci/approved-finance-revision-integrated-20261117]
+    paths:
+      - '.github/workflows/build-finance-worker-bundle.yml'
+permissions:
+  contents: write
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:release
+      - run: npx wrangler deploy --config wrangler.homeflow-bridge.toml --dry-run --outdir .wrangler/private-bridge-dryrun
+      - name: Preserve exact audited bundle on a nonproduction code branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test -f .wrangler/private-bridge-dryrun/index.js
+          mkdir -p .release
+          cp .wrangler/private-bridge-dryrun/index.js .release/kakeibo-private-bundle.mjs
+          test -s .release/kakeibo-private-bundle.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C release/private-finance-bundle-364
+          git add -f .release/kakeibo-private-bundle.mjs
+          git commit -m "build: audited private finance Worker bundle for #364"
+          git push --force origin HEAD:refs/heads/release/private-finance-bundle-364

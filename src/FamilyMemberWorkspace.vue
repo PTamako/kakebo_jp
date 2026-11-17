@@ -884,13 +884,8 @@ watch(()=>props.user.user_id,loadMemberCategories)
    </template>
    <template #member-privacy>
      <div class="device-privacy-section">
-       <div class="device-privacy-row"><strong>ログイン状態の保存</strong><span class="help">HomeFlow で管理</span></div>
-       <p class="help">ログイン状態は本人の HomeFlow 認証で管理しています。家族のカード・口座データを端末に保存しません。</p>
-       <button type="button" class="button-secondary" @click="emit('logout')">この端末からログアウト</button>
-     </div>
-     <div class="device-privacy-section">
-       <div class="device-privacy-row"><strong>保存済みレシート画像</strong><span class="help">端末内保存なし</span></div>
-       <p class="help">本人の OCR 画像は端末内で読み取り、一括保存しません。共有レシートは所有権を確認せず削除できません。</p>
+       <div class="device-privacy-row"><strong>レシート画像</strong><span class="help">OCR のみ対応</span></div>
+       <p class="help">画像から文字を読み取れますが、本人の画像を保存・再表示・一括ダウンロードする機能は未対応です。共有画像は他の利用者の許可なく削除できません。</p>
      </div>
    </template>
    <template #member-backup>

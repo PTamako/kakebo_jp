@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHmac,createHash,webcrypto} from 'node:crypto'
 import {familySharedMutationRequests} from '../functions/api/family-finance/shared-mutation-requests.js'
+import {familySharedEntries} from '../functions/api/family-finance/shared-entries.js'
 import {approvedSharedMutationRoute} from '../functions/api/internal/shared-entries/[[path]].js'
 if(!globalThis.crypto)globalThis.crypto=webcrypto
 const owner='11111111-1111-4111-8111-111111111111'
@@ -28,7 +29,7 @@ function fixture(){
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,amount INTEGER,category TEXT,'+
   'merchant TEXT,note TEXT,raw TEXT,type TEXT,client_request_id TEXT UNIQUE,payment_source TEXT,'+
   'family_account_id TEXT,family_transfer_target_account_id TEXT,transfer_target TEXT,transfer_date TEXT,transfer_applied INTEGER DEFAULT 0)')
- for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql'])
+ for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+version,import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,?,'active')").run(u,hh,role)
@@ -298,29 +299,42 @@ test('delegated credit card purchase stays pending until owner approves and reta
 })
 
 
-test('member creates one neutral spouse transfer only after owner reviews, both household views share one row',async()=>{
+test('member posts one neutral spouse transfer without approval; later ledger changes still require owner review',async()=>{
  const f=fixture();try{
   const spouse={...sample,type:'transfer',amount:18000,category:'投資・資産移動',
    merchant:'配偶への振替',transfer_target:'spouse',transfer_date:sample.date};
-  const b=await f.apply('create',null,0,spouse,'member-spouse-transfer-20261117');
-  assert.equal(f.count('entries'),0,'unreviewed transfer cannot appear as a posted record');
-  const approved=await f.target('execute',b);
-  assert.equal(approved.status,200,JSON.stringify(approved));
+  const old=await f.source(['shared-mutation-requests'],{
+   expected_user_id:member,idempotency_key:'member-spouse-old-review-20261117',
+   operation:'create',resource_id:null,expected_version:0,entry:spouse});
+  assert.equal(old.status,410,'old cached frontend must never create owner review for transfer');
+  const directUrl=new URL('https://kakeibo.example.test/api/family-finance/shared-entries');
+  const post=(data)=>familySharedEntries(new Request(directUrl,{method:'POST',
+   headers:{origin:directUrl.origin,'content-type':'application/json'},
+   body:JSON.stringify(data)}),f.env,directUrl,f.user,['shared-entries']);
+  const payload={expected_user_id:member,idempotency_key:'member-spouse-transfer-20261117',entry:spouse};
+  const first=await post(payload);
+  assert.equal(first.status,201,await first.text());
+  const data=await first.json();
+  assert.equal(data.action.creator_user_id,member);
+  const id=data.action.resource_id;
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_entry_audit'),1);
+  assert.equal(f.count('family_shared_mutation_applied'),0,'no owner approval exists for creation');
   const row=f.sql.prepare('SELECT * FROM entries').get();
   assert.equal(row.type,'transfer');assert.equal(row.amount,18000);
   assert.equal(row.transfer_target,'spouse');assert.equal(row.transfer_applied,0);
-  assert.equal(f.count('entries'),1);
-  assert.equal(f.count('family_shared_entry_audit'),1);
-  assert.equal(f.count('family_shared_mutation_applied'),1);
-  const posted=await f.target('execute',b);
-  assert.equal(posted.status,200);
-  assert.equal(posted.data.already_applied,true);
+  const replay=await post(payload);
+  assert.equal(replay.status,200);
+  assert.equal((await replay.json()).replayed,true);
   assert.equal(f.count('entries'),1);
   const totals=f.sql.prepare("SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) AS inc,"+
    "COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS exp FROM entries").get();
   assert.equal(totals.inc,0);assert.equal(totals.exp,0);
-  const id=approved.data.resource_id;
-  const changed=await f.target('execute',await f.apply('update',id,1,{...spouse,amount:19000}));
+  // Modifying/deleting/restoring an already posted household detail is a
+  // separate approved mutation, not a new asset transfer.
+  const intent=await f.apply('update',id,1,{...spouse,amount:19000});
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,18000);
+  const changed=await f.target('execute',intent);
   assert.equal(changed.status,200,JSON.stringify(changed));
   assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,19000);
   const removed=await f.target('execute',await f.apply('delete',id,2,null));
@@ -328,6 +342,7 @@ test('member creates one neutral spouse transfer only after owner reviews, both 
   const restored=await f.target('execute',await f.apply('restore',id,3,null));
   assert.equal(restored.status,200,JSON.stringify(restored));
   assert.equal(f.count('entries'),1);assert.equal(f.count('family_shared_entry_audit'),4);
+  assert.equal(f.count('family_shared_mutation_applied'),3);
   const fraud=await f.source(['shared-mutation-requests'],{expected_user_id:member,
    idempotency_key:'spouse-fake-bank-transfer',operation:'create',resource_id:null,
    expected_version:0,entry:{...spouse,transfer_target:'bank:other'}});

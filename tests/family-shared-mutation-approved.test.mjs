@@ -59,7 +59,7 @@ function fixture({accountCorrections=false}={}){
  }}}},async batch(commands){
   sql.exec('BEGIN IMMEDIATE')
   try{const res=commands.map(s=>s.sync());sql.exec('COMMIT');return res}
-  catch(e){sql.exec('ROLLBACK');throw e}
+  catch(e){sql.exec('ROLLBACK');if(accountCorrections)console.error('FUTURE_FINANCE_BATCH_ROLLBACK',e.message);throw e}
  }}
  const env={DB:db,APP_ENV:'production',KAKEIBO_FAMILY_FINANCE_ENABLED:'true',
   KAKEIBO_SHARED_ENTRY_ENABLED:'true',KAKEIBO_LEGACY_SHARED_ADOPTION_ENABLED:'true',

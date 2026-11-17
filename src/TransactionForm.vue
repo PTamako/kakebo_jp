@@ -45,7 +45,7 @@ const paymentOptions = computed(()=> {
  const options=(props.paymentChoices.length ? props.paymentChoices
   : orderedPayments.value.map(name=>({value:name,label:name})))
   .filter(item=>!props.editMode||
-   (record.value.restrictToPersonalPayment?item.value.startsWith('personal:'):
+   (record.value.restrictToPersonalPayment?(item.value.startsWith('personal:')||item.value==='cash'):
     record.value.restrictToSharedCash?!item.value.startsWith('personal:'):true));
  return [
   ...(!props.editMode||!props.paymentChoices.length?[{value:'',label:'未設定'}]:[]),

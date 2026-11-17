@@ -1,5 +1,5 @@
 <script setup>
-import {inject} from 'vue'
+import {inject,ref} from 'vue'
 import TransactionForm from './TransactionForm.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileChoiceSegments from './MobileChoiceSegments.vue'
@@ -8,12 +8,14 @@ import OcrCapturePanel from './OcrCapturePanel.vue'
 // authenticated data/actions adapter is identity-specific.
 const ctx=inject('kakeibo-entry-input')
 if(!ctx)throw Error('記帳ページのデータ接続がありません')
-const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,saveCategory,categoryEntryType,categoryName,categoryIcon,availableIcons,input,entryInputMode,recognitionMode,importPaymentSource,importPaymentOptions,recognize,aiOcrEnabled,aiQuota,scanImportPaymentSource,ocrEngine,ocrWarning,setAiOcrEnabled,forms,draftRecoveryInfo,clearLocalDraft,removeDraft,rewardDestinations,transferDestinations,categories,INCOME_CATEGORIES,paymentSources,categoryLabel,selectDraftReceipt,pendingReceiptImage,pendingReceiptFileName,receiptSaveError,setEntryType,applyMerchantPayment,manualPayment,onImage,addBlank,saveAll,receiptEnabled,allowedTypes,paymentChoices,allowSbiTransfer}=ctx
+const personalAssetOpen=ref(false)
+const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,saveCategory,categoryEntryType,categoryName,categoryIcon,availableIcons,input,entryInputMode,recognitionMode,importPaymentSource,importPaymentOptions,recognize,aiOcrEnabled,aiQuota,scanImportPaymentSource,ocrEngine,ocrWarning,setAiOcrEnabled,forms,draftRecoveryInfo,clearLocalDraft,removeDraft,rewardDestinations,transferDestinations,categories,INCOME_CATEGORIES,paymentSources,categoryLabel,selectDraftReceipt,pendingReceiptImage,pendingReceiptFileName,receiptSaveError,setEntryType,applyMerchantPayment,manualPayment,onImage,addBlank,saveAll,receiptEnabled,allowedTypes,paymentChoices,allowSbiTransfer,personalAssetActionsEnabled}=ctx
 </script>
 <template>
 <section class="page-section">
       <div class="page-heading"><div><h1>入力</h1><time class="entry-live-clock" :datetime="liveClockIso" aria-label="現在の日時">{{ todayLabel }}</time></div><button class="button-secondary manage-category" @click="addCategory">＋ カテゴリ追加</button></div>
-      <fieldset class="draft-controls" :disabled="busy === 'saving'" :aria-busy="busy === 'saving'">
+      <div v-if="personalAssetActionsEnabled" class="input-mode-switch personal-asset-entry-switch" role="tablist" aria-label="本人の取引種類"><button type="button" role="tab" :aria-selected="!personalAssetOpen" :class="{selected:!personalAssetOpen}" @click="personalAssetOpen=false">日常の記帳</button><button type="button" role="tab" :aria-selected="personalAssetOpen" :class="{selected:personalAssetOpen}" @click="personalAssetOpen=true">本人の資産操作</button></div>
+      <fieldset v-show="!personalAssetOpen" class="draft-controls" :disabled="busy === 'saving'" :aria-busy="busy === 'saving'">
       <div v-if="categoryDialog" class="edit-overlay" @click.self="!categorySaving && (categoryDialog = false)">
         <form class="edit-dialog category-dialog" @submit.prevent="saveCategory" aria-label="カテゴリを追加">
           <div class="edit-dialog-heading"><h2>カテゴリを追加</h2><button type="button" class="icon-button" :disabled="categorySaving" @click="categoryDialog = false" aria-label="閉じる">×</button></div>
@@ -68,7 +70,11 @@ const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,sa
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length || forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank')">{{ busy === 'saving' ? '保存中…' : forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank') ? '配偶間の資産移動は別途確認' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>
-      <slot name="personal-transfer"/>
+      <section v-if="personalAssetOpen&&personalAssetActionsEnabled" class="personal-asset-entry-panel" aria-label="本人の資産操作"><p class="personal-asset-entry-note">本人名義の資産だけを操作します。家計の収入・支出には加算せず、実際の発行元・証券取引の確認が必要な操作は個別の証跡を入力してください。</p><slot name="personal-transfer"/></section>
     </section>
 </template>
 
+
+<style scoped>
+.personal-asset-entry-switch{margin:4px 0 12px}.personal-asset-entry-panel{display:grid;gap:10px;min-width:0;padding:0 0 90px}.personal-asset-entry-note{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+</style>

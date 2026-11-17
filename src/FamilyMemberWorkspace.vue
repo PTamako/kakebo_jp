@@ -1561,7 +1561,8 @@ provide('kakeibo-entry-input',{
  onImage:memberScanImage,addBlank:()=>addMemberEntry(),saveAll:submitMemberEntry,
  receiptEnabled:computed(()=>true),
  allowedTypes:computed(()=>['expense','income','transfer']),
- paymentChoices:memberPaymentSourceChoices,allowSbiTransfer:false
+ paymentChoices:memberPaymentSourceChoices,allowSbiTransfer:false,
+  personalAssetActionsEnabled:computed(()=>true)
 })
 void loadMemberCategories()
 watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMemberCategories()})
@@ -1593,6 +1594,15 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    
+   <template #personal-transfer>
+    <MemberPrepaidTopups :key="'entry-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
+    <MemberPersonalPoints :key="'entry-points:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+    <MemberPointAssetActions :key="'entry-points-asset:'+user.user_id" 
+     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+    <MemberPointAssetReversals :key="'entry-points-asset-reversals:'+user.user_id"
+     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+   </template>
    <template #member-cards>
     <OriginalCardManagementPanel
       :selected="selectedCardId"
@@ -1611,13 +1621,6 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
       @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
     <MemberCardUsage :user-id="user.user_id" :active="tab==='finance'" :revision="memberUsageRevision"/>
 
-    <MemberPrepaidTopups :key="'personal-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPersonalPoints :key="'personal-points:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPointAssetActions :key="'points-asset:'+user.user_id" 
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
-    <MemberPointAssetReversals :key="'points-asset-refunds:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
     
    </template>
    <template #member-plans>

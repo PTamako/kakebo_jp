@@ -145,7 +145,7 @@ async function reversibleOriginal(db,user,x){
    .bind(old.target_account_id,user.household_id,user.user_id,old.prepaid_version).first();
   if(!target)return false;
   const corrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
-   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").first()
+   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first()
   const effect=corrections?
    "+COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects WHERE account_id=? AND account_kind='prepaid'),0)":""
   const balance=await db.prepare('SELECT COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal '+

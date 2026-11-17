@@ -23,7 +23,7 @@ async function read(req,url){
 }
 const date=s=>typeof s==='string'&&/^20\d\d-\d\d-\d\d$/.test(s)&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
 const entryKeys=['date','time','amount','type','category','merchant','note'];
-function cleanEntry(x){
+function cleanEntry(x,allowCashSelection=false){
  const paid=exact(x,[...entryKeys,'payment_source']);
  const spouse=exact(x,[...entryKeys,'transfer_target','transfer_date']);
  if(!(exact(x,entryKeys)||paid||spouse)||!date(x.date)||
@@ -37,7 +37,8 @@ function cleanEntry(x){
   typeof x.merchant!=='string'||x.merchant.length>120||
   typeof x.note!=='string'||x.note.length>500||
   (paid&&(x.type!=='expense'||typeof x.payment_source!=='string'||
-   !x.payment_source.trim()||x.payment_source.length>80)))return null;
+   (!allowCashSelection&&!x.payment_source.trim())||
+   x.payment_source.length>80||x.payment_source!==x.payment_source.trim())))return null;
  return {date:x.date,time:x.time,amount:x.amount,type:x.type,
   category:x.category.trim(),merchant:x.merchant.trim(),note:x.note.trim(),
   ...(paid?{payment_source:x.payment_source}:{}),
@@ -78,7 +79,8 @@ async function prepare(req,e,url,u){
   (x.operation==='create'?(x.resource_id!==null||x.expected_version!==0):
    (!id.test(x.resource_id)||!Number.isSafeInteger(x.expected_version)||x.expected_version<1)))
   return fail('SHARED_MUTATION_INVALID_FIELDS',400);
- const entry=x.operation==='create'||x.operation==='update'?cleanEntry(x.entry):null;
+ const entry=x.operation==='create'||x.operation==='update'?
+  cleanEntry(x.entry,x.operation==='update'):null;
  if((x.operation==='create'||x.operation==='update')&&!entry||
     ['delete','restore'].includes(x.operation)&&x.entry!==null)
   return fail('SHARED_MUTATION_INVALID_ENTRY',400);
@@ -87,7 +89,6 @@ async function prepare(req,e,url,u){
  if(x.operation==='create'&&entry?.type==='transfer')
   return fail('NEUTRAL_SPOUSE_TRANSFER_NO_OWNER_REVIEW',410);
  if(entry?.payment_source){
-  if(x.operation!=='create')return fail('SHARED_CARD_PAYMENT_CHANGE_FORBIDDEN',403);
   const granted=await e.DB.prepare("SELECT 1 FROM family_legacy_card_shares s "+
    "JOIN payment_sources card ON card.name=s.card_name "+
    "JOIN homeflow_identity_links o ON o.user_id=s.owner_user_id "+
@@ -99,10 +100,24 @@ async function prepare(req,e,url,u){
   if(!granted)return fail('SHARED_CARD_GRANT_REQUIRED',403);
  }
  if(x.operation!=='create'){
-  const reg=await e.DB.prepare('SELECT state,version FROM family_shared_entry_registry '+
+  const reg=await e.DB.prepare('SELECT state,version,entry_id FROM family_shared_entry_registry '+
    'WHERE resource_id=? AND household_id=?').bind(x.resource_id,u.household_id).first();
   if(reg?.version!==x.expected_version||reg.state!==(x.operation==='restore'?'deleted':'active'))
    return fail('SHARED_MUTATION_RESOURCE_CHANGED');
+  if(x.operation==='update'&&Object.hasOwn(entry,'payment_source')){
+   // Only the original posting member may propose a payment-source revision.
+   // Administrator authority and an unrelated member's ledger visibility do
+   // not grant ownership of another person's card.
+   const [author,physical]=await Promise.all([
+    e.DB.prepare("SELECT requester_user_id FROM family_shared_mutation_applied "+
+     "WHERE entry_id=? AND action='create' LIMIT 1").bind(reg.entry_id).first(),
+    e.DB.prepare('SELECT family_account_id,type FROM entries WHERE id=? LIMIT 1')
+     .bind(reg.entry_id).first()
+   ]);
+   if(author?.requester_user_id!==u.user_id||!physical||
+    physical.family_account_id!==null||physical.type!=='expense'||entry.type!=='expense')
+    return fail('OTHER_MEMBERS_PAYMENT_READ_ONLY',403);
+  }
  }
  const payload={operation:x.operation,resource_id:x.resource_id,expected_version:x.expected_version,entry};
  const raw=JSON.stringify(payload),sha=await digest(raw);

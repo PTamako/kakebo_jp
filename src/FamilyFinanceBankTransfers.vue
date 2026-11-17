@@ -148,7 +148,7 @@ onMounted(()=>document.addEventListener('visibilitychange',foreground))
 onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitychange',foreground)})
 </script>
 <template>
-<section class="bank-transfers" aria-label="家庭银行已到账资产转移">
+<section class="bank-transfers" aria-label="家庭帳簿の銀行間振替">
  <div class="head">
   <strong>銀行間振替 · 入出金確認済み</strong>
   <button type="button" :disabled="busy" :aria-expanded="open" @click="toggle">{{open?'閉じる':'振替を記録'}}</button>
@@ -182,16 +182,16 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
    <label>振替金額（円）
     <input v-model="amount" type="number" min="1" max="10000000" step="1" required
      :disabled="busy||!!prepared" @input="edited"/></label>
-   <label>振替元の銀行已扣款的参考号
+   <label>振替元銀行の引落参照番号
     <input v-model="sourceRef" maxlength="160" minlength="8" required
      placeholder="銀行の引落明細に記載された番号" :disabled="busy||!!prepared" @input="edited"/></label>
-   <label>振替先の銀行已到账的参考号
+   <label>振替先銀行の入金参照番号
     <input v-model="targetRef" maxlength="160" minlength="8" required
-     placeholder="根据振替先の銀行的入账明细填写" :disabled="busy||!!prepared" @input="edited"/></label>
+     placeholder="振替先銀行の入金明細に記載された番号" :disabled="busy||!!prepared" @input="edited"/></label>
    <label class="check"><input v-model="sourcePosted" type="checkbox" :disabled="busy||!!prepared"/>
-    我已核实振替元の銀行实际完成扣款，不是待处理请求</label>
+    振替元銀行で実際の引落が完了したことを確認しました</label>
    <label class="check"><input v-model="targetPosted" type="checkbox" :disabled="busy||!!prepared"/>
-    我已核实振替先の銀行实际完成入账，不是预计到账</label>
+    振替先銀行で実際の入金が完了したことを確認しました</label>
    <p class="hint">これは家庭帳簿の資産移動です。申請だけでは残高は変わりません。承認後も口座状態と両側の入出金証拠を確認します。</p>
    <button type="submit" :disabled="busy||!(prepared||ready)">
     {{prepared?'HomeFlowで明細変更の承認を申請':'入出金証拠を暗号化して保存'}}
@@ -199,16 +199,16 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
    <button v-if="prepared" type="button" :disabled="busy" @click="cancel">未提出の下書きを取り消す</button>
   </form>
   <div class="head"><strong>振替申請履歴</strong>
-   <button type="button" :disabled="busy||!serviceAvailable" @click="load">刷新</button>
+   <button type="button" :disabled="busy||!serviceAvailable" @click="load">更新</button>
   </div>
   <div v-for="r in history" :key="r.request_id" class="history">
    <span>{{r.source_account_id?.slice(0,8)}} → {{r.target_account_id?.slice(0,8)}} ·
-    {{r.status==='applied'?'已得到家庭账本双向回执':
-      r.status==='submitted_status_unknown'?'等待 HomeFlow 审核与执行':
-      r.status==='prepared'?'仅草稿':r.status}}
+    {{r.status==='applied'?'家庭帳簿への振替反映済み':
+      r.status==='submitted_status_unknown'?'HomeFlowの承認・実行待ち':
+      r.status==='prepared'?'下書き':r.status}}
    </span>
    <button v-if="r.status==='prepared'" type="button" :disabled="busy||!!prepared||!serviceAvailable"
-    @click="resume(r)">继续原申请</button>
+    @click="resume(r)">元の申請を再開</button>
   </div>
   <p v-if="!history.length&&serviceAvailable" class="hint">振替記録はまだありません。</p>
  </template>

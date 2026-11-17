@@ -20,6 +20,7 @@ import {familyMemberFixedCosts} from './member-fixed-costs.js';
 import {familyMemberMerchantRules} from './member-merchant-rules.js';
 import {familyMemberCategories} from './member-categories.js';
 import {familyMemberReceipts} from './member-receipts.js';
+import {familyMemberArchiveHistory} from './member-archive-history.js';
 import {familyMemberAiOcr} from './member-ai-ocr.js';
 import {familyRecurringOccurrences} from './recurring-occurrences.js';
 import {familySbiCashReversals} from './sbi-cash-reversals.js';
@@ -400,6 +401,7 @@ export async function onRequest({request,env,params}){
   if(parts[0]==='member-merchant-rules')return familyMemberMerchantRules(request,env,url,user,parts);
    if(parts[0]==='member-categories')return familyMemberCategories(request,env,url,user,parts);
   if(parts[0]==='member-receipts')return familyMemberReceipts(request,env,url,user,parts);
+   if(parts[0]==='member-archive-history')return familyMemberArchiveHistory(request,env,url,user,parts);
    if(parts[0]==='ai-ocr')return familyMemberAiOcr(request,env,url,user,parts);
     if(parts[0]==='recurring-occurrences')return familyRecurringOccurrences(request,env,url,user,parts);
    if(parts[0]==='sbi-cash-reversals')return familySbiCashReversals(request,env,url,user,parts);

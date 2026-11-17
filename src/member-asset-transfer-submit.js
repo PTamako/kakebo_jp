@@ -42,7 +42,7 @@ export async function submitMemberPersonalTransfer({record,userId,accounts}){
    const targetId=record.transferTarget.slice('prepaid:'.length)
    const target=own.find(a=>a.account_id===targetId&&a.account_kind==='prepaid')
    if(!target||record.assetConfirmed!==true)
-    throw Error('本人の储值卡及実際のチャージ反映を確認してください')
+    throw Error('本人の電子マネーと実際のチャージ反映を確認してください')
    payload={expected_user_id:userId,prepaid_account_id:target.account_id,
     prepaid_version:target.version,amount_jpy:amount,effective_date:effectiveDate,
     confirmed:true}
@@ -57,7 +57,8 @@ export async function submitMemberPersonalTransfer({record,userId,accounts}){
     fresh.ledger_changed!==false||!Array.isArray(fresh.accounts)||
     !Array.isArray(fresh.purchases))
     throw Error('ポイント取引の本人資産を確認できません')
-   const ownFresh=fresh.accounts.filter(a=>a.owner_user_id===userId)
+   // GET is already scoped to the signed-in member; its projected rows omit owner_user_id.
+   const ownFresh=fresh.accounts
    const source=ownFresh.find(a=>a.account_id===record.pointSourceId&&a.account_kind==='points')
    const kind={transfer_prepaid:'prepaid',offset_card:'credit_card',redeem_asset:'securities',
     transfer_out:'points',exchange_out:'points'}[operation]
@@ -101,7 +102,7 @@ export async function submitMemberPersonalTransfer({record,userId,accounts}){
      target_rate_denominator:targetUnits})
    }
   }
-  pending={fingerprint,key:'member-transfer:'+crypto.randomUUID(),operation,payload}
+  pending={fingerprint,key:(operation==='prepaid'?'prepaid-topup:':'personal-asset:')+crypto.randomUUID(),operation,payload}
   record.memberAssetPending=pending
  }
  if(!window.confirm(operation==='prepaid'

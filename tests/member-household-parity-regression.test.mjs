@@ -56,7 +56,7 @@ test('member approval-based trash restoration preserves immutable registry CAS',
  assert.match(request,/target\.state!=='deleted'/)
 })
 
-test('member payment reassignment uses server owner and granted-card checks, not unconfigured flags',()=>{
+test('member payment reassignment requires both deployment gates plus owner and grant checks',()=>{
  const member=source('src/FamilyMemberWorkspace.vue')
  const memberApi=source('functions/api/family-finance/shared-mutation-requests.js')
  const executor=source('functions/api/internal/shared-entries/[[path]].js')
@@ -64,8 +64,8 @@ test('member payment reassignment uses server owner and granted-card checks, not
  assert.match(memberApi,/OTHER_MEMBERS_PAYMENT_READ_ONLY/)
  assert.match(executor,/SHARED_CARD_GRANT_REVOKED/)
  assert.match(executor,/SHARED_MUTATION_PAYMENT_OWNER_MISMATCH/)
- assert.doesNotMatch(memberApi,/KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED/)
- assert.doesNotMatch(executor,/KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED/)
+ assert.match(memberApi,/KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED/)
+ assert.match(executor,/KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED/)
 })
 
 test('original balance keeps one wallet and funds tree; member account settings are nested within funds',()=>{

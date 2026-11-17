@@ -942,3 +942,31 @@ test('owner-approved cross-card revision keeps settled and redeemed points as cr
   assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_approved_account_corrections').get().n,1)
  }finally{f.close()}
 })
+
+test('owner amount reduction against settled and redeemed points records source-card unapplied credit',async()=>{
+ const f=fixture({accountCorrections:true});
+ try{
+  const {resourceId,accountId,receipt,entryId}=await seedFuturePaid(f);
+  f.sql.prepare('INSERT INTO family_card_settlements_applied VALUES(?,?,?,?)')
+   .run('bank-credit-owner',hh,accountId,'2026-11-20');
+  f.sql.prepare('INSERT INTO family_card_settlement_allocations VALUES(?,?,?)')
+   .run('bank-credit-owner',receipt,500);
+  f.sql.prepare('INSERT INTO family_points_card_offsets VALUES(?,?,?,?,?,?)')
+   .run('points-credit-owner',receipt,300,hh,accountId,'2026-11-20');
+  const target=new URL('https://kakeibo.example.test/api/family-finance/shared-entries/'+resourceId);
+  const amend={date:'2026-11-18',time:'',amount:300,type:'expense',
+   category:'食費',merchant:'新交易',note:'管理员核对金额'};
+  const req=new Request(target,{method:'PUT',headers:{origin:target.origin,'content-type':'application/json'},
+   body:JSON.stringify({expected_user_id:owner,expected_version:1,entry:amend})});
+  const response=await familySharedEntries(req,f.env,target,f.ownerUser,['shared-entries',resourceId]);
+  assert.equal(response.status,200,await response.clone().text());
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,300);
+  const credit=await memberCardLiabilities(f.env.DB,hh,true);
+  assert.equal(credit.total,0);
+  assert.equal(credit.total_unapplied_card_credit_jpy,500);
+  assert.equal(credit.net_card_position_jpy,-500);
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_owner_account_corrections').get().n,1);
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_points_card_offsets').get().n,1);
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_card_settlement_allocations').get().n,1);
+ }finally{f.close()}
+});

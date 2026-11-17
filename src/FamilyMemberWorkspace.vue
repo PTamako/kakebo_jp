@@ -16,6 +16,7 @@ import EntryInputPage from './EntryInputPage.vue'
 import {ICON_LIBRARY} from './icon-library.js'
 import {encryptBackupBlob,decryptBackupBlob} from './backup-encryption.js'
 import {collectMemberArchive,verifiedArchiveImage} from './member-private-archive.js'
+import {prepareMemberRecurringRestores} from './member-recurring-restore.js'
 import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
@@ -909,7 +910,9 @@ async function importPersonalBackup(event){
   const newer=data.format!=='kakeibo-member-account-settings-v1'
   if(archiveV3&&(data.household_id!==props.user.household_id||
     !Array.isArray(data.manual_holdings)||data.manual_holdings.length>100||
-    !Array.isArray(data.receipts)||data.receipts.length>500||
+    !Array.isArray(data.receipts)||data.receipts.length>10000||
+    !Array.isArray(data.recurring_plans)||data.recurring_plans.length>60||
+    data.recurring_plans.some(p=>p.owner_user_id!==actor)||
     !data.history||typeof data.history!=='object'||Array.isArray(data.history)||
     data.manual_holdings.some(h=>h.owner_user_id!==actor)||
     data.receipts.some(r=>typeof r.receipt_ref!=='string'||r.receipt_ref.length>96)))
@@ -1047,9 +1050,31 @@ async function importPersonalBackup(event){
     rulesAdded++
    }catch{rulesSkipped++}
   }
-  let restoredHoldings=0,skippedHoldings=0,restoredImages=0,skippedImages=0
+  let restoredHoldings=0,skippedHoldings=0,restoredImages=0,skippedImages=0,
+   restoredPlans=0,skippedPlans=0
   if(archiveV3){
    verifyActor()
+   const currentPlans=await api('member-recurring-plans')
+   if(currentPlans.ok!==true||!Array.isArray(currentPlans.items))
+    throw Error('本人の積立計画を確認できません')
+   const {restore,skipped}=prepareMemberRecurringRestores({
+    ownerUserId:actor,oldPlans:data.recurring_plans,
+    existingPlans:currentPlans.items,accounts:nextAccounts,
+    accountMap,nowMonth:new Date(Date.now()+32400000).toISOString().slice(0,7)
+   })
+   skippedPlans=skipped.length
+   for(const plan of restore){
+    verifyActor()
+    const saved=await api('member-recurring-plans',request(plan))
+    if(saved.ok!==true||saved.plan?.owner_user_id!==actor||
+     saved.plan?.ledger_applied!==false||saved.plan?.policy_approved!==false||
+     saved.plan?.source_bank_account_id!==plan.source_bank_account_id||
+     saved.plan?.amount_jpy!==plan.amount_jpy)
+     throw Error('本人の積立計画の復元結果を確認できません')
+    restoredPlans++
+   }
+   // A historical plan is NEVER reactivated. This imports settings only;
+   // no past due installment, bank transaction or broker buy is executed.
    const existing=await api('manual-holdings')
    if(existing.scope!=='personal'||existing.owner_user_id!==actor||!Array.isArray(existing.holdings))
     throw Error('本人の投資情報の状態を確認できません')
@@ -1121,7 +1146,8 @@ async function importPersonalBackup(event){
    '件、カテゴリ'+categoriesAdded+'件、店舗ルール'+rulesAdded+'件を追加。'+
    '既存の口座'+accountsSkipped+'件と固定費'+fixedSkipped+'件は維持。'+
    (rulesSkipped?'利用できない支払方法などでルール'+rulesSkipped+'件を省略。':'')+
-   (archiveV3?'手動保有銘柄'+restoredHoldings+'件・画像'+restoredImages+'件を復元。既存保有'+
+   (archiveV3?'将来の積立計画'+restoredPlans+'件・手動保有銘柄'+restoredHoldings+
+     '件・画像'+restoredImages+'件を復元。過去／重複計画'+skippedPlans+'件、既存保有'+
      skippedHoldings+'件、関連取引が存在しない画像等'+skippedImages+'件は保留。':'')+
    '家庭明細と銀行・証券の実取引は直接書き換えていません。'
  }catch(e){personalBackupMessage.value='復元できませんでした：'+e.message}

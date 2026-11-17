@@ -63,7 +63,7 @@ test('settled and points credits remain attached to real old card, creating unap
   const less=plan(before,{...before,amount:100},{[field]:500});
   assert.equal(less.effects[0].deltaJpy,-900);
   const moved=plan(before,{...before,accountId:'b'},{[field]:1000});
-  assert.equal(moved.effects.reduce((sum,x)=>sum+x.deltaJpy,0));
+  assert.equal(moved.effects.reduce((sum,x)=>sum+x.deltaJpy,0),0);
   assert.deepEqual(moved.effects.map(x=>[x.accountId,x.deltaJpy]),
    [['a',-1000],['b',1000]]);
   assert.equal(moved.allocationPolicy,'preserve-original-bank-and-point-credit');

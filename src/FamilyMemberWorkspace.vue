@@ -48,6 +48,7 @@ const emit=defineEmits(['logout','theme-change'])
 const tab=ref('add')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
+const personalDocumentSbi=ref([]),annualPersonalDocumentSbi=ref([])
 const memberMerchantRules=ref([]),memberRuleError=ref('')
 const memberReceipts=ref([]),memberReceiptError=ref(''),memberReceiptRetry=ref([])
 const memberReceiptIndex=computed(()=>{
@@ -215,6 +216,8 @@ const memberLedgerPaymentOptions=computed(()=>memberPaymentOptions.value.filter(
 const memberPaymentReassignmentEnabled=ref(false)
 provide('kakeibo-member-payment-choices',memberLedgerPaymentOptions)
 function memberPaymentEditor(entry){
+ if(entry?.document_personal_sbi)return {paymentReadOnly:true,paymentSource:'',
+  transferReadOnly:true,categoryReadOnly:true,allReadOnly:false,isOwnRecorded:true};
  const isOwn=isOwnHouseholdEntry(entry,props.user.user_id)
  if(entry?.type==='transfer')return {
   paymentReadOnly:true,paymentSource:'',isOwnRecorded:isOwn,
@@ -570,7 +573,7 @@ const ledgerEntries=computed(()=>{
   const change=byId.get(String(entry.id))
   return change?{...entry,pending_approval:true,pending_operation:change.operation,
    pending_status:change.status,pending_preview:change.entry||null}:entry
- }),...drafts]
+ }),...drafts,...personalDocumentSbi.value]
 })
 const annualLedgerEntries=ref([])
 async function loadAnnualLedgerYear(annualYear){
@@ -587,7 +590,21 @@ async function loadAnnualLedgerYear(annualYear){
    result.items.some(x=>!String(x.date||'').startsWith(requested)))
    throw Error('年間明細の取得範囲が一致しません')
   all.push(...result.items)
-  if(result.next_offset==null){annualLedgerEntries.value=all;return}
+  if(result.next_offset==null){
+   const personal=[];let pageOffset=0;
+   for(let n=0;n<101;n++){
+    const doc=await api('personal-document-sbi?year='+requested+'&offset='+pageOffset)
+    if(!alive||ticket!==epoch||actor!==props.user.user_id)return
+    if(doc.scope!=='personal'||doc.viewer_user_id!==actor||!Array.isArray(doc.items))
+     throw Error('本人の資産移動履歴の所有者を確認できません')
+    personal.push(...doc.items)
+    if(doc.next_offset==null){annualPersonalDocumentSbi.value=personal;
+     annualLedgerEntries.value=[...all,...personal];return}
+    if(!Number.isInteger(doc.next_offset)||doc.next_offset<=pageOffset)throw Error('資産移動の読込位置が無効です')
+    pageOffset=doc.next_offset
+   }
+   throw Error('資産移動履歴を全件読み込めません')
+  }
   if(!Number.isInteger(result.next_offset)||result.next_offset<=offset)
    throw Error('年間明細のページ情報が無効です')
   offset=result.next_offset
@@ -596,6 +613,17 @@ async function loadAnnualLedgerYear(annualYear){
 }
 async function openApproval(action,entry){
  if(!entry||entry.pending_approval)throw Error('審査中の記録は変更できません')
+ if(entry.document_personal_sbi){
+  const actor=props.user.user_id,original=[...personalDocumentSbi.value,...annualPersonalDocumentSbi.value]
+   .find(x=>x.transfer_id===entry.transfer_id)
+  if(!original||actor!==props.user.user_id)throw Error('本人の資産移動を確認できません')
+  if(action!=='delete')throw Error('本人の資産移動の変更は編集画面から行ってください')
+  const result=await api('personal-document-sbi/'+entry.transfer_id,
+   request({expected_user_id:actor,expected_version:original.version},'DELETE'))
+  if(result.item?.state!=='trashed')throw Error('削除状態を確認できません')
+  await refresh()
+  return result
+ }
  const original=sharedEntries.value.find(x=>String(x.id)===String(entry.id))||
   annualLedgerEntries.value.find(x=>String(x.id)===String(entry.id))
  if(!original)throw Error('元の明細を確認できません')
@@ -663,12 +691,30 @@ async function saveMemberLedgerEdit(){
  const edited=memberLedger.editingEntry.value
  if(!edited||memberLedger.editSaving.value)return
  const initial=sharedEntries.value.find(row=>String(row.id)===String(edited.id))||
-  annualLedgerEntries.value.find(row=>String(row.id)===String(edited.id))
+  annualLedgerEntries.value.find(row=>String(row.id)===String(edited.id))||
+  personalDocumentSbi.value.find(row=>String(row.id)===String(edited.id))
  if(!initial||edited.pending_approval){
   memberLedger.receiptSaveError.value='元の明細を確認してください';return
  }
  if(edited.allReadOnly){
   memberLedger.receiptSaveError.value='他の人の資産移動は閲覧のみ可能です';return
+ }
+ if(initial.document_personal_sbi){
+  if(edited.type!=='transfer'||edited.transferTarget!=='sbi'||
+    edited.category!=='投資・資産移動'||edited.paymentSource||edited.receiptImage){
+   memberLedger.receiptSaveError.value='本人のSBI資産移動は種類・振替先・支払口座を変更できません';return
+  }
+  memberLedger.editSaving.value=true;memberLedger.receiptSaveError.value=''
+  try{
+   const applied=await api('personal-document-sbi/'+initial.transfer_id,
+    request({expected_user_id:props.user.user_id,expected_version:initial.version,
+     date:edited.date,effective_date:edited.transferDate||edited.transfer_date,
+     amount_jpy:Number(edited.amount),merchant:String(edited.merchant||''),note:String(edited.note||'')},'PATCH'))
+   if(applied.item?.version!==initial.version+1)throw Error('資産移動の更新結果を確認できません')
+   memberLedger.cancelEdit();await refresh()
+  }catch(e){memberLedger.receiptSaveError.value=e.message||'本人の資産移動を保存できません'}
+  finally{memberLedger.editSaving.value=false}
+  return
  }
  const fields=['date','time','amount','type','category','merchant','note']
  const paymentChanged=edited.type==='expense'&&!edited.paymentReadOnly&&
@@ -715,8 +761,8 @@ watch(selectedYear,n=>{if(Number.isInteger(n)&&n>=2000&&n<=9998)year.value=Strin
 
 const pageOffset=ref(null)
 const ledgerLoading=ref(false)
-const entryCategories=computed(()=>[...new Set(sharedEntries.value.map(x=>x.category))])
-const visibleEntries=computed(()=>sharedEntries.value.filter(x=>selectedEntryType.value==='all'||x.type===selectedEntryType.value))
+const entryCategories=computed(()=>[...new Set(ledgerEntries.value.map(x=>x.category))])
+const visibleEntries=computed(()=>ledgerEntries.value.filter(x=>selectedEntryType.value==='all'||x.type===selectedEntryType.value))
 const entryDays=computed(()=>{
  const byDay=new Map()
  for(const entry of visibleEntries.value){
@@ -910,14 +956,18 @@ async function refresh(){
  // Clearing all five panels on every refresh made the spouse PWA visibly flash.
  error.value=''
  try{
-  const [a,b,c,d,e,f]=await Promise.all([
+  const [a,b,c,d,e,f,personalSbiResult]=await Promise.all([
    api('accounts'),api('personal/assets'),
    api('shared/entries?limit=100&month='+encodeURIComponent(month.value)),
    api('shared/stats?month='+month.value),
    api('shared/stats?year='+year.value),
-   api('legacy-card-shares').catch(e=>({incoming:[],share_error:e.message}))
+   api('legacy-card-shares').catch(e=>({incoming:[],share_error:e.message})),
+   api('personal-document-sbi?month='+encodeURIComponent(month.value))
   ])
   if(!alive||ticket!==epoch||user!==props.user.user_id)return
+  if(personalSbiResult.scope!=='personal'||personalSbiResult.viewer_user_id!==user||
+   !Array.isArray(personalSbiResult.items)||personalSbiResult.next_offset!=null)
+   throw Error('本人のSBI資産移動履歴が不完整です')
   if(a.account_scope!=='personal'||b.scope!=='personal'||b.viewer_user_id!==user||
    c.ledger_scope!=='household'||d.ledger_scope!=='household'||e.ledger_scope!=='household')
    throw Error('帳簿のアクセス範囲を確認できません')
@@ -926,11 +976,13 @@ async function refresh(){
   cardSharingError.value=f.share_error||''
   sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
+  personalDocumentSbi.value=personalSbiResult.items;
   memberPaymentReassignmentEnabled.value=c.payment_reassignment_enabled===true;
   await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories()])
   monthlyReport.value=d;annualReport.value=e;
   memberUsageRevision.value++
-  totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
+  totals.value={income:d.income,expense:d.total,transfer:Number(d.transferTotal||0)+
+   personalDocumentSbi.value.reduce((sum,t)=>sum+Number(t.amount||0),0)}
   yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
    net_income_expense:Number(e.income||0)-Number(e.total||0)}
   // Only the requesting member receives these read-only pending previews.

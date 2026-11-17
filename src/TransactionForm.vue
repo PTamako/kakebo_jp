@@ -4,7 +4,7 @@ import { sortOtherLast } from './category-sort.js'
 import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
-const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentReadOnly: {type:Boolean,default:false}, categoryReadOnly: {type:Boolean,default:false}, transferReadOnly: {type:Boolean,default:false}, transferSourceReadOnly: {type:Boolean,default:false}, rewardReadOnly: {type:Boolean,default:false}, paymentChoices: {type:Array,default:()=>[]}, allowSbiTransfer: {type:Boolean,default:true} })
+const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentReadOnly: {type:Boolean,default:false}, categoryReadOnly: {type:Boolean,default:false}, allowUnlistedCategoryEdit: {type:Boolean,default:false}, transferReadOnly: {type:Boolean,default:false}, transferSourceReadOnly: {type:Boolean,default:false}, rewardReadOnly: {type:Boolean,default:false}, paymentChoices: {type:Array,default:()=>[]}, allowSbiTransfer: {type:Boolean,default:true} })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
@@ -12,8 +12,16 @@ const orderedCategories = computed(() => sortOtherLast(props.categories))
 const orderedIncomeCategories = computed(() => sortOtherLast([...new Set(props.incomeCategories)]))
 const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
 const hasReceipt = computed(() => !!record.value.receiptImage || !!props.receiptName || props.existingReceipt)
-const categoryOptions = computed(()=> (record.value.type==='income'?orderedIncomeCategories.value:orderedCategories.value)
-  .map(c=>({value:c,label:props.categoryLabel(c)})))
+const categoryOptions = computed(()=> {
+ const options=(record.value.type==='income'?orderedIncomeCategories.value:orderedCategories.value)
+  .map(c=>({value:c,label:props.categoryLabel(c)}))
+ // A category created by the entry's actual author must remain selectable
+ // when the personal category settings were later deleted or renamed.
+ if(props.editMode&&props.allowUnlistedCategoryEdit&&!props.categoryReadOnly&&
+  record.value.category&&!options.some(x=>x.value===record.value.category))
+  options.push({value:record.value.category,label:props.categoryLabel(record.value.category)})
+ return options
+})
 // Historic values are never inferred from the current viewer's personal options.
 const missingSavedCategory = computed(()=>props.editMode&&!!record.value.category&&
  !categoryOptions.value.some(x=>x.value===record.value.category))

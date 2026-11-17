@@ -3,7 +3,7 @@
 import {ref,computed,watch} from 'vue'
 import {groupAnnualEntries} from './detail-pagination.js'
 import {ICON_LIBRARY} from './icon-library.js'
-import {ledgerPaymentLabel} from './ledger-payment-label.js'
+import {ledgerPaymentLabel,ledgerTransferTargetLabel,ledgerTransferSourceLabel} from './ledger-payment-label.js'
 import {matchesPaymentStatMethod} from './payment-stat-group.js'
 
 export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTypeFilter,
@@ -142,13 +142,25 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
  function startEdit(entry){
   if(entry?.pending_approval){onError('この明細は HomeFlow 審査中です');return}
   const payment=typeof paymentEditor==='function'?paymentEditor(entry):null
-  editingEntry.value={...entry,paymentSource:payment?.paymentSource??ledgerPaymentLabel(entry),
+  editingEntry.value={...entry,
+   paymentSource:entry.type==='expense'
+    ?(payment?.paymentSource??ledgerPaymentLabel(entry)):(entry.payment_source||''),
    paymentOriginalChoice:payment?.paymentSource??null,
    paymentReadOnly:payment?.paymentReadOnly??true,
-   paymentDisplay:ledgerPaymentLabel(entry),payment_source:null,transferTarget:''}
+   paymentDisplay:entry.type==='expense'?ledgerPaymentLabel(entry):ledgerTransferSourceLabel(entry),
+   // Ordinary household approval may update totals, but never reassign a
+   // different person's private balance/transfer target.
+   transferTarget:entry.transfer_target||'',
+   transferDisplay:ledgerTransferTargetLabel(entry),
+   transferReadOnly:true,transferSourceReadOnly:true,
+   rewardDestination:entry.type==='income'&&entry.category==='ポイント還元'?
+    (entry.transfer_target||''):'',
+   rewardDisplay:ledgerTransferTargetLabel(entry),rewardReadOnly:true,
+   originalType:entry.type,payment_source:null}
   swipedEntryId.value=null
  }
- function setEntryType(row,type){if(['income','expense'].includes(type)){row.type=type;row.category=''}}
+ function setEntryType(row,type){if(row.originalType==='transfer')return
+  if(['income','expense'].includes(type)){row.type=type;row.category=''}}
  function manualPayment(row,source){
   if(row&&!row.paymentReadOnly&&typeof source==='string')row.paymentSource=source
  }

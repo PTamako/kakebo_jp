@@ -75,9 +75,12 @@ function canonical(input){
  }
  // The normal ledger editor passes null for an unchanged/no-card payment.
  // Never turn that sentinel into the literal card name "null" on an update.
- if(input?.payment_source!=null&&input.payment_source!==''){
+ if(input?.payment_source!=null){
   const card=String(input.payment_source)
-  if(e.type!=='expense'||!card||card.length>80)throw Error('共有カードを確認してください')
+  // Explicit empty string means the member selected cash instead of a card.
+  // Absence means the historical payment method must remain unchanged.
+  if(e.type!=='expense'||card.length>80||card!==card.trim())
+   throw Error('共有カードを確認してください')
   e.payment_source=card
  }
  if(!/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(e.date)||

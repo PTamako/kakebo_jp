@@ -149,7 +149,9 @@ export function makeFamilyLedgerContext({tab,month,selectedYear,entries,entryTyp
   swipedEntryId.value=null
  }
  function setEntryType(row,type){if(['income','expense'].includes(type)){row.type=type;row.category=''}}
- function manualPayment(){}
+ function manualPayment(row,source){
+  if(row&&!row.paymentReadOnly&&typeof source==='string')row.paymentSource=source
+ }
  function handleEntryClick(entry){startEdit(entry)}
  async function saveEdit(){
   if(!editingEntry.value||editSaving.value)return

@@ -10,6 +10,11 @@ CREATE TRIGGER IF NOT EXISTS trg_future_prepaid_effect_nonnegative
     WHERE t.prepaid_account_id=NEW.account_id AND t.household_id=NEW.household_id),0)
   +COALESCE((SELECT SUM(c.amount_jpy) FROM family_points_prepaid_credits c
     WHERE c.prepaid_account_id=NEW.account_id AND c.household_id=NEW.household_id),0)
+  +COALESCE((SELECT SUM((CASE WHEN k.after_account_id=NEW.account_id THEN k.after_amount_jpy ELSE 0 END)
+                     -(CASE WHEN k.before_account_id=NEW.account_id THEN k.before_amount_jpy ELSE 0 END))
+    FROM family_member_prepaid_topup_corrections k
+    WHERE k.household_id=NEW.household_id
+      AND (k.before_account_id=NEW.account_id OR k.after_account_id=NEW.account_id)),0)
   -COALESCE((SELECT SUM(r.debited_prepaid_jpy) FROM family_points_prepaid_refunds r
     WHERE r.prepaid_account_id=NEW.account_id AND r.household_id=NEW.household_id),0)
   +COALESCE((SELECT SUM(e.delta_jpy) FROM family_approved_account_effects e
@@ -29,7 +34,7 @@ CREATE TRIGGER IF NOT EXISTS trg_future_correction_no_allocated_purchase
    CAST(json_extract(NEW.before_json,'$.amount') AS INTEGER)
   OR json_extract(NEW.after_json,'$.date') <>
    json_extract(NEW.before_json,'$.date')
-  OR json_extract(NEW.after_json,'$.accountId') <>
+  OR json_extract(NEW.after_json,'$.accountId') IS NOT
    json_extract(NEW.before_json,'$.accountId')
  ) AND EXISTS(
   SELECT 1 FROM family_card_purchase_applied c

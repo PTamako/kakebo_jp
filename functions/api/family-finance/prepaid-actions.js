@@ -69,11 +69,15 @@ async function checkAccounts(db,user,x){
   (x.action==='spend'||rows.some(r=>r.account_id===x.bank_account_id&&r.account_kind==='bank'&&r.version===x.bank_version));
 }
 async function balance(db,prepaidId){
- const r=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal WHERE prepaid_account_id=?),0) '+
+ const corrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
+  "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").first()
+ const effect=corrections?
+  "+COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects WHERE account_id=? AND account_kind='prepaid'),0)":""
+ const r=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal WHERE prepaid_account_id=?),0) '+effect+
   '+COALESCE((SELECT SUM(amount_jpy) FROM family_member_prepaid_topups WHERE prepaid_account_id=?),0)'+
   '+COALESCE((SELECT SUM(amount_jpy) FROM family_points_prepaid_credits WHERE prepaid_account_id=?),0)'+
   '-COALESCE((SELECT SUM(debited_prepaid_jpy) FROM family_points_prepaid_refunds WHERE prepaid_account_id=?),0)) total')
-  .bind(prepaidId,prepaidId,prepaidId,prepaidId).first();
+  .bind(prepaidId,...(corrections?[prepaidId]:[]),prepaidId,prepaidId,prepaidId).first();
  return Number.isSafeInteger(r?.total)&&r.total>=0?r.total:null;
 }
 const visible=r=>({request_id:r.request_id,action:r.action,prepaid_account_id:r.prepaid_account_id,
@@ -187,13 +191,18 @@ export async function familyPrepaidActions(req,env,url,user,parts){
  if(!enabled(env))return fail('PREPAID_ACTIONS_DISABLED',503);
  if(user.role!=='member')return fail('ONLY_MEMBER_CAN_PROPOSE',403);
  if(req.method==='GET'&&parts.length===2&&parts[1]==='balances'){
+  const corrections=!!await env.DB.prepare("SELECT 1 FROM sqlite_master "+
+   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").first()
+  const effect=corrections?"+
+   COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects c "+
+   "WHERE c.account_id=a.account_id AND c.account_kind='prepaid'),0)":""
   const rows=(await env.DB.prepare('SELECT a.account_id,a.label,'+
    'COALESCE((SELECT SUM(j.delta_jpy) FROM family_prepaid_balance_journal j '+
    'WHERE j.prepaid_account_id=a.account_id),0) '+
    '+COALESCE((SELECT SUM(c.amount_jpy) FROM family_points_prepaid_credits c '+
    'WHERE c.prepaid_account_id=a.account_id),0) '+
    '-COALESCE((SELECT SUM(r.debited_prepaid_jpy) FROM family_points_prepaid_refunds r '+
-   'WHERE r.prepaid_account_id=a.account_id),0) balance_jpy '+
+   'WHERE r.prepaid_account_id=a.account_id),0) '+effect+' balance_jpy '+
    "FROM family_financial_accounts a WHERE a.household_id=? AND a.owner_user_id=? "+
    "AND a.origin='member_created' AND a.account_kind='prepaid' AND a.is_archived=0 "+
    'ORDER BY a.created_at DESC LIMIT 100')

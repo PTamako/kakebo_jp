@@ -13,7 +13,7 @@ const view=r=>({id:'doc-sbi:'+r.transfer_id,transfer_id:r.transfer_id,
  recorded_by:r.display_name||'',creator_user_id:r.owner_user_id,
  state:r.state,source_document_linked:true,asset_balance_unverified:true});
 export async function familyPersonalDocumentSbi(request,env,url,user,parts){
- if(env.KAKEIBO_DOCUMENT_PERSONAL_SBI_ENABLED!=='true'||!env.DB?.prepare)
+ if(env.KAKEIBO_FAMILY_FINANCE_ENABLED!=='true'||!env.DB?.prepare)
   return deny('PERSONAL_SBI_DISABLED',503);
  if(user.role!=='member')return deny('MEMBER_REQUIRED',403);
  const db=env.DB;
@@ -56,18 +56,20 @@ export async function familyPersonalDocumentSbi(request,env,url,user,parts){
   (action==='restore'&&record.state!=='trashed'))return deny('INVALID_STATE');
  if(patch&&(!validDay(data.date)||!validDay(data.effective_date)||
   !Number.isSafeInteger(data.amount_jpy)||data.amount_jpy<1||data.amount_jpy>10000000||
-  typeof data.note!=='string'||data.note.length>180))
+  typeof data.note!=='string'||data.note.length>180||
+  typeof data.merchant!=='string'||!data.merchant.trim()||data.merchant.length>100))
   return deny('INVALID_CHANGES',400);
  const newDate=patch?data.date:record.date,effective=patch?data.effective_date:record.effective_date,
   newAmount=patch?data.amount_jpy:record.amount_jpy,note=patch?data.note:record.note,
+  merchant=patch?data.merchant.trim():record.merchant,
   state=action==='trash'?'trashed':'active',at=Date.now();
  const audit=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
  try{
   await db.batch([
    db.prepare('UPDATE family_document_personal_sbi_transfers SET '+
-    'date=?,effective_date=?,amount_jpy=?,note=?,state=?,version=version+1,updated_at=? '+
+    'date=?,effective_date=?,amount_jpy=?,merchant=?,note=?,state=?,version=version+1,updated_at=? '+
     'WHERE transfer_id=? AND owner_user_id=? AND household_id=? AND version=? AND state=?')
-    .bind(newDate,effective,newAmount,note,state,at,transferId,user.user_id,user.household_id,
+    .bind(newDate,effective,newAmount,merchant,note,state,at,transferId,user.user_id,user.household_id,
       record.version,record.state),
    db.prepare('INSERT INTO family_document_personal_sbi_audit '+
     '(audit_id,transfer_id,actor_user_id,action,before_version,after_version,created_at) '+

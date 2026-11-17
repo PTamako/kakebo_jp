@@ -966,7 +966,7 @@ async function refresh(){
   ])
   if(!alive||ticket!==epoch||user!==props.user.user_id)return
   if(personalSbiResult.scope!=='personal'||personalSbiResult.viewer_user_id!==user||
-   !Array.isArray(personalSbiResult.items)||personalSbiResult.next_offset!=null)
+   !Array.isArray(personalSbiResult.items))
    throw Error('本人のSBI資産移動履歴が不完整です')
   if(a.account_scope!=='personal'||b.scope!=='personal'||b.viewer_user_id!==user||
    c.ledger_scope!=='household'||d.ledger_scope!=='household'||e.ledger_scope!=='household')

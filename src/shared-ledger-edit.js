@@ -8,6 +8,15 @@ export function isAnotherMembersPayment(entry,viewerUserId){
  return ids.some(id=>id!==viewerUserId)
 }
 
+// Creator is recorded differently for a directly posted neutral spouse
+// transfer and a HomeFlow-approved income/expense. Both are immutable
+// authenticated identities, unlike a display nickname or selected card.
+export function isOwnHouseholdEntry(entry,viewerUserId){
+ if(!entry||typeof viewerUserId!=='string'||!viewerUserId)return false
+ return ['shared_record_creator_user_id','shared_entry_requester_user_id',
+  'shared_card_actor_user_id'].some(key=>entry[key]===viewerUserId)
+}
+
 // Owner-side original ledger editor -> protected household CAS write.
 // Include the visible payment selection; omitting it silently kept the old
 // card/cash even though the UI reported a successful revision.

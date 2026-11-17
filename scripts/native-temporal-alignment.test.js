@@ -21,7 +21,10 @@ test('one native iPhone Safari alignment rule covers month, date and time throug
 })
 
 test('reported closing month and recurring start month retain native pickers', () => {
-  assert.match(finance,/class="card-closing-month" v-model="bill\.month" type="month"/)
+  assert.match(finance,/<CardUsageSummaryFields :card="bill\.name" :month="bill\.month"/)
+  const shared=read('src/CardUsageSummaryFields.vue')
+  assert.match(shared,/<input type="month" :value="month" aria-label="締め月"/)
+  assert.match(shared,/@input="emit\('update:month',\$event\.target\.value\)"/)
   assert.match(finance,/v-model="model\.startMonth" type="month"/)
   assert.match(finance,/\.finance-panel \.recurring-start-month input\[type=month\]\{display:inline-flex;align-items:center;/)
   assert.doesNotMatch(finance,/input\[type=month\]\{display:block/)

@@ -51,7 +51,7 @@ test('card management, billing, and recurring category can return to initial lab
   assert.match(finance, /<MobileChoiceSheet v-model="model\.category"[^>]*選択してください/)
   // Other optional selectors must remain resettable too.
   const transaction = read('src/TransactionForm.vue')
-  assert.match(transaction, /<MobileChoiceSheet v-model="record\.transferTarget"[^>]*transferOptions/)
+  assert.match(transaction, /<MobileChoiceSheet(?: v-else)? v-model="record\.transferTarget"[^>]*transferOptions/)
   assert.match(transaction, /<MobileChoiceSheet :model-value="record\.paymentSource"[^>]*paymentOptions/)
 })
 

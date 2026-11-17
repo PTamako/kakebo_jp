@@ -208,7 +208,8 @@ main .entry-day-heading { min-height: 49px; padding: 12px 11px; }
 main .ledger-row-content { min-height: 64px; padding-block: 10px; }
 main .ledger-info { overflow: hidden; }
 main .ledger-info b { font-size: 14px; }
-main .ledger-info small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+main .ledger-info small { display: block; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.45; overflow-wrap: anywhere; }
+main .ledger-payment-method { white-space: nowrap; font-weight: 700; color: var(--ink); }
 main .ledger-amount { font-size: clamp(12px, 3.5vw, 15px); }
 main .swipe-delete, main .swipe-receipt { min-height: 48px; }
 main .load-more-button { width: 100%; max-width: none; min-height: 46px; }

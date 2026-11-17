@@ -98,9 +98,9 @@ test('image-storage preference and cookie policy are committed together in D1',a
   assert.equal(failed.status,503)
   assert.equal(failed.headers.get('set-cookie'),null)
   const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8')
-  const handler=app.match(/async function setRememberDevice\(remember\) \{([\s\S]*?)\n\}/)?.[1]||''
-  assert.match(handler,/api\('auth\/remember'/)
-  assert.doesNotMatch(handler,/api\('app-state'/)
+  // The previous endpoint remains for legacy clients, but is no longer a UI setting.
+  assert.doesNotMatch(app,/setRememberDevice|onChangeRememberDevice|api\('auth\/remember'/)
+  assert.match(app,/if\(identity.role==='owner'\)/)
 })
 test('cookie-only logout revokes the server-side D1 session and clears the cookie',async()=>{
   const db=database()

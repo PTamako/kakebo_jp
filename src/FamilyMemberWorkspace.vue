@@ -212,7 +212,7 @@ const memberPaymentOptions=computed(()=>buildMemberPaymentChoices(myAccounts.val
 // must never be relabeled by the ordinary shared-entry approval endpoint.
 const memberLedgerPaymentOptions=computed(()=>memberPaymentOptions.value.filter(
  x=>x.value==='cash'||x.value.startsWith('shared:')))
-const memberPaymentReassignmentEnabled=ref(true)
+const memberPaymentReassignmentEnabled=ref(false)
 provide('kakeibo-member-payment-choices',memberLedgerPaymentOptions)
 function memberPaymentEditor(entry){
  const isOwn=isOwnHouseholdEntry(entry,props.user.user_id)
@@ -926,8 +926,7 @@ async function refresh(){
   cardSharingError.value=f.share_error||''
   sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
-  // Safe member-owned cash/shared-card payment edits use server-verified immutable approval.
-   memberPaymentReassignmentEnabled.value=true;
+  memberPaymentReassignmentEnabled.value=c.payment_reassignment_enabled===true;
   await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories()])
   monthlyReport.value=d;annualReport.value=e;
   memberUsageRevision.value++

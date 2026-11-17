@@ -28,7 +28,7 @@ const denied=(code,status=403)=>Response.json({ok:false,code,applied:false},
 export async function routeInternalFinance(request,env){
  const url=new URL(request.url);
  // Never accept GETs or arbitrary user-chosen routes as a target executor.
- const path=/^\/api\/internal\/([a-z-]+)\/(execute|receipt)$/.exec(url.pathname);
+ const path=/^\/api\/internal\/([a-z-]+)\/(execute|receipt|preview)$/.exec(url.pathname);
  const recurring=url.pathname==='/api/internal/recurring-finance/receipt';
  if(!path&&!recurring)return null;
  if(request.method!=='POST'||url.search||url.hash||
@@ -39,7 +39,7 @@ export async function routeInternalFinance(request,env){
  if(!env?.DB?.prepare)return denied('INTERNAL_EXECUTION_DB_UNAVAILABLE',503);
  if(recurring)return recurringFinanceReceipt({request,env});
  const router=Object.hasOwn(actionRoutes,path[1])?actionRoutes[path[1]]:null;
- if(!router)return denied('INTERNAL_EXECUTION_ROUTE_UNKNOWN',404);
+ if(!router||path[2]==='preview'&&path[1]!=='shared-entries')return denied('INTERNAL_EXECUTION_ROUTE_UNKNOWN',404);
  // No privileged actor is fabricated: only target handler can authenticate
  // caller proof + approve execution. Never fallback to Pages HTTP fetch.
  return router(request,env,path[2]);

@@ -29,6 +29,7 @@ function fixture(){
  sql.exec(readFileSync(new URL('../migrations/0052_shared_mutation_approved_execution.sql',import.meta.url),'utf8'))
  sql.exec(readFileSync(new URL('../migrations/0068_neutral_spouse_transfer.sql',import.meta.url),'utf8'))
  sql.exec(readFileSync(new URL('../migrations/0069_member_neutral_spouse_transfer.sql',import.meta.url),'utf8'))
+ sql.exec(readFileSync(new URL('../migrations/0074_member_neutral_spouse_revision.sql',import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,? ,?,'active')").run(u,household,role)
  const db={prepare(q){return {bind(...args){return{
@@ -166,12 +167,26 @@ test('member spouse transfer bypasses owner review but remains one audited neutr
    ...payload,idempotency_key:'neutral-spouse-wrong-target-20261117',
    entry:{...entry,transfer_target:'bank'}},f.member)
   assert.equal(malformed.status,400)
-  const forbiddenEdit=await f.invoke('PUT',['shared-entries',saved.resource_id],
-   {expected_user_id:member,expected_version:1,entry},f.member)
-  assert.equal(forbiddenEdit.status,403)
-  const forbiddenDelete=await f.invoke('DELETE',['shared-entries',saved.resource_id],
-   {expected_user_id:member,expected_version:1},f.member)
-  assert.equal(forbiddenDelete.status,403)
+  const updated=await f.invoke('PUT',['shared-entries',saved.resource_id],
+   {expected_user_id:member,expected_version:1,entry:{...entry,amount:6500,note:'本人訂正'}},f.member)
+  assert.equal(updated.status,200,JSON.stringify(updated))
+  assert.equal(updated.data.action.version,2)
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,6500)
+  const unsafe=await f.invoke('PUT',['shared-entries',saved.resource_id],
+   {expected_user_id:member,expected_version:2,entry:{...sample,amount:999}},f.member)
+  assert.equal(unsafe.status,403)
+  const deleted=await f.invoke('DELETE',['shared-entries',saved.resource_id],
+   {expected_user_id:member,expected_version:2},f.member)
+  assert.equal(deleted.status,200,JSON.stringify(deleted))
+  assert.equal(f.count('entries'),0)
+  assert.equal(deleted.data.action.state,'deleted')
+  const restored=await f.invoke('POST',['shared-entries',saved.resource_id,'restore'],
+   {expected_user_id:member,expected_version:3},f.member)
+  assert.equal(restored.status,200,JSON.stringify(restored))
+  assert.equal(restored.data.action.version,4)
+  assert.equal(f.sql.prepare('SELECT amount,type FROM entries').get().amount,6500)
+  assert.equal(f.sql.prepare('SELECT type FROM entries').get().type,'transfer')
+  assert.equal(f.count('family_shared_entry_audit'),4)
   assert.equal(f.count('entries'),1)
   f.sql.prepare("UPDATE homeflow_identity_links SET state='disabled' WHERE user_id=?").run(member)
   const disabled=await f.invoke('POST',['shared-entries'],
@@ -436,5 +451,24 @@ test('owner cannot reassign a delegated spouse card even by direct owner API',as
   })
   assert.equal(legitimate.status,200,JSON.stringify(legitimate))
   assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'')
+ }finally{f.close()}
+})
+
+test('member cannot directly change owner-created household income or spouse transfer',async()=>{
+ const f=fixture();try{
+  const income=await f.create();
+  const denied=await f.invoke('PUT',['shared-entries',income.resource_id],
+   {expected_user_id:member,expected_version:1,entry:{...sample,amount:2}},f.member)
+  assert.equal(denied.status,403)
+  const neutral={date:'2026-11-17',time:'',amount:1800,type:'transfer',
+   category:'投資・資産移動',merchant:'配偶への振替',note:'owner only',
+   transfer_target:'spouse',transfer_date:'2026-11-17'}
+  const other=await f.invoke('POST',['shared-entries'],{expected_user_id:owner,
+   idempotency_key:'owner-neutral-20261117',entry:neutral},f.owner)
+  assert.equal(other.status,201,JSON.stringify(other))
+  const remove=await f.invoke('DELETE',['shared-entries',other.data.action.resource_id],
+   {expected_user_id:member,expected_version:1},f.member)
+  assert.equal(remove.status,403)
+  assert.equal(f.count('entries'),2)
  }finally{f.close()}
 })

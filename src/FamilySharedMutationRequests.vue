@@ -129,6 +129,28 @@ async function submitIntent(operation,entry,target=null){
   return {proposalId:pending.proposalId,status:result.status}
  }finally{busy.value=false}
 }
+// Personal neutral transfers modify the same immutable household row directly.
+ // They are transfers (not household income/expense), so no owner approval.
+async function directNeutralTransfer(operation,target,entry=null){
+ if(!['update','delete','restore'].includes(operation)||
+  !/^[a-f0-9]{32}$/.test(target?.resource_id||'')||
+  target.creator_user_id!==props.userId||target.entry?.type!=='transfer'||
+  target.entry.transfer_target!=='spouse')
+  throw Error('本人が作成した配偶者への資産移動だけを直接変更できます')
+ const url='/api/family-finance/shared-entries/'+target.resource_id+
+  (operation==='restore'?'/restore':'')
+ const method=operation==='update'?'PUT':operation==='delete'?'DELETE':'POST'
+ const body={expected_user_id:props.userId,expected_version:target.version,
+  ...(operation==='update'?{entry}:{})}
+ const receipt=await api(url,{method,headers:{'content-type':'application/json'},
+  body:JSON.stringify(body)})
+ if(receipt.applied!==true||receipt.action?.resource_id!==target.resource_id||
+  receipt.action?.entry_id!==target.entry_id||
+  receipt.action?.version!==target.version+1||
+  receipt.action?.state!==(operation==='delete'?'deleted':'active'))
+  throw Error('資産移動の保存結果を確認してください')
+ return {applied:true,action:receipt.action}
+}
 async function submitEntry(input){return submitIntent('create',canonical(input))}
 async function submitMutation(operation,original,edited=null){
  if(!['update','delete'].includes(operation)||!Number.isSafeInteger(Number(original?.id))||
@@ -149,6 +171,7 @@ async function submitMutation(operation,original,edited=null){
  if((pending.items||[]).some(r=>String(r.source_entry_id)===String(original.id)))
   throw Error('この明細には審査中の変更があります')
  const entry=operation==='update'?canonical(edited):null
+ if(target.entry?.type==='transfer')return directNeutralTransfer(operation,target,entry)
  return submitIntent(operation,entry,target)
 }
 async function submitRestore(record){
@@ -161,6 +184,7 @@ async function submitRestore(record){
  if(!target||target.resource_id!==id||target.state!=='deleted'||
   target.entry_id!==record.entry_id||target.version!==record.version)
   throw Error('この明細の状態が変更されました。ゴミ箱を更新してください')
+ if(target.entry?.type==='transfer')return directNeutralTransfer('restore',target)
  return submitIntent('restore',null,target)
 }
 defineExpose({submitEntry,submitMutation,submitRestore,openForEntry})
@@ -181,10 +205,28 @@ function startChange(row,op){
  if(op==='update')draft.value={...row.entry,amount:String(row.entry.amount)}
 }
 async function prepare(){
- if(!canWrite.value||busy.value||prepared.value||!window.confirm(
-  '明細変更を申請します。HomeFlow で管理者の承認が必要です。続けますか？'))return
- const ticket=version,actor=props.userId,household=props.householdId
+ if(!canWrite.value||busy.value||prepared.value)return
  const op=action.value,selected=chosen.value
+ const personalTransfer=op!=='create'&&selected?.entry?.type==='transfer'
+ if(!window.confirm(personalTransfer
+  ?'本人の配偶者への資産移動を直接変更します。管理者承認は不要です。続けますか？'
+  :'明細変更を申請します。HomeFlow で管理者の承認が必要です。続けますか？'))return
+ const ticket=version,actor=props.userId,household=props.householdId
+ if(personalTransfer){
+  busy.value=true;error.value='';message.value=''
+  try{
+   const entry=op==='update'?
+    canonical({...record(),type:'transfer',transferTarget:'spouse'}):null
+   const saved=await directNeutralTransfer(op,selected,entry)
+   if(ticket!==version||actor!==props.userId||household!==props.householdId)return
+   if(!saved.applied)throw Error('資産移動の反映を確認できません')
+   message.value='本人の資産移動を直接変更しました。承認は不要です。'
+   busy.value=false
+   await load()
+  }catch(e){if(actor===props.userId&&household===props.householdId)error.value=e.message}
+  finally{busy.value=false}
+  return
+ }
  const payload={expected_user_id:actor,
   idempotency_key:stableKey.value||'shared-entry:'+crypto.randomUUID(),
   operation:op,resource_id:op==='create'?null:selected?.resource_id,

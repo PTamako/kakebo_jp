@@ -137,6 +137,8 @@ async function submit(req,env,url,user,id){
  if(!exact(x,['expected_user_id'])||x.expected_user_id!==user.user_id)return fail('ACTOR_CHANGED',403);
  const p=await one(env.DB,id,user);
  if(!p)return fail('NOT_FOUND',404);
+ if(env.KAKEIBO_HOUSEHOLD_LEDGER_ONLY==='true'&&p.action==='topup')
+  return fail('PERSONAL_PREPAID_TOPUP_USE_MEMBER_PREPAID_TOPUPS',410);
  if(p.status==='submitted')return json({ok:true,approval_id:p.homeflow_approval_id,
   status:'submitted_status_unknown',applied:false,replayed:true});
  if(p.status!=='prepared'||p.expires_at<=Date.now())return fail('PREPAID_NOT_SUBMITTABLE');

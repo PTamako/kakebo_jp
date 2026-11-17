@@ -222,9 +222,8 @@ function memberPaymentEditor(entry){
  if(entry?.type==='transfer')return {
   paymentReadOnly:true,paymentSource:'',isOwnRecorded:isOwn,
   transferReadOnly:!isOwn,
-  // Foreign neutral transfers still accept ordinary amount/date/note changes
-  // through HomeFlow review. Their spouse target remains read-only.
-  allReadOnly:entry.transfer_target!=='spouse'
+  // Neutral transfers are personal: a member cannot change the other person's.
+  allReadOnly:entry.transfer_target!=='spouse'||!isOwn
  }
  if(entry?.type==='expense'&&entry.family_account_id&&
    entry.payment_account_owner_user_id===props.user.user_id&&
@@ -639,7 +638,7 @@ async function openApproval(action,entry){
  if(!original)throw Error('元の明細を確認できません')
  const result=await sharedMutationRef.value?.submitMutation(action,original,
   action==='update'?entry:null)
- if(!result?.proposalId)throw Error('HomeFlow の審査受付を確認できません')
+ if(!result?.proposalId&&!result?.applied)throw Error('明細変更の反映を確認できません')
  await refresh()
  if(annualLedgerEntries.value.some(x=>String(x.id)===String(entry.id)))
   await loadAnnualLedgerYear(String(selectedYear.value)).catch(e=>{error.value=e.message})
@@ -857,12 +856,20 @@ async function loadMemberSharedTrash(){
 }
 async function restoreMemberSharedTrash(row){
  if(memberTrashBusy.value)return
- if(!window.confirm('家庭明細の復元を HomeFlow 管理者へ申請しますか？承認前は復元されません。'))return
+ const personalTransfer=row?.entry?.type==='transfer'&&
+  row?.creator_user_id===props.user.user_id
+ if(!window.confirm(personalTransfer
+  ?'本人の配偶者への資産移動を復元しますか？管理者承認は不要です。'
+  :'家庭明細の復元を HomeFlow 管理者へ申請しますか？承認前は復元されません。'))return
  memberTrashBusy.value=true;memberTrashError.value='';memberTrashNotice.value=''
  try{
   const receipt=await sharedMutationRef.value?.submitRestore(row)
-  if(!receipt?.proposalId)throw Error('HomeFlow の申請受付を確認できません')
-  memberTrashNotice.value='復元申請を HomeFlow に提出しました。承認後に明細へ反映されます。'
+  if(receipt?.applied&&personalTransfer){
+   memberTrashNotice.value='本人の資産移動を復元しました。管理者承認は不要です。'
+   await refresh()
+  }else if(receipt?.proposalId){
+   memberTrashNotice.value='復元申請を HomeFlow に提出しました。承認後に明細へ反映されます。'
+  }else throw Error('復元結果を確認できません')
  }catch(e){memberTrashError.value=e.message}
  finally{memberTrashBusy.value=false;await loadMemberSharedTrash()}
 }

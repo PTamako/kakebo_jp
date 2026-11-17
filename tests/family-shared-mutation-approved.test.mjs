@@ -319,7 +319,7 @@ test('delegated credit card purchase stays pending until owner approves and reta
 })
 
 
-test('member posts one neutral spouse transfer without approval; later ledger changes still require owner review',async()=>{
+test('member posts and revises own neutral spouse transfer without family approval',async()=>{
  const f=fixture();try{
   const spouse={...sample,type:'transfer',amount:18000,category:'投資・資産移動',
    merchant:'配偶への振替',transfer_target:'spouse',transfer_date:sample.date};
@@ -350,19 +350,33 @@ test('member posts one neutral spouse transfer without approval; later ledger ch
   const totals=f.sql.prepare("SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) AS inc,"+
    "COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS exp FROM entries").get();
   assert.equal(totals.inc,0);assert.equal(totals.exp,0);
-  // Modifying/deleting/restoring an already posted household detail is a
-  // separate approved mutation, not a new asset transfer.
-  const intent=await f.apply('update',id,1,{...spouse,amount:19000});
-  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,18000);
-  const changed=await f.target('execute',intent);
+  // Old approval requests are retired, while own transfer CAS changes are direct.
+  const oldRevision=await f.source(['shared-mutation-requests'],{
+   expected_user_id:member,idempotency_key:'old-neutral-transfer-revision',
+   operation:'update',resource_id:id,expected_version:1,
+   entry:{...spouse,amount:19000}});
+  assert.equal(oldRevision.status,410);
+  const direct=async(method,parts,data)=>{
+   const request=new Request(directUrl,{method,
+    headers:{origin:directUrl.origin,'content-type':'application/json'},
+    body:JSON.stringify(data)});
+   const response=await familySharedEntries(request,f.env,directUrl,f.user,parts);
+   return {status:response.status,data:await response.json()};
+  };
+  const changed=await direct('PUT',['shared-entries',id],{
+   expected_user_id:member,expected_version:1,entry:{...spouse,amount:19000}});
   assert.equal(changed.status,200,JSON.stringify(changed));
   assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,19000);
-  const removed=await f.target('execute',await f.apply('delete',id,2,null));
-  assert.equal(removed.status,200);assert.equal(f.count('entries'),0);
-  const restored=await f.target('execute',await f.apply('restore',id,3,null));
+  const removed=await direct('DELETE',['shared-entries',id],{
+   expected_user_id:member,expected_version:2});
+  assert.equal(removed.status,200,JSON.stringify(removed));
+  assert.equal(f.count('entries'),0);
+  const restored=await direct('POST',['shared-entries',id,'restore'],{
+   expected_user_id:member,expected_version:3});
   assert.equal(restored.status,200,JSON.stringify(restored));
-  assert.equal(f.count('entries'),1);assert.equal(f.count('family_shared_entry_audit'),4);
-  assert.equal(f.count('family_shared_mutation_applied'),3);
+  assert.equal(f.count('entries'),1);
+  assert.equal(f.count('family_shared_entry_audit'),4);
+  assert.equal(f.count('family_shared_mutation_applied'),0);
   const fraud=await f.source(['shared-mutation-requests'],{expected_user_id:member,
    idempotency_key:'spouse-fake-bank-transfer',operation:'create',resource_id:null,
    expected_version:0,entry:{...spouse,transfer_target:'bank:other'}});
@@ -603,7 +617,7 @@ test('mixed deployment cannot queue or apply payment revision until private exec
  }finally{f.close()}
 })
 
-test('non-admin may propose edits to the administrator neutral spouse transfer; only approval changes it',async()=>{
+test('non-admin cannot edit administrator neutral spouse transfer and old review path is retired',async()=>{
  const f=fixture()
  try{
   const spouse={...sample,type:'transfer',amount:23000,category:'投資・資産移動',
@@ -616,12 +630,24 @@ test('non-admin may propose edits to the administrator neutral spouse transfer; 
   assert.equal(create.status,201,await create.clone().text())
   const action=(await create.json()).action
   assert.equal(action.creator_user_id,owner)
-  const proposal=await f.apply('update',action.resource_id,1,{
-   ...spouse,date:'2026-11-16',transfer_date:'2026-11-16',
-   amount:26000,note:'双方确认后的修改'})
-  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,23000)
-  const applied=await f.target('execute',proposal)
-  assert.equal(applied.status,200,JSON.stringify(applied))
+  const legacy=await f.source(['shared-mutation-requests'],{
+   expected_user_id:member,idempotency_key:'old-foreign-transfer-approval',
+   operation:'update',resource_id:action.resource_id,expected_version:1,
+   entry:{...spouse,amount:26000}})
+  assert.equal(legacy.status,410)
+  const attempt=await familySharedEntries(new Request(url,{method:'PUT',
+   headers:{origin:url.origin,'content-type':'application/json'},
+   body:JSON.stringify({expected_user_id:member,expected_version:1,
+    entry:{...spouse,amount:26000}})}),f.env,url,f.user,
+   ['shared-entries',action.resource_id])
+  assert.equal(attempt.status,403)
+  const ownerChange=await familySharedEntries(new Request(url,{method:'PUT',
+   headers:{origin:url.origin,'content-type':'application/json'},
+   body:JSON.stringify({expected_user_id:owner,expected_version:1,
+    entry:{...spouse,date:'2026-11-16',transfer_date:'2026-11-16',
+     amount:26000,note:'双方确认后的修改'}})}),f.env,url,f.ownerUser,
+   ['shared-entries',action.resource_id])
+  assert.equal(ownerChange.status,200,await ownerChange.clone().text())
   const edited=f.sql.prepare('SELECT type,date,amount,note,transfer_target,transfer_applied FROM entries').get()
   assert.deepEqual({...edited},{type:'transfer',date:'2026-11-16',amount:26000,
    note:'双方确认后的修改',transfer_target:'spouse',transfer_applied:0})
@@ -634,8 +660,8 @@ test('non-admin may propose edits to the administrator neutral spouse transfer; 
    operation:'update',resource_id:action.resource_id,expected_version:2,
    entry:{date:spouse.date,time:spouse.time,amount:50000,
     type:'income',category:'給与',merchant:'給与',note:''}})
-  assert.equal(incompatible.status,409)
-  assert.equal(incompatible.data.code,'SHARED_MUTATION_TRANSFER_TYPE_LOCKED')
+  assert.equal(incompatible.status,410)
+  assert.equal(incompatible.data.code,'NEUTRAL_SPOUSE_TRANSFER_NO_OWNER_REVIEW')
  }finally{f.close()}
 })
 

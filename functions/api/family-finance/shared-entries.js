@@ -1,6 +1,7 @@
 import {familySharedAttachments} from './shared-entry-attachments.js';
-// DRAFT shared household ledger lifecycle. Only ordinary income/expense;
-// signed immutable finance journals, SBI lots and account transfers stay separate.
+// Household income/expense remains owner-reviewed for non-admin members.
+// Self-created account-free spouse transfers permit direct audited CAS revisions.
+// Signed finance journals, SBI lots and account transfers stay separate.
 // Original D1 entries remain the unique source for household totals.
 const enc=new TextEncoder(),id32=/^[a-f0-9]{32}$/,yyyy=/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const json=(value,status=200)=>Response.json(value,{status,headers:{'cache-control':'no-store'}});
@@ -112,7 +113,7 @@ async function create(req,e,url,u,role){
  if(entry.payment_source&&!await availablePayment(e.DB,entry.payment_source))
   return fail('SHARED_ENTRY_PAYMENT_NOT_AVAILABLE',409);
  // A member can directly create only an account-free, neutral spouse transfer.
- // Income/expense and every subsequent shared-ledger revision still require review.
+ // Income/expense revisions still require review; member-owned neutral transfers do not.
  if(role!=='owner'&&!(role==='member'&&entry.type==='transfer'&&entry.transfer_target==='spouse'))
   return fail('SHARED_ENTRY_OWNER_REVIEW_REQUIRED',403);
  const resource=await hash([u.household_id,u.user_id,'shared-entry',x.idempotency_key].join('\0'));
@@ -153,13 +154,36 @@ async function create(req,e,url,u,role){
    fail('SHARED_ENTRY_CREATE_CONFLICT');
  }
 }
-async function modify(req,e,url,u,id,action){
+async function modify(req,e,url,u,id,action,role){
  const x=await parse(req,url);
  if(x?.expected_user_id!==u.user_id)return fail('SHARED_ENTRY_ACTOR_CHANGED',403);
  if(!requireVersion(x?.expected_version))return fail('SHARED_ENTRY_EXPECTED_VERSION_REQUIRED',400);
  const r=await get(e.DB,id,u);
  if(!r)return fail('SHARED_ENTRY_NOT_FOUND',404);
  if(r.version!==x.expected_version)return fail('SHARED_ENTRY_STALE_VERSION');
+ // Keep household income/expense and other people's records owner-only.
+ // A member may act only on their own originally posted neutral transfer.
+ if(role!=='owner'){
+  let before;
+  try{before=JSON.parse(r.snapshot_json)}catch{return fail('NEUTRAL_TRANSFER_SNAPSHOT_INVALID')}
+  if(role!=='member'||r.creator_user_id!==u.user_id||
+   before?.type!=='transfer'||before.transfer_target!=='spouse'||
+   before.transfer_date!==before.date||Object.hasOwn(before,'payment_source'))
+   return fail('ONLY_OWN_NEUTRAL_TRANSFER_IS_DIRECT',403);
+  const adopted=await e.DB.prepare('SELECT 1 FROM family_legacy_shared_adoptions '+
+   'WHERE resource_id=? LIMIT 1').bind(id).first();
+  if(adopted)return fail('LEGACY_ENTRY_REQUIRES_OWNER_REVIEW',403);
+  if(action!=='restore'){
+   const posted=await e.DB.prepare('SELECT type,transfer_target,transfer_applied,'+
+    'client_request_id,payment_source,family_account_id,family_transfer_target_account_id '+
+    'FROM entries WHERE id=? LIMIT 1').bind(r.entry_id).first();
+   if(!posted||posted.type!=='transfer'||posted.transfer_target!=='spouse'||
+    Number(posted.transfer_applied)!==0||
+    posted.client_request_id!=='hfshare:'+id||posted.payment_source!==''||
+    posted.family_account_id!==null||posted.family_transfer_target_account_id!==null)
+    return fail('NEUTRAL_TRANSFER_SOURCE_CHANGED',409);
+  }
+ }
  const expected=action==='update'?['expected_user_id','expected_version','entry']:
   ['expected_user_id','expected_version'];
  if(!exact(x,expected))return fail('SHARED_ENTRY_INVALID_MUTATION',400);
@@ -167,6 +191,10 @@ async function modify(req,e,url,u,id,action){
    action==='restore'&&r.state!=='deleted')return fail('SHARED_ENTRY_STATE_CONFLICT');
  let next=action==='update'?canon(x.entry):null;
  if(action==='update'&&!next)return fail('SHARED_ENTRY_INVALID_FIELDS',400);
+ if(role==='member'&&action==='update'&&
+  (next.type!=='transfer'||next.transfer_target!=='spouse'||
+   next.transfer_date!==next.date||Object.hasOwn(next,'payment_source')))
+  return fail('NEUTRAL_TRANSFER_TYPE_LOCKED',403);
  const previousSnapshot=JSON.parse(r.snapshot_json);
  let paymentAfter='';
  if(action==='update'){
@@ -377,12 +405,11 @@ export async function familySharedEntries(req,e,url,u,parts){
   return r?json({ok:true,action:visible(r)}):fail('SHARED_ENTRY_NOT_FOUND',404);
  }
  if(!p.length&&method==='POST')return create(req,e,url,u,role);
- if(role!=='owner')return fail('SHARED_ENTRY_OWNER_REVIEW_REQUIRED',403);
- if(p.length===1&&id32.test(p[0])&&method==='PUT')return modify(req,e,url,u,p[0],'update');
- if(p.length===1&&id32.test(p[0])&&method==='DELETE')return modify(req,e,url,u,p[0],'delete');
+ if(p.length===1&&id32.test(p[0])&&method==='PUT')return modify(req,e,url,u,p[0],'update',role);
+ if(p.length===1&&id32.test(p[0])&&method==='DELETE')return modify(req,e,url,u,p[0],'delete',role);
  if(p.length===2&&id32.test(p[0])&&method==='POST'){
-  if(p[1]==='restore')return modify(req,e,url,u,p[0],'restore');
-  if(p[1]==='purge')return purge(req,e,url,u,p[0]);
+  if(p[1]==='restore')return modify(req,e,url,u,p[0],'restore',role);
+  if(role==='owner'&&p[1]==='purge')return purge(req,e,url,u,p[0]);
  }
  return fail('NOT_FOUND',404);
 }

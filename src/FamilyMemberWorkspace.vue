@@ -22,6 +22,7 @@ import {parseNamedExpenseBlocks} from './named-expense.js'
 import {parseRepeatedExpense} from './natural-repeat.js'
 import {memberPaymentChoices as buildMemberPaymentChoices,resolveMemberPayment} from './member-payment-choices.js'
 import {ledgerPaymentLabel} from './ledger-payment-label.js'
+import {isOwnHouseholdEntry} from './shared-ledger-edit.js'
 import BottomNavigation from './BottomNavigation.vue'
 import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
@@ -212,17 +213,21 @@ const memberLedgerPaymentOptions=computed(()=>memberPaymentOptions.value.filter(
 const memberPaymentReassignmentEnabled=ref(false)
 provide('kakeibo-member-payment-choices',memberLedgerPaymentOptions)
 function memberPaymentEditor(entry){
+ const isOwn=isOwnHouseholdEntry(entry,props.user.user_id)
  if(entry?.type==='transfer')return {
-  paymentReadOnly:true,paymentSource:'',
-  allReadOnly:entry.transfer_target!=='spouse'||
-   entry.shared_entry_requester_user_id!==props.user.user_id
+  paymentReadOnly:true,paymentSource:'',isOwnRecorded:isOwn,
+  // Only a neutral spouse transfer can be revised in the ordinary
+  // household ledger. It has no separately posted card/bank journal.
+  allReadOnly:!isOwn||entry.transfer_target!=='spouse'
  }
  const own=memberPaymentReassignmentEnabled.value&&entry?.type==='expense'&&
   entry.shared_entry_requester_user_id===props.user.user_id&&
   !entry.family_account_id
- if(!own)return {paymentReadOnly:true,paymentSource:ledgerPaymentLabel(entry)}
+ if(!own)return {paymentReadOnly:true,paymentSource:ledgerPaymentLabel(entry),
+  isOwnRecorded:isOwn}
  const source=typeof entry.payment_source==='string'?entry.payment_source:''
- return {paymentReadOnly:false,paymentSource:source?'shared:'+source:'cash'}
+ return {paymentReadOnly:false,paymentSource:source?'shared:'+source:'cash',
+  isOwnRecorded:isOwn}
 }
 function memberRuleFor(merchant){
  const text=String(merchant||'').normalize('NFKC').trim().toLowerCase()

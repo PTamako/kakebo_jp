@@ -27,7 +27,7 @@ function account(id,accounts,spender){
 function identity(row,mayBeVoid=false){
  if(!row||row.type!=='expense'||!(money(Number(row.amount))||
   mayBeVoid&&Number(row.amount)===0)||!date(row.date)||
-  typeof row.accountId!=='string')fail('CORRECTION_INVALID_ENTRY');
+  !(typeof row.accountId==='string'||row.accountId===null))fail('CORRECTION_INVALID_ENTRY');
 }
 function effectKey(v){return [v.accountId,v.kind,v.billMonth||''].join('\0');}
 export function planAccountLinkedExpenseCorrection(input){
@@ -39,10 +39,9 @@ export function planAccountLinkedExpenseCorrection(input){
  identity(before,operation==='restore');identity(after,operation==='delete');
  if(operation==='delete'&&after.amount!==0||operation==='restore'&&before.amount!==0)
   fail('CORRECTION_INVALID_VOID_TRANSITION');
- if(!before.accountId)fail('CORRECTION_NOT_ACCOUNT_LINKED');
  const old=account(before.accountId,accounts,spenderUserId);
  const newer=account(after.accountId,accounts,spenderUserId);
- if(old.account_id!==newer?.account_id&&editorUserId!==spenderUserId)
+ if(old?.account_id!==newer?.account_id&&editorUserId!==spenderUserId)
   fail('CORRECTION_OTHER_PERSON_ACCOUNT_READ_ONLY');
  const changed=before.amount!==after.amount||before.date!==after.date||
   before.accountId!==after.accountId;

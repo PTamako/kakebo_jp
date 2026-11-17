@@ -229,6 +229,10 @@ test('Safari cannot login; only original PWA uses independent one-time proof',as
   assert.equal(user.role,'owner');
   assert.equal(user.ledger_access,false);
   assert.ok(response.headers.get('set-cookie').includes('HttpOnly'));
+  assert.ok(response.headers.get('set-cookie').includes('Max-Age=2592000'));
+  const linkedSession=f.DB.sqlite.prepare('SELECT expires_at,created_at FROM homeflow_sso_sessions ORDER BY created_at DESC LIMIT 1').get();
+  assert.ok(linkedSession.expires_at-linkedSession.created_at>=29*86400000,
+   'SSO identity survives 15 minutes and stays within a maximum 30-day login');
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) c FROM homeflow_identity_links').get().c,1);
   assert.equal(f.DB.sqlite.prepare('SELECT COUNT(*) c FROM homeflow_identity_events').get().c,1);
   assert.equal(f.DB.sqlite.prepare('SELECT merchant FROM entries WHERE id=1').get().merchant,'既存の個人明細');

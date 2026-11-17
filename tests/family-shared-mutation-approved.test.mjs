@@ -682,7 +682,7 @@ async function seedFuturePaid(f,kind='credit_card',balanceJpy=0){
   .run('2026-11-18','',1000,'expense','食費','新交易','','',client,source,accountId,null).lastInsertRowid
  if(kind==='credit_card')
   f.sql.prepare('INSERT INTO family_card_purchase_applied VALUES(?,?,?,?,?,?,?)')
-   .run(id,hh,member,receipt,accountId,'2026-11',1000)
+   .run(id,hh,member,receipt,accountId,'2026-12',1000)
  else{
   f.sql.prepare('INSERT INTO family_prepaid_actions_applied VALUES(?,?,?,?,?,?)')
    .run(id,hh,member,receipt,'spend',accountId)

@@ -18,11 +18,14 @@ function fixture(){
   "('日用品',1,'daily','日用品','expense',1),"+
   "('工资',10001,'money','給与','income',1),"+
   "('老公生活费',10002,'money','配偶者からの生活費','income',0);")
- const db={prepare(sql){return {bind(...args){const q=sqlite.prepare(sql);return{
-  first:async()=>q.get(...args)||null,
-  all:async()=>({results:q.all(...args)}),
-  run:async()=>({meta:{changes:q.run(...args).changes}})
- }}}}}
+ const db={prepare(sql){const q=sqlite.prepare(sql);return {
+  all:async()=>({results:q.all()}),
+  bind(...args){return{
+   first:async()=>q.get(...args)||null,
+   all:async()=>({results:q.all(...args)}),
+   run:async()=>({meta:{changes:q.run(...args).changes}})
+  }}
+ }}}
  async function send(user=member,method='GET',data=null){
   const url=new URL('https://kakeibo.test/api/family-finance/member-categories')
   const r=await familyMemberCategories(new Request(url,{method,...(method==='GET'?{}:

@@ -8,7 +8,8 @@ const panel=read('src/MobileMerchantRulesPanel.vue')
 const mobile=read('src/mobile-ui.css')
 
 test('店舗ルール管理 launches a bottom sheet instead of expanding a long page',()=>{
-  assert.match(finance,/<template #rules>\s*<MobileMerchantRulesPanel/)
+  assert.match(finance,/<template #rules>[\s\S]*?<slot v-if="memberView" name="member-rules"/)
+   assert.match(finance,/<MobileMerchantRulesPanel/)
   assert.match(finance,/:rules="merchantRulesCombined"/)
   assert.match(finance,/:on-save="saveMerchantRule"/)
   assert.doesNotMatch(finance,/<details[^>]*merchant-rules-panel/)

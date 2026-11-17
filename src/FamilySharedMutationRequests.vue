@@ -137,9 +137,13 @@ async function submitMutation(operation,original,edited=null){
   throw Error('前の申請を確認してください')
  // Resolve an approved resource and its CAS version from the server, never
  // trust an arbitrary entry ID or browser-provided version.
- const result=await api('/api/family-finance/shared-entries?state=active')
- const target=(result.items||[]).find(r=>String(r.entry_id)===String(original.id))
- if(!target)throw Error('この明細は共有審査対象に登録されていません')
+ // Lookup by the immutable entry ID: a paginated 50-record registry list
+ // misses older self-created spouse transfers.
+ const result=await api('/api/family-finance/shared-entries?entry_id='+
+  encodeURIComponent(String(original.id)))
+ const target=result.action
+ if(!target||target.state!=='active'||String(target.entry_id)!==String(original.id))
+  throw Error('この明細は共有審査対象に登録されていません')
  const pending=await api('/api/family-finance/shared-mutation-requests?view=ledger&month='+
   encodeURIComponent(String(original.date).slice(0,7)))
  if((pending.items||[]).some(r=>String(r.source_entry_id)===String(original.id)))

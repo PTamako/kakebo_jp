@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - 'workers/homeflow-service-bridge.js'
+      - 'workers/family-finance-service-router.js'
+      - 'functions/api/internal/shared-entries/**'
+      - 'functions/api/family-finance/shared-mutation-requests.js'
       - 'functions/api/bridge/document-assistant.js'
       - 'functions/api/payment-source-validation.js'
       - 'functions/api/ledger-input-validation.js'

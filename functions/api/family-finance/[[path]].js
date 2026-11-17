@@ -281,15 +281,14 @@ async function entries(env,user,url){
   ledgerRecorderColumns+',ls.actor_user_id AS shared_card_actor_user_id,'+
   'member_intent.requester_user_id AS shared_entry_requester_user_id,'+
   'sr.creator_user_id AS shared_record_creator_user_id,'+
-  'COALESCE(paid_card.requester_user_id,paid_prepaid.requester_user_id) AS future_paid_owner_user_id '+
+  "CASE WHEN e.client_request_id LIKE 'hfcard:%' OR e.client_request_id LIKE 'hfprepaid:%' "+
+  'THEN sr.creator_user_id ELSE NULL END AS future_paid_owner_user_id '+
   'FROM entries e LEFT JOIN family_financial_accounts a '+
   'ON a.account_id=e.family_account_id '+
   'LEFT JOIN payment_sources p ON p.name=e.payment_source '+
   'LEFT JOIN family_financial_accounts t '+
   'ON t.account_id=e.family_transfer_target_account_id '+
   ledgerRecorderJoins+' '+
-  'LEFT JOIN family_card_purchase_applied paid_card ON paid_card.entry_id=e.id '+
-  "LEFT JOIN family_prepaid_actions_applied paid_prepaid ON paid_prepaid.entry_id=e.id AND paid_prepaid.action='spend' "+
   'WHERE NOT (e.amount=0 AND (COALESCE(e.client_request_id,\'\') LIKE \'hfcard:%\' OR COALESCE(e.client_request_id,\'\') LIKE \'hfprepaid:%\')) '+
   ((period||annual)?'AND e.date >= ? AND e.date < ? ':'')+
   'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',

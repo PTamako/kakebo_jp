@@ -13,8 +13,21 @@ const canWrite=computed(()=>open.value&&available.value&&
  (action.value==='create'||!!chosen.value)&&
  (action.value!=='create'||(draft.value.date&&Number.isSafeInteger(Number(draft.value.amount))&&
  Number(draft.value.amount)>0&&draft.value.category.trim())))
-const statusText=x=>x.status==='prepared'?'未提出':x.status==='submitted_status_unknown'?
- 'HomeFlow に提出済み・管理者の審査待ち':x.status
+const reviewLabels=Object.freeze({
+ prepared:'未提出',
+ submitted_status_unknown:'HomeFlow に提出済み・状態を確認中',
+ pending:'審査待ち',
+ approved:'承認済み・記帳待ち',
+ executing:'記帳処理中',
+ applied:'記帳済み',
+ rejected:'却下・未記帳',
+ cancelled:'取り消し済み・未記帳',
+ expired:'期限切れ・未記帳',
+ failed_retryable:'実行結果を再確認中',
+ failed_final:'実行失敗・未記帳',
+ conflict:'競合・再確認が必要'
+})
+const statusText=x=>reviewLabels[x.status]||'状態を確認中'
 function reset(){version++;open.value=false;busy.value=false;available.value=false;error.value='';message.value='';
  rows.value=[];deleted.value=[];proposals.value=[];resource.value='';prepared.value=null;stableKey.value='';
  draft.value={date:new Date(Date.now()+32400000).toISOString().slice(0,10),
@@ -284,8 +297,22 @@ watch(resource,()=>{
   draft.value={...chosen.value.entry,amount:String(chosen.value.entry.amount)}
 })
 watch(()=>[props.userId,props.householdId],reset)
-onMounted(()=>document.addEventListener('visibilitychange',foreground))
-onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitychange',foreground)})
+// Refresh only while a visible request still needs a HomeFlow outcome.
+// Stop polling as soon as every request is final, and on unmount/logout.
+const unresolved=new Set(['submitted_status_unknown','pending','approved',
+ 'executing','failed_retryable','conflict'])
+let reviewTimer=null
+onMounted(()=>{
+ document.addEventListener('visibilitychange',foreground)
+ reviewTimer=setInterval(()=>{
+  if(!alive||!open.value||!available.value||busy.value||
+   document.visibilityState!=='visible'||
+   !proposals.value.some(x=>unresolved.has(x.status)))return
+  void load()
+ },20000)
+})
+onUnmounted(()=>{alive=false;clearInterval(reviewTimer);reset();
+ document.removeEventListener('visibilitychange',foreground)})
 </script>
 <template>
 <section v-if="!headless && (!onlyWhenOpen || open)" class="shared-request" aria-label="家庭明細の変更申請">

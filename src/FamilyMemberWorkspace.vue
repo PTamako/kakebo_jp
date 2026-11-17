@@ -2,7 +2,6 @@
 import {ref,computed,provide,onMounted,onUnmounted,watch} from 'vue'
 import FamilyFinanceProposals from './FamilyFinanceProposals.vue'
 import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
-import FamilyFinanceBankTransfers from './FamilyFinanceBankTransfers.vue'
 import MemberPersonalPoints from './MemberPersonalPoints.vue'
 import MemberPointAssetActions from './MemberPointAssetActions.vue'
 import MemberPointAssetReversals from './MemberPointAssetReversals.vue'
@@ -11,7 +10,6 @@ import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
-import {SPOUSE_INCOME_CATEGORY,SPOUSE_INCOME_SOURCE} from './spouse-income.js'
 import {parseEntries,parseReceipt,ocrImage} from './parse.js'
 import {compressReceiptImage} from './receipt-image.js'
 import EntryInputPage from './EntryInputPage.vue'
@@ -199,7 +197,7 @@ async function cardDanger(action,name){
 
 let epoch=0,alive=true
 const kinds=[['credit_card','クレジットカード'],['prepaid','プリペイドカード'],['cash','現金'],
- ['bank','銀行'],['points','ポイント'],['securities','証券'],['other','その他']]
+ ['points','ポイント'],['securities','証券'],['other','その他']]
 const kindLabel=x=>kinds.find(k=>k[0]===x)?.[1]||'口座'
 const yen=n=>n===null||n===undefined?'—':'¥'+Number(n).toLocaleString('ja-JP')
 const myAccounts=computed(()=>accounts.value.filter(x=>x.owner_user_id===props.user.user_id))
@@ -269,7 +267,7 @@ const monthlyReport=ref(null),annualReport=ref(null),selectedYear=ref(Number(yea
 const sharedMutationRef=ref(null)
 const memberEntryPending=ref(false),memberEntryError=ref(''),memberEntryNotice=ref('')
 const entryExpenseCategories=['食費','日用品','交通','住居','医療','交際費','その他']
-const entryIncomeCategories=['給与','賞与','副収入','ポイント還元',SPOUSE_INCOME_CATEGORY,'その他']
+const entryIncomeCategories=['給与','賞与','副収入','ポイント還元','その他']
 function newEntry(){return {type:'expense',amount:'',date:new Date(Date.now()+9*3600000).toISOString().slice(0,10),
  time:'',category:'食費',merchant:'',note:'',paymentSource:'cash',transferTarget:'',
  bindRule:false,bindPaymentRule:false}}
@@ -727,7 +725,7 @@ async function memberSbiApi(path,options={}){
  const match=/^investment-portfolio\?month=(20\d{2}-(?:0[1-9]|1[0-2]))$/.exec(path)
  if(!match||method!=='GET')throw Error('本人の投資情報だけを読み取れます')
  const [planResult,occurrenceResult,holdingsResult]=await Promise.allSettled([
-  api('member-recurring-plans'),api('recurring-occurrences'),api('manual-holdings')
+  api('member-sbi-plans'),api('recurring-occurrences'),api('manual-holdings')
  ])
  if(actor!==props.user.user_id||ticket!==epoch)throw Error('利用者が切り替わりました')
  if(planResult.status!=='fulfilled'||planResult.value.ok!==true)
@@ -1299,10 +1297,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
     memberRefresh:refresh,memberTrashCount:memberArchivedAccounts.length,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
-   <template #personal-transfer>
-    <FamilyFinanceBankTransfers :key="'personal-bank-transfer:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" />
-   </template>
+   
    <template #member-cards>
     <MemberPersonalPoints :key="'personal-points:'+user.user_id"
      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
@@ -1347,7 +1342,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
        :category-label="x=>x" :on-save="saveMemberMerchantRule"/>
    </template>
    <template #member-jobs>
-     <p class="help">固定費・積立は各メニューで管理。金融取引は承認と証拠確認が必要です。</p>
+     <p class="help">固定費・積立は各メニューで管理。家庭明細の変更のみ管理者の承認が必要です。</p>
      <button type="button" class="button-secondary" :disabled="busy" @click="refresh">
        {{busy?'確認中…':'本人の設定と審査状態を更新'}}
      </button>

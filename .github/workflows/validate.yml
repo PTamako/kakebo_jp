@@ -3,6 +3,24 @@ name: Validate
 # Run full release checks on PRs; Pages Preview only compiles, while production runs release checks.
 # Manual dispatch remains available for post-release incident verification.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'functions/**'
+      - 'public/**'
+      - 'migrations/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'workers/**'
+      - 'index.html'
+      - 'schema.sql'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.js'
+      - 'wrangler*.toml'
+      - '.node-version'
+      - '.github/workflows/validate.yml'
   pull_request:
     paths:
       - 'src/**'

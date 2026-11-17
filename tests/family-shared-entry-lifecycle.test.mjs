@@ -21,7 +21,7 @@ function fixture(){
   'family_account_id TEXT,family_transfer_target_account_id TEXT,transfer_target TEXT,transfer_date TEXT,transfer_applied INTEGER DEFAULT 0)')
  sql.exec(readFileSync(new URL('../migrations/0051_shared_entry_lifecycle.sql',import.meta.url),'utf8'))
  sql.exec(readFileSync(new URL('../migrations/0052_shared_mutation_approved_execution.sql',import.meta.url),'utf8'))
- sql.exec(readFileSync(new URL('../migrations/0067_neutral_spouse_transfer.sql',import.meta.url),'utf8'))
+ sql.exec(readFileSync(new URL('../migrations/0068_neutral_spouse_transfer.sql',import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,? ,?,'active')").run(u,household,role)
  const db={prepare(q){return {bind(...args){return{

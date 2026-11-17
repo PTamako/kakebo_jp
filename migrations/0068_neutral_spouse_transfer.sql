@@ -1,4 +1,4 @@
--- 0067: Admit only account-free, income-neutral spouse transfers as one
+-- 0068: Admit only account-free, income-neutral spouse transfers as one
 -- shared family entry. Keep owner review, versions, immutable audit and D1 CAS.
 -- No personal financial account IDs or synthetic spouse income are created.
 DROP TRIGGER IF EXISTS trg_shared_entry_registry_guard;
@@ -72,5 +72,5 @@ WHEN NOT EXISTS(
 )
 BEGIN SELECT RAISE(ABORT,'SHARED_MUTATION_APPLIED_COUNTERPART_INVALID'); END;
 INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(
- 'schema-0067-neutral-spouse-transfer',
+ 'schema-0068-neutral-spouse-transfer',
  'One neutral household transfer row for both spouses with owner review for member submissions');

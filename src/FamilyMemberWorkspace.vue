@@ -1387,7 +1387,7 @@ provide('kakeibo-entry-input',{
  onImage:memberScanImage,addBlank:()=>addMemberEntry(),saveAll:submitMemberEntry,
  receiptEnabled:computed(()=>true),
  allowedTypes:computed(()=>['expense','income','transfer']),
- paymentChoices:memberPaymentSourceChoices
+ paymentChoices:memberPaymentSourceChoices,allowSbiTransfer:false
 })
 void loadMemberCategories()
 watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMemberCategories()})

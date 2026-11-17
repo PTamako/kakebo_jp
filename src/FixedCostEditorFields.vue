@@ -52,11 +52,7 @@ const emit=defineEmits(['update:cycleChoice'])
     <input v-model="model.postingMode" type="radio" value="manual"
      name="recurring-posting-mode"/><span>確認して記帳</span></label>
   </fieldset>
-  <p class="recurring-posting-hint" v-if="member">
-   家庭帳簿への記帳は HomeFlow の審査後に反映されます。個人の固定費設定は審査不要です。
-   金融機関の自動引落・自動入帳はこの設定では実行しません。
-  </p>
-  <p v-else class="recurring-posting-hint">{{model.postingMode==='auto'
+  <p v-if="!member" class="recurring-posting-hint">{{model.postingMode==='auto'
     ? (model.scheduleType==='workday'?'土日・祝日を除く日に、自動で支出明細に登録します。':
        recurringFrequencyLabel(model)+'になると、自動で支出明細に登録します。')
     :'予定日以降、内容を確認してから支出明細に登録します。'}}</p>

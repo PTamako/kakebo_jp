@@ -80,10 +80,11 @@ test('mobile navigation, keyboard and charts retain touch-safe affordances', () 
 
 test('native select, calendar and time pickers never hide the bottom tab bar on focus', () => {
   const focusRules = mobile.split('\n').filter(line =>
-    line.includes('main:has(') &&
+    line.includes('main:has(') && line.includes(':focus') &&
     (line.includes('.bottom-nav') || line.includes('.batch-actions'))
   )
   assert.equal(focusRules.length, 2)
+  assert.ok(mobile.includes('main:has(.edit-overlay) .bottom-nav { visibility: hidden; pointer-events: none; }'))
   for (const rule of focusRules) {
     assert.doesNotMatch(rule, /select:focus|input:focus/)
     assert.doesNotMatch(rule, /\[type="(?:date|month|time|datetime-local|file|checkbox|radio)"\]/)

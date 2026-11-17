@@ -1592,7 +1592,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    :on-personal-history="openMemberWalletHistory"
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     cardSettingsRequest:memberCardSettingsRequest,
-    memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
+    memberStatus:'',
     memberRefresh:refresh,memberTrashCount:memberTrashCount,memberLoadTrash:loadMemberSharedTrash,memberLoadJobs:loadMemberJobStatus,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
@@ -1611,7 +1611,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
       :payment-sources="cardLabels" :share-ready="false"
       :archived="cardAccounts.filter(a=>a.is_archived).map(a=>({value:a.account_id,
         label:a.label,kind:a.account_kind}))"
-      :allow-permanent-delete="false" empty-hint="＋から本人のカードを追加できます。"
+      :allow-permanent-delete="false" 
       :default-source-type="preferredCardType"
       :on-save="saveCard" :on-danger="cardDanger"
       @update:selected="selectedCardId=$event" @update:mode="next=>{if(next==='add')preferredCardType='standard';cardMode=next}"
@@ -1631,19 +1631,9 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
     <SbiPortfolio member-mode active-view="plans" :api="memberSbiApi"
       :on-member-create="()=>openMemberInvestmentPlan()"
       :on-member-edit="openMemberInvestmentPlan"/>
-    <FamilyRecurringFinance ref="memberRecurringRef" view="investment"
+    <FamilyRecurringFinance ref="memberRecurringRef" view="investment" embedded
      :key="'personal-sbi:'+user.user_id" :user-id="user.user_id"
      :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
-    <details class="member-asset-history">
-     <summary>本人のポイント・チャージ履歴と訂正</summary>
-     <MemberPrepaidTopups :key="'history-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
-     <MemberPersonalPoints :key="'history-points:'+user.user_id"
-      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
-     <MemberPointAssetActions :key="'history-point-assets:'+user.user_id"
-      :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
-     <MemberPointAssetReversals :key="'history-point-reversals:'+user.user_id"
-      :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
-    </details>
    </template>
    <template #member-rules>
      <p v-if="memberRuleError" role="alert" class="member-alert">{{memberRuleError}}</p>
@@ -1665,7 +1655,16 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
       <strong>{{item.due_date}} · {{yen(item.amount_jpy)}} · {{item.state}}</strong>
      </div>
      <button type="button" class="button-secondary" :disabled="memberJobsBusy" @click="loadMemberJobStatus">状態を更新</button>
-     <p class="help">予定・実行証跡の表示であり、金融機関の実取引確認や家庭明細の自動入帳を意味しません。家庭明細の追加・変更のみ HomeFlow 審査へ送信します。</p>
+         <details class="member-asset-history">
+     <summary>本人のポイント・チャージ履歴と訂正</summary>
+     <MemberPrepaidTopups :key="'history-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
+     <MemberPersonalPoints :key="'history-points:'+user.user_id"
+      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+     <MemberPointAssetActions :key="'history-point-assets:'+user.user_id"
+      :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+     <MemberPointAssetReversals :key="'history-point-reversals:'+user.user_id"
+      :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+    </details>
     </template>
    <template #member-privacy>
      <p v-if="memberReceiptError" class="help" role="alert">{{memberReceiptError}}</p>

@@ -9,6 +9,9 @@ const day=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const month=()=>day().slice(0,7)
 const activeType=computed(()=>props.view==='investment'?'sbi_tsumitate':'fixed_cost')
 const visiblePlans=computed(()=>plans.value.filter(p=>p.plan_type===activeType.value))
+const planPage=ref(0)
+const planPages=computed(()=>Math.max(1,Math.ceil(visiblePlans.value.length/5)))
+const visiblePlanPage=computed(()=>visiblePlans.value.slice(planPage.value*5,planPage.value*5+5))
 const visibleOccurrences=computed(()=>occurrences.value.filter(p=>p.plan_type===activeType.value))
 const form=ref({plan_type:props.view==='investment'?'sbi_tsumitate':'fixed_cost',source_bank_account_id:'',
  securities_account_id:'',amount_jpy:'',due_day:Math.min(28,Number(day().slice(8))),
@@ -55,29 +58,15 @@ function reset(){
 async function refresh(){
  const ticket=++generation,who=props.userId,hh=props.householdId
  if(!open.value)return
- // A disabled monthly execution path must never hide otherwise enabled
- // personal plan registration and HomeFlow policy applications.
- const [planResult,executionResult]=await Promise.allSettled([
-   api('/api/family-finance/member-recurring-plans'),
-   api('/api/family-finance/recurring-occurrences')
- ])
- if(!alive||!open.value||ticket!==generation||who!==props.userId||hh!==props.householdId)return
- if(planResult.status==='fulfilled'){
-  const p=planResult.value
-  plans.value=Array.isArray(p.items)?p.items:[]
+ try{
+  const result=await api('/api/family-finance/member-recurring-plans')
+  if(!alive||ticket!==generation||who!==props.userId||hh!==props.householdId)return
+  plans.value=Array.isArray(result.items)?result.items:[]
   available.value=true;error.value=''
- }else{
-  plans.value=[];available.value=false
-  const msg=String(planResult.reason?.message||'計画情報を取得できません')
-  error.value=/DISABLED/.test(msg)?'計画登録は管理者設定により停止中です。既存の固定費には影響しません。':msg
- }
- if(executionResult.status==='fulfilled'){
-  occurrences.value=Array.isArray(executionResult.value.items)?executionResult.value.items:[]
-  executionAvailable.value=true
- }else{
-  occurrences.value=[];executionAvailable.value=false
-  if(available.value && !/DISABLED/.test(String(executionResult.reason?.message||'')))
-   notice.value='月度履歴の読み込みに失敗しました：'+String(executionResult.reason?.message||'再更新してください')
+  planPage.value=Math.min(planPage.value,Math.max(0,Math.ceil(visiblePlans.value.length/5)-1))
+ }catch(e){
+  if(!alive||ticket!==generation||who!==props.userId||hh!==props.householdId)return
+  plans.value=[];available.value=false;error.value=String(e.message||'積立計画を取得できません')
  }
 }
 async function toggle(){
@@ -91,7 +80,7 @@ function accountVersion(id){
 }
 async function createPlan(){
  if(!canPlan.value||busy.value||!available.value)return
- if(!window.confirm('创建本人的固定费／SBI 定投计划？新计划不会自动扣款，正式记账仍需管理员授权和逐期已到账证据。'))return
+ if(!window.confirm('本人の積立計画を登録しますか？登録だけでは購入・口座振替・家庭明細の追加は行われません。'))return
  const ticket=generation,actor=props.userId,hh=props.householdId
  const x=form.value
  const payload={expected_user_id:actor,
@@ -111,7 +100,7 @@ async function createPlan(){
   if(ticket!==generation||actor!==props.userId||hh!==props.householdId)return
   if(result.plan?.ledger_applied!==false||result.plan?.policy_approved!==false)
    throw Error('计划创建回执不完整，不能视为已执行')
-  planRetry='';editorOpen.value=false;notice.value='本人の積立計画を保存しました。HomeFlow の承認後、実際の取引証拠を確認して記帳してください。'
+  planRetry='';editorOpen.value=false;notice.value='本人の積立計画を保存しました。計画には管理者承認は不要です。実際の取引は残高・明細から別途記録してください。'
   selected.value=result.plan.plan_resource_id
   await refresh()
  }catch(e){if(ticket===generation)error.value=e.message}
@@ -205,6 +194,22 @@ function openPlanEditor(source=null){
  if(typeof document!=='undefined')queueMicrotask(()=>
    document.querySelector('.recurring-panel[aria-label="毎月の積立"]')?.scrollIntoView({behavior:'smooth',block:'start'}))
 }
+async function revokePlan(p){
+ if(busy.value||p.state!=='active'||!window.confirm('この積立計画を停止しますか？過去の記録は削除されません。'))return
+ const ticket=generation,actor=props.userId
+ busy.value=true;error.value='';notice.value=''
+ try{
+  const result=await api('/api/family-finance/member-recurring-plans/'+
+   encodeURIComponent(p.plan_resource_id)+'/revoke',post({
+    expected_user_id:actor,confirm_resource_id:p.plan_resource_id
+   }))
+  if(ticket!==generation||actor!==props.userId)return
+  if(result.revoked!==true)throw Error('停止結果が確認できません')
+  notice.value='積立計画を停止しました。既存の明細や保有残高は変わりません。'
+  await refresh()
+ }catch(e){if(ticket===generation)error.value=e.message}
+ finally{if(ticket===generation)busy.value=false}
+}
 defineExpose({openPlanEditor})
 function foreground(){
  if(document.visibilityState!=='visible')return
@@ -217,22 +222,30 @@ onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreg
 onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitychange',foreground)})
 </script>
 <template>
-<section class="recurring-panel finance-panel" :aria-label="view==='investment'?'毎月の積立':'固定費の設定'">
- <header><strong>{{view==='investment'?'積立の承認と実行確認':'固定費の設定'}}</strong>
-  <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'閉じる':'確認・設定'}}</button></header>
+<section class="recurring-panel finance-panel" :aria-label="view==='investment'?'本人の積立計画':'本人の定期計画'">
+ <header>
+  <strong>{{view==='investment'?'積立計画の管理':'定期計画の管理'}}</strong>
+  <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'閉じる':'開く'}}</button>
+ </header>
  <template v-if="open">
-  <p class="help">新規計画のみ。承認は期間・上限額が対象で、銀行引落し・SBI注文は実行しません。</p>
+  <p class="help">本人の積立計画の登録・停止に管理者の承認は不要です。家庭の明細を変更する場合にだけ、HomeFlowで明細の承認を受けます。</p>
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="help">{{notice}}</p>
-  <form v-if="available&&(!view||view!=='investment'||editorOpen)" class="editor" @submit.prevent="createPlan">
-   <strong>{{view==='investment'?'本人の積立を登録':'固定費の設定'}}</strong>
-   <p class="help">{{view==='investment'?'SBI積立':'固定費'}} · HomeFlow で初回承認</p>
-   <label>本人の引落銀行口座<select v-model="form.source_bank_account_id" :disabled="busy" required><option value="">口座を選択</option>
-    <option v-for="a in banks" :key="a.account_id" :value="a.account_id">{{a.label}} · v{{a.version}}</option>
-   </select></label>
-   <label v-if="form.plan_type==='sbi_tsumitate'">本人の証券口座<select v-model="form.securities_account_id" :disabled="busy" required><option value="">証券口座を選択</option>
-    <option v-for="a in securities" :key="a.account_id" :value="a.account_id">{{a.label}} · v{{a.version}}</option>
-   </select></label>
+  <button v-if="available&&!editorOpen" type="button" @click="openPlanEditor()">＋ 積立計画を追加</button>
+  <form v-if="available&&editorOpen" class="editor" @submit.prevent="createPlan">
+   <strong>本人の積立計画を登録</strong>
+   <label>本人の引落銀行口座
+    <select v-model="form.source_bank_account_id" :disabled="busy" required>
+     <option value="">口座を選択</option>
+     <option v-for="a in banks" :key="a.account_id" :value="a.account_id">{{a.label}}</option>
+    </select>
+   </label>
+   <label>本人の証券口座
+    <select v-model="form.securities_account_id" :disabled="busy" required>
+     <option value="">口座を選択</option>
+     <option v-for="a in securities" :key="a.account_id" :value="a.account_id">{{a.label}}</option>
+    </select>
+   </label>
    <div class="pair">
     <label>毎月の金額（円）<input v-model="form.amount_jpy" type="number" min="1" max="10000000" required :disabled="busy"/></label>
     <label>引落日（1～28日）<input v-model.number="form.due_day" type="number" min="1" max="28" required :disabled="busy"/></label>
@@ -241,50 +254,24 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
     <label>開始月<input v-model="form.start_month" type="month" required :disabled="busy"/></label>
     <label>終了月<input v-model="form.end_month" type="month" required :disabled="busy"/></label>
    </div>
-   <label>分类<input v-model="form.category" maxlength="100" required :disabled="busy"/></label>
-   <label>商家／项目<input v-model="form.merchant" maxlength="120" required :disabled="busy"/></label>
-   <template v-if="form.plan_type==='sbi_tsumitate'">
-    <label>銘柄コード（8文字）<input v-model="form.fund_code" maxlength="8" required :disabled="busy"/></label>
-    <label>銘柄名<input v-model="form.fund_name" maxlength="120" required :disabled="busy"/></label>
-   </template>
-   <button type="submit" :disabled="busy||!canPlan">積立計画を保存（未入帳）</button>
+   <label>銘柄コード（8文字）<input v-model="form.fund_code" maxlength="8" required :disabled="busy"/></label>
+   <label>銘柄名<input v-model="form.fund_name" maxlength="120" required :disabled="busy"/></label>
+   <button type="submit" :disabled="busy||!canPlan">積立計画を保存</button>
+   <button type="button" :disabled="busy" @click="editorOpen=false">キャンセル</button>
   </form>
   <div v-if="available" class="items">
-   <strong>{{view==='investment'?'登録済みの積立':'登録済みの固定費'}} · {{visiblePlans.length}}件</strong>
-   <div v-for="p in visiblePlans" :key="p.plan_resource_id" class="item">
-    <div class="head"><strong>{{p.merchant}} · {{currency(p.amount_jpy)}}</strong><span>{{p.state}}</span></div>
-    <p class="help">{{p.plan_type==='fixed_cost'?'固定費':'SBI積立'}} · {{p.start_month}}～{{p.end_month}} · 毎月{{p.due_day}}日</p>
-    <p class="help">承認状態：{{currentPolicy(p)?.status||'未確認'}}</p>
-    <button type="button" :disabled="busy||p.state!=='active'" @click="submitPolicy(p)">提交／恢复原 HomeFlow 授权</button>
-    <button v-if="currentPolicy(p)?.status==='approved'" type="button" :disabled="busy" @click="selected=p.plan_resource_id">记录本期已发生事项</button>
+   <strong>登録済みの積立計画 · {{visiblePlans.length}}件</strong>
+   <p v-if="!visiblePlans.length" class="help">積立計画はまだありません。</p>
+   <div v-for="p in visiblePlanPage" :key="p.plan_resource_id" class="item">
+    <div class="head"><strong>{{p.fund_name||p.merchant}} · {{currency(p.amount_jpy)}}</strong><span>{{p.state==='active'?'有効':'停止済み'}}</span></div>
+    <p class="help">{{p.start_month}}～{{p.end_month}} · 毎月{{p.due_day}}日</p>
+    <p class="help">計画の保存のみ。銀行の引落し・証券注文は実行していません。</p>
+    <button v-if="p.state==='active'" type="button" :disabled="busy" @click="revokePlan(p)">計画を停止</button>
    </div>
-  </div>
-  <form v-if="available&&chosen&&currentPolicy(chosen)?.status==='approved'" class="editor" @submit.prevent="prepareOccurrence">
-   <strong>逐月记账凭证 · {{chosen.merchant}}</strong>
-   <div class="pair">
-    <label>对应月份<input v-model="period" type="month" :disabled="busy" required/></label>
-    <label>银行实际扣款日<input v-model="debit" type="date" :disabled="busy" required/></label>
-   </div>
-   <label>实际银行流水参考号<input v-model="bankRef" maxlength="160" minlength="8" :disabled="busy" required/></label>
-   <label class="checkbox"><input v-model="bankPosted" type="checkbox" :disabled="busy"/> 已核实银行扣款真正发生（非预定）</label>
-   <template v-if="chosen.plan_type==='sbi_tsumitate'">
-    <label>已成交基金份额／单位<input v-model="units" type="number" min="1" inputmode="numeric" :disabled="busy" required/></label>
-    <label>SBI 已成交交易参考号<input v-model="brokerRef" maxlength="160" minlength="8" :disabled="busy" required/></label>
-    <div class="pair">
-     <label>实际交易日<input v-model="trade" type="date" :disabled="busy" required/></label>
-     <label>买付适用日<input v-model="effective" type="date" :disabled="busy" required/></label>
-    </div>
-    <label class="checkbox"><input v-model="brokerExecuted" type="checkbox" :disabled="busy"/> 已核对券商真实成交和单位（不是待成交指令）</label>
-   </template>
-   <button type="submit" :disabled="busy||!bankPosted||(chosen.plan_type==='sbi_tsumitate'&&!brokerExecuted)">准备唯一月度凭证</button>
-  </form>
-  <div v-if="available" class="items"><strong>月度凭证与执行恢复</strong>
-   <div v-for="o in visibleOccurrences" :key="o.occurrence_id" class="item">
-    <p class="help">{{o.period_key}} · {{currency(o.amount_jpy)}} · {{o.occurrence_id.slice(0,8)}} · {{o.plan_type}}</p>
-    <div class="head">
-     <button type="button" :disabled="busy" @click="perform(o,'execute')">按原 ID 核验后执行</button>
-     <button type="button" :disabled="busy" @click="perform(o,'reconcile')">仅核对已入账回执</button>
-    </div>
+   <div v-if="planPages>1" class="head">
+    <button type="button" :disabled="planPage===0" @click="planPage--">前へ</button>
+    <span>{{planPage+1}} / {{planPages}}</span>
+    <button type="button" :disabled="planPage+1>=planPages" @click="planPage++">次へ</button>
    </div>
   </div>
  </template>

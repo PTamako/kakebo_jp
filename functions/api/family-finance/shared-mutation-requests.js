@@ -264,6 +264,26 @@ async function decryptIntent(e,record){
   return value.entry===null?value:null;
  }catch{return null}
 }
+// HomeFlow is the authority for review completion. The local "submitted"
+// record is intentionally immutable and must never be mistaken for a pending review.
+// When the signed status service is unavailable, expose an explicitly unknown
+// status instead of fabricating an approval state or duplicating a ledger write.
+async function reviewedHistory(e,u,rows){
+ const submitted=rows.filter(row=>row.status==='submitted'&&
+  uuid.test(row.homeflow_approval_id||''));
+ let states=new Map(),verified=true;
+ try{states=await verifiedStatuses(e,u,submitted)}
+ catch{verified=false}
+ return {items:rows.map(row=>{
+  const result=shape(row);
+  if(row.status!=='submitted')return {...result,review_status_verified:true};
+  const actual=states.get(row.homeflow_approval_id);
+  return {...result,status:actual||'submitted_status_unknown',
+   review_status_verified:!!actual,
+   applied:actual==='applied'};
+ }),review_status_verified:verified};
+}
+
 async function verifiedStatuses(e,u,rows){
  const ids=[...new Set(rows.map(x=>x.homeflow_approval_id))];
  if(!ids.length)return new Map();
@@ -355,12 +375,15 @@ export async function familySharedMutationRequests(req,e,url,u,parts){
   const rows=(await e.DB.prepare('SELECT * FROM family_shared_mutation_intents '+
    'WHERE household_id=? AND requester_user_id=? ORDER BY created_at DESC LIMIT 30')
    .bind(u.household_id,u.user_id).all()).results||[];
-  return json({ok:true,items:rows.map(shape)});
+  return json({ok:true,...await reviewedHistory(e,u,rows)});
  }
  if(parts.length>=2&&!id.test(parts[1]))return fail('NOT_FOUND',404);
  if(parts.length===2&&req.method==='GET'){
   const p=await get(e.DB,parts[1],u);
-  return p?json({ok:true,prepared:shape(p)}):fail('NOT_FOUND',404);
+  if(!p)return fail('NOT_FOUND',404);
+  const review=await reviewedHistory(e,u,[p]);
+  return json({ok:true,prepared:review.items[0],
+   review_status_verified:review.review_status_verified});
  }
  if(parts.length===3&&req.method==='POST'){
   if(parts[2]==='submit')return submit(req,e,url,u,parts[1]);

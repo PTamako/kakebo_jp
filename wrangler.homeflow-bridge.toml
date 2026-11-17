@@ -12,9 +12,11 @@ preview_urls = false
 KAKEIBO_FAMILY_FINANCE_ENABLED = "true"
 KAKEIBO_FAMILY_EXECUTION_ENABLED = "true"
 KAKEIBO_APPROVAL_PROOF_ENABLED = "true"
-KAKEIBO_BANK_TRANSFER_ENABLED = "true"
+# Legacy bank-transfer execution is retired; signed historical journals remain readable.
+KAKEIBO_BANK_TRANSFER_ENABLED = "false"
 KAKEIBO_CARD_PURCHASES_ENABLED = "true"
-KAKEIBO_CARD_SETTLEMENTS_ENABLED = "true"
+# No new card repayment actions; retained original settlement evidence is read-only.
+KAKEIBO_CARD_SETTLEMENTS_ENABLED = "false"
 KAKEIBO_POINTS_ACTIONS_ENABLED = "true"
 KAKEIBO_PREPAID_ACTIONS_ENABLED = "true"
 KAKEIBO_SBI_CASH_ENABLED = "true"

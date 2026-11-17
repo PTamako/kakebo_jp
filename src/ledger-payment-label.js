@@ -6,6 +6,10 @@ export function ledgerPaymentLabel(entry) {
  const authorizedDisplay=typeof entry.payment_source_display==='string'
   ? entry.payment_source_display.trim() : '';
  const source=typeof entry.payment_source==='string'?entry.payment_source.trim():'';
+ // The shared-ledger approval path sometimes carries a legacy cash marker.
+ // This is not a card grant and must never be shown as `shared:現金`.
+ const cashLabels=new Set(['cash','現金','shared:cash','shared:現金']);
+ if(cashLabels.has(authorizedDisplay)||cashLabels.has(source))return '現金';
  if (authorizedDisplay && authorizedDisplay !== source) return authorizedDisplay;
  if (source) return source;
  if (authorizedDisplay) return authorizedDisplay;

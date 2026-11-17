@@ -4,7 +4,7 @@ import { sortOtherLast } from './category-sort.js'
 import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
-const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentChoices: {type:Array,default:()=>[]} })
+const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentReadOnly: {type:Boolean,default:false}, paymentChoices: {type:Array,default:()=>[]} })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
@@ -62,7 +62,7 @@ const transferOptions = computed(()=> [
     <label v-if="record.type==='income' && record.category==='ポイント還元'" class="form-field reward-destination-field"><span>還元先（任意）</span><MobileChoiceSheet v-model="record.rewardDestination" :options="rewardOptions" label="還元先" /><small>プリペイド・SBI証券は資産移動を自動作成、クレジットカードは利用額から差し引きます。</small></label>
     <label v-if="record.type==='income' && record.category==='ポイント還元' && record.rewardDestination==='sbi'" class="form-field sbi-reward-date-field"><span>SBI証券への適用日（必須）</span><input v-model="record.transferDate" type="date" required /><small>収入の日付とは別に、投資への反映日を選択してください。未来の日付は当日まで未反映です。</small></label>
     <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
-    <label v-if="record.type==='expense' && showPaymentSource" class="form-field"><span>支払方法・カード</span><MobileChoiceSheet :model-value="record.paymentSource" :options="paymentOptions" label="支払方法・カード" @change="emit('payment-change',$event)" /></label>
+    <label v-if="record.type==='expense' && showPaymentSource" class="form-field"><span>支払方法・カード</span><span v-if="paymentReadOnly" class="payment-source-readonly" role="status">{{record.paymentSource||'未設定'}}</span><MobileChoiceSheet v-else :model-value="record.paymentSource" :options="paymentOptions" label="支払方法・カード" @change="emit('payment-change',$event)" /></label>
   </div>
   <div v-if="record.type==='transfer'" class="field-grid transfer-schedule-fields">
     <label class="form-field"><span>转移方式／振替先</span>
@@ -119,4 +119,5 @@ const transferOptions = computed(()=> [
 .transaction-form .amount-field input{min-width:0!important}
 .transaction-form .receipt-attachment-field{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
 .transaction-form .receipt-attachment-label{flex-basis:100%}
+ .payment-source-readonly{display:flex;align-items:center;min-height:44px;padding:9px 12px;border:1px solid var(--line,#dedfe7);border-radius:10px;color:var(--ink,#232631);background:var(--card,#fff);font-size:16px;font-weight:650;overflow-wrap:anywhere}
 </style>

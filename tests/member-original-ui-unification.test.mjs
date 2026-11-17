@@ -71,5 +71,5 @@ test('member investment mutations cannot reach the owner legacy SBI API',()=>{
  assert.doesNotMatch(memberView,/api\('investment-portfolio\?/)
  assert.match(sbi,/if\(props.memberMode\)\{/)
  assert.match(sbi,/props.onMemberEdit\?\.\(p\)/)
- assert.match(sbi,/本人の積立変更は HomeFlow 承認のある専用設定から行ってください/)
+ assert.match(sbi,/本人の積立設定は「管理 → 積立」で変更してください。計画に管理者承認は不要です/)
 })

@@ -22,6 +22,8 @@ export async function familyPersonalDocumentSbi(request,env,url,user,parts){
  if(!active)return deny('IDENTITY_INACTIVE',403);
  if(request.method==='GET'&&parts.length===1){
   const month=url.searchParams.get('month'),year=url.searchParams.get('year');
+  const selectedState=url.searchParams.get('state')||'active';
+  if(!['active','trashed'].includes(selectedState))return deny('INVALID_STATE',400);
   const offset=Number(url.searchParams.get('offset')||'0');
   if((month&&year)||!Number.isInteger(offset)||offset<0||offset>100000||
    (month&&!/^20\d\d-(0[1-9]|1[0-2])$/.test(month))||
@@ -30,13 +32,13 @@ export async function familyPersonalDocumentSbi(request,env,url,user,parts){
   const start=month?month+'-01':year+'-01-01',end=month?month+'-31':year+'-12-31';
   const [page,total]=await Promise.all([
    db.prepare('SELECT * FROM family_document_personal_sbi_transfers '+
-    "WHERE household_id=? AND owner_user_id=? AND date>=? AND date<=? AND state='active' "+
+    "WHERE household_id=? AND owner_user_id=? AND date>=? AND date<=? AND state=? "+
     'ORDER BY date DESC,transfer_id DESC LIMIT 101 OFFSET ?')
-    .bind(user.household_id,user.user_id,start,end,offset).all(),
+    .bind(user.household_id,user.user_id,start,end,selectedState,offset).all(),
    db.prepare('SELECT COUNT(*) AS transfer_count,COALESCE(SUM(amount_jpy),0) AS total_transfer_jpy '+
     'FROM family_document_personal_sbi_transfers '+
-    "WHERE household_id=? AND owner_user_id=? AND date>=? AND date<=? AND state='active'")
-    .bind(user.household_id,user.user_id,start,end).first()
+    "WHERE household_id=? AND owner_user_id=? AND date>=? AND date<=? AND state=?")
+    .bind(user.household_id,user.user_id,start,end,selectedState).first()
   ]);
   const rows=page.results||[];
   const transferCount=Number(total?.transfer_count||0),
@@ -44,7 +46,7 @@ export async function familyPersonalDocumentSbi(request,env,url,user,parts){
   if(!Number.isSafeInteger(transferCount)||!Number.isSafeInteger(transferTotal))
    return deny('PERSONAL_SBI_TOTAL_INVALID',503);
   return json({ok:true,scope:'personal',viewer_user_id:user.user_id,
-   items:rows.slice(0,100).map(r=>view({...r,display_name:active.display_name})),
+   state:selectedState,items:rows.slice(0,100).map(r=>view({...r,display_name:active.display_name})),
    next_offset:rows.length>100?offset+100:null,
    transfer_count:transferCount,transfer_total_jpy:transferTotal,
    excluded_from_income_expense:true,no_fund_units_inferred:true});

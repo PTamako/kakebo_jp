@@ -309,6 +309,7 @@ async function entries(env,user,url){
  });
  return json({ok:true,household_id:user.household_id,items,
   next_offset:rows.length>limit?offset+limit:null,ledger_scope:'household',
+  payment_reassignment_enabled:env.KAKEIBO_MEMBER_PAYMENT_REASSIGNMENT_ENABLED==='true',
   private_payment_sources_redacted:user.role!=='owner'});
 }
 async function totals(env,user,url){

@@ -9,7 +9,7 @@ import {highestSpendingRatioMonth} from './stats-ratio-peak.js'
 import {ICON_LIBRARY} from './icon-library.js'
 import puppyWorried from './assets/puppy-worried.gif'
 import puppyCrying from './assets/puppy-crying.jpg'
-export function makeFamilyStatsContext({tab,month,selectedYear,stats,annualStats,entryType,onPaymentMethodDetails}){
+export function makeFamilyStatsContext({tab,month,selectedYear,stats,annualStats,entryType,onPaymentMethodDetails,onCategoryDetails}){
  const statsPeriod=ref('month'),selectedRatioMonth=ref('')
  const input=ref('')
  const yen=n=>'¥'+Number(n||0).toLocaleString('ja-JP')
@@ -17,7 +17,9 @@ export function makeFamilyStatsContext({tab,month,selectedYear,stats,annualStats
  const categoryLabel=x=>x||'その他'
  const dayRows=computed(()=>[...(stats.value?.byDay||[])].sort((a,b)=>a.date.localeCompare(b.date)))
  const resetMonth=()=>{month.value=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).slice(0,7)}
- const openCategoryDetails=(category,type,period)=>{if(type==='income'||type==='expense'||type==='transfer')entryType.value=type
+ const openCategoryDetails=(category,type,period)=>{if(typeof onCategoryDetails==='function')
+  return onCategoryDetails(category,type,period)
+  if(type==='income'||type==='expense'||type==='transfer')entryType.value=type
   if(period==='year')month.value=String(selectedYear.value)+'-01'
   tab.value='list'}
  const openPaymentMethodDetails=(method,period)=>{

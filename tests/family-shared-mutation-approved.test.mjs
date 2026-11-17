@@ -313,7 +313,7 @@ test('member posts one neutral spouse transfer without approval; later ledger ch
    body:JSON.stringify(data)}),f.env,directUrl,f.user,['shared-entries']);
   const payload={expected_user_id:member,idempotency_key:'member-spouse-transfer-20261117',entry:spouse};
   const first=await post(payload);
-  assert.equal(first.status,201,await first.text());
+  assert.equal(first.status,201,await first.clone().text());
   const data=await first.json();
   assert.equal(data.action.creator_user_id,member);
   const id=data.action.resource_id;

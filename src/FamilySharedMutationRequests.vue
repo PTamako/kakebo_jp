@@ -234,7 +234,7 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
  <header><strong>{{spouseQuickMode?'配偶からの収入':'申请修改共享账目'}}</strong>
   <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'收起':'申请'}}</button></header>
  <template v-if="open">
-  <p class="hint">{{spouseQuickMode?'受取人が「配偶からの収入」を登録。銀行口座は不要で、承認後に反映。':'共有明細の追加・変更・削除・復元は HomeFlow 承認後に反映。SBI・カード・振替は対象外。'}}</p>
+  <p class="hint">{{spouseQuickMode?'受取人が「配偶からの収入」を登録。銀行口座は不要で、承認後に反映。':'共有明細の追加・変更・削除・復元は承認・実行後に反映。SBI・カード・振替は対象外。'}}</p>
   <p v-if="error" class="error" role="alert">{{error}}</p>
   <p v-if="message" class="hint" role="status">{{message}}</p>
   <form v-if="available" class="editor" @submit.prevent="prepared?submit():prepare()">

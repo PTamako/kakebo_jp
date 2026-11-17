@@ -103,7 +103,23 @@ export async function verifyDocumentFinanceAccount(request,env,parts=['verify'])
         rows.unshift({account_id:accountId,label:cash.name,account_kind:'cash',account_version:1});
       }
     }
-    return reply({ok:true,verified:true,applied:false,accounts:rows});
+    // Canonical Japanese category labels and their stable database values.
+    // The client must choose a database category, not invent a free-text label.
+    let categories=[];
+    try{
+      const found=await env.DB.prepare(
+        "SELECT category,display_name,entry_type FROM category_source "+
+        "WHERE entry_type IN ('income','expense') ORDER BY entry_type,sort_order LIMIT 100"
+      ).bind().all();
+      categories=(found.results||[]).filter(x=>
+        ['income','expense'].includes(x.entry_type)&&
+        typeof x.category==='string'&&x.category.length>0&&x.category.length<=80)
+        .map(x=>({value:x.category,label:x.display_name||x.category,entry_type:x.entry_type}));
+    }catch(error){
+      // Initial isolated approval fixtures predate the canonical category table.
+      if(!/no such table: category_source/i.test(String(error)))throw error;
+    }
+    return reply({ok:true,verified:true,applied:false,accounts:rows,categories});
   }
   // The mapping must exist in the TARGET database and belong to the
   // exact currently linked member. Duplicate labels carry no authority.

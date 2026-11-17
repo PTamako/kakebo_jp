@@ -1,4 +1,4 @@
-name: One-time Approved Household Ledger Cash Production Publish
+name: One-time Payment Ownership and Stats Production Publish
 on:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   production:
-    if: "${{ startsWith(github.event.head_commit.message, 'deploy(kakeibo): publish reviewed ledger cash release') }}"
+    if: "${{ startsWith(github.event.head_commit.message, 'deploy(kakeibo): publish payment ownership stats release') }}"
     environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -34,6 +34,6 @@ jobs:
       - name: Deploy existing private bridge with signed reviewed ledger handlers
         run: npx wrangler deploy --config wrangler.homeflow-bridge.toml
       - name: Publish existing Pages project on main (production only)
-        run: npx wrangler pages deploy dist --project-name=kakeibo --branch=main --commit-hash="$GITHUB_SHA" --commit-message="reviewed household ledger cash and approval detail release"
+        run: npx wrangler pages deploy dist --project-name=kakeibo --branch=main --commit-hash="$GITHUB_SHA" --commit-message="payment ownership read-only and family payment statistics release"
       - name: Confirm production Pages endpoint responds
         run: curl --retry 5 --retry-delay 3 --fail --silent --show-error https://kakeibo-f17.pages.dev/ >/dev/null

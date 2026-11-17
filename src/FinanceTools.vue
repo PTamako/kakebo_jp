@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
+import CardUsageSummaryFields from './CardUsageSummaryFields.vue'
 import OriginalOtherManagement from './OriginalOtherManagement.vue'
 import CardManagementControls from './CardManagementControls.vue'
 import OriginalCardManagementPanel from './OriginalCardManagementPanel.vue'
@@ -1705,11 +1706,10 @@ async function removeCardBill(record) {
     @edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan(p.id)" />
   <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">
     <h2>カード別利用額</h2>
-    <div class="finance-inputs card-billing-fields">
-      <label>カード<MobileChoiceSheet v-model="bill.name" label="カード名" :options="[{value:'',label:'カードを選択'},...creditCardSources.map(source=>({value:source,label:source+(props.paymentSourceMeta[source]?.is_archived?'（アーカイブ済み）':'')}))]" /></label>
-      <label>締め月<input class="card-closing-month" v-model="bill.month" type="month" aria-label="締め月"></label>
-      <label>利用額<output class="card-usage-total" aria-live="polite">{{loaded && bill.name && cardPeriod ? yen(cardTotal) : "—"}}</output></label>
-    </div>
+    <CardUsageSummaryFields :card="bill.name" :month="bill.month"
+      :card-options="[{value:'',label:'カードを選択'},...creditCardSources.map(source=>({value:source,label:source+(props.paymentSourceMeta[source]?.is_archived?'（アーカイブ済み）':'')}))]"
+      :amount="loaded && bill.name && cardPeriod ? yen(cardTotal) : '—'"
+      @update:card="bill.name=$event" @update:month="bill.month=$event" />
     <p v-if="!loaded">全明細を更新してください。</p>
     <p v-else-if="bill.name && cardPeriod" class="card-billing-period">{{cardPeriod.start}} ～ {{cardPeriod.end}} · {{cardTransactions.length}}件（資産移動・ポイント還元を含む）</p>
     <p v-if="selectedSavedBillStale" class="card-billing-period" role="status">保存済みの請求額と現在のD1明細・締め期間に差があります。再計算して保存してください。</p>

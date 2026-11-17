@@ -194,7 +194,7 @@ try{
     assert.equal(cardAdds[0].sourceType,'prepaid')
     assert.equal(await page.evaluate(()=>document.body.style.overflow),'','Card sheets must unlock scroll after save')
     assert.ok(Math.abs((await panel.evaluate(el=>el.getBoundingClientRect().height))-heightBefore)<2)
-    await assertNativeTemporalLayout(page.locator('.card-billing-panel input.card-closing-month'),'締め月',width)
+    await assertNativeTemporalLayout(page.locator('.card-billing-panel .card-usage-summary-month input[type=month]'),'締め月',width)
 
     // Fixed-expense search spans the panel width and all three statuses stay on one row.
     await page.locator('.finance-section-tabs').getByRole('button',{name:'固定費'}).click()

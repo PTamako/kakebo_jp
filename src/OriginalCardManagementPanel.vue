@@ -31,7 +31,7 @@ const emit=defineEmits(['update:selected','update:mode','default','archive','rem
    @update:model-value="emit('update:selected',$event)"
    @default="emit('default')" @edit="emit('update:mode','edit')"
    @add="emit('update:mode','add')"/>
-  <p v-if="defaultValue">デフォルト：{{options.find(x=>x.value===defaultValue)?.label||defaultValue}}</p>
+  <p class="card-default-status">デフォルト：{{defaultValue?(options.find(x=>x.value===defaultValue)?.label||defaultValue):'未設定'}}</p>
   <MobileCardEditorSheet :mode="mode" :card-name="name" :card="card" :default-source-type="defaultSourceType"
    :closing-day="closingDay" :payment-sources="paymentSources"
    :share-options="shareOptions" :share-ready="shareReady" :share-error="shareError"

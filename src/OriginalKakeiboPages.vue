@@ -35,7 +35,7 @@ function navigate(next){
   <AppTopbar :identity="identity" :theme="theme" :themes="themes"
    @change-theme="emit('theme-change',$event)" @logout="emit('logout')"/>
   <EntryInputPage v-if="activeTab==='add'">
-   <template #personal-transfer><slot name="personal-transfer"/></template>
+   <template #custom-transfer-fields="{record}"><slot name="custom-transfer-fields" :record="record"/></template>
   </EntryInputPage>
   <LedgerPage v-else-if="activeTab==='list'" :member="member"/>
   <StatisticsPage v-else-if="activeTab==='stat'"/>

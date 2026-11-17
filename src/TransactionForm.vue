@@ -4,7 +4,7 @@ import { sortOtherLast } from './category-sort.js'
 import { inferredSbiEntryKind } from './sbi-investment-kind.js'
 import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
-const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentReadOnly: {type:Boolean,default:false}, categoryReadOnly: {type:Boolean,default:false}, allowUnlistedCategoryEdit: {type:Boolean,default:false}, allowUnlistedAccountEdit: {type:Boolean,default:false}, transferReadOnly: {type:Boolean,default:false}, transferSourceReadOnly: {type:Boolean,default:false}, rewardReadOnly: {type:Boolean,default:false}, paymentChoices: {type:Array,default:()=>[]}, allowSbiTransfer: {type:Boolean,default:true} })
+const props = defineProps({ record: { type: Object, required: true }, categories: { type: Array, required: true }, incomeCategories: { type: Array, required: true }, paymentSources: { type: Array, required: true }, transferDestinations: {type:Array,default:()=>[]}, rewardDestinations: {type:Array,default:()=>[]}, categoryLabel: { type: Function, required: true }, receiptEnabled: { type: Boolean, default: true }, existingReceipt: { type: Boolean, default: false }, receiptName: { type: String, default: '' }, editMode: { type: Boolean, default: false }, allowedTypes: {type:Array,default:()=>['expense','income','transfer']}, showPaymentSource: {type:Boolean,default:true}, paymentReadOnly: {type:Boolean,default:false}, categoryReadOnly: {type:Boolean,default:false}, allowUnlistedCategoryEdit: {type:Boolean,default:false}, allowUnlistedAccountEdit: {type:Boolean,default:false}, transferReadOnly: {type:Boolean,default:false}, transferSourceReadOnly: {type:Boolean,default:false}, rewardReadOnly: {type:Boolean,default:false}, paymentChoices: {type:Array,default:()=>[]}, allowSbiTransfer: {type:Boolean,default:true}, customTransferForm: {type:Boolean,default:false}, lockedTypeSwitch: {type:Boolean,default:false} })
 const emit = defineEmits(['change-type','select-receipt','clear-receipt','merchant-change','payment-change'])
 const detailsOpen = ref(false)
 const record = computed(() => props.record)
@@ -82,7 +82,8 @@ const transferOptions = computed(()=> [
 <template>
 <div class="transaction-form">
   <div class="type-switch" role="group" aria-label="記録の種類">
-    <button v-for="t in [{id:'expense',label:'支出'},{id:'income',label:'収入'},{id:'transfer',label:'資産移動'}].filter(t=>allowedTypes.includes(t.id))" :key="t.id" type="button" :class="{selected:record.type===t.id}" @click="emit('change-type',t.id)">{{t.label}}</button>
+    <button v-for="t in [{id:'expense',label:'支出'},{id:'income',label:'収入'},{id:'transfer',label:'資産移動'}].filter(t=>allowedTypes.includes(t.id))" :key="t.id" type="button" :class="{selected:record.type===t.id}" :disabled="lockedTypeSwitch && editMode && (record.originalType==='transfer' ? t.id!=='transfer' : t.id==='transfer')"
+      :title="lockedTypeSwitch && editMode && (record.originalType==='transfer' ? t.id!=='transfer' : t.id==='transfer') ? '既存の明細と資産移動は別々に管理します。新しい資産移動は「＋」から入力できます。' : undefined" @click="emit('change-type',t.id)">{{t.label}}</button>
   </div>
   <div class="form-field amount-field"><span>金額（円）</span><AmountInput v-model="record.amount" /></div>
   <div v-if="!(Number(record.amount)>0)" class="amount-warning" role="alert">金額を確認してください。</div>
@@ -94,7 +95,7 @@ const transferOptions = computed(()=> [
     <label v-if="record.type==='expense'" class="form-field"><span>店舗</span><input v-model="record.merchant" @input="emit('merchant-change')" /></label>
     <label v-if="record.type==='expense' && showPaymentSource" class="form-field"><span>支払方法・カード</span><span v-if="paymentReadOnly" class="payment-source-readonly" role="status">{{record.paymentDisplay||record.paymentSource||'未設定'}}</span><MobileChoiceSheet :model-value="record.paymentSource" v-else :options="paymentOptions" label="支払方法・カード" @change="emit('payment-change',$event)" /></label>
   </div>
-  <div v-if="record.type==='transfer'" class="field-grid transfer-schedule-fields">
+  <div v-if="record.type==='transfer' && !customTransferForm" class="field-grid transfer-schedule-fields">
     <label class="form-field"><span>转移方式／振替先</span>
       <span v-if="transferLocked" class="payment-source-readonly" role="status">{{record.transferDisplay||record.transferTarget||'未設定'}}</span><MobileChoiceSheet v-else v-model="record.transferTarget" :options="transferOptions" label="振替先" />
     </label>
@@ -102,20 +103,21 @@ const transferOptions = computed(()=> [
       <input v-model="record.transferDate" type="date" required />
     </label>
   </div>
-  <p v-if="record.type==='transfer'&&record.transferTarget==='spouse'" class="form-field"><small>家庭内の資産移動は1件だけ記録。両者の収入・支出に計上せず、口座の指定も不要です。</small></p>
-  <label v-if="record.type==='transfer' && record.transferTarget==='sbi' && !editMode" class="form-field">
+  <p v-if="record.type==='transfer'&&!customTransferForm&&record.transferTarget==='spouse'" class="form-field"><small>家庭内の資産移動は1件だけ記録。両者の収入・支出に計上せず、口座の指定も不要です。</small></p>
+  <label v-if="record.type==='transfer' && !customTransferForm && record.transferTarget==='sbi' && !editMode" class="form-field">
     <span>SBIの取引区分</span>
     <MobileChoiceSheet v-model="record.sbiPurpose" :options="sbiPurposeOptions" label="SBIの取引区分" />
     <small v-if="!record.sbiPurpose || record.sbiPurpose==='auto'">自動判定：{{autoSbiLabel}}（「積立」の文字があるときだけ定投）</small>
   </label>
-  <label v-if="record.type==='transfer' && record.transferTarget==='sbi' && !editMode" class="form-field">
+  <label v-if="record.type==='transfer' && !customTransferForm && record.transferTarget==='sbi' && !editMode" class="form-field">
     <span>取引名（任意）</span>
     <input v-model="record.merchant" maxlength="500" placeholder="SBI証券 投信積立サービス" />
   </label>
-  <label v-if="record.type==='transfer' && record.transferTarget!=='family:cross-bank'&&record.transferTarget!=='spouse'" class="form-field">
+  <label v-if="record.type==='transfer' && !customTransferForm && record.transferTarget!=='family:cross-bank'&&record.transferTarget!=='spouse'" class="form-field">
     <span>{{record.transferTarget?.startsWith('prepaid:') ? 'チャージ元（任意）' : '振替元（任意）'}}</span>
     <span v-if="transferSourceLocked" class="payment-source-readonly" role="status">{{record.paymentDisplay||record.paymentSource||'未設定'}}</span><MobileChoiceSheet v-else v-model="record.paymentSource" :options="transferSourceOptions" label="振替元" />
   </label>
+  <slot v-if="record.type==='transfer' && customTransferForm" name="custom-transfer-fields" :record="record"/>
   <div v-if="record.type==='expense' && receiptEnabled" class="receipt-attachment-field" role="group" aria-label="レシート画像の添付"><span class="receipt-attachment-label">レシート画像（任意）</span><label class="button-secondary receipt-attachment-button">{{hasReceipt?'画像を変更する':'画像を追加'}}<input type="file" accept="image/*" @change="emit('select-receipt',$event)" hidden /></label><span class="receipt-attachment-status">{{record.receiptImage?'選択済み'+(record.receiptFileName?'：'+record.receiptFileName:''):receiptName?'選択済み：'+receiptName:existingReceipt?'保存済み':'未選択'}}</span><button v-if="record.receiptImage || receiptName" type="button" class="receipt-attachment-clear" @click="emit('clear-receipt')">選択を解除</button></div>
   <div v-if="!editMode && record.type==='expense'" class="merchant-rule-options" role="group" aria-label="店舗の自動設定">
     <label class="bind-rule transaction-bind-rule"><input v-model="record.bindRule" type="checkbox" :disabled="!record.merchant || record.merchant.trim().length<2" /><span>カテゴリを記憶</span></label>

@@ -6,6 +6,8 @@ import MemberPersonalPoints from './MemberPersonalPoints.vue'
 import MemberPointAssetActions from './MemberPointAssetActions.vue'
 import MemberPointAssetReversals from './MemberPointAssetReversals.vue'
 import MemberPrepaidTopups from './MemberPrepaidTopups.vue'
+import MemberAssetTransferFields from './MemberAssetTransferFields.vue'
+import {submitMemberPersonalTransfer} from './member-asset-transfer-submit.js'
 import MemberCardUsage from './MemberCardUsage.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import {memberInvestmentSnapshot} from './member-investment-view.js'
@@ -46,6 +48,10 @@ const props=defineProps({
 })
 const emit=defineEmits(['logout','theme-change'])
 const tab=ref('add')
+const memberLastRefreshAt=ref(null)
+const memberStatus=computed(()=>memberLastRefreshAt.value
+ ?'最終更新：'+new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit'}).format(memberLastRefreshAt.value)
+ :'未読み込み')
 const accounts=ref([]),assets=ref([]),sharedEntries=ref([]),pendingMutations=ref([]),totals=ref(null),yearly=ref(null)
 const sharedCards=ref([]),cardSharingError=ref('')
 const personalDocumentSbi=ref([]),annualPersonalDocumentSbi=ref([])
@@ -342,7 +348,7 @@ function setMemberEntryType(type,entry){
  if(!['expense','income','transfer'].includes(type))return
  entry.type=type
  entry.category=type==='expense'?'食費':type==='income'?'給与':'投資・資産移動'
- entry.merchant=type==='transfer'?'配偶への振替':''
+ entry.merchant=''
  entry.transferTarget=type==='transfer'?'spouse':''
  entry.transferDate=type==='transfer'?entry.date:''
  entry.paymentSource=type==='expense'?'cash':''
@@ -522,8 +528,6 @@ async function submitMemberEntry(){
  try{
   while(memberEntries.value.length){
    const record=memberEntries.value[0]
-   if(record.type==='transfer'&&record.transferTarget!=='spouse')
-    throw Error('配偶への資産移動以外はこの記帳画面から申請できません')
    const choice=record.type==='expense'
     ?resolveMemberPayment(record.paymentSource,myAccounts.value,sharedCards.value)
     :{kind:'cash'}
@@ -532,9 +536,12 @@ async function submitMemberEntry(){
     throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
    let receiptRef=''
    if(record.type==='transfer'){
-    const result=await submitNeutralSpouseTransfer(record)
+    const result=record.transferTarget==='spouse'
+     ?await submitNeutralSpouseTransfer(record)
+     :await submitMemberPersonalTransfer({record,userId:props.user.user_id,
+       accounts:myAccounts.value})
     applied++
-    receiptRef='entry:'+result.entryId
+    receiptRef=result.entryId?'entry:'+result.entryId:''
    }else if(choice.kind==='shared'||choice.kind==='personal'){
     const result=await submitPaidExpense(choice,record)
     if(result.type==='applied')applied++
@@ -1064,6 +1071,7 @@ async function refresh(){
   yearly.value={totals:{income:e.income,expense:e.total,
    transfer:Number(e.transferTotal||0)+personalYearResult.transfer_total_jpy},
    net_income_expense:Number(e.income||0)-Number(e.total||0)}
+  memberLastRefreshAt.value=new Date()
   // Only the requesting member receives these read-only pending previews.
   try{
    const pending=await api('shared-mutation-requests?view=ledger&month='+
@@ -1580,7 +1588,8 @@ provide('kakeibo-entry-input',{
  onImage:memberScanImage,addBlank:()=>addMemberEntry(),saveAll:submitMemberEntry,
  receiptEnabled:computed(()=>true),
  allowedTypes:computed(()=>['expense','income','transfer']),
- paymentChoices:memberPaymentSourceChoices,allowSbiTransfer:false
+ paymentChoices:memberPaymentSourceChoices,allowSbiTransfer:false,
+  personalAssetActionsEnabled:computed(()=>true)
 })
 void loadMemberCategories()
 watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMemberCategories()})
@@ -1607,11 +1616,15 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    :on-personal-history="openMemberWalletHistory"
    :management-bindings="{memberView:true,memberBusy:busy,memberError:error,
     cardSettingsRequest:memberCardSettingsRequest,
-    memberStatus:'本人のカード・残高・固定費 · '+myAccounts.length+'口座',
+    memberStatus,
     memberRefresh:refresh,memberTrashCount:memberTrashCount,memberLoadTrash:loadMemberSharedTrash,memberLoadJobs:loadMemberJobStatus,api}"
    @update:active-tab="tab=$event" @ledger-open="tab='list'"
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    
+   <template #custom-transfer-fields="{record}">
+    <MemberAssetTransferFields :key="'personal-transfer:'+user.user_id"
+     :record="record" :user-id="user.user_id" :accounts="myAccounts"/>
+   </template>
    <template #member-cards>
     <OriginalCardManagementPanel
       :selected="selectedCardId"
@@ -1622,7 +1635,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
       :payment-sources="cardLabels" :share-ready="false"
       :archived="cardAccounts.filter(a=>a.is_archived).map(a=>({value:a.account_id,
         label:a.label,kind:a.account_kind}))"
-      :allow-permanent-delete="false" empty-hint="＋から本人のカードを追加できます。"
+      :allow-permanent-delete="false" 
       :default-source-type="preferredCardType"
       :on-save="saveCard" :on-danger="cardDanger"
       @update:selected="selectedCardId=$event" @update:mode="next=>{if(next==='add')preferredCardType='standard';cardMode=next}"
@@ -1630,13 +1643,6 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
       @archive="id=>modify(cardAccounts.find(a=>a.account_id===id),{is_archived:false})" />
     <MemberCardUsage :user-id="user.user_id" :active="tab==='finance'" :revision="memberUsageRevision"/>
 
-    <MemberPrepaidTopups :key="'personal-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPersonalPoints :key="'personal-points:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
-    <MemberPointAssetActions :key="'points-asset:'+user.user_id" 
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
-    <MemberPointAssetReversals :key="'points-asset-refunds:'+user.user_id"
-     :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
     
    </template>
    <template #member-plans>
@@ -1649,7 +1655,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
     <SbiPortfolio member-mode active-view="plans" :api="memberSbiApi"
       :on-member-create="()=>openMemberInvestmentPlan()"
       :on-member-edit="openMemberInvestmentPlan"/>
-    <FamilyRecurringFinance ref="memberRecurringRef" view="investment"
+    <FamilyRecurringFinance ref="memberRecurringRef" view="investment" embedded
      :key="'personal-sbi:'+user.user_id" :user-id="user.user_id"
      :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
    </template>
@@ -1673,7 +1679,16 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
       <strong>{{item.due_date}} · {{yen(item.amount_jpy)}} · {{item.state}}</strong>
      </div>
      <button type="button" class="button-secondary" :disabled="memberJobsBusy" @click="loadMemberJobStatus">状態を更新</button>
-     <p class="help">予定・実行証跡の表示であり、金融機関の実取引確認や家庭明細の自動入帳を意味しません。家庭明細の追加・変更のみ HomeFlow 審査へ送信します。</p>
+         <details class="member-asset-history">
+     <summary>本人のポイント・チャージ履歴と訂正</summary>
+     <MemberPrepaidTopups :key="'history-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
+     <MemberPersonalPoints :key="'history-points:'+user.user_id"
+      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
+     <MemberPointAssetActions :key="'history-point-assets:'+user.user_id"
+      :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+     <MemberPointAssetReversals :key="'history-point-reversals:'+user.user_id"
+      :user-id="user.user_id" :household-id="user.household_id" @changed="refresh"/>
+    </details>
     </template>
    <template #member-privacy>
      <p v-if="memberReceiptError" class="help" role="alert">{{memberReceiptError}}</p>

@@ -1,7 +1,8 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 const props=defineProps({userId:{type:String,required:true},householdId:{type:String,required:true},
- accounts:{type:Array,required:true},view:{type:String,default:'investment'}})
+ accounts:{type:Array,required:true},view:{type:String,default:'investment'},
+ embedded:{type:Boolean,default:false}})
 const emit=defineEmits(['changed'])
 const nowMonth=()=>new Date(Date.now()+32400000).toISOString().slice(0,7)
 const open=ref(false),editorOpen=ref(false),busy=ref(false),available=ref(false)
@@ -61,7 +62,7 @@ async function save(){
  try{
   const r=await api('',post({...payload,idempotency_key:pending.key}))
   if(r.ledger_changed!==false||r.plan?.owner_user_id!==actor)throw Error('記録結果を確認できません')
-  pending=null;editorOpen.value=false;notice.value='積立予定を保存しました。承認不要・買付未実行です。'
+  pending=null;editorOpen.value=false;notice.value='積立予定を保存しました。管理者の承認は不要です。'
   await refresh();emit('changed')
  }catch(e){error.value=e.message}finally{busy.value=false}
 }
@@ -82,11 +83,12 @@ onUnmounted(()=>{alive=false;generation++})
 defineExpose({openPlanEditor})
 </script>
 <template>
-<section class="personal-sbi-plans">
- <header><strong>本人のSBI積立計画</strong>
+<section v-if="!embedded || open" class="personal-sbi-plans">
+ <header v-if="!embedded"><strong>本人のSBI積立計画</strong>
   <button type="button" @click="toggle">{{open?'閉じる':'開く'}}</button></header>
+ <div v-else class="embedded-plan-heading"><strong>積立設定</strong>
+  <button type="button" @click="open=false;editorOpen=false">閉じる</button></div>
  <template v-if="open">
-  <p class="hint">銀行口座は不要です。積立予定の管理は本人だけで完結し、家庭管理者の承認は不要です。実際の買付・入金は行いません。</p>
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="hint">{{notice}}</p>
   <button v-if="available&&!editorOpen" type="button" @click="openPlanEditor">＋ 積立予定を登録</button>

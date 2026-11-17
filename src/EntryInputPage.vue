@@ -8,7 +8,7 @@ import OcrCapturePanel from './OcrCapturePanel.vue'
 // authenticated data/actions adapter is identity-specific.
 const ctx=inject('kakeibo-entry-input')
 if(!ctx)throw Error('記帳ページのデータ接続がありません')
-const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,saveCategory,categoryEntryType,categoryName,categoryIcon,availableIcons,input,entryInputMode,recognitionMode,importPaymentSource,importPaymentOptions,recognize,aiOcrEnabled,aiQuota,scanImportPaymentSource,ocrEngine,ocrWarning,setAiOcrEnabled,forms,draftRecoveryInfo,clearLocalDraft,removeDraft,rewardDestinations,transferDestinations,categories,INCOME_CATEGORIES,paymentSources,categoryLabel,selectDraftReceipt,pendingReceiptImage,pendingReceiptFileName,receiptSaveError,setEntryType,applyMerchantPayment,manualPayment,onImage,addBlank,saveAll,receiptEnabled,allowedTypes,paymentChoices,allowSbiTransfer}=ctx
+const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,saveCategory,categoryEntryType,categoryName,categoryIcon,availableIcons,input,entryInputMode,recognitionMode,importPaymentSource,importPaymentOptions,recognize,aiOcrEnabled,aiQuota,scanImportPaymentSource,ocrEngine,ocrWarning,setAiOcrEnabled,forms,draftRecoveryInfo,clearLocalDraft,removeDraft,rewardDestinations,transferDestinations,categories,INCOME_CATEGORIES,paymentSources,categoryLabel,selectDraftReceipt,pendingReceiptImage,pendingReceiptFileName,receiptSaveError,setEntryType,applyMerchantPayment,manualPayment,onImage,addBlank,saveAll,receiptEnabled,allowedTypes,paymentChoices,allowSbiTransfer,personalAssetActionsEnabled}=ctx
 </script>
 <template>
 <section class="page-section">
@@ -58,8 +58,8 @@ const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,sa
         <span class="count-pill">{{ forms.length }}件</span>
       </div>
       <div v-for="(f, i) in forms" :key="i" class="entry-card">
-        <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ f.merchant || '新しい記録' }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
-        <TransactionForm :reward-destinations="rewardDestinations" :transfer-destinations="transferDestinations" :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="receiptEnabled && (entryInputMode === 'manual' || f.showReceiptAttachment === true)" :allowed-types="allowedTypes" :payment-choices="paymentChoices" :allow-sbi-transfer="allowSbiTransfer" @change-type="setEntryType(f, $event)" @merchant-change="applyMerchantPayment(f)" @payment-change="manualPayment(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''" />
+        <div class="entry-card-heading"><span class="entry-number">{{ String(i + 1).padStart(2, '0') }}</span><strong>{{ personalAssetActionsEnabled&&f.type==='transfer'?'資産移動':(f.merchant || '新しい記録') }}</strong><button class="icon-button remove-button" @click="removeDraft(i)" aria-label="この記録を削除">×</button></div>
+        <TransactionForm :reward-destinations="rewardDestinations" :transfer-destinations="transferDestinations" :record="f" :categories="categories" :income-categories="INCOME_CATEGORIES" :payment-sources="paymentSources" :category-label="categoryLabel" :receipt-enabled="receiptEnabled && (entryInputMode === 'manual' || f.showReceiptAttachment === true)" :allowed-types="allowedTypes" :payment-choices="paymentChoices" :allow-sbi-transfer="allowSbiTransfer" :custom-transfer-form="personalAssetActionsEnabled" @change-type="setEntryType(f, $event)" @merchant-change="applyMerchantPayment(f)" @payment-change="manualPayment(f, $event)" @select-receipt="selectDraftReceipt($event, f)" @clear-receipt="f.receiptImage = null; f.receiptFileName = ''"><template #custom-transfer-fields><slot name="custom-transfer-fields" :record="f"/></template></TransactionForm>
       </div>
       <p v-if="receiptSaveError" role="alert" class="receipt-save-error">{{ receiptSaveError }}</p>
       <div class="batch-actions" :class="{ 'batch-actions-empty': !forms.length }">
@@ -68,7 +68,10 @@ const {liveClockIso,todayLabel,addCategory,busy,categoryDialog,categorySaving,sa
         <button class="button-primary" @click="saveAll" :disabled="!!busy || !forms.length || forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank')">{{ busy === 'saving' ? '保存中…' : forms.some(f => f.type === 'transfer' && f.transferTarget === 'family:cross-bank') ? '配偶間の資産移動は別途確認' : `保存 ${forms.length}件` }}</button>
       </div>
       </fieldset>
-      <slot name="personal-transfer"/>
     </section>
 </template>
 
+
+<style scoped>
+.personal-asset-entry-switch{margin:4px 0 12px}.personal-asset-entry-panel{display:grid;gap:10px;min-width:0;padding:0 0 90px}.personal-asset-entry-note{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+</style>

@@ -34,6 +34,7 @@ function fixture(){
   '0041_points_transfer_atomic_refund.sql','0042_points_prepaid_refund.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+current,import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0072_member_personal_prepaid_topups.sql',import.meta.url),'utf8'));
+  sql.exec(readFileSync(new URL('../migrations/0075_member_prepaid_topup_corrections.sql',import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,household,role,role,'active',Date.now());

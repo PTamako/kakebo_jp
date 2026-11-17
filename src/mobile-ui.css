@@ -247,6 +247,9 @@ main .finance-tools { min-width: 0; gap: 12px; }
 main .finance-tools .finance-load-error { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--tint); color: var(--ink); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 main .finance-tools .finance-panel { padding: 14px; border-radius: 17px; }
 main .finance-tools .finance-panel h2 { font-size: 16px; }
+/* Card utilization panel spacing is identical for owner/member slot components. */
+main .finance-tools .card-billing-panel { display: grid; gap: 8px; }
+
 main .finance-tools .finance-global-load { min-height: 44px; }
 main .finance-tools .finance-inputs input,
 main .finance-tools .finance-inputs select,
@@ -290,6 +293,11 @@ main .finance-tools .recurring-details > label:last-child { grid-column: 1 / -1;
 main .finance-tools .finance-bill-history-row { min-height: 52px; }
 main .finance-tools .finance-bill-history-row button { min-height: 44px; }
 
+/* A ledger dialog must never sit behind the fixed five-tab bar on iPhone.
+   Keep the page navigation hidden while any modal is active, including when
+   its scroll contents exceed the viewport. */
+main:has(.edit-overlay) .bottom-nav { visibility: hidden; pointer-events: none; }
+main .edit-overlay { z-index: 100; }
 /* iPhone edit dialogs are bottom sheets with a reliable safe-area footer. */
 @media (max-width: 560px) {
   main .edit-overlay { align-items: flex-end; padding: 0; }
@@ -302,7 +310,7 @@ main .finance-tools .finance-bill-history-row button { min-height: 44px; }
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
   }
-  main .edit-dialog-actions { position: sticky; bottom: 0; z-index: 2; background: var(--card); padding-block: 8px; }
+  main .edit-dialog-actions { position: sticky; bottom: 0; z-index: 2; background: var(--card); padding: 10px 0 calc(12px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (max-width: 420px) {
   main .today-date { display: none; }

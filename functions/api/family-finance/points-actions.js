@@ -354,6 +354,8 @@ async function submit(req,e,url,user,requestId){
  if(!exact(body,['expected_user_id'])||body.expected_user_id!==user.user_id)return fail('ACTOR_CHANGED',403);
  const p=await one(e.DB,requestId,user);
  if(!p)return fail('NOT_FOUND',404);
+ if(e.KAKEIBO_HOUSEHOLD_LEDGER_ONLY==='true')
+  return fail('PERSONAL_POINTS_USE_MEMBER_PERSONAL_POINTS',410);
  if(p.status==='submitted')return json({ok:true,approval_id:p.homeflow_approval_id,
   status:'submitted_status_unknown',applied:!!p.homeflow_request_id,replayed:true});
  if(p.status!=='prepared'||p.expires_at<=Date.now())return fail('POINTS_NOT_SUBMITTABLE');

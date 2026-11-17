@@ -104,13 +104,13 @@ async function prepare(req,e,url,u){
    'WHERE resource_id=? AND household_id=?').bind(x.resource_id,u.household_id).first();
   if(reg?.version!==x.expected_version||reg.state!==(x.operation==='restore'?'deleted':'active'))
    return fail('SHARED_MUTATION_RESOURCE_CHANGED');
-  // A member may submit an edit for a spouse-created neutral transfer too:
-  // HomeFlow owner approval, not the submitter, authorizes any ledger change.
-  // What never changes through this route is the neutral spouse-only target.
+  // Neutral transfers must never be resubmitted into owner approval,
+  // including old cached PWA update/delete/restore requests.
   let before;
   try{before=JSON.parse(reg.snapshot_json)}catch{return fail('SHARED_MUTATION_RESOURCE_CHANGED')}
-  if(before?.type==='transfer'&&(before.transfer_target!=='spouse'||
-   x.operation==='update'&&(entry.type!=='transfer'||entry.transfer_target!=='spouse')))
+  if(before?.type==='transfer')
+   return fail('NEUTRAL_SPOUSE_TRANSFER_NO_OWNER_REVIEW',410);
+  if(x.operation==='update'&&entry.type==='transfer')
    return fail('SHARED_MUTATION_TRANSFER_TYPE_LOCKED',409);
   if(x.operation==='update'&&Object.hasOwn(entry,'payment_source')){
    // The private executor and Pages must both explicitly permit this operation.

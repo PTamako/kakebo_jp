@@ -112,6 +112,8 @@ async function submit(req,e,url,u,idValue){
   return fail('BANK_TRANSFER_ACTOR_CHANGED',403);
  const p=await one(e.DB,idValue,u);
  if(!p)return fail('BANK_TRANSFER_NOT_FOUND',404);
+ if(e.KAKEIBO_HOUSEHOLD_LEDGER_ONLY==='true')
+  return fail('PERSONAL_BANK_TRANSFER_NO_OWNER_REVIEW',410);
  if(p.status==='submitted'&&uuid.test(p.homeflow_approval_id))
   return json({ok:true,approval_id:p.homeflow_approval_id,status:'submitted_status_unknown',replayed:true,applied:false});
  if(p.status!=='prepared'||p.expires_at<=Date.now())

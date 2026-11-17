@@ -107,6 +107,8 @@ async function submit(req,e,url,u,requestId){
  if(!exact(x,['expected_user_id'])||x.expected_user_id!==u.user_id)return fail('SBI_ACTOR_CHANGED',403);
  const p=await one(e.DB,requestId,u);
  if(!p)return fail('SBI_CASH_NOT_FOUND',404);
+ if(e.KAKEIBO_HOUSEHOLD_LEDGER_ONLY==='true')
+  return fail('PERSONAL_SBI_ACTION_USE_PERSONAL_SBI',410);
  if(p.status==='submitted'&&uuid.test(p.homeflow_approval_id))
   return json({ok:true,status:'submitted_status_unknown',approval_id:p.homeflow_approval_id,replayed:true,applied:false});
  if(p.status!=='prepared'||p.expires_at<=Date.now())return fail('SBI_CASH_NOT_SUBMITTABLE');

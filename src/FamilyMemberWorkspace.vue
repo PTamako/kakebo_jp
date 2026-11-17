@@ -807,15 +807,30 @@ const memberDuplicateGroups=computed(()=>{
 })
 const memberArchivedAccounts=computed(()=>myAccounts.value.filter(a=>
  a.is_archived&&a.origin==='member_created'))
-const memberSharedTrash=ref([]),memberTrashBusy=ref(false)
+const memberSharedTrash=ref([]),memberPersonalDocumentSbiTrash=ref([]),memberTrashBusy=ref(false)
 const memberTrashError=ref(''),memberTrashNotice=ref('')
 async function loadMemberSharedTrash(){
  if(memberTrashBusy.value)return
  const actor=props.user.user_id,ticket=epoch
  memberTrashBusy.value=true;memberTrashError.value=''
  try{
-  const result=await api('shared-entries?state=deleted')
+  const [result,personalFirst]=await Promise.all([
+   api('shared-entries?state=deleted'),api('personal-document-sbi?state=trashed')])
   if(ticket!==epoch||actor!==props.user.user_id)return
+  if(personalFirst.scope!=='personal'||personalFirst.viewer_user_id!==actor||
+   personalFirst.state!=='trashed'||!Array.isArray(personalFirst.items))
+   throw Error('本人の資産移動の回収記録を確認できません')
+  const personal=[...personalFirst.items]
+  let offset=personalFirst.next_offset
+  for(let page=0;offset!==null&&page<100;page++){
+   const next=await api('personal-document-sbi?state=trashed&offset='+offset)
+   if(ticket!==epoch||actor!==props.user.user_id)return
+   if(next.scope!=='personal'||next.viewer_user_id!==actor||!Array.isArray(next.items)||
+    next.next_offset!==null&&next.next_offset<=offset)throw Error('本人の資産移動回収ページが無効です')
+   personal.push(...next.items);offset=next.next_offset
+  }
+  if(offset!==null)throw Error('回収済み資産移動の一覧が長すぎます')
+  memberPersonalDocumentSbiTrash.value=personal
   if(!Array.isArray(result.items)||result.items.some(x=>x.state!=='deleted'))
    throw Error('回収箱の取得範囲を確認できません')
   memberSharedTrash.value=result.items
@@ -833,7 +848,20 @@ async function restoreMemberSharedTrash(row){
  }catch(e){memberTrashError.value=e.message}
  finally{memberTrashBusy.value=false;await loadMemberSharedTrash()}
 }
-const memberTrashCount=computed(()=>memberArchivedAccounts.value.length+memberSharedTrash.value.length)
+async function restoreMemberPersonalSbi(row){
+ if(memberTrashBusy.value||!row?.transfer_id||row.state!=='trashed')return
+ memberTrashBusy.value=true;memberTrashError.value='';memberTrashNotice.value=''
+ try{
+  const receipt=await api('personal-document-sbi/'+row.transfer_id,
+   request({expected_user_id:props.user.user_id,expected_version:row.version,action:'restore'}))
+  if(receipt.item?.state!=='active')throw Error('復元状態を確認できません')
+  memberTrashNotice.value='本人のSBI資産移動を復元しました。家庭の承認は不要です。'
+  await refresh()
+ }catch(e){memberTrashError.value=e.message||'本人の資産移動を復元できません'}
+ finally{memberTrashBusy.value=false;await loadMemberSharedTrash()}
+}
+const memberTrashCount=computed(()=>memberArchivedAccounts.value.length+
+ memberSharedTrash.value.length+memberPersonalDocumentSbiTrash.value.length)
 const memberJobs=ref({fixed:[],sbi:[],occurrences:[]}),memberJobsBusy=ref(false),memberJobsError=ref('')
 async function loadMemberJobStatus(){
  if(memberJobsBusy.value)return
@@ -1665,6 +1693,14 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
       </div>
       <p class="help">復元は管理者が HomeFlow で承認してから反映されます。</p>
      </div>
+     <div v-if="memberPersonalDocumentSbiTrash.length" class="member-trash-section">
+      <strong>本人のSBI資産移動 · {{memberPersonalDocumentSbiTrash.length}}件</strong>
+      <div v-for="row in memberPersonalDocumentSbiTrash" :key="row.transfer_id" class="entry">
+       <strong>{{row.date}} · {{row.merchant}} · {{yen(row.amount)}}</strong>
+       <button type="button" :disabled="memberTrashBusy" @click="restoreMemberPersonalSbi(row)">復元</button>
+      </div>
+      <p class="help">本人の資産移動は本人が直接復元できます。銀行口座や基金口数は変更しません。</p>
+     </div>
      <div v-if="memberArchivedAccounts.length" class="member-trash-section">
       <strong>本人のアーカイブ済み口座 · {{memberArchivedAccounts.length}}件</strong>
       <div v-for="a in memberArchivedAccounts" :key="a.account_id" class="entry">
@@ -1672,7 +1708,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
        <button type="button" :disabled="busy" @click="modify(a,{is_archived:false})">復元</button>
       </div>
      </div>
-     <p v-if="!memberArchivedAccounts.length&&!memberSharedTrash.length&&!memberTrashBusy" class="help">ゴミ箱は空です。</p>
+     <p v-if="!memberArchivedAccounts.length&&!memberSharedTrash.length&&!memberPersonalDocumentSbiTrash.length&&!memberTrashBusy" class="help">ゴミ箱は空です。</p>
     </template></OriginalKakeiboPages>
  </div>
 </template>

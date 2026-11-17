@@ -86,6 +86,7 @@ async function correct(){
    throw Error('訂正結果を確認できません')
   pendingCorrection=null;editing.value=null;editConfirmed.value=false
   message.value='本人のチャージを訂正し、関連する残高を同期しました。'
+  busy.value=false
   await load();emit('changed')
  }catch(err){if(actor===props.userId&&ticket===epoch)error.value=err.message}
  finally{if(actor===props.userId&&ticket===epoch)busy.value=false}

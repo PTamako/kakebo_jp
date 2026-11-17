@@ -80,7 +80,7 @@ function changesOk(result,count){return result.length===count&&result.every(r=>r
 // D1 batch results are not a durable transaction receipt: affected-row counts
 // can be imprecise even when the batch committed. Verify immutable CAS evidence
 // before replying success or failure. Do not retry merely on an ambiguous count.
-async function committedRevision(db,resource,u,original,action,next,snapshot,digest,stamp){
+async function committedRevision(db,resource,u,original,action,next,snapshot,digest,stamp,paymentAfter){
  const r=await get(db,resource,u);
  if(!r||r.version!==original.version+1||r.updated_at!==stamp||
   r.state!==(action==='delete'?'deleted':'active')||
@@ -98,7 +98,7 @@ async function committedRevision(db,resource,u,original,action,next,snapshot,dig
  if(!entry||!next||entry.id!==original.entry_id||
   ['date','time','amount','type','category','merchant','note'].some(
    key=>entry[key]!==next[key])||
-  (typeof next.payment_source==='string'&&entry.payment_source!==next.payment_source))return null;
+  (action==='update'&&entry.payment_source!==paymentAfter))return null;
  return visible(r);
 }
 
@@ -168,20 +168,31 @@ async function modify(req,e,url,u,id,action){
  let next=action==='update'?canon(x.entry):null;
  if(action==='update'&&!next)return fail('SHARED_ENTRY_INVALID_FIELDS',400);
  const previousSnapshot=JSON.parse(r.snapshot_json);
+ let paymentAfter='';
  if(action==='update'){
-  const originalPayment=previousSnapshot.payment_source||'';
-  // A previously approved card purchase may be reclassified to a different
-  // active payment method by its owner, but never silently converted to income.
+  // The original entry is authoritative for migrated legacy payment labels:
+  // their protected snapshot may not contain payment_source at all.
+  const physical=await e.DB.prepare('SELECT payment_source FROM entries WHERE id=? LIMIT 1')
+   .bind(r.entry_id).first();
+  if(!physical)return fail('SHARED_ENTRY_NOT_FOUND',404);
+  const originalPayment=String(physical.payment_source||'');
+  paymentAfter=originalPayment;
+  // A previously approved card purchase cannot be turned into income.
   if(originalPayment&&next.type!=='expense')
    return fail('SHARED_CARD_CHANGE_TYPE_FORBIDDEN',409);
   if(next.type==='expense'){
-   const payment=Object.hasOwn(next,'payment_source')?next.payment_source:originalPayment;
-   if(payment!==originalPayment&&!await availablePayment(e.DB,payment))
+   const explicit=Object.hasOwn(next,'payment_source');
+   paymentAfter=explicit?next.payment_source:originalPayment;
+   if(paymentAfter!==originalPayment&&!await availablePayment(e.DB,paymentAfter))
     return fail('SHARED_ENTRY_PAYMENT_NOT_AVAILABLE',409);
-   next={...next,payment_source:payment};
+   // Preserve the legacy snapshot shape if no payment choice was supplied.
+   // A new explicit selection is recorded together with the ledger row.
+   if(explicit||Object.hasOwn(previousSnapshot,'payment_source'))
+    next={...next,payment_source:paymentAfter};
   }
-  // A no-op must not increase the immutable audit version or say "saved".
-  if(sameLedgerValues(previousSnapshot,next))return fail('SHARED_ENTRY_NO_CHANGES',409);
+  const before={...previousSnapshot,...(next.type==='expense'?
+   {payment_source:originalPayment}:{})};
+  if(sameLedgerValues(before,next))return fail('SHARED_ENTRY_NO_CHANGES',409);
  }
  if(action==='restore')next=previousSnapshot;
  const snapshot=next?JSON.stringify(next):r.snapshot_json;
@@ -202,10 +213,10 @@ async function modify(req,e,url,u,id,action){
   statements.push(spouseRevision?
    db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0,payment_source=? '+
     'WHERE id=? AND '+allowed+" AND (type IN('expense','income') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL")
-    .bind(...entryArgs(next),next.type==='transfer'?'spouse':null,next.type==='transfer'?next.date:null,next.payment_source||'',r.entry_id,...source):
+    .bind(...entryArgs(next),next.type==='transfer'?'spouse':null,next.type==='transfer'?next.date:null,paymentAfter,r.entry_id,...source):
    db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,payment_source=? '+
     'WHERE id=? AND '+allowed+" AND type IN('expense','income') AND family_transfer_target_account_id IS NULL")
-    .bind(...entryArgs(next),next.payment_source||'',r.entry_id,...source));
+    .bind(...entryArgs(next),paymentAfter,r.entry_id,...source));
  }else if(action==='delete'){
   statements.push(db.prepare('DELETE FROM entries WHERE id=? AND '+
    (adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL')+
@@ -239,7 +250,7 @@ async function modify(req,e,url,u,id,action){
   // A lost response is not evidence of rollback: check the same CAS receipt.
   batchFailed=true;
  }
- const committed=await committedRevision(db,id,u,r,action,next,snapshot,digest,at)
+ const committed=await committedRevision(db,id,u,r,action,next,snapshot,digest,at,paymentAfter)
   .catch(()=>null);
  if(committed)return json({ok:true,action:committed,applied:true});
  return batchFailed?fail('SHARED_ENTRY_MUTATION_ROLLED_BACK'):

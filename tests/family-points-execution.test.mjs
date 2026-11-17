@@ -53,7 +53,7 @@ function fixture(){
   '0046_sbi_legacy_holding_review.sql','0047_sbi_point_full_refund.sql'])
   sql.exec(readFileSync(new URL('../migrations/'+n,import.meta.url),'utf8'));
  sql.exec(readFileSync(new URL('../migrations/0072_member_personal_prepaid_topups.sql',import.meta.url),'utf8'));
-  sql.exec(readFileSync(new URL('../migrations/0074_member_prepaid_topup_corrections.sql',import.meta.url),'utf8'));
+  sql.exec(readFileSync(new URL('../migrations/0075_member_prepaid_topup_corrections.sql',import.meta.url),'utf8'));
  for(const [u,role] of [[owner,'owner'],[member,'member'],[other,'member']])
   stmt(sql,'INSERT INTO homeflow_identity_links(user_id,household_id,role,display_name,state,linked_at) VALUES(?,?,?,?,?,?)',
    u,hh,role,role,'active',Date.now());

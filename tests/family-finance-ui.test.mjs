@@ -100,7 +100,7 @@ test('member-only proposal UI distinguishes HomeFlow submitted from durable Kake
  assert.match(proposals,/item\.ledger_changed===true&&Number.isSafeInteger\(item.entry_id\)&&item.entry_id>0/);
  assert.match(proposals,/item\.ledger_changed===false&&item.entry_id===null/);
  assert.match(proposals,/submitted_status_unknown'\?'已提交 · HomeFlow 审批状态待核对'/);
- assert.match(proposals,/HomeFlow の承認後、入帳結果を反映します。/);
+ assert.match(proposals,/HomeFlow の承認と実際の入帳結果を区別します。/);
  assert.match(proposals,/credentials:'same-origin',cache:'no-store'/);
  assert.match(proposals,/user!==props.userId\|\|!open.value/);
  assert.match(proposals,/alive=false;revision\+\+;open.value=false;items.value=\[\]/);

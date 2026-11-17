@@ -759,7 +759,7 @@ async function refresh(){
   cardSharingError.value=f.share_error||''
   sharedCards.value=f.scope==='granted-cards'&&Array.isArray(f.incoming)?f.incoming:[]
   sharedEntries.value=c.items||[];pageOffset.value=c.next_offset;
-  await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts()])
+  await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories()])
   monthlyReport.value=d;annualReport.value=e
   totals.value={income:d.income,expense:d.total,transfer:d.transferTotal}
   yearly.value={totals:{income:e.income,expense:e.total,transfer:e.transferTotal},
@@ -866,9 +866,11 @@ async function importPersonalBackup(event){
       data.fixed_costs.some(p=>p.owner_user_id!==actor)))||
      data.accounts.length>100||data.accounts.some(a=>a.owner_user_id!==actor))
    throw Error('設定の件数や所有者を確認できません')
-  const [existing,currentAccounts,currentFixed]=await Promise.all([
-   api('member-merchant-rules'),api('accounts'),api('member-fixed-costs')
+  const [existing,currentAccounts,currentFixed,currentCategories]=await Promise.all([
+   api('member-merchant-rules'),api('accounts'),api('member-fixed-costs'),api('member-categories')
   ])
+  if(currentCategories.scope!=='personal'||currentCategories.viewer_user_id!==actor||
+   !Array.isArray(currentCategories.items))throw Error('本人のカテゴリを確認できません')
   if(existing.scope!=='personal'||existing.viewer_user_id!==actor||
      currentAccounts.account_scope!=='personal'||
      currentFixed.scope!=='personal'||!Array.isArray(currentFixed.items)||
@@ -970,8 +972,14 @@ async function importPersonalBackup(event){
    if(memberCategoryRecords.value.length>=80)break
    memberCategoryRecords.value.push({type:c.type,name:c.name,icon:c.icon});categoriesAdded++
   }
-  localStorage.setItem('kakeibo-personal-categories:'+actor,
-    JSON.stringify(memberCategoryRecords.value))
+  const alreadyStored=new Set(currentCategories.items.map(c=>c.type+'\\u0000'+c.name))
+  for(const c of memberCategoryRecords.value.filter(c=>!alreadyStored.has(c.type+'\\u0000'+c.name))){
+   verifyActor()
+   const result=await api('member-categories',request({expected_user_id:actor,
+    type:c.type,name:c.name,icon:c.icon}))
+   if(result.scope!=='personal'||result.ledger_changed!==false)
+    throw Error('カテゴリのクラウド復元を確認できません')
+  }
   for(const r of recoverable){
    verifyActor()
    const payment=translateSource(r.payment_source)
@@ -1009,28 +1017,50 @@ const memberCategoryDialog=ref(false),memberCategorySaving=ref(false)
 const memberCategoryEntryType=ref('expense'),memberCategoryName=ref('')
 const memberCategoryIcon=ref('daily'),memberAvailableIcons=ICON_LIBRARY
 const memberCategoryRecords=ref([])
-function loadMemberCategories(){
+async function loadMemberCategories(){
+ const actor=props.user.user_id
  try{
-  const raw=localStorage.getItem('kakeibo-personal-categories:'+props.user.user_id)
-  const parsed=JSON.parse(raw||'[]')
-  memberCategoryRecords.value=Array.isArray(parsed)?parsed.filter(x=>
-   x&&['income','expense'].includes(x.type)&&typeof x.name==='string'&&x.name.length<=20
-  ).slice(0,80):[]
- }catch{memberCategoryRecords.value=[]}
+  const result=await api('member-categories')
+  if(result.scope!=='personal'||result.viewer_user_id!==actor||!Array.isArray(result.items))
+   throw Error('本人のカテゴリ情報を確認できません')
+  if(actor!==props.user.user_id)return
+  const items=[...result.items],key='kakeibo-personal-categories:'+actor
+  let legacy=[]
+  try{const old=JSON.parse(localStorage.getItem(key)||'[]');if(Array.isArray(old))legacy=old}catch{}
+  // Move old device-only categories to D1, removing the old copy only
+  // after every write is acknowledged by the authenticated personal route.
+  for(const x of legacy){
+   if(!x||!['income','expense'].includes(x.type)||typeof x.name!=='string'||
+    !x.name.trim()||x.name.length>20||!/^[a-z0-9-]{1,48}$/.test(x.icon||''))continue
+   if(items.some(y=>y.type===x.type&&y.name===x.name))continue
+   if(actor!==props.user.user_id)return
+   const stored=await api('member-categories',request({
+    expected_user_id:actor,type:x.type,name:x.name.trim(),icon:x.icon}))
+   if(stored.scope!=='personal'||stored.ledger_changed!==false)
+    throw Error('旧カテゴリの同期を確認できません')
+   items.push({type:x.type,name:x.name.trim(),icon:x.icon})
+  }
+  if(actor!==props.user.user_id)return
+  memberCategoryRecords.value=items
+  try{localStorage.removeItem(key)}catch{}
+ }catch(e){if(actor===props.user.user_id)memberEntryError.value='カテゴリの同期に失敗しました：'+e.message}
 }
-function saveMemberCategory(){
- const name=memberCategoryName.value.trim(),type=memberCategoryEntryType.value
- if(!name||name.length>20||!['income','expense'].includes(type))return
+async function saveMemberCategory(){
+ const actor=props.user.user_id,name=memberCategoryName.value.trim(),type=memberCategoryEntryType.value
+ if(memberCategorySaving.value||!name||name.length>20||!['income','expense'].includes(type))return
  if(memberCategoryRecords.value.some(x=>x.type===type&&x.name===name)){
   memberEntryError.value='すでに同じカテゴリがあります';return
  }
- memberCategorySaving.value=true
+ memberCategorySaving.value=true;memberEntryError.value=''
  try{
-  memberCategoryRecords.value.push({type,name,icon:memberCategoryIcon.value})
-  localStorage.setItem('kakeibo-personal-categories:'+props.user.user_id,
-   JSON.stringify(memberCategoryRecords.value))
+  const stored=await api('member-categories',request({expected_user_id:actor,
+   type,name,icon:memberCategoryIcon.value}))
+  if(stored.scope!=='personal'||stored.ledger_changed!==false)
+   throw Error('本人の保存結果を確認できません')
+  if(actor!==props.user.user_id)return
+  memberCategoryRecords.value=[...memberCategoryRecords.value,{type,name,icon:memberCategoryIcon.value}]
   memberCategoryDialog.value=false;memberCategoryName.value=''
- }catch(e){memberEntryError.value='端末へカテゴリを保存できません：'+e.message}
+ }catch(e){if(actor===props.user.user_id)memberEntryError.value='カテゴリを保存できません：'+e.message}
  finally{memberCategorySaving.value=false}
 }
 const memberInputBusy=computed(()=>memberEntryPending.value?'saving':memberOcrBusy.value?'読み取り中':'')
@@ -1088,8 +1118,8 @@ provide('kakeibo-entry-input',{
  allowedTypes:computed(()=>['expense','income']),
  paymentChoices:memberPaymentSourceChoices
 })
-loadMemberCategories()
-watch(()=>props.user.user_id,loadMemberCategories)
+void loadMemberCategories()
+watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMemberCategories()})
 </script>
 <template>
  <div class="member-shell">

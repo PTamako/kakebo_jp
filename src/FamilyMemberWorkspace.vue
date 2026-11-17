@@ -5,6 +5,7 @@ import FamilyRecurringFinance from './FamilyRecurringFinance.vue'
 import MemberPersonalPoints from './MemberPersonalPoints.vue'
 import MemberPointAssetActions from './MemberPointAssetActions.vue'
 import MemberPointAssetReversals from './MemberPointAssetReversals.vue'
+import MemberPrepaidTopups from './MemberPrepaidTopups.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import {memberInvestmentSnapshot} from './member-investment-view.js'
 import MemberFixedCosts from './MemberFixedCosts.vue'
@@ -1299,6 +1300,7 @@ watch(()=>props.user.user_id,()=>{memberCategoryRecords.value=[];void loadMember
    @theme-change="emit('theme-change',$event)" @logout="emit('logout')">
    
    <template #member-cards>
+    <MemberPrepaidTopups :key="'personal-topups:'+user.user_id" :user-id="user.user_id" :accounts="myAccounts" @changed="refresh"/>
     <MemberPersonalPoints :key="'personal-points:'+user.user_id"
      :user-id="user.user_id" :household-id="user.household_id" :accounts="myAccounts" @changed="refresh"/>
     <MemberPointAssetActions :key="'points-asset:'+user.user_id" 

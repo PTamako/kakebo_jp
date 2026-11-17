@@ -401,8 +401,9 @@ async function submitPaidExpense(choice,record){
   if(!prepared?.request_id)throw Error('決済申請の準備結果が未確認です')
   pending.requestId=prepared.request_id
   if(prepared.status==='submitted_status_unknown'&&prepared.approval_id){
+   const requestId=pending.requestId
    pendingPaidEntry=null
-   return {type:'pending',receiptRef:'request:'+pending.requestId}
+   return {type:'pending',receiptRef:'request:'+requestId}
   }
   if(prepared.status!=='prepared')throw Error('決済申請の状態を確認してください')
  }
@@ -505,6 +506,41 @@ async function openApproval(action,entry){
 const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:ledgerEntries,
  entryTypeFilter:selectedEntryType,load:()=>refresh(),more:()=>moreEntries(),
  openApproval,onError:message=>{error.value=message}})
+const memberReceiptLedgerIds=computed(()=>new Set(memberReceipts.value.flatMap(item=>{
+ const ref=item.receipt_ref
+ if(ref.startsWith('entry:'))return [ref.slice(6)]
+ if(ref.startsWith('proposal:'))return ['pending:'+ref.slice(9)]
+ return []
+})))
+let memberReceiptViewingId=''
+function memberReceiptRefForId(id){
+ return String(id).startsWith('pending:')?'proposal:'+String(id).slice(8):'entry:'+id
+}
+function closeMemberLedgerReceipt(){
+ const current=memberLedger.viewedReceiptUrl.value
+ if(current)URL.revokeObjectURL(current)
+ memberLedger.viewedReceiptUrl.value=null;memberReceiptViewingId=''
+}
+async function viewMemberLedgerReceipt(id){
+ const item=memberReceiptIndex.value.get(memberReceiptRefForId(id))
+ if(!item){memberReceiptError.value='本人の保存画像が見つかりません';return}
+ try{
+  const blob=await fetchMemberReceipt(item.receipt_id)
+  closeMemberLedgerReceipt()
+  memberReceiptViewingId=item.receipt_id
+  memberLedger.viewedReceiptUrl.value=URL.createObjectURL(blob)
+ }catch(e){memberReceiptError.value='画像を表示できません：'+e.message}
+}
+async function removeMemberLedgerReceipt(){
+ const id=memberReceiptViewingId
+ if(!id||!confirm('画像を完全削除しますか？元の明細は残ります。'))return
+ try{await deleteMemberReceipt(id);closeMemberLedgerReceipt()}
+ catch(e){memberReceiptError.value='画像を削除できません：'+e.message}
+}
+memberLedger.receiptImageIds=memberReceiptLedgerIds
+memberLedger.viewReceipt=viewMemberLedgerReceipt
+memberLedger.closeReceipt=closeMemberLedgerReceipt
+memberLedger.removeReceiptImage=removeMemberLedgerReceipt
 provide('kakeibo-page-context',{
  ...makeFamilyStatsContext({tab,month,selectedYear,stats:monthlyReport,
    annualStats:annualReport,entryType:selectedEntryType}),
@@ -823,10 +859,10 @@ async function importPersonalBackup(event){
 }
 
 function foreground(){if(document.visibilityState==='visible')void refresh()}
-watch(()=>props.user.user_id,()=>{pendingPaidEntry=null;memberEntries.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
+watch(()=>props.user.user_id,()=>{closeMemberLedgerReceipt();pendingPaidEntry=null;memberEntries.value=[];memberReceipts.value=[];memberReceiptRetry.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
 onMounted(()=>{void refresh();document.addEventListener('visibilitychange',foreground)})
-onUnmounted(()=>{alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
+onUnmounted(()=>{closeMemberLedgerReceipt();memberReceipts.value=[];memberReceiptRetry.value=[];alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
  memberMerchantRules.value=[];memberRuleError.value='';
  document.removeEventListener('visibilitychange',foreground)})
 // The original EntryInputPage renders for both identities. All writes here

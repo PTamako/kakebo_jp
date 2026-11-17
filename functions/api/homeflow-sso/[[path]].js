@@ -4,7 +4,9 @@
 // All routes fail closed unless every production binding is explicitly enabled.
 const CLIENT='kakeibo';
 const MS=300_000;
-const SESSION_MS=900_000;
+// Same maximum life as the ORIGINAL HomeFlow login. The proof is sealed
+// server-side and /me checks current HomeFlow session, role and household.
+const SESSION_MS=14*86400000;
 const encoder=new TextEncoder();
 const json=(value,status=200,headers={})=>Response.json(value,{status,headers:{
   'Cache-Control':'no-store','Referrer-Policy':'no-referrer',...headers}});
@@ -126,7 +128,7 @@ async function verifyHomeFlow(env,code,verifier){
  if(token?.token_type!=='Bearer'||!safeHex(token.access_token)||
    !Number.isInteger(token.expires_in)||token.expires_in<1||token.expires_in>180||
    !safeHex(token.session_assertion)||!Number.isInteger(token.session_assertion_expires_in)||
-   token.session_assertion_expires_in<1||token.session_assertion_expires_in>900)return null;
+   token.session_assertion_expires_in<1||token.session_assertion_expires_in>SESSION_MS/1000)return null;
  const userRequest=new Request(new URL('/api/oauth/userinfo',env.HOMEFLOW_OAUTH_ORIGIN),{
   method:'GET',redirect:'manual',
   headers:{Authorization:'Bearer '+token.access_token,Accept:'application/json'}});
@@ -214,7 +216,7 @@ async function finish(request,env,url){
   return json({ok:true,user_id:hf.userId,household_id:hf.householdId,
     role:hf.role,display_name:hf.nickname,ledger_access:false},200,{
     'Set-Cookie':'__Host-kakeibo_hf='+rawSession+
-      '; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=900'});
+      '; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age='+SESSION_MS/1000});
  }catch{return fail('SSO_IDENTITY_WRITE_REJECTED');}
 }
 async function currentUser(request,env){

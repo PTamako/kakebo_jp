@@ -73,14 +73,18 @@ async function balance(db,prepaidId){
   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first()
  const effect=corrections?
   "+COALESCE((SELECT SUM(delta_jpy) FROM family_approved_account_effects WHERE account_id=? AND account_kind='prepaid'),0)":""
+ const hasTopupCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
+  "WHERE type='table' AND name='family_member_prepaid_topup_corrections' LIMIT 1").bind().first()
+ const topupDelta=hasTopupCorrections?
+  "+COALESCE((SELECT SUM((CASE WHEN after_account_id=? THEN after_amount_jpy ELSE 0 END)-"+
+    "(CASE WHEN before_account_id=? THEN before_amount_jpy ELSE 0 END)) "+
+    "FROM family_member_prepaid_topup_corrections WHERE before_account_id=? OR after_account_id=?),0)":"";
  const r=await db.prepare('SELECT (COALESCE((SELECT SUM(delta_jpy) FROM family_prepaid_balance_journal WHERE prepaid_account_id=?),0) '+effect+
   '+COALESCE((SELECT SUM(amount_jpy) FROM family_member_prepaid_topups WHERE prepaid_account_id=?),0)'+
-  '+COALESCE((SELECT SUM((CASE WHEN after_account_id=? THEN after_amount_jpy ELSE 0 END)-'+
-    '(CASE WHEN before_account_id=? THEN before_amount_jpy ELSE 0 END)) '+
-    'FROM family_member_prepaid_topup_corrections WHERE before_account_id=? OR after_account_id=?),0)'+
+  topupDelta+
   '+COALESCE((SELECT SUM(amount_jpy) FROM family_points_prepaid_credits WHERE prepaid_account_id=?),0)'+
   '-COALESCE((SELECT SUM(debited_prepaid_jpy) FROM family_points_prepaid_refunds WHERE prepaid_account_id=?),0)) total')
-  .bind(prepaidId,...(corrections?[prepaidId]:[]),prepaidId,prepaidId,prepaidId,prepaidId,prepaidId,prepaidId,prepaidId).first();
+  .bind(prepaidId,...(corrections?[prepaidId]:[]),prepaidId,...(hasTopupCorrections?[prepaidId,prepaidId,prepaidId,prepaidId]:[]),prepaidId,prepaidId).first();
  return Number.isSafeInteger(r?.total)&&r.total>=0?r.total:null;
 }
 const visible=r=>({request_id:r.request_id,action:r.action,prepaid_account_id:r.prepaid_account_id,

@@ -227,14 +227,14 @@ onUnmounted(()=>{
    </button>
   </div>
   <div v-if="open" class="hf-body">
-   <p class="muted">仅可查看本人的申请。HomeFlow 负责审批，只有家計簿的真实入账回执才显示“已入账”。</p>
+   <p class="muted">本人の申請のみ表示。HomeFlow の承認と実際の入帳結果を区別します。</p>
    <p v-if="error" class="error" role="alert">{{error}}</p>
    <p v-if="message" class="muted" role="status">{{message}}</p>
    <form class="hf-new-request" @submit.prevent="createProposal" aria-label="创建本人加密家庭收支草稿">
     <strong>新建收支申请</strong>
-    <p class="muted">仅可选择本人账户；草稿不会影响家庭余额或统计。</p>
-    <select v-model="accountId" aria-label="本人账户" required :disabled="!!busy||loading">
-     <option value="" disabled>选择本人账户</option>
+    <p class="muted">本人の口座のみ選択できます。</p>
+    <select v-model="accountId" aria-label="本人の口座" required :disabled="!!busy||loading">
+     <option value="" disabled>选择本人の口座</option>
      <option v-for="a in myAccounts" :key="a.account_id" :value="a.account_id">{{a.label}}</option>
     </select>
     <TransactionForm :record="memberDraft" :categories="memberCategories"
@@ -247,25 +247,25 @@ onUnmounted(()=>{
       收入来源 <input v-model="merchant" maxlength="160" required placeholder="工资、奖金或其他来源"/>
     </label>
     <button type="submit" :disabled="!!busy||loading||!myAccounts.some(a=>a.account_id===accountId)||!merchant.trim()||!category.trim()||!Number.isSafeInteger(Number(amount))||Number(amount)<1">仅保存加密草稿</button>
-    <p v-if="!myAccounts.length" class="muted">请先创建本人金融账户，再发起申请。</p>
+    <p v-if="!myAccounts.length" class="muted">先に本人の口座を登録してください。</p>
    </form>
-   <p v-if="loading" class="muted">读取中…</p>
-   <p v-else-if="unavailable" class="muted">家庭申请功能尚未开放。</p>
-   <p v-else-if="!items.length" class="muted">暂无申请</p>
+   <p v-if="loading" class="muted">読み込み中…</p>
+   <p v-else-if="unavailable" class="muted">申請機能は利用できません。</p>
+   <p v-else-if="!items.length" class="muted">申請はありません</p>
    <ul v-else class="hf-items">
     <li v-for="item in items" :key="item.request_id">
      <strong>{{label(item)}}</strong>
-     <small>账户：{{accounts.find(a=>a.account_id===item.account_id)?.label||'本人账户'}}</small>
-     <small v-if="item.homeflow_approval_id">审批号：{{item.homeflow_approval_id.slice(0,8)}}…</small>
-     <small v-if="item.status==='applied'">已入账记录：{{item.entry_id}}</small>
+     <small>口座：{{accounts.find(a=>a.account_id===item.account_id)?.label||'本人の口座'}}</small>
+     <small v-if="item.homeflow_approval_id">承認番号：{{item.homeflow_approval_id.slice(0,8)}}…</small>
+     <small v-if="item.status==='applied'">入帳明細：{{item.entry_id}}</small>
      <div v-if="item.status==='prepared_not_submitted'" class="hf-actions">
       <button type="button" :disabled="loading||!!busy" @click="action(item,'cancel')">撤回</button>
       <button type="button" :disabled="loading||!!busy||!canSubmitForExecution(item)" @click="action(item,'submit')">提交审批</button>
-      <small v-if="!canSubmitForExecution(item)">目前仅本人现金账户可提交并实际执行；其他账户草稿继续保留。</small>
+      <small v-if="!canSubmitForExecution(item)">現在は本人の現金口座のみ申請可能です。</small>
      </div>
      <div v-else-if="item.status==='submitted_status_unknown'&&item.homeflow_approval_id" class="hf-actions">
       <button type="button" :disabled="loading||!!busy" @click="checkApproval(item)">核实 HomeFlow 审批</button>
-      <small>审批通过不等于已入账</small>
+      <small>承認後も入帳結果をご確認ください</small>
      </div>
     </li>
    </ul>

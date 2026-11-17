@@ -221,12 +221,12 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
  <header><strong>{{view==='investment'?'積立の承認と実行確認':'固定費の設定'}}</strong>
   <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'閉じる':'確認・設定'}}</button></header>
  <template v-if="open">
-  <p class="help">本功能仅对本人新计划使用。HomeFlow 管理员批准的是计划期限与额度，银行扣款及 SBI 成交不会由本 App 发起；必须核对真实已发生记录后逐月记账。</p>
+  <p class="help">新規計画のみ。承認は期間・上限額が対象で、銀行引落し・SBI注文は実行しません。</p>
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="help">{{notice}}</p>
   <form v-if="available&&(!view||view!=='investment'||editorOpen)" class="editor" @submit.prevent="createPlan">
    <strong>{{view==='investment'?'本人の積立を登録':'固定費の設定'}}</strong>
-   <p class="help">{{view==='investment'?'本人の証券口座で行うSBI積立':'本人の銀行口座からの固定費'}} · HomeFlow で計画を一度承認します</p>
+   <p class="help">{{view==='investment'?'SBI積立':'固定費'}} · HomeFlow で初回承認</p>
    <label>本人の引落銀行口座<select v-model="form.source_bank_account_id" :disabled="busy" required><option value="">口座を選択</option>
     <option v-for="a in banks" :key="a.account_id" :value="a.account_id">{{a.label}} · v{{a.version}}</option>
    </select></label>
@@ -253,8 +253,8 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
    <strong>{{view==='investment'?'登録済みの積立':'登録済みの固定費'}} · {{visiblePlans.length}}件</strong>
    <div v-for="p in visiblePlans" :key="p.plan_resource_id" class="item">
     <div class="head"><strong>{{p.merchant}} · {{currency(p.amount_jpy)}}</strong><span>{{p.state}}</span></div>
-    <p class="help">{{p.plan_type==='fixed_cost'?'固定费':'SBI 定投'}} · {{p.start_month}}～{{p.end_month}} · 每月{{p.due_day}}日</p>
-    <p class="help">管理员授权：{{currentPolicy(p)?.status||'未读取，请点提交／恢复授权'}}</p>
+    <p class="help">{{p.plan_type==='fixed_cost'?'固定費':'SBI積立'}} · {{p.start_month}}～{{p.end_month}} · 毎月{{p.due_day}}日</p>
+    <p class="help">承認状態：{{currentPolicy(p)?.status||'未確認'}}</p>
     <button type="button" :disabled="busy||p.state!=='active'" @click="submitPolicy(p)">提交／恢复原 HomeFlow 授权</button>
     <button v-if="currentPolicy(p)?.status==='approved'" type="button" :disabled="busy" @click="selected=p.plan_resource_id">记录本期已发生事项</button>
    </div>

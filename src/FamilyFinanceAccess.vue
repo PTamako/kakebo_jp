@@ -203,8 +203,8 @@ onUnmounted(()=>{
    <span v-if="person" class="hf-state">已关联</span>
   </div>
   <p v-if="person" class="hf-note">{{person.display_name}} · {{role}}</p>
-  <p v-else class="hf-note">使用已有 HomeFlow 账号授权，不需要共享家計簿访问码。</p>
-  <p v-if="!person&&pending" class="hf-note">在 Safari 完成授权后，回到本 App 点击「完成登录」。</p>
+  <p v-else class="hf-note">HomeFlow アカウントでログイン</p>
+  <p v-if="!person&&pending" class="hf-note">Safari で認証後、アプリに戻ってログインを完了してください。</p>
   <p v-if="error" class="hf-error" role="alert">{{error}}</p>
   <div class="hf-actions">
    <button v-if="person" type="button" :disabled="busy" @click="logout">退出家庭身份</button>
@@ -214,12 +214,12 @@ onUnmounted(()=>{
    </template>
   </div>
   <template v-if="person&&!props.identityOnly">
-   <p v-if="!financeEnabled" class="hf-note">家庭金融账户功能尚未开放，旧账本不会因身份关联而自动开放。</p>
+   <p v-if="!financeEnabled" class="hf-note">家庭金融機能は利用できません。</p>
    <template v-else>
     <div class="hf-subhead"><strong>家庭账户</strong>
      <button type="button" :disabled="busy" @click="refresh">刷新</button>
     </div>
-    <p v-if="!accounts.length" class="hf-note">尚无统一金融账户。原有支付方式和历史账目仍保留在记账本中，未被删除。</p>
+    <p v-if="!accounts.length" class="hf-note">口座は未登録です。既存の明細は保持されています。</p>
     <ul v-else class="hf-list">
      <li v-for="a in accounts" :key="a.account_id">
       <div><strong>{{a.label}}</strong>
@@ -251,13 +251,13 @@ onUnmounted(()=>{
      <button type="submit" :disabled="busy||!newLabel.trim()">新建</button>
     </form>
     <div class="hf-subhead hf-advanced-head">
-     <strong>更多家庭财务工具</strong>
+     <strong>家庭金融ツール</strong>
      <button type="button" :aria-expanded="advancedOpen" :disabled="busy" @click="advancedOpen=!advancedOpen">
       {{advancedOpen?'收起':'展开'}}
      </button>
     </div>
     <div v-if="advancedOpen" class="hf-advanced">
-     <small class="hf-note">按需查看共享账务、历史归属核验及审批工具；不会影响原有账本。</small>
+     <small class="hf-note">共有明細・承認の確認</small>
     <FamilySharedMutationRequests v-if="person.role==='member'"
       :key="'shared-mutation:'+person.user_id" :user-id="person.user_id"
       :household-id="person.household_id" />
@@ -301,7 +301,7 @@ onUnmounted(()=>{
      :key="'bank-transfers:'+person.user_id" :user-id="person.user_id"
      :household-id="person.household_id" :accounts="accounts" />
     </div>
-    <small class="hf-note">此界面不会直接记账；成员修改家庭正式账务仍须管理员审批。</small>
+    <small class="hf-note">共有明細の変更には管理者の承認が必要です。</small>
    </template>
   </template>
  </section>

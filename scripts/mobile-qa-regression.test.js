@@ -59,7 +59,7 @@ test('failed finance loads cannot be exported as stale complete backups', () => 
   assert.match(finance, /:error="memberView \? memberError : loadError"/)
   assert.match(managementHeader, /v-if="error" class="finance-load-error" role="alert"/)
   assert.match(finance, /:disabled="busy\|\|backupBusy\|\|!loaded" @click="downloadBackup"/)
-  assert.match(finance, /JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます/)
+  assert.match(finance, /JSON：帳簿のみ／ZIP：帳簿と画像/)
 })
 
 test('mobile navigation, keyboard and charts retain touch-safe affordances', () => {

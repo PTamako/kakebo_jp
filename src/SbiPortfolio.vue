@@ -509,7 +509,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
       </div>
     </div>
     <p v-if="loading && !data" class="sbi-loading" role="status">残高・積立を読み込み中…</p>
-    <p v-if="memberMode" class="sbi-hint" role="status">本人の積立設定のみ表示しています。証券会社の保有・評価額は未照合です。銀行や SBI への注文は実行しません。</p>
+    <p v-if="memberMode" class="sbi-hint" role="status">本人の積立設定のみ表示。SBIの残高は未照合で、注文は実行しません。</p>
     
     <p v-if="error && /投資テーブルの移行が未実施/.test(error)" class="sbi-hint">投資データを確認してください。既存の家計簿は変更されません。</p>
     
@@ -636,7 +636,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           <span class="sbi-chevron" aria-hidden="true">⌄</span>
         </summary>
         <div class="sbi-section-body sbi-management-body">
-          <p v-if="memberMode" class="sbi-hint">本人の投資設定は HomeFlow 承認後、銀行・証券の実際の証拠を照合して記録します。既存計画の変更は別の申請になります。</p>
+          <p v-if="memberMode" class="sbi-hint">計画変更は再申請が必要です。実績は取引証拠を確認してください。</p>
           <div class="sbi-month-pulse">
             <div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}}</strong></div>
             <div><span>{{memberMode?'内部入帳確認':'振替登録済み'}}</span><strong>{{data.reconciliation.registered===null?'未確認':yen(data.reconciliation.registered)}}</strong></div>
@@ -702,7 +702,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
   :options="[{value:'tsumitate',label:'NISA（つみたて）'},{value:'growth',label:'NISA（成長）'}]" /></label>
         <label>毎月の積立額（円）<input v-model.number="plan.monthlyAmount" type="number" min="0" step="1" required /></label>
         <label>注文希望日<input v-model.number="plan.orderDay" type="number" min="1" max="28" required /></label>
-        <label>適用開始月<input v-model="plan.effectiveMonth" type="month" required /></label><p class="sbi-hint">変更は指定した月以降に適用され、以前の月は変更されません。</p>
+        <label>適用開始月<input v-model="plan.effectiveMonth" type="month" required /></label><p class="sbi-hint">指定月以降に適用</p>
         <label class="sbi-checkbox"><input v-model="plan.enabled" type="checkbox"/>積立中</label>
         <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button class="button-primary" type="submit" :disabled="saving">保存</button></div>
       </form>
@@ -731,7 +731,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
               <span>{{scannedFundCount}} / {{fundGroups.length}} 銘柄確認済み</span>
               <button type="button" class="sbi-import-reset" :disabled="saving || bulkBusy" @click="clearFundDetailImports">クリア</button>
             </div>
-            <p class="sbi-detail-help">成長・つみたての保有数量と取得金額を読み取り、変更分だけ更新します。画像を送信しても確認前には保存されません。</p>
+            <p class="sbi-detail-help">保有数量・取得金額を読み取り、確認後に更新します。</p>
           </section>
           <details class="sbi-single-import">
             <summary>テキストから読み取る</summary>
@@ -801,7 +801,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
         <label>支払元（任意）<MobileChoiceSheet v-model="activity.paymentSource" label="支払元" :options="activePaymentOptions" /></label>
         <label v-if="activity.purpose==='purchase'">銘柄名（任意）<input v-model.trim="activity.fundName" type="text" maxlength="120" placeholder="オール・カントリー" /></label>
         <label>メモ（任意）<input v-model.trim="activity.note" maxlength="500" /></label>
-        <p class="sbi-activity-notice">これは家計簿への記録です。証券注文や保有残高の変更は行いません。</p>
+        <p class="sbi-activity-notice">帳簿への記録のみ。証券注文は行いません。</p>
         <div class="sbi-actions"><button type="button" class="button-secondary" :disabled="saving" @click="closeEditor">キャンセル</button><button type="submit" class="button-primary" :disabled="saving">保存</button></div>
       </form>
       <form v-else-if="editingTransfer!==null" class="sbi-dialog" role="dialog" aria-modal="true" aria-label="買付月の編集" @submit.prevent="submitTransfer">

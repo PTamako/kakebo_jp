@@ -58,7 +58,7 @@ test('A05/A09/A10/A11/A12: filters, privacy, quota, local imagery and due transf
   const app=read('src/App.vue')+'\n'+read('src/OcrCapturePanel.vue')+'\n'+read('src/pages/AssetsPage.vue')
   const api=read('functions/api/[[path]].js')
   assert.match(app,/detailFilter\.value\.paymentMethod \|\| ''/)
-  assert.match(app,/setRememberDevice\(/)
+  assert.doesNotMatch(app,/setRememberDevice\(/)
   assert.match(app,/function clearLocalDraft\(/)
   assert.match(read('functions/api/ai-quota.js'),/ai_ocr_daily_usage/)
   assert.match(app,/本日のAI残り回数：\{\{quota\.remaining\}\}\/\{\{quota\.limit\}\}回/)

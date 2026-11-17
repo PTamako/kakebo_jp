@@ -13,7 +13,6 @@ import AmountInput from './AmountInput.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileMultiChoiceSheet from './MobileMultiChoiceSheet.vue'
 import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
-import MobileChoiceSegments from './MobileChoiceSegments.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import FixedCostEditorFields from './FixedCostEditorFields.vue'
 import OriginalFixedCostList from './OriginalFixedCostList.vue'
@@ -35,8 +34,8 @@ import { listR2Receipts, getR2Receipt, uploadR2Receipt, deleteR2ReceiptsByIds, r
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
-const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, rememberDevice: { type: Boolean, default: true }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null}, memberTrashCount:{type:Number,default:0} })
-const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'change-remember-device', 'receipt-images-cleared', 'receipt-images-removed', 'receipt-images-updated'])
+const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null}, memberTrashCount:{type:Number,default:0} })
+const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'receipt-images-cleared', 'receipt-images-removed', 'receipt-images-updated'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
 const orderedPayments = computed(() => sortOtherLast(props.paymentSources))
@@ -282,10 +281,6 @@ async function deleteSelectedReceiptPeriod() {
     receiptImagePrivacyMessage.value='期間指定の削除に失敗しました：'+e.message
   } finally { receiptPeriodBusy.value=false }
 }
-watch(() => props.rememberDevice, () => {
-  if(props.active && managementTab.value==='tools')void refreshLocalReceiptCount()
-})
-
 const cardMode = ref('')
 watch(()=>props.cardSettingsRequest,()=>{managementTab.value='cards';cardMode.value='add'})
 const selectedCard = ref('')
@@ -1652,7 +1647,7 @@ async function removeCardBill(record) {
           <p>過去分・明日の予定</p>
         </div>
       </div>
-      <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">過去分は直近10年まで確認します。</p>
+      <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">過去10年分まで</p>
       <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringListOpen && recurringDueEntries.length > 0}">
         <button type="button" :disabled="recurringBusy || (!recurringListOpen && (!settingsReady || !loaded))" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
         <button v-if="recurringListOpen && recurringDueEntries.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button>
@@ -1660,7 +1655,7 @@ async function removeCardBill(record) {
       <div v-if="recurringListOpen" id="recurring-candidate-list" class="recurring-review-results">
         <section v-if="recurringTomorrowEntries.length" class="recurring-review-group recurring-review-upcoming" aria-label="明日の記帳予定">
           <div class="recurring-review-group-heading">
-            <div><h4>明日の記帳予定</h4><p>前日から除外できます。記帳は予定日以降。</p></div>
+            <div><h4>明日の記帳予定</h4><p>前日から除外可能</p></div>
             <span class="recurring-review-count">{{recurringTomorrowEntries.length}}件</span>
           </div>
           <div class="recurring-upcoming-list">
@@ -1698,7 +1693,7 @@ async function removeCardBill(record) {
               <button type="button" class="recurring-dismiss-desktop" :disabled="recurringBusy" :aria-label="candidate.name+' '+candidate.month+'を候補から除外'" @click="dismissRecurring(candidate)">除外</button>
             </div>
           </div>
-          <p class="recurring-swipe-tip">左にスワイプして候補から除外</p>
+          <p class="recurring-swipe-tip">左スワイプで除外</p>
         </section>
         <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
       </div>
@@ -1763,14 +1758,6 @@ async function removeCardBill(record) {
 
     
     <div class="device-privacy-section">
-      <label class="device-login-field"><span>ログイン状態の保存</span>
-        <MobileChoiceSegments :model-value="props.rememberDevice ? 'remember' : 'session'" label="ログイン状態の保存方法"
-          :options="[{value:'remember',label:'ログイン状態を保持（最長30日）'},{value:'session',label:'セッション内のみ保持'}]"
-          @change="emit('change-remember-device', $event === 'remember')" />
-      </label>
-      
-    </div>
-    <div class="device-privacy-section">
       <div class="device-privacy-row">
         <strong>保存済みレシート画像</strong>
         <span class="device-privacy-count" aria-live="polite">{{receiptImagesBusy && localReceiptCount === null ? '確認中…' : localReceiptCount === null ? '未確認' : localReceiptCount + '件'}}</span>
@@ -1812,7 +1799,7 @@ async function removeCardBill(record) {
     <template #backup>
 
     
-    <p>JSONは帳簿のみ。ZIPにはR2と端末の画像を含めます。画像は非公開R2に保存し、既存画像は上書きしません。</p>
+    <p>JSON：帳簿のみ／ZIP：帳簿と画像。画像は非公開で、既存画像は上書きしません。</p>
     <label class="backup-password-label">暗号化パスワード（任意）<input v-model="backupPassword" type="password" autocomplete="off" minlength="10" maxlength="128" placeholder="10文字以上・端末に保存しません" /></label>
     <div class="finance-actions backup-actions"><button type="button" :disabled="busy||backupBusy||!loaded" @click="downloadBackup">{{backupBusy ? 'バックアップ作成中…' : '帳簿JSONを保存'}}</button><label class="backup-upload" :class="{ 'is-disabled': busy||backupBusy||!loaded }">バックアップを選択<input type="file" accept=".json,.zip,.kbe,application/json,application/zip,application/octet-stream" :disabled="busy||backupBusy||!loaded" @change="preview"></label></div>
     <div class="backup-receipt-group">
@@ -1866,7 +1853,7 @@ async function removeCardBill(record) {
       </details>
       <details v-if="deletedEntries.length" class="review-trash-category">
         <summary>削除した明細 <span>{{deletedEntries.length}}件</span></summary>
-        <p class="review-trash-category-note">元の明細に戻します（別の帳簿から復元した記録は新しいIDになる場合があります）。レシート画像は非公開R2に保持されます。</p>
+        <p class="review-trash-category-note">明細を復元します。レシート画像は保持されます。</p>
         <div v-for="item in deletedEntries" :key="item.id" class="review-trash-item">
           <span class="review-trash-text" :title="item.date+' '+(item.merchant||item.category)">{{item.date}} · {{item.merchant||item.category}} · {{yen(item.amount)}}</span>
           <ReviewTrashActions :label="item.merchant||item.category" restore-label="明細を復元" remove-label="明細を完全削除"
@@ -1877,7 +1864,6 @@ async function removeCardBill(record) {
            merely excludes a single month's unposted candidate. -->
       <details v-if="trashedRecurringPlans.length" class="review-trash-category">
         <summary>削除した固定費 <span>{{trashedRecurringPlans.length}}件</span></summary>
-        <p class="review-trash-category-note">固定費の登録を削除した項目です。</p>
         <div v-for="item in trashedRecurringPlans" :key="item.id" class="review-trash-item">
           <span class="review-trash-text" :title="item.name+' '+yen(item.amount)">{{item.name}} · {{yen(item.amount)}} · 毎月{{item.day}}日</span>
           <ReviewTrashActions :label="item.name" restore-label="固定費設定を復元" remove-label="固定費設定を完全削除"
@@ -1886,7 +1872,6 @@ async function removeCardBill(record) {
       </details>
       <details v-if="reviewTrash.recurringExclusions.length" class="review-trash-category">
         <summary>固定費の月別除外 <span>{{reviewTrash.recurringExclusions.length}}件</span></summary>
-        <p class="review-trash-category-note">指定した月・日だけ記帳候補から除外した項目です。</p>
         <div v-for="item in reviewTrash.recurringExclusions" :key="recurringTrashKey(item)" class="review-trash-item">
           <span class="review-trash-text" :title="item.name+' '+(item.date||item.month)">{{item.name}} · {{item.date||item.month}}</span>
           <ReviewTrashActions :label="item.name+' '+(item.date||item.month)" restore-label="対象の記帳候補を再表示" remove-label="確認済み一覧から削除"
@@ -1993,8 +1978,6 @@ async function removeCardBill(record) {
 /* The privacy controls share the finance-page panels, typography and 44px actions. */
 .device-privacy-panel .device-privacy-section{display:grid;gap:8px;min-width:0}
 .device-privacy-panel .device-privacy-section + .device-privacy-section{border-top:1px solid var(--line);padding-top:13px;margin-top:5px}
-.device-login-field{display:grid;gap:6px}
-.device-privacy-panel .device-login-field select{width:100%;min-width:0;background:var(--card);color:var(--ink);padding:0 12px;border:1px solid var(--line);border-radius:10px;font-size:16px}
 .device-privacy-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}
 .device-privacy-row strong{font-size:14px}
 .device-privacy-count{font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}

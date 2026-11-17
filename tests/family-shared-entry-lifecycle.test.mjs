@@ -186,7 +186,7 @@ test('one spouse transfer is exactly one shared transfer row, never spouse incom
   assert.equal(stored.transfer_applied,0);
   const totals=f.sql.prepare("SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) AS income,"+
    "COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense FROM entries").get();
-  assert.deepEqual(totals,{income:0,expense:0});
+  assert.equal(totals.income,0);assert.equal(totals.expense,0);
   const id=first.data.action.resource_id;
   const edit=await f.invoke('PUT',['shared-entries',id],{expected_user_id:owner,expected_version:1,
    entry:{...entry,amount:12000}});

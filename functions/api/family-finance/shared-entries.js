@@ -131,16 +131,22 @@ async function modify(req,e,url,u,id,action){
    'FROM family_legacy_shared_adoptions WHERE resource_id=? AND entry_id=?').bind(id,r.entry_id).first():null;
  const original=adopted?JSON.parse(adopted.original_row_json):null;
  const statements=[context(db,r,u,action,at)];
+ const spouseRevision=next?.type==='transfer'||JSON.parse(r.snapshot_json)?.type==='transfer';
  if(action==='update'){
   const allowed=adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL';
-  statements.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0 '+
-   'WHERE id=? AND '+allowed+" AND (type IN('expense','income') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL")
-   .bind(...entryArgs(next),next.type==='transfer'?'spouse':null,next.type==='transfer'?next.date:null,
-    r.entry_id,...(adopted?[adopted.original_client_request_id,adopted.account_id]:[ref])));
+  const source=adopted?[adopted.original_client_request_id,adopted.account_id]:[ref];
+  statements.push(spouseRevision?
+   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0 '+
+    'WHERE id=? AND '+allowed+" AND (type IN('expense','income') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL")
+    .bind(...entryArgs(next),next.type==='transfer'?'spouse':null,next.type==='transfer'?next.date:null,r.entry_id,...source):
+   db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=? '+
+    'WHERE id=? AND '+allowed+" AND type IN('expense','income') AND family_transfer_target_account_id IS NULL")
+    .bind(...entryArgs(next),r.entry_id,...source));
  }else if(action==='delete'){
   statements.push(db.prepare('DELETE FROM entries WHERE id=? AND '+
    (adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL')+
-   " AND (type IN('income','expense') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL")
+   (spouseRevision?" AND (type IN('income','expense') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL":
+    " AND type IN('income','expense') AND family_transfer_target_account_id IS NULL"))
    .bind(r.entry_id,...(adopted?[adopted.original_client_request_id,adopted.account_id]:[ref])));
  }else{
   if(adopted){

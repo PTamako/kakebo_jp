@@ -28,13 +28,25 @@ export async function familyPersonalDocumentSbi(request,env,url,user,parts){
    (year&&!/^20\d\d$/.test(year))||
    (!month&&!year))return deny('INVALID_RANGE',400);
   const start=month?month+'-01':year+'-01-01',end=month?month+'-31':year+'-12-31';
-  const rows=(await db.prepare('SELECT * FROM family_document_personal_sbi_transfers '+
-   "WHERE household_id=? AND owner_user_id=? AND date>=? AND date<=? AND state='active' "+
-   'ORDER BY date DESC,transfer_id DESC LIMIT 101 OFFSET ?')
-    .bind(user.household_id,user.user_id,start,end,offset).all()).results||[];
+  const [page,total]=await Promise.all([
+   db.prepare('SELECT * FROM family_document_personal_sbi_transfers '+
+    "WHERE household_id=? AND owner_user_id=? AND date>=? AND date<=? AND state='active' "+
+    'ORDER BY date DESC,transfer_id DESC LIMIT 101 OFFSET ?')
+    .bind(user.household_id,user.user_id,start,end,offset).all(),
+   db.prepare('SELECT COUNT(*) AS transfer_count,COALESCE(SUM(amount_jpy),0) AS total_transfer_jpy '+
+    'FROM family_document_personal_sbi_transfers '+
+    "WHERE household_id=? AND owner_user_id=? AND date>=? AND date<=? AND state='active'")
+    .bind(user.household_id,user.user_id,start,end).first()
+  ]);
+  const rows=page.results||[];
+  const transferCount=Number(total?.transfer_count||0),
+   transferTotal=Number(total?.total_transfer_jpy||0);
+  if(!Number.isSafeInteger(transferCount)||!Number.isSafeInteger(transferTotal))
+   return deny('PERSONAL_SBI_TOTAL_INVALID',503);
   return json({ok:true,scope:'personal',viewer_user_id:user.user_id,
    items:rows.slice(0,100).map(r=>view({...r,display_name:active.display_name})),
    next_offset:rows.length>100?offset+100:null,
+   transfer_count:transferCount,transfer_total_jpy:transferTotal,
    excluded_from_income_expense:true,no_fund_units_inferred:true});
  }
  if(parts.length!==2||!id.test(parts[1]))return deny('NOT_FOUND',404);

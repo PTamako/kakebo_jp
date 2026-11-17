@@ -34,7 +34,7 @@ import { listR2Receipts, getR2Receipt, uploadR2Receipt, deleteR2ReceiptsByIds, r
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readCompleteBackupZip } from './receipt-import.js'
 import { planReceiptRestoration } from './receipt-restore-plan.js'
-const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null}, memberTrashCount:{type:Number,default:0}, memberLoadTrash:{type:Function,default:null} })
+const props = defineProps({ cardSettingsRequest: { type: Number, default: 0 }, active: { type: Boolean, default: false }, ledgerRevision: { type: Number, default: 0 }, api: { type: Function, required: true }, categories: { type: Array, default: () => [] }, categoryDisplayNames: { type: Object, default: () => ({}) }, paymentSources: { type: Array, default: () => [] }, paymentClosingDays: { type: Object, default: () => ({}) }, paymentSourceMeta: { type: Object, default: () => ({}) }, defaultPaymentSource: { type: String, default: '' }, merchantPaymentRules: { type: Array, default: () => [] }, categoryRules: { type: Array, default: () => [] }, memberView:{type:Boolean,default:false}, memberStatus:{type:String,default:''}, memberBusy:{type:Boolean,default:false}, memberError:{type:String,default:''}, memberRefresh:{type:Function,default:null}, memberTrashCount:{type:Number,default:0}, memberLoadTrash:{type:Function,default:null}, memberLoadJobs:{type:Function,default:null} })
 const emit = defineEmits(['ledger-updated', 'update-payment-sources', 'open-duplicate', 'open-card-bill-details', 'set-default-payment-source', 'settings-changed', 'merchant-rules-changed', 'payment-settings-refresh', 'receipt-images-cleared', 'receipt-images-removed', 'receipt-images-updated'])
 
 const orderedCategories = computed(() => sortOtherLast(props.categories))
@@ -1598,7 +1598,7 @@ async function removeCardBill(record) {
     @refresh="memberView ? memberRefresh?.() : refreshEverything()" />
   <slot v-if="memberView&&managementTab!=='tools'" :name="'member-'+managementTab" />
   <OriginalOtherManagement v-if="memberView" :active="managementTab==='tools'"
-    :trash-count="memberTrashCount" :on-open-trash="memberLoadTrash">
+    :trash-count="memberTrashCount" :on-open-trash="memberLoadTrash" :on-open-jobs="memberLoadJobs">
     <template #rules><slot name="member-rules"/></template>
     <template #jobs><slot name="member-jobs"/></template>
     <template #privacy><slot name="member-privacy"/></template>

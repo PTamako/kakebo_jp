@@ -583,3 +583,39 @@ test('mixed deployment cannot queue or apply payment revision until private exec
   assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'楽天カード')
  }finally{f.close()}
 })
+
+test('non-admin may propose edits to the administrator neutral spouse transfer; only approval changes it',async()=>{
+ const f=fixture()
+ try{
+  const spouse={...sample,type:'transfer',amount:23000,category:'投資・資産移動',
+   merchant:'配偶への振替',transfer_target:'spouse',transfer_date:sample.date};
+  const url=new URL('https://kakeibo.example.test/api/family-finance/shared-entries')
+  const create=await familySharedEntries(new Request(url,{method:'POST',
+   headers:{origin:url.origin,'content-type':'application/json'},
+   body:JSON.stringify({expected_user_id:owner,idempotency_key:'admin-neutral-spouse-transfer',
+    entry:spouse})}),f.env,url,f.ownerUser,['shared-entries'])
+  assert.equal(create.status,201,await create.clone().text())
+  const action=(await create.json()).action
+  assert.equal(action.creator_user_id,owner)
+  const proposal=await f.apply('update',action.resource_id,1,{
+   ...spouse,date:'2026-11-16',transfer_date:'2026-11-16',
+   amount:26000,note:'双方确认后的修改'})
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,23000)
+  const applied=await f.target('execute',proposal)
+  assert.equal(applied.status,200,JSON.stringify(applied))
+  const edited=f.sql.prepare('SELECT type,date,amount,note,transfer_target,transfer_applied FROM entries').get()
+  assert.deepEqual(edited,{type:'transfer',date:'2026-11-16',amount:26000,
+   note:'双方确认后的修改',transfer_target:'spouse',transfer_applied:0})
+  const totals=f.sql.prepare("SELECT SUM(CASE WHEN type='income' THEN amount ELSE 0 END) AS income,"+
+   "SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) AS expense FROM entries").get()
+  assert.equal(totals.income,0)
+  assert.equal(totals.expense,0)
+  const incompatible=await f.source(['shared-mutation-requests'],{
+   expected_user_id:member,idempotency_key:'blocked-member-transfer-conversion',
+   operation:'update',resource_id:action.resource_id,expected_version:2,
+   entry:{...spouse,type:'income',amount:50000}})
+  assert.equal(incompatible.status,409)
+  assert.equal(incompatible.data.code,'SHARED_MUTATION_TRANSFER_TYPE_LOCKED')
+ }finally{f.close()}
+})
+

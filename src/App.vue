@@ -95,7 +95,7 @@ const paymentSources = ref([])
 const paymentClosingDays = ref({})
 const paymentSourceMeta = ref({})
 const prepaidSources = computed(() => paymentSources.value.filter(name=>paymentSourceMeta.value[name]?.source_type==='prepaid'))
-const transferDestinations = computed(() => prepaidSources.value.map(name=>({value:prepaidTarget(name),name})))
+const transferDestinations = computed(() => [{value:'spouse',name:'配偶'},...prepaidSources.value.map(name=>({value:prepaidTarget(name),name}))])
 const rewardDestinations = computed(() => [
   {value:'sbi',name:'SBI証券（投資信託）'},
   ...prepaidSources.value.map(name => ({value:prepaidTarget(name),name:name+'（プリペイド）'})),

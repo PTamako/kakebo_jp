@@ -18,8 +18,10 @@ function fixture(){
  sql.exec('CREATE TABLE homeflow_identity_links(user_id TEXT PRIMARY KEY,household_id TEXT,role TEXT,state TEXT)')
  sql.exec('CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,time TEXT,amount INTEGER,category TEXT,'+
   'merchant TEXT,note TEXT,raw TEXT,type TEXT,client_request_id TEXT UNIQUE,payment_source TEXT,'+
-  'family_account_id TEXT,family_transfer_target_account_id TEXT)')
+  'family_account_id TEXT,family_transfer_target_account_id TEXT,transfer_target TEXT,transfer_date TEXT,transfer_applied INTEGER DEFAULT 0)')
  sql.exec(readFileSync(new URL('../migrations/0051_shared_entry_lifecycle.sql',import.meta.url),'utf8'))
+ sql.exec(readFileSync(new URL('../migrations/0052_shared_mutation_approved_execution.sql',import.meta.url),'utf8'))
+ sql.exec(readFileSync(new URL('../migrations/0067_neutral_spouse_transfer.sql',import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,? ,?,'active')").run(u,household,role)
  const db={prepare(q){return {bind(...args){return{
@@ -167,3 +169,34 @@ test('R2 shared attachment is separate from legacy numeric receipts; trash prese
    {expected_user_id:owner,expected_version:4})).status,409)
  }finally{f.close()}
 })
+
+
+test('one spouse transfer is exactly one shared transfer row, never spouse income or expense; replay and lifecycle stay atomic',async()=>{
+ const f=fixture();try{
+  const entry={date:'2026-11-17',time:'12:30',amount:10000,type:'transfer',
+   category:'投資・資産移動',merchant:'配偶への振替',note:'',transfer_target:'spouse',transfer_date:'2026-11-17'};
+  const payload={expected_user_id:owner,idempotency_key:'neutral-spouse-transfer-20261117',entry};
+  const first=await f.invoke('POST',['shared-entries'],payload);
+  assert.equal(first.status,201,JSON.stringify(first.data));
+  const retry=await f.invoke('POST',['shared-entries'],payload);
+  assert.equal(retry.status,200);assert.equal(retry.data.replayed,true);
+  assert.equal(f.count('entries'),1);
+  const stored=f.sql.prepare('SELECT type,amount,transfer_target,transfer_applied FROM entries').get();
+  assert.equal(stored.type,'transfer');assert.equal(stored.transfer_target,'spouse');
+  assert.equal(stored.transfer_applied,0);
+  const totals=f.sql.prepare("SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) AS income,"+
+   "COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense FROM entries").get();
+  assert.deepEqual(totals,{income:0,expense:0});
+  const id=first.data.action.resource_id;
+  const edit=await f.invoke('PUT',['shared-entries',id],{expected_user_id:owner,expected_version:1,
+   entry:{...entry,amount:12000}});
+  assert.equal(edit.status,200,JSON.stringify(edit.data));
+  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,12000);
+  const del=await f.invoke('DELETE',['shared-entries',id],{expected_user_id:owner,expected_version:2});
+  assert.equal(del.status,200);assert.equal(f.count('entries'),0);
+  const restore=await f.invoke('POST',['shared-entries',id,'restore'],{expected_user_id:owner,expected_version:3});
+  assert.equal(restore.status,200,JSON.stringify(restore.data));
+  assert.equal(f.count('entries'),1);assert.equal(f.count('family_shared_entry_registry'),1);
+  assert.equal(f.count('family_shared_entry_audit'),4);
+ }finally{f.close()}
+});

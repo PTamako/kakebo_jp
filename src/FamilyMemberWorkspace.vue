@@ -295,10 +295,13 @@ const memberTodayLabel=computed(()=>new Date().toLocaleString('ja-JP',{
 function addMemberEntry(){memberEntries.value.push(newEntry())}
 function removeMemberEntry(index){if(!memberEntryPending.value)memberEntries.value.splice(index,1)}
 function setMemberEntryType(type,entry){
- if(!['expense','income'].includes(type))return
+ if(!['expense','income','transfer'].includes(type))return
  entry.type=type
- entry.category=type==='expense'?'食費':'給与'
- entry.merchant=''
+ entry.category=type==='expense'?'食費':type==='income'?'給与':'投資・資産移動'
+ entry.merchant=type==='transfer'?'配偶への振替':''
+ entry.transferTarget=type==='transfer'?'spouse':''
+ entry.transferDate=type==='transfer'?entry.date:''
+ entry.paymentSource=type==='expense'?'cash':''
 }
 function recognizeMemberText(fromImage=false){
  memberEntryError.value='';memberEntryNotice.value=''
@@ -452,6 +455,8 @@ async function submitMemberEntry(){
  try{
   while(memberEntries.value.length){
    const record=memberEntries.value[0]
+   if(record.type==='transfer'&&record.transferTarget!=='spouse')
+    throw Error('配偶への資産移動以外はこの記帳画面から申請できません')
    const choice=record.type==='expense'
     ?resolveMemberPayment(record.paymentSource,myAccounts.value,sharedCards.value)
     :{kind:'cash'}
@@ -1223,7 +1228,7 @@ provide('kakeibo-entry-input',{
  setAiOcrEnabled:setMemberAiEnabled,forms:memberEntries,
  draftRecoveryInfo:memberDraftRecoveryInfo,clearLocalDraft:clearMemberDraft,
  removeDraft:removeMemberEntry,rewardDestinations:computed(()=>[]),
- transferDestinations:computed(()=>[]),categories:memberExpenseCategoryChoices,
+ transferDestinations:computed(()=>[{value:'spouse',name:'配偶'}]),categories:memberExpenseCategoryChoices,
  INCOME_CATEGORIES:memberIncomeCategoryChoices,
  paymentSources:computed(()=>[]),categoryLabel:(x)=>x,
  selectDraftReceipt:selectMemberDraftReceipt,pendingReceiptImage:memberReceiptImage,
@@ -1233,7 +1238,7 @@ provide('kakeibo-entry-input',{
  manualPayment:(f,source)=>{f.paymentSource=source},
  onImage:memberScanImage,addBlank:()=>addMemberEntry(),saveAll:submitMemberEntry,
  receiptEnabled:computed(()=>true),
- allowedTypes:computed(()=>['expense','income']),
+ allowedTypes:computed(()=>['expense','income','transfer']),
  paymentChoices:memberPaymentSourceChoices
 })
 void loadMemberCategories()

@@ -14,14 +14,20 @@ const enabled=e=>e.APP_ENV==='production'&&e.KAKEIBO_FAMILY_FINANCE_ENABLED==='t
  e.KAKEIBO_SHARED_ENTRY_ENABLED==='true'&&!!e.DB?.prepare;
 const schema=['date','time','amount','type','category','merchant','note'];
 function canon(input){
- if(!exact(input,schema)||!validDay(input.date)||!validTime(input.time)||
+ const spouse=exact(input,[...schema,'transfer_target','transfer_date']);
+ if(!(exact(input,schema)||spouse)||!validDay(input.date)||!validTime(input.time)||
   !Number.isSafeInteger(input.amount)||input.amount<1||input.amount>10000000||
-  !['income','expense'].includes(input.type)||
+  !['income','expense','transfer'].includes(input.type)||
+  (input.type==='transfer'&&(!spouse||input.transfer_target!=='spouse'||
+   input.transfer_date!==input.date||input.category!=='投資・資産移動'||
+   input.merchant!=='配偶への振替'))||
+  (input.type!=='transfer'&&spouse)||
   typeof input.category!=='string'||!input.category.trim()||input.category.length>100||
   typeof input.merchant!=='string'||input.merchant.length>120||
   typeof input.note!=='string'||input.note.length>500) return null;
  return {date:input.date,time:input.time,amount:input.amount,type:input.type,
-  category:input.category.trim(),merchant:input.merchant.trim(),note:input.note.trim()};
+  category:input.category.trim(),merchant:input.merchant.trim(),note:input.note.trim(),
+  ...(spouse?{transfer_target:'spouse',transfer_date:input.transfer_date}:{})};
 }
 function parse(req,url){
  if(req.headers.get('origin')!==url.origin||req.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()!=='application/json')return Promise.resolve(null);
@@ -70,9 +76,13 @@ async function create(req,e,url,u){
  const db=e.DB;
  try{
   const stmts=[
-   db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
-    "VALUES(?,?,?,?,?,?,'',?,?,'') ON CONFLICT(client_request_id) DO NOTHING")
-    .bind(...entryArgs(entry),client),
+   (entry.type==='transfer'?
+    db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source,transfer_target,transfer_date,transfer_applied) '+
+     "VALUES(?,?,?,?,?,?,'',?,?,'','spouse',?,0) ON CONFLICT(client_request_id) DO NOTHING")
+     .bind(...entryArgs(entry),client,entry.date):
+    db.prepare('INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
+     "VALUES(?,?,?,?,?,?,'',?,?,'') ON CONFLICT(client_request_id) DO NOTHING")
+     .bind(...entryArgs(entry),client)),
    db.prepare('INSERT INTO family_shared_entry_write_context '+
     '(resource_id,entry_id,actor_user_id,action,expected_version,stamp) '+
     "SELECT ?,id,?,'create',0,? FROM entries WHERE client_request_id=? AND changes()=1")
@@ -123,13 +133,14 @@ async function modify(req,e,url,u,id,action){
  const statements=[context(db,r,u,action,at)];
  if(action==='update'){
   const allowed=adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL';
-  statements.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=? '+
-   'WHERE id=? AND '+allowed+" AND type IN('expense','income') AND family_transfer_target_account_id IS NULL")
-   .bind(...entryArgs(next),r.entry_id,...(adopted?[adopted.original_client_request_id,adopted.account_id]:[ref])));
+  statements.push(db.prepare('UPDATE entries SET date=?,time=?,amount=?,category=?,merchant=?,note=?,type=?,transfer_target=?,transfer_date=?,transfer_applied=0 '+
+   'WHERE id=? AND '+allowed+" AND (type IN('expense','income') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL")
+   .bind(...entryArgs(next),next.type==='transfer'?'spouse':null,next.type==='transfer'?next.date:null,
+    r.entry_id,...(adopted?[adopted.original_client_request_id,adopted.account_id]:[ref])));
  }else if(action==='delete'){
   statements.push(db.prepare('DELETE FROM entries WHERE id=? AND '+
    (adopted?'client_request_id IS ? AND family_account_id=?':'client_request_id=? AND family_account_id IS NULL')+
-   " AND type IN('income','expense') AND family_transfer_target_account_id IS NULL")
+   " AND (type IN('income','expense') OR (type='transfer' AND transfer_target='spouse')) AND family_transfer_target_account_id IS NULL")
    .bind(r.entry_id,...(adopted?[adopted.original_client_request_id,adopted.account_id]:[ref])));
  }else{
   if(adopted){
@@ -138,9 +149,11 @@ async function modify(req,e,url,u,id,action){
    if(columns.some(k=>!/^[a-z][a-z0-9_]*$/i.test(k)))return fail('LEGACY_SHARED_RESTORE_SCHEMA_REVIEW_REQUIRED');
    statements.push(db.prepare('INSERT INTO entries('+columns.map(k=>'"'+k+'"').join(',')+') VALUES('+
     columns.map(()=>'?').join(',')+')').bind(...columns.map(k=>old[k])));
-  }else statements.push(db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
-   "VALUES(?,?,?,?,?,?,?,'',?,?,'')")
-   .bind(r.entry_id,...entryArgs(next),ref));
+  }else statements.push(next.type==='transfer'?
+   db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source,transfer_target,transfer_date,transfer_applied) '+
+    "VALUES(?,?,?,?,?,?,?,'',?,?,'','spouse',?,0)").bind(r.entry_id,...entryArgs(next),ref,next.date):
+   db.prepare('INSERT INTO entries(id,date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
+    "VALUES(?,?,?,?,?,?,?,'',?,?,'')").bind(r.entry_id,...entryArgs(next),ref));
  }
  statements.push(db.prepare('UPDATE family_shared_entry_registry SET state=?,snapshot_json=?,'+
   'payload_sha256=?,version=version+1,last_actor_user_id=?,updated_at=?,'+

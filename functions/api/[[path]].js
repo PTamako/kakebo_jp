@@ -1260,7 +1260,7 @@ export async function onRequest({ request, env, params }) {
         const reward=await rewardDestination(db,e)
         if(reward.error)return json({error:reward.error},400)
         const rawTarget=transfer?String(e.transferTarget||''):''
-        if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
+        if(transfer&&rawTarget&&rawTarget!=='sbi'&&rawTarget!=='spouse'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
         if(transfer&&rawTarget.startsWith('prepaid:') &&
           await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(rawTarget.slice(8)).first())
           return json({error:'アーカイブ済みのプリペイドカードには新規チャージできません',code:'payment_source_archived'},409)
@@ -1367,7 +1367,7 @@ export async function onRequest({ request, env, params }) {
           : await validateRegisteredPaymentSource(db,paymentSource,{currentSource:previous.payment_source})
         if(sourceProblem)return json({error:sourceProblem.error,code:sourceProblem.code},sourceProblem.status)
         const rawTarget=transfer?String(e.transferTarget||''):''
-        if(transfer&&rawTarget&&rawTarget!=='sbi'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
+        if(transfer&&rawTarget&&rawTarget!=='sbi'&&rawTarget!=='spouse'&&!await validPrepaidTarget(db,rawTarget))return json({error:'登録済みの振替先を選択してください'},400)
         if(transfer&&rawTarget!==previous.transfer_target&&rawTarget.startsWith('prepaid:') &&
           await db.prepare('SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=1').bind(rawTarget.slice(8)).first())
           return json({error:'アーカイブ済みのプリペイドカードへ変更できません',code:'payment_source_archived'},409)

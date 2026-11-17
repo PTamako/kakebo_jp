@@ -24,17 +24,21 @@ function account(id,accounts,spender){
   fail('CORRECTION_ACCOUNT_NOT_OWNED_OR_ACTIVE');
  return a;
 }
-function identity(row){
- if(!row||row.type!=='expense'||!money(Number(row.amount))||!date(row.date)||
+function identity(row,mayBeVoid=false){
+ if(!row||row.type!=='expense'||!(money(Number(row.amount))||
+  mayBeVoid&&Number(row.amount)===0)||!date(row.date)||
   typeof row.accountId!=='string')fail('CORRECTION_INVALID_ENTRY');
 }
 function effectKey(v){return [v.accountId,v.kind,v.billMonth||''].join('\0');}
 export function planAccountLinkedExpenseCorrection(input){
  const {before,after,accounts,spenderUserId,editorUserId,
-  prepaidBalances={},settledJpy=0,offsetJpy=0}=input||{};
+  prepaidBalances={},settledJpy=0,offsetJpy=0,operation='update'}=input||{};
  if(!spenderUserId||!editorUserId||!Array.isArray(accounts))
   fail('CORRECTION_IDENTITY_REQUIRED');
- identity(before);identity(after);
+ if(!['update','delete','restore'].includes(operation))fail('CORRECTION_INVALID_OPERATION');
+ identity(before,operation==='restore');identity(after,operation==='delete');
+ if(operation==='delete'&&after.amount!==0||operation==='restore'&&before.amount!==0)
+  fail('CORRECTION_INVALID_VOID_TRANSITION');
  if(!before.accountId)fail('CORRECTION_NOT_ACCOUNT_LINKED');
  const old=account(before.accountId,accounts,spenderUserId);
  const newer=account(after.accountId,accounts,spenderUserId);
@@ -49,6 +53,7 @@ export function planAccountLinkedExpenseCorrection(input){
  const effects=new Map();
  function post(a,amount,when,reverse){
   if(!a)return;
+  if(amount===0)return;
   const row={accountId:a.account_id,kind:a.account_kind,
    billMonth:a.account_kind==='credit_card'?closingMonth(when,a.closing_day):null,
    deltaJpy:reverse?-amount:amount};

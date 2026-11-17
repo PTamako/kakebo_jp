@@ -103,8 +103,10 @@ test('all prepaid projections and original form include owner-correction account
  assert.match(migration,/TRIGGER trg_family_prepaid_balance_atomic/);
  const input=source('src/EntryInputPage.vue'),member=source('src/FamilyMemberWorkspace.vue');
  assert.match(input,/personalAssetActionsEnabled/);
- assert.match(input,/<slot name="personal-transfer"\/>/);
- assert.match(member,/<template #personal-transfer>/);
+ assert.match(input,/<slot name="custom-transfer-fields"/);
+ assert.match(member,/<template #custom-transfer-fields/);
+ assert.match(member,/submitMemberPersonalTransfer/);
+ assert.doesNotMatch(input,/本人の資産操作<\/button>/);
  assert.match(member,/<MemberPointAssetActions/);
  assert.match(member,/<MemberPrepaidTopups/);
  assert.match(member,/personalAssetActionsEnabled:computed\(\(\)=>true\)/);

@@ -411,3 +411,30 @@ test('unregistered and archived cards fail closed; old card remains valid for un
   assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'テスト共有カード');
  }finally{f.close()}
 });
+
+
+test('owner cannot reassign a delegated spouse card even by direct owner API',async()=>{
+ const f=fixture();
+ try{
+  const first=await f.create(),id=first.resource_id
+  // A historical card-spend event establishes the actual user of the card.
+  // Owner permissions to edit household totals cannot override that actor.
+  f.sql.exec('CREATE TABLE family_legacy_card_spends(entry_id INTEGER PRIMARY KEY,actor_user_id TEXT)')
+  f.sql.prepare('INSERT INTO family_legacy_card_spends VALUES(?,?)').run(first.entry_id,member)
+  const attempted=await f.invoke('PUT',['shared-entries',id],{
+   expected_user_id:owner,expected_version:1,
+   entry:{...sample,payment_source:'テスト共有カード'}
+  })
+  assert.equal(attempted.status,403,JSON.stringify(attempted))
+  assert.equal(attempted.data.code,'OTHER_MEMBERS_PAYMENT_READ_ONLY')
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'')
+  assert.equal(f.sql.prepare('SELECT version FROM family_shared_entry_registry').get().version,1)
+  // Legitimate category changes still remain owner-editable.
+  const legitimate=await f.invoke('PUT',['shared-entries',id],{
+   expected_user_id:owner,expected_version:1,
+   entry:{...sample,category:'日用品'}
+  })
+  assert.equal(legitimate.status,200,JSON.stringify(legitimate))
+  assert.equal(f.sql.prepare('SELECT payment_source FROM entries').get().payment_source,'')
+ }finally{f.close()}
+})

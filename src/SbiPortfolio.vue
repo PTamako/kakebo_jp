@@ -509,10 +509,8 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
       </div>
     </div>
     <p v-if="loading && !data" class="sbi-loading" role="status">残高・積立を読み込み中…</p>
-    <p v-if="memberMode" class="sbi-hint" role="status">本人の積立設定のみ表示。SBIの残高は未照合で、注文は実行しません。</p>
-    
+
     <p v-if="error && /投資テーブルの移行が未実施/.test(error)" class="sbi-hint">投資データを確認してください。既存の家計簿は変更されません。</p>
-    
 
     <div v-show="activeView==='funds'" class="sbi-view-panel">
     <template v-if="data">
@@ -600,7 +598,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
             <button v-if="!memberMode" type="button" class="sbi-activity-main" @click="openActivity('purchase')">＋ 買付を記録</button>
             <a class="sbi-activity-external" href="https://www.sbisec.co.jp/" target="_blank" rel="noopener noreferrer" aria-label="SBI証券の公式サイトで買付を操作">SBIで買付 ↗</a>
           </div>
-          <p v-if="memberMode" class="sbi-hint">本人のSBI口座の買付登録は、証券会社の取引証拠に基づく本人資産操作から行ってください。この画面では実行できない旧記帳ボタンを表示しません。</p>
+          
           <div class="sbi-activity-month">
             <span>対象月</span>
             <input v-model="month" type="month" aria-label="買付履歴の対象月" @change="load" />
@@ -638,7 +636,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           <span class="sbi-chevron" aria-hidden="true">⌄</span>
         </summary>
         <div class="sbi-section-body sbi-management-body">
-          <p v-if="memberMode" class="sbi-hint">計画の変更は本人が保存できます。家庭明細への入帳のみ承認が必要です。</p>
+          
           <div class="sbi-month-pulse">
             <div><span>積立予定</span><strong>{{yen(data.reconciliation.monthly_amount)}}</strong></div>
             <div><span>{{memberMode?'内部入帳確認':'振替登録済み'}}</span><strong>{{data.reconciliation.registered===null?'未確認':yen(data.reconciliation.registered)}}</strong></div>
@@ -742,8 +740,7 @@ onUnmounted(() => { if(checkTimer!==null)clearTimeout(checkTimer); for (const ti
           </label>
           <button type="button" class="button-secondary sbi-text-import-button" :disabled="saving || bulkBusy || !bulkText.trim()" @click="applyBulkText">テキストを読み取る</button>
           </details>
-          
-          
+
         </div>
         <div class="sbi-bulk-heading"><strong>変更内容を確認</strong><span>{{bulkChanged.length}}口座変更</span></div>
         <p v-if="!bulkChanged.length" class="sbi-bulk-idle">変更候補はありません</p>

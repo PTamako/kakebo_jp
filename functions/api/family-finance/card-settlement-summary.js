@@ -8,6 +8,11 @@ export async function memberCardLiabilities(db,household,settlementEnabled){
  // signed adjustment effects. No direct mutation of the purchase evidence.
  const hasCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
   "WHERE type='table' AND name='family_approved_account_effects' LIMIT 1").bind().first();
+ const hasOwnerCorrections=!!await db.prepare("SELECT 1 FROM sqlite_master "+
+  "WHERE type='table' AND name='family_owner_account_effects' LIMIT 1").bind().first();
+ const ownerUnion=hasOwnerCorrections?
+   " UNION ALL SELECT o.account_id,o.bill_month,o.delta_jpy,o.purchase_count_delta "+
+   "FROM family_owner_account_effects o WHERE o.household_id=? AND o.account_kind='credit_card'":'';
  const common=hasCorrections?
   'SELECT x.account_id,x.bill_month,COALESCE(SUM(x.amount_jpy),0) amount_jpy,'+
    'SUM(x.purchases) purchases FROM ('+
@@ -15,7 +20,7 @@ export async function memberCardLiabilities(db,household,settlementEnabled){
    'FROM family_card_purchase_applied p WHERE p.household_id=? UNION ALL '+
    "SELECT e.account_id,e.bill_month,e.delta_jpy,e.purchase_count_delta "+
    "FROM family_approved_account_effects e WHERE e.household_id=? AND e.account_kind='credit_card'"+
-   ') x GROUP BY x.account_id,x.bill_month':
+   ownerUnion+') x GROUP BY x.account_id,x.bill_month':
   'SELECT p.account_id,p.bill_month,COALESCE(SUM(p.amount_jpy),0) amount_jpy,'+
    'COUNT(*) purchases FROM family_card_purchase_applied p '+
    'WHERE p.household_id=? GROUP BY p.account_id,p.bill_month';
@@ -44,7 +49,7 @@ export async function memberCardLiabilities(db,household,settlementEnabled){
   'SELECT g.account_id,g.bill_month,g.amount_jpy,g.purchases,a.label,a.owner_user_id,'+
   '0 settled_jpy,0 points_offset_jpy FROM gross g JOIN family_financial_accounts a ON a.account_id=g.account_id '+
   'WHERE a.household_id=? AND g.amount_jpy>0 AND g.purchases>0 ORDER BY g.bill_month DESC,g.account_id LIMIT 200';
- const commonArgs=hasCorrections?[household,household]:[household];
+ const commonArgs=hasCorrections?[household,household,...(hasOwnerCorrections?[household]:[])]:[household];
  const args=settlementEnabled?
   [...commonArgs,household,household,household,household]:[...commonArgs,household];
  const rows=(await db.prepare(sql).bind(...args).all()).results||[];

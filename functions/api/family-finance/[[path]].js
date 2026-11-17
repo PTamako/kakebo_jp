@@ -280,13 +280,16 @@ async function entries(env,user,url){
   't.owner_user_id AS transfer_target_account_owner_user_id,'+
   ledgerRecorderColumns+',ls.actor_user_id AS shared_card_actor_user_id,'+
   'member_intent.requester_user_id AS shared_entry_requester_user_id,'+
-  'sr.creator_user_id AS shared_record_creator_user_id '+
+  'sr.creator_user_id AS shared_record_creator_user_id,'+
+  'COALESCE(paid_card.requester_user_id,paid_prepaid.requester_user_id) AS future_paid_owner_user_id '+
   'FROM entries e LEFT JOIN family_financial_accounts a '+
   'ON a.account_id=e.family_account_id '+
   'LEFT JOIN payment_sources p ON p.name=e.payment_source '+
   'LEFT JOIN family_financial_accounts t '+
   'ON t.account_id=e.family_transfer_target_account_id '+
   ledgerRecorderJoins+' '+
+  'LEFT JOIN family_card_purchase_applied paid_card ON paid_card.entry_id=e.id '+
+  "LEFT JOIN family_prepaid_actions_applied paid_prepaid ON paid_prepaid.entry_id=e.id AND paid_prepaid.action='spend' "+
   'WHERE NOT (e.amount=0 AND (COALESCE(e.client_request_id,\'\') LIKE \'hfcard:%\' OR COALESCE(e.client_request_id,\'\') LIKE \'hfprepaid:%\')) '+
   ((period||annual)?'AND e.date >= ? AND e.date < ? ':'')+
   'ORDER BY e.date DESC,e.id DESC LIMIT ? OFFSET ?',
@@ -321,7 +324,8 @@ async function entries(env,user,url){
    transfer_target_display:visibleTarget||'未設定',
    payment_account_owner_user_id:ownSource?user.user_id:null,
    transfer_target_account_owner_user_id:ownTarget?user.user_id:null,
-   shared_record_creator_user_id:r.shared_record_creator_user_id===user.user_id?user.user_id:null};
+   shared_record_creator_user_id:r.shared_record_creator_user_id===user.user_id?user.user_id:null,
+   future_paid_owner_user_id:r.future_paid_owner_user_id===user.user_id?user.user_id:null};
  });
  return json({ok:true,household_id:user.household_id,items,
   next_offset:rows.length>limit?offset+limit:null,ledger_scope:'household',

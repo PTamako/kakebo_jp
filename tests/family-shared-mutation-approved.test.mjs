@@ -446,7 +446,7 @@ test('a sealed-reference replay cannot be previewed before its original physical
 test('D1 batch metadata can report zero after a committed household approval without causing false automatic reconciliation',async()=>{
  const f=fixture();
  try{
-  const intent=await f.apply('create',null,0,{...sample,amount:960,payment_source:'',merchant:'長門'});
+  const intent=await f.apply('create',null,0,{...sample,amount:960,merchant:'長門'});
   const originalBatch=f.env.DB.batch;
   f.env.DB.batch=async statements=>{
    const results=await originalBatch(statements);

@@ -42,7 +42,7 @@ async function hmac(secret,client,stamp,raw){
   enc.encode(client+'\n'+stamp+'\n'+raw))
  return Array.from(new Uint8Array(result),x=>x.toString(16).padStart(2,'0')).join('')
 }
-async function decodePayload(env,row){
+export async function decodePayload(env,row){
  try{
   const iv=Uint8Array.from(atob(row.payload_iv),x=>x.charCodeAt(0))
   const cipher=Uint8Array.from(atob(row.payload_cipher),x=>x.charCodeAt(0))
@@ -64,7 +64,7 @@ function validDate(v){
  const stamp=Date.parse(v+'T00:00:00Z')
  return Number.isFinite(stamp)&&new Date(stamp).toISOString().slice(0,10)===v
 }
-function validCash(p,row){
+export function validCash(p,row){
  return p&&typeof p==='object'&&!Array.isArray(p)&&
   Object.keys(p).sort().join(',')===
    ['account_id','amount_jpy','category','date','merchant','note','type'].sort().join(',')&&

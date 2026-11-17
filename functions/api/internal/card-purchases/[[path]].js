@@ -42,7 +42,7 @@ export function cardClosingMonth(date,closingDay){
   new Date(Date.UTC(year,month-1,1));
  return closeDate.toISOString().slice(0,7);
 }
-async function sealed(env,row){
+export async function sealed(env,row){
  try{
   const iv=Uint8Array.from(atob(row.payload_iv),x=>x.charCodeAt(0));
   const cipher=Uint8Array.from(atob(row.payload_cipher),x=>x.charCodeAt(0));

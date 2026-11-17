@@ -11,11 +11,11 @@ test('husband edit form renders the same payment field, read-only with actual ca
  assert.match(ledger,/paymentSource:ledgerPaymentLabel\(entry\)/)
  assert.match(ledger,/payment_source:null/)
  const page=readFileSync(new URL('../src/pages/LedgerPage.vue',import.meta.url),'utf8')
- assert.match(page,/:show-payment-source="true" :payment-read-only="props.member"/)
+ assert.match(page,/:show-payment-source="true" :payment-read-only="props.member || !!editingEntry.paymentReadOnly"/)
  const form=readFileSync(new URL('../src/TransactionForm.vue',import.meta.url),'utf8')
  assert.match(form,/record.type==='expense' && showPaymentSource/)
  assert.match(form,/v-if="paymentReadOnly" class="payment-source-readonly"/)
- assert.match(form,/\{\{record.paymentSource\|\|'未設定'\}\}/)
+ assert.match(form,/record.paymentDisplay\|\|record.paymentSource\|\|'未設定'/)
  assert.match(form,/<MobileChoiceSheet :model-value="record.paymentSource" v-else/)
 })
 

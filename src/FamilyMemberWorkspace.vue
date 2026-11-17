@@ -334,7 +334,7 @@ function setMemberEntryType(type,entry){
  if(!['expense','income','transfer'].includes(type))return
  entry.type=type
  entry.category=type==='expense'?'食費':type==='income'?'給与':'投資・資産移動'
- entry.merchant=type==='transfer'?'配偶への振替':''
+ entry.merchant=''
  entry.transferTarget=type==='transfer'?'spouse':''
  entry.transferDate=type==='transfer'?entry.date:''
  entry.paymentSource=type==='expense'?'cash':''

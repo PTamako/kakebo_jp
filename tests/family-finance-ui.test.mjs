@@ -85,8 +85,8 @@ test('management keeps owner and member tools available only after explicit expa
  assert.match(source,/advancedOpen\.value=false/);
  assert.match(source,/<div v-if="advancedOpen" class="hf-advanced">/);
  assert.match(source,/:aria-expanded="advancedOpen"/);
- assert.match(source,/更多家庭财务工具/);
- assert.match(source,/原有支付方式和历史账目仍保留在记账本中/);
+ assert.match(source,/家庭金融ツール/);
+ assert.match(source,/口座は未登録です。既存の明細は保持されています。/);
  assert.match(source,/<FamilyFinanceLegacyLink v-if="person.role==='owner'"/);
  assert.match(source,/<FamilyFinanceProposals v-if="person.role==='member'"/);
 });
@@ -100,7 +100,7 @@ test('member-only proposal UI distinguishes HomeFlow submitted from durable Kake
  assert.match(proposals,/item\.ledger_changed===true&&Number.isSafeInteger\(item.entry_id\)&&item.entry_id>0/);
  assert.match(proposals,/item\.ledger_changed===false&&item.entry_id===null/);
  assert.match(proposals,/submitted_status_unknown'\?'已提交 · HomeFlow 审批状态待核对'/);
- assert.match(proposals,/只有家計簿的真实入账回执才显示/);
+ assert.match(proposals,/HomeFlow の承認後、入帳結果を反映します。/);
  assert.match(proposals,/credentials:'same-origin',cache:'no-store'/);
  assert.match(proposals,/user!==props.userId\|\|!open.value/);
  assert.match(proposals,/alive=false;revision\+\+;open.value=false;items.value=\[\]/);
@@ -235,7 +235,7 @@ test('only stable member-created cash account drafts can enter an executable Hom
  assert.match(proposals,/\(kind==='submit'&&!canSubmitForExecution\(item\)\)/);
  assert.match(proposals,/:disabled="loading\|\|!!busy\|\|!canSubmitForExecution\(item\)"/);
  assert.match(proposals,/非现金账户暂不支持审批后的执行/);
- assert.match(proposals,/其他账户草稿继续保留/);
+ assert.match(proposals,/現在は本人の現金口座のみ申請可能です。/);
  // Neither the PWA nor the new rejection code posts finance entries directly.
  assert.doesNotMatch(proposals,/\/api\/entries\b|\/api\/internal\/approved-actions/);
 });

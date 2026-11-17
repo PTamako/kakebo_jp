@@ -48,7 +48,10 @@ function fixture({accountCorrections=false}={}){
    'CREATE TABLE family_points_prepaid_refunds(prepaid_account_id TEXT,household_id TEXT,debited_prepaid_jpy INTEGER)',
   ])sql.exec(s)
  }
- for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql','0074_member_neutral_spouse_revision.sql',...(accountCorrections?['0100_approved_account_corrections.sql','0101_future_paid_entry_registration.sql','0102_future_paid_correction_serial_guards.sql']:[])])
+ if(accountCorrections)sql.exec("CREATE TRIGGER trg_family_card_purchase_entry_no_update BEFORE UPDATE ON entries "+
+  "WHEN EXISTS(SELECT 1 FROM family_card_purchase_applied p WHERE p.entry_id=OLD.id) "+
+  "BEGIN SELECT RAISE(ABORT,'CARD_PURCHASE_ENTRY_IMMUTABLE'); END");
+ for(const version of ['0051_shared_entry_lifecycle.sql','0052_shared_mutation_approved_execution.sql','0055_legacy_shared_entry_adoption.sql','0058_adopted_shared_mutation_approval.sql','0068_neutral_spouse_transfer.sql','0069_member_neutral_spouse_transfer.sql','0074_member_neutral_spouse_revision.sql',...(accountCorrections?['0100_approved_account_corrections.sql','0101_future_paid_entry_registration.sql','0102_future_paid_correction_serial_guards.sql','0105_future_card_correction_entry_guard.sql']:[])])
   sql.exec(readFileSync(new URL('../migrations/'+version,import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,?,?,'active')").run(u,hh,role)
@@ -741,6 +744,9 @@ test('approved correction updates new card expense, liability, household totals 
   assert.equal(f.sql.prepare('SELECT SUM(delta_jpy) n FROM family_approved_account_effects').get().n,450)
   assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_card_purchase_applied').get().n,1)
   assert.equal(f.sql.prepare('SELECT amount_jpy FROM family_card_purchase_applied').get().amount_jpy,1000)
+  assert.throws(()=>f.sql.prepare("UPDATE entries SET amount=900 WHERE id=?").run(entryId),
+   /CARD_PURCHASE_ENTRY_IMMUTABLE|CONTEXT_REQUIRED/,
+   'direct unapproved changes to the original linked card row remain forbidden');
   assert.equal((await f.target('execute',pending)).status,200)
   assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_approved_account_corrections').get().n,1)
   assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM family_approved_account_effects').get().n,1)

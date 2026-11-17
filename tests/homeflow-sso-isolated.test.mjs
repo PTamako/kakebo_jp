@@ -100,7 +100,7 @@ async function setup(){
    assert.equal(data.get('code'),'f'.repeat(64));
    return Response.json({access_token:'e'.repeat(64),token_type:'Bearer',expires_in:180,
     session_assertion:state.user===owner?'d'.repeat(64):'c'.repeat(64),
-    session_assertion_expires_in:900});
+    session_assertion_expires_in:30*86400});
   }
   if(u.pathname==='/api/oauth/userinfo'){
    assert.equal(request.headers.get('Authorization'),'Bearer '+'e'.repeat(64));

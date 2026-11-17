@@ -33,14 +33,15 @@ CREATE TRIGGER IF NOT EXISTS trg_account_correction_approved_source
   LEFT JOIN family_card_purchase_applied card ON card.entry_id=entry.id
   LEFT JOIN family_prepaid_actions_applied prepaid ON prepaid.entry_id=entry.id AND prepaid.action='spend'
   WHERE intent.proposal_id=NEW.proposal_id
-   AND intent.status='submitted' AND intent.operation='update'
+   AND intent.status='submitted' AND intent.operation IN('update','delete','restore')
    AND intent.homeflow_approval_id=NEW.homeflow_request_id
    AND intent.household_id=NEW.household_id
    AND intent.requester_user_id=NEW.requester_user_id
    AND intent.expected_version=NEW.version_before
    AND registry.household_id=NEW.household_id
    AND registry.entry_id=NEW.entry_id
-   AND registry.state='active' AND registry.version=NEW.version_before
+   AND registry.version=NEW.version_before
+   AND registry.state=CASE WHEN intent.operation='restore' THEN 'deleted' ELSE 'active' END
    AND entry.type='expense'
    AND COALESCE(card.requester_user_id,prepaid.requester_user_id)=NEW.spender_user_id
    AND COALESCE(card.household_id,prepaid.household_id)=NEW.household_id
@@ -51,7 +52,12 @@ CREATE TRIGGER IF NOT EXISTS trg_account_correction_approved_source
    AND json_extract(NEW.before_json,'$.date')=entry.date
    AND json_extract(NEW.before_json,'$.accountId')=entry.family_account_id
    AND json_extract(NEW.after_json,'$.type')='expense'
-   AND CAST(json_extract(NEW.after_json,'$.amount') AS INTEGER) BETWEEN 1 AND 10000000
+   AND CAST(json_extract(NEW.after_json,'$.amount') AS INTEGER) BETWEEN 0 AND 10000000
+   AND (
+    (intent.operation='update' AND entry.amount>0 AND json_extract(NEW.after_json,'$.amount')>0)
+    OR (intent.operation='delete' AND entry.amount>0 AND json_extract(NEW.after_json,'$.amount')=0)
+    OR (intent.operation='restore' AND entry.amount=0 AND json_extract(NEW.after_json,'$.amount')>0)
+   )
  )
  BEGIN SELECT RAISE(ABORT,'ACCOUNT_CORRECTION_APPROVAL_OR_SNAPSHOT_INVALID'); END;
 CREATE TRIGGER IF NOT EXISTS trg_account_correction_no_update

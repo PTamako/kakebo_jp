@@ -276,7 +276,8 @@ async function entries(env,user,url){
   'COALESCE(t.label,e.transfer_target) AS transfer_target_display,'+
   't.owner_user_id AS transfer_target_account_owner_user_id,'+
   ledgerRecorderColumns+',ls.actor_user_id AS shared_card_actor_user_id,'+
-  'member_intent.requester_user_id AS shared_entry_requester_user_id '+
+  'member_intent.requester_user_id AS shared_entry_requester_user_id,'+
+  'sr.creator_user_id AS shared_record_creator_user_id '+
   'FROM entries e LEFT JOIN family_financial_accounts a '+
   'ON a.account_id=e.family_account_id '+
   'LEFT JOIN payment_sources p ON p.name=e.payment_source '+
@@ -315,7 +316,8 @@ async function entries(env,user,url){
    payment_source_display:paymentLabel,
    transfer_target_display:visibleTarget||'未設定',
    payment_account_owner_user_id:ownSource?user.user_id:null,
-   transfer_target_account_owner_user_id:ownTarget?user.user_id:null};
+   transfer_target_account_owner_user_id:ownTarget?user.user_id:null,
+   shared_record_creator_user_id:r.shared_record_creator_user_id===user.user_id?user.user_id:null};
  });
  return json({ok:true,household_id:user.household_id,items,
   next_offset:rows.length>limit?offset+limit:null,ledger_scope:'household',

@@ -26,6 +26,7 @@ function fixture(){
  sql.exec('CREATE TABLE family_financial_accounts(account_id TEXT,owner_user_id TEXT,household_id TEXT,is_archived INTEGER)')
  sql.exec(readFileSync(new URL('../migrations/0052_shared_mutation_approved_execution.sql',import.meta.url),'utf8'))
  sql.exec(readFileSync(new URL('../migrations/0068_neutral_spouse_transfer.sql',import.meta.url),'utf8'))
+ sql.exec(readFileSync(new URL('../migrations/0069_member_neutral_spouse_transfer.sql',import.meta.url),'utf8'))
  for(const [u,role] of [[owner,'owner'],[member,'member']])
   sql.prepare("INSERT INTO homeflow_identity_links VALUES(?,? ,?,'active')").run(u,household,role)
  const db={prepare(q){return {bind(...args){return{
@@ -114,6 +115,66 @@ test('owner-created ordinary shared entry counts exactly once and legacy writers
   const replay=await f.invoke('POST',['shared-entries'],{
    expected_user_id:owner,idempotency_key:'shared-create-20261115-a',entry:sample})
   assert.equal(replay.status,409)
+ }finally{f.close()}
+})
+test('member spouse transfer bypasses owner review but remains one audited neutral household record',async()=>{
+ const f=fixture();try{
+  const entry={date:'2026-11-17',time:'13:20',amount:5000,type:'transfer',
+   category:'投資・資産移動',merchant:'配偶への振替',note:'家庭内資産移動',
+   transfer_target:'spouse',transfer_date:'2026-11-17'}
+  const payload={expected_user_id:member,idempotency_key:'neutral-spouse-20261117-a',entry}
+  const first=await f.invoke('POST',['shared-entries'],payload,f.member)
+  assert.equal(first.status,201,JSON.stringify(first))
+  const saved=first.data.action
+  assert.equal(saved.creator_user_id,member)
+  assert.equal(saved.entry.type,'transfer')
+  assert.equal(f.count('entries'),1)
+  assert.equal(f.count('family_shared_entry_registry'),1)
+  assert.equal(f.count('family_shared_entry_audit'),1)
+  const physical=f.sql.prepare('SELECT * FROM entries').get()
+  assert.equal(physical.transfer_target,'spouse')
+  assert.equal(physical.transfer_applied,0)
+  assert.equal(physical.family_account_id,null)
+  assert.equal(physical.family_transfer_target_account_id,null)
+  assert.equal(physical.payment_source,'')
+  assert.equal(f.sql.prepare("SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) income, "+
+   "COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expense FROM entries").get().income,0)
+  assert.equal(f.sql.prepare("SELECT COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expense FROM entries").get().expense,0)
+  for(const actor of [f.owner,f.member]){
+   const read=await f.invoke('GET',['shared-entries',saved.resource_id],null,actor)
+   assert.equal(read.status,200)
+   assert.equal(read.data.action.entry_id,saved.entry_id)
+  }
+  const replay=await f.invoke('POST',['shared-entries'],payload,f.member)
+  assert.equal(replay.status,200)
+  assert.equal(replay.data.replayed,true)
+  assert.equal(f.count('entries'),1)
+  assert.equal(f.count('family_shared_entry_audit'),1)
+  const changed=await f.invoke('POST',['shared-entries'],
+   {...payload,entry:{...entry,amount:10000}},f.member)
+  assert.equal(changed.status,409)
+  for(const type of ['income','expense']){
+   const unauthorized=await f.invoke('POST',['shared-entries'],{
+    ...payload,idempotency_key:'neutral-spouse-'+type+'-20261117',
+    entry:{date:entry.date,time:entry.time,amount:100,type,
+     category:'食費',merchant:'スーパー',note:''}},f.member)
+   assert.equal(unauthorized.status,403,JSON.stringify(unauthorized))
+  }
+  const malformed=await f.invoke('POST',['shared-entries'],{
+   ...payload,idempotency_key:'neutral-spouse-wrong-target-20261117',
+   entry:{...entry,transfer_target:'bank'}},f.member)
+  assert.equal(malformed.status,400)
+  const forbiddenEdit=await f.invoke('PUT',['shared-entries',saved.resource_id],
+   {expected_user_id:member,expected_version:1,entry},f.member)
+  assert.equal(forbiddenEdit.status,403)
+  const forbiddenDelete=await f.invoke('DELETE',['shared-entries',saved.resource_id],
+   {expected_user_id:member,expected_version:1},f.member)
+  assert.equal(forbiddenDelete.status,403)
+  assert.equal(f.count('entries'),1)
+  f.sql.prepare("UPDATE homeflow_identity_links SET state='disabled' WHERE user_id=?").run(member)
+  const disabled=await f.invoke('POST',['shared-entries'],
+   {...payload,idempotency_key:'neutral-spouse-disabled-20261117'},f.member)
+  assert.equal(disabled.status,403)
  }finally{f.close()}
 })
 test('entry revision and revision audit fail in one real SQLite transaction, no partial entry or metadata update',async()=>{

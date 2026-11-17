@@ -31,6 +31,8 @@ export async function familyMemberCategories(request,env,url,user,parts){
   const x=await payload(request,url);
   const keys=request.method==='POST'?['expected_user_id','type','name','icon']:
    ['expected_user_id','type','name'];
+  if(x?.expected_user_id!==undefined&&x.expected_user_id!==user.user_id)
+   return fail('ACTOR_CHANGED',403);
   if(!exact(x,keys)||x.expected_user_id!==user.user_id||
    !['expense','income'].includes(x.type)||!valid(x.name)||
    (request.method==='POST'&&!/^[a-z0-9-]{1,48}$/.test(x.icon)))

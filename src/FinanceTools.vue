@@ -1668,7 +1668,7 @@ const unifiedInvestmentApi=(path,options)=>props.memberView
     @update:mode="onCardMode" @default="onCardDefault"
     @archive="onCardArchive" @remove="onCardRemove" />
   <slot v-if="memberView&&managementTab==='cards'" name="member-card-usage"/>
-  <section v-show="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
+  <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
     <InvestmentTransferReview v-if="!memberView" />
     <SbiPortfolio :member-mode="memberView"
       :api="unifiedInvestmentApi" active-view="plans"
@@ -1934,7 +1934,6 @@ const unifiedInvestmentApi=(path,options)=>props.memberView
       </template>
     </template>
   </OriginalOtherManagement>
-  </template>
 </section>
 </template>
 <style scoped>

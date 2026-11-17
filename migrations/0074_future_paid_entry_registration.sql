@@ -17,12 +17,12 @@ WHEN NEW.state<>'active' OR NEW.version<>1
       AND m.family_account_id IS NULL
       AND m.family_transfer_target_account_id IS NULL
       AND m.client_request_id='hfshare:'||NEW.resource_id)
- OR EXISTS(SELECT 1 FROM family_card_purchase_applied paid
- WHERE paid.entry_id=m.id AND paid.household_id=NEW.household_id
+ OR EXISTS(SELECT 1 FROM family_card_purchase_applied paid JOIN entries m ON m.id=paid.entry_id
+ WHERE paid.entry_id=NEW.entry_id AND paid.household_id=NEW.household_id
  AND paid.requester_user_id=NEW.creator_user_id
  AND m.client_request_id='hfcard:'||paid.homeflow_request_id)
- OR EXISTS(SELECT 1 FROM family_prepaid_actions_applied paid
- WHERE paid.entry_id=m.id AND paid.household_id=NEW.household_id
+ OR EXISTS(SELECT 1 FROM family_prepaid_actions_applied paid JOIN entries m ON m.id=paid.entry_id
+ WHERE paid.entry_id=NEW.entry_id AND paid.household_id=NEW.household_id
  AND paid.requester_user_id=NEW.creator_user_id
  AND paid.action='spend'
  AND m.client_request_id='hfprepaid:'||paid.homeflow_request_id))))
@@ -75,7 +75,7 @@ WHEN NOT EXISTS (
  WHERE paid.entry_id=e.id AND paid.household_id=OLD.household_id
  
  AND paid.action='spend'
- AND e.client_request_id='hfprepaid:'||paid.homeflow_request_id)))
+ AND e.client_request_id='hfprepaid:'||paid.homeflow_request_id))))
   OR (OLD.state='active' AND NEW.state='deleted' AND c.action='delete'
    AND NOT EXISTS(SELECT 1 FROM entries e WHERE e.id=OLD.entry_id))
   OR (OLD.state='deleted' AND NEW.state='active' AND c.action='restore'
@@ -93,7 +93,7 @@ WHEN NOT EXISTS (
  WHERE paid.entry_id=e.id AND paid.household_id=OLD.household_id
  
  AND paid.action='spend'
- AND e.client_request_id='hfprepaid:'||paid.homeflow_request_id)))
+ AND e.client_request_id='hfprepaid:'||paid.homeflow_request_id))))
   OR (OLD.state='deleted' AND NEW.state='purge_pending' AND c.action='purge'
    AND NEW.snapshot_json IS NULL)
   OR (OLD.state='purge_pending' AND NEW.state='purged' AND c.action='purge'

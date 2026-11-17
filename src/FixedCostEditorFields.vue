@@ -64,7 +64,52 @@ const emit=defineEmits(['update:cycleChoice'])
 .recurring-form-field{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%;font-size:12px;font-weight:700;color:var(--muted)}
 .recurring-form-field>span:first-child{font-size:12px;font-weight:700}
 .recurring-form-field input{max-width:100%;min-width:0;width:100%;box-sizing:border-box;font-size:16px;min-height:44px;border-radius:11px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 12px}
-.recurring-start-month{width:100%}
+/* Keep the native iOS month picker inside the SAME one-column grid width as
+   category/payment controls. This must live in the child SFC's own scoped CSS:
+   parent FinanceTools scoped selectors cannot style the child's input. */
+.recurring-start-month{
+ display:grid;
+ grid-template-columns:minmax(0,1fr);
+ gap:4px;
+ width:100%;
+ min-width:0;
+ max-width:100%;
+ min-inline-size:0;
+ max-inline-size:100%;
+ box-sizing:border-box;
+ overflow:hidden;
+}
+.recurring-start-month input[type="month"]{
+ display:inline-flex;
+ align-items:center;
+ justify-self:stretch;
+ inline-size:100%!important;
+ width:100%!important;
+ min-inline-size:0!important;
+ max-inline-size:100%!important;
+ min-width:0!important;
+ max-width:100%!important;
+ box-sizing:border-box!important;
+ margin:0!important;
+ padding:0 12px!important;
+ overflow:hidden;
+ -webkit-appearance:none;
+ appearance:none;
+}
+.recurring-start-month input[type="month"]::-webkit-date-and-time-value{
+ min-width:0;
+ max-width:100%;
+ text-align:left;
+}
+.recurring-start-month input[type="month"]::-webkit-datetime-edit{
+ min-width:0;
+}
+.recurring-start-month input[type="month"]::-webkit-calendar-picker-indicator{
+ flex:none;
+ max-width:18px;
+ margin:0;
+ padding:0;
+}
 .recurring-posting-mode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:2px 0 0;padding:0;border:0;min-width:0}
 .recurring-posting-mode legend{font-size:12px;font-weight:700;margin-bottom:8px;color:var(--muted)}
 .recurring-posting-mode label{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:10px;min-height:44px;padding:6px 8px;box-sizing:border-box;min-width:0;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;white-space:nowrap}

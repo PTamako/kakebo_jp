@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
-import {sharedEntryFromEditor,sameSharedEditValues,sharedEditConfirmed} from '../src/shared-ledger-edit.js'
+import {sharedEntryFromEditor,sameSharedEditValues,sharedEditConfirmed,isAnotherMembersPayment} from '../src/shared-ledger-edit.js'
 
 test('original owner editor sends the selected expense payment and all changed fields',()=>{
  const record={date:'2026-11-17',time:'',amount:960,type:'expense',
@@ -39,3 +39,21 @@ test('owner editor wires the verified saved receipt and does not omit payment so
  assert.match(form,/v-model="record\.category"/)
  assert.match(form,/@change="emit\('payment-change',\$event\)"/)
 })
+
+
+test('payment owner provenance locks spouse entries while preserving own edits',()=>{
+ const owner='owner',member='member';
+ assert.equal(isAnotherMembersPayment({shared_entry_requester_user_id:member},owner),true);
+ assert.equal(isAnotherMembersPayment({shared_card_actor_user_id:member},owner),true);
+ assert.equal(isAnotherMembersPayment({payment_account_owner_user_id:member},owner),true);
+ assert.equal(isAnotherMembersPayment({shared_entry_requester_user_id:owner},owner),false);
+ assert.equal(isAnotherMembersPayment({recorded_by:'鸡毛大王'},owner),false,
+  'display names never confer or revoke payment editing rights');
+ assert.equal(isAnotherMembersPayment({shared_entry_requester_user_id:member,
+  payment_account_owner_user_id:owner},owner),true,
+  'shared-card spender attribution remains protected');
+ const app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8');
+ assert.match(app,/paymentReadOnly:isAnotherMembersPayment\(entry,familyIdentity\.value\?\.user_id\)/);
+ assert.match(app,/paymentSource: entry\.payment_source \|\| ''/);
+ assert.match(app,/paymentDisplay:entry\.payment_source_display/);
+});

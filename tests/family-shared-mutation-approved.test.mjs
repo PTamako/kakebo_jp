@@ -817,3 +817,46 @@ test('future linked prepaid deletion refunds balance and restore debits again at
   assert.equal((await memberPrepaidBalances(f.env.DB,hh)).total_jpy,500)
  }finally{f.close()}
 })
+
+test('future personal credit card moves to cash and back only after HomeFlow approvals',async()=>{
+ const f=fixture({accountCorrections:true})
+ try{
+  const {resourceId,entryId,accountId,receipt}=await seedFuturePaid(f)
+  const cash={...sample,date:'2026-11-18',time:'',amount:1200,merchant:'新交易',payment_source:''}
+  const p=await f.apply('update',resourceId,1,cash)
+  assert.equal(f.sql.prepare('SELECT family_account_id FROM entries WHERE id=?').get(entryId).family_account_id,accountId)
+  assert.equal((await memberCardLiabilities(f.env.DB,hh,false)).total,1000)
+  const approved=await f.target('execute',p)
+  assert.equal(approved.status,200,JSON.stringify(approved))
+  assert.deepEqual({...f.sql.prepare('SELECT amount,payment_source,family_account_id FROM entries WHERE id=?').get(entryId)},
+   {amount:1200,payment_source:'',family_account_id:null})
+  assert.equal((await memberCardLiabilities(f.env.DB,hh,false)).total,0)
+  assert.equal(f.sql.prepare('SELECT amount_jpy FROM family_card_purchase_applied WHERE homeflow_request_id=?').get(receipt).amount_jpy,1000)
+  assert.equal((await f.target('execute',p)).data.already_applied,true)
+  const back=await f.apply('update',resourceId,2,{...cash,amount:1300,payment_source:'cc:'+accountId})
+  assert.equal(f.sql.prepare('SELECT amount FROM entries WHERE id=?').get(entryId).amount,1200)
+  const ok=await f.target('execute',back)
+  assert.equal(ok.status,200,JSON.stringify(ok))
+  assert.equal(f.sql.prepare('SELECT family_account_id FROM entries WHERE id=?').get(entryId).family_account_id,accountId)
+  assert.equal((await memberCardLiabilities(f.env.DB,hh,false)).total,1300)
+  assert.equal(f.sql.prepare('SELECT count(*) n FROM family_approved_account_corrections').get().n,2)
+  assert.equal(f.sql.prepare('SELECT SUM(delta_jpy) v FROM family_approved_account_effects').get().v,300)
+ }finally{f.close()}
+})
+test('future prepaid card to cash refunds and later recharges without changing original evidence',async()=>{
+ const f=fixture({accountCorrections:true})
+ try{
+  const {resourceId,entryId,accountId}=await seedFuturePaid(f,'prepaid',300)
+  const cash={...sample,date:'2026-11-18',time:'',amount:800,merchant:'新交易',payment_source:''}
+  const p=await f.apply('update',resourceId,1,cash)
+  const toCash=await f.target('execute',p)
+  assert.equal(toCash.status,200,JSON.stringify(toCash))
+  assert.equal(f.sql.prepare('SELECT family_account_id FROM entries WHERE id=?').get(entryId).family_account_id,null)
+  assert.equal((await memberPrepaidBalances(f.env.DB,hh)).total_jpy,1300)
+  assert.equal(f.sql.prepare('SELECT SUM(delta_jpy) v FROM family_prepaid_balance_journal').get().v,300)
+  const back=await f.apply('update',resourceId,2,{...cash,amount:1100,payment_source:'prepaid:'+accountId})
+  assert.equal((await f.target('execute',back)).status,200)
+  assert.equal((await memberPrepaidBalances(f.env.DB,hh)).total_jpy,200)
+  assert.equal(f.sql.prepare('SELECT SUM(delta_jpy) v FROM family_approved_account_effects').get().v,-100)
+ }finally{f.close()}
+})

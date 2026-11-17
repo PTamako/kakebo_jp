@@ -853,7 +853,9 @@ function openMemberInvestmentPlan(plan=null){
 }
 async function refresh(){
  const ticket=++epoch,user=props.user.user_id
- error.value='';accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];totals.value=null;yearly.value=null
+ // Keep the last verified snapshot while network requests are in flight.
+ // Clearing all five panels on every refresh made the spouse PWA visibly flash.
+ error.value=''
  try{
   const [a,b,c,d,e,f]=await Promise.all([
    api('accounts'),api('personal/assets'),

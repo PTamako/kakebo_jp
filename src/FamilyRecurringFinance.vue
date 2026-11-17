@@ -221,7 +221,7 @@ onUnmounted(()=>{alive=false;reset();document.removeEventListener('visibilitycha
  <header><strong>{{view==='investment'?'積立の承認と実行確認':'固定費の設定'}}</strong>
   <button type="button" :aria-expanded="open" :disabled="busy" @click="toggle">{{open?'閉じる':'確認・設定'}}</button></header>
  <template v-if="open">
-  <p class="help">本人の新規計画のみ対象。承認は期間・上限額に限ります。実際の入出金は別途確認が必要です。</p>
+  <p class="help">新規計画のみ。承認は期間・上限額が対象で、銀行引落し・SBI注文は実行しません。</p>
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="help">{{notice}}</p>
   <form v-if="available&&(!view||view!=='investment'||editorOpen)" class="editor" @submit.prevent="createPlan">

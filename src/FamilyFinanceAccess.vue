@@ -13,11 +13,11 @@ import FamilyFinanceAssetOwnership from './FamilyFinanceAssetOwnership.vue'
 import FamilyFinancePlanOwnership from './FamilyFinancePlanOwnership.vue'
 import FamilyFinanceOwnerAdoption from './FamilyFinanceOwnerAdoption.vue'
 
-const props=defineProps({identityOnly:{type:Boolean,default:false}})
+const props=defineProps({identityOnly:{type:Boolean,default:false},skipInitialCheck:{type:Boolean,default:false}})
 const emit=defineEmits(['identity-change'])
 const STORAGE='kakeibo:homeflow-resume-v1'
 const hex=/^[a-f0-9]{64}$/i
-const enabled=ref(false),financeEnabled=ref(false),busy=ref(false),error=ref('')
+const enabled=ref(props.identityOnly),financeEnabled=ref(false),busy=ref(false),error=ref('')
 const person=ref(null),pending=ref(null),accounts=ref([]),advancedOpen=ref(false)
 const newLabel=ref(''),newKind=ref('credit_card'),editing=ref(null),rename=ref('')
 const kinds=[
@@ -67,13 +67,17 @@ async function check(){
  const revision=++epoch
  error.value='';restorePending()
  try{
-  const status=await call('/api/homeflow-sso/status')
-  if(revision!==epoch)return
-  enabled.value=status.enabled===true
-  if(!enabled.value){resetIdentity();clearPending();return}
-  const feature=await call('/api/family-finance/status')
-  if(revision!==epoch)return
-  financeEnabled.value=feature.enabled===true
+  if(!props.identityOnly){
+   const status=await call('/api/homeflow-sso/status')
+   if(revision!==epoch)return
+   enabled.value=status.enabled===true
+   if(!enabled.value){resetIdentity();clearPending();return}
+   const feature=await call('/api/family-finance/status')
+   if(revision!==epoch)return
+   financeEnabled.value=feature.enabled===true
+  }
+  // The login-only view never needs the separate status and finance endpoints.
+  // /me alone verifies the current cookie after OAuth completion.
   const response=await fetch('/api/homeflow-sso/me',{cache:'no-store',credentials:'same-origin'})
   if(revision!==epoch)return
   if(response.ok){
@@ -181,7 +185,13 @@ function foreground(){
  resetIdentity()
  void check()
 }
-onMounted(()=>{void check();document.addEventListener('visibilitychange',foreground)})
+onMounted(()=>{
+ // Parent already received an unauthenticated /me response during cold boot;
+ // avoid immediately repeating that network round trip.
+ if(props.identityOnly&&props.skipInitialCheck)restorePending()
+ else void check()
+ document.addEventListener('visibilitychange',foreground)
+})
 onUnmounted(()=>{
  // Unmount is NOT a logout: the verified HomeFlow owner is deliberately
  // switched from the identity screen to the original ledger by App.vue.

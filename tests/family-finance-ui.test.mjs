@@ -24,7 +24,7 @@ test('independent family account UI is gated and does not unlock shared legacy l
  assert.match(source,/user\.ledger_access===false/);
  assert.match(app,/<main v-if="identityBootstrapping"/);
  assert.match(app,/<main v-else-if="locked"/);
- assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity" identity-only[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
+ assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity&&!serverLogoutPending" identity-only[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
  assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
  assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/);
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
@@ -52,10 +52,10 @@ test('member account management respects server actor and version; no direct led
 
 test('new family-member PWA requires verified HomeFlow identity rather than legacy fallback',()=>{
  assert.match(app,/async function routeNewFamilyMemberToIsolatedLogin\(\)/);
- assert.match(app,/if\(!status\.ok\)throw Error/);
- assert.match(app,/if\(\(await status\.json\(\)\)\.enabled!==true\)return false/);
+ assert.match(app,/const response=await fetch\('\/api\/homeflow-sso\/me'/);
+ assert.match(app,/if\(!response\.ok\)return null/);
  assert.match(app,/onFamilyIdentityChange\(null\)\s+return true/);
- assert.match(app,/if\(!locked\.value && !await routeNewFamilyMemberToIsolatedLogin\(\)\)/);
+ assert.match(app,/await routeNewFamilyMemberToIsolatedLogin\(\)/);
  assert.doesNotMatch(app,/if\(old\.status===401\)/);
  assert.doesNotMatch(app,/fetch\('\/api\/payment-sources',\{credentials:'same-origin',cache:'no-store'\}\)/);
 });
@@ -76,7 +76,7 @@ test('normal management uses identity-only HomeFlow status and original payment-
  assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
  assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/);
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
- assert.match(source,/defineProps\(\{identityOnly:\{type:Boolean,default:false\}\}\)/);
+ assert.match(source,/defineProps\(\{identityOnly:\{type:Boolean,default:false\},skipInitialCheck:\{type:Boolean,default:false\}\}\)/);
  assert.match(source,/v-if="person&&!props.identityOnly"/);
  assert.match(source,/if\(financeEnabled.value&&!props.identityOnly\)await refresh\(\)/);
  assert.match(sharedPages,/<ManagementPage v-show="activeTab==='finance'"/)

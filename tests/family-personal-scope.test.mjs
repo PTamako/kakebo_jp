@@ -31,8 +31,8 @@ test('HomeFlow member bypasses old legacy access even with an old device session
  assert.match(app,/const response=await fetch\('\/api\/homeflow-sso\/me'/);
  assert.match(app,/onFamilyIdentityChange\(null\)\s+return true/);
  assert.match(app,/\['member','owner'\]\.includes\(proof\.identity\?\.role\)/);
- assert.match(app,/onFamilyIdentityChange\(proof\.identity\)/);
- assert.match(app,/return proof\.identity\.role==='member'/);
+ assert.match(app,/onFamilyIdentityChange\(identity\)/);
+ assert.match(app,/return identity\.role==='member'/);
  assert.match(app,/if\(familyIdentity\.value\?\.role==='member'\)return flash/);
  assert.match(app,/<FamilyMemberWorkspace v-if="familyIdentity\?\.role==='member'"/);
  assert.match(identity,/emit\('identity-change',user\.identity\)/);

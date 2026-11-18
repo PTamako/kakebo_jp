@@ -197,7 +197,7 @@ test('app startup never migrates old images or reads R2 and a click fetches one 
   const app=source('src/App.vue')
   const migration=source('src/receipt-migration.js')
   const server=source('functions/api/r2-receipts.js')
-  const mounted=app.split('onMounted(async () => {')[1]?.split('// Only a successful cross-month edit')[0]
+  const mounted=app.split("onMounted(()=>{\n window.addEventListener('online',onConnectionRestored)")[1]?.split('// Only a successful cross-month edit')[0]
   const unlock=app.split('async function unlock() {')[1]?.slice(0,240)
   assert.ok(mounted)
   assert.ok(unlock)

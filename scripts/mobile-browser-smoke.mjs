@@ -87,7 +87,12 @@ try{
       const u=new URL(route.request().url())
       const p=u.pathname.replace(/^\/api\//,'')
       let data=[]
-      if(p==='app-state')data={}
+      // Production startup now requires a verified HomeFlow /me response.
+      // Test only: use a synthetic identity, never a legacy device token.
+      if(p==='homeflow-sso/me')data={ok:true,ledger_access:false,
+        identity:{user_id:'11111111-1111-4111-8111-111111111111',
+          household_id:'test-household',role:'owner',display_name:'テスト管理者'}}
+      else if(p==='app-state')data={}
       else if(p==='receipts'&&route.request().method()==='GET')data={ok:true,items:[]}
       else if(p==='payment-sources'&&route.request().method()==='GET')data=cards
       else if(p==='payment-sources'&&route.request().method()==='POST'){

@@ -41,6 +41,6 @@ test('account menu does not lose explicit logout or member data isolation',()=>{
  assert.match(app,/fetch\('\/api\/homeflow-sso\/logout'/)
  assert.match(app,/<FamilyMemberWorkspace v-if="familyIdentity\?\.role==='member'"/)
  assert.match(app,/@logout="logoutFamilyMember"/)
- assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity" identity-only/)
+ assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity&&!serverLogoutPending" identity-only/)
  assert.match(app,/onFamilyIdentityChange\(null\)/)
 })

@@ -123,8 +123,13 @@ let paymentSettingsLoaded = false
 let paymentSettingsLoading = null
 async function loadPaymentSettings() {
   if (paymentSettingsLoading) return paymentSettingsLoading
+  const actor=familyIdentity.value?.user_id
+  const generation=ownerBootstrap
+  const canCommit=()=>!actor||(
+    generation===ownerBootstrap&&familyIdentity.value?.user_id===actor&&!locked.value)
   paymentSettingsLoading = (async () => {
     const cards = await api('payment-sources')
+    if(!canCommit())return
     // Keep archived cards in metadata for old ledger references and management.
     // Only active cards appear for NEW spending, receipts, top-ups and rewards.
     paymentSources.value = sortOtherLast(cards.filter(x=>!x.is_archived).map(x => x.name))
@@ -134,8 +139,12 @@ async function loadPaymentSettings() {
     paymentSourceMeta.value = Object.fromEntries(cards.map(x => [x.name,x]))
     paymentClosingDays.value = Object.fromEntries(cards.filter(x => x.closing_day !== null && x.closing_day !== undefined).map(x => [x.name, x.closing_day]))
     defaultPaymentSource.value = cards.find(x => x.is_default && !x.is_archived)?.name || ''
-    merchantPaymentRules.value = await api('merchant-payment-rules')
-    customCategoryRules.value = await api('custom-rules')
+    const nextMerchantRules=await api('merchant-payment-rules')
+    if(!canCommit())return
+    merchantPaymentRules.value=nextMerchantRules
+    const nextCategoryRules=await api('custom-rules')
+    if(!canCommit())return
+    customCategoryRules.value=nextCategoryRules
     paymentSettingsLoaded = true
   })().finally(() => { paymentSettingsLoading = null })
   return paymentSettingsLoading
@@ -442,6 +451,7 @@ function onFamilyIdentityChange(identity){
   loadRequestId++;yearRequestId++
   loadedMonth='';loadedYear=null;paymentSettingsLoaded=false
   pendingTransfers.value=[]
+  rules.value=[];merchantPaymentRules.value=[];customCategoryRules.value=[]
   locked.value=true
   token.value=''
   sessionStorage.removeItem('kakeibo-device-session')

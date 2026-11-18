@@ -18,11 +18,12 @@ crons = ["30 15 * * *", "30 10 * * *"]
 DAIWA_CSV_EXPERIMENT = "false"
 HEARTBEAT_ENABLED = "true"
 
-# Log both daily invocations; NAV and financial job outcomes remain independent.
+# Sample 10% of daily invocations to keep Workers Logs far below Free limits.
+# NAV and financial outcomes are persisted independently in the existing D1 heartbeat.
 # Workers Logs are separate from Workers Builds deployment logs.
 [observability]
 enabled = true
-head_sampling_rate = 1
+head_sampling_rate = 0.1
 
 [[d1_databases]]
 binding = "DB"

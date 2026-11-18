@@ -97,9 +97,10 @@ test('approved cross-card and cross-billing-month revision updates card position
   assert.equal(after.cards.items[0].account_id,ids.b)
   assert.equal(after.cards.items[0].closing_month,'2026-12')
   assert.equal(after.cards.items[0].purchases,1)
-  assert.equal(f.month('2026-11').expense,0)
+  // Household spending follows purchase date, not the credit-card closing month.
+  assert.equal(f.month('2026-11').expense,1250)
   assert.equal(f.month('2026-11').transfer,300)
-  assert.equal(f.month('2026-12').expense,1250)
+  assert.equal(f.month('2026-12').expense,0)
   assert.equal(after.prepaid.total_jpy,5000)
  }finally{f.close()}
 })

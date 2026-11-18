@@ -90,7 +90,7 @@ async function check(){
    }else resetIdentity()
   }else resetIdentity()
  }catch{
-  if(revision===epoch){enabled.value=false;financeEnabled.value=false;resetIdentity()}
+  if(revision===epoch){enabled.value=props.identityOnly;financeEnabled.value=false;resetIdentity()}
  }
 }
 async function start(){

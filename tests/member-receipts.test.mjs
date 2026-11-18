@@ -169,3 +169,52 @@ test('receipt inventory paginates over 1000 rows without leaking another member 
   assert.equal((await f.send(member,'GET','',null,{},'before=bad')).status,400)
  }finally{f.db.close()}
 })
+
+test('editing an approved household entry stages the replacement image until HomeFlow applies revision',async()=>{
+ const f=fixture()
+ const updateProposal='d'.repeat(32),rejectedProposal='e'.repeat(32)
+ try{
+  f.db.prepare('INSERT INTO family_shared_mutation_intents VALUES (?,?,?,?,?)')
+   .run(updateProposal,'spouse','family','update','submitted')
+  f.db.prepare('INSERT INTO family_shared_mutation_intents VALUES (?,?,?,?,?)')
+   .run(rejectedProposal,'spouse','family','update','rejected')
+  const before=await prepare(f,member,'entry:123','original-receipt-of-entry')
+  const originalId=before.body.item.receipt_id
+  assert.equal((await f.send(member,'PUT',originalId,before.bytes,
+   {'origin':'https://kakeibo.test','content-type':'image/jpeg'})).status,200)
+  assert.equal((await prepare(f,member,'proposal:'+rejectedProposal,
+   'rejected-receipt-should-not-upload')).status,403)
+  const replacement=await prepare(f,member,'proposal:'+updateProposal,'approved-update-replacement')
+  assert.equal(replacement.status,201,JSON.stringify(replacement.body))
+  const newId=replacement.body.item.receipt_id
+  assert.equal((await f.send(member,'PUT',newId,replacement.bytes,
+   {'origin':'https://kakeibo.test','content-type':'image/jpeg'})).status,200)
+  const pending=await f.send(member)
+  assert.equal(pending.status,200)
+  assert.equal(pending.body.items.find(x=>x.receipt_id===newId).linked_entry_id,null,
+   'unapproved revision must not replace the entry receipt')
+  assert.equal((await f.send(member,'GET',originalId)).status,200,
+   'original receipt must remain available while revision is pending')
+  assert.equal((await f.send(another,'GET',newId)).status,404)
+  f.db.prepare('INSERT INTO family_shared_mutation_applied VALUES (?,?,?,?,?)')
+   .run(updateProposal,'spouse','family','update',123)
+  const approved=await f.send(member)
+  assert.equal(approved.body.items.find(x=>x.receipt_id===newId).linked_entry_id,123)
+  assert.equal((await f.send(member,'GET',originalId)).status,200,
+   'do not destroy original audit evidence when revision is approved')
+ }finally{f.db.close()}
+})
+
+test('member ledger image edits submit HomeFlow revision before storing any replacement',()=>{
+ const src=readFileSync(new URL('../src/FamilyMemberWorkspace.vue',import.meta.url),'utf8')
+ const start=src.indexOf('async function saveMemberLedgerEdit()')
+ const end=src.indexOf('memberLedger.selectEditReceipt=',start)
+ assert.ok(start>0&&end>start)
+ const flow=src.slice(start,end)
+ assert.match(flow,/const submitted=await openApproval\('update',edited\)/)
+ assert.match(flow,/const receiptRef='proposal:'\+submitted\.proposalId/)
+ assert.match(flow,/await saveMemberReceipt\(edited,receiptRef\)/)
+ assert.ok(flow.indexOf("await openApproval('update',edited)")<
+  flow.indexOf('await saveMemberReceipt(edited,receiptRef)'))
+ assert.doesNotMatch(flow,/deleteMemberReceipt\(current\.receipt_id\)[\s\S]*openApproval\('update'/)
+})

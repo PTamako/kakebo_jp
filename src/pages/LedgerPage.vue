@@ -7,7 +7,7 @@ import LedgerTypeFilter from '../LedgerTypeFilter.vue'
 import { isExternalLedgerEntry } from '../ledger-origin.js'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
-const { categories, tab, month, resetMonth, selectedYear, input, paymentSources, transferDestinations, rewardDestinations, editReceiptImage, editReceiptFileName, receiptSaveError, selectEditReceipt, receiptImageIds, viewedReceiptUrl, viewReceipt, closeReceipt, removeReceiptImage, editingEntry, INCOME_CATEGORIES, categoryIconPath, categoryLabel, yen, load, setEntryType, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, manualPayment, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, detailFilter, prepaidHistoryFilter, detailLoading, visibleEntryCount, listPageSize, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, expandedMonth, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, groupedPagedEntries, toggleEntryDay, clearDetailFilter, visibleCalendarDays, toggleDay, startSwipe, endSwipe, handleEntryClick, monthLabel, formatLedgerTotal } = inject('kakeibo-page-context')
+const { categories, tab, month, resetMonth, selectedYear, input, paymentSources, transferDestinations, rewardDestinations, editReceiptImage, editReceiptFileName, receiptSaveError, selectEditReceipt, receiptImageIds, canDeleteReceipt, viewedReceiptUrl, viewReceipt, closeReceipt, removeReceiptImage, editingEntry, INCOME_CATEGORIES, categoryIconPath, categoryLabel, yen, load, setEntryType, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, manualPayment, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, detailFilter, prepaidHistoryFilter, detailLoading, visibleEntryCount, listPageSize, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, expandedMonth, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, groupedPagedEntries, toggleEntryDay, clearDetailFilter, visibleCalendarDays, toggleDay, startSwipe, endSwipe, handleEntryClick, monthLabel, formatLedgerTotal } = inject('kakeibo-page-context')
 const memberPaymentChoices=inject('kakeibo-member-payment-choices',[])
 const memberIncomeCategories=inject('kakeibo-member-income-categories',[])
 const memberExpenseCategories=inject('kakeibo-member-expense-categories',[])
@@ -84,7 +84,7 @@ const memberExpenseCategories=inject('kakeibo-member-expense-categories',[])
           <div class="edit-dialog-heading"><h2>レシート画像</h2><button type="button" class="icon-button" @click="closeReceipt" aria-label="閉じる">×</button></div>
           <img :src="viewedReceiptUrl" alt="保存したレシート" style="width:100%;max-height:65vh;object-fit:contain" />
           <p class="microcopy">画像は非公開R2に保存（手動削除まで）</p>
-          <button type="button" class="button-secondary" @click="removeReceiptImage">画像のみ削除</button>
+          <button v-if="canDeleteReceipt" type="button" class="button-secondary" @click="removeReceiptImage">画像のみ削除</button>
         </div>
       </div>
       <div v-if="editingEntry" class="edit-overlay" @click.self="cancelEdit">

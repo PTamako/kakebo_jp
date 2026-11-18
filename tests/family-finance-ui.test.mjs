@@ -24,7 +24,7 @@ test('independent family account UI is gated and does not unlock shared legacy l
  assert.match(source,/user\.ledger_access===false/);
  assert.match(app,/<main v-if="identityBootstrapping"/);
  assert.match(app,/<main v-else-if="locked"/);
- assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity" identity-only[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
+ assert.match(app,/<FamilyFinanceAccess v-if="!familyIdentity&&!serverLogoutPending" identity-only[\s\S]*?@identity-change="onFamilyIdentityChange" \/>/);
  assert.match(app,/<OriginalKakeiboPages :identity="familyIdentity"/)
  assert.match(sharedPages,/<AppTopbar :identity="identity" :theme="theme" :themes="themes"/);
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);

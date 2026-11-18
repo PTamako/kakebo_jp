@@ -36,7 +36,7 @@ async function referenceOwned(db,user,ref){
  const [kind,value]=ref.split(':');
  if(kind==='proposal'&&ID.test(value)){
   return !!await first(db,"SELECT 1 FROM family_shared_mutation_intents WHERE "+
-   "proposal_id=? AND requester_user_id=? AND household_id=? AND operation='create' "+
+   "proposal_id=? AND requester_user_id=? AND household_id=? AND operation IN('create','update') "+
    "AND status IN('submitted','prepared','applied')",value,user.user_id,user.household_id);
  }
  if(kind==='entry'&&/^[1-9]\d{0,14}$/.test(value)&&Number.isSafeInteger(Number(value))){
@@ -94,10 +94,10 @@ async function list(req,e,user){
   "AND pi.requester_user_id=r.owner_user_id AND pi.household_id=r.household_id AND pi.action='spend' "+
   'LEFT JOIN family_prepaid_actions_applied pp ON pp.proposal_id=pi.request_id '+
   "LEFT JOIN family_shared_mutation_intents mi ON r.receipt_ref='proposal:'||mi.proposal_id "+
-  "AND mi.requester_user_id=r.owner_user_id AND mi.household_id=r.household_id AND mi.operation='create' "+
+  "AND mi.requester_user_id=r.owner_user_id AND mi.household_id=r.household_id AND mi.operation IN('create','update') "+
   'LEFT JOIN family_shared_mutation_applied ma ON ma.proposal_id=mi.proposal_id '+
   'AND ma.requester_user_id=r.owner_user_id AND ma.household_id=r.household_id '+
-  "AND ma.action='create' "+
+  'AND ma.action=mi.operation '+
   "WHERE r.household_id=? AND r.owner_user_id=? AND r.state='ready' "+
   "AND (?='' OR r.created_at<? OR (r.created_at=? AND r.receipt_id<?)) "+
   'ORDER BY r.created_at DESC,r.receipt_id DESC LIMIT 201')

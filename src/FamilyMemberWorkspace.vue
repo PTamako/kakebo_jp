@@ -805,15 +805,29 @@ async function saveMemberLedgerEdit(){
  if(!ledgerChanged&&!edited.receiptImage){memberLedger.cancelEdit();return}
  memberLedger.editSaving.value=true;memberLedger.receiptSaveError.value=''
  try{
-  if(edited.receiptImage){
+  if(ledgerChanged){
+   // A household amount/payment edit must be accepted for review before
+   // its replacement image is stored; the original image remains untouched.
+   const submitted=await openApproval('update',edited)
+   if(edited.receiptImage){
+    if(!submitted?.proposalId)throw Error('画像に必要な審査番号を確認できません')
+    const receiptRef='proposal:'+submitted.proposalId
+    try{await saveMemberReceipt(edited,receiptRef)}
+    catch(e){
+     memberReceiptRetry.value.push({record:edited,receiptRef})
+     memberReceiptError.value='明細の審査は送信済みです。画像を再送してください：'+e.message
+    }
+   }
+  }else if(edited.receiptImage){
+   // Image-only changes can be applied directly to the user's own receipt.
+   // Delete the old object only after the new one is durably stored.
    const current=memberReceiptIndex.value.get('entry:'+edited.id)
-   await saveMemberReceipt(edited,'entry:'+edited.id)
-   if(current){
+   const savedId=await saveMemberReceipt(edited,'entry:'+edited.id)
+   if(current&&savedId!==current.receipt_id){
     try{await deleteMemberReceipt(current.receipt_id)}
     catch(e){memberReceiptError.value='古い画像を削除できません：'+e.message}
    }
   }
-  if(ledgerChanged)await openApproval('update',edited)
   memberLedger.cancelEdit()
  }catch(e){memberLedger.receiptSaveError.value=e.message||'変更を保存できません'}
  finally{memberLedger.editSaving.value=false}

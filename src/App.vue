@@ -748,10 +748,11 @@ function onHomeflowForeground(){
     !familyIdentity.value||serverLogoutPending.value||foregroundVerification||
     Date.now()-lastHomeflowVerifiedAt<HOMEFLOW_FOREGROUND_RECHECK_MS)return
  const previous=familyIdentity.value
+ const revision=ownerBootstrap
  foregroundVerification=(async()=>{
   let current=null
   try{current=await requestVerifiedHomeflowIdentity()}catch{/* Fail closed below. */}
-  if(familyIdentity.value?.user_id!==previous.user_id||
+  if(revision!==ownerBootstrap||familyIdentity.value?.user_id!==previous.user_id||
      familyIdentity.value?.role!==previous.role)return
   if(!current||current.user_id!==previous.user_id||
      current.household_id!==previous.household_id||
@@ -2256,7 +2257,7 @@ provide('kakeibo-entry-input', {
     </div>
   </main>
   <main v-else-if="locked" :class="`theme-${theme}`">
-    <FamilyFinanceAccess v-if="!familyIdentity" identity-only
+    <FamilyFinanceAccess v-if="!familyIdentity&&!serverLogoutPending" identity-only
       :skip-initial-check="ssoBootstrapChecked"
       @identity-change="onFamilyIdentityChange" />
     <FamilyMemberWorkspace v-if="familyIdentity?.role==='member'"

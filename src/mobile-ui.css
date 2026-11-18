@@ -298,6 +298,8 @@ main .finance-tools .finance-bill-history-row button { min-height: 44px; }
    its scroll contents exceed the viewport. */
 main:has(.edit-overlay) .bottom-nav { visibility: hidden; pointer-events: none; }
 main .edit-overlay { z-index: 100; }
+/* Modal surfaces must follow the active user theme, not a fixed pink/white sheet. */
+main .edit-dialog { background: var(--paper); border-color: var(--line); }
 /* iPhone edit dialogs are bottom sheets with a reliable safe-area footer. */
 @media (max-width: 560px) {
   main .edit-overlay { align-items: flex-end; padding: 0; }
@@ -306,11 +308,12 @@ main .edit-overlay { z-index: 100; }
     max-width: none;
     max-height: calc(100dvh - 18px - env(safe-area-inset-top, 0px));
     border-radius: 22px 22px 0 0;
-    padding: 18px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    /* Account for the home indicator only once, at the sheet edge. */
+    padding: 18px 16px max(12px, env(safe-area-inset-bottom, 0px));
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
   }
-  main .edit-dialog-actions { position: sticky; bottom: 0; z-index: 2; background: var(--card); padding: 10px 0 calc(12px + env(safe-area-inset-bottom, 0px)); }
+  main .edit-dialog-actions { position: sticky; bottom: 0; z-index: 2; background: var(--paper); padding: 10px 0 0; }
 }
 @media (max-width: 420px) {
   main .today-date { display: none; }

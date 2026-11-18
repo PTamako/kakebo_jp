@@ -534,6 +534,9 @@ async function logout() {
   // Persist the SSO revocation obligation so a failed network call is retried.
   if(familyIdentity.value)try{localStorage.setItem(PENDING_HF_LOGOUT_KEY,'1')}catch{}
   familyIdentity.value=null
+  ownerBootstrap++;loadRequestId++;yearRequestId++
+  loadedMonth='';loadedYear=null;paymentSettingsLoaded=false
+  pendingTransfers.value=[]
   entries.value=[];stats.value=null;annualStats.value=null
   paymentSources.value=[];paymentSourceMeta.value={};paymentClosingDays.value={}
   // Persist only a revocation marker (never credentials), then retry on reconnect.
@@ -601,6 +604,10 @@ async function api(path, opt = {}) {
       onFamilyIdentityChange(null)
       throw Error('HomeFlow の認証が切れました。もう一度ログインしてください')
     }
+    // A late request after logout must not open the obsolete access-code
+    // prompt or quietly render data for an unauthenticated actor.
+    if(locked.value||!familyIdentity.value)
+      throw Error('HomeFlow の認証が切れました。もう一度ログインしてください')
     // A different legacy request may already have refreshed the session.
     if (token.value !== requestToken) return api(path, opt)
     if (rejectedSession !== requestToken) {

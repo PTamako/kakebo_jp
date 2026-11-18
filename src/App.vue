@@ -439,6 +439,9 @@ function onFamilyIdentityChange(identity){
  familyIdentity.value=identity?.user_id?identity:null
  if(identity?.role==='member'||!identity){
   ownerBootstrap++
+  loadRequestId++;yearRequestId++
+  loadedMonth='';loadedYear=null;paymentSettingsLoaded=false
+  pendingTransfers.value=[]
   locked.value=true
   token.value=''
   sessionStorage.removeItem('kakeibo-device-session')
@@ -639,22 +642,31 @@ let loadRequestId = 0
 async function load() {
   const requestId = ++loadRequestId
   const requestedMonth = month.value
+  const actor=familyIdentity.value?.user_id
+  const stillActive=()=>requestId===loadRequestId&&requestedMonth===month.value&&
+   (!actor||(familyIdentity.value?.user_id===actor&&!locked.value))
   if (loadedMonth !== requestedMonth) { entries.value = []; stats.value = null }
   pageLoadError.value = ''
   try {
-    if (!rules.value.length) rules.value = await api('rules')
+    if (!rules.value.length){
+      const nextRules=await api('rules')
+      if(!stillActive())return
+      rules.value=nextRules
+    }
     if (!paymentSettingsLoaded) await loadPaymentSettings()
+    if(!stillActive())return
     await loadCategoryMetadata()
+    if(!stillActive())return
     let nextEntries, nextStats
     // Entries and totals are different D1 reads; a concurrent write can land
     // between them. Retry once instead of showing contradictory financial data.
     for (let attempt=0; attempt<2; attempt++) {
       [nextEntries, nextStats]=await Promise.all([fetchMonthEntries(requestedMonth),api('stats?month='+requestedMonth)])
-      if (requestId!==loadRequestId || requestedMonth!==month.value) return
+      if(!stillActive())return
       if (monthLedgerMatchesStats(nextEntries,nextStats)) break
       if (attempt===1) throw Error('記録と集計の更新時点が一致しません。もう一度読み込んでください')
     }
-    if (requestId !== loadRequestId || requestedMonth !== month.value) return
+    if(!stillActive())return
     entries.value = nextEntries
     refreshReceiptImageIds().catch(() => {})
     stats.value = nextStats
@@ -673,11 +685,13 @@ let yearRequestId = 0
 async function loadYear() {
   const requestId = ++yearRequestId
   const year = selectedYear.value
+  const actor=familyIdentity.value?.user_id
   if (loadedYear !== year) annualStats.value = null
   annualLoadError.value = ''
   try {
     const nextStats = await api('stats?year=' + year)
-    if (requestId === yearRequestId && year === selectedYear.value) {
+    if (requestId === yearRequestId && year === selectedYear.value &&
+        (!actor||(familyIdentity.value?.user_id===actor&&!locked.value))) {
       annualStats.value = nextStats
       loadedYear = year
     }
@@ -932,12 +946,17 @@ function onDraftVisibilityChange() {
   if (document.visibilityState === 'hidden') void syncDraftToD1()
 }
 async function restoreAppState() {
+  const actor=familyIdentity.value?.user_id
+  const ticket=ownerBootstrap
+  const stillActive=()=>!actor||(
+    ticket===ownerBootstrap&&familyIdentity.value?.user_id===actor&&!locked.value)
   draftHydrated=false
   draftRemoteKnown=false
   draftCloudConflictTimestamp=0
   let cloud=null
   try {
     const state=await api('app-state')
+    if(!stillActive())return
     if (typeof state.remember_device === 'boolean') rememberDevice.value=state.remember_device
     cloud=validDraft(state.unsaved_draft) ? state.unsaved_draft : null
     draftRemoteKnown=true
@@ -950,6 +969,7 @@ async function restoreAppState() {
   catch(error) {
     if(!draftDeviceErrorShown){draftDeviceErrorShown=true;flash('端末の下書きを読み込めません：'+error.message)}
   }
+  if(!stillActive())return
   const selected=draftRemoteKnown && cloud && (!device || Number(cloud.updatedAt)>Number(device.updatedAt))
     ? cloud : device
   draftCurrentSnapshot=selected
@@ -970,6 +990,7 @@ async function restoreAppState() {
     catch(error) { if(!draftDeviceErrorShown){draftDeviceErrorShown=true;flash('端末への下書き復元に失敗しました：'+error.message)} }
   }
   await nextTick()
+  if(!stillActive())return
   draftHydrated=true
   if (draftSyncInterval) clearInterval(draftSyncInterval)
   draftSyncInterval=setInterval(() => void syncDraftToD1(),DRAFT_SYNC_MS)
@@ -1490,10 +1511,13 @@ const pendingTransfers = ref([])
 const transferLoading = ref(false)
 const transferDue = item => String(item.transfer_date || item.date) <= new Date().toLocaleDateString('sv-SE')
 async function loadTransfers() {
+  const actor=familyIdentity.value?.user_id
   transferLoading.value = true
   try {
     // Page visits are read-only; the scheduled Worker applies due transfers.
-    pendingTransfers.value = await api('transfers')
+    const nextTransfers=await api('transfers')
+    if(!actor||(familyIdentity.value?.user_id===actor&&!locked.value))
+      pendingTransfers.value=nextTransfers
   } catch (e) { flash('振替予定を読み込めませんでした：' + e.message) }
   finally { transferLoading.value = false }
 }

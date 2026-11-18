@@ -736,7 +736,7 @@ const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:ledge
  openApproval,paymentEditor:memberPaymentEditor,memberPaymentChoices:memberLedgerPaymentOptions,
  onError:message=>{error.value=message}})
 const memberReceiptLedgerIds=computed(()=>new Set([
- ...householdReceiptIndex.value.keys().map(String),
+ ...[...householdReceiptIndex.value.keys()].map(String),
  ...memberReceipts.value.flatMap(item=>{
  const ref=item.receipt_ref
  if(Number.isSafeInteger(Number(item.linked_entry_id))&&Number(item.linked_entry_id)>0)

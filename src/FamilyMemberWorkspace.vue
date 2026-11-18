@@ -56,6 +56,37 @@ const sharedCards=ref([]),cardSharingError=ref('')
 const personalDocumentSbi=ref([]),annualPersonalDocumentSbi=ref([])
 const memberMerchantRules=ref([]),memberRuleError=ref('')
 const memberReceipts=ref([]),memberReceiptError=ref(''),memberReceiptRetry=ref([])
+const householdReceiptIndex=ref(new Map())
+async function reloadHouseholdReceipts(entries,replace=false){
+ const ids=[...new Set(entries.map(x=>Number(x.id)).filter(
+  id=>Number.isSafeInteger(id)&&id>0))]
+ const found=new Map(replace?[]:householdReceiptIndex.value)
+ for(let n=0;n<ids.length;n+=100){
+  const chunk=ids.slice(n,n+100)
+  const response=await fetch('/api/family-finance/household-receipts?ids='+chunk.join(','),{
+   credentials:'same-origin',cache:'no-store'
+  })
+  const body=await response.json().catch(()=>({}))
+  if(!response.ok||body.ok!==true||!Array.isArray(body.items))
+   throw Error('家庭小票を確認できません')
+  for(const id of chunk)found.delete(id)
+  for(const item of body.items){
+   if(!chunk.includes(Number(item.entry_id)))throw Error('家庭小票の対象が一致しません')
+   found.set(Number(item.entry_id),item)
+  }
+ }
+ householdReceiptIndex.value=found
+}
+async function fetchHouseholdReceipt(entryId){
+ const response=await fetch('/api/family-finance/household-receipts/'+Number(entryId),{
+  credentials:'same-origin',cache:'no-store'
+ })
+ if(!response.ok)throw Error('家庭小票を読み込めません（HTTP '+response.status+'）')
+ const blob=await response.blob()
+ if(!['image/jpeg','image/webp'].includes(blob.type)||!blob.size||blob.size>204800)
+  throw Error('家庭小票の画像形式・サイズを確認できません')
+ return blob
+}
 const memberReceiptIndex=computed(()=>{
  const map=new Map()
  for(const r of [...memberReceipts.value].reverse()){
@@ -105,6 +136,7 @@ async function deleteMemberReceipt(id){
  if(!response.ok||data.ok!==true||data.purged!==true)
   throw Error(data.code||'画像を削除できませんでした')
  memberReceipts.value=memberReceipts.value.filter(x=>x.receipt_id!==id)
+ await reloadHouseholdReceipts(sharedEntries.value,true).catch(()=>{})
 }
 async function saveMemberReceipt(record,receiptRef){
  if(record.type!=='expense'||!record.receiptImage||!receiptRef)return
@@ -660,7 +692,9 @@ async function loadAnnualLedgerYear(annualYear){
      throw Error('本人の資産移動履歴の所有者を確認できません')
     personal.push(...doc.items)
     if(doc.next_offset==null){annualPersonalDocumentSbi.value=personal;
-     annualLedgerEntries.value=[...all,...personal];return}
+     annualLedgerEntries.value=[...all,...personal]
+     await reloadHouseholdReceipts(all,false)
+     return}
     if(!Number.isInteger(doc.next_offset)||doc.next_offset<=pageOffset)throw Error('資産移動の読込位置が無効です')
     pageOffset=doc.next_offset
    }
@@ -701,14 +735,17 @@ const memberLedger=makeFamilyLedgerContext({tab,month,selectedYear,entries:ledge
  annualEntries:annualLedgerEntries,loadAnnual:loadAnnualLedgerYear,
  openApproval,paymentEditor:memberPaymentEditor,memberPaymentChoices:memberLedgerPaymentOptions,
  onError:message=>{error.value=message}})
-const memberReceiptLedgerIds=computed(()=>new Set(memberReceipts.value.flatMap(item=>{
+const memberReceiptLedgerIds=computed(()=>new Set([
+ ...householdReceiptIndex.value.keys().map(String),
+ ...memberReceipts.value.flatMap(item=>{
  const ref=item.receipt_ref
  if(Number.isSafeInteger(Number(item.linked_entry_id))&&Number(item.linked_entry_id)>0)
   return [String(item.linked_entry_id)]
  if(ref.startsWith('entry:'))return [ref.slice(6)]
  if(ref.startsWith('proposal:'))return ['pending:'+ref.slice(9)]
  return []
-})))
+ })
+]))
 let memberReceiptViewingId=''
 function memberReceiptRefForId(id){
  return String(id).startsWith('pending:')?'proposal:'+String(id).slice(8):'entry:'+id
@@ -719,12 +756,14 @@ function closeMemberLedgerReceipt(){
  memberLedger.viewedReceiptUrl.value=null;memberReceiptViewingId=''
 }
 async function viewMemberLedgerReceipt(id){
- const item=memberReceiptIndex.value.get(memberReceiptRefForId(id))
- if(!item){memberReceiptError.value='本人の保存画像が見つかりません';return}
+ const own=memberReceiptIndex.value.get(memberReceiptRefForId(id))
+ const shared=householdReceiptIndex.value.get(Number(id))
+ if(!own&&!shared){memberReceiptError.value='保存された小票が見つかりません';return}
  try{
-  const blob=await fetchMemberReceipt(item.receipt_id)
+  // Prefer your own uploaded image. Another member's image is read-only.
+  const blob=own?await fetchMemberReceipt(own.receipt_id):await fetchHouseholdReceipt(id)
   closeMemberLedgerReceipt()
-  memberReceiptViewingId=item.receipt_id
+  memberReceiptViewingId=own?.receipt_id||''
   memberLedger.viewedReceiptUrl.value=URL.createObjectURL(blob)
  }catch(e){memberReceiptError.value='画像を表示できません：'+e.message}
 }
@@ -735,6 +774,7 @@ async function removeMemberLedgerReceipt(){
  catch(e){memberReceiptError.value='画像を削除できません：'+e.message}
 }
 memberLedger.receiptImageIds=memberReceiptLedgerIds
+memberLedger.canDeleteReceipt=computed(()=>!!memberLedger.viewedReceiptUrl.value&&!!memberReceiptViewingId)
 memberLedger.viewReceipt=viewMemberLedgerReceipt
 memberLedger.closeReceipt=closeMemberLedgerReceipt
 memberLedger.removeReceiptImage=removeMemberLedgerReceipt
@@ -1120,7 +1160,10 @@ async function refresh(){
   personalDocumentSbi.value=personalTransfers;
   memberPaymentReassignmentEnabled.value=c.payment_reassignment_enabled===true;
   memberAccountCorrectionEnabled.value=c.account_corrections_enabled===true;
-  await Promise.all([loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories()])
+  await Promise.all([
+   loadMemberMerchantRules(),reloadMemberReceipts(),loadMemberCategories(),
+   reloadHouseholdReceipts(c.items||[],true)
+  ])
   monthlyReport.value={...d,
    transferTotal:Number(d.transferTotal||0)+personalSbiResult.transfer_total_jpy,
    transferCount:Number(d.transferCount||0)+personalSbiResult.transfer_count};
@@ -1534,13 +1577,13 @@ async function checkPendingLedgerStatus(){
  finally{approvalProbeActive=false}
 }
 function foreground(){if(document.visibilityState==='visible')void refresh()}
-watch(()=>props.user.user_id,()=>{closeMemberLedgerReceipt();pendingPaidEntry=null;memberEntries.value=[];memberReceipts.value=[];memberReceiptRetry.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
+watch(()=>props.user.user_id,()=>{closeMemberLedgerReceipt();pendingPaidEntry=null;memberEntries.value=[];memberReceipts.value=[];householdReceiptIndex.value=new Map();memberReceiptRetry.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
 watch([month,year],()=>void refresh())
 onMounted(()=>{
  void refresh();document.addEventListener('visibilitychange',foreground)
  approvalStatusTimer=setInterval(()=>{void checkPendingLedgerStatus()},20000)
 })
-onUnmounted(()=>{if(approvalStatusTimer)clearInterval(approvalStatusTimer);closeMemberLedgerReceipt();memberReceipts.value=[];memberReceiptRetry.value=[];alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
+onUnmounted(()=>{if(approvalStatusTimer)clearInterval(approvalStatusTimer);closeMemberLedgerReceipt();memberReceipts.value=[];householdReceiptIndex.value=new Map();memberReceiptRetry.value=[];alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
  memberMerchantRules.value=[];memberRuleError.value='';
  document.removeEventListener('visibilitychange',foreground)})
 // The original EntryInputPage renders for both identities. All writes here

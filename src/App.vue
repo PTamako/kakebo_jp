@@ -2249,7 +2249,7 @@ provide('kakeibo-entry-input', {
   <main v-if="identityBootstrapping" :class="`theme-${theme}`" aria-busy="true">
     <!-- Never display private amounts, cached identity or finance actions before /me. -->
     <div class="homeflow-boot-shell" role="status" aria-label="HomeFlow のログイン状態を確認中">
-      <div class="homeflow-boot-header"><strong>家計簿</strong><span class="homeflow-boot-pulse" aria-hidden="true"></span></div>
+      <div class="homeflow-boot-header"><span class="homeflow-boot-brand">家計簿</span><span class="homeflow-boot-pulse" aria-hidden="true"></span></div>
       <div class="homeflow-boot-card" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="homeflow-boot-card homeflow-boot-card-small" aria-hidden="true"><span></span><span></span></div>
       <div class="homeflow-boot-bottom" aria-hidden="true"><span>明細</span><span>統計</span><span>資産</span><span>管理</span></div>

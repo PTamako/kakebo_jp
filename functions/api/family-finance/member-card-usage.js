@@ -16,9 +16,9 @@ export async function familyMemberCardUsage(req,env,url,user,parts){
  const month=url.searchParams.get('month')||todayMonth()
  if(!validMonth(month))return reply({ok:false,code:'CARD_USAGE_BAD_MONTH'},400)
  const db=env.DB
- const accounts=(await db.prepare("SELECT account_id,label,closing_day FROM family_financial_accounts "+
+ const accounts=(await db.prepare("SELECT account_id,label,closing_day,is_archived FROM family_financial_accounts "+
   "WHERE household_id=? AND owner_user_id=? AND account_kind='credit_card' "+
-  "AND origin='member_created' AND is_archived=0 ORDER BY sort_order,account_id LIMIT 30")
+  "AND origin='member_created' ORDER BY is_archived,sort_order,account_id LIMIT 100")
   .bind(user.household_id,user.user_id).all()).results||[]
  const items=[]
  for(const account of accounts){
@@ -36,7 +36,7 @@ export async function familyMemberCardUsage(req,env,url,user,parts){
   const amount=safe(total?.amount),count=safe(total?.count)
   if(amount===null||count===null)return reply({ok:false,code:'CARD_USAGE_INVALID_SUM'},409)
   items.push({key:'personal:'+account.account_id,account_id:account.account_id,
-   owner_user_id:user.user_id,label:account.label,scope:'personal',
+   owner_user_id:user.user_id,label:account.label,is_archived:Number(account.is_archived)===1,scope:'personal',
    period,amount_jpy:amount,count,entries:entries.slice(0,200),truncated:count>200})
  }
  return reply({ok:true,scope:'personal-card-usage',

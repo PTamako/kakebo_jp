@@ -47,6 +47,12 @@ const isCreditCard = name => !!name && !['現金','その他','其他'].includes
 const creditCardSources = computed(() => sortOtherLast([...orderedPayments.value,
   ...archivedPaymentSources.value].filter(isCreditCard)))
 const managementTab = ref('cards')
+// Lazy-mount each member management section once, then preserve its editor
+// state while switching tabs. The owner already keeps card/plan editors alive.
+const visitedMemberSections = ref(new Set(['cards']))
+watch(managementTab, section => {
+  if (props.memberView) visitedMemberSections.value.add(section)
+})
 const appContext = inject('kakeibo-page-context', null)
 const investmentRefreshKey = ref(0)
 const refreshingEverything = ref(false)
@@ -1639,7 +1645,14 @@ function onCardRemove(value){
     :status="memberView ? memberStatus : (loaded ? '最終更新：'+lastLoadedLabel+' · '+rows.length+'件' : busy ? '明細を読み込み中…' : '未読み込み')"
     :error="memberView ? memberError : loadError"
     @refresh="memberView ? memberRefresh?.() : refreshEverything()" />
-  <slot v-if="memberView&&['plans','investment'].includes(managementTab)" :name="'member-'+managementTab" />
+  <section v-if="memberView && visitedMemberSections.has('plans')" v-show="managementTab==='plans'"
+    class="finance-member-plans-slot" aria-label="固定費管理">
+    <slot name="member-plans"/>
+  </section>
+  <section v-if="memberView && visitedMemberSections.has('investment')" v-show="managementTab==='investment'"
+    class="finance-investment-panel" aria-label="積立管理">
+    <slot name="member-investment"/>
+  </section>
   <OriginalOtherManagement v-if="memberView" :active="managementTab==='tools'"
     :trash-count="memberTrashCount" :on-open-trash="memberLoadTrash" :on-open-jobs="memberLoadJobs">
     <template #rules><slot name="member-rules"/></template>
@@ -1653,7 +1666,10 @@ function onCardRemove(value){
     v-bind="unifiedCardProps" @update:selected="onCardSelect"
     @update:mode="onCardMode" @default="onCardDefault"
     @archive="onCardArchive" @remove="onCardRemove" />
-  <slot v-if="memberView&&managementTab==='cards'" name="member-card-usage"/>
+  <section v-if="memberView" v-show="managementTab==='cards'" class="finance-card-usage-slot"
+    aria-label="カード利用額">
+    <slot name="member-card-usage"/>
+  </section>
   <template v-if="!memberView">
   <section v-if="managementTab === 'investment'" class="finance-investment-panel" aria-label="積立管理">
     <InvestmentTransferReview />
@@ -2315,4 +2331,8 @@ function onCardRemove(value){
 .finance-panel .card-edit-actions>.card-edit-icon{flex:0 0 44px;width:44px;max-width:44px}
 .finance-panel .card-edit-actions>.card-edit-icon svg{display:block;width:20px;height:20px;flex:none}
 .finance-panel .card-edit-actions>.card-edit-delete{color:var(--danger,#b7495d)}
+
+/* Both HomeFlow identities use the same management grid/spacing. Member-only
+   adapters are mounted lazily and hidden instead of destroyed on tab changes. */
+.finance-member-plans-slot,.finance-card-usage-slot{display:grid;gap:10px;min-width:0}
 </style>

@@ -12,7 +12,7 @@ let epoch=0
 const yen=n=>'¥'+Number(n||0).toLocaleString('ja-JP')
 const selected=computed(()=>rows.value.find(item=>item.key===selectedKey.value)||null)
 const options=computed(()=>[{value:'',label:'カードを選択'},
- ...rows.value.map(item=>({value:item.key,label:item.label}))])
+ ...rows.value.map(item=>({value:item.key,label:item.label+(item.is_archived?'（アーカイブ済み）':'')}))])
 async function load(){
  if(!props.active||busy.value)return
  const actor=props.userId,ticket=++epoch,requestedMonth=month.value

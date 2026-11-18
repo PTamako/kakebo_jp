@@ -249,6 +249,33 @@ async function persistReceipt(id, blob, replace = false, expectedVersion = null)
 }
 
 const receiptImageIds = ref(new Set())
+// Only published household photos are visible here; this list never grants deletion.
+const householdReceiptIndex = ref(new Map())
+async function fetchHouseholdReceiptIndex(ids) {
+  if (familyIdentity.value?.role !== 'owner') return []
+  const pages=[]
+  for(let offset=0;offset<ids.length;offset+=100){
+    const batch=ids.slice(offset,offset+100)
+    const response=await fetch('/api/family-finance/household-receipts?ids='+batch.join(','),{
+      credentials:'same-origin',cache:'no-store'
+    })
+    const data=await response.json().catch(()=>({}))
+    if(!response.ok || data.ok!==true || !Array.isArray(data.items))
+      throw Error('家庭小票一覧を取得できません')
+    pages.push(...data.items)
+  }
+  return pages
+}
+async function fetchHouseholdReceiptImage(entryId) {
+  const response=await fetch('/api/family-finance/household-receipts/'+Number(entryId),{
+    credentials:'same-origin',cache:'no-store'
+  })
+  if(!response.ok)throw Error('家庭小票を読み込めません（HTTP '+response.status+'）')
+  const blob=await response.blob()
+  if(!['image/webp','image/jpeg'].includes(blob.type)||blob.size<1||blob.size>204800)
+    throw Error('家庭小票の画像形式を確認できません')
+  return blob
+}
 const receiptMigrationInfo = ref('')
 async function migrateReceiptsNow() {
   try {
@@ -269,12 +296,20 @@ async function refreshReceiptImageIds() {
   const requestId=++receiptIndexRequest
   const ids=[...new Set([...entries.value,...detailSourceEntries.value]
     .map(row=>Number(row.id)).filter(id=>Number.isSafeInteger(id)&&id>0))]
-  if(!ids.length){receiptImageIds.value=new Set();return}
+  if(!ids.length){receiptImageIds.value=new Set();householdReceiptIndex.value=new Map();return}
   try {
-    const [remote,localIds]=await Promise.all([listR2ReceiptsByIds(ids),listReceiptImageIds()])
+    const [remote,localIds,household]=await Promise.all([
+      listR2ReceiptsByIds(ids),listReceiptImageIds(),
+      fetchHouseholdReceiptIndex(ids).catch(()=>[])
+    ])
     if(requestId!==receiptIndexRequest)return
     const wanted=new Set(ids)
-    receiptImageIds.value=new Set([...remote.map(item=>item.entryId),...localIds.filter(id=>wanted.has(id))])
+    householdReceiptIndex.value=new Map(household.map(row=>[Number(row.entry_id),row]))
+    receiptImageIds.value=new Set([
+      ...remote.map(item=>item.entryId),
+      ...localIds.filter(id=>wanted.has(id)),
+      ...householdReceiptIndex.value.keys()
+    ])
   } catch(error) {
     if(requestId!==receiptIndexRequest)return
     const localIds=await listReceiptImageIds().catch(()=>[])
@@ -283,6 +318,16 @@ async function refreshReceiptImageIds() {
   }
 }
 async function viewReceipt(entryId) {
+  // Display another family member's approved receipt without importing or copying it.
+  if(householdReceiptIndex.value.get(Number(entryId))?.source==='member'){
+    try{
+      const sharedBlob=await fetchHouseholdReceiptImage(entryId)
+      if(viewedReceiptUrl.value)URL.revokeObjectURL(viewedReceiptUrl.value)
+      viewedReceiptUrl.value=URL.createObjectURL(sharedBlob)
+      viewedReceiptId.value=entryId
+    }catch(error){flash(error.message)}
+    return
+  }
   let blob=null,cloudError=null
   try { blob=await getR2Receipt(entryId) }
   catch(error){cloudError=error}
@@ -308,7 +353,11 @@ function closeReceipt() {
   viewedReceiptUrl.value = ''
   viewedReceiptId.value = null
 }
+const canDeleteReceipt = computed(()=>!!viewedReceiptUrl.value &&
+  !householdReceiptIndex.value.has(Number(viewedReceiptId.value)) ||
+  (!!viewedReceiptUrl.value && householdReceiptIndex.value.get(Number(viewedReceiptId.value))?.source==='legacy'))
 async function removeReceiptImage() {
+  if(!canDeleteReceipt.value)return flash('他の家族が保存した小票は削除できません')
   if (!confirm('R2と端末のレシート画像のみ削除します。記帳済み明細は残ります。よろしいですか？')) return
   const id=Number(viewedReceiptId.value)
   try {
@@ -2074,7 +2123,11 @@ async function pollOwnerLedgerRevision(){
  }catch{/* Keep the on-screen list until a later foreground probe succeeds. */}
  finally{ownerLedgerProbeBusy=false}
 }
-watch(()=>familyIdentity.value?.user_id,()=>{ownerLedgerRevision=''})
+watch(()=>familyIdentity.value?.user_id,()=>{
+  ownerLedgerRevision=''
+  householdReceiptIndex.value=new Map()
+  void refreshReceiptImageIds()
+})
 onMounted(()=>{
  ownerLedgerTimer=setInterval(()=>{void pollOwnerLedgerRevision()},20000)
  document.addEventListener('visibilitychange',pollOwnerLedgerRevision)
@@ -2083,7 +2136,7 @@ onUnmounted(()=>{
  if(ownerLedgerTimer)clearInterval(ownerLedgerTimer)
  document.removeEventListener('visibilitychange',pollOwnerLedgerRevision)
 })
-provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, rewardDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, scanImportPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, receiptMigrationInfo, migrateReceiptsNow, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, openCardBillDetails, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, averageDailySummary, monthlyDayTypeAverages, annualDayTypeAverages, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, maxYearMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
+provide('kakeibo-page-context', { tab, cardSettingsRequest, openCardSettingsFromWallet, statsPeriod, themes, storedTheme, theme, setTheme, currentMonth, month, resetMonth, selectedYear, annualStats, selectedRatioMonth, rules, input, ocrEngine, forms, paymentSources, paymentClosingDays, paymentSourceMeta, transferDestinations, rewardDestinations, updatePaymentSources, defaultPaymentSource, merchantPaymentRules, customCategoryRules, importPaymentSource, scanImportPaymentSource, paymentSettingsLoaded, paymentSettingsLoading, loadPaymentSettings, suggestedPayment, applyMerchantPayment, manualPayment, refreshMerchantRules, setDefaultPaymentSource, pendingReceiptImage, pendingReceiptFileName, editReceiptImage, editReceiptFileName, receiptSaveError, selectDraftReceipt, selectEditReceipt, persistReceipt, receiptImageIds, canDeleteReceipt, viewedReceiptUrl, viewedReceiptId, refreshReceiptImageIds, viewReceipt, closeReceipt, removeReceiptImage, onReceiptImagesCleared, receiptMigrationInfo, migrateReceiptsNow, editingEntry, INCOME_CATEGORIES, categoryIcons, categoryDisplayNames, availableIcons, categoryIconPath, categoryLabel, loadCategoryMetadata, rememberDevice, token, locked, signIn, logout, loginPromise, rejectedSession, ensureLogin, unlock, api, yen, formatLedgerTotal, flashTimer, flash, pageLoadError, annualLoadError, loadedMonth, loadedYear, fetchMonthEntries, loadRequestId, load, yearRequestId, loadYear, recognitionMode, entryInputMode, aiOcrEnabled, aiQuota, refreshAiQuota, setAiOcrEnabled, draftRecoveryInfo, DRAFT_KEY, clearLocalDraft, recognize, onImage, addBlank, setEntryType, categoryDialog, categoryName, categoryIcon, categorySaving, addCategory, saveCategory, removeDraft, saveAll, ledgerRevision, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, pendingTransfers, transferLoading, transferDue, loadTransfers, transferStatus, transferStatusClass, transferActionId, retryTransfer, dismissTransferReminder, maxCat, maxDay, categoryRows, pieGradient, expensePalette, selectedDonut, donutRows, donutSelected, donutTotal, donutPercent, chooseDonut, selectDonutSlice, monthlyCategoryPie, annualExpensePie, openDuplicateDate, openCardBillDetails, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, swipedReceiptId, filteredEntries, detailFilter, prepaidHistoryFilter, openPrepaidHistoryDetails, paymentMethodMatches, openPaymentMethodDetails, detailSourceEntries, detailLoading, detailRequestId, visibleEntryCount, listPageSize, entryMatchesType, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, pagedEntries, expandedMonth, annualVisibleCounts, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, preserveOperatedDay, groupedPagedEntries, toggleEntryDay, fetchPeriodDetailRows, openCategoryDetails, refreshDetailSource, clearDetailFilter, dayRows, touchStartX, touchStartY, suppressRowClick, calendarEntries, calendarDays, visibleCalendarDays, openLedgerFromNav, toggleDay, startSwipe, endSwipe, handleEntryClick, weekRows, maxWeek, averageDaily, averageDailySummary, monthlyDayTypeAverages, annualDayTypeAverages, liveNow, clockTimer, todayLabel, liveClockIso, monthLabel, yearMonthRows, expenseTrendPoints, expenseTrendLine, expenseTrendArea, incomeTrendPoints, incomeTrendLine, ratioTrendPoints, ratioTrendSegments, incomeTrendMax, highestIncomeMonth, ratioTrendMax, highestRatioMonth, maxYearMonth, highestSpendMonth, annualAverageSummary, annualIncomeCategories, maxAnnualIncomeCategory, openMonthDetails, selectRatioMonth, selectedRatioMonthRow, selectedRatio, monthlyRatio, annualRatio, pigState, puppyExpression, puppyFallback, pigLabel, ratioLabel, entries, stats, categories, msg, ocrWarning, busy })
 const originalManagementBindings=computed(()=>({
  cardSettingsRequest:cardSettingsRequest.value,
  paymentSourceMeta:paymentSourceMeta.value,

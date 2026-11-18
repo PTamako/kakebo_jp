@@ -22,6 +22,10 @@ export async function receiptZip(rows, extraFiles=[]) {
      throw Error('帳簿JSONの形式を確認してください')
    const bytes=new Uint8Array(await row.blob.arrayBuffer())
    total+=bytes.length
+   // The importer and the R2 restore API both reject images over 200 KB.
+   // Never create a seemingly successful backup that cannot be restored.
+   if(row.entryId!==0 && bytes.length>200*1024)
+     throw Error('画像は200KB以下でないと復元できません。保存用画像を圧縮してください')
    if(!bytes.length||total>60*1024*1024)throw Error('画像が多いため分割して保存してください')
    const name=enc.encode(row.entryId===0?row.name:'receipt-'+row.entryId+(row.blob.type==='image/jpeg'?'.jpg':'.webp'))
    const crc=crc32(bytes),header=new Uint8Array(30+name.length),h=new DataView(header.buffer)

@@ -1,29 +1,8 @@
 name: Deploy Private Kakeibo Bridge
-# The receiver must be deployed when ANY imported module changes.
+# The receiver must be deployed MANUALLY after relevant imported-module changes.
 # This workflow intentionally fails if production credentials are not configured.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'workers/homeflow-service-bridge.js'
-      - 'workers/family-finance-service-router.js'
-      - 'functions/api/internal/shared-entries/**'
-      - 'functions/api/family-finance/shared-mutation-requests.js'
-      - 'functions/api/bridge/document-assistant.js'
-      - 'functions/api/internal/document-accounts/**'
-      - 'functions/api/internal/document-finance/**'
-      - 'functions/api/internal/document-personal-sbi/**'
-      - 'functions/api/payment-source-validation.js'
-      - 'functions/api/ledger-input-validation.js'
-      - 'src/parse.js'
-      - 'src/payment-rules.js'
-      - 'src/entry-time.js'
-      - 'src/relative-entry-time.js'
-      - 'src/station-merchant.js'
-      - 'wrangler.homeflow-bridge.toml'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/deploy-private-bridge.yml'
+  # Explicit dispatch only; merging into main must never redeploy private finance automatically.
   workflow_dispatch:
 permissions:
   contents: read

@@ -416,8 +416,26 @@ const locked = ref(sessionStorage.getItem('kakeibo-logged-out') === '1')
 // checked: on iPhone it appeared interactive but belonged to no actor.
 const identityBootstrapping=ref(!locked.value)
 const familyIdentity=ref(null)
+// Only a server-verified identity in this running JS context can keep the
+// existing page on foreground. Never cache credentials or private ledger data.
+const ssoBootstrapChecked=ref(false)
+const HOMEFLOW_FOREGROUND_RECHECK_MS=60_000
+let lastHomeflowVerifiedAt=0
+let foregroundVerification=null
 let ownerBootstrap=0
+async function restoreVerifiedOwner(identity){
+ const ticket=++ownerBootstrap
+ try{
+  await restoreAppState()
+  if(ticket!==ownerBootstrap||familyIdentity.value?.user_id!==identity.user_id)return
+  await Promise.allSettled([load(),loadYear(),loadTransfers()])
+ }catch(error){if(ticket===ownerBootstrap)flash(error.message)}
+}
 function onFamilyIdentityChange(identity){
+ if(identity?.user_id){
+  lastHomeflowVerifiedAt=Date.now()
+  try{sessionStorage.removeItem('kakeibo-logged-out')}catch{}
+ }else lastHomeflowVerifiedAt=0
  familyIdentity.value=identity?.user_id?identity:null
  if(identity?.role==='member'||!identity){
   ownerBootstrap++
@@ -433,16 +451,7 @@ function onFamilyIdentityChange(identity){
   locked.value=false
   // The original UI and account are restored by a verified HomeFlow owner
   // without another legacy login prompt.
-  if(shouldLoad){
-   const ticket=++ownerBootstrap
-   void (async()=>{
-    try{
-     await restoreAppState()
-     if(ticket!==ownerBootstrap||familyIdentity.value?.user_id!==identity.user_id)return
-     await Promise.allSettled([load(),loadYear(),loadTransfers()])
-    }catch(error){if(ticket===ownerBootstrap)flash(error.message)}
-   })()
-  }
+  if(shouldLoad)void restoreVerifiedOwner(identity)
  }
 }
 async function logoutFamilyMember(){
@@ -681,54 +690,78 @@ async function loadYear() {
     }
   }
 }
-// When HomeFlow SSO is enabled, every user must be verified before rendering
-// the shared ledger. In particular, an expired member cookie must NEVER
-// fall back to the old owner page just because a legacy cookie remains.
-async function routeNewFamilyMemberToIsolatedLogin(){
-  try{
-    const status=await fetch('/api/homeflow-sso/status',{credentials:'same-origin',cache:'no-store'})
-    if(!status.ok)throw Error('HomeFlow 認証状態を確認できません')
-    if((await status.json()).enabled!==true)return false // Deployment without SSO.
-    const response=await fetch('/api/homeflow-sso/me',{credentials:'same-origin',cache:'no-store'})
-    if(response.ok){
-      const proof=await response.json()
-      if(proof.ok===true&&proof.ledger_access===false&&
-         typeof proof.identity?.user_id==='string'&&
-         ['member','owner'].includes(proof.identity?.role)){
-        onFamilyIdentityChange(proof.identity)
-        // The owner gets the original UI only after verified owner identity;
-        // a member always opens the identity-scoped member controller.
-        return proof.identity.role==='member'
-      }
-    }
-    // Missing, stale, invalid or unverified SSO identity: require HomeFlow.
-    // Do NOT guess an identity from an old ledger cookie.
-    onFamilyIdentityChange(null)
-    return true
-  }catch{
-    // Fail closed on network/SSO errors rather than displaying someone else's
-    // original ledger with the old logout arrow.
-    onFamilyIdentityChange(null)
-    return true
-  }
+// Cold starts verify the server cookie before mounting any private ledger or
+// member workspace. One /me call replaces the old /status + /me waterfall.
+async function requestVerifiedHomeflowIdentity(){
+ const response=await fetch('/api/homeflow-sso/me',{credentials:'same-origin',cache:'no-store'})
+ if(!response.ok)return null
+ const proof=await response.json()
+ if(proof.ok===true&&proof.ledger_access===false&&
+    typeof proof.identity?.user_id==='string'&&
+    typeof proof.identity?.household_id==='string'&&
+    ['member','owner'].includes(proof.identity?.role))return proof.identity
+ return null
 }
-onMounted(async () => {
-  window.addEventListener('online',onConnectionRestored)
-  try{
-    if(serverLogoutPending.value)await completeServerLogout()
-    cleanupReceiptImages().catch(() => {}) // Never silently delete images.
-    if(!locked.value && !await routeNewFamilyMemberToIsolatedLogin()){
-      // A verified HomeFlow owner may read the original legacy ledger.
-      await restoreAppState()
-      await load()
-      await Promise.allSettled([loadYear(),loadTransfers()])
-    }
-  }catch(e){
-    onFamilyIdentityChange(null)
-    flash('HomeFlow の確認に失敗しました。再ログインしてください。')
-  }finally{
-    identityBootstrapping.value=false
+async function routeNewFamilyMemberToIsolatedLogin(){
+ try{
+  const identity=await requestVerifiedHomeflowIdentity()
+  if(identity){
+   onFamilyIdentityChange(identity)
+   // The owner gets the original UI only after verified owner identity;
+   // a member always opens the identity-scoped member controller.
+   return identity.role==='member'
   }
+  onFamilyIdentityChange(null)
+  return true
+ }catch{
+  // A bad connection must never expose the old owner's private ledger.
+  onFamilyIdentityChange(null)
+  return true
+ }
+}
+// A running, previously verified PWA can keep its layout on foreground.
+// Backend authorization remains mandatory for every write/read. Revoked,
+// expired or switched identities scrub the previous actor after introspection.
+function onHomeflowForeground(){
+ if(document.visibilityState!=='visible'||identityBootstrapping.value||
+    !familyIdentity.value||serverLogoutPending.value||foregroundVerification||
+    Date.now()-lastHomeflowVerifiedAt<HOMEFLOW_FOREGROUND_RECHECK_MS)return
+ const previous=familyIdentity.value
+ foregroundVerification=(async()=>{
+  let current=null
+  try{current=await requestVerifiedHomeflowIdentity()}catch{/* Fail closed below. */}
+  if(familyIdentity.value?.user_id!==previous.user_id||
+     familyIdentity.value?.role!==previous.role)return
+  if(!current||current.user_id!==previous.user_id||
+     current.household_id!==previous.household_id||
+     current.role!==previous.role)onFamilyIdentityChange(null)
+  else lastHomeflowVerifiedAt=Date.now()
+ })().finally(()=>{foregroundVerification=null})
+}
+onMounted(()=>{
+ window.addEventListener('online',onConnectionRestored)
+ document.addEventListener('visibilitychange',onHomeflowForeground)
+ cleanupReceiptImages().catch(() => {}) // Never silently delete images.
+ void (async()=>{
+  try{
+   if(serverLogoutPending.value&&!await completeServerLogout()){
+    onFamilyIdentityChange(null)
+    return
+   }
+   if(!locked.value){
+    await routeNewFamilyMemberToIsolatedLogin()
+    ssoBootstrapChecked.value=true
+   }
+  }catch(e){
+   onFamilyIdentityChange(null)
+   flash('HomeFlow の確認に失敗しました。再ログインしてください。')
+  }finally{
+   // Identity unlocks the page immediately; D1 data loads after render.
+   identityBootstrapping.value=false
+   if(familyIdentity.value?.role==='owner')
+    void restoreVerifiedOwner(familyIdentity.value)
+  }
+ })()
 })
 
 // Only a successful cross-month edit may restore its date after the month
@@ -2011,6 +2044,7 @@ onMounted(() => { liveNow.value = new Date(); clockTimer = setInterval(() => { l
 onUnmounted(() => {
   if (clockTimer) clearInterval(clockTimer)
   window.removeEventListener('online',onConnectionRestored)
+  document.removeEventListener('visibilitychange',onHomeflowForeground)
 })
 const monthLabel = computed(() => {
   const [y, m] = month.value.split('-')
@@ -2180,11 +2214,19 @@ provide('kakeibo-entry-input', {
   <GlobalToast />
   <MobileLoginSheet :open="loginSheetOpen" :busy="loginSheetBusy" :error="loginSheetError"
     @submit="submitLoginSheet" @cancel="cancelLoginSheet" />
-  <main v-if="identityBootstrapping" :class="`theme-${theme}`">
-    <div class="empty-state" role="status">HomeFlow のログイン状態を確認中…</div>
+  <main v-if="identityBootstrapping" :class="`theme-${theme}`" aria-busy="true">
+    <!-- Never display private amounts, cached identity or finance actions before /me. -->
+    <div class="homeflow-boot-shell" role="status" aria-label="HomeFlow のログイン状態を確認中">
+      <div class="homeflow-boot-header"><strong>家計簿</strong><span class="homeflow-boot-pulse" aria-hidden="true"></span></div>
+      <div class="homeflow-boot-card" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="homeflow-boot-card homeflow-boot-card-small" aria-hidden="true"><span></span><span></span></div>
+      <div class="homeflow-boot-bottom" aria-hidden="true"><span>明細</span><span>統計</span><span>資産</span><span>管理</span></div>
+      <p>HomeFlow のログイン状態を確認中…</p>
+    </div>
   </main>
   <main v-else-if="locked" :class="`theme-${theme}`">
     <FamilyFinanceAccess v-if="!familyIdentity" identity-only
+      :skip-initial-check="ssoBootstrapChecked"
       @identity-change="onFamilyIdentityChange" />
     <FamilyMemberWorkspace v-if="familyIdentity?.role==='member'"
       :key="familyIdentity.user_id" :user="familyIdentity" :theme="theme" :themes="themes"
@@ -2216,6 +2258,18 @@ provide('kakeibo-entry-input', {
 </template>
 
 <style>
+.homeflow-boot-shell{width:min(100%,650px);margin:0 auto;padding:18px 15px 100px;display:grid;gap:15px;color:var(--ink)}
+.homeflow-boot-header{display:flex;justify-content:space-between;align-items:center;padding:5px 2px;font-size:18px}
+.homeflow-boot-pulse{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--blue);animation:homeflow-boot-spin .9s linear infinite}
+.homeflow-boot-card{background:var(--card);border:1px solid var(--line);border-radius:16px;min-height:140px;padding:20px;display:grid;gap:17px;align-content:center}
+.homeflow-boot-card-small{min-height:90px}
+.homeflow-boot-card span{height:14px;width:60%;border-radius:10px;background:var(--line);opacity:.8}
+.homeflow-boot-card span:nth-child(2){width:88%}
+.homeflow-boot-card span:nth-child(3){width:42%}
+.homeflow-boot-bottom{position:fixed;bottom:0;left:0;right:0;padding:15px 12px calc(15px + env(safe-area-inset-bottom,0px));display:flex;justify-content:space-around;background:var(--card);border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+.homeflow-boot-shell>p{text-align:center;color:var(--muted);font-size:12px;margin:0}
+@keyframes homeflow-boot-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.homeflow-boot-pulse{animation:none}}
 :root{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","PingFang SC",system-ui,sans-serif;color:#473d46;background:#fff8f5;font-synthesis:none;text-rendering:optimizeLegibility;--ink:#473d46;--muted:#8c7e88;--line:#f3e5e8;--blue:#d96f91;--blue-dark:#bd5376;--paper:#fff8f5;--card:#fff;--teal:#68a995}
 *{box-sizing:border-box}
 body{margin:0;background:radial-gradient(ellipse at 12% 0%,#fff0e8 0,transparent 32%),radial-gradient(ellipse at 95% 18%,#fff0f5 0,transparent 30%),var(--paper);color:var(--ink);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}

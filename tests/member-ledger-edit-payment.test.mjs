@@ -121,7 +121,7 @@ test('the authenticated direct creator of a neutral spouse transfer may edit and
  assert.match(workspace,/isOwnHouseholdEntry\(entry,props\.user\.user_id\)/)
  assert.match(workspace,/allReadOnly:entry\.transfer_target!=='spouse'/)
  assert.match(workspace,/transferReadOnly:!isOwn/)
- assert.match(workspace,/if\(ledgerChanged\)await openApproval\('update',edited\)/)
+ assert.match(workspace,/const submitted=await openApproval\('update',edited\)/)
  const ledger=readFileSync(new URL('../src/family-ledger-context.js',import.meta.url),'utf8')
  assert.match(ledger,/isOwnRecorded:payment\?\.isOwnRecorded\?\?false/)
  const form=readFileSync(new URL('../src/TransactionForm.vue',import.meta.url),'utf8')

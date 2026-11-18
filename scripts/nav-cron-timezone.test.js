@@ -123,9 +123,11 @@ test('scheduled work failures are logged independently on the shared Worker',asy
   }finally{console.error=originalError;console.log=originalLog}
 })
 
-test('worker still records each invocation with detailed logs and enabled observability',()=>{
+test('worker keeps sampled, query-redacted observability and durable NAV heartbeat',()=>{
   const config=read('wrangler.nav.toml'),worker=read('workers/fund-nav-cron.js')
-  assert.match(config,/\[observability\]\s+enabled = true\s+head_sampling_rate = 1/)
+  assert.match(config,/\[observability\]\s+enabled = true\s+head_sampling_rate = 0\.1\s+redact_query_string = true/)
+  assert.match(config,/\[observability\.logs\]\s+enabled = true\s+head_sampling_rate = 0\.1/)
+  assert.match(config,/\[observability\.traces\]\s+enabled = false[\s\S]*?persist = false/)
   assert.match(worker,/console\.log\('NAV sync started'/)
   assert.match(worker,/console\.log\('NAV sync',JSON\.stringify\(result\)\)/)
   assert.match(worker,/console\.error\('NAV sync failed'/)

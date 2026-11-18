@@ -286,6 +286,34 @@ async function fetchHouseholdReceiptImage(entryId) {
   return blob
 }
 const receiptMigrationInfo = ref('')
+// Only the original PWA can read its existing legacy IndexedDB receipts.
+// SHA-256-verified R2 migration removes a local copy only after upload proof.
+let legacyReceiptRecoveryRunning=false
+let legacyReceiptScanOwner=''
+async function recoverLegacyReceiptsAfterOwnerLogin(identity){
+  const actor=identity?.user_id
+  if(!actor||identity.role!=='owner'||locked.value||
+     legacyReceiptRecoveryRunning||legacyReceiptScanOwner===actor)return
+  const ticket=ownerBootstrap
+  legacyReceiptRecoveryRunning=true
+  try{
+    const ids=await listReceiptImageIds()
+    if(ticket!==ownerBootstrap||locked.value||familyIdentity.value?.user_id!==actor)return
+    if(!ids.length){legacyReceiptScanOwner=actor;return}
+    const result=await migrateLegacyReceipts()
+    if(ticket!==ownerBootstrap||locked.value||familyIdentity.value?.user_id!==actor)return
+    const remaining=result.failed+result.conflicts
+    receiptMigrationInfo.value='R2へ移行 '+(result.migrated+result.removedAlreadyCloud)+
+      '件・端末に残る未完了 '+remaining+'件'
+    if(!remaining)legacyReceiptScanOwner=actor
+    if(result.migrated||result.removedAlreadyCloud||result.removedDeleted)
+      await refreshReceiptImageIds()
+    if(remaining)flash('旧レシート '+remaining+'件は未同期です。元の画像を保持し、通信回復後に再試行します')
+  }catch(error){
+    if(ticket===ownerBootstrap&&familyIdentity.value?.user_id===actor)
+      receiptMigrationInfo.value='旧レシートのR2同期は未完了です：'+error.message
+  }finally{legacyReceiptRecoveryRunning=false}
+}
 async function migrateReceiptsNow() {
   try {
     const result=await migrateLegacyReceipts()
@@ -438,6 +466,8 @@ async function restoreVerifiedOwner(identity){
   await restoreAppState()
   if(ticket!==ownerBootstrap||familyIdentity.value?.user_id!==identity.user_id)return
   await Promise.allSettled([load(),loadYear(),loadTransfers()])
+  if(ticket===ownerBootstrap&&familyIdentity.value?.user_id===identity.user_id)
+    void recoverLegacyReceiptsAfterOwnerLogin(identity)
  }catch(error){if(ticket===ownerBootstrap)flash(error.message)}
 }
 function onFamilyIdentityChange(identity){
@@ -514,6 +544,8 @@ async function completeServerLogout(oldSession=''){
 }
 function onConnectionRestored(){
   if(serverLogoutPending.value)void completeServerLogout()
+  if(familyIdentity.value?.role==='owner'&&!locked.value)
+    void recoverLegacyReceiptsAfterOwnerLogin(familyIdentity.value)
 }
 async function signIn(code) {
   // Never replace a still-live cookie before its prior logout has been confirmed.
@@ -860,12 +892,14 @@ watch(entryInputMode, value => { if (value === 'scan') void refreshAiQuota() })
 const draftRecoveryInfo = ref('')
 const DRAFT_KEY = 'unsaved_draft'
 const DRAFT_SYNC_MS = 30000
+const DRAFT_IDLE_SYNC_MS = 4000
 const DRAFT_TTL_MS = 7 * 86400000
 let draftHydrated = false
 let draftLocalQueue = Promise.resolve()
 let draftWriteQueue = Promise.resolve()
 let draftSyncInFlight = null
 let draftSyncInterval = null
+let draftIdleTimer = null
 let draftDeviceErrorShown = false
 let draftCloudErrorShown = false
 let draftRemoteKnown = false
@@ -960,14 +994,27 @@ async function syncDraftToD1() {
   })()
   try { await draftSyncInFlight } finally { draftSyncInFlight=null }
 }
-function onDraftVisibilityChange() {
-  if (document.visibilityState === 'hidden') void syncDraftToD1()
+function scheduleDraftIdleSync(){
+  if(draftIdleTimer)clearTimeout(draftIdleTimer)
+  if(!draftHydrated||locked.value)return
+  draftIdleTimer=setTimeout(()=>{
+    draftIdleTimer=null
+    void syncDraftToD1()
+  },DRAFT_IDLE_SYNC_MS)
+}
+function onDraftVisibilityChange(){
+  if(document.visibilityState!=='hidden')return
+  if(draftIdleTimer)clearTimeout(draftIdleTimer)
+  draftIdleTimer=null
+  void syncDraftToD1()
 }
 async function restoreAppState() {
   const actor=familyIdentity.value?.user_id
   const ticket=ownerBootstrap
   const stillActive=()=>!actor||(
     ticket===ownerBootstrap&&familyIdentity.value?.user_id===actor&&!locked.value)
+  if(draftIdleTimer)clearTimeout(draftIdleTimer)
+  draftIdleTimer=null
   draftHydrated=false
   draftRemoteKnown=false
   draftCloudConflictTimestamp=0
@@ -1017,6 +1064,8 @@ async function restoreAppState() {
 }
 async function clearLocalDraft() {
   if(!confirm('未保存の下書きを削除しますか？保存済み明細やレシート画像は残ります。'))return
+  if(draftIdleTimer)clearTimeout(draftIdleTimer)
+  draftIdleTimer=null
   const tombstone={updatedAt:Date.now(),deleted:true}
   try {
     await queueDeviceDraft(tombstone)
@@ -1036,9 +1085,13 @@ async function clearLocalDraft() {
   } catch(error) { flash('端末の下書きを削除しました。クラウド側は次回再試行します：'+error.message) }
 }
 watch([forms,input,entryInputMode], () => {
-  if (draftHydrated) void persistDraftLocally()
+  if(draftHydrated){
+    void persistDraftLocally()
+    scheduleDraftIdleSync()
+  }
 }, {deep:true})
 onUnmounted(() => {
+  if(draftIdleTimer)clearTimeout(draftIdleTimer)
   if (draftSyncInterval) clearInterval(draftSyncInterval)
   document.removeEventListener('visibilitychange',onDraftVisibilityChange)
 })

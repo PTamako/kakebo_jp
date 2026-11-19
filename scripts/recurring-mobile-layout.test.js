@@ -113,6 +113,6 @@ test('fixed and variable cost tabs isolate the panels and preserve variable draf
  assert.match(source, /if \(tab === 'variable'\) variableCostTabVisited.value = true/)
  assert.match(source, /<VariableRecurringCosts v-if="variableCostTabVisited" inline/)
  const variable = readFileSync(new URL('../src/VariableRecurringCosts.vue', import.meta.url),'utf8')
- assert.match(variable, /const expanded=ref\(false\),planEditor=ref\(props.inline\)/)
+ assert.match(variable, /const expanded=ref\(false\),planEditor=ref\(false\)/)
  assert.match(variable, /<div v-if="inline \|\| expanded" class="body">/)
 })

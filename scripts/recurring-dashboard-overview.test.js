@@ -1,0 +1,37 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')
+const finance=read('src/FinanceTools.vue')
+const variable=read('src/VariableRecurringCosts.vue')
+const list=read('src/OriginalFixedCostList.vue')
+
+test('fixed costs show saved items by default; the editor is not mounted until requested',()=>{
+ assert.match(finance,/const fixedPlanEditorOpen = ref\(false\)/)
+ assert.match(finance,/@click="openNewFixedPlan"/)
+ assert.match(finance,/v-if="fixedPlanEditorOpen" id="fixed-cost-editor"/)
+ assert.match(finance,/fixedPlanEditorOpen.value = true/)
+ assert.match(finance,/fixedPlanEditorOpen.value = false/)
+ assert.match(finance,/<OriginalFixedCostList default-open/)
+ assert.match(list,/defaultOpen:\{type:Boolean,default:false\}/)
+ assert.match(list,/<details class="recurring-list-disclosure" :open="defaultOpen">/)
+ const firstList=finance.indexOf('<OriginalFixedCostList default-open')
+ const firstReview=finance.indexOf('aria-label="固定費の記帳確認"')
+ assert.ok(firstList>0&&firstReview>firstList,'saved list must precede review card')
+})
+
+test('variable costs open as a compact overview, not duplicate heading and two-level expanded form',()=>{
+ assert.match(variable,/const expanded=ref\(false\),planEditor=ref\(false\),billEditor=ref\(false\)/)
+ assert.doesNotMatch(variable,/v-if="inline" class="inline-heading"/)
+ assert.match(variable,/<div class="variable-toolbar">/)
+ assert.match(variable,/@click="planEditor\?closePlanEditor\(\):newPlan\(\)"/)
+ assert.match(variable,/<form v-if="planEditor" ref="planEditorElement"/)
+ assert.match(variable,/<form v-if="billEditor&&chosenPlan" ref="billEditorElement"/)
+ assert.match(variable,/<details v-for="p in plans"/)
+ assert.match(variable,/@click="openBill\(p\)"/)
+ assert.match(variable,/@click="togglePlan\(p\)"/)
+ assert.match(variable,/@click="editPlan\(p\)"/)
+ assert.match(variable,/confirmBill/)
+ assert.match(variable,/sourceType==='document'/)
+ assert.doesNotMatch(variable,/<button type="button" :disabled="busy" @click="refresh">再読込/)
+})

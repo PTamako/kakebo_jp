@@ -22,7 +22,9 @@ export async function familyPrepaidReport(env,user){
    'COALESCE((SELECT SUM(-j.delta_jpy) FROM family_prepaid_balance_journal j WHERE j.prepaid_account_id=a.account_id AND j.household_id=a.household_id AND j.effective_date>=? AND j.delta_jpy<0),0) spent_month,'+
    'COALESCE((SELECT SUM(c.amount_jpy) FROM family_points_prepaid_credits c WHERE c.prepaid_account_id=a.account_id AND c.household_id=a.household_id),0) points_credit,'+
    'COALESCE((SELECT SUM(r.debited_prepaid_jpy) FROM family_points_prepaid_refunds r WHERE r.prepaid_account_id=a.account_id AND r.household_id=a.household_id),0) points_refund,'+
-   'COALESCE(alert.enabled,0) AS alert_enabled,COALESCE(alert.threshold_jpy,1000) AS alert_threshold_jpy,COALESCE(alert.version,0) AS alert_version '+
+   'COALESCE(alert.enabled,0) AS alert_enabled,COALESCE(alert.threshold_jpy,1000) AS alert_threshold_jpy,'+
+   "COALESCE(alert.alert_mode,'lower') AS alert_mode,"+
+   'COALESCE(alert.upper_threshold_jpy,10000) AS alert_upper_threshold_jpy,COALESCE(alert.version,0) AS alert_version '+
    'FROM family_financial_accounts a LEFT JOIN prepaid_balance_alert_settings alert '+
    'ON alert.account_scope=\'member\' AND alert.resource_key=a.account_id '+
    'AND alert.household_id=a.household_id AND alert.owner_user_id=a.owner_user_id '+
@@ -41,7 +43,8 @@ export async function familyPrepaidReport(env,user){
    if(!Number.isSafeInteger(balance)||balance<0)return response({ok:false,code:'BALANCE_NEEDS_REVIEW'},409)
    cards.push({name:a.label,account_id:a.account_id,version:a.version,
     owner_user_id:user.user_id,alert_enabled:!!a.alert_enabled,
-    alert_threshold_jpy:a.alert_threshold_jpy,alert_version:a.alert_version,
+    alert_threshold_jpy:a.alert_threshold_jpy,alert_mode:a.alert_mode,
+    alert_upper_threshold_jpy:a.alert_upper_threshold_jpy,alert_version:a.alert_version,
     is_archived:!!a.is_archived,opening_balance:a.opening_balance,
     opening_date:String(a.created_at||'').slice(0,10)||'登録時',
     balance,charged_month:a.charged_month+a.direct_charged_month+a.correction_charged_month,spent_month:a.spent_month,

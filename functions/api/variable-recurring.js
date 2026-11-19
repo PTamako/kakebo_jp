@@ -84,7 +84,7 @@ export async function handleVariableRecurring(request,db,parts){
      .bind(Date.now(),pid).run()
     return json({ok:true})
    }
-   if(!cycle(x.startMonth,p.start_month,x.intervalMonths)&&
+   if((x.startMonth!==p.start_month||x.intervalMonths!==p.interval_months)&&
       (await db.prepare('SELECT 1 FROM variable_recurring_bills WHERE plan_id=? LIMIT 1')
        .bind(pid).first()))
     return fail('過去の請求がある設定の開始月・周期は変更できません',409)
@@ -134,7 +134,7 @@ export async function handleVariableRecurring(request,db,parts){
    const conflict=await db.prepare("SELECT id FROM entries WHERE type='expense' "+
     'AND merchant=? AND COALESCE(payment_source,?)=? AND amount=? '+
     "AND date>=? AND date<date(?,'+1 month') LIMIT 1")
-    .bind(p.name,'',p.payment_source,b.amount_jpy,x.periodMonth+'-01',x.periodMonth+'-01').first()
+    .bind(p.name,'',p.payment_source,b.amount_jpy,b.expense_date.slice(0,7)+'-01',b.expense_date.slice(0,7)+'-01').first()
    if(conflict)return json({ok:false,error:'同じ月の明細が存在します。文書助手や手入力の記録を確認してください',
     conflictEntryId:conflict.id},409)
    const stamped=Date.now()

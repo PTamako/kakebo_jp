@@ -124,3 +124,63 @@ test('ledger note includes only explicitly supplied metering dates',()=>{
  assert.equal(variableBillLedgerNote('2026-10',{service_end:'2026-11-15'}),
   '変動固定費・対象月 2026-10 ／ 利用終了 2026/11/15')
 })
+
+// Use the production posting endpoint itself, not a separate imitation.
+import {postDueVariableRecurring} from '../functions/api/variable-recurring-auto.js'
+
+test('evening Cron posts a due variable draft once with its latest edited amount',async()=>{
+ const f=fixture()
+ assert.equal((await f.send('POST','',f.plan(uuid,{startMonth:'2026-10'}))).httpStatus,201)
+ const draft=f.bill('2026-10',{amountJpy:1987,expenseDate:'2026-11-27',
+  serviceStart:'2026-10-16',serviceEnd:'2026-11-15'})
+ await f.send('POST','/'+uuid+'/bill',draft)
+ let result=await postDueVariableRecurring(f.db,{today:'2026-11-26'})
+ assert.deepEqual(result,{checked:0,created:0,skipped:0,failed:0})
+ // Change amount before due date; it is not an obstacle to automatic posting.
+ await f.send('POST','/'+uuid+'/bill',{...draft,amountJpy:2000})
+ result=await postDueVariableRecurring(f.db,{today:'2026-11-27'})
+ assert.deepEqual(result,{checked:1,created:1,skipped:0,failed:0})
+ const row=f.sql.prepare('SELECT date,amount,note FROM entries').get()
+ assert.equal(row.amount,2000)
+ assert.equal(row.date,'2026-11-27')
+ assert.equal(row.note,'変動固定費・対象月 2026-10 ／ 利用期間 2026/10/16〜2026/11/15')
+ assert.deepEqual(await postDueVariableRecurring(f.db,{today:'2026-11-27'}),
+  {checked:0,created:0,skipped:0,failed:0})
+ assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM entries').get().n,1)
+})
+
+test('changing posting date postpones Cron and a prior manual post remains untouched',async()=>{
+ const f=fixture()
+ await f.send('POST','',f.plan(uuid,{startMonth:'2026-10'}))
+ const draft=f.bill('2026-10',{amountJpy:1987,expenseDate:'2026-11-27'})
+ await f.send('POST','/'+uuid+'/bill',draft)
+ await f.send('POST','/'+uuid+'/bill',{...draft,expenseDate:'2026-11-29'})
+ assert.equal((await postDueVariableRecurring(f.db,{today:'2026-11-27'})).checked,0)
+ // User confirms on the rescheduled date before 19:30.
+ assert.equal((await f.send('POST','/'+uuid+'/confirm',{periodMonth:'2026-10'})).posted,true)
+ assert.equal((await postDueVariableRecurring(f.db,{today:'2026-11-29'})).checked,0)
+ assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM entries').get().n,1)
+})
+
+test('duplicate manual transaction blocks automatic posting without changing the draft',async()=>{
+ const f=fixture()
+ await f.send('POST','',f.plan(uuid,{startMonth:'2026-10'}))
+ await f.send('POST','/'+uuid+'/bill',f.bill('2026-10',{amountJpy:1987,expenseDate:'2026-11-27'}))
+ f.sql.prepare("INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,payment_source) "+
+  "VALUES('2026-11-27','',1987,'光熱費','オクトパスエナジー','','','expense','現金')").run()
+ const result=await postDueVariableRecurring(f.db,{today:'2026-11-27'})
+ assert.deepEqual(result,{checked:1,created:0,skipped:1,failed:0})
+ assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM entries').get().n,1)
+ assert.equal(f.sql.prepare('SELECT status FROM variable_recurring_bills').get().status,'draft')
+})
+
+test('empty amount or paused plan never auto-posts',async()=>{
+ const f=fixture()
+ await f.send('POST','',f.plan(uuid,{startMonth:'2026-10'}))
+ await f.send('POST','/'+uuid+'/bill',f.bill('2026-10',{amountJpy:null,expenseDate:'2026-11-27'}))
+ assert.equal((await postDueVariableRecurring(f.db,{today:'2026-11-27'})).checked,0)
+ await f.send('POST','/'+uuid+'/bill',f.bill('2026-10',{amountJpy:1987,expenseDate:'2026-11-27'}))
+ await f.send('PUT','/'+uuid,f.plan(uuid,{startMonth:'2026-10',enabled:false}))
+ assert.equal((await postDueVariableRecurring(f.db,{today:'2026-11-27'})).checked,0)
+ assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM entries').get().n,0)
+})

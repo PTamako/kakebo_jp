@@ -1,5 +1,6 @@
 import { syncFundNav } from '../functions/api/fund-nav-sync.js'
 import { postScheduledRecurring } from '../functions/api/recurring-auto.js'
+import { postDueVariableRecurring } from '../functions/api/variable-recurring-auto.js'
 import { applyDueSbiTransfers } from '../functions/api/investment-transfer.js'
 import { tokyoDateAt } from '../src/recurring-posting.js'
 import { isJapanHoliday } from '../src/japan-holidays.js'
@@ -38,15 +39,36 @@ export default {
     // Primary posting at 00:30; a second idempotent chance at 19:30.
     console.log('Recurring fixed-expense sync started', JSON.stringify({cron,scheduledAt,today}))
     ctx.waitUntil((async () => {
+      let recurringResult={checked:0,created:0,skipped:0}
+      let variableResult={checked:0,created:0,skipped:0,failed:0}
+      let problem=null
       try {
-        const result=await postScheduledRecurring(env.DB,{today})
-        console.log('Recurring fixed-expense sync',JSON.stringify(result))
-        await heartbeat('recurring','success',result)
+        recurringResult=await postScheduledRecurring(env.DB,{today})
+        console.log('Recurring fixed-expense sync',JSON.stringify(recurringResult))
       }catch(error){
-        await heartbeat('recurring','failed')
         console.error('Recurring fixed-expense sync failed',String(error?.message||error))
-        throw error
+        problem=error
       }
+      // Variable bills use ONLY the existing 19:30 JST trigger.
+      // The 00:30 run must never post a new variable bill early.
+      if(!isMorning){
+        try {
+          variableResult=await postDueVariableRecurring(env.DB,{today})
+          console.log('Variable bill auto-post summary',JSON.stringify(variableResult))
+          if(variableResult.failed)problem??=Error('variable_bill_posting_failed')
+        }catch(error){
+          console.error('Variable bill auto-post failed',String(error?.message||error))
+          problem??=error
+        }
+      }
+      const summary={
+        checked:recurringResult.checked+variableResult.checked,
+        created:recurringResult.created+variableResult.created,
+        skipped:recurringResult.skipped+variableResult.skipped,
+        failed:variableResult.failed
+      }
+      await heartbeat('recurring',problem?'failed':'success',summary)
+      if(problem)throw problem
     })())
     // Keep the SBI task independent from recurring, NAV and their failures.
     ctx.waitUntil((async () => {

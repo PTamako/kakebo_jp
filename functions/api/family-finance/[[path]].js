@@ -470,7 +470,8 @@ export async function onRequest({request,env,params}){
     if(!body)return json({code:'INVALID_ALERT_SETTINGS'},400);
     return updatePrepaidAlert(env.DB,{scope:'member',key:body.accountId,
       householdId:user.household_id,ownerUserId:user.user_id,
-      enabled:body.enabled,thresholdJpy:body.thresholdJpy});
+      enabled:body.enabled,thresholdJpy:body.thresholdJpy,
+      mode:body.mode??'lower',upperThresholdJpy:body.upperThresholdJpy??10000});
   }
   if(parts.length===1&&parts[0]==='prepaid-report'&&request.method==='GET')return familyPrepaidReport(env,user);
   if(parts[0]==='accounts')return accounts(request,env,url,user,parts);

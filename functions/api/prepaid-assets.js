@@ -16,7 +16,8 @@ export async function handlePrepaid({db,request,method,sub,ownerProof=null}) {
     const body=await request.json().catch(()=>null)
     return updatePrepaidAlert(db,{scope:'legacy',key:body?.name,
       householdId:ownerProof.householdId,ownerUserId:ownerProof.userId,
-      enabled:body?.enabled,thresholdJpy:body?.thresholdJpy})
+      enabled:body?.enabled,thresholdJpy:body?.thresholdJpy,
+       mode:body?.mode??'lower',upperThresholdJpy:body?.upperThresholdJpy??10000})
   }
   if(method==='POST' && sub==='opening'){
     const body=await request.json().catch(()=>null)
@@ -40,6 +41,8 @@ export async function handlePrepaid({db,request,method,sub,ownerProof=null}) {
   const {results:cards}=await db.prepare(`SELECT p.name,p.is_archived,p.opening_balance,p.opening_entry_id,p.opening_date,
     ${withAlert?'COALESCE(alert.enabled,0)':'0'} AS alert_enabled,
     ${withAlert?'COALESCE(alert.threshold_jpy,1000)':'1000'} AS alert_threshold_jpy,
+    ${withAlert?"COALESCE(alert.alert_mode,'lower')":"'lower'"} AS alert_mode,
+    ${withAlert?'COALESCE(alert.upper_threshold_jpy,10000)':'10000'} AS alert_upper_threshold_jpy,
     ${withAlert?'COALESCE(alert.version,0)':'0'} AS alert_version,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name

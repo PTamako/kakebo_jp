@@ -17,7 +17,6 @@ const emit=defineEmits(['update:cycleChoice'])
 <template>
  <div class="fixed-cost-common-fields">
   <div class="recurring-form-layout">
-   <h3 class="recurring-form-section-title">基本情報</h3>
    <label class="recurring-form-field recurring-form-name"><span>名称</span>
     <input v-model="model.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120"/></label>
    <label class="recurring-form-field"><span>カテゴリ</span>

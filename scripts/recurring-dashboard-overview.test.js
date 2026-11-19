@@ -59,10 +59,13 @@ test('posting review is fixed-only; variable costs confirm bills on their own ca
  assert.match(variable,/chosenSaved\?\.status==='draft'/)
  assert.doesNotMatch(variable,/defineExpose\(\{openPendingReview\}\)/)
 })
-test('bill footer fits 3 actions on one row and shows one concise hint',()=>{
+test('bill footer uses two action columns without a duplicate close button',()=>{
  const sheet=read('src/RecurringFormSheet.vue')
  assert.match(variable,/class="actions recurring-sheet-actions recurring-bill-actions"/)
- assert.match(sheet,/\.recurring-bill-actions\)\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/)
+ assert.match(sheet,/\.recurring-bill-actions\)\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
+ assert.match(variable,/v-if="chosenSaved\?\.status!=='posted'" class="actions recurring-sheet-actions recurring-bill-actions"/)
+ assert.doesNotMatch(variable,/<button type="button" @click="billEditor=false">閉じる<\/button>/)
+ assert.match(sheet,/class="recurring-sheet-close"/)
  assert.match(variable,/下書きを保存/)
  assert.match(variable,/確認して記帳/)
  assert.match(variable,/v-else class="hint">金額と記帳日が揃うと自動記帳/)

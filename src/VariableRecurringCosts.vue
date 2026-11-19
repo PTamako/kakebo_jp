@@ -5,7 +5,8 @@ const props=defineProps({
  categories:{type:Array,default:()=>[]},
  paymentSources:{type:Array,default:()=>[]},
  categoryLabel:{type:Function,default:x=>x},
- inline:{type:Boolean,default:false}
+ inline:{type:Boolean,default:false},
+ refreshKey:{type:Number,default:0}
 })
 const today=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const thisMonth=()=>today().slice(0,7)
@@ -161,6 +162,7 @@ async function confirmBill(){
  finally{busy.value=false}
 }
 onMounted(refresh)
+watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
 </script>
 <template>
 <section class="variable-costs" :class="{'is-inline':inline}">

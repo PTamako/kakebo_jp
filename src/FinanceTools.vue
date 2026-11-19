@@ -52,6 +52,7 @@ const managementTab = ref('cards')
 // Keep both editors mounted once visited so switching types preserves drafts.
 const recurringCostTab = ref('fixed')
 const variableCostTabVisited = ref(false)
+const variableRecurringRefreshKey = ref(0)
 const fixedPlanEditorOpen = ref(false)
 function focusFixedPlanEditor() {
   void nextTick(() => document.getElementById('fixed-cost-editor')?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
@@ -85,6 +86,8 @@ async function refreshEverything() {
     if(managementTab.value==='tools')await refreshLocalReceiptCount()
     // Refresh the SBI monthly plans/reconciliation after the transfer state.
     investmentRefreshKey.value++
+    // Also refresh already-mounted variable bills when the global refresh button is used.
+    variableRecurringRefreshKey.value++
   } catch (e) {
     loadError.value = '更新に失敗しました：' + e.message
   } finally {
@@ -1794,7 +1797,7 @@ function onCardRemove(value){
     aria-labelledby="recurring-cost-tab-variable"
     v-show="managementTab === 'plans' && recurringCostTab === 'variable'">
     <VariableRecurringCosts v-if="variableCostTabVisited" inline
-      :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
+      :refresh-key="variableRecurringRefreshKey" :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
       :category-label="categoryLabel" />
   </section>
   <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">

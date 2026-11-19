@@ -34,4 +34,7 @@ test('variable costs open as a compact overview, not duplicate heading and two-l
  assert.match(variable,/confirmBill/)
  assert.match(variable,/sourceType==='document'/)
  assert.doesNotMatch(variable,/<button type="button" :disabled="busy" @click="refresh">再読込/)
+ assert.match(finance,/:refresh-key="variableRecurringRefreshKey"/)
+ assert.match(finance,/variableRecurringRefreshKey.value\+\+/)
+ assert.match(variable,/watch\(\(\)=>props.refreshKey,\(\)=>\{if\(props.inline\)void refresh\(\)\}\)/)
 })

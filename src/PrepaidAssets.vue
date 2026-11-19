@@ -111,7 +111,7 @@ onMounted(()=>{if(props.active)void refresh()})
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h5"/></svg>
                 </span>
                 <div class="wallet-name"><strong :title="card.name">{{card.name}}</strong>
-                  <small>{{card.is_archived?'アーカイブ済み':'プリペイド'}} · 持ち主：自分</small>
+                  <small>{{card.is_archived?'アーカイブ済み':'プリペイド'}}</small>
                   <button type="button" class="wallet-alert-link"
                     :aria-label="card.name+'の残高通知を設定'" @click="startAlert(card)">
                     <span aria-hidden="true">🔔</span> {{card.alert_enabled?'残高通知 '+money(card.alert_threshold_jpy)+'以下':'残高通知を設定'}}
@@ -150,14 +150,12 @@ onMounted(()=>{if(props.active)void refresh()})
       <form class="wallet-opening-editor" role="dialog" aria-modal="true"
         :aria-label="alertCard.name+'の残高通知'" @submit.prevent="saveAlert">
         <div class="wallet-opening-title">{{alertCard.name}} の残高通知</div>
-        <p class="wallet-hint">持ち主：自分。通知は HomeFlow の「今日通知」と本人の端末だけに届きます。</p>
         <label class="wallet-alert-toggle">
           <input v-model="alertEnabledDraft" type="checkbox" /> 残高不足を通知する
         </label>
         <label>通知する残高（円）
           <input v-model.number="alertThresholdDraft" type="number" step="1" min="0" max="100000000" required />
         </label>
-        <p class="wallet-hint">現在残高が設定額以下になったときに通知します。毎日同じ通知は送りません。</p>
         <div class="wallet-editor-actions"><button type="button" @click="alertCard=null" :disabled="alertSaving">キャンセル</button><button type="submit" :disabled="alertSaving">{{alertSaving?'保存中…':'保存'}}</button></div>
       </form>
     </div>

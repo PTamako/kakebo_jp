@@ -1746,7 +1746,7 @@ function onCardRemove(value){
       :category-label="categoryLabel" />
   </section>
   <section v-show="managementTab === 'plans'" class="recurring-common-review-area" aria-label="固定費の記帳確認">
-  <article class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringListOpen }" aria-label="固定費の記帳確認">
+  <article class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringCostTab === 'fixed' && recurringListOpen }" aria-label="固定費の記帳確認">
       <div class="recurring-review-heading">
         <div>
           <h3>記帳の確認</h3>
@@ -1754,7 +1754,7 @@ function onCardRemove(value){
         </div>
       </div>
       <p v-if="recurringCostTab === 'fixed' && recurringAutoWindow.clipped" class="recurring-window-note">過去10年分まで</p>
-      <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringListOpen && recurringDueEntries.length > 0}">
+      <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringCostTab === 'fixed' && recurringListOpen && recurringDueEntries.length > 0}">
         <button v-if="recurringCostTab === 'fixed'" type="button" :disabled="recurringBusy || (!recurringListOpen && (!settingsReady || !loaded))" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
         <button v-if="recurringCostTab === 'fixed' && recurringListOpen && recurringDueEntries.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button>
         <button v-if="recurringCostTab === 'variable'" type="button" :disabled="!variableCostTabVisited" @click="openVariableBillReview">請求を確認</button>

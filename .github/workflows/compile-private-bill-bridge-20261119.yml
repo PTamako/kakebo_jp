@@ -23,7 +23,7 @@ jobs:
           set -euo pipefail
           echo "Compiled files:"
           find .wrangler/bill-bridge-bundle -maxdepth 2 -type f -printf '%p %s bytes\n'
-          bundle=".wrangler/bill-bridge-bundle/index.js"
+          bundle=".wrangler/bill-bridge-bundle/homeflow-service-bridge.js"
           test -s "$bundle"
           test "$(wc -c < "$bundle")" -lt 5000000
           git switch -c release-artifacts/kakeibo-bill-bridge-20261119

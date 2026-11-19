@@ -129,6 +129,12 @@ try{
       else if(p==='merchant-payment-rules')data=[{keyword:'テスト商店',payment_source:'テストカード'}]
       else if(p==='entry-years')data=[{year:String(new Date().getFullYear()),count:1}]
       else if(p==='job-health')data=[]
+      else if(p==='variable-recurring')data={
+        plans:[{id:'11111111-1111-4111-8111-111111111112',name:'オクトパスエナジー',
+          category:'日用品',paymentSource:'テストカード',
+          startMonth:'2026-11',intervalMonths:1,budgetJpy:null,enabled:true}],
+        bills:[]
+      }
       else if(p==='prepaid-assets')data={cards:[],latestUsage:null,latestCharge:null}
       else if(p==='investment-portfolio')data={holdings:[],plans:[],prices:[]}
       await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)})
@@ -223,7 +229,8 @@ try{
     // Fixed-expense search spans the panel width and all three statuses stay on one row.
     await page.locator('.finance-section-tabs').getByRole('button',{name:'固定費'}).click()
     const recurringPanel=page.locator('.recurring-plans-panel')
-    await recurringPanel.locator('.recurring-list-summary').click()
+    const disclosure=recurringPanel.locator('.recurring-list-disclosure')
+    if(!await disclosure.evaluate(el=>el.open))await recurringPanel.locator('.recurring-list-summary').click()
     const recurringFilters=recurringPanel.locator('.recurring-list-filters')
     await recurringFilters.locator('input[type=search]').waitFor({state:'visible'})
     const filterLayout=await recurringFilters.evaluate(node=>{
@@ -246,7 +253,10 @@ try{
 
     // Recurrence is a single bottom-sheet dropdown, with independently chosen
     // multiple weekdays/dates. Never expand all frequency options inline.
-    const recurringForm=page.locator('.recurring-manager-panel')
+    await page.getByRole('button',{name:/固定費を追加/}).click()
+    const fixedSheet=page.getByRole('dialog',{name:'固定費を追加'})
+    await fixedSheet.waitFor()
+    const recurringForm=fixedSheet.locator('.recurring-manager-panel')
     await assertNativeTemporalLayout(recurringForm.locator('input[type=month]'),'固定費の開始月',width)
     const startMonthLayout=await recurringForm.locator('.recurring-start-month').evaluate(label=>{
       const input=label.querySelector('input[type=month]').getBoundingClientRect()
@@ -295,6 +305,53 @@ try{
     await days.getByRole('button',{name:'15日'}).click()
     await days.getByRole('button',{name:'決定'}).click()
     assert.match(await recurringForm.getByRole('button',{name:/記帳する日付：/}).innerText(),/1日.*15日/)
+    const fixedSheetOverflow=await fixedSheet.evaluate(node=>{
+      const body=node.querySelector('.recurring-sheet-content')
+      return body.scrollWidth-body.clientWidth
+    })
+    assert.ok(fixedSheetOverflow<=2,'Fixed bottom sheet content overflow at '+width)
+    await fixedSheet.getByRole('button',{name:'キャンセル'}).click()
+    await fixedSheet.waitFor({state:'hidden'})
+    assert.equal(await page.evaluate(()=>document.body.style.overflow),'',
+      'Closing fixed cost sheet must unlock background scroll at '+width)
+    await page.getByRole('tab',{name:'変動金額'}).click()
+    await page.getByRole('button',{name:/変動費を追加/}).click()
+    const variableSheet=page.getByRole('dialog',{name:'変動費を追加'})
+    await variableSheet.waitFor()
+    await assertNativeTemporalLayout(variableSheet.locator('input[type=month]'),'変動費の開始月',width)
+    const variableMonthLayout=await variableSheet.locator('input[type=month]').evaluate(input=>{
+      const i=input.getBoundingClientRect(),l=input.closest('label').getBoundingClientRect()
+      return {left:i.left,right:i.right,labelLeft:l.left,labelRight:l.right}
+    })
+    assert.ok(variableMonthLayout.left>=variableMonthLayout.labelLeft-1 &&
+      variableMonthLayout.right<=variableMonthLayout.labelRight+1,
+      'Variable month overflow at '+width+': '+JSON.stringify(variableMonthLayout))
+    await variableSheet.getByRole('button',{name:'キャンセル'}).click()
+    await variableSheet.waitFor({state:'hidden'})
+    const variablePlan=page.locator('.variable-costs .plan').first()
+    if(await variablePlan.count()){
+      await variablePlan.locator('.plan-summary').click()
+      await variablePlan.getByRole('button',{name:'請求を確認'}).click()
+      const billSheet=page.getByRole('dialog',{name:/請求を確認/})
+      await billSheet.waitFor()
+      const dateLayout=await billSheet.evaluate(node=>{
+        const inputs=[...node.querySelectorAll('input[type=date],input[type=month]')]
+        return inputs.map(el=>{
+          const i=el.getBoundingClientRect(),l=el.closest('label').getBoundingClientRect()
+          return {left:i.left,right:i.right,labelLeft:l.left,labelRight:l.right}
+        })
+      })
+      assert.ok(dateLayout.length>=6,'Variable bill must expose native dates at '+width)
+      assert.ok(dateLayout.every(x=>x.left>=x.labelLeft-1&&x.right<=x.labelRight+1),
+        'Variable bill date inputs must stay within fields at '+width+': '+JSON.stringify(dateLayout))
+      const billOverflow=await billSheet.evaluate(node=>{
+        const c=node.querySelector('.recurring-sheet-content')
+        return c.scrollWidth-c.clientWidth
+      })
+      assert.ok(billOverflow<=2,'Variable bill sheet overflow at '+width+': '+billOverflow)
+      await billSheet.getByRole('button',{name:'閉じる',exact:true}).last().click()
+      await billSheet.waitFor({state:'hidden'})
+    }
     assert.equal(await page.evaluate(()=>document.body.style.overflow),'')
     const recurringOverflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)
     assert.ok(recurringOverflow<=2,'Recurrence bottom-sheet overflow at '+width)

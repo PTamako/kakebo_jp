@@ -18,6 +18,8 @@ import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import FixedCostEditorFields from './FixedCostEditorFields.vue'
 import VariableRecurringCosts from './VariableRecurringCosts.vue'
 import OriginalFixedCostList from './OriginalFixedCostList.vue'
+import RecurringFormSheet from './RecurringFormSheet.vue'
+import RecurringCostOverview from './RecurringCostOverview.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
 import { validateBackup, transactionKey, nextScheduledDate, prepareRestoreRows, restoreMissingByKey, backupVersion, prepaidRestoreBalances, isFuturePrepaidMovement, chunkRestoreSettings, prepareLinkedRestoreRows } from './finance-tools.js'
@@ -57,7 +59,7 @@ const variableRecurringComponent = ref(null)
 function openVariableBillReview() { variableRecurringComponent.value?.openPendingReview() }
 const fixedPlanEditorOpen = ref(false)
 function focusFixedPlanEditor() {
-  void nextTick(() => document.getElementById('fixed-cost-editor')?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+  // RecurringFormSheet manages focus without scrolling the background page.
 }
 function openNewFixedPlan() {
   cancelPlanEdit()
@@ -1714,10 +1716,15 @@ function onCardRemove(value){
   <section id="recurring-cost-panel-fixed" class="recurring-cost-type-panel" role="tabpanel"
     aria-labelledby="recurring-cost-tab-fixed"
     v-show="managementTab === 'plans' && recurringCostTab === 'fixed'">
-  <div class="recurring-fixed-toolbar">
-    <button type="button" class="recurring-fixed-add" :disabled="recurringBusy" @click="fixedPlanEditorOpen ? cancelPlanEdit() : openNewFixedPlan()">{{fixedPlanEditorOpen ? '閉じる' : '＋ 固定費を追加'}}</button>
-  </div>
-  <div v-if="fixedPlanEditorOpen" id="fixed-cost-editor" class="recurring-editor-shell">
+  <RecurringCostOverview title="固定金額" kind="fixed"
+    :count="plans.length" primary-label="今月予定額" :primary-value="yen(recurringMonthlyTotal)"
+    secondary-label="今月対象" :secondary-value="currentEligiblePlans.length+'件'"
+    note="家賃・定額サービスなど。記帳方法は各項目で設定できます。"
+    add-label="固定費を追加" @add="openNewFixedPlan" />
+  <RecurringFormSheet :open="managementTab === 'plans' && recurringCostTab === 'fixed' && fixedPlanEditorOpen"
+    :busy="recurringBusy" :title="editingPlanId ? '固定費を編集' : '固定費を追加'"
+    subtitle="名称・金額・周期を設定します。" @close="cancelPlanEdit">
+   <div v-if="fixedPlanEditorOpen" id="fixed-cost-editor" class="recurring-editor-shell">
   <article class="finance-panel recurring-manager-panel">
     <h2>{{editingPlanId ? '固定費を編集' : '固定費を追加'}}</h2>
     <FixedCostEditorFields :model="plan" v-model:cycleChoice="planCycleChoice"
@@ -1729,8 +1736,9 @@ function onCardRemove(value){
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button type="button" :disabled="recurringBusy" @click="cancelPlanEdit">キャンセル</button></div>
   </article>
-  </div>
-  <OriginalFixedCostList default-open
+   </div>
+  </RecurringFormSheet>
+  <OriginalFixedCostList default-open compact-header
     :items="plans" :busy="recurringBusy" :yen="yen"
     :category-label="categoryLabel" :next-label="p=>recurringPlanNextLabel(recurringStatusFor(p))"
     :current-count="currentEligiblePlans.length" :monthly-total="recurringMonthlyTotal"
@@ -1742,6 +1750,7 @@ function onCardRemove(value){
     aria-labelledby="recurring-cost-tab-variable"
     v-show="managementTab === 'plans' && recurringCostTab === 'variable'">
     <VariableRecurringCosts v-if="variableCostTabVisited" ref="variableRecurringComponent" inline
+      :active="managementTab === 'plans' && recurringCostTab === 'variable'"
       :refresh-key="variableRecurringRefreshKey" :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
       :category-label="categoryLabel" />
   </section>
@@ -1749,7 +1758,7 @@ function onCardRemove(value){
   <article class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringCostTab === 'fixed' && recurringListOpen }" aria-label="固定費の記帳確認">
       <div class="recurring-review-heading">
         <div>
-          <h3>記帳の確認</h3>
+          <h3>{{recurringCostTab === 'fixed' ? '未記帳の確認' : '請求確認・記帳'}}</h3>
           <p>{{recurringCostTab === 'fixed' ? '固定金額：過去分・明日の予定' : '変動金額：請求ごとに確認'}}</p>
         </div>
       </div>

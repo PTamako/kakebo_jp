@@ -133,7 +133,11 @@ try{
         plans:[{id:'11111111-1111-4111-8111-111111111112',name:'オクトパスエナジー',
           category:'日用品',paymentSource:'テストカード',
           startMonth:'2026-11',intervalMonths:1,budgetJpy:null,enabled:true}],
-        bills:[]
+        bills:[{planId:'11111111-1111-4111-8111-111111111112',
+          periodMonth:new Date(Date.now()+32400000).toISOString().slice(0,7),
+          status:'draft',amountJpy:4200,
+          expenseDate:new Date(Date.now()+32400000).toISOString().slice(0,10),
+          sourceType:'document'}]
       }
       else if(p==='prepaid-assets')data={cards:[],latestUsage:null,latestCharge:null}
       else if(p==='investment-portfolio')data={holdings:[],plans:[],prices:[]}
@@ -315,6 +319,8 @@ try{
     assert.equal(await page.evaluate(()=>document.body.style.overflow),'',
       'Closing fixed cost sheet must unlock background scroll at '+width)
     await page.getByRole('tab',{name:'変動金額'}).click()
+    assert.equal(await page.locator('.recurring-common-review-area').isVisible(),false,
+      'Variable tab must not show the fixed-cost review card')
     await page.getByRole('button',{name:/変動費を追加/}).click()
     const variableSheet=page.getByRole('dialog',{name:'変動費を追加'})
     await variableSheet.waitFor()
@@ -349,6 +355,23 @@ try{
         return c.scrollWidth-c.clientWidth
       })
       assert.ok(billOverflow<=2,'Variable bill sheet overflow at '+width+': '+billOverflow)
+      const footer=await billSheet.locator('.recurring-bill-actions').evaluate(node=>{
+        const buttons=[...node.querySelectorAll('button')].map(el=>{
+          const r=el.getBoundingClientRect()
+          return {text:el.textContent.trim(),top:r.top,left:r.left,right:r.right,bottom:r.bottom}
+        })
+        return {buttons,
+          gridColumns:getComputedStyle(node).gridTemplateColumns,
+          contentWidth:node.getBoundingClientRect().width}
+      })
+      assert.equal(footer.buttons.length,3,'Draft bill must show three buttons at '+width)
+      assert.ok(footer.buttons.every(b=>Math.abs(b.top-footer.buttons[0].top)<=1),
+        'Bill actions must share one row at '+width+': '+JSON.stringify(footer))
+      assert.ok(footer.buttons[0].right<footer.buttons[1].left &&
+        footer.buttons[1].right<footer.buttons[2].left,
+        'Bill buttons must not overlap at '+width)
+      assert.equal(await billSheet.locator('.editor .hint').count(),1,
+        'Bill should display only one short explanatory message')
       await billSheet.getByRole('button',{name:'閉じる',exact:true}).last().click()
       await billSheet.waitFor({state:'hidden'})
     }

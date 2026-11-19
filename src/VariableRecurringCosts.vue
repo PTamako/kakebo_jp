@@ -17,7 +17,7 @@ const yen=n=>'¥'+Number(n||0).toLocaleString('ja-JP')
 const ready=ref(false),busy=ref(false),error=ref(''),notice=ref('')
 const plans=ref([]),bills=ref([])
 const expanded=ref(false),planEditor=ref(false),billEditor=ref(false)
-const planEditorElement=ref(null),billEditorElement=ref(null),plansElement=ref(null)
+const planEditorElement=ref(null),billEditorElement=ref(null)
 function focusVariableEditor(node){
  void nextTick(()=>node.value?.scrollIntoView({block:'start',behavior:'smooth'}))
 }
@@ -166,19 +166,6 @@ async function confirmBill(){
  }catch(e){error.value=String(e.message||e)}
  finally{busy.value=false}
 }
-function openPendingReview() {
- const pending=bills.value.find(b=>b.status==='draft' && plans.value.some(p=>p.id===b.planId && p.enabled))
- if(pending){
-  const p=plans.value.find(p=>p.id===pending.planId)
-  openBill(p)
-  if(invoice.value.periodMonth!==pending.periodMonth)invoice.value.periodMonth=pending.periodMonth
- }else if(plans.value.length){
-  void nextTick(()=>plansElement.value?.scrollIntoView({block:'start',behavior:'smooth'}))
- }else{
-  notice.value='まず変動費を登録してください。'
- }
-}
-defineExpose({openPendingReview})
 onMounted(refresh)
 watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
 </script>
@@ -199,7 +186,7 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
   <section class="variable-register-card" aria-label="登録済みの変動費">
    <div class="variable-list-heading"><h3>登録済みの変動費</h3><span>{{plans.length}}件</span></div>
   <p v-if="ready&&!plans.length&&!planEditor" class="variable-empty">まだ登録がありません。電気・ガス・水道などを追加できます。</p>
-  <div v-if="ready&&plans.length" ref="plansElement" class="plans" aria-label="登録済みの変動費">
+  <div v-if="ready&&plans.length" class="plans" aria-label="登録済みの変動費">
    <details v-for="p in plans" :key="p.id" class="plan">
     <summary class="plan-summary">
      <span class="plan-title"><strong>{{p.name}}</strong><span class="plan-state" :class="{'is-due':billLabel(p)==='要確認'}">{{billLabel(p)}}</span></span>
@@ -262,10 +249,10 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
    <h3 class="recurring-form-section-title">利用期間</h3>
    <div class="recurring-date-pair"><label>利用期間開始 <input v-model="invoice.serviceStart" type="date"/></label>
     <label>利用期間終了 <input v-model="invoice.serviceEnd" type="date"/></label></div>
-   <p class="hint">保存しただけでは支出になりません。文書助手ですでに記帳された同じ請求は、もう一度登録しないでください。</p>
-   <p v-if="chosenSaved?.status==='posted'" class="hint">記帳済み：明細 #{{chosenSaved.postedEntryId}}。同じ回は二重記帳できません。</p>
-   <p v-else-if="chosenSaved?.sourceType==='document'" class="hint">文書助手が入力した下書きです。原本と照合して、必要なら金額・日付を手動修正してください。</p>
-   <div class="actions recurring-sheet-actions">
+   <p v-if="chosenSaved?.status==='posted'" class="hint">記帳済み（明細 #{{chosenSaved.postedEntryId}}）</p>
+   <p v-else-if="chosenSaved?.sourceType==='document'" class="hint">文書助手の下書きです。金額・日付を確認してください。</p>
+   <p v-else class="hint">下書き保存だけでは記帳されません。</p>
+   <div class="actions recurring-sheet-actions recurring-bill-actions">
     <button class="primary" v-if="chosenSaved?.status!=='posted'" type="submit" :disabled="busy||!canSaveBill">下書きを保存</button>
     <button class="primary" v-if="chosenSaved?.status==='draft'" type="button" :disabled="busy||!canConfirm" @click="confirmBill">確認して記帳</button>
     <button type="button" @click="billEditor=false">閉じる</button>

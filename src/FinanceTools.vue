@@ -55,8 +55,6 @@ const managementTab = ref('cards')
 const recurringCostTab = ref('fixed')
 const variableCostTabVisited = ref(false)
 const variableRecurringRefreshKey = ref(0)
-const variableRecurringComponent = ref(null)
-function openVariableBillReview() { variableRecurringComponent.value?.openPendingReview() }
 const fixedPlanEditorOpen = ref(false)
 function focusFixedPlanEditor() {
   // RecurringFormSheet manages focus without scrolling the background page.
@@ -1749,24 +1747,23 @@ function onCardRemove(value){
   <section id="recurring-cost-panel-variable" class="recurring-cost-type-panel" role="tabpanel"
     aria-labelledby="recurring-cost-tab-variable"
     v-show="managementTab === 'plans' && recurringCostTab === 'variable'">
-    <VariableRecurringCosts v-if="variableCostTabVisited" ref="variableRecurringComponent" inline
+    <VariableRecurringCosts v-if="variableCostTabVisited" inline
       :active="managementTab === 'plans' && recurringCostTab === 'variable'"
       :refresh-key="variableRecurringRefreshKey" :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
       :category-label="categoryLabel" />
   </section>
-  <section v-show="managementTab === 'plans'" class="recurring-common-review-area" aria-label="固定費の記帳確認">
+  <section v-show="managementTab === 'plans' && recurringCostTab === 'fixed'" class="recurring-common-review-area" aria-label="固定費の記帳確認">
   <article class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringCostTab === 'fixed' && recurringListOpen }" aria-label="固定費の記帳確認">
       <div class="recurring-review-heading">
         <div>
-          <h3>{{recurringCostTab === 'fixed' ? '未記帳の確認' : '請求確認・記帳'}}</h3>
-          <p>{{recurringCostTab === 'fixed' ? '固定金額：過去分・明日の予定' : '変動金額：請求ごとに確認'}}</p>
+          <h3>未記帳の確認</h3>
+          <p>固定金額：過去分・明日の予定</p>
         </div>
       </div>
       <p v-if="recurringCostTab === 'fixed' && recurringAutoWindow.clipped" class="recurring-window-note">過去10年分まで</p>
       <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringCostTab === 'fixed' && recurringListOpen && recurringDueEntries.length > 0}">
         <button v-if="recurringCostTab === 'fixed'" type="button" :disabled="recurringBusy || (!recurringListOpen && (!settingsReady || !loaded))" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
         <button v-if="recurringCostTab === 'fixed' && recurringListOpen && recurringDueEntries.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button>
-        <button v-if="recurringCostTab === 'variable'" type="button" :disabled="!variableCostTabVisited" @click="openVariableBillReview">請求を確認</button>
       </div>
       <div v-if="recurringCostTab === 'fixed' && recurringListOpen" id="recurring-candidate-list" class="recurring-review-results">
         <section v-if="recurringTomorrowEntries.length" class="recurring-review-group recurring-review-upcoming" aria-label="明日の記帳予定">

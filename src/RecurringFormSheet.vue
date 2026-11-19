@@ -109,6 +109,9 @@ onBeforeUnmount(unlock)
 .recurring-sheet-content :deep(.recurring-date-pair){display:grid;grid-template-columns:minmax(0,1fr);gap:13px;min-width:0;width:100%}
 .recurring-sheet-content :deep(.recurring-form-section-title){margin:9px 0 0;padding-bottom:7px;border-bottom:1px solid var(--line);font-size:13px;font-weight:800;color:var(--ink)}
 .recurring-sheet-content :deep(.recurring-sheet-actions){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;position:sticky;bottom:-22px;padding:12px 0 10px;background:var(--card);z-index:2}
+.recurring-sheet-content :deep(.recurring-bill-actions){grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.recurring-sheet-content :deep(.recurring-bill-actions button){min-width:0;padding-inline:4px;white-space:nowrap;font-size:clamp(11px,3vw,13px)}
+.recurring-sheet-content :deep(.recurring-bill-actions button:only-child){grid-column:1/-1}
 .recurring-sheet-content :deep(.recurring-sheet-actions button){min-width:0;min-height:46px;border:1px solid var(--line);border-radius:12px;background:var(--tint);color:var(--ink);font-size:13px;font-weight:750;padding:9px 8px}
 .recurring-sheet-content :deep(.recurring-sheet-actions .primary){background:var(--blue-dark);border-color:var(--blue-dark);color:#fff}
 .recurring-sheet-content :deep(.recurring-sheet-actions button:disabled){opacity:.5}

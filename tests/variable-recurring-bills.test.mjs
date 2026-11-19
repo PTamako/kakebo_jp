@@ -98,7 +98,7 @@ test('the existing fixed-cost screen keeps its legacy posting path and embeds va
  const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')
  const editor=readFileSync(new URL('../src/VariableRecurringCosts.vue',import.meta.url),'utf8')
  const auth=readFileSync(new URL('../functions/api/[[path]].js',import.meta.url),'utf8')
- assert.match(finance,/<VariableRecurringCosts v-if="variableCostTabVisited" ref="variableRecurringComponent" inline/)
+ assert.match(finance,/<VariableRecurringCosts v-if="variableCostTabVisited" inline/)
  assert.match(finance,/id="recurring-cost-panel-variable"/)
  assert.match(editor,/確認して記帳/)
  assert.match(editor,/文書助手/)

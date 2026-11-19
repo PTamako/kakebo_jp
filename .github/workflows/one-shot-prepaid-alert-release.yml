@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
-    if: ${{ github.event.head_commit.message == 'manual: deploy-prepaid-alerts-once' }}
+    if: ${{ contains(github.event.head_commit.message, 'deploy-prepaid-alerts-once') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: production

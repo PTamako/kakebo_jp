@@ -21,8 +21,12 @@ export async function familyPrepaidReport(env,user){
     'FROM family_member_prepaid_topup_corrections k WHERE k.household_id=a.household_id),0) correction_charged_month,'+
    'COALESCE((SELECT SUM(-j.delta_jpy) FROM family_prepaid_balance_journal j WHERE j.prepaid_account_id=a.account_id AND j.household_id=a.household_id AND j.effective_date>=? AND j.delta_jpy<0),0) spent_month,'+
    'COALESCE((SELECT SUM(c.amount_jpy) FROM family_points_prepaid_credits c WHERE c.prepaid_account_id=a.account_id AND c.household_id=a.household_id),0) points_credit,'+
-   'COALESCE((SELECT SUM(r.debited_prepaid_jpy) FROM family_points_prepaid_refunds r WHERE r.prepaid_account_id=a.account_id AND r.household_id=a.household_id),0) points_refund '+
-   'FROM family_financial_accounts a WHERE a.household_id=? AND a.owner_user_id=? '+
+   'COALESCE((SELECT SUM(r.debited_prepaid_jpy) FROM family_points_prepaid_refunds r WHERE r.prepaid_account_id=a.account_id AND r.household_id=a.household_id),0) points_refund,'+
+   'COALESCE(alert.enabled,0) AS alert_enabled,COALESCE(alert.threshold_jpy,1000) AS alert_threshold_jpy,COALESCE(alert.version,0) AS alert_version '+
+   'FROM family_financial_accounts a LEFT JOIN prepaid_balance_alert_settings alert '+
+   'ON alert.account_scope=\'member\' AND alert.resource_key=a.account_id '+
+   'AND alert.household_id=a.household_id AND alert.owner_user_id=a.owner_user_id '+
+   'WHERE a.household_id=? AND a.owner_user_id=? '+
    "AND a.account_kind='prepaid' AND a.origin='member_created' AND a.is_archived=0 "+
    'ORDER BY a.sort_order,a.created_at DESC LIMIT 101')
    .bind(month,month,month,month,month,user.household_id,user.user_id).all()
@@ -36,6 +40,8 @@ export async function familyPrepaidReport(env,user){
    const balance=a.opening_balance+a.journal+a.direct_topups+a.correction_delta+a.points_credit-a.points_refund
    if(!Number.isSafeInteger(balance)||balance<0)return response({ok:false,code:'BALANCE_NEEDS_REVIEW'},409)
    cards.push({name:a.label,account_id:a.account_id,version:a.version,
+    owner_user_id:user.user_id,alert_enabled:!!a.alert_enabled,
+    alert_threshold_jpy:a.alert_threshold_jpy,alert_version:a.alert_version,
     is_archived:!!a.is_archived,opening_balance:a.opening_balance,
     opening_date:String(a.created_at||'').slice(0,10)||'登録時',
     balance,charged_month:a.charged_month+a.direct_charged_month+a.correction_charged_month,spent_month:a.spent_month,

@@ -4,7 +4,8 @@ const props=defineProps({
  api:{type:Function,required:true},
  categories:{type:Array,default:()=>[]},
  paymentSources:{type:Array,default:()=>[]},
- categoryLabel:{type:Function,default:x=>x}
+ categoryLabel:{type:Function,default:x=>x},
+ inline:{type:Boolean,default:false}
 })
 const today=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const thisMonth=()=>today().slice(0,7)
@@ -153,11 +154,11 @@ onMounted(refresh)
 </script>
 <template>
 <section class="variable-costs">
- <button class="open-manager" type="button" :aria-expanded="expanded"
+ <button v-if="!inline" class="open-manager" type="button" :aria-expanded="expanded"
   @click="expanded=!expanded">
   <strong>変動する定期費用</strong><span>電気・ガス・水道・通信など（請求ごとに確認） {{expanded?'⌃':'⌄'}}</span>
  </button>
- <div v-if="expanded" class="body">
+ <div v-if="inline || expanded" class="body">
   <p class="hint">金額・請求日・利用日・口座引落日を別々に管理します。予算は実際の支出に計上しません。</p>
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="hint">{{notice}}</p>

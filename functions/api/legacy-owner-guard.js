@@ -31,6 +31,6 @@ export async function verifyLegacyOwner(request,env,url,proofState){
    user?.role!=='owner'||typeof user.user_id!=='string'||
    user.household_id!==env.KAKEIBO_FAMILY_HOUSEHOLD_ID)
   return json({code:'HOMEFLOW_OWNER_REQUIRED',error:'非原账本管理员不能使用旧财务入口'},403);
- if(proofState)proofState.verified=true;
+ if(proofState){proofState.verified=true;proofState.userId=user.user_id;proofState.householdId=user.household_id;}
  return null;
 }

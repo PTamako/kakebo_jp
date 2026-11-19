@@ -1,14 +1,23 @@
 import { prepaidTarget } from '../../src/prepaid-card.js'
+import {updatePrepaidAlert} from './prepaid-alert-settings.js'
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json; charset=utf-8'}})
 const todayJST=()=>new Date(Date.now()+9*3600000).toISOString().slice(0,10)
 export async function prepaidSchemaReady(db) {
   const {results}=await db.prepare('PRAGMA table_info(payment_sources)').all()
   return ['source_type','opening_balance','opening_date','opening_entry_id'].every(col=>results.some(x=>x.name===col))
 }
-export async function handlePrepaid({db,request,method,sub}) {
+export async function handlePrepaid({db,request,method,sub,ownerProof=null}) {
   if(!await prepaidSchemaReady(db))return json({error:'プリペイド管理の追加移行が必要です',code:'prepaid_migration_required'},409)
   const pending=await db.prepare("SELECT name FROM payment_sources WHERE source_type='prepaid' AND opening_date='__restore_pending__' LIMIT 1").first()
   if(pending)return json({error:'プリペイド残高の復元が完了していません。バックアップ復元を再開してください',code:'prepaid_restore_incomplete'},409)
+  if(method==='POST' && sub==='alert'){
+    if(!ownerProof?.verified||!ownerProof.userId||!ownerProof.householdId)
+      return json({code:'PREPAID_ALERT_OWNER_REQUIRED'},403)
+    const body=await request.json().catch(()=>null)
+    return updatePrepaidAlert(db,{scope:'legacy',key:body?.name,
+      householdId:ownerProof.householdId,ownerUserId:ownerProof.userId,
+      enabled:body?.enabled,thresholdJpy:body?.thresholdJpy})
+  }
   if(method==='POST' && sub==='opening'){
     const body=await request.json().catch(()=>null)
     const name=typeof body?.name==='string'?body.name.trim():''
@@ -26,6 +35,9 @@ export async function handlePrepaid({db,request,method,sub}) {
   const today=todayJST()
   const monthStart=today.slice(0,7)+'-01'
   const {results:cards}=await db.prepare(`SELECT p.name,p.is_archived,p.opening_balance,p.opening_entry_id,p.opening_date,
+    COALESCE(alert.enabled,0) AS alert_enabled,
+    COALESCE(alert.threshold_jpy,1000) AS alert_threshold_jpy,
+    COALESCE(alert.version,0) AS alert_version,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name
         AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
@@ -79,8 +91,13 @@ export async function handlePrepaid({db,request,method,sub}) {
       WHERE e.type='transfer' AND e.payment_source=p.name
         AND e.date<=?1 AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
         AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out_month
-    FROM payment_sources p WHERE p.source_type='prepaid'
-    ORDER BY p.is_archived,p.sort_order,p.name`).bind(today,monthStart).all()
+    FROM payment_sources p
+    LEFT JOIN prepaid_balance_alert_settings alert
+      ON alert.account_scope='legacy' AND alert.resource_key=p.name
+      AND alert.household_id=?3 AND alert.owner_user_id=?4
+    WHERE p.source_type='prepaid'
+    ORDER BY p.is_archived,p.sort_order,p.name`).bind(today,monthStart,
+      ownerProof?.householdId||'',ownerProof?.userId||'').all()
   // Latest activity is read-only and uses exactly the same opening anchor/date
   // predicates as the balance and card-history filters. No extra ledger table.
   const [latestUsage,latestCharge] = await Promise.all([

@@ -15,9 +15,12 @@ export async function postDueVariableRecurring(db,{today}={}){
    WHERE b.status='draft' AND p.enabled=1
      AND b.amount_jpy BETWEEN 1 AND 10000000
      AND b.expense_date IS NOT NULL AND b.expense_date<=?
-   ORDER BY b.expense_date,b.plan_id,b.period_month LIMIT 40`).bind(today).all()
+   ORDER BY b.expense_date,b.plan_id,b.period_month LIMIT 201`).bind(today).all()
  const result={checked:0,created:0,skipped:0,failed:0}
- for(const bill of results){
+ // Bounded scan: more than 200 due bills signals an explicit backlog rather
+ // than silently starving every bill after the old 40-row limit. No new Cron.
+ if(results.length>200)result.backlog=1
+ for(const bill of results.slice(0,200)){
   result.checked++
   try{
    // Posting amount and posting date are re-read from D1 at confirmation time:
@@ -33,8 +36,10 @@ export async function postDueVariableRecurring(db,{today}={}){
     if(data.alreadyPosted)result.skipped++
     else result.created++
    }else if(response.status===409){
-    // Duplicate, edited/invalid date, or another confirmation won the race.
+    // An existing manual/document expense deliberately wins. Surface its
+    // unresolved draft as a count for owner review, without identifying it.
     result.skipped++
+    if(data.conflictEntryId)result.blocked=(result.blocked||0)+1
    }else result.failed++
   }catch{
    // Do not log bill amounts, dates, source document IDs or personal metadata.

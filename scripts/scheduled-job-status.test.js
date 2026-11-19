@@ -14,6 +14,11 @@ test('cron heartbeat is monotonic, separate from all financial tables',async()=>
   assert.equal(JSON.stringify(row).includes('900000'),false)
   await recordScheduledJobStatus(db,'sbi','2026-11-07T00:30:00.000Z','failed')
   assert.equal((await readScheduledJobStatus(db)).length,2)
+  await recordScheduledJobStatus(db,'recurring','2026-11-07T10:30:00.000Z','failed',{
+    checked:200,blocked:2,backlog:1,privateMerchant:'should-not-persist'})
+  const recurring=(await readScheduledJobStatus(db)).find(x=>x.job==='recurring')
+  assert.deepEqual(recurring.summary,{checked:200,blocked:2,backlog:1})
+  assert.equal(recurring.status,'failed')
   await assert.rejects(()=>recordScheduledJobStatus(db,'unknown','2026-11-07T10:30:00.000Z','success'))
   sqlite.close()
 })

@@ -216,11 +216,28 @@ test('duplicate manual transaction blocks automatic posting without changing the
  f.sql.prepare("INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,payment_source) "+
   "VALUES('2026-11-27','',1987,'光熱費','オクトパスエナジー','','','expense','現金')").run()
  const result=await postDueVariableRecurring(f.db,{today:'2026-11-27'})
- assert.deepEqual(result,{checked:1,created:0,skipped:1,failed:0})
+ assert.deepEqual(result,{checked:1,created:0,skipped:1,failed:0,blocked:1})
  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM entries').get().n,1)
  assert.equal(f.sql.prepare('SELECT status FROM variable_recurring_bills').get().status,'draft')
 })
 
+test('existing evening Cron processes more than 40 due bills without silently starving the tail',async()=>{
+ const f=fixture()
+ for(let i=1;i<=45;i++){
+  const id=String(i).padStart(8,'0')+'-1111-4111-8111-'+String(i).padStart(12,'0')
+  assert.equal((await f.send('POST','',f.plan(id,{
+    name:'独立した請求 '+i,startMonth:'2026-10'
+  }))).httpStatus,201)
+  assert.equal((await f.send('POST','/'+id+'/bill',f.bill('2026-11',{
+    amountJpy:100+i,expenseDate:'2026-11-19'
+  }))).httpStatus,200)
+ }
+ const r=await postDueVariableRecurring(f.db,{today:'2026-11-19'})
+ assert.deepEqual(r,{checked:45,created:45,skipped:0,failed:0})
+ assert.equal(f.sql.prepare('SELECT COUNT(*) AS n FROM entries').get().n,45)
+ assert.deepEqual(await postDueVariableRecurring(f.db,{today:'2026-11-19'}),
+  {checked:0,created:0,skipped:0,failed:0})
+})
 test('empty amount or paused plan never auto-posts',async()=>{
  const f=fixture()
  await f.send('POST','',f.plan(uuid,{startMonth:'2026-10'}))

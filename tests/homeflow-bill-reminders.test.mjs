@@ -12,7 +12,12 @@ function fixture(){
  interval_months INTEGER,payment_source TEXT,start_month TEXT,posting_mode TEXT,enabled INTEGER);
  CREATE TABLE trash_items(item_type TEXT,item_id TEXT);
  CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,merchant TEXT,payment_source TEXT,
- amount INTEGER,type TEXT,client_request_id TEXT);
+ amount INTEGER,type TEXT,client_request_id TEXT,family_account_id TEXT);
+ CREATE TABLE family_shared_mutation_applied(entry_id INTEGER,household_id TEXT,requester_user_id TEXT,action TEXT);
+ CREATE TABLE family_card_purchase_applied(entry_id INTEGER,household_id TEXT,requester_user_id TEXT);
+ CREATE TABLE family_prepaid_actions_applied(entry_id INTEGER,household_id TEXT,requester_user_id TEXT);
+ CREATE TABLE family_legacy_card_spends(entry_id INTEGER,household_id TEXT,actor_user_id TEXT);
+ CREATE TABLE family_recurring_execution_applied(target_entry_id INTEGER,household_id TEXT,member_user_id TEXT);
  CREATE TABLE recurring_candidate_exclusions(plan_id TEXT,month TEXT);
  CREATE TABLE recurring_date_exclusions(plan_id TEXT,date TEXT);
  CREATE TABLE family_member_fixed_cost_settings(plan_id TEXT,household_id TEXT,owner_user_id TEXT,
@@ -49,6 +54,25 @@ test('member sees only own bill; owner never gets spouse bill',async()=>{
  const member=await projectBillConfirmationReminders(db,{day:'2026-11-26',recipientUserId:MEMBER,householdId:HID})
  assert.deepEqual(member.items.map(x=>x.name),['家族語学'])
  const owner=await projectBillConfirmationReminders(db,{day:'2026-11-26',recipientUserId:OWNER,householdId:HID})
+ assert.deepEqual(owner.items.map(x=>x.name),['家賃','オクトパスエナジー'])
+ sql.close()
+})
+test('owner same-name expenses never suppress a member reminder; attributed approval does',async()=>{
+ const {sql,db}=fixture()
+ // This owner ledger row shares name, amount, day and payment source with
+ // the member plan. It must NOT be mistaken for the member's payment.
+ sql.exec("INSERT INTO entries(date,merchant,payment_source,amount,type) VALUES('2026-11-27','家族語学','cash',100,'expense')")
+ const initial=await projectBillConfirmationReminders(db,{day:'2026-11-26',
+   recipientUserId:MEMBER,householdId:HID})
+ assert.deepEqual(initial.items.map(x=>x.name),['家族語学'])
+ // Only a committed, member-attributed approval can consume that slot.
+ sql.prepare("INSERT INTO family_shared_mutation_applied(entry_id,household_id,requester_user_id,action) VALUES(1,?,?,?)")
+  .run(HID,MEMBER,'create')
+ const paid=await projectBillConfirmationReminders(db,{day:'2026-11-26',
+   recipientUserId:MEMBER,householdId:HID})
+ assert.deepEqual(paid.items,[])
+ const owner=await projectBillConfirmationReminders(db,{day:'2026-11-26',
+   recipientUserId:OWNER,householdId:HID})
  assert.deepEqual(owner.items.map(x=>x.name),['家賃','オクトパスエナジー'])
  sql.close()
 })

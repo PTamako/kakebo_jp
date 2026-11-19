@@ -55,7 +55,8 @@ export default {
         try {
           variableResult=await postDueVariableRecurring(env.DB,{today})
           console.log('Variable bill auto-post summary',JSON.stringify(variableResult))
-          if(variableResult.failed)problem??=Error('variable_bill_posting_failed')
+          if(variableResult.failed||variableResult.blocked||variableResult.backlog)
+            problem??=Error('variable_bill_needs_review')
         }catch(error){
           console.error('Variable bill auto-post failed',String(error?.message||error))
           problem??=error
@@ -65,7 +66,9 @@ export default {
         checked:recurringResult.checked+variableResult.checked,
         created:recurringResult.created+variableResult.created,
         skipped:recurringResult.skipped+variableResult.skipped,
-        failed:variableResult.failed
+        failed:variableResult.failed,
+        blocked:variableResult.blocked||0,
+        backlog:variableResult.backlog||0
       }
       await heartbeat('recurring',problem?'failed':'success',summary)
       if(problem)throw problem

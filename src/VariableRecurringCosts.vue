@@ -273,10 +273,9 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
     {{chosenSaved.expenseDate}}以降の19:30に自動記帳。先に手動記帳もできます。</p>
    <p v-else-if="chosenSaved?.sourceType==='document'" class="hint">文書助手の下書き。金額・記帳日を確認してください。</p>
    <p v-else class="hint">金額と記帳日が揃うと自動記帳の対象になります。</p>
-   <div class="actions recurring-sheet-actions recurring-bill-actions">
-    <button class="primary" v-if="chosenSaved?.status!=='posted'" type="submit" :disabled="busy||!canSaveBill">下書きを保存</button>
+   <div v-if="chosenSaved?.status!=='posted'" class="actions recurring-sheet-actions recurring-bill-actions">
+    <button class="primary" type="submit" :disabled="busy||!canSaveBill">下書きを保存</button>
     <button class="primary" v-if="chosenSaved?.status==='draft'" type="button" :disabled="busy||!canConfirm" @click="confirmBill">確認して記帳</button>
-    <button type="button" @click="billEditor=false">閉じる</button>
    </div>
   </form>
 

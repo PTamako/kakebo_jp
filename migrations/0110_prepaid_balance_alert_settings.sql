@@ -36,14 +36,8 @@ BEFORE UPDATE OF account_scope,resource_key,household_id,owner_user_id
 WHEN NEW.account_scope<>OLD.account_scope OR NEW.resource_key<>OLD.resource_key
  OR NEW.household_id<>OLD.household_id OR NEW.owner_user_id<>OLD.owner_user_id
 BEGIN SELECT RAISE(ABORT,'PREPAID_ALERT_OWNER_IMMUTABLE'); END;
--- Renaming a legacy card must preserve its alert settings and stable owner.
-CREATE TRIGGER IF NOT EXISTS trg_prepaid_alert_legacy_card_rename
-AFTER UPDATE OF name ON payment_sources
-WHEN OLD.name<>NEW.name AND OLD.source_type='prepaid'
-BEGIN
- UPDATE prepaid_balance_alert_settings SET resource_key=NEW.name
- WHERE account_scope='legacy' AND resource_key=OLD.name;
-END;
+-- If a legacy card is renamed, old alert settings deliberately remain inert;
+-- only revalidated owner-bound settings for the new card may be enabled.
 INSERT OR IGNORE INTO schema_migrations(version,description)
  VALUES('schema-0110-prepaid-balance-alert-settings',
  'Owner-bound low prepaid balance settings; no financial ledger or balance changes');

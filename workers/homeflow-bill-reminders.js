@@ -36,9 +36,37 @@ export async function projectBillConfirmationReminders(db,{day,recipientUserId,h
  let items=[]
  if(plans.length){
   const [entries,monthSkips,dateSkips]=await Promise.all([
-   all(db,`SELECT date,merchant,payment_source,amount,type,client_request_id
-    FROM entries WHERE type='expense' AND date>=?1 AND date<date(?1,'+1 month')
-    ORDER BY date,id LIMIT 1500`,month+'-01'),
+   // Legacy entries belong to the owner. Never treat an owner's same-name
+   // expense as proof that a member has already confirmed a personal bill.
+   // Only immutable, member-attributed posted finance evidence may consume
+   // a member's recurring confirmation slot.
+   original
+    ?all(db,`SELECT date,merchant,payment_source,amount,type,client_request_id
+      FROM entries WHERE type='expense' AND date>=?1 AND date<date(?1,'+1 month')
+      ORDER BY date,id LIMIT 1500`,month+'-01')
+    :all(db,`SELECT e.date,e.merchant,
+      CASE WHEN e.family_account_id IS NOT NULL THEN 'personal:'||e.family_account_id
+        WHEN EXISTS(SELECT 1 FROM family_legacy_card_spends s
+          WHERE s.entry_id=e.id AND s.household_id=?2 AND s.actor_user_id=?3)
+          THEN 'shared:'||e.payment_source
+        WHEN e.payment_source IN ('','現金') THEN 'cash'
+        ELSE e.payment_source END AS payment_source,
+      e.amount,e.type,e.client_request_id FROM entries e
+      WHERE e.type='expense' AND e.date>=?1 AND e.date<date(?1,'+1 month')
+        AND (
+          EXISTS(SELECT 1 FROM family_shared_mutation_applied a
+            WHERE a.entry_id=e.id AND a.household_id=?2
+              AND a.requester_user_id=?3 AND a.action='create')
+          OR EXISTS(SELECT 1 FROM family_card_purchase_applied a
+            WHERE a.entry_id=e.id AND a.household_id=?2 AND a.requester_user_id=?3)
+          OR EXISTS(SELECT 1 FROM family_prepaid_actions_applied a
+            WHERE a.entry_id=e.id AND a.household_id=?2 AND a.requester_user_id=?3)
+          OR EXISTS(SELECT 1 FROM family_legacy_card_spends a
+            WHERE a.entry_id=e.id AND a.household_id=?2 AND a.actor_user_id=?3)
+          OR EXISTS(SELECT 1 FROM family_recurring_execution_applied a
+            WHERE a.target_entry_id=e.id AND a.household_id=?2 AND a.member_user_id=?3)
+        )
+      ORDER BY e.date,e.id LIMIT 1500`,month+'-01',hid,recipientUserId),
    original?all(db,'SELECT plan_id AS planId,month FROM recurring_candidate_exclusions WHERE month=? LIMIT 200',month):[],
    original?all(db,'SELECT plan_id AS planId,date FROM recurring_date_exclusions WHERE date=? LIMIT 200',due):[]
   ])

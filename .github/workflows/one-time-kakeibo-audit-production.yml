@@ -45,3 +45,7 @@ jobs:
         run: npx wrangler pages deploy dist --project-name=kakeibo --branch=main --commit-hash="$GITHUB_SHA" --commit-message="2026-11-19 audited finance release"
       - name: Verify production URL
         run: curl --retry 5 --retry-delay 3 --fail --silent --show-error https://kakeibo-f17.pages.dev/ >/dev/null
+
+# Follow-up release approved 2026-11-19: PR #404 owner-attributed bill reminders,
+# privacy-safe variable-bill backlog/collision monitoring, and real-WebKit gate.
+# Never create Preview resources or modify production finance tables here.

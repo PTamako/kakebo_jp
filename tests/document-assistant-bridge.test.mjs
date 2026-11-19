@@ -73,7 +73,7 @@ test('signed read-only ledger options list real categories and active payment so
  assert.deepEqual(result.categories.map(x=>x.label),['飲食料品','外食','日用品']);
  assert.deepEqual(result.payment_sources.map(x=>x.value),['現金','三井住友カード','楽天カード']);
  assert.equal(calls,1);
- assert.equal(queries.length,5);
+ assert.equal(queries.length,6);
  assert.ok(queries.every(sql=>/^\s*SELECT/i.test(sql)));
  const transfer=await onRequestPost({request:await signed({...options,payload:{
    operation:'options',entryType:'transfer',merchant:'SBI証券投信積立サービス（翌月買付分）',

@@ -4,6 +4,7 @@ import { validateRegisteredPaymentSource } from '../payment-source-validation.js
 import { validateLedgerTextFields } from '../ledger-input-validation.js'
 import { classify } from '../../../src/parse.js'
 import { paymentForDraft, normalizeMerchant } from '../../../src/payment-rules.js'
+import { variableBillOptions, lookupVariableBill, importVariableBillDraft } from './variable-bill-sync.js'
 const enc=new TextEncoder()
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})
 async function verified(secret,raw,stamp,signature){
@@ -98,11 +99,18 @@ export async function onRequestPost({request,env}){
         payment_source:registered.includes(recommendedPayment)?recommendedPayment:'',
         category_origin:categoryOrigin,payment_origin:paymentOrigin
       }
+      const variable_plans=type==='expense'?await variableBillOptions(env.DB):[]
       return json({ok:true,categories:choices,payment_sources:names.map(value=>({value,label:value})),
-        suggested})
+        variable_plans,suggested})
     }catch{return json({ok:false,error:'catalog_unavailable'},503)}
   }
   const key=body?.idempotency_key
+  if(body?.payload?.operation==='variable_bill_draft'){
+    if(typeof key!=='string'||!/^jda:kakebo:[a-f0-9]{16,64}$/i.test(key)||
+       request.headers.get('Idempotency-Key')!==key)
+      return json({ok:false,error:'invalid_source'},400)
+    return importVariableBillDraft(env.DB,body)
+  }
   // Read-only recovery check for a previously failed/uncertain signed request.
   // Reuse the original idempotency key and do not accept arbitrary ledger queries.
   if(['lookup','status'].includes(body?.payload?.operation)){
@@ -118,9 +126,10 @@ export async function onRequestPost({request,env}){
         WHERE item_type='entry' AND json_valid(payload_json)
           AND json_extract(payload_json,'$.entry.client_request_id')=?1 LIMIT 1`)
         .bind(requestId).first()
-      const remoteId=row?.id??tombstone?.item_id??null
+      const draft=row?.id||tombstone?.item_id?null:await lookupVariableBill(env.DB,body.source_candidate_id)
+      const remoteId=row?.id??tombstone?.item_id??draft?.remote_id??null
       const result={ok:true,exists:remoteId!==null,remote_id:remoteId!==null?String(remoteId):null}
-      if(body.payload.operation==='status')result.record_state=row?.id?'active':tombstone?'trashed':'missing'
+      if(body.payload.operation==='status')result.record_state=row?.id||draft?'active':tombstone?'trashed':'missing'
       return json(result)
     }catch{return json({ok:false,error:'ledger_lookup_failed'},503)}
   }

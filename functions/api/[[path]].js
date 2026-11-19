@@ -21,6 +21,7 @@ import { validateLedgerTextFields } from './ledger-input-validation.js'
 import { getCardBillSnapshots } from './card-bill-snapshots.js'
 import { handleR2Receipts } from './r2-receipts.js'
 import {verifyLegacyOwner} from './legacy-owner-guard.js'
+import {handleVariableRecurring} from './variable-recurring.js'
 import {ledgerRecorderColumns,ledgerRecorderJoins} from './ledger-recorder.js'
 const readLedgerWithOptionalRecorder=async(db,joinedSql,legacySql,args)=>{
  try{return (await db.prepare(joinedSql).bind(...args).all()).results}
@@ -294,6 +295,7 @@ export async function onRequest({ request, env, params }) {
     catch { return json({ error: 'アクセス認証を確認できません' }, 503) }
     if (!validSession) return json({ error: 'アクセスコードを確認してください' }, 401)
   }
+  if (a === 'variable-recurring') return handleVariableRecurring(request,db,params.path||[])
   if (a === 'receipts') {
     // A preview must never read OR mutate the production private receipt bucket.
     if (isPagesPreview) return json({error:'プレビューではR2画像を利用できません'},403)

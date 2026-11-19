@@ -2,6 +2,7 @@
 import {computed,onMounted,ref,watch,nextTick} from 'vue'
 import RecurringFormSheet from './RecurringFormSheet.vue'
 import RecurringCostOverview from './RecurringCostOverview.vue'
+import {selectPendingBill} from './variable-recurring-display.js'
 const props=defineProps({
  api:{type:Function,required:true},
  categories:{type:Array,default:()=>[]},
@@ -63,7 +64,8 @@ function latestPeriod(p){
  const d=new Date(Date.UTC(y, m-1+n,1))
  return d.toISOString().slice(0,7)
 }
-const billFor=p=>bills.value.find(b=>b.planId===p.id&&b.periodMonth===latestPeriod(p))
+const displayedPeriod=p=>selectPendingBill(p,bills.value)?.periodMonth||latestPeriod(p)
+const billFor=p=>bills.value.find(b=>b.planId===p.id&&b.periodMonth===displayedPeriod(p))
 const latestKnownAmount=computed(()=>plans.value.reduce((sum,p)=>sum+Number(billFor(p)?.amountJpy||0),0))
 const pendingDraftCount=computed(()=>bills.value.filter(b=>b.status==='draft').length)
 const billLabel=p=>!p.enabled?'停止中':billFor(p)?.status==='posted'?'記帳済み':billFor(p)?'要確認':'請求待ち'
@@ -116,7 +118,7 @@ async function togglePlan(p){
 }
 function openBill(p){
  selectedPlan.value=p
- const periodMonth=latestPeriod(p)
+ const periodMonth=displayedPeriod(p)
  const existing=bills.value.find(x=>x.planId===p.id&&x.periodMonth===periodMonth)
  invoice.value=existing?{...existing,
   amountJpy:existing.amountJpy??'',billDate:existing.billDate||'',
@@ -191,7 +193,7 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
     <summary class="plan-summary">
      <span class="plan-title"><strong>{{p.name}}</strong><span class="plan-state" :class="{'is-due':billLabel(p)==='要確認'}">{{billLabel(p)}}</span></span>
      <small class="plan-meta">{{p.intervalMonths===1?'毎月':p.intervalMonths+'か月ごと'}} · {{p.paymentSource}}</small>
-     <span class="plan-month">{{latestPeriod(p)}} · {{billFor(p)?.amountJpy?yen(billFor(p).amountJpy):'金額未確定'}}</span>
+     <span class="plan-month">{{displayedPeriod(p)}} · {{billFor(p)?.amountJpy?yen(billFor(p).amountJpy):'金額未確定'}}</span>
     </summary>
     <div class="plan-detail">
      <small>参考予算 {{p.budgetJpy?yen(p.budgetJpy):'なし'}} · {{p.enabled?'有効':'停止中'}}</small>

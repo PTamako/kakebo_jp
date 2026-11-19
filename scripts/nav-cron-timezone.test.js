@@ -9,6 +9,8 @@ const MORNING='30 15 * * *',EVENING='30 10 * * *'
 function fakeDb(queries=[]){
   return {prepare(sql){
     queries.push(sql)
+    if(sql.includes('FROM variable_recurring_bills b'))
+      return {bind(){return this},all:async()=>({results:[]})}
     if(sql.includes('FROM recurring_plans p'))
       return {bind(){return this},all:async()=>({results:[]})}
     if(sql.includes('UPDATE entries SET transfer_applied = 1'))
@@ -132,4 +134,11 @@ test('worker keeps sampled, query-redacted observability and durable NAV heartbe
   assert.match(worker,/console\.log\('NAV sync',JSON\.stringify\(result\)\)/)
   assert.match(worker,/console\.error\('NAV sync failed'/)
   assert.match(worker,/throw error/)
+})
+
+test('variable bills run only at evening time and reuse scheduled D1',()=>{
+ const s=read('workers/fund-nav-cron.js')
+ assert.match(s,/if\(!isMorning\)\{/)
+ assert.match(s,/postDueVariableRecurring\(env\.DB,\{today\}\)/)
+ assert.match(s,/Variable bill auto-post summary/)
 })

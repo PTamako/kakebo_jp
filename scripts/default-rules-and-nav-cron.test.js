@@ -45,6 +45,8 @@ test('NAV on a public holiday skips vendor calls while recurring and SBI still r
   const queries=[],pending=[]
   const db={prepare(sql){
     queries.push(sql)
+    if(sql.includes('FROM variable_recurring_bills b'))
+      return {bind(){return this},all:async()=>({results:[]})}
     if(sql.includes('FROM recurring_plans p'))return {bind(){return this},all:async()=>({results:[]})}
     if(sql.includes('UPDATE entries SET transfer_applied = 1'))
       return {bind(){return this},run:async()=>({meta:{changes:0}})}
@@ -63,6 +65,8 @@ test('weekend NAV is skipped at 19:30 but prior Friday can be retried on Saturda
   const queries=[],pending=[]
   const db={prepare(sql){
     queries.push(sql)
+    if(sql.includes('FROM variable_recurring_bills b'))
+      return {bind(){return this},all:async()=>({results:[]})}
     if(sql.includes('FROM recurring_plans p'))return {bind(){return this},all:async()=>({results:[]})}
     if(sql.includes('UPDATE entries SET transfer_applied = 1'))
       return {bind(){return this},run:async()=>({meta:{changes:0}})}

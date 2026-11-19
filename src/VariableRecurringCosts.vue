@@ -28,7 +28,7 @@ const emptyPlan=()=>({id:crypto.randomUUID(),name:'',category:'',paymentSource:'
  startMonth:thisMonth(),intervalMonths:1,budgetJpy:'',enabled:true})
 const form=ref(emptyPlan())
 const emptyBill=(periodMonth=thisMonth())=>({periodMonth,amountJpy:'',
- billDate:'',expenseDate:'',paidDate:'',serviceStart:'',serviceEnd:''})
+ expenseDate:'',paidDate:'',serviceStart:'',serviceEnd:''})
 const invoice=ref(emptyBill())
 const cycleOptions=[{value:1,label:'毎月'},{value:2,label:'2か月ごと'},
  {value:3,label:'3か月ごと'},{value:6,label:'6か月ごと'},
@@ -121,7 +121,7 @@ function openBill(p){
  const periodMonth=displayedPeriod(p)
  const existing=bills.value.find(x=>x.planId===p.id&&x.periodMonth===periodMonth)
  invoice.value=existing?{...existing,
-  amountJpy:existing.amountJpy??'',billDate:existing.billDate||'',
+  amountJpy:existing.amountJpy??'',
   expenseDate:existing.expenseDate||'',paidDate:existing.paidDate||'',
   serviceStart:existing.serviceStart||'',serviceEnd:existing.serviceEnd||''}:
   emptyBill(periodMonth)
@@ -132,7 +132,7 @@ watch(()=>invoice.value.periodMonth,month=>{
  if(!selectedPlan.value)return
  const x=bills.value.find(b=>b.planId===selectedPlan.value.id&&b.periodMonth===month)
  const selected=invoice.value
- invoice.value=x?{...x,amountJpy:x.amountJpy??'',billDate:x.billDate||'',
+ invoice.value=x?{...x,amountJpy:x.amountJpy??'',
   expenseDate:x.expenseDate||'',paidDate:x.paidDate||'',
   serviceStart:x.serviceStart||'',serviceEnd:x.serviceEnd||''}:emptyBill(month)
 })
@@ -143,7 +143,7 @@ async function saveBill(){
   const x=invoice.value
   const payload={periodMonth:x.periodMonth,
    amountJpy:x.amountJpy===''?null:Number(x.amountJpy),
-   billDate:x.billDate||null,expenseDate:x.expenseDate||null,
+   billDate:null,expenseDate:x.expenseDate||null,
    paidDate:x.paidDate||null,serviceStart:x.serviceStart||null,serviceEnd:x.serviceEnd||null}
   const res=await api('/'+chosenPlan.value.id+'/bill',{method:'POST',body:JSON.stringify(payload)})
   if(!res.ok)throw Error('請求書の保存結果を確認できません')
@@ -244,9 +244,8 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
    <p v-if="!periodIsOnCycle(chosenPlan,invoice.periodMonth)" class="error">
     対象月は開始月から{{chosenPlan.intervalMonths}}か月周期で選択してください。</p>
    <label>実際の請求額 <input v-model="invoice.amountJpy" type="number" min="1" max="10000000" placeholder="請求書が届いてから入力"/></label>
-   <h3 class="recurring-form-section-title">請求・記帳の日付</h3>
-   <label>請求書発行日 <input v-model="invoice.billDate" type="date"/></label>
-   <label>記帳日（実際の利用・決済日） <input v-model="invoice.expenseDate" type="date"/></label>
+   <h3 class="recurring-form-section-title">記帳・引落日</h3>
+   <label>記帳日（カード立替日など・変更可能） <input v-model="invoice.expenseDate" type="date"/></label>
    <label>実際の引落日（任意） <input v-model="invoice.paidDate" type="date"/></label>
    <h3 class="recurring-form-section-title">利用期間</h3>
    <div class="recurring-date-pair"><label>利用期間開始 <input v-model="invoice.serviceStart" type="date"/></label>

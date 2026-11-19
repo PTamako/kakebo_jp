@@ -104,3 +104,10 @@ test('the existing fixed-cost screen keeps its legacy posting path and embeds va
  assert.match(editor,/文書助手/)
  assert.match(auth,/handleVariableRecurring\(request,db,params\.path/)
 })
+
+test('variable-bill sheet omits invoice issue date and retains editable proposed ledger date',()=>{
+ const ui=readFileSync(new URL('../src/VariableRecurringCosts.vue',import.meta.url),'utf8')
+ assert.doesNotMatch(ui,/<label>請求書発行日/)
+ assert.match(ui,/記帳日（カード立替日など・変更可能）/)
+ assert.match(ui,/billDate:null,expenseDate:x\.expenseDate\|\|null/)
+})

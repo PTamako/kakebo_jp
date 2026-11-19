@@ -1,18 +1,24 @@
 <script setup>
-import {computed,onMounted,ref,watch} from 'vue'
+import {computed,onMounted,ref,watch,nextTick} from 'vue'
 const props=defineProps({
  api:{type:Function,required:true},
  categories:{type:Array,default:()=>[]},
  paymentSources:{type:Array,default:()=>[]},
  categoryLabel:{type:Function,default:x=>x},
- inline:{type:Boolean,default:false}
+ inline:{type:Boolean,default:false},
+ refreshKey:{type:Number,default:0}
 })
 const today=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const thisMonth=()=>today().slice(0,7)
 const yen=n=>'¥'+Number(n||0).toLocaleString('ja-JP')
 const ready=ref(false),busy=ref(false),error=ref(''),notice=ref('')
 const plans=ref([]),bills=ref([])
-const expanded=ref(false),planEditor=ref(props.inline),billEditor=ref(false)
+const expanded=ref(false),planEditor=ref(false),billEditor=ref(false)
+const planEditorElement=ref(null),billEditorElement=ref(null)
+function focusVariableEditor(node){
+ void nextTick(()=>node.value?.scrollIntoView({block:'start',behavior:'smooth'}))
+}
+function closePlanEditor(){planEditor.value=false;editing.value=false;form.value=emptyPlan()}
 const editing=ref(false),selectedPlan=ref(null)
 const emptyPlan=()=>({id:crypto.randomUUID(),name:'',category:'',paymentSource:'',
  startMonth:thisMonth(),intervalMonths:1,budgetJpy:'',enabled:true})
@@ -55,6 +61,7 @@ function latestPeriod(p){
  return d.toISOString().slice(0,7)
 }
 const billFor=p=>bills.value.find(b=>b.planId===p.id&&b.periodMonth===latestPeriod(p))
+const billLabel=p=>!p.enabled?'停止中':billFor(p)?.status==='posted'?'記帳済み':billFor(p)?'要確認':'請求待ち'
 async function api(path,opt={}){
  return props.api('variable-recurring'+path,opt)
 }
@@ -69,10 +76,12 @@ async function refresh(){
 }
 function newPlan(){
  editing.value=false;form.value=emptyPlan();planEditor.value=true;billEditor.value=false
+ expanded.value=true;focusVariableEditor(planEditorElement)
 }
 function editPlan(p){
  editing.value=true;form.value={...p,budgetJpy:p.budgetJpy??''}
  planEditor.value=true;billEditor.value=false
+ expanded.value=true;focusVariableEditor(planEditorElement)
 }
 async function savePlan(){
  if(busy.value||!validatedPlan.value)return
@@ -110,6 +119,7 @@ function openBill(p){
   serviceStart:existing.serviceStart||'',serviceEnd:existing.serviceEnd||''}:
   emptyBill(periodMonth)
  billEditor.value=true;planEditor.value=false;expanded.value=true
+ focusVariableEditor(billEditorElement)
 }
 watch(()=>invoice.value.periodMonth,month=>{
  if(!selectedPlan.value)return
@@ -147,26 +157,28 @@ async function confirmBill(){
   if(!res.posted)throw Error('記帳結果を確認できません')
   notice.value='確認済み：'+yen(b.amountJpy)+' を1回だけ支出に登録しました'
   await refresh()
+  billEditor.value=false
  }catch(e){error.value=String(e.message||e)}
  finally{busy.value=false}
 }
 onMounted(refresh)
+watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
 </script>
 <template>
-<section class="variable-costs">
- <h2 v-if="inline" class="inline-heading">変動する定期費用</h2>
+<section class="variable-costs" :class="{'is-inline':inline}">
  <button v-if="!inline" class="open-manager" type="button" :aria-expanded="expanded"
   @click="expanded=!expanded">
   <strong>変動する定期費用</strong><span>電気・ガス・水道・通信など（請求ごとに確認） {{expanded?'⌃':'⌄'}}</span>
  </button>
  <div v-if="inline || expanded" class="body">
-  <p class="hint">金額・請求日・利用日・口座引落日を別々に管理します。予算は実際の支出に計上しません。</p>
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="hint">{{notice}}</p>
-  <div class="actions"><button type="button" :disabled="busy" @click="newPlan">＋ 定期費用を登録</button>
-   <button type="button" :disabled="busy" @click="refresh">再読込</button></div>
-  <form v-if="planEditor" class="editor" @submit.prevent="savePlan">
-   <h4>{{editing?'定期費用を編集':'変動する定期費用を追加'}}</h4>
+  <div class="variable-toolbar">
+    <span class="variable-count">登録済み <strong>{{plans.length}}件</strong></span>
+    <button class="variable-add" type="button" :disabled="busy" @click="planEditor?closePlanEditor():newPlan()">{{planEditor?'閉じる':'＋ 変動費を追加'}}</button>
+  </div>
+  <form v-if="planEditor" ref="planEditorElement" class="editor" @submit.prevent="savePlan">
+   <h4>{{editing?'定期費用を編集':'変動費を追加'}}</h4>
    <label>名称 <input v-model="form.name" maxlength="120" placeholder="例：オクトパスエナジー" required/></label>
    <label>カテゴリ <select v-model="form.category" required>
     <option value="">選択してください</option>
@@ -181,25 +193,12 @@ onMounted(refresh)
    </select></label>
    <label>開始月 <input v-model="form.startMonth" type="month" required/></label>
    <label>参考予算（任意・実績に含めない） <input v-model="form.budgetJpy" type="number" min="1" max="10000000" placeholder="未設定"/></label>
-   <div class="actions"><button type="submit" :disabled="busy||!validatedPlan">設定を保存</button>
-    <button type="button" @click="planEditor=false">キャンセル</button></div>
+   <div class="actions">
+    <button type="submit" :disabled="busy||!validatedPlan">設定を保存</button>
+    <button type="button" @click="closePlanEditor">キャンセル</button>
+   </div>
   </form>
-  <p v-if="ready&&!plans.length" class="hint">変動費はまだ登録されていません。</p>
-  <div v-if="ready" class="plans">
-   <article v-for="p in plans" :key="p.id" class="plan">
-    <div class="plan-title"><strong>{{p.name}}</strong><span>{{p.enabled?'有効':'停止中'}}</span></div>
-    <small>{{p.intervalMonths===1?'毎月':p.intervalMonths+'か月ごと'}} · {{p.paymentSource}} · 参考予算 {{p.budgetJpy?yen(p.budgetJpy):'なし'}}</small>
-    <small v-if="billFor(p)?.status==='posted'">最新回 {{latestPeriod(p)}} · 記帳済み {{yen(billFor(p).amountJpy)}}</small>
-    <small v-else-if="billFor(p)?.amountJpy">最新回 {{latestPeriod(p)}} · 確認待ち {{yen(billFor(p).amountJpy)}}</small>
-    <small v-else>最新回 {{latestPeriod(p)}} · 請求待ち（金額未確定）</small>
-    <div class="actions">
-     <button type="button" :disabled="busy" @click="openBill(p)">請求を確認</button>
-     <button type="button" :disabled="busy" @click="editPlan(p)">編集</button>
-     <button type="button" :disabled="busy" @click="togglePlan(p)">{{p.enabled?'停止':'再開'}}</button>
-    </div>
-   </article>
-  </div>
-  <form v-if="billEditor&&chosenPlan" class="editor" @submit.prevent="saveBill">
+  <form v-if="billEditor&&chosenPlan" ref="billEditorElement" class="editor" @submit.prevent="saveBill">
    <h4>{{chosenPlan.name}} · 請求を確認</h4>
    <label>対象月（サービス所属月） <input v-model="invoice.periodMonth" type="month" required/></label>
    <p v-if="!periodIsOnCycle(chosenPlan,invoice.periodMonth)" class="error">
@@ -219,23 +218,61 @@ onMounted(refresh)
     <button type="button" @click="billEditor=false">閉じる</button>
    </div>
   </form>
+  <p v-if="ready&&!plans.length&&!planEditor" class="variable-empty">まだ登録がありません。電気・ガス・水道などを追加できます。</p>
+  <div v-if="ready&&plans.length" class="plans" aria-label="登録済みの変動費">
+   <details v-for="p in plans" :key="p.id" class="plan">
+    <summary class="plan-summary">
+     <span class="plan-title"><strong>{{p.name}}</strong><span class="plan-state" :class="{'is-due':billLabel(p)==='要確認'}">{{billLabel(p)}}</span></span>
+     <small class="plan-meta">{{p.intervalMonths===1?'毎月':p.intervalMonths+'か月ごと'}} · {{p.paymentSource}}</small>
+     <span class="plan-month">{{latestPeriod(p)}} · {{billFor(p)?.amountJpy?yen(billFor(p).amountJpy):'金額未確定'}}</span>
+    </summary>
+    <div class="plan-detail">
+     <small>参考予算 {{p.budgetJpy?yen(p.budgetJpy):'なし'}} · {{p.enabled?'有効':'停止中'}}</small>
+     <div class="actions">
+      <button type="button" :disabled="busy" @click="openBill(p)">請求を確認</button>
+      <button type="button" :disabled="busy" @click="editPlan(p)">編集</button>
+      <button type="button" :disabled="busy" @click="togglePlan(p)">{{p.enabled?'停止':'再開'}}</button>
+     </div>
+    </div>
+   </details>
+  </div>
  </div>
 </section>
 </template>
 <style scoped>
 .variable-costs{display:grid;gap:8px;border:1px solid var(--line);border-radius:15px;background:var(--card);padding:12px;min-width:0}
-.inline-heading{margin:0 0 2px;font-size:17px}
+.variable-costs.is-inline{padding:12px}
 .open-manager{display:grid;text-align:left;gap:4px;border:0;padding:4px;background:transparent;color:var(--ink)}
-.open-manager strong{font-size:16px}.open-manager span,.hint,.plan small{font-size:12px;color:var(--muted);line-height:1.5}
-.body,.plans,.editor{display:grid;gap:10px;min-width:0}
-.editor,.plan{padding:12px;border:1px solid var(--line);border-radius:12px;min-width:0;display:grid;gap:9px;background:var(--card)}
-.editor h4{margin:0;font-size:14px}.editor label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;min-width:0}
+.open-manager strong{font-size:16px}
+.open-manager span,.hint,.plan small{font-size:12px;color:var(--muted);line-height:1.5}
+.body,.plans,.editor,.plan-detail{display:grid;gap:10px;min-width:0}
+.variable-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.variable-count{font-size:13px;color:var(--muted);white-space:nowrap}
+.variable-count strong{color:var(--ink)}
+.variable-add{min-height:44px;min-width:0;padding:9px 12px;border:1px solid var(--blue-dark);border-radius:11px;background:var(--card);color:var(--blue-dark);font-size:13px;font-weight:750}
+.variable-empty{margin:0;padding:20px 12px;text-align:center;background:var(--tint);border-radius:11px;color:var(--muted);font-size:13px;line-height:1.55}
+.editor{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);scroll-margin-top:12px}
+.editor h4{margin:0;font-size:15px}
+.editor label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;min-width:0}
 .editor input,.editor select{width:100%;box-sizing:border-box;min-height:44px;padding:8px 10px;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;min-width:0}
+.plans{gap:8px}
+.plan{border:1px solid var(--line);border-radius:12px;min-width:0;background:var(--card);overflow:hidden}
+.plan-summary{display:grid;gap:5px;padding:12px 32px 12px 12px;cursor:pointer;list-style:none;position:relative}
+.plan-summary::-webkit-details-marker{display:none}
+.plan-summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:-3px}
+.plan-title{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.plan-title strong{font-size:14px;overflow-wrap:anywhere;min-width:0;color:var(--ink)}
+.plan-state{font-size:11px;flex:none;border-radius:99px;background:var(--tint);color:var(--muted);padding:3px 8px}
+.plan-state.is-due{color:var(--blue-dark);background:var(--tint);font-weight:750}
+.plan-meta{color:var(--muted)}
+.plan-month{font-size:12px;color:var(--ink);font-weight:650}
+.plan-summary::after{content:'⌄';color:var(--muted);font-size:12px;position:absolute;right:12px;top:50%;transform:translateY(-50%)}
+.plan[open] .plan-summary::after{content:'⌃'}
+.plan-detail{padding:10px 12px;border-top:1px solid var(--line)}
 .actions,.pair{display:flex;gap:7px;flex-wrap:wrap}
-.actions button{min-height:42px;border:1px solid var(--line);background:var(--tint);border-radius:10px;color:var(--blue-dark);font-weight:700;padding:8px 12px}
-.actions button:disabled{opacity:.45}.pair>*{min-width:0;flex:1}
-.plan-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.plan-title span{font-size:11px;color:var(--muted)}
-.error{color:#b43c4a;font-size:12px}
+.actions button{min-height:44px;border:1px solid var(--line);background:var(--tint);border-radius:10px;color:var(--blue-dark);font-size:12px;font-weight:700;padding:8px 12px}
+.actions button:disabled,.variable-add:disabled{opacity:.45}
+.pair>*{min-width:0;flex:1}
+.error{color:var(--danger,#b43c4a);font-size:12px}
 @media(max-width:390px){.pair{display:grid;grid-template-columns:1fr}}
 </style>

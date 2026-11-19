@@ -12,7 +12,8 @@ const props=defineProps({
  currentCount:{type:Number,default:null},
  monthlyTotal:{type:Number,default:null},
  allowDelete:{type:Boolean,default:true},
- allowPost:{type:Boolean,default:false}
+ allowPost:{type:Boolean,default:false},
+ defaultOpen:{type:Boolean,default:false}
 })
 const emit=defineEmits(['edit','toggle','remove','post'])
 const query=ref(''),filter=ref('all'),showAll=ref(false),expanded=ref('')
@@ -33,7 +34,7 @@ watch([query,filter],()=>{showAll.value=false;expanded.value=''})
 </script>
 <template>
  <article class="finance-panel recurring-plans-panel">
-  <details class="recurring-list-disclosure">
+  <details class="recurring-list-disclosure" :open="defaultOpen">
    <summary class="recurring-list-summary">
     <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{items.length}}件</strong></span>
     <span class="recurring-list-summary-total">今月対象 {{activeCount}}件 · 今月予定額 {{yen(total)}}</span>

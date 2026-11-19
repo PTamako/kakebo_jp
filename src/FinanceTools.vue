@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import FinanceManagementHeader from './FinanceManagementHeader.vue'
 import CardUsageSummaryFields from './CardUsageSummaryFields.vue'
 import OriginalOtherManagement from './OriginalOtherManagement.vue'
@@ -52,6 +52,16 @@ const managementTab = ref('cards')
 // Keep both editors mounted once visited so switching types preserves drafts.
 const recurringCostTab = ref('fixed')
 const variableCostTabVisited = ref(false)
+const variableRecurringRefreshKey = ref(0)
+const fixedPlanEditorOpen = ref(false)
+function focusFixedPlanEditor() {
+  void nextTick(() => document.getElementById('fixed-cost-editor')?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+}
+function openNewFixedPlan() {
+  cancelPlanEdit()
+  fixedPlanEditorOpen.value = true
+  focusFixedPlanEditor()
+}
 function selectRecurringCostTab(tab) {
   if (tab === 'variable') variableCostTabVisited.value = true
   recurringCostTab.value = tab
@@ -76,6 +86,8 @@ async function refreshEverything() {
     if(managementTab.value==='tools')await refreshLocalReceiptCount()
     // Refresh the SBI monthly plans/reconciliation after the transfer state.
     investmentRefreshKey.value++
+    // Also refresh already-mounted variable bills when the global refresh button is used.
+    variableRecurringRefreshKey.value++
   } catch (e) {
     loadError.value = '更新に失敗しました：' + e.message
   } finally {
@@ -672,6 +684,8 @@ function toggleRecurringSelection(row, checked) {
 }
 const recurringPreviewTotal = computed(() => selectedRecurring.value.reduce((sum,row) => sum + row.amount,0))
 function beginEditPlan(item) {
+  fixedPlanEditorOpen.value = true
+  focusFixedPlanEditor()
   editingPlanId.value = item.id
   plan.value = {...item, paymentSource:item.paymentSource || '現金',startMonth:item.startMonth || currentRecurringMonth(),
     postingMode:item.postingMode || 'manual',scheduleType:item.scheduleType||'monthly',weekday:Number(item.weekday??1),
@@ -682,7 +696,7 @@ function beginEditPlan(item) {
   recurringSelected.value = new Set()
   recurringListOpen.value=false
 }
-function cancelPlanEdit() { editingPlanId.value = ''; plan.value = blankPlan() }
+function cancelPlanEdit() { editingPlanId.value = ''; plan.value = blankPlan(); fixedPlanEditorOpen.value = false }
 async function togglePlanEnabled(item) {
   if(recurringBusy.value || !settingsReady.value)return
   recurringBusy.value=true
@@ -1698,8 +1712,12 @@ function onCardRemove(value){
   <section id="recurring-cost-panel-fixed" class="recurring-cost-type-panel" role="tabpanel"
     aria-labelledby="recurring-cost-tab-fixed"
     v-show="managementTab === 'plans' && recurringCostTab === 'fixed'">
+  <div class="recurring-fixed-toolbar">
+    <button type="button" class="recurring-fixed-add" :disabled="recurringBusy" @click="fixedPlanEditorOpen ? cancelPlanEdit() : openNewFixedPlan()">{{fixedPlanEditorOpen ? '閉じる' : '＋ 固定費を追加'}}</button>
+  </div>
+  <div v-if="fixedPlanEditorOpen" id="fixed-cost-editor" class="recurring-editor-shell">
   <article class="finance-panel recurring-manager-panel">
-    <h2>固定費の設定</h2>
+    <h2>{{editingPlanId ? '固定費を編集' : '固定費を追加'}}</h2>
     <FixedCostEditorFields :model="plan" v-model:cycleChoice="planCycleChoice"
       :cycle-options="planCycleOptions" :categories="orderedCategories"
       :payment-choices="[...orderedPayments.map(source=>({value:source,label:source})),
@@ -1707,8 +1725,14 @@ function onCardRemove(value){
          ?[{value:plan.paymentSource,label:plan.paymentSource+'（既存の設定）'}]:[])]"
       :category-label="categoryLabel" />
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
-    <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
+    <button type="button" :disabled="recurringBusy" @click="cancelPlanEdit">キャンセル</button></div>
   </article>
+  </div>
+  <OriginalFixedCostList default-open
+    :items="plans" :busy="recurringBusy" :yen="yen"
+    :category-label="categoryLabel" :next-label="p=>recurringPlanNextLabel(recurringStatusFor(p))"
+    :current-count="currentEligiblePlans.length" :monthly-total="recurringMonthlyTotal"
+    @edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan(p.id)" />
   <article class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringListOpen }" aria-label="固定費の記帳確認">
       <div class="recurring-review-heading">
         <div>
@@ -1767,17 +1791,13 @@ function onCardRemove(value){
         <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
       </div>
   </article>
-  <OriginalFixedCostList
-    :items="plans" :busy="recurringBusy" :yen="yen"
-    :category-label="categoryLabel" :next-label="p=>recurringPlanNextLabel(recurringStatusFor(p))"
-    :current-count="currentEligiblePlans.length" :monthly-total="recurringMonthlyTotal"
-    @edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan(p.id)" />
+
   </section>
   <section id="recurring-cost-panel-variable" class="recurring-cost-type-panel" role="tabpanel"
     aria-labelledby="recurring-cost-tab-variable"
     v-show="managementTab === 'plans' && recurringCostTab === 'variable'">
     <VariableRecurringCosts v-if="variableCostTabVisited" inline
-      :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
+      :refresh-key="variableRecurringRefreshKey" :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
       :category-label="categoryLabel" />
   </section>
   <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">
@@ -1973,6 +1993,10 @@ function onCardRemove(value){
 </section>
 </template>
 <style scoped>
+.recurring-fixed-toolbar{display:flex;align-items:center;justify-content:flex-end;min-width:0}
+.recurring-fixed-add{min-height:44px;border:1px solid var(--blue-dark);border-radius:11px;padding:9px 15px;background:var(--card);color:var(--blue-dark);font-size:13px;font-weight:750}
+.recurring-fixed-add:disabled{opacity:.5}
+.recurring-editor-shell{min-width:0;scroll-margin-top:12px}
 .recurring-cost-type-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:5px;border:1px solid var(--line);border-radius:15px;background:var(--tint);min-width:0}
 .recurring-cost-type-tabs button{min-width:0;min-height:44px;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--muted);font:inherit;font-size:14px;font-weight:750;cursor:pointer}
 .recurring-cost-type-tabs button.is-active{background:var(--card);color:var(--blue-dark);border-color:var(--blue-dark)}

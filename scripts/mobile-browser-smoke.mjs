@@ -364,12 +364,11 @@ try{
           gridColumns:getComputedStyle(node).gridTemplateColumns,
           contentWidth:node.getBoundingClientRect().width}
       })
-      assert.equal(footer.buttons.length,3,'Draft bill must show three buttons at '+width)
+      assert.equal(footer.buttons.length,2,'Draft bill must show two actions; close remains in the sheet header at '+width)
       assert.ok(footer.buttons.every(b=>Math.abs(b.top-footer.buttons[0].top)<=1),
         'Bill actions must share one row at '+width+': '+JSON.stringify(footer))
-      assert.ok(footer.buttons[0].right<footer.buttons[1].left &&
-        footer.buttons[1].right<footer.buttons[2].left,
-        'Bill buttons must not overlap at '+width)
+      assert.ok(footer.buttons[0].right<footer.buttons[1].left,
+        'The two bill actions must not overlap at '+width)
       assert.equal(await billSheet.locator('.editor .hint').count(),1,
         'Bill should display only one short explanatory message')
       await billSheet.getByRole('button',{name:'閉じる',exact:true}).last().click()

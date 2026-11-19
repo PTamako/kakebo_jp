@@ -38,7 +38,7 @@ function fixture(){
    body:payload===undefined?undefined:JSON.stringify(payload)})
   const parts=['variable-recurring',...path.split('/').filter(Boolean)]
   const response=await handleVariableRecurring(req,db,parts)
-  return {status:response.status,...await response.json()}
+  return {httpStatus:response.status,...await response.json()}
  }
  const plan=(id=uuid,overrides={})=>({id,name:'オクトパスエナジー',
   category:'光熱費',paymentSource:'現金',startMonth:'2026-11',intervalMonths:1,
@@ -49,14 +49,14 @@ function fixture(){
 }
 test('draft variable bill has no ledger effect and does not require amount or payment date',async()=>{
  const f=fixture()
- assert.equal((await f.send('POST','',f.plan())).status,201)
- assert.equal((await f.send('POST','/'+uuid+'/bill',f.bill())).status,200)
+ assert.equal((await f.send('POST','',f.plan())).httpStatus,201)
+ assert.equal((await f.send('POST','/'+uuid+'/bill',f.bill())).httpStatus,200)
  assert.equal(f.sql.prepare('SELECT count(*) AS n FROM entries').get().n,0)
  const list=await f.send('GET','')
  assert.equal(list.plans[0].budgetJpy,null)
  assert.equal(list.bills[0].status,'draft')
  assert.equal(list.bills[0].amountJpy,null)
- assert.equal((await f.send('POST','/'+uuid+'/confirm',{periodMonth:'2026-11'})).status,409)
+ assert.equal((await f.send('POST','/'+uuid+'/confirm',{periodMonth:'2026-11'})).httpStatus,409)
 })
 test('explicit confirmation posts exactly once; replay never adds a second expense',async()=>{
  const f=fixture()
@@ -71,19 +71,19 @@ test('explicit confirmation posts exactly once; replay never adds a second expen
  assert.equal(second.alreadyPosted,true)
  assert.equal(f.sql.prepare('SELECT count(*) AS n FROM entries').get().n,1)
  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,6800)
- assert.equal((await f.send('POST','/'+uuid+'/bill',due)).status,409)
+ assert.equal((await f.send('POST','/'+uuid+'/bill',due)).httpStatus,409)
 })
 test('existing document/manual expense blocks duplicate; bimonthly cannot create off-cycle bill',async()=>{
  const f=fixture()
  const p=f.plan(other,{name:'東京都水道局',intervalMonths:2})
  await f.send('POST','',p)
- assert.equal((await f.send('POST','/'+other+'/bill',f.bill('2026-12'))).status,400)
+ assert.equal((await f.send('POST','/'+other+'/bill',f.bill('2026-12'))).httpStatus,400)
  f.sql.prepare("INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,payment_source) "+
  "VALUES('2026-11-08','',3100,'光熱費','東京都水道局','','','expense','現金')").run()
  await f.send('POST','/'+other+'/bill',f.bill('2026-11',
   {amountJpy:3100,expenseDate:'2026-11-05'}))
  const res=await f.send('POST','/'+other+'/confirm',{periodMonth:'2026-11'})
- assert.equal(res.status,409)
+ assert.equal(res.httpStatus,409)
  assert.ok(res.conflictEntryId)
  assert.equal(f.sql.prepare('SELECT count(*) AS n FROM entries').get().n,1)
 })
@@ -91,8 +91,8 @@ test('cannot change the cycle or anchor once a bill draft exists',async()=>{
  const f=fixture()
  await f.send('POST','',f.plan())
  await f.send('POST','/'+uuid+'/bill',f.bill())
- assert.equal((await f.send('PUT','/'+uuid,f.plan(uuid,{intervalMonths:2}))).status,409)
- assert.equal((await f.send('PUT','/'+uuid,f.plan(uuid,{startMonth:'2026-10'}))).status,409)
+ assert.equal((await f.send('PUT','/'+uuid,f.plan(uuid,{intervalMonths:2}))).httpStatus,409)
+ assert.equal((await f.send('PUT','/'+uuid,f.plan(uuid,{startMonth:'2026-10'}))).httpStatus,409)
 })
 test('the existing fixed-cost screen keeps its legacy posting path and embeds variable bills',()=>{
  const finance=readFileSync(new URL('../src/FinanceTools.vue',import.meta.url),'utf8')

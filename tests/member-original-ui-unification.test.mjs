@@ -25,7 +25,7 @@ test('original pages, card management, fixed costs, investment and Other all reu
  assert.doesNotMatch(spouse,/<OriginalCardManagementPanel\s/)
  assert.match(spouse,/memberCardConfig:getMemberCardConfig\(\)/)
  assert.equal((finance.match(/<OriginalCardManagementPanel/g)||[]).length,1)
- assert.match(finance,/<OriginalFixedCostList v-show=/)
+ assert.match(finance,/<OriginalFixedCostList\s/)
  assert.match(read('src/MemberFixedCosts.vue'),/<OriginalFixedCostList :items=/)
  assert.match(finance,/<SbiPortfolio :api="props.api" active-view="plans"/)
  assert.match(spouse,/<SbiPortfolio member-mode active-view="plans"/)

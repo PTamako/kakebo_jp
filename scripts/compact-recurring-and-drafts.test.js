@@ -35,7 +35,8 @@ test('unsaved draft actions are compact, low emphasis and cannot touch saved ent
 test('original fixed-expense list is shared, with five entries per page and consistent actions',()=>{
    const list=source('src/OriginalFixedCostList.vue')
    const member=source('src/MemberFixedCosts.vue')
-   assert.match(finance,/<OriginalFixedCostList v-show="managementTab==='plans'"/)
+   assert.match(finance,/<OriginalFixedCostList\s/)
+   assert.match(finance,/role="tablist" aria-label="固定費の種類"/)
    assert.match(member,/<OriginalFixedCostList :items=/)
    assert.match(list,/<details class="recurring-list-disclosure"/)
    assert.match(list,/登録済みの固定費/)

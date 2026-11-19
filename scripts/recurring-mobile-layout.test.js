@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('../src/FinanceTools.vue', import.meta.url), 'utf8')
 const fixedFields = readFileSync(new URL('../src/FixedCostEditorFields.vue', import.meta.url),'utf8')
-const fixed = (source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">([\s\S]*?)\n  <\/article>/)?.[1] || '')+'\n'+fixedFields
-const review = source.match(/<article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel"[^>]*aria-label="固定費の記帳確認">([\s\S]*?)\n  <\/article>/)?.[1] || ''
+const fixed = (source.match(/<article class="finance-panel recurring-manager-panel">([\s\S]*?)\n  <\/article>/)?.[1] || '')+'\n'+fixedFields
+const review = source.match(/<article class="finance-panel recurring-review-panel"[^>]*aria-label="固定費の記帳確認">([\s\S]*?)\n  <\/article>/)?.[1] || ''
 const registered = readFileSync(new URL('../src/OriginalFixedCostList.vue',import.meta.url),'utf8')
 
 test('iPhone effective-month input stays within its own grid cell', () => {
@@ -33,7 +33,7 @@ test('expense candidates use native 18px checkboxes and readable rows', () => {
 })
 
 test('registered fixed expense list has owner and member shared summary, chevron and metadata',()=>{
- assert.match(source,/<OriginalFixedCostList v-show="managementTab==='plans'"/)
+ assert.match(source,/<OriginalFixedCostList\s/)
  assert.match(registered,/<details class="recurring-list-disclosure"/)
  assert.match(registered,/<summary class="recurring-list-summary">/)
  assert.match(registered, /class="recurring-list-summary-total"/)
@@ -77,11 +77,11 @@ test('review card stays distinct from the background and collapses into a compac
   assert.match(review, /過去分・明日の予定/)
   assert.match(review, /aria-controls="recurring-candidate-list"/)
   assert.match(review, /未記帳分を確認/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel\{\s*background:#fff;[^}]*border-left:3px solid var\(--blue\)/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel:not\(\.is-expanded\)\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(120px,auto\)/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions\{[^}]*grid-column:2/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel \.recurring-review-results\{grid-column:1\/-1\}/)
-  assert.match(source, /\.finance-tools>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions button\{[^}]*min-height:44px/)
+  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel\{\s*background:#fff;[^}]*border-left:3px solid var\(--blue\)/)
+  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel:not\(\.is-expanded\)\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(120px,auto\)/)
+  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions\{[^}]*grid-column:2/)
+  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel \.recurring-review-results\{grid-column:1\/-1\}/)
+  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions button\{[^}]*min-height:44px/)
 })
 
 test('posting method options are compact horizontal touch targets with native-size radio inputs', () => {
@@ -94,10 +94,25 @@ test('posting method options are compact horizontal touch targets with native-si
   assert.match(source, /\.finance-panel input:not\(\[type=file\]\),\.finance-panel select\{height:44px!important;/)
 })
 
-test('fixed-expense form, due review and saved plans are separate peer cards', () => {
+test('fixed-expense form, due review and saved plans remain peer cards inside the fixed tab', () => {
+  assert.match(source, /id="recurring-cost-panel-fixed"[\s\S]*?<OriginalFixedCostList[\s\S]*?<\/section>/)
+  assert.match(source, /v-show="managementTab === 'plans' && recurringCostTab === 'fixed'"/)
   assert.ok(fixed && review && registered)
   assert.doesNotMatch(fixed, /recurring-review-panel|recurring-list-disclosure/)
   assert.doesNotMatch(review, /recurring-form-layout|recurring-list-disclosure/)
   assert.doesNotMatch(registered, /recurring-form-layout|reviewRecurring/)
   assert.match(registered, /\.recurring-list-summary\{display:grid/)
+})
+
+test('fixed and variable cost tabs isolate the panels and preserve variable draft state', () => {
+ assert.match(source, /role="tablist" aria-label="固定費の種類"/)
+ assert.match(source, /role="tab"[^>]*aria-controls="recurring-cost-panel-fixed"/)
+ assert.match(source, /role="tab"[^>]*aria-controls="recurring-cost-panel-variable"/)
+ assert.match(source, /v-show="managementTab === 'plans' && recurringCostTab === 'variable'"/)
+ assert.match(source, /const variableCostTabVisited = ref\(false\)/)
+ assert.match(source, /if \(tab === 'variable'\) variableCostTabVisited.value = true/)
+ assert.match(source, /<VariableRecurringCosts v-if="variableCostTabVisited" inline/)
+ const variable = readFileSync(new URL('../src/VariableRecurringCosts.vue', import.meta.url),'utf8')
+ assert.match(variable, /const expanded=ref\(false\),planEditor=ref\(props.inline\)/)
+ assert.match(variable, /<div v-if="inline \|\| expanded" class="body">/)
 })

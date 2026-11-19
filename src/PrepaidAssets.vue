@@ -7,22 +7,40 @@ const emit=defineEmits(['summary','open-card-settings','open-history'])
 const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false)
 const money=value=>value===null||value===undefined?'—':'¥'+Number(value).toLocaleString('ja-JP')
 const selected=ref(null),openingDraft=ref(0),saving=ref(false),notice=ref('')
-const alertCard=ref(null),alertEnabledDraft=ref(false),alertThresholdDraft=ref(1000),alertSaving=ref(false)
+const alertCard=ref(null),alertEnabledDraft=ref(false),alertThresholdDraft=ref(1000)
+const alertUpperDraft=ref(10000),alertModeDraft=ref('lower'),alertSaving=ref(false)
+const alertOptions=[{value:'lower',label:'下限'},{value:'upper',label:'上限'},{value:'both',label:'両方'}]
+function cardAlertLabel(card){
+ if(!card.alert_enabled)return '残高通知を設定'
+ const mode=card.alert_mode||'lower'
+ const low=money(card.alert_threshold_jpy)+'以下'
+ const upper=money(card.alert_upper_threshold_jpy??10000)+'以上'
+ return '残高通知 '+(mode==='upper'?upper:mode==='both'?low+' / '+upper:low)
+}
 function startAlert(card){
  alertCard.value=card
  alertEnabledDraft.value=!!card.alert_enabled
  alertThresholdDraft.value=Number(card.alert_threshold_jpy??1000)
+ alertUpperDraft.value=Number(card.alert_upper_threshold_jpy??10000)
+ alertModeDraft.value=['lower','upper','both'].includes(card.alert_mode)?card.alert_mode:'lower'
 }
 async function saveAlert(){
  if(!alertCard.value||alertSaving.value)return
  const amount=Number(alertThresholdDraft.value)
- if(!Number.isSafeInteger(amount)||amount<0||amount>100000000){
-  error.value='通知する金額を0〜100,000,000円で入力してください';return
+ const upper=Number(alertUpperDraft.value),mode=alertModeDraft.value
+ if(!['lower','upper','both'].includes(mode)||
+   ![amount,upper].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=100000000)){
+  error.value='通知金額を0〜100,000,000円で入力してください';return
+ }
+ if(mode==='both'&&amount>=upper){
+  error.value='下限の金額は上限より小さくしてください';return
  }
  const card=alertCard.value
  const body=props.memberMode
-  ?{accountId:card.account_id,enabled:alertEnabledDraft.value,thresholdJpy:amount}
-  :{name:card.name,enabled:alertEnabledDraft.value,thresholdJpy:amount}
+  ?{accountId:card.account_id,enabled:alertEnabledDraft.value,
+    thresholdJpy:amount,upperThresholdJpy:upper,mode}
+  :{name:card.name,enabled:alertEnabledDraft.value,
+    thresholdJpy:amount,upperThresholdJpy:upper,mode}
  alertSaving.value=true;error.value='';notice.value=''
  try{
   await props.api(props.memberMode?'prepaid-alerts':'prepaid-assets/alert',{
@@ -114,7 +132,7 @@ onMounted(()=>{if(props.active)void refresh()})
                   <small>{{card.is_archived?'アーカイブ済み':'プリペイド'}}</small>
                   <button type="button" class="wallet-alert-link"
                     :aria-label="card.name+'の残高通知を設定'" @click="startAlert(card)">
-                    <span aria-hidden="true">🔔</span> {{card.alert_enabled?'残高通知 '+money(card.alert_threshold_jpy)+'以下':'残高通知を設定'}}
+                    <span aria-hidden="true">🔔</span> {{cardAlertLabel(card)}}
                   </button>
                 </div>
               </div>
@@ -151,11 +169,23 @@ onMounted(()=>{if(props.active)void refresh()})
         :aria-label="alertCard.name+'の残高通知'" @submit.prevent="saveAlert">
         <div class="wallet-opening-title">{{alertCard.name}} の残高通知</div>
         <label class="wallet-alert-toggle">
-          <input v-model="alertEnabledDraft" type="checkbox" /> 残高不足を通知する
+          <input v-model="alertEnabledDraft" type="checkbox" /> 残高通知を有効にする
         </label>
-        <label>通知する残高（円）
-          <input v-model.number="alertThresholdDraft" type="number" step="1" min="0" max="100000000" required />
-        </label>
+        <template v-if="alertEnabledDraft">
+          <div class="wallet-alert-choices" role="radiogroup" aria-label="通知条件">
+            <label v-for="choice in alertOptions" :key="choice.value"
+              :class="['wallet-alert-choice',{'wallet-alert-choice-active':alertModeDraft===choice.value}]">
+              <input v-model="alertModeDraft" type="radio" name="prepaid-alert-mode" :value="choice.value" />
+              <span>{{choice.label}}</span>
+            </label>
+          </div>
+          <label v-if="alertModeDraft!=='upper'">下限残高（円）
+            <input v-model.number="alertThresholdDraft" type="number" inputmode="numeric" step="1" min="0" max="100000000" required />
+          </label>
+          <label v-if="alertModeDraft!=='lower'">上限残高（円）
+            <input v-model.number="alertUpperDraft" type="number" inputmode="numeric" step="1" min="0" max="100000000" required />
+          </label>
+        </template>
         <div class="wallet-editor-actions"><button type="button" @click="alertCard=null" :disabled="alertSaving">キャンセル</button><button type="submit" :disabled="alertSaving">{{alertSaving?'保存中…':'保存'}}</button></div>
       </form>
     </div>
@@ -196,6 +226,13 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-alert-link:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .wallet-alert-toggle{display:flex!important;align-items:center;gap:10px}
 .wallet-alert-toggle input{width:19px;height:19px;min-height:19px;flex:none;accent-color:var(--blue)}
+.wallet-alert-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.wallet-alert-choice{position:relative;display:grid!important;place-items:center;min-width:0;
+ min-height:42px;border:1px solid var(--line);border-radius:10px;background:var(--paper);
+ color:var(--ink);font-size:12px;font-weight:750;cursor:pointer}
+.wallet-alert-choice input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.wallet-alert-choice-active{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 12%,var(--card));color:var(--blue-dark)}
+.wallet-alert-choice:focus-within{outline:2px solid var(--blue-dark);outline-offset:2px}
 
 .wallet-money{display:grid;justify-items:end;gap:1px;flex:none;max-width:48%;font-variant-numeric:tabular-nums;text-align:right}
 .wallet-money strong{font-size:17px;line-height:1.35;overflow-wrap:anywhere}

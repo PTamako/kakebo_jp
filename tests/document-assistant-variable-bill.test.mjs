@@ -31,6 +31,7 @@ function fixture(){
  const sql=new DatabaseSync(':memory:')
  sql.exec("CREATE TABLE schema_migrations(version TEXT PRIMARY KEY,description TEXT);"+
   "CREATE TABLE entries(id INTEGER PRIMARY KEY,client_request_id TEXT UNIQUE);"+
+  "CREATE TABLE trash_items(item_type TEXT,item_id TEXT,payload_json TEXT);"+
   "CREATE TABLE payment_sources(name TEXT PRIMARY KEY,is_archived INTEGER);")
  sql.exec(readFileSync(new URL('../migrations/0109_variable_recurring_bills.sql',import.meta.url),'utf8'))
  sql.prepare('INSERT INTO variable_recurring_plans'+

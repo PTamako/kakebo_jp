@@ -8,7 +8,7 @@ test('owner and member use one original balances and management page tree',()=>{
  const member=src('FamilyMemberWorkspace.vue')
  const owner=src('App.vue')
  assert.match(shell,/<AssetsPage v-else-if="activeTab==='investments'"/)
- assert.match(shell,/<ManagementPage v-show="activeTab==='finance'"/)
+ assert.match(shell,/<ManagementPage v-if="managementVisited" v-show="activeTab==='finance'"/)
  assert.match(owner,/<OriginalKakeiboPages :identity="familyIdentity"/)
  assert.match(member,/<OriginalKakeiboPages :identity="user"/)
  assert.match(src('FinanceTools.vue'),/<OriginalCardManagementPanel v-show="managementTab === 'cards'"/)

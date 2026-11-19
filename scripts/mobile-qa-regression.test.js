@@ -39,7 +39,7 @@ test('cross-month duplicate navigation selects date after month watcher resets i
 })
 
 test('finance management starts loading only when tab is active and refreshes on revisit', () => {
-  assert.match(workspace, /<ManagementPage v-show="activeTab==='finance'"/)
+  assert.match(workspace, /<ManagementPage v-if="managementVisited" v-show="activeTab==='finance'"/)
   assert.match(workspace, /:active="activeTab==='finance'"/)
   assert.match(finance, /onMounted\(\(\) => \{ if \(!props\.memberView && props\.active\) void initializeFinance\(\) \}\)/)
   // Revisit reuses a fresh ledger; mutations, expiration and explicit backup force refresh.

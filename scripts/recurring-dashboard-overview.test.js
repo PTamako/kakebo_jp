@@ -65,8 +65,8 @@ test('bill footer fits 3 actions on one row and shows one concise hint',()=>{
  assert.match(sheet,/\.recurring-bill-actions\)\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/)
  assert.match(variable,/下書きを保存/)
  assert.match(variable,/確認して記帳/)
- assert.match(variable,/v-else class="hint">下書き保存だけでは記帳されません/)
- assert.match(variable,/v-else-if="chosenSaved\?\.sourceType==='document'" class="hint">文書助手の下書きです/)
+ assert.match(variable,/v-else class="hint">金額と記帳日が揃うと自動記帳/)
+ assert.match(variable,/v-else-if="chosenSaved\?\.sourceType==='document'" class="hint">文書助手の下書き/)
  assert.doesNotMatch(variable,/保存しただけでは支出になりません。文書助手ですでに記帳/)
 })
 

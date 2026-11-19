@@ -720,7 +720,7 @@ export async function onRequest({ request, env, params }) {
     if (a === 'payment-sources' || a === 'merchant-payment-rules') {
       // Use the already migrated merchant_rules table; never re-import old mappings.
     }
-    if (a === 'prepaid-assets') return handlePrepaid({db,request,method:m,sub:b})
+    if (a === 'prepaid-assets') return handlePrepaid({db,request,method:m,sub:b,ownerProof})
     if (a === 'payment-sources' && !b && m === 'GET') {
       // Closing days are authoritative on payment_sources.closing_day.
       // Never recreate the deprecated finance_settings table.

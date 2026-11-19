@@ -7,6 +7,34 @@ const emit=defineEmits(['summary','open-card-settings','open-history'])
 const data=ref(null),error=ref(''),loading=ref(false),showAll=ref(false)
 const money=value=>value===null||value===undefined?'—':'¥'+Number(value).toLocaleString('ja-JP')
 const selected=ref(null),openingDraft=ref(0),saving=ref(false),notice=ref('')
+const alertCard=ref(null),alertEnabledDraft=ref(false),alertThresholdDraft=ref(1000),alertSaving=ref(false)
+function startAlert(card){
+ alertCard.value=card
+ alertEnabledDraft.value=!!card.alert_enabled
+ alertThresholdDraft.value=Number(card.alert_threshold_jpy??1000)
+}
+async function saveAlert(){
+ if(!alertCard.value||alertSaving.value)return
+ const amount=Number(alertThresholdDraft.value)
+ if(!Number.isSafeInteger(amount)||amount<0||amount>100000000){
+  error.value='通知する金額を0〜100,000,000円で入力してください';return
+ }
+ const card=alertCard.value
+ const body=props.memberMode
+  ?{accountId:card.account_id,enabled:alertEnabledDraft.value,thresholdJpy:amount}
+  :{name:card.name,enabled:alertEnabledDraft.value,thresholdJpy:amount}
+ alertSaving.value=true;error.value='';notice.value=''
+ try{
+  await props.api(props.memberMode?'prepaid-alerts':'prepaid-assets/alert',{
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)
+  })
+  alertCard.value=null
+  await refresh()
+  notice.value=card.name+' の残高通知を保存しました'
+ }catch(e){error.value=e.message}
+ finally{alertSaving.value=false}
+}
+
 function startOpening(card){ selected.value=card;openingDraft.value=Number(card.opening_balance) }
 async function saveOpening(){
   if(!selected.value||saving.value)return
@@ -82,7 +110,13 @@ onMounted(()=>{if(props.active)void refresh()})
                 <span class="wallet-card-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h5"/></svg>
                 </span>
-                <div class="wallet-name"><strong :title="card.name">{{card.name}}</strong><small>{{card.is_archived?'アーカイブ済み':'プリペイド'}}</small></div>
+                <div class="wallet-name"><strong :title="card.name">{{card.name}}</strong>
+                  <small>{{card.is_archived?'アーカイブ済み':'プリペイド'}} · 持ち主：自分</small>
+                  <button type="button" class="wallet-alert-link"
+                    :aria-label="card.name+'の残高通知を設定'" @click="startAlert(card)">
+                    <span aria-hidden="true">🔔</span> {{card.alert_enabled?'残高通知 '+money(card.alert_threshold_jpy)+'以下':'残高通知を設定'}}
+                  </button>
+                </div>
               </div>
               <div class="wallet-money" :class="{'wallet-negative':card.balance<0}">
                 <small>現在残高</small>
@@ -111,6 +145,21 @@ onMounted(()=>{if(props.active)void refresh()})
         <button v-if="data.cards.length>2" type="button" class="wallet-show-more" :aria-expanded="showAll" @click="showAll=!showAll">{{showAll?'閉じる':'あと'+(data.cards.length-2)+'件を表示'}}</button>
 
       </template>
+    </div>
+    <div v-if="alertCard" class="wallet-overlay" @click.self="alertCard=null">
+      <form class="wallet-opening-editor" role="dialog" aria-modal="true"
+        :aria-label="alertCard.name+'の残高通知'" @submit.prevent="saveAlert">
+        <div class="wallet-opening-title">{{alertCard.name}} の残高通知</div>
+        <p class="wallet-hint">持ち主：自分。通知は HomeFlow の「今日通知」と本人の端末だけに届きます。</p>
+        <label class="wallet-alert-toggle">
+          <input v-model="alertEnabledDraft" type="checkbox" /> 残高不足を通知する
+        </label>
+        <label>通知する残高（円）
+          <input v-model.number="alertThresholdDraft" type="number" step="1" min="0" max="100000000" required />
+        </label>
+        <p class="wallet-hint">現在残高が設定額以下になったときに通知します。毎日同じ通知は送りません。</p>
+        <div class="wallet-editor-actions"><button type="button" @click="alertCard=null" :disabled="alertSaving">キャンセル</button><button type="submit" :disabled="alertSaving">{{alertSaving?'保存中…':'保存'}}</button></div>
+      </form>
     </div>
     <div v-if="selected" class="wallet-overlay" @click.self="selected=null">
       <form class="wallet-opening-editor" role="dialog" aria-modal="true" :aria-label="selected.name+'の期首残高'" @submit.prevent="saveOpening">
@@ -144,6 +193,12 @@ onMounted(()=>{if(props.active)void refresh()})
 .wallet-name{display:grid;gap:2px;min-width:0}
 .wallet-name strong{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
 .wallet-name small{color:var(--muted);font-size:10px;line-height:1.3}
+.wallet-alert-link{justify-self:start;min-height:30px;border:0;background:transparent;
+ color:var(--blue-dark);padding:4px 0;font-size:11px;font-weight:750;text-align:left;cursor:pointer}
+.wallet-alert-link:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.wallet-alert-toggle{display:flex!important;align-items:center;gap:10px}
+.wallet-alert-toggle input{width:19px;height:19px;min-height:19px;flex:none;accent-color:var(--blue)}
+
 .wallet-money{display:grid;justify-items:end;gap:1px;flex:none;max-width:48%;font-variant-numeric:tabular-nums;text-align:right}
 .wallet-money strong{font-size:17px;line-height:1.35;overflow-wrap:anywhere}
 .wallet-money small{font-size:10px;line-height:1.3;color:var(--muted)}

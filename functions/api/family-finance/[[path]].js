@@ -37,6 +37,7 @@ import {familyPersonalAssets} from './personal-assets.js';
 import {familyManualHoldings} from './manual-holdings.js';
 import {familyPersonalDocumentSbi} from './personal-document-sbi.js';
 import {familyPrepaidReport} from './prepaid-report.js';
+import {updatePrepaidAlert} from '../prepaid-alert-settings.js';
 import {familyHouseholdStats} from './household-stats.js';
 import {paymentMethodForEntry} from '../../../src/payment-stat-group.js';
 import {familyPlanOwnership} from './plan-ownership.js';
@@ -463,6 +464,14 @@ export async function onRequest({request,env,params}){
      parts[0]==='personal'&&parts[1]==='assets')
    return familyPersonalAssets(env,user);
   if(parts[0]==='manual-holdings')return familyManualHoldings(request,env,url,user,parts);
+  if(parts.length===1&&parts[0]==='prepaid-alerts'){
+    if(request.method!=='POST')return json({code:'METHOD_NOT_ALLOWED'},405);
+    const body=await bodyForMutation(request,url);
+    if(!body)return json({code:'INVALID_ALERT_SETTINGS'},400);
+    return updatePrepaidAlert(env.DB,{scope:'member',key:body.accountId,
+      householdId:user.household_id,ownerUserId:user.user_id,
+      enabled:body.enabled,thresholdJpy:body.thresholdJpy});
+  }
   if(parts.length===1&&parts[0]==='prepaid-report'&&request.method==='GET')return familyPrepaidReport(env,user);
   if(parts[0]==='accounts')return accounts(request,env,url,user,parts);
   if(parts.length===2&&parts[0]==='legacy'&&parts[1]==='transfer-links')

@@ -79,7 +79,8 @@ test('normal management uses identity-only HomeFlow status and original payment-
  assert.match(source,/defineProps\(\{identityOnly:\{type:Boolean,default:false\},skipInitialCheck:\{type:Boolean,default:false\}\}\)/);
  assert.match(source,/v-if="person&&!props.identityOnly"/);
  assert.match(source,/if\(financeEnabled.value&&!props.identityOnly\)await refresh\(\)/);
- assert.match(sharedPages,/<ManagementPage v-show="activeTab==='finance'"/)
+ assert.match(sharedPages,/<ManagementPage v-if="managementVisited" v-show="activeTab==='finance'"/)
+ assert.match(sharedPages,/watch\(\(\)=>props\.activeTab,tab=>\{if\(tab==='finance'\)managementVisited\.value=true\}/)
  assert.match(app,/:management-bindings="originalManagementBindings"/);
 });
 

@@ -12,7 +12,7 @@ const thisMonth=()=>today().slice(0,7)
 const yen=n=>'¥'+Number(n||0).toLocaleString('ja-JP')
 const ready=ref(false),busy=ref(false),error=ref(''),notice=ref('')
 const plans=ref([]),bills=ref([])
-const expanded=ref(false),planEditor=ref(false),billEditor=ref(false)
+const expanded=ref(false),planEditor=ref(props.inline),billEditor=ref(false)
 const editing=ref(false),selectedPlan=ref(null)
 const emptyPlan=()=>({id:crypto.randomUUID(),name:'',category:'',paymentSource:'',
  startMonth:thisMonth(),intervalMonths:1,budgetJpy:'',enabled:true})
@@ -154,6 +154,7 @@ onMounted(refresh)
 </script>
 <template>
 <section class="variable-costs">
+ <h2 v-if="inline" class="inline-heading">変動する定期費用</h2>
  <button v-if="!inline" class="open-manager" type="button" :aria-expanded="expanded"
   @click="expanded=!expanded">
   <strong>変動する定期費用</strong><span>電気・ガス・水道・通信など（請求ごとに確認） {{expanded?'⌃':'⌄'}}</span>
@@ -223,6 +224,7 @@ onMounted(refresh)
 </template>
 <style scoped>
 .variable-costs{display:grid;gap:8px;border:1px solid var(--line);border-radius:15px;background:var(--card);padding:12px;min-width:0}
+.inline-heading{margin:0 0 2px;font-size:17px}
 .open-manager{display:grid;text-align:left;gap:4px;border:0;padding:4px;background:transparent;color:var(--ink)}
 .open-manager strong{font-size:16px}.open-manager span,.hint,.plan small{font-size:12px;color:var(--muted);line-height:1.5}
 .body,.plans,.editor{display:grid;gap:10px;min-width:0}

@@ -13,6 +13,14 @@ const props=defineProps({
 })
 const emit=defineEmits(['close'])
 const panel=ref(null)
+const theme=ref({})
+function captureTheme(){
+ const root=document.querySelector('main')
+ if(!root)return
+ const css=getComputedStyle(root)
+ theme.value=Object.fromEntries(['--card','--paper','--ink','--muted','--line','--blue','--blue-dark','--tint']
+  .map(key=>[key,css.getPropertyValue(key).trim()]).filter(([,value])=>value))
+}
 let scrollLocked=false
 let previousFocus=null
 // This component may be used by either cost tab; avoid releasing another sheet's scroll lock.
@@ -42,6 +50,7 @@ function keydown(event){
 watch(()=>props.open,async open=>{
  if(open){
   previousFocus=document.activeElement
+  captureTheme()
   lock()
   await nextTick()
   if(props.open)panel.value?.focus({preventScroll:true})
@@ -55,7 +64,7 @@ onBeforeUnmount(unlock)
 </script>
 <template>
  <Teleport to="body">
-  <div v-if="open" class="recurring-sheet-backdrop" @click.self="requestClose" @keydown="keydown">
+  <div v-if="open" class="recurring-sheet-backdrop" :style="theme" @click.self="requestClose" @keydown="keydown">
    <section ref="panel" class="recurring-sheet-panel" tabindex="-1" role="dialog" aria-modal="true" :aria-label="title">
     <div class="recurring-sheet-handle" aria-hidden="true"></div>
     <header class="recurring-sheet-heading">

@@ -48,6 +48,14 @@ const isCreditCard = name => !!name && !['現金','その他','其他'].includes
 const creditCardSources = computed(() => sortOtherLast([...orderedPayments.value,
   ...archivedPaymentSources.value].filter(isCreditCard)))
 const managementTab = ref('cards')
+// The two recurring-cost workflows are separate, but share the management tab.
+// Keep both editors mounted once visited so switching types preserves drafts.
+const recurringCostTab = ref('fixed')
+const variableCostTabVisited = ref(false)
+function selectRecurringCostTab(tab) {
+  if (tab === 'variable') variableCostTabVisited.value = true
+  recurringCostTab.value = tab
+}
 // Lazy-mount each member management section once, then preserve its editor
 // state while switching tabs. The owner already keeps card/plan editors alive.
 const visitedMemberSections = ref(new Set(['cards']))
@@ -1677,7 +1685,20 @@ function onCardRemove(value){
     <SbiPortfolio :api="props.api" active-view="plans" :refresh-key="investmentRefreshKey" />
   </section>
 
-  <article v-show="managementTab === 'plans'" class="finance-panel recurring-manager-panel">
+  <div v-show="managementTab === 'plans'" class="recurring-cost-type-tabs" role="tablist" aria-label="固定費の種類">
+    <button id="recurring-cost-tab-fixed" type="button" role="tab"
+      :class="{ 'is-active': recurringCostTab === 'fixed' }"
+      :aria-selected="recurringCostTab === 'fixed'"
+      aria-controls="recurring-cost-panel-fixed" @click="selectRecurringCostTab('fixed')">固定金額</button>
+    <button id="recurring-cost-tab-variable" type="button" role="tab"
+      :class="{ 'is-active': recurringCostTab === 'variable' }"
+      :aria-selected="recurringCostTab === 'variable'"
+      aria-controls="recurring-cost-panel-variable" @click="selectRecurringCostTab('variable')">変動金額</button>
+  </div>
+  <section id="recurring-cost-panel-fixed" class="recurring-cost-type-panel" role="tabpanel"
+    aria-labelledby="recurring-cost-tab-fixed"
+    v-show="managementTab === 'plans' && recurringCostTab === 'fixed'">
+  <article class="finance-panel recurring-manager-panel">
     <h2>固定費の設定</h2>
     <FixedCostEditorFields :model="plan" v-model:cycleChoice="planCycleChoice"
       :cycle-options="planCycleOptions" :categories="orderedCategories"
@@ -1688,7 +1709,7 @@ function onCardRemove(value){
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
     <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
   </article>
-  <article v-show="managementTab === 'plans'" class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringListOpen }" aria-label="固定費の記帳確認">
+  <article class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringListOpen }" aria-label="固定費の記帳確認">
       <div class="recurring-review-heading">
         <div>
           <h3>記帳の確認</h3>
@@ -1746,14 +1767,19 @@ function onCardRemove(value){
         <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
       </div>
   </article>
-  <VariableRecurringCosts v-if="managementTab==='plans' && !props.memberView"
-    :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
-    :category-label="categoryLabel" />
-  <OriginalFixedCostList v-show="managementTab==='plans'"
+  <OriginalFixedCostList
     :items="plans" :busy="recurringBusy" :yen="yen"
     :category-label="categoryLabel" :next-label="p=>recurringPlanNextLabel(recurringStatusFor(p))"
     :current-count="currentEligiblePlans.length" :monthly-total="recurringMonthlyTotal"
     @edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan(p.id)" />
+  </section>
+  <section id="recurring-cost-panel-variable" class="recurring-cost-type-panel" role="tabpanel"
+    aria-labelledby="recurring-cost-tab-variable"
+    v-show="managementTab === 'plans' && recurringCostTab === 'variable'">
+    <VariableRecurringCosts v-if="variableCostTabVisited" inline
+      :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
+      :category-label="categoryLabel" />
+  </section>
   <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">
     <h2>カード別利用額</h2>
     <CardUsageSummaryFields :card="bill.name" :month="bill.month"
@@ -1947,6 +1973,11 @@ function onCardRemove(value){
 </section>
 </template>
 <style scoped>
+.recurring-cost-type-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:5px;border:1px solid var(--line);border-radius:15px;background:var(--tint);min-width:0}
+.recurring-cost-type-tabs button{min-width:0;min-height:44px;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--muted);font:inherit;font-size:14px;font-weight:750;cursor:pointer}
+.recurring-cost-type-tabs button.is-active{background:var(--card);color:var(--blue-dark);border-color:var(--blue-dark)}
+.recurring-cost-type-tabs button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
+.recurring-cost-type-panel{display:grid;gap:10px;min-width:0}
 .finance-tools{display:grid;gap:10px}.finance-heading{margin:0 0 2px;font-size:21px;line-height:1.3}.finance-panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;display:grid;gap:8px}.finance-panel h2{font-size:17px;margin:0}.finance-panel p{font-size:13px;color:var(--muted);margin:0}.finance-panel button{border:1px solid var(--line);border-radius:10px;background:var(--tint);color:var(--ink);padding:9px}.finance-panel label{font-size:13px}.finance-panel input[type=file]{display:block;max-width:100%}.finance-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.finance-inputs input,.finance-inputs select{width:100%;min-width:0;height:44px;min-height:44px;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:9px 5px;background:var(--card);color:var(--ink)}.finance-inputs label{min-width:0;font-size:12px;color:var(--muted)}.finance-inputs label select{display:block;color:var(--ink)}.finance-row{font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}.finance-row button{margin-left:6px}
 .duplicate-review-row{display:grid;gap:8px;min-width:0;background:var(--tint);border:1px solid var(--line);border-radius:11px;padding:10px}
 .duplicate-review-label{min-width:0;overflow-wrap:anywhere;font-size:13px;font-weight:650}

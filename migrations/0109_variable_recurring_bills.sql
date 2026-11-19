@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS variable_recurring_bills (
  service_end TEXT,
  source_type TEXT NOT NULL DEFAULT 'manual' CHECK(source_type IN ('manual','document')),
  source_document_id TEXT,
+ source_candidate_id TEXT,
  status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','posted')),
  posted_entry_id INTEGER REFERENCES entries(id) ON DELETE RESTRICT,
  updated_at INTEGER NOT NULL,
@@ -30,6 +31,8 @@ CREATE TABLE IF NOT EXISTS variable_recurring_bills (
  CHECK((status='draft' AND posted_entry_id IS NULL) OR
        (status='posted' AND posted_entry_id IS NOT NULL))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_variable_recurring_doc_candidate
+ ON variable_recurring_bills(source_candidate_id) WHERE source_candidate_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_variable_recurring_plan_cycle
  ON variable_recurring_plans(enabled,start_month,interval_months);
 CREATE INDEX IF NOT EXISTS idx_variable_recurring_bill_posted

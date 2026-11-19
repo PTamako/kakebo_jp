@@ -1,0 +1,36 @@
+name: Compile existing Kakeibo private bill bridge bundle (no deploy)
+on:
+  push:
+    branches: [release/build-private-bill-bridge-20261119]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - run: node --test tests/homeflow-bill-reminders.test.mjs tests/homeflow-ledger.test.mjs scripts/homeflow-service-bridge.test.js
+      - run: npx wrangler deploy --config wrangler.homeflow-bridge.toml --dry-run --outdir .wrangler/bill-bridge-bundle
+      - name: Package compiled script to a private release branch for Cloudflare admin deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Compiled files:"
+          find .wrangler/bill-bridge-bundle -maxdepth 2 -type f -printf '%p %s bytes\n'
+          bundle=".wrangler/bill-bridge-bundle/index.js"
+          test -s "$bundle"
+          test "$(wc -c < "$bundle")" -lt 5000000
+          git switch -c release-artifacts/kakeibo-bill-bridge-20261119
+          mkdir -p release-artifacts
+          cp "$bundle" release-artifacts/kakeibo-homeflow-bridge.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add release-artifacts/kakeibo-homeflow-bridge.js
+          git commit -m "build: reviewed Kakeibo private bridge bundle (no secrets)"
+          git push origin HEAD:refs/heads/release-artifacts/kakeibo-bill-bridge-20261119

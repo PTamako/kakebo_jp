@@ -5,10 +5,14 @@ import {familyPrepaidReport} from './family-finance/prepaid-report.js'
 
 const json=(value,status=200)=>Response.json(value,{status,headers:{'cache-control':'no-store'}})
 export const validAlertAmount=value=>Number.isSafeInteger(value)&&value>=0&&value<=100000000
+export const validAlertMode=value=>['lower','upper','both'].includes(value)
+export const validAlertBounds=(mode,lower,upper)=>validAlertMode(mode)&&
+ validAlertAmount(lower)&&validAlertAmount(upper)&&(mode!=='both'||lower<upper)
 
-export async function updatePrepaidAlert(db,{scope,key,householdId,ownerUserId,enabled,thresholdJpy}){
+export async function updatePrepaidAlert(db,{scope,key,householdId,ownerUserId,enabled,thresholdJpy,mode='lower',upperThresholdJpy=10000}){
  if(!['legacy','member'].includes(scope)||typeof key!=='string'||!key||key.length>160||
-    !householdId||!ownerUserId||typeof enabled!=='boolean'||!validAlertAmount(thresholdJpy))
+    !householdId||!ownerUserId||typeof enabled!=='boolean'||
+    !validAlertBounds(mode,thresholdJpy,upperThresholdJpy))
    return json({code:'INVALID_ALERT_SETTINGS'},400)
  const owner=scope==='legacy'
    ?await db.prepare(`SELECT p.name FROM payment_sources p JOIN family_legacy_owner_claims c
@@ -23,23 +27,28 @@ export async function updatePrepaidAlert(db,{scope,key,householdId,ownerUserId,e
  if(!owner)return json({code:'PREPAID_ALERT_NOT_OWNED'},403)
  const time=Date.now()
  await db.prepare(`INSERT INTO prepaid_balance_alert_settings
-   (account_scope,resource_key,household_id,owner_user_id,enabled,threshold_jpy,updated_at)
-   VALUES(?1,?2,?3,?4,?5,?6,?7)
+   (account_scope,resource_key,household_id,owner_user_id,enabled,threshold_jpy,alert_mode,upper_threshold_jpy,updated_at)
+   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)
    ON CONFLICT(account_scope,resource_key) DO UPDATE SET
      enabled=excluded.enabled,threshold_jpy=excluded.threshold_jpy,
+     alert_mode=excluded.alert_mode,upper_threshold_jpy=excluded.upper_threshold_jpy,
      version=prepaid_balance_alert_settings.version+1,updated_at=excluded.updated_at
    WHERE prepaid_balance_alert_settings.household_id=excluded.household_id
      AND prepaid_balance_alert_settings.owner_user_id=excluded.owner_user_id
      AND (prepaid_balance_alert_settings.enabled<>excluded.enabled
-       OR prepaid_balance_alert_settings.threshold_jpy<>excluded.threshold_jpy)`)
-   .bind(scope,key,householdId,ownerUserId,enabled?1:0,thresholdJpy,time).run()
- const setting=await db.prepare(`SELECT enabled,threshold_jpy,version
+       OR prepaid_balance_alert_settings.threshold_jpy<>excluded.threshold_jpy
+       OR prepaid_balance_alert_settings.alert_mode<>excluded.alert_mode
+       OR prepaid_balance_alert_settings.upper_threshold_jpy<>excluded.upper_threshold_jpy)`)
+   .bind(scope,key,householdId,ownerUserId,enabled?1:0,thresholdJpy,mode,upperThresholdJpy,time).run()
+ const setting=await db.prepare(`SELECT enabled,threshold_jpy,alert_mode,upper_threshold_jpy,version
    FROM prepaid_balance_alert_settings WHERE account_scope=?1 AND resource_key=?2
      AND household_id=?3 AND owner_user_id=?4`)
    .bind(scope,key,householdId,ownerUserId).first()
  if(!setting)return json({code:'PREPAID_ALERT_OWNER_CONFLICT'},409)
  return json({ok:true,alert_enabled:!!setting.enabled,
-   alert_threshold_jpy:setting.threshold_jpy,alert_version:setting.version})
+   alert_threshold_jpy:setting.threshold_jpy,
+   alert_mode:setting.alert_mode,alert_upper_threshold_jpy:setting.upper_threshold_jpy,
+   alert_version:setting.version})
 }
 
 export async function privatePrepaidAlertSnapshot(env,{householdId,ownerUserId}){
@@ -53,7 +62,7 @@ export async function privatePrepaidAlertSnapshot(env,{householdId,ownerUserId})
  if(!identity)return json({error:'not_authorized'},403)
  let settings
  try{
-  settings=(await db.prepare(`SELECT s.account_scope,s.resource_key,s.threshold_jpy,s.version
+  settings=(await db.prepare(`SELECT s.account_scope,s.resource_key,s.threshold_jpy,s.alert_mode,s.upper_threshold_jpy,s.version
     FROM prepaid_balance_alert_settings s
     WHERE s.household_id=?1 AND s.owner_user_id=?2 AND s.enabled=1
     ORDER BY s.account_scope,s.resource_key LIMIT 101`)
@@ -84,7 +93,8 @@ export async function privatePrepaidAlertSnapshot(env,{householdId,ownerUserId})
  const items=[]
  for(const row of settings){
   if(!['legacy','member'].includes(row.account_scope)||
-    !validAlertAmount(row.threshold_jpy)||!Number.isSafeInteger(row.version))continue
+    !validAlertBounds(row.alert_mode,row.threshold_jpy,row.upper_threshold_jpy)||
+    !Number.isSafeInteger(row.version))continue
   // Revalidate the immutable recorded owner: a shared card is never the grantee's card.
   const allowed=row.account_scope==='legacy'
    ?await db.prepare(`SELECT 1 FROM family_legacy_owner_claims c
@@ -100,7 +110,8 @@ export async function privatePrepaidAlertSnapshot(env,{householdId,ownerUserId})
   const card=result.get(row.account_scope+':'+row.resource_key)
   if(!allowed||!card)continue
   items.push({scope:row.account_scope,key:row.resource_key,name:card.name,
-    balance:card.balance,thresholdJpy:row.threshold_jpy,version:row.version})
+    balance:card.balance,thresholdJpy:row.threshold_jpy,
+    mode:row.alert_mode,upperThresholdJpy:row.upper_threshold_jpy,version:row.version})
  }
  return json({ok:true,householdId,ownerUserId,items})
 }

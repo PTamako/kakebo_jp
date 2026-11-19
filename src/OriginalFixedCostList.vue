@@ -13,7 +13,8 @@ const props=defineProps({
  monthlyTotal:{type:Number,default:null},
  allowDelete:{type:Boolean,default:true},
  allowPost:{type:Boolean,default:false},
- defaultOpen:{type:Boolean,default:false}
+ defaultOpen:{type:Boolean,default:false},
+ compactHeader:{type:Boolean,default:false}
 })
 const emit=defineEmits(['edit','toggle','remove','post'])
 const query=ref(''),filter=ref('all'),showAll=ref(false),expanded=ref('')
@@ -37,7 +38,7 @@ watch([query,filter],()=>{showAll.value=false;expanded.value=''})
   <details class="recurring-list-disclosure" :open="defaultOpen">
    <summary class="recurring-list-summary">
     <span class="recurring-list-summary-title">登録済みの固定費 <strong>{{items.length}}件</strong></span>
-    <span class="recurring-list-summary-total">今月対象 {{activeCount}}件 · 今月予定額 {{yen(total)}}</span>
+    <span v-if="!compactHeader" class="recurring-list-summary-total">今月対象 {{activeCount}}件 · 今月予定額 {{yen(total)}}</span>
    </summary>
    <div class="recurring-list-body">
     <div class="recurring-list-filters">

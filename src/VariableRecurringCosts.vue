@@ -1,12 +1,15 @@
 <script setup>
 import {computed,onMounted,ref,watch,nextTick} from 'vue'
+import RecurringFormSheet from './RecurringFormSheet.vue'
+import RecurringCostOverview from './RecurringCostOverview.vue'
 const props=defineProps({
  api:{type:Function,required:true},
  categories:{type:Array,default:()=>[]},
  paymentSources:{type:Array,default:()=>[]},
  categoryLabel:{type:Function,default:x=>x},
  inline:{type:Boolean,default:false},
- refreshKey:{type:Number,default:0}
+ refreshKey:{type:Number,default:0},
+ active:{type:Boolean,default:true}
 })
 const today=()=>new Date(Date.now()+32400000).toISOString().slice(0,10)
 const thisMonth=()=>today().slice(0,7)
@@ -61,6 +64,8 @@ function latestPeriod(p){
  return d.toISOString().slice(0,7)
 }
 const billFor=p=>bills.value.find(b=>b.planId===p.id&&b.periodMonth===latestPeriod(p))
+const latestKnownAmount=computed(()=>plans.value.reduce((sum,p)=>sum+Number(billFor(p)?.amountJpy||0),0))
+const pendingDraftCount=computed(()=>bills.value.filter(b=>b.status==='draft').length)
 const billLabel=p=>!p.enabled?'停止中':billFor(p)?.status==='posted'?'記帳済み':billFor(p)?'要確認':'請求待ち'
 async function api(path,opt={}){
  return props.api('variable-recurring'+path,opt)
@@ -186,51 +191,13 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
  <div v-if="inline || expanded" class="body">
   <p v-if="error" role="alert" class="error">{{error}}</p>
   <p v-if="notice" role="status" class="hint">{{notice}}</p>
-  <div class="variable-toolbar">
-    <span class="variable-count">登録済み <strong>{{plans.length}}件</strong></span>
-    <button class="variable-add" type="button" :disabled="busy" @click="planEditor?closePlanEditor():newPlan()">{{planEditor?'閉じる':'＋ 変動費を追加'}}</button>
-  </div>
-  <form v-if="planEditor" ref="planEditorElement" class="editor" @submit.prevent="savePlan">
-   <h4>{{editing?'定期費用を編集':'変動費を追加'}}</h4>
-   <label>名称 <input v-model="form.name" maxlength="120" placeholder="例：オクトパスエナジー" required/></label>
-   <label>カテゴリ <select v-model="form.category" required>
-    <option value="">選択してください</option>
-    <option v-for="category in categories" :key="category" :value="category">{{categoryLabel(category)}}</option>
-   </select></label>
-   <label>支払方法 <select v-model="form.paymentSource" required>
-    <option value="">選択してください</option>
-    <option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option>
-   </select></label>
-   <label>請求周期 <select v-model.number="form.intervalMonths">
-    <option v-for="cycle in cycleOptions" :key="cycle.value" :value="cycle.value">{{cycle.label}}</option>
-   </select></label>
-   <label>開始月 <input v-model="form.startMonth" type="month" required/></label>
-   <label>参考予算（任意・実績に含めない） <input v-model="form.budgetJpy" type="number" min="1" max="10000000" placeholder="未設定"/></label>
-   <div class="actions">
-    <button type="submit" :disabled="busy||!validatedPlan">設定を保存</button>
-    <button type="button" @click="closePlanEditor">キャンセル</button>
-   </div>
-  </form>
-  <form v-if="billEditor&&chosenPlan" ref="billEditorElement" class="editor" @submit.prevent="saveBill">
-   <h4>{{chosenPlan.name}} · 請求を確認</h4>
-   <label>対象月（サービス所属月） <input v-model="invoice.periodMonth" type="month" required/></label>
-   <p v-if="!periodIsOnCycle(chosenPlan,invoice.periodMonth)" class="error">
-    対象月は開始月から{{chosenPlan.intervalMonths}}か月周期で選択してください。</p>
-   <label>実際の請求額 <input v-model="invoice.amountJpy" type="number" min="1" max="10000000" placeholder="請求書が届いてから入力"/></label>
-   <label>請求書発行日 <input v-model="invoice.billDate" type="date"/></label>
-   <label>記帳日（実際の利用・決済日） <input v-model="invoice.expenseDate" type="date"/></label>
-   <label>実際の引落日（任意） <input v-model="invoice.paidDate" type="date"/></label>
-   <div class="pair"><label>利用期間開始 <input v-model="invoice.serviceStart" type="date"/></label>
-    <label>利用期間終了 <input v-model="invoice.serviceEnd" type="date"/></label></div>
-   <p class="hint">保存しただけでは支出になりません。文書助手ですでに記帳された同じ請求は、もう一度登録しないでください。</p>
-   <p v-if="chosenSaved?.status==='posted'" class="hint">記帳済み：明細 #{{chosenSaved.postedEntryId}}。同じ回は二重記帳できません。</p>
-   <p v-else-if="chosenSaved?.sourceType==='document'" class="hint">文書助手が入力した下書きです。原本と照合して、必要なら金額・日付を手動修正してください。</p>
-   <div class="actions">
-    <button v-if="chosenSaved?.status!=='posted'" type="submit" :disabled="busy||!canSaveBill">下書きを保存</button>
-    <button v-if="chosenSaved?.status==='draft'" type="button" :disabled="busy||!canConfirm" @click="confirmBill">確認して記帳</button>
-    <button type="button" @click="billEditor=false">閉じる</button>
-   </div>
-  </form>
+  <RecurringCostOverview title="変動金額" kind="variable" :count="plans.length"
+    primary-label="最新回の入力済み額" :primary-value="yen(latestKnownAmount)"
+    secondary-label="確認待ちの請求" :secondary-value="pendingDraftCount+'件'"
+    note="入力済み額には未記帳の請求も含みます。実際の支出は確認後に記帳します。"
+    add-label="変動費を追加" @add="newPlan" />
+  <section class="variable-register-card" aria-label="登録済みの変動費">
+   <div class="variable-list-heading"><h3>登録済みの変動費</h3><span>{{plans.length}}件</span></div>
   <p v-if="ready&&!plans.length&&!planEditor" class="variable-empty">まだ登録がありません。電気・ガス・水道などを追加できます。</p>
   <div v-if="ready&&plans.length" ref="plansElement" class="plans" aria-label="登録済みの変動費">
    <details v-for="p in plans" :key="p.id" class="plan">
@@ -249,26 +216,78 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
     </div>
    </details>
   </div>
+  </section>
  </div>
+
+ <RecurringFormSheet :open="active && planEditor" :busy="busy"
+    :title="editing ? '変動費を編集' : '変動費を追加'"
+    subtitle="電気・ガス・水道などの請求条件を設定します。" @close="closePlanEditor">
+  <p v-if="error" class="error" role="alert">{{error}}</p>
+  <form v-if="planEditor" ref="planEditorElement" class="editor recurring-editor-fields" @submit.prevent="savePlan">
+   <h3 class="recurring-form-section-title">基本情報</h3>
+   <label>名称 <input v-model="form.name" maxlength="120" placeholder="例：オクトパスエナジー" required/></label>
+   <label>カテゴリ <select v-model="form.category" required>
+    <option value="">選択してください</option>
+    <option v-for="category in categories" :key="category" :value="category">{{categoryLabel(category)}}</option>
+   </select></label>
+   <label>支払方法 <select v-model="form.paymentSource" required>
+    <option value="">選択してください</option>
+    <option v-for="source in paymentSources" :key="source" :value="source">{{source}}</option>
+   </select></label>
+   <h3 class="recurring-form-section-title">周期と予算</h3>
+   <label>請求周期 <select v-model.number="form.intervalMonths">
+    <option v-for="cycle in cycleOptions" :key="cycle.value" :value="cycle.value">{{cycle.label}}</option>
+   </select></label>
+   <label>開始月 <input v-model="form.startMonth" type="month" required/></label>
+   <label>参考予算（任意・実績に含めない） <input v-model="form.budgetJpy" type="number" min="1" max="10000000" placeholder="未設定"/></label>
+   <div class="actions recurring-sheet-actions">
+    <button class="primary" type="submit" :disabled="busy||!validatedPlan">設定を保存</button>
+    <button type="button" @click="closePlanEditor">キャンセル</button>
+   </div>
+  </form>
+ </RecurringFormSheet>
+ <RecurringFormSheet :open="active && billEditor && !!chosenPlan" :busy="busy"
+    :title="chosenPlan?.name ? chosenPlan.name+' · 請求を確認' : '請求を確認'"
+    subtitle="請求書と照合してから記帳します。" @close="billEditor=false">
+  <p v-if="error" class="error" role="alert">{{error}}</p>
+  <form v-if="billEditor&&chosenPlan" ref="billEditorElement" class="editor recurring-editor-fields" @submit.prevent="saveBill">
+   <h3 class="recurring-form-section-title">請求情報</h3>
+   <label>対象月（サービス所属月） <input v-model="invoice.periodMonth" type="month" required/></label>
+   <p v-if="!periodIsOnCycle(chosenPlan,invoice.periodMonth)" class="error">
+    対象月は開始月から{{chosenPlan.intervalMonths}}か月周期で選択してください。</p>
+   <label>実際の請求額 <input v-model="invoice.amountJpy" type="number" min="1" max="10000000" placeholder="請求書が届いてから入力"/></label>
+   <h3 class="recurring-form-section-title">請求・記帳の日付</h3>
+   <label>請求書発行日 <input v-model="invoice.billDate" type="date"/></label>
+   <label>記帳日（実際の利用・決済日） <input v-model="invoice.expenseDate" type="date"/></label>
+   <label>実際の引落日（任意） <input v-model="invoice.paidDate" type="date"/></label>
+   <h3 class="recurring-form-section-title">利用期間</h3>
+   <div class="recurring-date-pair"><label>利用期間開始 <input v-model="invoice.serviceStart" type="date"/></label>
+    <label>利用期間終了 <input v-model="invoice.serviceEnd" type="date"/></label></div>
+   <p class="hint">保存しただけでは支出になりません。文書助手ですでに記帳された同じ請求は、もう一度登録しないでください。</p>
+   <p v-if="chosenSaved?.status==='posted'" class="hint">記帳済み：明細 #{{chosenSaved.postedEntryId}}。同じ回は二重記帳できません。</p>
+   <p v-else-if="chosenSaved?.sourceType==='document'" class="hint">文書助手が入力した下書きです。原本と照合して、必要なら金額・日付を手動修正してください。</p>
+   <div class="actions recurring-sheet-actions">
+    <button class="primary" v-if="chosenSaved?.status!=='posted'" type="submit" :disabled="busy||!canSaveBill">下書きを保存</button>
+    <button class="primary" v-if="chosenSaved?.status==='draft'" type="button" :disabled="busy||!canConfirm" @click="confirmBill">確認して記帳</button>
+    <button type="button" @click="billEditor=false">閉じる</button>
+   </div>
+  </form>
+
+ </RecurringFormSheet>
 </section>
 </template>
 <style scoped>
-.variable-costs{display:grid;gap:8px;border:1px solid var(--line);border-radius:15px;background:var(--card);padding:12px;min-width:0}
-.variable-costs.is-inline{padding:12px}
+.variable-costs{display:grid;gap:12px;min-width:0;background:transparent;border:0;padding:0}
+.body,.plans,.plan-detail{display:grid;gap:9px;min-width:0}
+.body{gap:12px}
+.variable-register-card{display:grid;gap:10px;min-width:0;padding:13px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
+.variable-list-heading{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.variable-list-heading h3{margin:0;font-size:16px;font-weight:800}
+.variable-list-heading span{color:var(--muted);font-size:12px}
 .open-manager{display:grid;text-align:left;gap:4px;border:0;padding:4px;background:transparent;color:var(--ink)}
 .open-manager strong{font-size:16px}
 .open-manager span,.hint,.plan small{font-size:12px;color:var(--muted);line-height:1.5}
-.body,.plans,.editor,.plan-detail{display:grid;gap:10px;min-width:0}
-.variable-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
-.variable-count{font-size:13px;color:var(--muted);white-space:nowrap}
-.variable-count strong{color:var(--ink)}
-.variable-add{min-height:44px;min-width:0;padding:9px 12px;border:1px solid var(--blue-dark);border-radius:11px;background:var(--card);color:var(--blue-dark);font-size:13px;font-weight:750}
-.variable-empty{margin:0;padding:20px 12px;text-align:center;background:var(--tint);border-radius:11px;color:var(--muted);font-size:13px;line-height:1.55}
-.editor{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);scroll-margin-top:12px}
-.editor h4{margin:0;font-size:15px}
-.editor label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;min-width:0}
-.editor input,.editor select{width:100%;box-sizing:border-box;min-height:44px;padding:8px 10px;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;min-width:0}
-.plans{gap:8px}
+.variable-empty{margin:0;padding:18px 12px;text-align:center;border-radius:12px;background:var(--tint);color:var(--muted);font-size:13px;line-height:1.55}
 .plan{border:1px solid var(--line);border-radius:12px;min-width:0;background:var(--card);overflow:hidden}
 .plan-summary{display:grid;gap:5px;padding:12px 32px 12px 12px;cursor:pointer;list-style:none;position:relative}
 .plan-summary::-webkit-details-marker{display:none}
@@ -276,16 +295,19 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
 .plan-title{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
 .plan-title strong{font-size:14px;overflow-wrap:anywhere;min-width:0;color:var(--ink)}
 .plan-state{font-size:11px;flex:none;border-radius:99px;background:var(--tint);color:var(--muted);padding:3px 8px}
-.plan-state.is-due{color:var(--blue-dark);background:var(--tint);font-weight:750}
+.plan-state.is-due{color:var(--blue-dark);font-weight:750}
 .plan-meta{color:var(--muted)}
 .plan-month{font-size:12px;color:var(--ink);font-weight:650}
 .plan-summary::after{content:'⌄';color:var(--muted);font-size:12px;position:absolute;right:12px;top:50%;transform:translateY(-50%)}
 .plan[open] .plan-summary::after{content:'⌃'}
 .plan-detail{padding:10px 12px;border-top:1px solid var(--line)}
-.actions,.pair{display:flex;gap:7px;flex-wrap:wrap}
-.actions button{min-height:44px;border:1px solid var(--line);background:var(--tint);border-radius:10px;color:var(--blue-dark);font-size:12px;font-weight:700;padding:8px 12px}
-.actions button:disabled,.variable-add:disabled{opacity:.45}
-.pair>*{min-width:0;flex:1}
-.error{color:var(--danger,#b43c4a);font-size:12px}
-@media(max-width:390px){.pair{display:grid;grid-template-columns:1fr}}
+.plan-detail .actions{display:flex;gap:7px;flex-wrap:wrap}
+.plan-detail .actions button{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--tint);color:var(--blue-dark);font-size:12px;font-weight:700;padding:8px 12px}
+.plan-detail .actions button:disabled{opacity:.45}
+.editor{display:grid;gap:13px;min-width:0}
+.editor label{display:grid;gap:5px;min-width:0}
+.editor input,.editor select{max-width:100%;min-width:0;box-sizing:border-box}
+.editor .recurring-date-pair{display:grid;grid-template-columns:minmax(0,1fr);gap:13px;min-width:0}
+.editor .hint{margin:0;font-size:12px;line-height:1.6}
+.error{margin:0;color:var(--danger,#b43c4a);font-size:12px}
 </style>

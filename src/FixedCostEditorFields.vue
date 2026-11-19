@@ -17,8 +17,10 @@ const emit=defineEmits(['update:cycleChoice'])
 <template>
  <div class="fixed-cost-common-fields">
   <div class="recurring-form-layout">
+   <h3 class="recurring-form-section-title">基本情報</h3>
    <label class="recurring-form-field recurring-form-name"><span>名称</span>
     <input v-model="model.name" placeholder="例：家賃" aria-label="固定費名" maxlength="120"/></label>
+   <h3 class="recurring-form-section-title">金額と記帳周期</h3>
    <div class="recurring-form-field recurring-form-amount"><span>金額</span>
     <AmountInput v-model="model.amount" input-label="固定費額（円）"/></div>
    <div class="recurring-form-field recurring-form-schedule"><span>周期</span>
@@ -40,6 +42,7 @@ const emit=defineEmits(['update:cycleChoice'])
      :options="[{value:'',label:'選択してください'},...categories.map(category=>({value:category,label:categoryLabel(category)}))]"/></label>
    <label class="recurring-form-field"><span>支払方法</span>
     <MobileChoiceSheet v-model="model.paymentSource" label="固定費支払方法" :options="paymentChoices"/></label>
+   <h3 class="recurring-form-section-title">開始日と記帳方法</h3>
    <label class="recurring-form-field recurring-start-month"><span>開始月</span>
     <input v-model="model.startMonth" type="month" aria-label="固定費の適用開始月"/></label>
   </div>

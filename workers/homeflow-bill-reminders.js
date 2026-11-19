@@ -54,9 +54,9 @@ export async function projectBillConfirmationReminders(db,{day,recipientUserId,h
       e.amount,e.type,e.client_request_id FROM entries e
       WHERE e.type='expense' AND e.date>=?1 AND e.date<date(?1,'+1 month')
         AND (
-          EXISTS(SELECT 1 FROM family_shared_mutation_applied a
-            WHERE a.entry_id=e.id AND a.household_id=?2
-              AND a.requester_user_id=?3 AND a.action='create')
+          e.id IN (SELECT a.entry_id FROM family_shared_mutation_applied a
+            WHERE a.household_id=?2 AND a.requester_user_id=?3
+              AND a.action='create')
           OR EXISTS(SELECT 1 FROM family_card_purchase_applied a
             WHERE a.entry_id=e.id AND a.household_id=?2 AND a.requester_user_id=?3)
           OR EXISTS(SELECT 1 FROM family_prepaid_actions_applied a

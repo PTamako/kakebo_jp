@@ -125,6 +125,47 @@ test('ledger note includes only explicitly supplied metering dates',()=>{
   '変動固定費・対象月 2026-10 ／ 利用終了 2026/11/15')
 })
 
+test('midflight edited draft cannot be posted using stale values',async()=>{
+ const f=fixture()
+ await f.send('POST','',f.plan(uuid,{startMonth:'2026-10'}))
+ await f.send('POST','/'+uuid+'/bill',f.bill('2026-10',{
+  amountJpy:1800,expenseDate:'2026-11-19',serviceStart:'2026-10-01'
+ }))
+ const normalBatch=f.db.batch.bind(f.db)
+ f.db.batch=async statements=>{
+  f.sql.prepare("UPDATE variable_recurring_bills SET amount_jpy=2000,service_start='2026-10-02',updated_at=updated_at+1 WHERE plan_id=?")
+   .run(uuid)
+  return normalBatch(statements)
+ }
+ const res=await f.send('POST','/'+uuid+'/confirm',{periodMonth:'2026-10'})
+ assert.equal(res.httpStatus,409)
+ assert.equal(f.sql.prepare('SELECT count(*) n FROM entries').get().n,0)
+ assert.equal(f.sql.prepare('SELECT status FROM variable_recurring_bills').get().status,'draft')
+})
+
+test('a concurrent manual expense blocks variable bill even after preflight',async()=>{
+ const f=fixture()
+ await f.send('POST','',f.plan(uuid,{startMonth:'2026-10'}))
+ await f.send('POST','/'+uuid+'/bill',f.bill('2026-10',{
+  amountJpy:1800,expenseDate:'2026-11-19'
+ }))
+ const normalBatch=f.db.batch.bind(f.db)
+ f.db.batch=async statements=>{
+  f.sql.prepare("INSERT INTO entries(date,time,amount,category,merchant,note,raw,type,payment_source) VALUES('2026-11-19','',1800,'光熱費','オクトパスエナジー','','','expense','現金')").run()
+  return normalBatch(statements)
+ }
+ const res=await f.send('POST','/'+uuid+'/confirm',{periodMonth:'2026-10'})
+ assert.equal(res.httpStatus,409)
+ assert.equal(f.sql.prepare('SELECT count(*) n FROM entries').get().n,1)
+ assert.equal(f.sql.prepare('SELECT status FROM variable_recurring_bills').get().status,'draft')
+})
+
+test('variable bill explains due-day 19:30 automatic posting',()=>{
+ const ui=readFileSync(new URL('../src/VariableRecurringCosts.vue',import.meta.url),'utf8')
+ assert.match(ui,/記帳日以降の19:30に自動記帳/)
+ assert.match(ui,/自動記帳待ち/)
+})
+
 // Use the production posting endpoint itself, not a separate imitation.
 import {postDueVariableRecurring} from '../functions/api/variable-recurring-auto.js'
 

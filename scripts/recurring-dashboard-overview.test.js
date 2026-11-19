@@ -40,3 +40,17 @@ test('variable costs open as a compact overview, not duplicate heading and two-l
  assert.match(finance,/variableRecurringRefreshKey.value\+\+/)
  assert.match(variable,/watch\(\(\)=>props.refreshKey,\(\)=>\{if\(props.inline\)void refresh\(\)\}\)/)
 })
+
+test('the common posting review is outside amount tabs and opens the right review workflow',()=>{
+ const fixedPanelEnd=finance.indexOf('<section id="recurring-cost-panel-variable"')
+ const common=finance.indexOf('class="recurring-common-review-area"')
+ const lastVariable=finance.indexOf('<VariableRecurringCosts v-if="variableCostTabVisited"')
+ assert.ok(common>lastVariable && lastVariable>fixedPanelEnd)
+ assert.match(finance,/v-show="managementTab === 'plans'" class="recurring-common-review-area"/)
+ assert.match(finance,/<button v-if="recurringCostTab === 'fixed'"[^>]*@click="reviewRecurring"/)
+ assert.match(finance,/<button v-if="recurringCostTab === 'variable'"[^>]*@click="openVariableBillReview"/)
+ assert.match(finance,/<VariableRecurringCosts v-if="variableCostTabVisited" ref="variableRecurringComponent" inline/)
+ assert.match(variable,/defineExpose\(\{openPendingReview\}\)/)
+ assert.match(variable,/b\.status==='draft'/)
+ assert.match(variable,/openBill\(p\)/)
+})

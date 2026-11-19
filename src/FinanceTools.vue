@@ -53,6 +53,8 @@ const managementTab = ref('cards')
 const recurringCostTab = ref('fixed')
 const variableCostTabVisited = ref(false)
 const variableRecurringRefreshKey = ref(0)
+const variableRecurringComponent = ref(null)
+function openVariableBillReview() { variableRecurringComponent.value?.openPendingReview() }
 const fixedPlanEditorOpen = ref(false)
 function focusFixedPlanEditor() {
   void nextTick(() => document.getElementById('fixed-cost-editor')?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
@@ -1733,19 +1735,31 @@ function onCardRemove(value){
     :category-label="categoryLabel" :next-label="p=>recurringPlanNextLabel(recurringStatusFor(p))"
     :current-count="currentEligiblePlans.length" :monthly-total="recurringMonthlyTotal"
     @edit="beginEditPlan" @toggle="togglePlanEnabled" @remove="p=>removePlan(p.id)" />
-  <article class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringListOpen }" aria-label="固定費の記帳確認">
+
+
+  </section>
+  <section id="recurring-cost-panel-variable" class="recurring-cost-type-panel" role="tabpanel"
+    aria-labelledby="recurring-cost-tab-variable"
+    v-show="managementTab === 'plans' && recurringCostTab === 'variable'">
+    <VariableRecurringCosts v-if="variableCostTabVisited" ref="variableRecurringComponent" inline
+      :refresh-key="variableRecurringRefreshKey" :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
+      :category-label="categoryLabel" />
+  </section>
+  <section v-show="managementTab === 'plans'" class="recurring-common-review-area" aria-label="固定費の記帳確認">
+  <article class="finance-panel recurring-review-panel" :class="{ 'is-expanded': recurringCostTab === 'fixed' && recurringListOpen }" aria-label="固定費の記帳確認">
       <div class="recurring-review-heading">
         <div>
           <h3>記帳の確認</h3>
-          <p>過去分・明日の予定</p>
+          <p>{{recurringCostTab === 'fixed' ? '固定金額：過去分・明日の予定' : '変動金額：請求ごとに確認'}}</p>
         </div>
       </div>
-      <p v-if="recurringAutoWindow.clipped" class="recurring-window-note">過去10年分まで</p>
-      <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringListOpen && recurringDueEntries.length > 0}">
-        <button type="button" :disabled="recurringBusy || (!recurringListOpen && (!settingsReady || !loaded))" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
-        <button v-if="recurringListOpen && recurringDueEntries.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button>
+      <p v-if="recurringCostTab === 'fixed' && recurringAutoWindow.clipped" class="recurring-window-note">過去10年分まで</p>
+      <div class="finance-actions recurring-review-actions" :class="{'has-preview':recurringCostTab === 'fixed' && recurringListOpen && recurringDueEntries.length > 0}">
+        <button v-if="recurringCostTab === 'fixed'" type="button" :disabled="recurringBusy || (!recurringListOpen && (!settingsReady || !loaded))" :aria-expanded="recurringListOpen" aria-controls="recurring-candidate-list" @click="reviewRecurring">{{recurringListOpen ? '候補を閉じる' : '未記帳分を確認'}}</button>
+        <button v-if="recurringCostTab === 'fixed' && recurringListOpen && recurringDueEntries.length" type="button" :disabled="recurringBusy || !selectedRecurring.length" @click="applyRecurring">選択した{{selectedRecurring.length}}件を登録</button>
+        <button v-if="recurringCostTab === 'variable'" type="button" :disabled="!variableCostTabVisited" @click="openVariableBillReview">請求を確認</button>
       </div>
-      <div v-if="recurringListOpen" id="recurring-candidate-list" class="recurring-review-results">
+      <div v-if="recurringCostTab === 'fixed' && recurringListOpen" id="recurring-candidate-list" class="recurring-review-results">
         <section v-if="recurringTomorrowEntries.length" class="recurring-review-group recurring-review-upcoming" aria-label="明日の記帳予定">
           <div class="recurring-review-group-heading">
             <div><h4>明日の記帳予定</h4><p>前日から除外可能</p></div>
@@ -1791,14 +1805,6 @@ function onCardRemove(value){
         <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
       </div>
   </article>
-
-  </section>
-  <section id="recurring-cost-panel-variable" class="recurring-cost-type-panel" role="tabpanel"
-    aria-labelledby="recurring-cost-tab-variable"
-    v-show="managementTab === 'plans' && recurringCostTab === 'variable'">
-    <VariableRecurringCosts v-if="variableCostTabVisited" inline
-      :refresh-key="variableRecurringRefreshKey" :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
-      :category-label="categoryLabel" />
   </section>
   <article v-show="managementTab === 'cards'" class="finance-panel card-billing-panel">
     <h2>カード別利用額</h2>
@@ -2002,6 +2008,7 @@ function onCardRemove(value){
 .recurring-cost-type-tabs button.is-active{background:var(--card);color:var(--blue-dark);border-color:var(--blue-dark)}
 .recurring-cost-type-tabs button:focus-visible{outline:2px solid var(--blue-dark);outline-offset:2px}
 .recurring-cost-type-panel{display:grid;gap:10px;min-width:0}
+.recurring-common-review-area{display:grid;gap:10px;min-width:0}
 .finance-tools{display:grid;gap:10px}.finance-heading{margin:0 0 2px;font-size:21px;line-height:1.3}.finance-panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;display:grid;gap:8px}.finance-panel h2{font-size:17px;margin:0}.finance-panel p{font-size:13px;color:var(--muted);margin:0}.finance-panel button{border:1px solid var(--line);border-radius:10px;background:var(--tint);color:var(--ink);padding:9px}.finance-panel label{font-size:13px}.finance-panel input[type=file]{display:block;max-width:100%}.finance-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.finance-inputs input,.finance-inputs select{width:100%;min-width:0;height:44px;min-height:44px;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:9px 5px;background:var(--card);color:var(--ink)}.finance-inputs label{min-width:0;font-size:12px;color:var(--muted)}.finance-inputs label select{display:block;color:var(--ink)}.finance-row{font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}.finance-row button{margin-left:6px}
 .duplicate-review-row{display:grid;gap:8px;min-width:0;background:var(--tint);border:1px solid var(--line);border-radius:11px;padding:10px}
 .duplicate-review-label{min-width:0;overflow-wrap:anywhere;font-size:13px;font-weight:650}
@@ -2210,10 +2217,10 @@ function onCardRemove(value){
 .recurring-plans-panel .recurring-list-summary:after{grid-column:2;grid-row:1 / span 2;justify-self:center;margin:0}
 .recurring-plans-panel .recurring-list-body{padding:0 4px 6px}
 @media(max-width:679px){
-  .recurring-cost-type-panel>.recurring-review-panel{padding:12px}
+  .recurring-common-review-area>.recurring-review-panel{padding:12px}
   .recurring-cost-type-panel>.recurring-plans-panel{padding:5px 10px}
 }
-@media(max-width:380px){.recurring-cost-type-panel>.recurring-review-panel{padding:10px}}
+@media(max-width:380px){.recurring-common-review-area>.recurring-review-panel{padding:10px}}
 
 /* Fixed expenses: iPhone-first form, review cards and stable disclosure headers. */
 .recurring-manager-panel{min-width:0;max-width:100%;box-sizing:border-box}
@@ -2241,7 +2248,7 @@ function onCardRemove(value){
 
 /* Keep the review shortcut distinct from the page background in all four themes.
    When collapsed, keep its action beside the heading on iPhones. */
-.recurring-cost-type-panel>.recurring-review-panel{
+.recurring-common-review-area>.recurring-review-panel{
   background:#fff;
   border:1px solid color-mix(in srgb,var(--blue) 46%,#c9d8ce);
   border-left:3px solid var(--blue);
@@ -2253,9 +2260,9 @@ function onCardRemove(value){
   font-size:11px;
   line-height:1.4;
 }
-.recurring-cost-type-panel>.recurring-review-panel .recurring-review-heading{min-width:0}
-.recurring-cost-type-panel>.recurring-review-panel .recurring-window-note{grid-column:1/-1}
-.recurring-cost-type-panel>.recurring-review-panel .recurring-review-results{grid-column:1/-1}
+.recurring-common-review-area>.recurring-review-panel .recurring-review-heading{min-width:0}
+.recurring-common-review-area>.recurring-review-panel .recurring-window-note{grid-column:1/-1}
+.recurring-common-review-area>.recurring-review-panel .recurring-review-results{grid-column:1/-1}
 .finance-panel .recurring-review-actions button:disabled{
   opacity:1;
   color:color-mix(in srgb,var(--ink) 65%,var(--muted));
@@ -2263,22 +2270,22 @@ function onCardRemove(value){
   border-color:color-mix(in srgb,var(--blue) 28%,var(--line));
 }
 @media(max-width:679px){
-  .recurring-cost-type-panel>.recurring-review-panel:not(.is-expanded){
+  .recurring-common-review-area>.recurring-review-panel:not(.is-expanded){
     grid-template-columns:minmax(0,1fr) minmax(120px,auto);
     align-items:center;
     gap:7px 10px;
     padding:10px 12px;
   }
-  .recurring-cost-type-panel>.recurring-review-panel:not(.is-expanded) .recurring-review-heading{
+  .recurring-common-review-area>.recurring-review-panel:not(.is-expanded) .recurring-review-heading{
     grid-column:1;
     grid-row:1;
   }
-  .recurring-cost-type-panel>.recurring-review-panel:not(.is-expanded) .recurring-review-actions{
+  .recurring-common-review-area>.recurring-review-panel:not(.is-expanded) .recurring-review-actions{
     grid-column:2;
     grid-row:1;
     min-width:0;
   }
-  .recurring-cost-type-panel>.recurring-review-panel:not(.is-expanded) .recurring-review-actions button{
+  .recurring-common-review-area>.recurring-review-panel:not(.is-expanded) .recurring-review-actions button{
     min-height:44px;
     padding:8px;
     font-size:12px;

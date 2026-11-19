@@ -14,7 +14,7 @@ const yen=n=>'¥'+Number(n||0).toLocaleString('ja-JP')
 const ready=ref(false),busy=ref(false),error=ref(''),notice=ref('')
 const plans=ref([]),bills=ref([])
 const expanded=ref(false),planEditor=ref(false),billEditor=ref(false)
-const planEditorElement=ref(null),billEditorElement=ref(null)
+const planEditorElement=ref(null),billEditorElement=ref(null),plansElement=ref(null)
 function focusVariableEditor(node){
  void nextTick(()=>node.value?.scrollIntoView({block:'start',behavior:'smooth'}))
 }
@@ -161,6 +161,19 @@ async function confirmBill(){
  }catch(e){error.value=String(e.message||e)}
  finally{busy.value=false}
 }
+function openPendingReview() {
+ const pending=bills.value.find(b=>b.status==='draft' && plans.value.some(p=>p.id===b.planId && p.enabled))
+ if(pending){
+  const p=plans.value.find(p=>p.id===pending.planId)
+  openBill(p)
+  if(invoice.value.periodMonth!==pending.periodMonth)invoice.value.periodMonth=pending.periodMonth
+ }else if(plans.value.length){
+  void nextTick(()=>plansElement.value?.scrollIntoView({block:'start',behavior:'smooth'}))
+ }else{
+  notice.value='まず変動費を登録してください。'
+ }
+}
+defineExpose({openPendingReview})
 onMounted(refresh)
 watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
 </script>
@@ -219,7 +232,7 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
    </div>
   </form>
   <p v-if="ready&&!plans.length&&!planEditor" class="variable-empty">まだ登録がありません。電気・ガス・水道などを追加できます。</p>
-  <div v-if="ready&&plans.length" class="plans" aria-label="登録済みの変動費">
+  <div v-if="ready&&plans.length" ref="plansElement" class="plans" aria-label="登録済みの変動費">
    <details v-for="p in plans" :key="p.id" class="plan">
     <summary class="plan-summary">
      <span class="plan-title"><strong>{{p.name}}</strong><span class="plan-state" :class="{'is-due':billLabel(p)==='要確認'}">{{billLabel(p)}}</span></span>

@@ -64,6 +64,22 @@ test('signed document sync saves draft, never writes ledger and never double-cre
  assert.equal(body.exists,true)
  assert.equal(body.remote_id,'variable-bill:'+planId+':2026-11')
 })
+test('new utility drafts preserve proposed card day and metering range but never auto-post',async()=>{
+ const {sql,env}=fixture()
+ const p=payload('variable_bill_draft',{
+  periodMonth:'2026-11',billDate:null,expenseDate:'2026-11-27',
+  serviceStart:'2026-10-16',serviceEnd:'2026-11-15'
+ })
+ const res=await onRequestPost({request:await signed(p),env})
+ assert.equal(res.status,200)
+ const row=sql.prepare('SELECT bill_date,expense_date,service_start,service_end,status FROM variable_recurring_bills').get()
+ assert.equal(row.bill_date,null)
+ assert.equal(row.expense_date,'2026-11-27')
+ assert.equal(row.service_start,'2026-10-16')
+ assert.equal(row.service_end,'2026-11-15')
+ assert.equal(row.status,'draft')
+ assert.equal(sql.prepare('SELECT count(*) count FROM entries').get().count,0)
+})
 test('different document cannot overwrite an existing billed period or select an invalid period',async()=>{
  const {sql,env}=fixture()
  let res=await onRequestPost({request:await signed(payload()),env})

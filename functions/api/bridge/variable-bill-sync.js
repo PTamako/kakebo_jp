@@ -36,7 +36,10 @@ export async function importVariableBillDraft(db,requestPayload){
  const sourceDocument=requestPayload?.source_document_id
  if(!p||!uuid.test(p.planId||'')||!month.test(p.periodMonth||'')||
   !Number.isSafeInteger(p.amount)||p.amount<1||p.amount>10000000||
-  !isDate(p.billDate)||!isId(sourceCandidate)||!isId(sourceDocument)||
+  !(p.billDate===null||p.billDate===undefined||isDate(p.billDate))||
+  ![p.expenseDate,p.serviceStart,p.serviceEnd].every(d=>d===undefined||d===null||isDate(d))||
+  (p.serviceStart&&p.serviceEnd&&p.serviceStart>p.serviceEnd)||
+  !isId(sourceCandidate)||!isId(sourceDocument)||
   typeof p.merchant!=='string'||!p.merchant.trim()||p.merchant.length>120)
   return fail('invalid_variable_bill',400)
  try{
@@ -53,9 +56,10 @@ export async function importVariableBillDraft(db,requestPayload){
   // Never overwrite a manually reviewed draft, another source document or a
   // posted entry. The user can correct an imported draft in Kakeibo itself.
   const inserted=await db.prepare("INSERT INTO variable_recurring_bills "+
-   "(plan_id,period_month,amount_jpy,bill_date,source_type,source_document_id,source_candidate_id,updated_at) "+
-   "VALUES(?,?,?,?,'document',?,?,?) ON CONFLICT(plan_id,period_month) DO NOTHING")
-   .bind(p.planId,p.periodMonth,p.amount,p.billDate,sourceDocument,sourceCandidate,Date.now()).run()
+   "(plan_id,period_month,amount_jpy,bill_date,expense_date,service_start,service_end,source_type,source_document_id,source_candidate_id,updated_at) "+
+   "VALUES(?,?,?,?,?,?,?,'document',?,?,?) ON CONFLICT(plan_id,period_month) DO NOTHING")
+   .bind(p.planId,p.periodMonth,p.amount,p.billDate??null,p.expenseDate??null,
+    p.serviceStart??null,p.serviceEnd??null,sourceDocument,sourceCandidate,Date.now()).run()
   if(inserted.meta?.changes!==1){
    const current=await lookupVariableBill(db,sourceCandidate)
    if(!current||current.remote_id!=='variable-bill:'+p.planId+':'+p.periodMonth)

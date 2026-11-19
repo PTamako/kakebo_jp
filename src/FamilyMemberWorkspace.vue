@@ -1022,6 +1022,14 @@ async function loadMemberJobStatus(){
 }
 const memberPortfolioVersions=ref(new Map())
 async function memberPrepaidApi(path,options={}){
+ if(path==='prepaid-alerts'&&options.method==='POST'){
+  const body=JSON.parse(options.body||'{}')
+  const account=myAccounts.value.find(a=>a.account_id===body.accountId &&
+   a.owner_user_id===props.user.user_id&&a.account_kind==='prepaid' &&
+   a.origin==='member_created'&&!a.is_archived)
+  if(!account)throw Error('本人のカードだけ設定できます')
+  return api('prepaid-alerts',options)
+ }
  if(path!=='prepaid-report'||(options.method&&options.method!=='GET'))
   throw Error('本人のプリペイド一覧のみ読み取れます')
  const result=await api('prepaid-report')

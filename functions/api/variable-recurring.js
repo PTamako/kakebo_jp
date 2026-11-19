@@ -41,6 +41,20 @@ function cycle(start,period,step){
  const a=start.split('-').map(Number),b=period.split('-').map(Number)
  return ((b[0]-a[0])*12+b[1]-a[1])%step===0
 }
+// Keep the billed service period in the final ledger detail, not just the draft.
+// Never infer a missing period from a calendar month or a card-advance date.
+export function variableBillLedgerNote(periodMonth,bill){
+ const fragments=['変動固定費・対象月 '+periodMonth]
+ const format=d=>d.replaceAll('-','/')
+ const start=date(bill?.service_start)?bill.service_start:null
+ const end=date(bill?.service_end)?bill.service_end:null
+ if(start&&end&&start<=end)fragments.push('利用期間 '+format(start)+'〜'+format(end))
+ else{
+  if(start)fragments.push('利用開始 '+format(start))
+  if(end)fragments.push('利用終了 '+format(end))
+ }
+ return fragments.join(' ／ ')
+}
 const fromRow=r=>({id:r.id,name:r.name,category:r.category,
  paymentSource:r.payment_source,startMonth:r.start_month,intervalMonths:r.interval_months,
  budgetJpy:r.budget_jpy,enabled:!!r.enabled})
@@ -137,13 +151,14 @@ export async function handleVariableRecurring(request,db,parts){
    if(conflict)return json({ok:false,error:'同じ月の明細が存在します。文書助手や手入力の記録を確認してください',
     conflictEntryId:conflict.id},409)
    const stamped=Date.now()
+   const ledgerNote=variableBillLedgerNote(x.periodMonth,b)
    const result=await db.batch([
     db.prepare('INSERT OR IGNORE INTO entries '+
      '(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
      "SELECT ?, '', ?, ?, ?, ?, '', 'expense', ?, ? WHERE EXISTS "+
      "(SELECT 1 FROM variable_recurring_bills WHERE plan_id=? AND period_month=? AND status='draft') ")
      .bind(b.expense_date,b.amount_jpy,p.category,p.name,
-      '変動固定費・対象月 '+x.periodMonth,reqId,p.payment_source,pid,x.periodMonth),
+      ledgerNote,reqId,p.payment_source,pid,x.periodMonth),
     db.prepare("UPDATE variable_recurring_bills SET status='posted',"+
      'posted_entry_id=(SELECT id FROM entries WHERE client_request_id=?),updated_at=? '+
      "WHERE plan_id=? AND period_month=? AND status='draft' "+

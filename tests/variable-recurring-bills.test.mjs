@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {DatabaseSync} from 'node:sqlite'
 import {readFileSync} from 'node:fs'
-import {handleVariableRecurring} from '../functions/api/variable-recurring.js'
+import {handleVariableRecurring,variableBillLedgerNote} from '../functions/api/variable-recurring.js'
 const migration=readFileSync(new URL('../migrations/0109_variable_recurring_bills.sql',import.meta.url),'utf8')
 const origin='https://kakeibo.example'
 const uuid='11111111-1111-4111-8111-111111111111'
@@ -71,6 +71,8 @@ test('explicit confirmation posts exactly once; replay never adds a second expen
  assert.equal(second.alreadyPosted,true)
  assert.equal(f.sql.prepare('SELECT count(*) AS n FROM entries').get().n,1)
  assert.equal(f.sql.prepare('SELECT amount FROM entries').get().amount,6800)
+ assert.equal(f.sql.prepare('SELECT note FROM entries').get().note,
+  '変動固定費・対象月 2026-11 ／ 利用期間 2026/10/01〜2026/10/31')
  assert.equal((await f.send('POST','/'+uuid+'/bill',due)).httpStatus,409)
 })
 test('existing document/manual expense blocks duplicate; bimonthly cannot create off-cycle bill',async()=>{
@@ -110,4 +112,15 @@ test('variable-bill sheet omits invoice issue date and retains editable proposed
  assert.doesNotMatch(ui,/<label>請求書発行日/)
  assert.match(ui,/記帳日（カード立替日など・変更可能）/)
  assert.match(ui,/billDate:null,expenseDate:x\.expenseDate\|\|null/)
+})
+
+test('ledger note includes only explicitly supplied metering dates',()=>{
+ const bill={service_start:'2026-10-16',service_end:'2026-11-15'}
+ assert.equal(variableBillLedgerNote('2026-10',bill),
+  '変動固定費・対象月 2026-10 ／ 利用期間 2026/10/16〜2026/11/15')
+ assert.equal(variableBillLedgerNote('2026-10',{}),'変動固定費・対象月 2026-10')
+ assert.equal(variableBillLedgerNote('2026-10',{service_start:'2026-10-16'}),
+  '変動固定費・対象月 2026-10 ／ 利用開始 2026/10/16')
+ assert.equal(variableBillLedgerNote('2026-10',{service_end:'2026-11-15'}),
+  '変動固定費・対象月 2026-10 ／ 利用終了 2026/11/15')
 })

@@ -224,7 +224,6 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
     subtitle="電気・ガス・水道などの請求条件を設定します。" @close="closePlanEditor">
   <p v-if="error" class="error" role="alert">{{error}}</p>
   <form v-if="planEditor" ref="planEditorElement" class="editor recurring-editor-fields" @submit.prevent="savePlan">
-   <h3 class="recurring-form-section-title">基本情報</h3>
    <label>名称 <input v-model="form.name" maxlength="120" placeholder="例：オクトパスエナジー" required/></label>
    <label>カテゴリ <select v-model="form.category" required>
     <option value="">選択してください</option>

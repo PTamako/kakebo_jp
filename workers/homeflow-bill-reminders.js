@@ -71,7 +71,7 @@ export async function readBillConfirmationReminders(request,db){
  if(!db?.prepare)return json({error:'db_unavailable'},503)
  const q=new URL(request.url).searchParams,allowed=new Set(['day','recipientUserId','householdId'])
  if([...q.keys()].some(k=>!allowed.has(k)||q.getAll(k).length!==1))return json({error:'invalid_query'},400)
- const day=q.get('day'),recipientUserId=q.get('recipientUserId'),householdId=q.get('householdId')
- if(!date(day)||!userId(recipientUserId)||!householdId(householdId))return json({error:'invalid_query'},400)
- return json(await projectBillConfirmationReminders(db,{day,recipientUserId,householdId}))
+ const day=q.get('day'),recipientUserId=q.get('recipientUserId'),hid=q.get('householdId')
+ if(!date(day)||!userId(recipientUserId)||!householdId(hid))return json({error:'invalid_query'},400)
+ return json(await projectBillConfirmationReminders(db,{day,recipientUserId,householdId:hid}))
 }

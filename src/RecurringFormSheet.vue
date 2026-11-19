@@ -1,3 +1,8 @@
+<script>
+// Shared by every instance: opening one cost form never unlocks another.
+let activeLocks=0
+let lastBodyOverflow=''
+</script>
 <script setup>
 import {nextTick,onBeforeUnmount,ref,watch} from 'vue'
 const props=defineProps({
@@ -10,8 +15,6 @@ const emit=defineEmits(['close'])
 const panel=ref(null)
 let scrollLocked=false
 let previousFocus=null
-let lastBodyOverflow=''
-let activeLocks=0
 // This component may be used by either cost tab; avoid releasing another sheet's scroll lock.
 function lock(){
  if(scrollLocked || typeof document==='undefined')return
@@ -84,8 +87,10 @@ onBeforeUnmount(unlock)
 .recurring-sheet-content :deep(.recurring-editor-fields input:not([type=checkbox]):not([type=radio])),
 .recurring-sheet-content :deep(.recurring-editor-fields select),
 .recurring-sheet-content :deep(.recurring-form-field input:not([type=checkbox]):not([type=radio])){display:block;inline-size:100%!important;width:100%!important;min-inline-size:0!important;min-width:0!important;max-inline-size:100%!important;max-width:100%!important;box-sizing:border-box!important;min-height:46px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink);font-size:16px;padding:9px 12px}
-.recurring-sheet-content :deep(input[type=date]),
-.recurring-sheet-content :deep(input[type=month]){display:block!important;min-width:0!important;min-inline-size:0!important;max-width:100%!important;max-inline-size:100%!important;width:100%!important;inline-size:100%!important;box-sizing:border-box!important;overflow:hidden!important;-webkit-appearance:none;appearance:none}
+.recurring-sheet-content :deep(.recurring-editor-fields input[type=date]),
+.recurring-sheet-content :deep(.recurring-editor-fields input[type=month]),
+.recurring-sheet-content :deep(.recurring-form-field input[type=date]),
+.recurring-sheet-content :deep(.recurring-form-field input[type=month]){display:inline-flex!important;align-items:center;min-width:0!important;min-inline-size:0!important;max-width:100%!important;max-inline-size:100%!important;width:100%!important;inline-size:100%!important;box-sizing:border-box!important;overflow:hidden!important;padding:0 12px!important;-webkit-appearance:none;appearance:none}
 .recurring-sheet-content :deep(input[type=date]::-webkit-date-and-time-value),
 .recurring-sheet-content :deep(input[type=month]::-webkit-date-and-time-value){min-width:0!important;max-width:100%;text-align:left}
 .recurring-sheet-content :deep(input[type=date]::-webkit-datetime-edit),

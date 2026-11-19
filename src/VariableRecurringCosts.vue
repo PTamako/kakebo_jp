@@ -210,9 +210,9 @@ onMounted(refresh)
     <label>利用期間終了 <input v-model="invoice.serviceEnd" type="date"/></label></div>
    <p class="hint">保存しただけでは支出になりません。文書助手ですでに記帳された同じ請求は、もう一度登録しないでください。</p>
    <p v-if="chosenSaved?.status==='posted'" class="hint">記帳済み：明細 #{{chosenSaved.postedEntryId}}。同じ回は二重記帳できません。</p>
-   <p v-else-if="chosenSaved?.sourceType==='document'" class="hint">文書助手由来の下書きです。元資料を確認してください。</p>
+   <p v-else-if="chosenSaved?.sourceType==='document'" class="hint">文書助手が入力した下書きです。原本と照合して、必要なら金額・日付を手動修正してください。</p>
    <div class="actions">
-    <button v-if="chosenSaved?.status!=='posted'&&chosenSaved?.sourceType!=='document'" type="submit" :disabled="busy||!canSaveBill">下書きを保存</button>
+    <button v-if="chosenSaved?.status!=='posted'" type="submit" :disabled="busy||!canSaveBill">下書きを保存</button>
     <button v-if="chosenSaved?.status==='draft'" type="button" :disabled="busy||!canConfirm" @click="confirmBill">確認して記帳</button>
     <button type="button" @click="billEditor=false">閉じる</button>
    </div>

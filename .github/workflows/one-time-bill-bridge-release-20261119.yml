@@ -1,0 +1,45 @@
+name: One-time Kakeibo bill reminder private bridge production release
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/one-time-bill-bridge-release-20261119.yml
+permissions:
+  contents: read
+concurrency:
+  group: kakeibo-private-bill-bridge-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fail closed if not the audited bridge release commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "788f8dc73700bb1c4c2673472b3fe1474f067d4a"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          grep -F 'workers_dev = false' wrangler.homeflow-bridge.toml
+          grep -F 'preview_urls = false' wrangler.homeflow-bridge.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - name: Verify bill owner and timing isolation
+        run: node --test tests/homeflow-bill-reminders.test.mjs tests/homeflow-ledger.test.mjs scripts/homeflow-service-bridge.test.js
+      - name: Full production validation and Vite build (no Pages deploy)
+        run: npm run verify:release
+      - name: Verify private bridge bundle and preserve existing production bindings
+        run: npx wrangler deploy --config wrangler.homeflow-bridge.toml --dry-run --outdir .wrangler/private-bill-dryrun
+      - name: Deploy ONLY existing kakeibo-homeflow-bridge production Worker
+        run: npx wrangler deploy --config wrangler.homeflow-bridge.toml
+      - name: Verify public account UI remains independently available
+        run: curl --retry 4 --retry-delay 2 --fail --silent --show-error https://kakeibo-f17.pages.dev/ >/dev/null

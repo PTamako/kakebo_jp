@@ -3,7 +3,11 @@ import { ref, computed, watch, nextTick, onBeforeUnmount, inject } from 'vue'
 import { formatYenInput, normalizeYenInput, calculateYenExpression, convertToYen, calculateJapaneseConsumptionTax } from './amount-tools.js'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 
-const props = defineProps({ modelValue: { type: [Number, String], default: 0 }, inputLabel: { type: String, default: '金額（円）' } })
+const props = defineProps({
+  modelValue: { type: [Number, String], default: 0 },
+  inputLabel: { type: String, default: '金額（円）' },
+  required: { type: Boolean, default: true }
+})
 const emit = defineEmits(['update:modelValue'])
 const moneyInput = ref(null)
 const launchButton = ref(null)
@@ -200,7 +204,7 @@ function apply() {
     <div class="money-entry-input">
       <span class="money-symbol" aria-hidden="true">¥</span>
       <input ref="moneyInput" :value="draft" type="text" inputmode="numeric" autocomplete="off"
-        :aria-label="inputLabel" placeholder="0" required
+        :aria-label="inputLabel" placeholder="0" :required="required"
         @input="onAmountInput" @blur="onAmountBlur" />
     </div>
     <button ref="launchButton" class="money-tools-trigger" type="button" aria-label="計算・為替換算を開く" @click="openTools">

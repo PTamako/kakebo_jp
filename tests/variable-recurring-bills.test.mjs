@@ -190,3 +190,16 @@ test('empty amount or paused plan never auto-posts',async()=>{
  assert.equal((await postDueVariableRecurring(f.db,{today:'2026-11-27'})).checked,0)
  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM entries').get().n,0)
 })
+
+test('variable bill amount uses the fixed-cost money control without forcing drafts to have an amount',()=>{
+ const billUi=readFileSync(new URL('../src/VariableRecurringCosts.vue',import.meta.url),'utf8')
+ const shared=readFileSync(new URL('../src/AmountInput.vue',import.meta.url),'utf8')
+ assert.match(billUi,/import AmountInput from '\.\/AmountInput\.vue'/)
+ assert.match(billUi,/<AmountInput v-model="invoiceAmount" :required="false" input-label="実際の請求額（円）"\/>/)
+ assert.match(billUi,/invoice\.value\.amountJpy=value===0\?'':value/)
+ assert.match(billUi,/Number\(invoice\.value\.amountJpy\)<=10000000/)
+ assert.doesNotMatch(billUi,/v-model="invoice\.amountJpy" type="number"/)
+ assert.match(shared,/required: \{ type: Boolean, default: true \}/)
+ assert.match(shared,/:required="required"/)
+ assert.match(shared,/class="money-tools-trigger"/)
+})

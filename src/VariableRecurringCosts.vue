@@ -2,6 +2,7 @@
 import {computed,onMounted,ref,watch,nextTick} from 'vue'
 import RecurringFormSheet from './RecurringFormSheet.vue'
 import RecurringCostOverview from './RecurringCostOverview.vue'
+import AmountInput from './AmountInput.vue'
 import {selectPendingBill} from './variable-recurring-display.js'
 const props=defineProps({
  api:{type:Function,required:true},
@@ -30,6 +31,11 @@ const form=ref(emptyPlan())
 const emptyBill=(periodMonth=thisMonth())=>({periodMonth,amountJpy:'',
  expenseDate:'',paidDate:'',serviceStart:'',serviceEnd:''})
 const invoice=ref(emptyBill())
+// The shared money field emits 0 when cleared; keep an empty variable bill as a draft.
+const invoiceAmount=computed({
+ get:()=>invoice.value.amountJpy,
+ set:value=>{invoice.value.amountJpy=value===0?'':value}
+})
 const cycleOptions=[{value:1,label:'毎月'},{value:2,label:'2か月ごと'},
  {value:3,label:'3か月ごと'},{value:6,label:'6か月ごと'},
  {value:12,label:'毎年'}]
@@ -49,7 +55,8 @@ const chosenPlan=computed(()=>plans.value.find(p=>p.id===selectedPlan.value?.id)
 const canSaveBill=computed(()=>!!chosenPlan.value?.enabled&&
  periodIsOnCycle(chosenPlan.value,invoice.value.periodMonth)&&
  (invoice.value.amountJpy===''||
-  (Number.isSafeInteger(Number(invoice.value.amountJpy))&&Number(invoice.value.amountJpy)>0))&&
+  (Number.isSafeInteger(Number(invoice.value.amountJpy))&&Number(invoice.value.amountJpy)>0&&
+    Number(invoice.value.amountJpy)<=10000000))&&
  (!invoice.value.serviceStart||!invoice.value.serviceEnd||
   invoice.value.serviceStart<=invoice.value.serviceEnd))
 const canConfirm=computed(()=>chosenSaved.value?.status==='draft'&&
@@ -243,7 +250,8 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
    <label>対象月（サービス所属月） <input v-model="invoice.periodMonth" type="month" required/></label>
    <p v-if="!periodIsOnCycle(chosenPlan,invoice.periodMonth)" class="error">
     対象月は開始月から{{chosenPlan.intervalMonths}}か月周期で選択してください。</p>
-   <label>実際の請求額 <input v-model="invoice.amountJpy" type="number" min="1" max="10000000" placeholder="請求書が届いてから入力"/></label>
+   <div class="recurring-form-field recurring-form-amount"><span>実際の請求額</span>
+    <AmountInput v-model="invoiceAmount" :required="false" input-label="実際の請求額（円）"/></div>
    <h3 class="recurring-form-section-title">記帳・引落日</h3>
    <label>記帳日（カード立替日など・変更可能） <input v-model="invoice.expenseDate" type="date"/></label>
    <label>実際の引落日（任意） <input v-model="invoice.paidDate" type="date"/></label>

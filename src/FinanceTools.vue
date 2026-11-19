@@ -1713,7 +1713,7 @@ function onCardRemove(value){
     aria-labelledby="recurring-cost-tab-fixed"
     v-show="managementTab === 'plans' && recurringCostTab === 'fixed'">
   <div class="recurring-fixed-toolbar">
-    <button type="button" class="recurring-fixed-add" :disabled="recurringBusy" @click="openNewFixedPlan">＋ 固定費を追加</button>
+    <button type="button" class="recurring-fixed-add" :disabled="recurringBusy" @click="fixedPlanEditorOpen ? cancelPlanEdit() : openNewFixedPlan()">{{fixedPlanEditorOpen ? '閉じる' : '＋ 固定費を追加'}}</button>
   </div>
   <div v-if="fixedPlanEditorOpen" id="fixed-cost-editor" class="recurring-editor-shell">
   <article class="finance-panel recurring-manager-panel">
@@ -1725,7 +1725,7 @@ function onCardRemove(value){
          ?[{value:plan.paymentSource,label:plan.paymentSource+'（既存の設定）'}]:[])]"
       :category-label="categoryLabel" />
     <div class="finance-actions recurring-save-actions"><button type="button" @click="addPlan" :disabled="recurringBusy || !settingsReady">{{editingPlanId ? '変更を保存' : '固定費を登録'}}</button>
-    <button v-if="editingPlanId" type="button" :disabled="recurringBusy" @click="cancelPlanEdit">編集をやめる</button></div>
+    <button type="button" :disabled="recurringBusy" @click="cancelPlanEdit">キャンセル</button></div>
   </article>
   </div>
   <OriginalFixedCostList default-open

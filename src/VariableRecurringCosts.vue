@@ -257,7 +257,7 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
 .editor input,.editor select{width:100%;box-sizing:border-box;min-height:44px;padding:8px 10px;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;min-width:0}
 .plans{gap:8px}
 .plan{border:1px solid var(--line);border-radius:12px;min-width:0;background:var(--card);overflow:hidden}
-.plan-summary{display:grid;gap:5px;padding:12px;cursor:pointer;list-style:none}
+.plan-summary{display:grid;gap:5px;padding:12px 32px 12px 12px;cursor:pointer;list-style:none;position:relative}
 .plan-summary::-webkit-details-marker{display:none}
 .plan-summary:focus-visible{outline:2px solid var(--blue-dark);outline-offset:-3px}
 .plan-title{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
@@ -266,7 +266,7 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
 .plan-state.is-due{color:var(--blue-dark);background:var(--tint);font-weight:750}
 .plan-meta{color:var(--muted)}
 .plan-month{font-size:12px;color:var(--ink);font-weight:650}
-.plan-summary::after{content:'⌄';color:var(--muted);justify-self:end;font-size:12px;margin-top:-18px}
+.plan-summary::after{content:'⌄';color:var(--muted);font-size:12px;position:absolute;right:12px;top:50%;transform:translateY(-50%)}
 .plan[open] .plan-summary::after{content:'⌃'}
 .plan-detail{padding:10px 12px;border-top:1px solid var(--line)}
 .actions,.pair{display:flex;gap:7px;flex-wrap:wrap}

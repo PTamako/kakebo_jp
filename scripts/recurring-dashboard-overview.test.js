@@ -8,10 +8,12 @@ const list=read('src/OriginalFixedCostList.vue')
 
 test('fixed costs show saved items by default; the editor is not mounted until requested',()=>{
  assert.match(finance,/const fixedPlanEditorOpen = ref\(false\)/)
- assert.match(finance,/@click="openNewFixedPlan"/)
+ assert.match(finance,/@click="fixedPlanEditorOpen \? cancelPlanEdit\(\) : openNewFixedPlan\(\)"/)
  assert.match(finance,/v-if="fixedPlanEditorOpen" id="fixed-cost-editor"/)
  assert.match(finance,/fixedPlanEditorOpen.value = true/)
  assert.match(finance,/fixedPlanEditorOpen.value = false/)
+ assert.match(finance,/固定費を追加'\}\}/)
+ assert.match(finance,/@click="cancelPlanEdit">キャンセル/)
  assert.match(finance,/<OriginalFixedCostList default-open/)
  assert.match(list,/defaultOpen:\{type:Boolean,default:false\}/)
  assert.match(list,/<details class="recurring-list-disclosure" :open="defaultOpen">/)

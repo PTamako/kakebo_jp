@@ -114,7 +114,7 @@ onMounted(()=>{if(props.active)void refresh()})
                   <small>{{card.is_archived?'アーカイブ済み':'プリペイド'}} · 持ち主：自分</small>
                   <button type="button" class="wallet-alert-link"
                     :aria-label="card.name+'の残高通知を設定'" @click="startAlert(card)">
-                    <span aria-hidden="true">♢</span> {{card.alert_enabled?'残高通知 '+money(card.alert_threshold_jpy)+'以下':'残高通知を設定'}}
+                    <span aria-hidden="true">🔔</span> {{card.alert_enabled?'残高通知 '+money(card.alert_threshold_jpy)+'以下':'残高通知を設定'}}
                   </button>
                 </div>
               </div>

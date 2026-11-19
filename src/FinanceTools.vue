@@ -16,6 +16,7 @@ import MobileMultiChoiceSheet from './MobileMultiChoiceSheet.vue'
 import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
 import FixedCostEditorFields from './FixedCostEditorFields.vue'
+import VariableRecurringCosts from './VariableRecurringCosts.vue'
 import OriginalFixedCostList from './OriginalFixedCostList.vue'
 import SbiPortfolio from './SbiPortfolio.vue'
 import InvestmentTransferReview from './InvestmentTransferReview.vue'
@@ -1745,6 +1746,9 @@ function onCardRemove(value){
         <p v-if="!recurringPreview.length" class="recurring-review-empty">未記帳分・明日の記帳予定はありません。</p>
       </div>
   </article>
+  <VariableRecurringCosts v-if="managementTab==='plans' && !props.memberView"
+    :api="props.api" :categories="orderedCategories" :payment-sources="orderedPayments"
+    :category-label="categoryLabel" />
   <OriginalFixedCostList v-show="managementTab==='plans'"
     :items="plans" :busy="recurringBusy" :yen="yen"
     :category-label="categoryLabel" :next-label="p=>recurringPlanNextLabel(recurringStatusFor(p))"

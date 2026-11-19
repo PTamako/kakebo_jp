@@ -45,18 +45,29 @@ test('variable costs open as a compact overview, not duplicate heading and two-l
  assert.match(variable,/watch\(\(\)=>props.refreshKey,\(\)=>\{if\(props.inline\)void refresh\(\)\}\)/)
 })
 
-test('the common posting review is outside amount tabs and opens the right review workflow',()=>{
+test('posting review is fixed-only; variable costs confirm bills on their own cards',()=>{
  const fixedPanelEnd=finance.indexOf('<section id="recurring-cost-panel-variable"')
  const common=finance.indexOf('class="recurring-common-review-area"')
  const lastVariable=finance.indexOf('<VariableRecurringCosts v-if="variableCostTabVisited"')
  assert.ok(common>lastVariable && lastVariable>fixedPanelEnd)
- assert.match(finance,/v-show="managementTab === 'plans'" class="recurring-common-review-area"/)
+ assert.match(finance,/v-show="managementTab === 'plans' && recurringCostTab === 'fixed'" class="recurring-common-review-area"/)
  assert.match(finance,/<button v-if="recurringCostTab === 'fixed'"[^>]*@click="reviewRecurring"/)
- assert.match(finance,/<button v-if="recurringCostTab === 'variable'"[^>]*@click="openVariableBillReview"/)
- assert.match(finance,/<VariableRecurringCosts v-if="variableCostTabVisited" ref="variableRecurringComponent" inline/)
- assert.match(variable,/defineExpose\(\{openPendingReview\}\)/)
- assert.match(variable,/b\.status==='draft'/)
- assert.match(variable,/openBill\(p\)/)
+ assert.doesNotMatch(finance,/@click="openVariableBillReview"/)
+ assert.doesNotMatch(finance,/function openVariableBillReview/)
+ assert.match(finance,/<VariableRecurringCosts v-if="variableCostTabVisited" inline/)
+ assert.match(variable,/@click="openBill\(p\)"/)
+ assert.match(variable,/chosenSaved\?\.status==='draft'/)
+ assert.doesNotMatch(variable,/defineExpose\(\{openPendingReview\}\)/)
+})
+test('bill footer fits 3 actions on one row and shows one concise hint',()=>{
+ const sheet=read('src/RecurringFormSheet.vue')
+ assert.match(variable,/class="actions recurring-sheet-actions recurring-bill-actions"/)
+ assert.match(sheet,/\.recurring-bill-actions\)\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/)
+ assert.match(variable,/下書きを保存/)
+ assert.match(variable,/確認して記帳/)
+ assert.match(variable,/v-else class="hint">下書き保存だけでは記帳されません/)
+ assert.match(variable,/v-else-if="chosenSaved\?\.sourceType==='document'" class="hint">文書助手の下書きです/)
+ assert.doesNotMatch(variable,/保存しただけでは支出になりません。文書助手ですでに記帳/)
 })
 
 test('shared form sheet locks background and bounds native iOS date inputs',()=>{

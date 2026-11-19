@@ -104,14 +104,13 @@ export async function handleVariableRecurring(request,db,parts){
    const old=await db.prepare('SELECT status,source_type FROM variable_recurring_bills WHERE plan_id=? AND period_month=?')
     .bind(pid,x.periodMonth).first()
    if(old?.status==='posted')return fail('記帳済みの請求は変更できません',409)
-   if(old?.source_type==='document')return fail('文書連携済みの請求は元資料から確認してください',409)
    await db.prepare('INSERT INTO variable_recurring_bills '+
     '(plan_id,period_month,amount_jpy,bill_date,expense_date,paid_date,service_start,service_end,updated_at) '+
     'VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(plan_id,period_month) DO UPDATE SET '+
     'amount_jpy=excluded.amount_jpy,bill_date=excluded.bill_date,'+
     'expense_date=excluded.expense_date,paid_date=excluded.paid_date,'+
     'service_start=excluded.service_start,service_end=excluded.service_end,updated_at=excluded.updated_at '+
-    "WHERE variable_recurring_bills.status='draft' AND variable_recurring_bills.source_type='manual'")
+    "WHERE variable_recurring_bills.status='draft'")
     .bind(pid,x.periodMonth,x.amountJpy,x.billDate||null,x.expenseDate||null,
      x.paidDate||null,x.serviceStart||null,x.serviceEnd||null,Date.now()).run()
    return json({ok:true,status:'draft'})

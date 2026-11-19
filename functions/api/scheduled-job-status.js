@@ -5,7 +5,7 @@ export async function recordScheduledJobStatus(db,job,scheduledAt,status,summary
   if(!JOB_KEYS.includes(job) || !['success','failed','skipped'].includes(status) ||
      !Number.isFinite(Date.parse(scheduledAt))) throw Error('invalid_scheduled_job_status')
   const safe={}
-  for(const name of ['checked','created','skipped','failed','updated']){
+  for(const name of ['checked','created','skipped','failed','updated','blocked','backlog']){
     const value=summary?.[name]
     if(Number.isSafeInteger(value)&&value>=0) safe[name]=value
     else if(Array.isArray(value))safe[name]=value.length

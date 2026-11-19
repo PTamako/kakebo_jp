@@ -8,6 +8,7 @@ import { onRequestPost as documentAssistantPost } from '../functions/api/bridge/
 import { routeInternalFinance } from './family-finance-service-router.js'
 import { approvalPreviewRoute } from './approval-preview.js'
 import {privatePrepaidAlertSnapshot} from '../functions/api/prepaid-alert-settings.js'
+import {readBillConfirmationReminders} from './homeflow-bill-reminders.js'
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{
   'content-type':'application/json; charset=utf-8','cache-control':'no-store',
   'x-content-type-options':'nosniff','referrer-policy':'no-referrer'
@@ -89,6 +90,11 @@ export default {
     // The only new write paths are preexisting signed Kakeibo execution
     // handlers. This Worker has workers_dev=false and no public route.
     // Never route these to Pages URL or skip target verification.
+    if(path==='/api/internal/bill-confirmation-reminders'){
+      if(request.method!=='GET')return json({error:'method_not_allowed'},405)
+      try{return await readBillConfirmationReminders(request,env.DB)}
+      catch{return json({error:'bill_reminder_source_unavailable'},503)}
+    }
     if(path==='/api/internal/prepaid-balance-alerts'){
       if(request.method!=='GET')return json({error:'method_not_allowed'},405)
       const params=new URL(request.url).searchParams

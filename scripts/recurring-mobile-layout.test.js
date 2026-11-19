@@ -77,11 +77,11 @@ test('review card stays distinct from the background and collapses into a compac
   assert.match(review, /過去分・明日の予定/)
   assert.match(review, /aria-controls="recurring-candidate-list"/)
   assert.match(review, /未記帳分を確認/)
-  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel\{\s*background:#fff;[^}]*border-left:3px solid var\(--blue\)/)
-  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel:not\(\.is-expanded\)\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(120px,auto\)/)
-  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions\{[^}]*grid-column:2/)
-  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel \.recurring-review-results\{grid-column:1\/-1\}/)
-  assert.match(source, /\.recurring-cost-type-panel>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions button\{[^}]*min-height:44px/)
+  assert.match(source, /\.recurring-common-review-area>\.recurring-review-panel\{\s*background:#fff;[^}]*border-left:3px solid var\(--blue\)/)
+  assert.match(source, /\.recurring-common-review-area>\.recurring-review-panel:not\(\.is-expanded\)\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(120px,auto\)/)
+  assert.match(source, /\.recurring-common-review-area>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions\{[^}]*grid-column:2/)
+  assert.match(source, /\.recurring-common-review-area>\.recurring-review-panel \.recurring-review-results\{grid-column:1\/-1\}/)
+  assert.match(source, /\.recurring-common-review-area>\.recurring-review-panel:not\(\.is-expanded\) \.recurring-review-actions button\{[^}]*min-height:44px/)
 })
 
 test('posting method options are compact horizontal touch targets with native-size radio inputs', () => {

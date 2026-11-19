@@ -34,10 +34,13 @@ export async function handlePrepaid({db,request,method,sub,ownerProof=null}) {
   if(method!=='GET'||sub)return json({error:'未対応の操作です'},405)
   const today=todayJST()
   const monthStart=today.slice(0,7)+'-01'
+  // Read-only family asset summaries also call this projection without a
+  // verified individual owner. Do not join personal alert settings there.
+  const withAlert=!!ownerProof?.verified
   const {results:cards}=await db.prepare(`SELECT p.name,p.is_archived,p.opening_balance,p.opening_entry_id,p.opening_date,
-    COALESCE(alert.enabled,0) AS alert_enabled,
-    COALESCE(alert.threshold_jpy,1000) AS alert_threshold_jpy,
-    COALESCE(alert.version,0) AS alert_version,
+    ${withAlert?'COALESCE(alert.enabled,0)':'0'} AS alert_enabled,
+    ${withAlert?'COALESCE(alert.threshold_jpy,1000)':'1000'} AS alert_threshold_jpy,
+    ${withAlert?'COALESCE(alert.version,0)':'0'} AS alert_version,
     COALESCE((SELECT SUM(e.amount) FROM entries e
       WHERE e.type='transfer' AND e.transfer_target='prepaid:'||p.name
         AND e.id>p.opening_entry_id AND (e.date>=p.opening_date OR COALESCE(e.transfer_date,e.date)>=p.opening_date) AND e.date<=?1
@@ -92,12 +95,12 @@ export async function handlePrepaid({db,request,method,sub,ownerProof=null}) {
         AND e.date<=?1 AND COALESCE(e.transfer_date,e.date) BETWEEN ?2 AND ?1
         AND COALESCE(e.transfer_target,'')<>'prepaid:'||p.name),0) transferred_out_month
     FROM payment_sources p
-    LEFT JOIN prepaid_balance_alert_settings alert
+    ${withAlert?`LEFT JOIN prepaid_balance_alert_settings alert
       ON alert.account_scope='legacy' AND alert.resource_key=p.name
-      AND alert.household_id=?3 AND alert.owner_user_id=?4
+      AND alert.household_id=?3 AND alert.owner_user_id=?4`:''}
     WHERE p.source_type='prepaid'
-    ORDER BY p.is_archived,p.sort_order,p.name`).bind(today,monthStart,
-      ownerProof?.householdId||'',ownerProof?.userId||'').all()
+    ORDER BY p.is_archived,p.sort_order,p.name`)
+    .bind(today,monthStart,...(withAlert?[ownerProof.householdId,ownerProof.userId]:[])).all()
   // Latest activity is read-only and uses exactly the same opening anchor/date
   // predicates as the balance and card-history filters. No extra ledger table.
   const [latestUsage,latestCharge] = await Promise.all([

@@ -27,7 +27,7 @@ export async function postDueVariableRecurring(db,{today}={}){
     body:JSON.stringify({periodMonth:bill.period_month})
    })
    const response=await handleVariableRecurring(request,db,
-    ['variable-recurring',bill.plan_id,'confirm'])
+    ['variable-recurring',bill.plan_id,'confirm'],{scheduledToday:today})
    const data=await response.json()
    if(response.ok&&data.posted){
     if(data.alreadyPosted)result.skipped++

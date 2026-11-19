@@ -157,7 +157,13 @@ test('changing posting date postpones Cron and a prior manual post remains untou
  await f.send('POST','/'+uuid+'/bill',{...draft,expenseDate:'2026-11-29'})
  assert.equal((await postDueVariableRecurring(f.db,{today:'2026-11-27'})).checked,0)
  // User confirms on the rescheduled date before 19:30.
- assert.equal((await f.send('POST','/'+uuid+'/confirm',{periodMonth:'2026-10'})).posted,true)
+ const request=new Request(origin+'/api/variable-recurring/'+uuid+'/confirm',{
+  method:'POST',headers:{'content-type':'application/json'},
+  body:JSON.stringify({periodMonth:'2026-10'})
+ })
+ const confirmed=await handleVariableRecurring(request,f.db,
+  ['variable-recurring',uuid,'confirm'],{scheduledToday:'2026-11-29'})
+ assert.equal((await confirmed.json()).posted,true)
  assert.equal((await postDueVariableRecurring(f.db,{today:'2026-11-29'})).checked,0)
  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM entries').get().n,1)
 })

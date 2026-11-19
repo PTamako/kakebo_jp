@@ -63,8 +63,11 @@ const billRow=r=>({planId:r.plan_id,periodMonth:r.period_month,amountJpy:r.amoun
  serviceStart:r.service_start,serviceEnd:r.service_end,sourceType:r.source_type,
  sourceDocumentId:r.source_document_id,status:r.status,postedEntryId:r.posted_entry_id})
 const planSql='SELECT * FROM variable_recurring_plans WHERE id=?'
-export async function handleVariableRecurring(request,db,parts){
+export async function handleVariableRecurring(request,db,parts,{scheduledToday}={}){
  const method=request.method,pid=parts[1],action=parts[2]
+ // Only an in-process trusted Cron caller can supply its Japan-local date.
+ // The public API never obtains this value from request JSON or query params.
+ const postingToday=date(scheduledToday)?scheduledToday:today()
  try{
   if(method==='GET'&&parts.length===1){
    const [p,b]=await db.batch([
@@ -141,7 +144,7 @@ export async function handleVariableRecurring(request,db,parts){
    if(known)return fail('既に明細が存在します。重複を確認してください',409)
    if(!p.enabled||!cycle(p.start_month,x.periodMonth,p.interval_months)||
     !Number.isSafeInteger(b.amount_jpy)||b.amount_jpy<1||!date(b.expense_date)||
-    b.expense_date>today())return fail('金額・実際の利用日を確認してください',409)
+    b.expense_date>postingToday)return fail('金額・実際の利用日を確認してください',409)
    // Existing manually entered or document-assistant expenses are authoritative.
    // Never silently double-post the same merchant, payment source and amount.
    const conflict=await db.prepare("SELECT id FROM entries WHERE type='expense' "+

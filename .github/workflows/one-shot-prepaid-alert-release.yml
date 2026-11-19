@@ -1,0 +1,39 @@
+name: One-shot prepaid owner alert production release
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-shot-prepaid-alert-release.yml'
+permissions:
+  contents: read
+concurrency:
+  group: production-prepaid-one-shot
+  cancel-in-progress: false
+jobs:
+  release:
+    if: ${{ github.event.head_commit.message == 'manual: deploy-prepaid-alerts-once' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+      - run: npm ci
+      - run: npm run verify:release
+      - name: Deploy existing production Pages only
+        run: npx wrangler pages deploy dist --project-name=kakeibo --branch=main --commit-hash="$GITHUB_SHA" --commit-message="Owner-only prepaid alerts"
+      - name: Deploy existing private finance bridge (no preview)
+        run: npx wrangler deploy --config wrangler.homeflow-bridge.toml
+      - name: Check deployed production endpoints
+        run: |
+          curl --retry 4 --retry-delay 2 --fail --silent --show-error https://kakeibo-f17.pages.dev/ >/dev/null
+          curl --retry 4 --retry-delay 2 --fail --silent --show-error https://kakeibo-f17.pages.dev/api/family-finance/status >/dev/null

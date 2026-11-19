@@ -75,7 +75,15 @@ const displayedPeriod=p=>selectPendingBill(p,bills.value)?.periodMonth||latestPe
 const billFor=p=>bills.value.find(b=>b.planId===p.id&&b.periodMonth===displayedPeriod(p))
 const latestKnownAmount=computed(()=>plans.value.reduce((sum,p)=>sum+Number(billFor(p)?.amountJpy||0),0))
 const pendingDraftCount=computed(()=>bills.value.filter(b=>b.status==='draft').length)
-const billLabel=p=>!p.enabled?'停止中':billFor(p)?.status==='posted'?'記帳済み':billFor(p)?'要確認':'請求待ち'
+const billLabel=p=>{
+ if(!p.enabled)return '停止中'
+ const b=billFor(p)
+ if(b?.status==='posted')return '記帳済み'
+ if(!b)return '請求待ち'
+ if(Number(b.amountJpy)>0&&b.expenseDate)
+  return b.expenseDate<=today()?'記帳可能':'自動記帳待ち'
+ return '入力待ち'
+}
 async function api(path,opt={}){
  return props.api('variable-recurring'+path,opt)
 }
@@ -154,7 +162,9 @@ async function saveBill(){
    paidDate:x.paidDate||null,serviceStart:x.serviceStart||null,serviceEnd:x.serviceEnd||null}
   const res=await api('/'+chosenPlan.value.id+'/bill',{method:'POST',body:JSON.stringify(payload)})
   if(!res.ok)throw Error('請求書の保存結果を確認できません')
-  notice.value='この回の請求額を下書きとして保存しました（支出には未計上）'
+  notice.value=payload.amountJpy&&payload.expenseDate
+   ?'保存しました。記帳日以降の19:30に自動記帳します。'
+   :'下書きを保存しました。金額と記帳日を入力すると自動記帳の対象になります。'
   await refresh()
  }catch(e){error.value=String(e.message||e)}
  finally{busy.value=false}
@@ -190,7 +200,7 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
   <RecurringCostOverview title="変動金額" kind="variable" :count="plans.length"
     primary-label="最新回の入力済み額" :primary-value="yen(latestKnownAmount)"
     secondary-label="確認待ちの請求" :secondary-value="pendingDraftCount+'件'"
-    note="入力済み額には未記帳の請求も含みます。実際の支出は確認後に記帳します。"
+    note="入力済み額には未記帳の請求も含みます。"
     add-label="変動費を追加" @add="newPlan" />
   <section class="variable-register-card" aria-label="登録済みの変動費">
    <div class="variable-list-heading"><h3>登録済みの変動費</h3><span>{{plans.length}}件</span></div>
@@ -198,7 +208,7 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
   <div v-if="ready&&plans.length" class="plans" aria-label="登録済みの変動費">
    <details v-for="p in plans" :key="p.id" class="plan">
     <summary class="plan-summary">
-     <span class="plan-title"><strong>{{p.name}}</strong><span class="plan-state" :class="{'is-due':billLabel(p)==='要確認'}">{{billLabel(p)}}</span></span>
+     <span class="plan-title"><strong>{{p.name}}</strong><span class="plan-state" :class="{'is-due':billLabel(p)==='記帳可能'}">{{billLabel(p)}}</span></span>
      <small class="plan-meta">{{p.intervalMonths===1?'毎月':p.intervalMonths+'か月ごと'}} · {{p.paymentSource}}</small>
      <span class="plan-month">{{displayedPeriod(p)}} · {{billFor(p)?.amountJpy?yen(billFor(p).amountJpy):'金額未確定'}}</span>
     </summary>
@@ -243,7 +253,7 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
  </RecurringFormSheet>
  <RecurringFormSheet :open="active && billEditor && !!chosenPlan" :busy="busy"
     :title="chosenPlan?.name ? chosenPlan.name+' · 請求を確認' : '請求を確認'"
-    subtitle="請求書と照合してから記帳します。" @close="billEditor=false">
+    subtitle="記帳日以降の19:30に自動記帳" @close="billEditor=false">
   <p v-if="error" class="error" role="alert">{{error}}</p>
   <form v-if="billEditor&&chosenPlan" ref="billEditorElement" class="editor recurring-editor-fields" @submit.prevent="saveBill">
    <h3 class="recurring-form-section-title">請求情報</h3>
@@ -259,8 +269,10 @@ watch(()=>props.refreshKey,()=>{if(props.inline)void refresh()})
    <div class="recurring-date-pair"><label>利用期間開始 <input v-model="invoice.serviceStart" type="date"/></label>
     <label>利用期間終了 <input v-model="invoice.serviceEnd" type="date"/></label></div>
    <p v-if="chosenSaved?.status==='posted'" class="hint">記帳済み（明細 #{{chosenSaved.postedEntryId}}）</p>
-   <p v-else-if="chosenSaved?.sourceType==='document'" class="hint">文書助手の下書きです。金額・日付を確認してください。</p>
-   <p v-else class="hint">下書き保存だけでは記帳されません。</p>
+   <p v-else-if="chosenSaved?.status==='draft' && Number(chosenSaved.amountJpy)>0 && chosenSaved.expenseDate" class="hint">
+    {{chosenSaved.expenseDate}}以降の19:30に自動記帳。先に手動記帳もできます。</p>
+   <p v-else-if="chosenSaved?.sourceType==='document'" class="hint">文書助手の下書き。金額・記帳日を確認してください。</p>
+   <p v-else class="hint">金額と記帳日が揃うと自動記帳の対象になります。</p>
    <div class="actions recurring-sheet-actions recurring-bill-actions">
     <button class="primary" v-if="chosenSaved?.status!=='posted'" type="submit" :disabled="busy||!canSaveBill">下書きを保存</button>
     <button class="primary" v-if="chosenSaved?.status==='draft'" type="button" :disabled="busy||!canConfirm" @click="confirmBill">確認して記帳</button>

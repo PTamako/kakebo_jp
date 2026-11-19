@@ -29,7 +29,7 @@ test('management renders only HomeFlow identity; old card settings and one stati
  assert.match(topbar,/<FamilyAccountMenu v-if="identity"/);
  assert.doesNotMatch(app,/<FamilyFinanceAccess v-if="tab === 'finance'"/);
  assert.match(identity,/v-if="person&&!props.identityOnly"/);
- assert.match(sharedPages,/<ManagementPage v-show="activeTab==='finance'"/)
+ assert.match(sharedPages,/<ManagementPage v-if="managementVisited" v-show="activeTab==='finance'"/)
  assert.match(app,/:management-bindings="originalManagementBindings"/);
  assert.match(sharedPages,/<StatisticsPage v-else-if="activeTab==='stat'"/);
 });

@@ -14,7 +14,9 @@ const schema=read('schema.sql')
 
 test('App only coordinates tabs; all four pages own their templates',()=>{
   for(const component of ['LedgerPage','StatisticsPage','AssetsPage','ManagementPage']) {
-    assert.match(workspace,new RegExp('import '+component+' from [\\x27\\x22]\\./pages/'+component+'\\.vue'))
+    if(component==='LedgerPage')
+      assert.match(workspace,new RegExp('import '+component+' from [\\x27\\x22]\\./pages/'+component+'\\.vue'))
+    else assert.ok(workspace.includes("const "+component+"=defineAsyncComponent(()=>import('./pages/"+component+".vue'))"))
     assert.match(workspace,new RegExp('<'+component+' '))
   }
   assert.doesNotMatch(app,/<section v-else-if="tab === 'list'"/)
@@ -33,7 +35,7 @@ test('App only coordinates tabs; all four pages own their templates',()=>{
   assert.match(management,/<FinanceTools v-bind="\$attrs">/)
   assert.match(management,/<slot name="member-card-usage"/)
   assert.match(workspace,/<slot name="member-card-usage"/)
-  assert.match(workspace,/<ManagementPage v-show="activeTab==='finance'"/)
+  assert.match(workspace,/<ManagementPage v-if="managementVisited" v-show="activeTab==='finance'"/)
 })
 
 test('extracted pages share exactly the parent navigation refs and do not create independent filters',()=>{

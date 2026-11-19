@@ -92,7 +92,7 @@ test('same original transaction filter is reused by both household accounts',()=
 })
 
 test('both users share management and member input supports genuine OCR without private owner API',()=>{
- assert.match(shared,/<ManagementPage v-show="activeTab==='finance'"/)
+ assert.match(shared,/<ManagementPage v-if="managementVisited" v-show="activeTab==='finance'"/)
  assert.match(family,/memberView:true/)
  assert.match(finance,/if\(props\.memberView\)return false/)
  assert.match(app,/<OcrCapturePanel v-if="entryInputMode === 'scan'"/)

@@ -1,11 +1,13 @@
 <script setup>
+import {defineAsyncComponent,ref,watch} from 'vue'
 import AppTopbar from './AppTopbar.vue'
 import EntryInputPage from './EntryInputPage.vue'
 import BottomNavigation from './BottomNavigation.vue'
 import LedgerPage from './pages/LedgerPage.vue'
-import StatisticsPage from './pages/StatisticsPage.vue'
-import AssetsPage from './pages/AssetsPage.vue'
-import ManagementPage from './pages/ManagementPage.vue'
+// Heavy pages load only when opened; management stays mounted after first visit.
+const StatisticsPage=defineAsyncComponent(()=>import('./pages/StatisticsPage.vue'))
+const AssetsPage=defineAsyncComponent(()=>import('./pages/AssetsPage.vue'))
+const ManagementPage=defineAsyncComponent(()=>import('./pages/ManagementPage.vue'))
 const props=defineProps({
   identity:{type:Object,default:null},
   theme:{type:String,required:true},
@@ -24,6 +26,8 @@ const props=defineProps({
   onOpenPersonalManagement:{type:Function,default:null},
 })
 const emit=defineEmits(['update:activeTab','theme-change','logout','ledger-open'])
+const managementVisited=ref(false)
+watch(()=>props.activeTab,tab=>{if(tab==='finance')managementVisited.value=true},{immediate:true})
 function navigate(next){
  if(next==='list'){emit('ledger-open');return}
  emit('update:activeTab',next)
@@ -50,7 +54,7 @@ function navigate(next){
    :on-personal-history="member?onPersonalHistory:null"
    :on-create-personal-account="member?onCreatePersonalAccount:null"
    :open-personal-management="member?onOpenPersonalManagement:null"/>
-  <ManagementPage v-show="activeTab==='finance'"
+  <ManagementPage v-if="managementVisited" v-show="activeTab==='finance'"
    v-bind="managementBindings" :active="activeTab==='finance'">
    <template #member-card-usage><slot name="member-card-usage"/></template>
    <template #member-plans><slot name="member-plans"/></template>

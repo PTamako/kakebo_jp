@@ -347,7 +347,7 @@ try{
           return {left:i.left,right:i.right,labelLeft:l.left,labelRight:l.right}
         })
       })
-      assert.ok(dateLayout.length>=6,'Variable bill must expose native dates at '+width)
+      assert.equal(dateLayout.length,5,'Variable bill must expose the five retained native dates at '+width)
       assert.ok(dateLayout.every(x=>x.left>=x.labelLeft-1&&x.right<=x.labelRight+1),
         'Variable bill date inputs must stay within fields at '+width+': '+JSON.stringify(dateLayout))
       const billOverflow=await billSheet.evaluate(node=>{

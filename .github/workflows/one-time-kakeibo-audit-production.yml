@@ -1,0 +1,47 @@
+name: One-time Kakeibo audit remediation release 2026-11-19
+# This file triggers only when itself is changed by the explicitly approved
+# 2026-11-19 audit release commit. Normal main pushes cannot deploy production.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-kakeibo-audit-production.yml'
+permissions:
+  contents: read
+concurrency:
+  group: deploy-private-kakeibo-bridge
+  cancel-in-progress: false
+jobs:
+  release:
+    if: "${{ startsWith(github.event.head_commit.message, 'deploy(kakeibo): audit remediation 2026-11-19') }}"
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Require production credentials
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+      - run: npm ci --no-audit --no-fund
+      - name: Verify tests, production dependency safety and build
+        run: npm run verify:release
+      - name: Install WebKit test runtime
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install --with-deps webkit
+      - name: Check narrow-screen mobile layout
+        run: node scripts/mobile-browser-smoke.mjs
+      - name: Deploy existing NAV and 19:30 variable-bill Worker
+        run: npx wrangler deploy --config wrangler.nav.toml
+      - name: Publish existing Pages production only
+        run: npx wrangler pages deploy dist --project-name=kakeibo --branch=main --commit-hash="$GITHUB_SHA" --commit-message="2026-11-19 audited finance release"
+      - name: Verify production URL
+        run: curl --retry 5 --retry-delay 3 --fail --silent --show-error https://kakeibo-f17.pages.dev/ >/dev/null

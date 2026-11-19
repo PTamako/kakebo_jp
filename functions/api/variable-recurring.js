@@ -156,12 +156,31 @@ export async function handleVariableRecurring(request,db,parts,{scheduledToday}=
    const stamped=Date.now()
    const ledgerNote=variableBillLedgerNote(x.periodMonth,b)
    const result=await db.batch([
-    db.prepare('INSERT OR IGNORE INTO entries '+
-     '(date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source) '+
-     "SELECT ?, '', ?, ?, ?, ?, '', 'expense', ?, ? WHERE EXISTS "+
-     "(SELECT 1 FROM variable_recurring_bills WHERE plan_id=? AND period_month=? AND status='draft') ")
-     .bind(b.expense_date,b.amount_jpy,p.category,p.name,
-      ledgerNote,reqId,p.payment_source,pid,x.periodMonth),
+    // Re-read the draft and plan inside the same D1 transaction as insertion.
+    // If an edit occurred after the preflight read, do not post stale amounts,
+    // dates, service periods, categories or payment sources.
+    db.prepare(`INSERT OR IGNORE INTO entries
+     (date,time,amount,category,merchant,note,raw,type,client_request_id,payment_source)
+     SELECT b.expense_date,'',b.amount_jpy,p.category,p.name,?1,'','expense',?2,p.payment_source
+     FROM variable_recurring_bills b
+     JOIN variable_recurring_plans p ON p.id=b.plan_id
+     WHERE b.plan_id=?3 AND b.period_month=?4 AND b.status='draft'
+       AND p.enabled=1 AND b.updated_at=?5 AND p.updated_at=?6
+       AND b.amount_jpy=?7 AND b.expense_date=?8
+       AND b.service_start IS ?9 AND b.service_end IS ?10
+       AND p.name=?11 AND p.category=?12 AND p.payment_source=?13
+       AND b.amount_jpy BETWEEN 1 AND 10000000 AND b.expense_date<=?14
+       AND NOT EXISTS (
+         SELECT 1 FROM entries e
+         WHERE e.type='expense' AND e.merchant=p.name
+           AND COALESCE(e.payment_source,'')=p.payment_source
+           AND e.amount=b.amount_jpy
+           AND e.date >= substr(b.expense_date,1,7)||'-01'
+           AND e.date < date(substr(b.expense_date,1,7)||'-01','+1 month')
+       )`)
+     .bind(ledgerNote,reqId,pid,x.periodMonth,b.updated_at,p.updated_at,
+       b.amount_jpy,b.expense_date,b.service_start,b.service_end,
+       p.name,p.category,p.payment_source,postingToday),
     db.prepare("UPDATE variable_recurring_bills SET status='posted',"+
      'posted_entry_id=(SELECT id FROM entries WHERE client_request_id=?),updated_at=? '+
      "WHERE plan_id=? AND period_month=? AND status='draft' "+

@@ -371,7 +371,7 @@ try{
         'The two bill actions must not overlap at '+width)
       assert.equal(await billSheet.locator('.editor .hint').count(),1,
         'Bill should display only one short explanatory message')
-      await billSheet.getByRole('button',{name:'閉じる',exact:true}).last().click()
+      await billSheet.getByRole('button',{name:'フォームを閉じる',exact:true}).click()
       await billSheet.waitFor({state:'hidden'})
     }
     assert.equal(await page.evaluate(()=>document.body.style.overflow),'')

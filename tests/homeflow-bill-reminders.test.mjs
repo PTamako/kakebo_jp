@@ -14,10 +14,12 @@ function fixture(){
  CREATE TABLE entries(id INTEGER PRIMARY KEY,date TEXT,merchant TEXT,payment_source TEXT,
  amount INTEGER,type TEXT,client_request_id TEXT,family_account_id TEXT);
  CREATE TABLE family_shared_mutation_applied(entry_id INTEGER,household_id TEXT,requester_user_id TEXT,action TEXT);
+ CREATE TABLE family_shared_entry_registry(entry_id INTEGER,household_id TEXT,creator_user_id TEXT);
  CREATE TABLE family_card_purchase_applied(entry_id INTEGER,household_id TEXT,requester_user_id TEXT);
  CREATE TABLE family_prepaid_actions_applied(entry_id INTEGER,household_id TEXT,requester_user_id TEXT);
  CREATE TABLE family_legacy_card_spends(entry_id INTEGER,household_id TEXT,actor_user_id TEXT);
  CREATE TABLE family_recurring_execution_applied(target_entry_id INTEGER,household_id TEXT,member_user_id TEXT);
+ CREATE TABLE family_finance_applied_actions(entry_id INTEGER,household_id TEXT,requester_user_id TEXT);
  CREATE TABLE recurring_candidate_exclusions(plan_id TEXT,month TEXT);
  CREATE TABLE recurring_date_exclusions(plan_id TEXT,date TEXT);
  CREATE TABLE family_member_fixed_cost_settings(plan_id TEXT,household_id TEXT,owner_user_id TEXT,
@@ -91,5 +93,24 @@ test('bridge rejects POST, malformed owner IDs and unmapped family users',async(
  assert.equal((await readBillConfirmationReminders(new Request(base+'?day=2026-11-26&recipientUserId=x&householdId='+HID),db)).status,400)
  const r=await readBillConfirmationReminders(new Request(base+'?day=2026-11-26&recipientUserId=55555555-5555-4555-8555-555555555555&householdId='+HID),db)
  assert.deepEqual((await r.json()).items,[])
+ sql.close()
+})
+
+
+test('member-attributed identical payments cannot suppress owner fixed or variable reminders',async()=>{
+ const {sql,db}=fixture()
+ sql.exec("INSERT INTO entries(id,date,merchant,payment_source,amount,type) VALUES(10,'2026-11-27','家賃','cash',101500,'expense')")
+ sql.exec("INSERT INTO entries(id,date,merchant,payment_source,amount,type) VALUES(11,'2026-11-26','オクトパスエナジー','card',1987,'expense')")
+ sql.prepare("INSERT INTO family_shared_mutation_applied(entry_id,household_id,requester_user_id,action) VALUES(?,?,?,'create')")
+   .run(10,HID,MEMBER)
+ sql.prepare("INSERT INTO family_card_purchase_applied(entry_id,household_id,requester_user_id) VALUES(?,?,?)")
+   .run(11,HID,MEMBER)
+ const owner=await projectBillConfirmationReminders(db,{day:'2026-11-26',recipientUserId:OWNER,householdId:HID})
+ assert.deepEqual(owner.items.map(x=>x.kind),['fixed','variable'])
+ // A confirmed owner transaction, not a spouse's matching payment, consumes the slot.
+ sql.exec("INSERT INTO entries(id,date,merchant,payment_source,amount,type) VALUES(12,'2026-11-27','家賃','cash',101500,'expense')")
+ sql.exec("INSERT INTO entries(id,date,merchant,payment_source,amount,type) VALUES(13,'2026-11-26','オクトパスエナジー','card',1987,'expense')")
+ const after=await projectBillConfirmationReminders(db,{day:'2026-11-26',recipientUserId:OWNER,householdId:HID})
+ assert.deepEqual(after.items,[])
  sql.close()
 })

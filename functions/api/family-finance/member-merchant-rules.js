@@ -61,17 +61,26 @@ export async function familyMemberMerchantRules(req,env,url,user,parts){
    const x=await body(req,url);
    if(x?.expected_user_id!==undefined&&x.expected_user_id!==user.user_id)
     return fail('ACTOR_CHANGED',403);
-   if(!exact(x,['expected_user_id','expected_version','keyword','category','payment_source'])||
+   if(!(exact(x,['expected_user_id','expected_version','keyword','category','payment_source'])||
+     exact(x,['expected_user_id','expected_version','keyword','category','payment_source','previous_keyword']))||
+    (x.previous_keyword!==undefined&&!safe(x.previous_keyword,120))||
     x.expected_user_id!==user.user_id||!Number.isSafeInteger(x.expected_version)||
     x.expected_version<0||!safe(x.keyword,120)||!safe(x.category,100)||
     !safe(x.payment_source,160))return fail('INVALID_RULE',400);
-   const keyword=normal(x.keyword),category=normal(x.category),source=x.payment_source;
-   if(!keyword||keyword.length>120||(!category&&!source))return fail('INVALID_RULE',400);
+   const keyword=normal(x.keyword),previousKeyword=x.previous_keyword===undefined?keyword:normal(x.previous_keyword);
+   const category=normal(x.category),source=x.payment_source;
+   if(!keyword||!previousKeyword||keyword.length>120||previousKeyword.length>120||
+    (!category&&!source))return fail('INVALID_RULE',400);
    if(!await paymentAllowed(db,user,source))return fail('PAYMENT_SOURCE_NOT_ALLOWED',403);
    const old=await first(db,'SELECT version FROM family_member_merchant_rules WHERE '+
     'household_id=? AND owner_user_id=? AND keyword=?',
-    user.household_id,user.user_id,keyword);
+    user.household_id,user.user_id,previousKeyword);
    if((old?.version||0)!==x.expected_version)return fail('RULE_VERSION_CHANGED',409);
+   if(previousKeyword!==keyword){
+    const destination=await first(db,'SELECT 1 FROM family_member_merchant_rules WHERE '+
+     'household_id=? AND owner_user_id=? AND keyword=?',user.household_id,user.user_id,keyword);
+    if(destination)return fail('RULE_KEYWORD_EXISTS',409);
+   }
    const stamp=Date.now();
    if(!old){
     const count=await first(db,'SELECT COUNT(*) AS count FROM family_member_merchant_rules '+
@@ -84,10 +93,13 @@ export async function familyMemberMerchantRules(req,env,url,user,parts){
     if(res?.meta?.changes!==1)return fail('RULE_VERSION_CHANGED',409);
    }else{
     const res=await db.prepare('UPDATE family_member_merchant_rules '+
-     'SET category=?,payment_source=?,version=version+1,updated_at=? '+
-     'WHERE household_id=? AND owner_user_id=? AND keyword=? AND version=?')
-     .bind(category,source,stamp,user.household_id,user.user_id,keyword,x.expected_version).run();
-    if(res.meta?.changes!==1)return fail('RULE_VERSION_CHANGED',409);
+     'SET keyword=?,category=?,payment_source=?,version=version+1,updated_at=? '+
+     'WHERE household_id=? AND owner_user_id=? AND keyword=? AND version=? '+
+     'AND NOT EXISTS (SELECT 1 FROM family_member_merchant_rules '+
+     'WHERE household_id=? AND owner_user_id=? AND keyword=? AND keyword<>?)')
+     .bind(keyword,category,source,stamp,user.household_id,user.user_id,previousKeyword,x.expected_version,
+      user.household_id,user.user_id,keyword,previousKeyword).run().catch(()=>null);
+    if(res?.meta?.changes!==1)return fail('RULE_VERSION_CHANGED',409);
    }
    return json({ok:true,scope:'personal',keyword,version:x.expected_version+1,ledger_changed:false});
   }

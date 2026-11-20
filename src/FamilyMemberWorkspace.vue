@@ -613,7 +613,7 @@ async function submitPaidExpense(choice,record){
   if(!prepared?.request_id)throw Error('決済申請の準備結果が未確認です')
   pending.requestId=prepared.request_id
   await persistMemberDraft()
-  if(prepared.status='submitted_status_unknown'&&prepared.approval_id){
+  if(prepared.status==='submitted_status_unknown'&&prepared.approval_id){
    const requestId=pending.requestId
    pendingPaidEntry=null
    try{await persistMemberDraft()}catch(e){pendingPaidEntry=pending;throw e}
@@ -691,7 +691,7 @@ async function submitMemberEntry(){
    // Every member write must start with a durable, scoped draft snapshot.
    await persistMemberDraft()
    let receiptRef=''
-   if(record.type='transfer'){
+   if(record.type==='transfer'){
     const result=record.transferTarget==='spouse'
      ?await submitNeutralSpouseTransfer(record)
      :await submitMemberPersonalTransfer({record,userId:props.user.user_id,

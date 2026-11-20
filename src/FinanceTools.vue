@@ -469,17 +469,28 @@ const visibleMerchantRules = computed(() => filteredMerchantRules.value.slice(0,
 function searchMerchantRules(value) { merchantRuleSearch.value = value; visibleMerchantRuleCount.value = merchantRuleBatchSize }
 function showMoreMerchantRules() { visibleMerchantRuleCount.value += merchantRuleBatchSize }
 // Only explicit Save mutates remembered rules; reading/opening the sheet is local.
-async function saveMerchantRule({keyword,oldCategory,oldPayment,category,paymentSource}){
-  const original=merchantRulesCombined.value.find(item=>item.keyword===keyword)
+async function saveMerchantRule({keyword,oldKeyword=keyword,oldCategory,oldPayment,category,paymentSource}){
+  const original=merchantRulesCombined.value.find(item=>item.keyword===(oldKeyword||keyword))
   if(!original && (oldCategory||oldPayment))throw Error('ルールが変更されています。一覧を更新してください')
   if(original && (original.category!==oldCategory||original.payment_source!==oldPayment))
     throw Error('別の端末で変更されました。画面を更新してください')
-  if(category && !props.categories.includes(category) && category!==original.category)
+  if(category && !props.categories.includes(category) && category!==original?.category)
     throw Error('カテゴリを確認してください')
-  if(paymentSource && !props.paymentSources.includes(paymentSource) && paymentSource!==original.payment_source)
+  if(paymentSource && !props.paymentSources.includes(paymentSource) && paymentSource!==original?.payment_source)
     throw Error('支払方法を確認してください')
   let changed=false
   try{
+    if(keyword!==oldKeyword){
+      if(!original)throw Error('変更対象の店舗ルールが見つかりません')
+      if(merchantRulesCombined.value.some(item=>item.keyword===keyword))
+        throw Error('同じ店舗名のルールが既にあります')
+      await props.api('merchant-payment-rules',{method:'PATCH',body:JSON.stringify({
+        oldKeyword,keyword,oldCategory,oldPayment,category,paymentSource
+      })})
+      changed=true
+      cardMessage.value='店舗名とルールを更新しました'
+      return
+    }
     if(category!==(original?.category||'')){
       if(category)await props.api('rules',{method:'POST',body:JSON.stringify({keyword,category})})
       else await props.api('custom-rules?keyword='+encodeURIComponent(keyword),{method:'DELETE'})

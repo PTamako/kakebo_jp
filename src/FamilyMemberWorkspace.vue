@@ -642,6 +642,9 @@ async function submitMemberFixedCost(item){
   if(!result?.proposalId)throw Error('HomeFlow の申請受付を確認できません')
  }else result=await submitPaidExpense(choice,record)
  await refresh()
+ // No member-entry draft for a manually submitted fixed cost.
+ if(result?.receiptRef?.startsWith('proposal:')||result?.proposalId)
+  await sharedMutationRef.value?.clearAcknowledgedIntent()
  return result
 }
 async function submitNeutralSpouseTransfer(record){
@@ -720,6 +723,8 @@ async function submitMemberEntry(){
    // If local storage is unavailable, retain the same retry key on restart.
    await persistMemberDraft(memberEntries.value.slice(1))
    memberEntries.value.shift();sent++
+   if(receiptRef.startsWith('proposal:'))
+    await sharedMutationRef.value?.clearAcknowledgedIntent()
   }
   memberEntryNotice.value=(applied?applied+'件の資産移動を記録しました。':'')+
    (sent-applied?sent-applied+'件を HomeFlow 審査に送信しました。承認・入帳までは待入帳です。':'')
@@ -805,6 +810,7 @@ async function openApproval(action,entry){
   action==='update'?entry:null)
  if(!result?.proposalId&&!result?.applied)throw Error('明細変更の反映を確認できません')
  await refresh()
+ if(result?.proposalId)await sharedMutationRef.value?.clearAcknowledgedIntent()
  if(annualLedgerEntries.value.some(x=>String(x.id)===String(entry.id)))
   await loadAnnualLedgerYear(String(selectedYear.value)).catch(e=>{error.value=e.message})
  return result

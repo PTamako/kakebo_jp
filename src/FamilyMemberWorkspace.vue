@@ -16,6 +16,7 @@ import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
 import {parseEntries,parseReceipt,ocrImage} from './parse.js'
 import {readMemberDeviceState,writeMemberDeviceState} from './draft-store.js'
+import {stageMemberReceiptOutbox,bindMemberReceiptOutbox,readMemberReceiptOutbox,removeMemberReceiptOutbox} from './member-receipt-outbox.js'
 import {memberDraftSnapshot,verifiedMemberDraft} from './member-draft-safety.js'
 import {compressReceiptImage} from './receipt-image.js'
 import EntryInputPage from './EntryInputPage.vue'
@@ -180,13 +181,39 @@ async function saveMemberReceipt(record,receiptRef){
  await reloadMemberReceipts()
  return prepared.item?.receipt_id
 }
+// Shared pages live in OriginalKakeiboPages; this component only adapts
+// authentication, household approvals and member-specific API calls.
+const receiptScope=()=>({userId:props.user.user_id,householdId:props.user.household_id})
+async function stageMemberReceipt(record){
+ if(record.type!=='expense'||!record.receiptImage)return
+ if(!record.receiptIdempotencyKey)
+  record.receiptIdempotencyKey='receipt:'+crypto.randomUUID()
+ await stageMemberReceiptOutbox({...receiptScope(),key:record.receiptIdempotencyKey,
+  blob:record.receiptImage,date:record.date,merchant:record.merchant})
+}
+async function bindMemberReceipt(record,receiptRef){
+ await bindMemberReceiptOutbox({...receiptScope(),key:record.receiptIdempotencyKey,receiptRef})
+}
+function noteMemberReceiptRetry(record,receiptRef,error){
+ const key=record.receiptIdempotencyKey
+ if(!memberReceiptRetry.value.some(item=>item.record.receiptIdempotencyKey===key))
+  memberReceiptRetry.value.push({record,receiptRef})
+ memberReceiptError.value='記帳は受付済みです。画像の再送が必要です：'+(error?.message||error)
+}
 async function retryMemberReceipt(){
- if(!memberReceiptRetry.value.length)return
+ if(memberEntryPending.value||!memberReceiptRetry.value.length)return
+ const actor=props.user.user_id,household=props.user.household_id
  const attempts=[...memberReceiptRetry.value];memberReceiptRetry.value=[]
  for(const item of attempts){
-  try{await saveMemberReceipt(item.record,item.receiptRef)}
-  catch(e){memberReceiptRetry.value.push(item);memberReceiptError.value='画像の再送が必要です：'+e.message}
+  if(actor!==props.user.user_id||household!==props.user.household_id)return
+  try{
+   await saveMemberReceipt(item.record,item.receiptRef)
+   // An unconsumed ledger draft keeps its outbox receipt until finalized.
+   if(!memberEntries.value.some(row=>row.receiptIdempotencyKey===item.record.receiptIdempotencyKey))
+    await removeMemberReceiptOutbox(actor,household,item.record.receiptIdempotencyKey)
+  }catch(e){noteMemberReceiptRetry(item.record,item.receiptRef,e)}
  }
+ if(!memberReceiptRetry.value.length)memberReceiptError.value=''
 }
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
 const year=ref(month.value.slice(0,4))
@@ -458,12 +485,26 @@ async function hydrateMemberDraft(){
   if(ticket!==memberDraftEpoch||user!==props.user.user_id||household!==props.user.household_id)return
   const data=stored?verifiedMemberDraft(stored,user,household):null
   if(stored&&!data)throw Error('保存済み下書きの本人情報または内容が一致しません')
-  memberEntries.value=data?.forms||[]
+  // Restore a saved Blob only from this verified household member's outbox.
+  // OCR/text-only entries never create a receipt attachment.
+  let receipts=[]
+  try{receipts=await readMemberReceiptOutbox(user,household)}
+  catch(e){memberReceiptError.value='保存済み小票の確認に失敗しました：'+e.message}
+  if(ticket!==memberDraftEpoch||user!==props.user.user_id||household!==props.user.household_id)return
+  const staged=new Map(receipts.map(item=>[item.key,item]))
+  memberReceiptRetry.value=receipts.filter(item=>item.receiptRef).map(item=>({
+   receiptRef:item.receiptRef,record:{type:'expense',date:item.date,merchant:item.merchant,
+    receiptImage:item.blob,receiptIdempotencyKey:item.key}
+  }))
+  memberEntries.value=(data?.forms||[]).map(row=>{
+   const photo=staged.get(row.receiptIdempotencyKey)
+   return photo?{...row,receiptImage:photo.blob}:row
+  })
   memberRawText.value=data?.rawText||''
   memberInputMode.value=data?.inputMode||'manual'
   pendingPaidEntry=data?.pendingPaidEntry||null
   memberDraftRecoveryInfo.value=data&&(data.forms.length||data.rawText||data.pendingPaidEntry)
-   ?'端末の下書きを復元しました（画像は再選択してください）':''
+   ?'端末の下書きを復元しました（未保存の画像は再選択してください）':''
   memberDraftLoaded.value=true
  }catch(e){
   if(ticket===memberDraftEpoch){memberDraftLoaded.value=false
@@ -714,31 +755,42 @@ async function submitMemberEntry(){
    if(!choice)throw Error('支払方法が変更・解除されました。もう一度選択してください')
    if(pendingPaidEntry&&choice.kind==='cash')
     throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
-   // Every member write must start with a durable, scoped draft snapshot.
+   // Persist the photo BEFORE the ledger is accepted. This is separate
+   // from text-only draft storage and remains scoped to the verified user.
+   if(record.type==='expense'&&record.receiptImage)await stageMemberReceipt(record)
    await persistMemberDraft()
-   let receiptRef=''
-   if(record.type==='transfer'){
+   let receiptRef=record.receiptSubmitRef||''
+   if(receiptRef&&!record.receiptImage)
+    throw Error('受付済み小票の画像を復元できません。端末内の画像を確認してください')
+   if(!receiptRef&&record.type==='transfer'){
     const result=record.transferTarget==='spouse'
      ?await submitNeutralSpouseTransfer(record)
      :await submitMemberPersonalTransfer({record,userId:props.user.user_id,
        accounts:myAccounts.value,persistPending:()=>persistMemberDraft()})
     applied++
     receiptRef=result.entryId?'entry:'+result.entryId:''
-   }else if(choice.kind==='shared'||choice.kind==='personal'){
+   }else if(!receiptRef&&(choice.kind==='shared'||choice.kind==='personal')){
     const result=await submitPaidExpense(choice,record)
     if(result.type==='applied')applied++
     receiptRef=result.receiptRef||''
-   }else{
+   }else if(!receiptRef){
     const result=await sharedMutationRef.value?.submitEntry(record)
     if(!result?.proposalId)throw Error('申請の受付を確認できません')
     receiptRef='proposal:'+result.proposalId
    }
-   if(record.receiptImage&&receiptRef){
-    try{await saveMemberReceipt(record,receiptRef)}
-    catch(e){
-     memberReceiptRetry.value.push({record,receiptRef})
-     memberReceiptError.value='記帳は送信済みです。画像は再送してください：'+e.message
+   let imageConfirmed=false
+   if(record.type==='expense'&&record.receiptImage&&receiptRef){
+    // Preserve the already-accepted request ID BEFORE the image upload.
+    // Restart/retry may resume this exact upload, never post a new ledger.
+    if(!record.receiptSubmitRef){
+     record.receiptSubmitRef=receiptRef
+     await persistMemberDraft()
     }
+    await bindMemberReceipt(record,receiptRef)
+    try{
+     await saveMemberReceipt(record,receiptRef)
+     imageConfirmed=true
+    }catch(e){noteMemberReceiptRetry(record,receiptRef,e)}
    }
    if(record.type==='expense'&&(record.bindRule||record.bindPaymentRule)){
     try{await rememberMemberRule(record)}catch(e){memberRuleError.value='店舗ルールの保存に失敗しました：'+e.message}
@@ -752,6 +804,12 @@ async function submitMemberEntry(){
    try{await persistMemberDraft(memberEntries.value.slice(1))}
    catch(e){pendingPaidEntry=priorPaid;throw e}
    memberEntries.value.shift();sent++
+   if(imageConfirmed){
+    try{
+     await removeMemberReceiptOutbox(props.user.user_id,props.user.household_id,
+      record.receiptIdempotencyKey)
+    }catch(e){noteMemberReceiptRetry(record,receiptRef,e)}
+   }
    if(receiptRef.startsWith('proposal:'))
     await sharedMutationRef.value?.clearAcknowledgedIntent()
   }
@@ -898,6 +956,7 @@ async function selectMemberEditReceipt(event){
  if(!file||!entry||memberLedger.editSaving.value)return
  try{
   entry.receiptImage=await compressReceiptImage(file)
+  entry.receiptIdempotencyKey='receipt:'+crypto.randomUUID()
   entry.receiptFileName=file.name
   memberLedger.receiptSaveError.value=''
  }catch(e){memberLedger.receiptSaveError.value='画像を添付できません：'+e.message}
@@ -959,6 +1018,7 @@ async function saveMemberLedgerEdit(){
  if(!ledgerChanged&&!edited.receiptImage){memberLedger.cancelEdit();return}
  memberLedger.editSaving.value=true;memberLedger.receiptSaveError.value=''
  try{
+  if(edited.receiptImage)await stageMemberReceipt(edited)
   if(ledgerChanged){
    // A household amount/payment edit must be accepted for review before
    // its replacement image is stored; the original image remains untouched.
@@ -966,17 +1026,21 @@ async function saveMemberLedgerEdit(){
    if(edited.receiptImage){
     if(!submitted?.proposalId)throw Error('画像に必要な審査番号を確認できません')
     const receiptRef='proposal:'+submitted.proposalId
-    try{await saveMemberReceipt(edited,receiptRef)}
-    catch(e){
-     memberReceiptRetry.value.push({record:edited,receiptRef})
-     memberReceiptError.value='明細の審査は送信済みです。画像を再送してください：'+e.message
-    }
+    await bindMemberReceipt(edited,receiptRef)
+    try{
+     await saveMemberReceipt(edited,receiptRef)
+     await removeMemberReceiptOutbox(props.user.user_id,props.user.household_id,
+      edited.receiptIdempotencyKey)
+    }catch(e){noteMemberReceiptRetry(edited,receiptRef,e)}
    }
   }else if(edited.receiptImage){
    // Image-only changes can be applied directly to the user's own receipt.
    // Delete the old object only after the new one is durably stored.
    const current=memberReceiptIndex.value.get('entry:'+edited.id)
+   await bindMemberReceipt(edited,'entry:'+edited.id)
    const savedId=await saveMemberReceipt(edited,'entry:'+edited.id)
+   await removeMemberReceiptOutbox(props.user.user_id,props.user.household_id,
+    edited.receiptIdempotencyKey)
    if(current&&savedId!==current.receipt_id){
     try{await deleteMemberReceipt(current.receipt_id)}
     catch(e){memberReceiptError.value='古い画像を削除できません：'+e.message}
@@ -1802,7 +1866,10 @@ const memberRuleCategoryOptions=computed(()=>[...new Set([...memberExpenseCatego
 async function selectMemberDraftReceipt(event,record){
  const file=event.target?.files?.[0];if(event.target)event.target.value=''
  if(!file||!record||memberEntryPending.value)return
- try{record.receiptImage=await compressReceiptImage(file)
+ try{
+  if(record.receiptSubmitRef)throw Error('受付済みの画像は変更できません。まず再送を完了してください')
+  record.receiptImage=await compressReceiptImage(file)
+  record.receiptIdempotencyKey='receipt:'+crypto.randomUUID()
   record.receiptFileName=file.name;record.showReceiptAttachment=true
   memberEntryError.value=''
  }catch(e){memberEntryError.value='画像を添付できません：'+e.message}

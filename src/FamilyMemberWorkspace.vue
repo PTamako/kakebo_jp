@@ -1796,16 +1796,30 @@ async function selectMemberDraftReceipt(event,record){
 }
 async function clearMemberDraft(){
  if(!memberDraftLoaded.value)return
- if(pendingPaidEntry){memberEntryError.value='送信結果を確認してから下書きを削除してください';return}
+ if(pendingPaidEntry||
+   memberEntries.value.some(row=>row.neutralSpouseTransferKey||row.memberAssetPending)){
+  memberEntryError.value='送信結果が未確認の記録があります。重複を防ぐため削除を中止しました';return
+ }
+ let storedApproval
+ try{storedApproval=await readMemberDeviceState(memberDraftOwner.userId,
+  memberDraftOwner.householdId,'shared-inline')}
+ catch(e){memberEntryError.value='申請状態を確認できないため下書きを削除しません：'+e.message;return}
+ if(storedApproval&&!storedApproval.acknowledged){
+  memberEntryError.value='家庭明細の申請結果が未確認です。同じ内容で再送し、結果を確認してください';return
+ }
  if(memberEntries.value.length||memberRawText.value.trim()){
   if(!window.confirm('未保存の下書きを破棄しますか？'))return
  }
- // Write a tombstone first; on failure keep the editable values and IDs.
+ // Tombstone first; on failure keep the editable values and retry IDs.
  const empty=memberDraftSnapshot({userId:memberDraftOwner.userId,
   householdId:memberDraftOwner.householdId,forms:[],rawText:'',inputMode:'manual'})
  try{await queueMemberDraftWrite(empty)}
  catch(e){memberEntryError.value='下書きを削除できません：'+e.message;return}
  memberEntries.value=[];memberRawText.value='';memberEntryError.value=''
+ if(storedApproval?.acknowledged)
+  await sharedMutationRef.value?.clearAcknowledgedIntent().catch(e=>{
+   memberEntryError.value='確認済み申請の後片付けに失敗しました：'+e.message
+  })
 }
 provide('kakeibo-entry-input',{
  liveClockIso:computed(()=>new Date().toISOString()),todayLabel:memberTodayLabel,

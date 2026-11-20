@@ -93,6 +93,13 @@ try{
         identity:{user_id:'11111111-1111-4111-8111-111111111111',
           household_id:'test-household',role:'owner',display_name:'テスト管理者'}}
       else if(p==='app-state')data={}
+      else if(p==='receipts'&&route.request().method()==='GET'&&u.searchParams.has('ids')){
+        // Reproduce the reported outage: receipt metadata may be unavailable
+        // even when the user never uploaded any photo. Ledger navigation and
+        // editing must not display a misleading image-upload failure.
+        return route.fulfill({status:503,contentType:'application/json',
+          body:JSON.stringify({error:'R2での画像操作に失敗しました。元の画像は削除しないでください'})})
+      }
       else if(p==='receipts'&&route.request().method()==='GET')data={ok:true,items:[]}
       else if(p==='payment-sources'&&route.request().method()==='GET')data=cards
       else if(p==='payment-sources'&&route.request().method()==='POST'){
@@ -147,6 +154,9 @@ try{
     await page.locator('.bottom-nav').waitFor()
     await page.getByRole('navigation',{name:'メインメニュー'}).getByRole('button',{name:'明細'}).click()
     await page.locator('.ledger').first().waitFor()
+    await page.waitForTimeout(200)
+    assert.equal(await page.getByRole('alert').filter({hasText:'レシート画像の表示状態を確認できません'}).count(),0,
+      'A background receipt-index failure must not be shown as an image-upload error')
     await page.getByRole('navigation',{name:'メインメニュー'}).getByRole('button',{name:'統計'}).click()
     await page.locator('.stats-page').waitFor()
     await page.getByRole('navigation',{name:'メインメニュー'}).getByRole('button',{name:'管理'}).click()

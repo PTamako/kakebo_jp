@@ -42,3 +42,26 @@ export function writeDeviceDraft(snapshot) {
   // A tombstone prevents an older cloud copy from reviving a cleared draft.
   return transaction('readwrite', store => store.put(snapshot, RECORD_KEY))
 }
+
+
+// Member drafts and retry receipts live in the SAME existing IndexedDB store,
+// but use a key scoped to the verified HomeFlow household and user. Never
+// read the owner's 'unsaved_draft' key or another member's state.
+export function memberDraftStorageKey(userId, householdId, slot='draft') {
+  const valid=x=>typeof x==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(x)
+  if(!valid(userId)||!valid(householdId)||!['draft','shared-inline','shared-editor'].includes(slot))
+    throw Error('下書きの本人確認に失敗しました')
+  return 'member-v1:'+householdId+':'+userId+':'+slot
+}
+export function readMemberDeviceState(userId, householdId, slot='draft') {
+  const key=memberDraftStorageKey(userId,householdId,slot)
+  return transaction('readonly',store=>store.get(key))
+}
+export function writeMemberDeviceState(userId, householdId, snapshot, slot='draft') {
+  const key=memberDraftStorageKey(userId,householdId,slot)
+  return transaction('readwrite',store=>store.put(snapshot,key))
+}
+export function clearMemberDeviceState(userId, householdId, slot='draft') {
+  const key=memberDraftStorageKey(userId,householdId,slot)
+  return transaction('readwrite',store=>store.delete(key))
+}

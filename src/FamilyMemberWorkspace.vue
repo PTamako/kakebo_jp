@@ -403,8 +403,9 @@ const memberAiQuota=ref(null)
 // No receipt image blobs are placed in this store.
 const memberDraftLoaded=ref(false)
 let memberDraftTimer=null,memberDraftEpoch=0,memberDraftWriteQueue=Promise.resolve()
+let memberDraftOwner={userId:props.user.user_id,householdId:props.user.household_id}
 function memberDraftValue(nextForms=memberEntries.value){
- return memberDraftSnapshot({userId:props.user.user_id,householdId:props.user.household_id,
+ return memberDraftSnapshot({userId:memberDraftOwner.userId,householdId:memberDraftOwner.householdId,
   forms:nextForms,rawText:memberRawText.value,inputMode:memberInputMode.value,
   pendingPaidEntry})
 }
@@ -415,7 +416,9 @@ function queueMemberDraftWrite(snapshot){
  return memberDraftWriteQueue
 }
 async function persistMemberDraft(nextForms=memberEntries.value){
- if(!memberDraftLoaded.value)throw Error('端末の下書き復元が完了していません。再読み込みしてください')
+ if(!memberDraftLoaded.value||memberDraftOwner.userId!==props.user.user_id||
+  memberDraftOwner.householdId!==props.user.household_id)
+  throw Error('端末の下書き復元が完了していません。再読み込みしてください')
  if(memberDraftTimer){clearTimeout(memberDraftTimer);memberDraftTimer=null}
  const snapshot=memberDraftValue(nextForms)
  try{await queueMemberDraftWrite(snapshot)}
@@ -434,6 +437,7 @@ watch([memberEntries,memberRawText,memberInputMode],scheduleMemberDraftSave,{dee
 async function hydrateMemberDraft(){
  const ticket=++memberDraftEpoch,user=props.user.user_id,household=props.user.household_id
  memberDraftLoaded.value=false
+ memberDraftOwner={userId:user,householdId:household}
  if(memberDraftTimer){clearTimeout(memberDraftTimer);memberDraftTimer=null}
  try{
   await memberDraftWriteQueue.catch(()=>{})
@@ -1660,13 +1664,27 @@ async function checkPendingLedgerStatus(){
  finally{approvalProbeActive=false}
 }
 function foreground(){if(document.visibilityState==='visible')void refresh()}
-watch(()=>props.user.user_id,()=>{closeMemberLedgerReceipt();pendingPaidEntry=null;memberEntries.value=[];memberReceipts.value=[];householdReceiptIndex.value=new Map();memberReceiptRetry.value=[];memberRawText.value='';label.value='';renameId.value='';void refresh()})
+watch(()=>[props.user.user_id,props.user.household_id],()=>{
+ // Save the OLD identity's pending text under its own key before switching.
+ if(memberDraftTimer){clearTimeout(memberDraftTimer);memberDraftTimer=null}
+ if(memberDraftLoaded.value)void queueMemberDraftWrite(memberDraftValue()).catch(()=>{})
+ memberDraftEpoch++;memberDraftLoaded.value=false
+ closeMemberLedgerReceipt();pendingPaidEntry=null;memberEntries.value=[];memberReceipts.value=[]
+ householdReceiptIndex.value=new Map();memberReceiptRetry.value=[];memberRawText.value=''
+ label.value='';renameId.value='';void hydrateMemberDraft();void refresh()
+})
 watch([month,year],()=>void refresh())
 onMounted(()=>{
- void refresh();document.addEventListener('visibilitychange',foreground)
+ void hydrateMemberDraft();void refresh();document.addEventListener('visibilitychange',foreground)
+ document.addEventListener('visibilitychange',memberDraftHidden)
  approvalStatusTimer=setInterval(()=>{void checkPendingLedgerStatus()},20000)
 })
-onUnmounted(()=>{if(approvalStatusTimer)clearInterval(approvalStatusTimer);closeMemberLedgerReceipt();memberReceipts.value=[];householdReceiptIndex.value=new Map();memberReceiptRetry.value=[];alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
+onUnmounted(()=>{
+ if(memberDraftTimer){clearTimeout(memberDraftTimer);memberDraftTimer=null}
+ if(memberDraftLoaded.value)void queueMemberDraftWrite(memberDraftValue()).catch(()=>{})
+ memberDraftEpoch++;memberDraftLoaded.value=false
+ document.removeEventListener('visibilitychange',memberDraftHidden)
+ if(approvalStatusTimer)clearInterval(approvalStatusTimer);closeMemberLedgerReceipt();memberReceipts.value=[];householdReceiptIndex.value=new Map();memberReceiptRetry.value=[];alive=false;epoch++;pendingPaidEntry=null;accounts.value=[];assets.value=[];sharedEntries.value=[];pendingMutations.value=[];sharedCards.value=[];
  memberMerchantRules.value=[];memberRuleError.value='';
  document.removeEventListener('visibilitychange',foreground)})
 // The original EntryInputPage renders for both identities. All writes here
@@ -1754,10 +1772,17 @@ async function selectMemberDraftReceipt(event,record){
   memberEntryError.value=''
  }catch(e){memberEntryError.value='画像を添付できません：'+e.message}
 }
-function clearMemberDraft(){
+async function clearMemberDraft(){
+ if(!memberDraftLoaded.value)return
+ if(pendingPaidEntry){memberEntryError.value='送信結果を確認してから下書きを削除してください';return}
  if(memberEntries.value.length||memberRawText.value.trim()){
   if(!window.confirm('未保存の下書きを破棄しますか？'))return
  }
+ // Write a tombstone first; on failure keep the editable values and IDs.
+ const empty=memberDraftSnapshot({userId:memberDraftOwner.userId,
+  householdId:memberDraftOwner.householdId,forms:[],rawText:'',inputMode:'manual'})
+ try{await queueMemberDraftWrite(empty)}
+ catch(e){memberEntryError.value='下書きを削除できません：'+e.message;return}
  memberEntries.value=[];memberRawText.value='';memberEntryError.value=''
 }
 provide('kakeibo-entry-input',{

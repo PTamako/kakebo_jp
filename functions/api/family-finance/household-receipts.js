@@ -78,7 +78,16 @@ function memberSql(ids){
  ORDER BY r.created_at DESC,r.receipt_id DESC`
 }
 async function index(db,user,ids){
- const member=(await db.prepare(memberSql(ids)).bind(...ids,user.household_id).all()).results||[]
+ // Cloudflare D1 allows at most 100 bound SQL parameters per statement.
+ // The member query has one additional household_id binding beyond the IDs.
+ // Split server-side, including for clients already deployed with 100-ID pages.
+ // NEVER exceed 99 IDs here even if the public API accepts 100 IDs.
+ const member=[]
+ for(let offset=0;offset<ids.length;offset+=99){
+  const chunk=ids.slice(offset,offset+99)
+  const rows=(await db.prepare(memberSql(chunk)).bind(...chunk,user.household_id).all()).results||[]
+  member.push(...rows)
+ }
  const result=new Map()
  for(const r of member){
   if(!result.has(Number(r.entry_id)))result.set(Number(r.entry_id),{

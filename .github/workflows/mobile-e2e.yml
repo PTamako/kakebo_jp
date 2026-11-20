@@ -1,5 +1,18 @@
 name: Mobile WebKit Smoke
 on:
+  # Verify the exact main revision before any manually controlled production release.
+  # This is CI-only; it never deploys Pages or Workers.
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'functions/api/**'
+      - 'public/**'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/mobile-browser-smoke.mjs'
+      - '.github/workflows/mobile-e2e.yml'
   pull_request:
     paths:
       - 'src/**'

@@ -71,10 +71,10 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
         if(selected!==null){
           const values=selected.split(',')
           const ids=values.map(Number)
-          if(!values.length||values.length>250||values.some((raw,i)=>
+          if(!values.length||values.length>100||values.some((raw,i)=>
             !/^[1-9]\d{0,14}$/.test(raw)||!validId(raw)||!Number.isSafeInteger(ids[i]))||
             new Set(ids).size!==ids.length)
-            return json({error:'画像の検索対象を確認してください（最大250件）'},400)
+            return json({error:'画像の検索対象を確認してください（最大100件）'},400)
           const marks=ids.map((_,i)=>'?'+(i+1)).join(',')
           const {results=[]}=await db.prepare(
             'SELECT entry_id AS id,size_bytes AS size FROM receipt_r2_state WHERE deleted=0 AND entry_id IN ('+marks+') ORDER BY entry_id'
@@ -216,6 +216,10 @@ export async function handleR2Receipts(request,env,db,segments=[]) {
     return json({error:'操作を確認してください'},405)
   }catch(error){
     console.error('receipt R2 operation failed',method,idSegment,error?.message||error)
+    // Metadata-only GET reads D1, not R2. Do not claim that a receipt upload
+    // failed or tell text-only users to retain a photo they never selected.
+    if(method==='GET' && !idSegment)
+      return json({error:'レシート画像一覧の確認に失敗しました。再読み込みしてください'},503)
     return json({error:'R2での画像操作に失敗しました。元の画像は削除しないでください'},503)
   }
 }

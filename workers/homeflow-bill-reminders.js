@@ -8,6 +8,31 @@ const userId=x=>typeof x==='string'&&/^[a-f0-9-]{36}$/i.test(x)
 const householdId=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(x)
 const plusOne=x=>new Date(Date.parse(x+'T00:00:00Z')+86400000).toISOString().slice(0,10)
 const all=async(db,sql,...args)=>(await db.prepare(sql).bind(...args).all()).results||[]
+// An expense confirmed by a different family member cannot consume the
+// original owner's reminder. Keep this filter on both fixed and variable bills.
+// Caller supplies only hard-coded bind parameter positions, never user SQL.
+const ownerOnlyExpense=(householdParam,ownerParam)=>`
+  AND NOT EXISTS(SELECT 1 FROM family_shared_entry_registry r
+    WHERE r.entry_id=e.id AND r.household_id=${householdParam}
+      AND r.creator_user_id<>${ownerParam})
+  AND NOT EXISTS(SELECT 1 FROM family_shared_mutation_applied a
+    WHERE a.entry_id=e.id AND a.household_id=${householdParam}
+      AND a.requester_user_id<>${ownerParam} AND a.action='create')
+  AND NOT EXISTS(SELECT 1 FROM family_card_purchase_applied a
+    WHERE a.entry_id=e.id AND a.household_id=${householdParam}
+      AND a.requester_user_id<>${ownerParam})
+  AND NOT EXISTS(SELECT 1 FROM family_prepaid_actions_applied a
+    WHERE a.entry_id=e.id AND a.household_id=${householdParam}
+      AND a.requester_user_id<>${ownerParam})
+  AND NOT EXISTS(SELECT 1 FROM family_legacy_card_spends a
+    WHERE a.entry_id=e.id AND a.household_id=${householdParam}
+      AND a.actor_user_id<>${ownerParam})
+  AND NOT EXISTS(SELECT 1 FROM family_recurring_execution_applied a
+    WHERE a.target_entry_id=e.id AND a.household_id=${householdParam}
+      AND a.member_user_id<>${ownerParam})
+  AND NOT EXISTS(SELECT 1 FROM family_finance_applied_actions a
+    WHERE a.entry_id=e.id AND a.household_id=${householdParam}
+      AND a.requester_user_id<>${ownerParam})`
 const view=p=>({id:p.id,name:p.name,amount:Number(p.amount??p.amount_jpy),
   paymentSource:p.payment_source,startMonth:p.start_month,enabled:true,
   day:Number(p.day||1),weekday:Number(p.weekday||0),scheduleType:p.schedule_type,
@@ -41,9 +66,10 @@ export async function projectBillConfirmationReminders(db,{day,recipientUserId,h
    // Only immutable, member-attributed posted finance evidence may consume
    // a member's recurring confirmation slot.
    original
-    ?all(db,`SELECT date,merchant,payment_source,amount,type,client_request_id
-      FROM entries WHERE type='expense' AND date>=?1 AND date<date(?1,'+1 month')
-      ORDER BY date,id LIMIT 1500`,month+'-01')
+    ?all(db,`SELECT e.date,e.merchant,e.payment_source,e.amount,e.type,e.client_request_id
+      FROM entries e WHERE e.type='expense' AND e.date>=?1
+        AND e.date<date(?1,'+1 month') ${ownerOnlyExpense('?2','?3')}
+      ORDER BY e.date,e.id LIMIT 1500`,month+'-01',hid,recipientUserId)
     :all(db,`SELECT e.date,e.merchant,
       CASE WHEN e.family_account_id IS NOT NULL THEN 'personal:'||e.family_account_id
         WHEN EXISTS(SELECT 1 FROM family_legacy_card_spends s
@@ -85,10 +111,11 @@ export async function projectBillConfirmationReminders(db,{day,recipientUserId,h
   for(const bill of bills){
    const amt=Number(bill.amountJpy)
    const booked=Number.isSafeInteger(amt)&&amt>0?await db.prepare(`
-     SELECT 1 FROM entries WHERE type='expense' AND merchant=?1
-      AND COALESCE(payment_source,'')=?2 AND amount=?3
-      AND date>=?4 AND date<date(?4,'+1 month') LIMIT 1`)
-    .bind(bill.name,bill.paymentSource||'',amt,day.slice(0,7)+'-01').first():null
+     SELECT 1 FROM entries e WHERE e.type='expense' AND e.merchant=?1
+      AND COALESCE(e.payment_source,'')=?2 AND e.amount=?3
+      AND e.date>=?4 AND e.date<date(?4,'+1 month')
+      ${ownerOnlyExpense('?5','?6')} LIMIT 1`)
+    .bind(bill.name,bill.paymentSource||'',amt,day.slice(0,7)+'-01',hid,recipientUserId).first():null
    if(!booked)items.push({kind:'variable',planId:bill.planId,name:bill.name,
      dueOn:day,periodMonth:bill.periodMonth,amountJpy:bill.amountJpy??null})
   }

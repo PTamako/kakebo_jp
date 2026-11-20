@@ -480,7 +480,7 @@ async function saveMerchantRule({keyword,oldKeyword=keyword,oldCategory,oldPayme
     throw Error('支払方法を確認してください')
   let changed=false
   try{
-    if(keyword!==oldKeyword){
+    if(keyword!==oldKeyword && (category||paymentSource)){
       if(!original)throw Error('変更対象の店舗ルールが見つかりません')
       if(merchantRulesCombined.value.some(item=>item.keyword===keyword))
         throw Error('同じ店舗名のルールが既にあります')
@@ -491,14 +491,15 @@ async function saveMerchantRule({keyword,oldKeyword=keyword,oldCategory,oldPayme
       cardMessage.value='店舗名とルールを更新しました'
       return
     }
+    const targetKeyword=(!category&&!paymentSource&&original)?oldKeyword:keyword
     if(category!==(original?.category||'')){
-      if(category)await props.api('rules',{method:'POST',body:JSON.stringify({keyword,category})})
-      else await props.api('custom-rules?keyword='+encodeURIComponent(keyword),{method:'DELETE'})
+      if(category)await props.api('rules',{method:'POST',body:JSON.stringify({keyword:targetKeyword,category})})
+      else await props.api('custom-rules?keyword='+encodeURIComponent(targetKeyword),{method:'DELETE'})
       changed=true
     }
     if(paymentSource!==(original?.payment_source||'')){
-      if(paymentSource)await props.api('merchant-payment-rules',{method:'POST',body:JSON.stringify({keyword,paymentSource})})
-      else await props.api('merchant-payment-rules?keyword='+encodeURIComponent(keyword),{method:'DELETE'})
+      if(paymentSource)await props.api('merchant-payment-rules',{method:'POST',body:JSON.stringify({keyword:targetKeyword,paymentSource})})
+      else await props.api('merchant-payment-rules?keyword='+encodeURIComponent(targetKeyword),{method:'DELETE'})
       changed=true
     }
     cardMessage.value='店舗ルールを更新しました'

@@ -54,7 +54,7 @@ export async function onRequestPost({request,env}){
     try{
       const [categories,methods,builtIn,custom,paymentRules]=await env.DB.batch([
         env.DB.prepare("SELECT category,COALESCE(NULLIF(display_name,''),category) AS display_name,is_default FROM category_source WHERE entry_type=?1 ORDER BY COALESCE(sort_order,10000),category LIMIT 120").bind(type),
-        env.DB.prepare("SELECT name,is_default FROM payment_sources WHERE is_archived=0 ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name LIMIT 120"),
+        env.DB.prepare("SELECT name,is_default,source_type FROM payment_sources WHERE is_archived=0 ORDER BY CASE WHEN name IN ('その他','其他') THEN 1 ELSE 0 END,sort_order,name LIMIT 120"),
         env.DB.prepare("SELECT keyword,category FROM rules WHERE category IS NOT NULL"),
         env.DB.prepare("SELECT keyword,category FROM merchant_rules WHERE category IS NOT NULL"),
         env.DB.prepare("SELECT keyword,payment_source FROM merchant_rules WHERE payment_source IS NOT NULL")
@@ -101,6 +101,8 @@ export async function onRequestPost({request,env}){
       }
       const variable_plans=type==='expense'?await variableBillOptions(env.DB):[]
       return json({ok:true,categories:choices,payment_sources:names.map(value=>({value,label:value})),
+        prepaid_targets:methodRows.filter(row=>row.source_type==='prepaid')
+          .map(row=>({value:'prepaid:'+row.name,label:row.name})),
         variable_plans,suggested})
     }catch{return json({ok:false,error:'catalog_unavailable'},503)}
   }
@@ -153,9 +155,12 @@ export async function onRequestPost({request,env}){
   const validDate=value=>typeof value==='string'&&/^\d{4}-\d\d-\d\d$/.test(value)&&
     Number.isFinite(Date.parse(value+'T00:00:00Z'))&&
     new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value
+  const sbiTransfer=transfer&&p.transferTarget==='sbi'
+  const prepaidTransfer=transfer&&typeof p.transferTarget==='string'&&p.transferTarget.startsWith('prepaid:')
   if(transfer){
-    if(p.category!=='投資・資産移動'||p.transferTarget!=='sbi'||!validDate(p.transferDate)||
-      !['monthly','purchase'].includes(p.sbiPurpose))
+    if(p.category!=='投資・資産移動'||!validDate(p.transferDate)||
+      !(sbiTransfer&&['monthly','purchase'].includes(p.sbiPurpose)||
+        prepaidTransfer&&p.sbiPurpose===undefined))
       return json({ok:false,error:'invalid_transfer'},400)
   }else if(p.transferTarget!==undefined||p.transferDate!==undefined||p.sbiPurpose!==undefined){
     return json({ok:false,error:'invalid_transfer'},400)
@@ -178,6 +183,17 @@ export async function onRequestPost({request,env}){
   }
   const paymentErr=await validateRegisteredPaymentSource(env.DB,field.paymentSource)
   if(paymentErr)return json({ok:false,error:paymentErr.code||'invalid_source'},paymentErr.status||400)
+  if(prepaidTransfer){
+    const prepaidName=p.transferTarget.slice('prepaid:'.length)
+    if(!prepaidName||prepaidName.length>80||prepaidName===field.paymentSource)
+      return json({ok:false,error:'invalid_transfer'},400)
+    try{
+      const account=await env.DB.prepare(
+        "SELECT name FROM payment_sources WHERE name=?1 AND source_type='prepaid' AND is_archived=0 LIMIT 1"
+      ).bind(prepaidName).first()
+      if(!account)return json({ok:false,error:'prepaid_target_not_registered'},409)
+    }catch{return json({ok:false,error:'prepaid_target_unavailable'},503)}
+  }
   const requestId=await stableRequestId(key)
   // One D1 unique index ensures a lost response never creates a second transaction.
   try{
@@ -188,15 +204,15 @@ export async function onRequestPost({request,env}){
       SELECT ?1,?9,?2,?3,?4,?5,'',?6,?10,?11,?12,?7,?8
       WHERE NOT EXISTS (SELECT 1 FROM entries
         WHERE date=?1 AND amount=?2 AND type=?6 AND COALESCE(payment_source,'')=?8
-          AND TRIM(COALESCE(merchant,''))=TRIM(?4)
+          AND (TRIM(COALESCE(merchant,''))=TRIM(?4) OR (?6='transfer' AND ?10 LIKE 'prepaid:%'))
           AND (type<>'transfer' OR COALESCE(transfer_target,'')=COALESCE(?10,''))
           AND (COALESCE(time,'')='' OR COALESCE(?9,'')=''
             OR ABS((CAST(SUBSTR(time,1,2) AS INTEGER)*60 + CAST(SUBSTR(time,4,2) AS INTEGER))
               -(CAST(SUBSTR(?9,1,2) AS INTEGER)*60 + CAST(SUBSTR(?9,4,2) AS INTEGER)))<=5))
       ON CONFLICT(client_request_id) DO NOTHING`)
       .bind(date,amount,field.category,field.merchant,field.note,field.type,requestId,
-        field.paymentSource,field.time,transfer?'sbi':null,applied,transfer?p.transferDate:null)
-    const result=transfer
+        field.paymentSource,field.time,transfer?p.transferTarget:null,applied,transfer?p.transferDate:null)
+    const result=sbiTransfer
       ? (await env.DB.batch([insert,env.DB.prepare(`INSERT OR IGNORE INTO sbi_transfer_links
           (entry_id,purchase_month,purpose)
           SELECT id,?2,?3 FROM entries WHERE client_request_id=?1

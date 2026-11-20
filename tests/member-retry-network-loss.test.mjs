@@ -101,13 +101,13 @@ test('HomeFlow approval lost response retains same proposal and retry key after 
  const stored=[...store.values()][0]
  assert.equal(stored.proposalId,'proposal-1')
  const second=approvalHarness({store,api})
+ await assert.rejects(()=>second.submit('create',{...entry,amount:321}),
+  /元の内容で再試行|申請結果/)
+ assert.equal(store.size,1,'unknown prior outcome must block a changed intent')
  const done=await second.submit('create',entry)
  assert.deepEqual(done,{proposalId:'proposal-1',status:'submitted_status_unknown'})
  assert.equal(prepares,1)
  assert.equal(submits,2)
- assert.equal([...(await second.submit('create',entry)).status].join(''),'submitted_status_unknown')
- assert.equal(submits,2)
- await assert.rejects(()=>second.submit('create',{...entry,amount:321}),
-  /元の内容で再試行|申請結果/)
- assert.equal(store.size,1,'unacknowledged different intents remain blocked only until server confirms')
+ assert.equal((await second.submit('create',entry)).status,'submitted_status_unknown')
+ assert.equal(submits,2,'acknowledged intent is never submitted twice')
 })

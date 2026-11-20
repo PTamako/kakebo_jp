@@ -13,7 +13,7 @@ async function familyApi(path,options={}){
 // Commit only existing, verified personal-asset ledger routes. No personal
 // transfer can be reclassified as a household income/expense or sent for
 // the other member's private accounts.
-export async function submitMemberPersonalTransfer({record,userId,accounts}){
+export async function submitMemberPersonalTransfer({record,userId,accounts,persistPending=null}){
  if(record?.type!=='transfer')throw Error('資産移動を選択してください')
  const operation=memberTransferOperation(record.transferTarget)
  if(!operation||operation==='spouse')throw Error('振替先を選択してください')
@@ -112,6 +112,9 @@ export async function submitMemberPersonalTransfer({record,userId,accounts}){
   if(!wasPending)record.memberAssetPending=null
   throw Error('確認がキャンセルされました')
  }
+ // The retry key and immutable submitted payload must survive an iOS crash
+ // before the first POST; never rely on memory alone in the member workspace.
+ if(typeof persistPending==='function')await persistPending()
  const path=operation==='prepaid'?'member-prepaid-topups':'member-points-asset-actions'
  const result=await familyApi(path,{method:'POST',headers:{'content-type':'application/json'},
   body:JSON.stringify({...pending.payload,idempotency_key:pending.key})})

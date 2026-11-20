@@ -59,25 +59,38 @@ const personalDocumentSbi=ref([]),annualPersonalDocumentSbi=ref([])
 const memberMerchantRules=ref([]),memberRuleError=ref('')
 const memberReceipts=ref([]),memberReceiptError=ref(''),memberReceiptRetry=ref([])
 const householdReceiptIndex=ref(new Map())
+const householdReceiptError=ref('')
 async function reloadHouseholdReceipts(entries,replace=false){
+ const actor=props.user.user_id
  const ids=[...new Set(entries.map(x=>Number(x.id)).filter(
   id=>Number.isSafeInteger(id)&&id>0))]
+ // Preserve the last verified index if a transient network read fails.
  const found=new Map(replace?[]:householdReceiptIndex.value)
- for(let n=0;n<ids.length;n+=100){
-  const chunk=ids.slice(n,n+100)
-  const response=await fetch('/api/family-finance/household-receipts?ids='+chunk.join(','),{
-   credentials:'same-origin',cache:'no-store'
-  })
-  const body=await response.json().catch(()=>({}))
-  if(!response.ok||body.ok!==true||!Array.isArray(body.items))
-   throw Error('家庭小票を確認できません')
-  for(const id of chunk)found.delete(id)
-  for(const item of body.items){
-   if(!chunk.includes(Number(item.entry_id)))throw Error('家庭小票の対象が一致しません')
-   found.set(Number(item.entry_id),item)
+ try{
+  for(let n=0;n<ids.length;n+=99){
+   const chunk=ids.slice(n,n+99)
+   const response=await fetch('/api/family-finance/household-receipts?ids='+chunk.join(','),{
+    credentials:'same-origin',cache:'no-store'
+   })
+   const body=await response.json().catch(()=>({}))
+   if(!response.ok||body.ok!==true||!Array.isArray(body.items))
+    throw Error('家庭小票の一覧を読み込めません（HTTP '+response.status+'）')
+   for(const id of chunk)found.delete(id)
+   for(const item of body.items){
+    if(!chunk.includes(Number(item.entry_id)))
+     throw Error('家庭小票の対象が一致しません')
+    found.set(Number(item.entry_id),item)
+   }
   }
+  if(actor!==props.user.user_id)return
+  householdReceiptIndex.value=found
+  householdReceiptError.value=''
+ }catch(e){
+  if(actor!==props.user.user_id)return
+  // An image badge lookup must never abort a committed expense or mask it.
+  householdReceiptError.value='家庭小票の表示を更新できません：'+e.message
+  console.warn('Household receipt index refresh skipped:',e)
  }
- householdReceiptIndex.value=found
 }
 async function fetchHouseholdReceipt(entryId){
  const response=await fetch('/api/family-finance/household-receipts/'+Number(entryId),{
@@ -1863,6 +1876,10 @@ watch(()=>props.user.user_id,()=>{
    :user-id="user.user_id" :household-id="user.household_id" />
   <section v-if="error" class="member-alert" role="alert">{{error}}
    <button type="button" @click="refresh">再試行</button>
+  </section>
+  <section v-if="householdReceiptError && tab==='list'" class="member-alert" role="alert">
+   {{householdReceiptError}}
+   <button type="button" @click="reloadHouseholdReceipts(sharedEntries,true)">再試行</button>
   </section>
   <section v-if="memberReceiptRetry.length" class="member-alert" role="alert">
    記帳は受付済みですが画像の再送が必要です（{{memberReceiptRetry.length}}件）。

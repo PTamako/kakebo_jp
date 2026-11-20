@@ -877,6 +877,33 @@ export async function onRequest({ request, env, params }) {
       ])
       return json({ ok: true })
     }
+    if (a === 'merchant-payment-rules' && m === 'PATCH') {
+      // Atomic keyword rename: preserve combined category and payment rules,
+      // reject a stale editor or a destination collision, never edit ledger data.
+      const body=await request.json().catch(()=>null)
+      const {oldKeyword,keyword,oldCategory,oldPayment,category,paymentSource}=body||{}
+      if([oldKeyword,keyword,oldCategory,oldPayment,category,paymentSource]
+          .some(value=>typeof value!=='string')||
+        oldKeyword.length<2||oldKeyword.length>120||keyword.trim().length<2||
+        keyword.trim().length>120||keyword.trim().startsWith('__')||
+        oldKeyword===keyword.trim()||category.length>120||paymentSource.length>80||
+        (paymentSource&&keyword.trim().length>80)||
+        (!category&&!paymentSource))
+        return json({error:'店舗ルールを確認してください'},400)
+      const name=keyword.trim()
+      if(paymentSource&&!(await db.prepare(
+        'SELECT 1 FROM payment_sources WHERE name=?1 AND is_archived=0').bind(paymentSource).first()))
+        return json({error:'有効な支払方法を選択してください'},400)
+      const result=await db.prepare(
+        'UPDATE merchant_rules SET keyword=?1,category=?2,payment_source=?3 '+
+        "WHERE keyword=?4 AND COALESCE(category,'')=?5 AND COALESCE(payment_source,'')=?6 "+
+        'AND NOT EXISTS (SELECT 1 FROM merchant_rules WHERE keyword=?7)')
+        .bind(name,category||null,paymentSource||null,oldKeyword,oldCategory,oldPayment,name)
+        .run().catch(()=>null)
+      if(result?.meta?.changes!==1)
+        return json({error:'店舗名が重複しているか、別の端末でルールが変更されました'},409)
+      return json({ok:true,keyword:name})
+    }
     if (a === 'merchant-payment-rules' && m === 'GET') {
       const { results } = await db.prepare('SELECT keyword, payment_source FROM merchant_rules WHERE payment_source IS NOT NULL ORDER BY LENGTH(keyword) DESC').all()
       return json(results)

@@ -33,6 +33,7 @@ import BottomNavigation from './BottomNavigation.vue'
 import OriginalKakeiboPages from './OriginalKakeiboPages.vue'
 import ManagementPage from './pages/ManagementPage.vue'
 import MobileMerchantRulesPanel from './MobileMerchantRulesPanel.vue'
+import {bestMerchantRule} from './merchant-rule-match.js'
 import MemberReceiptManagement from './MemberReceiptManagement.vue'
 import MobileChoiceSheet from './MobileChoiceSheet.vue'
 import MobileCardEditorSheet from './MobileCardEditorSheet.vue'
@@ -344,10 +345,7 @@ function memberPaymentEditor(entry){
   isOwnRecorded:isOwn,restrictToSharedCash:true}
 }
 function memberRuleFor(merchant){
- const text=String(merchant||'').normalize('NFKC').trim().toLowerCase()
- if(!text)return null
- return [...memberMerchantRules.value].sort((a,b)=>b.keyword.length-a.keyword.length)
-   .find(r=>text.includes(r.keyword.normalize('NFKC').toLowerCase()))||null
+ return bestMerchantRule(merchant,memberMerchantRules.value)
 }
 function applyMemberMerchantRule(form){
  if(form?.type!=='expense')return
@@ -368,24 +366,27 @@ async function loadMemberMerchantRules(){
   memberRuleError.value=''
  }catch(e){if(actor===props.user.user_id)memberRuleError.value='店舗ルールを読み込めません：'+e.message}
 }
-async function saveMemberMerchantRule({keyword,oldCategory,oldPayment,expectedVersion,category,paymentSource}){
+async function saveMemberMerchantRule({keyword,oldKeyword=keyword,oldCategory,oldPayment,expectedVersion,category,paymentSource}){
  const actor=props.user.user_id
- const previous=memberMerchantRules.value.find(r=>r.keyword===keyword)
+ const previous=memberMerchantRules.value.find(r=>r.keyword===(oldKeyword||keyword))
  if((previous?.version||0)!==expectedVersion||
     (previous?.category||'')!==oldCategory||(previous?.payment_source||'')!==oldPayment)
   throw Error('別の端末でルールが変更されました。更新してください')
  if(category&&!memberRuleCategoryOptions.value.includes(category)&&category!==(previous?.category||''))throw Error('カテゴリを確認してください')
  if(paymentSource&&!memberPaymentOptions.value.some(o=>o.value===paymentSource))
   throw Error('支払方法を確認してください')
+ if(keyword!==oldKeyword&&memberMerchantRules.value.some(r=>r.keyword===keyword))
+  throw Error('同じ店舗名のルールが既にあります')
  if(!category&&!paymentSource){
   if(!previous)throw Error('空のルールは作成できません')
   await api('member-merchant-rules',request({
-   expected_user_id:actor,expected_version:previous.version,keyword
+   expected_user_id:actor,expected_version:previous.version,keyword:oldKeyword
   },'DELETE'))
  }else{
   await api('member-merchant-rules',request({
    expected_user_id:actor,expected_version:expectedVersion,
-   keyword,category,payment_source:paymentSource
+   keyword,category,payment_source:paymentSource,
+   ...(previous&&keyword!==oldKeyword?{previous_keyword:oldKeyword}:{})
   }))
  }
  await loadMemberMerchantRules()

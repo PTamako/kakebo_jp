@@ -38,3 +38,23 @@ test('Olive resolves only to a unique registered SMBC credit card after store ru
  assert.equal(paymentForDraft({...base,merchant:'初めての店',recognized:'Olive',registeredSources:['セゾンカード'],defaultSource:'セゾンカード'}),'セゾンカード')
  assert.equal(paymentForDraft({...base,merchant:'まいばすけっと南小岩8丁目店',recognized:'Olive'}),'三井住友カード')
 })
+
+
+test('OCR-shortened merchant name resolves a single saved branch preference',()=>{
+  assert.equal(paymentForDraft({
+    merchant:'まいばすけっと',recognized:'',importSource:'',
+    rules:[{keyword:'まいばすけっと南小岩8丁目',payment_source:'Aeon カード'}],
+    registeredSources:['Aeon カード','楽天カード'],
+    defaultSource:'楽天カード',type:'expense'
+  }),'Aeon カード')
+})
+test('conflicting branches do not override the default on ambiguous OCR',()=>{
+  assert.equal(paymentForDraft({
+    merchant:'まいばすけっと',recognized:'',
+    rules:[
+      {keyword:'まいばすけっと南小岩8丁目',payment_source:'Aeon カード'},
+      {keyword:'まいばすけっと亀有店',payment_source:'楽天カード'}],
+    registeredSources:['Aeon カード','楽天カード'],
+    defaultSource:'楽天カード',type:'expense'
+  }),'楽天カード')
+})

@@ -84,6 +84,43 @@ test('member payment preferences never reference private accounts of others',asy
   assert.equal((await f.rule(member,'D','食費','shared:楽天カード')).status,403)
  }finally{f.sqlite.close()}
 })
+test('keyword rename is atomic, versioned, and scoped to the member',async()=>{
+ const f=fixture()
+ try{
+  const created=await f.rule(member,'まいばすけっと南小岩8丁目','食費','cash')
+  assert.equal(created.status,200)
+  const renamed=await f.send(member,'POST',{
+   expected_user_id:member.user_id,expected_version:1,
+   previous_keyword:'まいばすけっと南小岩8丁目',
+   keyword:'まいばすけっと',category:'食費',payment_source:'cash'
+  })
+  assert.equal(renamed.status,200)
+  assert.equal(renamed.data.version,2)
+  assert.deepEqual((await f.send(member)).data.items.map(x=>x.keyword),['まいばすけっと'])
+  assert.deepEqual((await f.send(other)).data.items,[])
+  assert.equal((await f.send(member,'POST',{
+   expected_user_id:member.user_id,expected_version:1,
+   previous_keyword:'まいばすけっと南小岩8丁目',
+   keyword:'残ってはいけない',category:'食費',payment_source:'cash'
+  })).status,409)
+  assert.deepEqual((await f.send(member)).data.items.map(x=>x.keyword),['まいばすけっと'])
+ }finally{f.sqlite.close()}
+})
+test('renaming onto an existing rule rejects collision without losing either rule',async()=>{
+ const f=fixture()
+ try{
+  await f.rule(member,'まいばすけっと','食費','cash')
+  await f.rule(member,'まいばすけっと南小岩8丁目','日用品','cash')
+  const result=await f.send(member,'POST',{
+   expected_user_id:member.user_id,expected_version:1,
+   previous_keyword:'まいばすけっと南小岩8丁目',
+   keyword:'まいばすけっと',category:'日用品',payment_source:'cash'
+  })
+  assert.equal(result.status,409)
+  assert.deepEqual((await f.send(member)).data.items.map(x=>x.keyword),
+   ['まいばすけっと','まいばすけっと南小岩8丁目'])
+ }finally{f.sqlite.close()}
+})
 test('invalid origin/actor and deactivated sessions reject writes',async()=>{
  const f=fixture()
  try{

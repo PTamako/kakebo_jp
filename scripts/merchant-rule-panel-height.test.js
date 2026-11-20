@@ -54,3 +54,20 @@ test('Japanese rule search accepts kana variants and remains local to browser',(
   assert.equal(filterJapaneseChoices(rows,'存在しない').length,0)
   assert.doesNotMatch(panel,/fetch\(|localStorage|indexedDB|sessionStorage/)
 })
+
+
+test('editing existing keyword does not disable adding new rules or deleting an old rule',()=>{
+  const member=read('src/FamilyMemberWorkspace.vue')
+  const ownerApi=read('functions/api/[[path]].js')
+  const memberApi=read('functions/api/family-finance/member-merchant-rules.js')
+  assert.match(panel,/newKeyword.value=rule.keyword/)
+  assert.match(panel,/<label><span>店舗名・キーワード<\/span><input v-model="newKeyword"/)
+  assert.match(panel,/oldKeyword:creating.value\?'':selected.value.keyword/)
+  assert.match(finance,/if\(oldKeyword && keyword!==oldKeyword/)
+  assert.match(finance,/method:'PATCH'/)
+  assert.match(finance,/const targetKeyword=\(!category&&!paymentSource&&original\)\?oldKeyword:keyword/)
+  assert.match(ownerApi,/merchant-payment-rules' && m === 'PATCH'/)
+  assert.match(ownerApi,/NOT EXISTS \(SELECT 1 FROM merchant_rules WHERE keyword=\?7\)/)
+  assert.match(member,/previous_keyword:oldKeyword/)
+  assert.match(memberApi,/SET keyword=\?,category=\?,payment_source=\?,version=version\+1/)
+})

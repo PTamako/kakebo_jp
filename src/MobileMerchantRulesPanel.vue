@@ -39,8 +39,12 @@ const paymentOptions=computed(()=>[
   ...props.paymentSources.map(source=>typeof source==='string'?{value:source,label:source}:source),
   ...(payment.value&&!props.paymentSources.some(source=>(typeof source==='string'?source:source.value)===payment.value)?[{value:payment.value,label:payment.value}]:[])
 ])
-const hasChanges=computed(()=>creating.value ? (newKeyword.value.trim().length>=2&&(category.value!==''||payment.value!=='')) :
-  selected.value&&(category.value!==selected.value.category||payment.value!==selected.value.payment_source))
+const hasChanges=computed(()=>{
+  const keyword=newKeyword.value.trim()
+  if(keyword.length<2||(!category.value&&!payment.value))return false
+  return creating.value ? true : Boolean(selected.value&&(
+    keyword!==selected.value.keyword||category.value!==selected.value.category||payment.value!==selected.value.payment_source))
+})
 function openPanel(){
   if(open.value)return
   const css=getComputedStyle(trigger.value)
@@ -74,6 +78,7 @@ function beginNewRule(){
 function edit(rule){
   creating.value=false
   activeKeyword.value=rule.keyword
+  newKeyword.value=rule.keyword
   category.value=rule.category||''
   payment.value=rule.payment_source||''
   error.value=''
@@ -92,7 +97,7 @@ async function save(){
   if(!hasChanges.value||saving.value||(!creating.value&&!selected.value))return
   saving.value=true;error.value=''
   try{
-    await props.onSave({keyword:creating.value?newKeyword.value.trim():selected.value.keyword,
+    await props.onSave({keyword:newKeyword.value.trim(),oldKeyword:creating.value?'':selected.value.keyword,
       oldCategory:creating.value?'':selected.value.category||'',
       oldPayment:creating.value?'':selected.value.payment_source||'',
       expectedVersion:creating.value?0:Number(selected.value.version||0),
@@ -176,8 +181,7 @@ watch(query,()=>{limit.value=8})
             </div>
           </template>
           <div v-else class="merchant-sheet-editor">
-            <label v-if="creating"><span>店舗名・キーワード</span><input v-model="newKeyword" type="text" maxlength="120" placeholder="例：サンドラッグ" /></label>
-            <strong v-else class="merchant-sheet-shop">{{activeKeyword}}</strong>
+            <label><span>店舗名・キーワード</span><input v-model="newKeyword" type="text" maxlength="120" placeholder="例：まいばすけっと" autocomplete="off" /></label>
             <label><span>カテゴリ</span><MobileChoiceSheet v-model="category" :options="categoryOptions" label="カテゴリ" /></label>
             <label><span>支払方法</span><MobileChoiceSheet v-model="payment" :options="paymentOptions" label="支払方法" /></label>
             <p v-if="!category||!payment" class="merchant-sheet-note">「ルールなし」は、その項目の自動設定を解除します。過去の記帳明細は変更しません。</p>

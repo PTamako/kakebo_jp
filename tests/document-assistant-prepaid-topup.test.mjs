@@ -12,7 +12,7 @@ async function signed(payload,key='jda:kakebo:abcd1234abcd1234'){
  const raw=JSON.stringify(payload),stamp=String(Date.now())
  const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),
   {name:'HMAC',hash:'SHA-256'},false,['sign'])
- const sig=await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(stamp+'\\n'+raw))
+ const sig=await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(stamp+'\n'+raw))
  const hex=Array.from(new Uint8Array(sig),x=>x.toString(16).padStart(2,'0')).join('')
  return new Request(base,{method:'POST',headers:{'content-type':'application/json',
   'x-da-timestamp':stamp,'x-da-signature':hex,'Idempotency-Key':key},body:raw})

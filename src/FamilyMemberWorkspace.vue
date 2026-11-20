@@ -755,31 +755,42 @@ async function submitMemberEntry(){
    if(!choice)throw Error('支払方法が変更・解除されました。もう一度選択してください')
    if(pendingPaidEntry&&choice.kind==='cash')
     throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
-   // Every member write must start with a durable, scoped draft snapshot.
+   // Persist the photo BEFORE the ledger is accepted. This is separate
+   // from text-only draft storage and remains scoped to the verified user.
+   if(record.type==='expense'&&record.receiptImage)await stageMemberReceipt(record)
    await persistMemberDraft()
-   let receiptRef=''
-   if(record.type==='transfer'){
+   let receiptRef=record.receiptSubmitRef||''
+   if(receiptRef&&!record.receiptImage)
+    throw Error('受付済み小票の画像を復元できません。端末内の画像を確認してください')
+   if(!receiptRef&&record.type==='transfer'){
     const result=record.transferTarget==='spouse'
      ?await submitNeutralSpouseTransfer(record)
      :await submitMemberPersonalTransfer({record,userId:props.user.user_id,
        accounts:myAccounts.value,persistPending:()=>persistMemberDraft()})
     applied++
     receiptRef=result.entryId?'entry:'+result.entryId:''
-   }else if(choice.kind==='shared'||choice.kind==='personal'){
+   }else if(!receiptRef&&(choice.kind==='shared'||choice.kind==='personal')){
     const result=await submitPaidExpense(choice,record)
     if(result.type==='applied')applied++
     receiptRef=result.receiptRef||''
-   }else{
+   }else if(!receiptRef){
     const result=await sharedMutationRef.value?.submitEntry(record)
     if(!result?.proposalId)throw Error('申請の受付を確認できません')
     receiptRef='proposal:'+result.proposalId
    }
-   if(record.receiptImage&&receiptRef){
-    try{await saveMemberReceipt(record,receiptRef)}
-    catch(e){
-     memberReceiptRetry.value.push({record,receiptRef})
-     memberReceiptError.value='記帳は送信済みです。画像は再送してください：'+e.message
+   let imageConfirmed=false
+   if(record.type==='expense'&&record.receiptImage&&receiptRef){
+    // Preserve the already-accepted request ID BEFORE the image upload.
+    // Restart/retry may resume this exact upload, never post a new ledger.
+    if(!record.receiptSubmitRef){
+     record.receiptSubmitRef=receiptRef
+     await persistMemberDraft()
     }
+    await bindMemberReceipt(record,receiptRef)
+    try{
+     await saveMemberReceipt(record,receiptRef)
+     imageConfirmed=true
+    }catch(e){noteMemberReceiptRetry(record,receiptRef,e)}
    }
    if(record.type==='expense'&&(record.bindRule||record.bindPaymentRule)){
     try{await rememberMemberRule(record)}catch(e){memberRuleError.value='店舗ルールの保存に失敗しました：'+e.message}
@@ -793,6 +804,12 @@ async function submitMemberEntry(){
    try{await persistMemberDraft(memberEntries.value.slice(1))}
    catch(e){pendingPaidEntry=priorPaid;throw e}
    memberEntries.value.shift();sent++
+   if(imageConfirmed){
+    try{
+     await removeMemberReceiptOutbox(props.user.user_id,props.user.household_id,
+      record.receiptIdempotencyKey)
+    }catch(e){noteMemberReceiptRetry(record,receiptRef,e)}
+   }
    if(receiptRef.startsWith('proposal:'))
     await sharedMutationRef.value?.clearAcknowledgedIntent()
   }

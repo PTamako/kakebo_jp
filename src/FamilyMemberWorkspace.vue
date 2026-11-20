@@ -581,6 +581,8 @@ async function submitPaidExpense(choice,record){
   throw Error('前回の送信結果が未確認です。元の内容で再試行してください')
  if(!pendingPaidEntry)pendingPaidEntry={snapshot,key:'member-spend:'+crypto.randomUUID(),requestId:null}
  const pending=pendingPaidEntry
+ // Durably preserve the same payment key BEFORE any prepare/submit call.
+ await persistMemberDraft()
  if(choice.kind==='shared'){
   // Card sharing authorizes the payment method, never an immediate household
   // ledger mutation. The actual expense must be approved in HomeFlow.
@@ -589,6 +591,7 @@ async function submitPaidExpense(choice,record){
   })
   if(!result?.proposalId)throw Error('共有カードの HomeFlow 審査受付を確認できません')
   pendingPaidEntry=null
+  try{await persistMemberDraft()}catch(e){pendingPaidEntry=pending;throw e}
   return {type:'pending',receiptRef:'proposal:'+result.proposalId}
  }
  if(choice.kind!=='personal')throw Error('支払方法を確認してください')
@@ -605,9 +608,11 @@ async function submitPaidExpense(choice,record){
   const prepared=result.prepared
   if(!prepared?.request_id)throw Error('決済申請の準備結果が未確認です')
   pending.requestId=prepared.request_id
-  if(prepared.status==='submitted_status_unknown'&&prepared.approval_id){
+  await persistMemberDraft()
+  if(prepared.status='submitted_status_unknown'&&prepared.approval_id){
    const requestId=pending.requestId
    pendingPaidEntry=null
+   try{await persistMemberDraft()}catch(e){pendingPaidEntry=pending;throw e}
    return {type:'pending',receiptRef:'request:'+requestId}
   }
   if(prepared.status!=='prepared')throw Error('決済申請の状態を確認してください')
@@ -618,6 +623,7 @@ async function submitPaidExpense(choice,record){
  if(response.applied!==false||response.status!=='submitted_status_unknown')
   throw Error('HomeFlow 承認依頼の受付を確認できません')
  pendingPaidEntry=null
+ try{await persistMemberDraft()}catch(e){pendingPaidEntry=pending;throw e}
  return {type:'pending',receiptRef:'request:'+requestId}
 }
 async function submitMemberFixedCost(item){
@@ -642,6 +648,7 @@ async function submitNeutralSpouseTransfer(record){
  // an actual transfer on retry. A transfer has no payment card or bank account.
  if(!record.neutralSpouseTransferKey)
   record.neutralSpouseTransferKey='neutral-spouse:'+crypto.randomUUID()
+ await persistMemberDraft()
  const entry={date:String(record.date||''),time:String(record.time||''),
   amount:Number(record.amount),type:'transfer',category:'投資・資産移動',
   merchant:'配偶への振替',note:String(record.note||'').trim(),
@@ -659,6 +666,7 @@ async function submitNeutralSpouseTransfer(record){
 }
 async function submitMemberEntry(){
  if(memberEntryPending.value||memberOcrBusy.value||!memberEntries.value.length)return
+ if(!memberDraftLoaded.value){memberEntryError.value='下書きの復元が完了していません。保存は中止しました';return}
  if(!entryExpenseCategories.value.length||!entryIncomeCategories.value.length){
   memberEntryError.value='カテゴリの読み込みが必要です。再読み込みしてください';return
  }
@@ -673,12 +681,14 @@ async function submitMemberEntry(){
    if(!choice)throw Error('支払方法が変更・解除されました。もう一度選択してください')
    if(pendingPaidEntry&&choice.kind==='cash')
     throw Error('先のカード送信結果が未確認です。同じ内容で再試行してください')
+   // Every member write must start with a durable, scoped draft snapshot.
+   await persistMemberDraft()
    let receiptRef=''
-   if(record.type==='transfer'){
+   if(record.type='transfer'){
     const result=record.transferTarget==='spouse'
      ?await submitNeutralSpouseTransfer(record)
      :await submitMemberPersonalTransfer({record,userId:props.user.user_id,
-       accounts:myAccounts.value})
+       accounts:myAccounts.value,persistPending:()=>persistMemberDraft()})
     applied++
     receiptRef=result.entryId?'entry:'+result.entryId:''
    }else if(choice.kind==='shared'||choice.kind==='personal'){
@@ -702,6 +712,9 @@ async function submitMemberEntry(){
    }
    // Remove one draft only after the authenticated backend confirmed receipt.
    // A later failure leaves all unsent rows editable, not silently discarded.
+   // Server receipt already confirmed: persist removal before another write.
+   // If local storage is unavailable, retain the same retry key on restart.
+   await persistMemberDraft(memberEntries.value.slice(1))
    memberEntries.value.shift();sent++
   }
   memberEntryNotice.value=(applied?applied+'件の資産移動を記録しました。':'')+

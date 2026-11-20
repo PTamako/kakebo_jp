@@ -504,7 +504,7 @@ async function hydrateMemberDraft(){
   memberInputMode.value=data?.inputMode||'manual'
   pendingPaidEntry=data?.pendingPaidEntry||null
   memberDraftRecoveryInfo.value=data&&(data.forms.length||data.rawText||data.pendingPaidEntry)
-   ?'端末の下書きを復元しました（画像は再選択してください）':''
+   ?'端末の下書きを復元しました（未保存の画像は再選択してください）':''
   memberDraftLoaded.value=true
  }catch(e){
   if(ticket===memberDraftEpoch){memberDraftLoaded.value=false
@@ -956,6 +956,7 @@ async function selectMemberEditReceipt(event){
  if(!file||!entry||memberLedger.editSaving.value)return
  try{
   entry.receiptImage=await compressReceiptImage(file)
+  entry.receiptIdempotencyKey='receipt:'+crypto.randomUUID()
   entry.receiptFileName=file.name
   memberLedger.receiptSaveError.value=''
  }catch(e){memberLedger.receiptSaveError.value='画像を添付できません：'+e.message}
@@ -1017,6 +1018,7 @@ async function saveMemberLedgerEdit(){
  if(!ledgerChanged&&!edited.receiptImage){memberLedger.cancelEdit();return}
  memberLedger.editSaving.value=true;memberLedger.receiptSaveError.value=''
  try{
+  if(edited.receiptImage)await stageMemberReceipt(edited)
   if(ledgerChanged){
    // A household amount/payment edit must be accepted for review before
    // its replacement image is stored; the original image remains untouched.
@@ -1024,17 +1026,21 @@ async function saveMemberLedgerEdit(){
    if(edited.receiptImage){
     if(!submitted?.proposalId)throw Error('画像に必要な審査番号を確認できません')
     const receiptRef='proposal:'+submitted.proposalId
-    try{await saveMemberReceipt(edited,receiptRef)}
-    catch(e){
-     memberReceiptRetry.value.push({record:edited,receiptRef})
-     memberReceiptError.value='明細の審査は送信済みです。画像を再送してください：'+e.message
-    }
+    await bindMemberReceipt(edited,receiptRef)
+    try{
+     await saveMemberReceipt(edited,receiptRef)
+     await removeMemberReceiptOutbox(props.user.user_id,props.user.household_id,
+      edited.receiptIdempotencyKey)
+    }catch(e){noteMemberReceiptRetry(edited,receiptRef,e)}
    }
   }else if(edited.receiptImage){
    // Image-only changes can be applied directly to the user's own receipt.
    // Delete the old object only after the new one is durably stored.
    const current=memberReceiptIndex.value.get('entry:'+edited.id)
+   await bindMemberReceipt(edited,'entry:'+edited.id)
    const savedId=await saveMemberReceipt(edited,'entry:'+edited.id)
+   await removeMemberReceiptOutbox(props.user.user_id,props.user.household_id,
+    edited.receiptIdempotencyKey)
    if(current&&savedId!==current.receipt_id){
     try{await deleteMemberReceipt(current.receipt_id)}
     catch(e){memberReceiptError.value='古い画像を削除できません：'+e.message}
@@ -1860,7 +1866,10 @@ const memberRuleCategoryOptions=computed(()=>[...new Set([...memberExpenseCatego
 async function selectMemberDraftReceipt(event,record){
  const file=event.target?.files?.[0];if(event.target)event.target.value=''
  if(!file||!record||memberEntryPending.value)return
- try{record.receiptImage=await compressReceiptImage(file)
+ try{
+  if(record.receiptSubmitRef)throw Error('受付済みの画像は変更できません。まず再送を完了してください')
+  record.receiptImage=await compressReceiptImage(file)
+  record.receiptIdempotencyKey='receipt:'+crypto.randomUUID()
   record.receiptFileName=file.name;record.showReceiptAttachment=true
   memberEntryError.value=''
  }catch(e){memberEntryError.value='画像を添付できません：'+e.message}

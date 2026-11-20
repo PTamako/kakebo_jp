@@ -431,3 +431,4 @@ try{
   server.stderr.destroy()
   server.unref()
 }
+// Post-release verification marker: 2026-11-19, no production behavior change.

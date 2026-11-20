@@ -54,8 +54,9 @@ export async function listR2ReceiptsByIds(ids) {
   const unique=[...new Set(ids.map(Number))]
   if(unique.some(id=>!Number.isSafeInteger(id)||id<=0))throw Error('画像IDを確認してください')
   const rows=[]
-  for(let i=0;i<unique.length;i+=250){
-    const chunk=unique.slice(i,i+250)
+  // D1 accepts at most 100 bound parameters per SQL query.
+  for(let i=0;i<unique.length;i+=100){
+    const chunk=unique.slice(i,i+100)
     const response=await requestR2('?ids='+chunk.join(','))
     const body=await response.json()
     if(!body?.ok||!Array.isArray(body.items))throw Error('画像の検索結果を確認できません')

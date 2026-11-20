@@ -16,6 +16,7 @@ import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
 import {parseEntries,parseReceipt,ocrImage} from './parse.js'
 import {readMemberDeviceState,writeMemberDeviceState} from './draft-store.js'
+import {stageMemberReceiptOutbox,bindMemberReceiptOutbox,readMemberReceiptOutbox,removeMemberReceiptOutbox} from './member-receipt-outbox.js'
 import {memberDraftSnapshot,verifiedMemberDraft} from './member-draft-safety.js'
 import {compressReceiptImage} from './receipt-image.js'
 import EntryInputPage from './EntryInputPage.vue'
@@ -180,13 +181,39 @@ async function saveMemberReceipt(record,receiptRef){
  await reloadMemberReceipts()
  return prepared.item?.receipt_id
 }
+// Shared pages live in OriginalKakeiboPages; this component only adapts
+// authentication, household approvals and member-specific API calls.
+const receiptScope=()=>({userId:props.user.user_id,householdId:props.user.household_id})
+async function stageMemberReceipt(record){
+ if(record.type!=='expense'||!record.receiptImage)return
+ if(!record.receiptIdempotencyKey)
+  record.receiptIdempotencyKey='receipt:'+crypto.randomUUID()
+ await stageMemberReceiptOutbox({...receiptScope(),key:record.receiptIdempotencyKey,
+  blob:record.receiptImage,date:record.date,merchant:record.merchant})
+}
+async function bindMemberReceipt(record,receiptRef){
+ await bindMemberReceiptOutbox({...receiptScope(),key:record.receiptIdempotencyKey,receiptRef})
+}
+function noteMemberReceiptRetry(record,receiptRef,error){
+ const key=record.receiptIdempotencyKey
+ if(!memberReceiptRetry.value.some(item=>item.record.receiptIdempotencyKey===key))
+  memberReceiptRetry.value.push({record,receiptRef})
+ memberReceiptError.value='記帳は受付済みです。画像の再送が必要です：'+(error?.message||error)
+}
 async function retryMemberReceipt(){
- if(!memberReceiptRetry.value.length)return
+ if(memberEntryPending.value||!memberReceiptRetry.value.length)return
+ const actor=props.user.user_id,household=props.user.household_id
  const attempts=[...memberReceiptRetry.value];memberReceiptRetry.value=[]
  for(const item of attempts){
-  try{await saveMemberReceipt(item.record,item.receiptRef)}
-  catch(e){memberReceiptRetry.value.push(item);memberReceiptError.value='画像の再送が必要です：'+e.message}
+  if(actor!==props.user.user_id||household!==props.user.household_id)return
+  try{
+   await saveMemberReceipt(item.record,item.receiptRef)
+   // An unconsumed ledger draft keeps its outbox receipt until finalized.
+   if(!memberEntries.value.some(row=>row.receiptIdempotencyKey===item.record.receiptIdempotencyKey))
+    await removeMemberReceiptOutbox(actor,household,item.record.receiptIdempotencyKey)
+  }catch(e){noteMemberReceiptRetry(item.record,item.receiptRef,e)}
  }
+ if(!memberReceiptRetry.value.length)memberReceiptError.value=''
 }
 const month=ref(new Date(Date.now()+9*3600000).toISOString().slice(0,7))
 const year=ref(month.value.slice(0,4))
@@ -458,7 +485,21 @@ async function hydrateMemberDraft(){
   if(ticket!==memberDraftEpoch||user!==props.user.user_id||household!==props.user.household_id)return
   const data=stored?verifiedMemberDraft(stored,user,household):null
   if(stored&&!data)throw Error('保存済み下書きの本人情報または内容が一致しません')
-  memberEntries.value=data?.forms||[]
+  // Restore a saved Blob only from this verified household member's outbox.
+  // OCR/text-only entries never create a receipt attachment.
+  let receipts=[]
+  try{receipts=await readMemberReceiptOutbox(user,household)}
+  catch(e){memberReceiptError.value='保存済み小票の確認に失敗しました：'+e.message}
+  if(ticket!==memberDraftEpoch||user!==props.user.user_id||household!==props.user.household_id)return
+  const staged=new Map(receipts.map(item=>[item.key,item]))
+  memberReceiptRetry.value=receipts.filter(item=>item.receiptRef).map(item=>({
+   receiptRef:item.receiptRef,record:{type:'expense',date:item.date,merchant:item.merchant,
+    receiptImage:item.blob,receiptIdempotencyKey:item.key}
+  }))
+  memberEntries.value=(data?.forms||[]).map(row=>{
+   const photo=staged.get(row.receiptIdempotencyKey)
+   return photo?{...row,receiptImage:photo.blob}:row
+  })
   memberRawText.value=data?.rawText||''
   memberInputMode.value=data?.inputMode||'manual'
   pendingPaidEntry=data?.pendingPaidEntry||null

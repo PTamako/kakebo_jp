@@ -1,5 +1,6 @@
 <script setup>
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
+import {readMemberDeviceState,writeMemberDeviceState,clearMemberDeviceState} from './draft-store.js'
 const props=defineProps({userId:{type:String,required:true},householdId:{type:String,required:true},headless:{type:Boolean,default:false},onlyWhenOpen:{type:Boolean,default:false}})
 const open=ref(false),busy=ref(false),error=ref(''),message=ref(''),
  proposals=ref([]),rows=ref([]),deleted=ref([]),available=ref(false),
@@ -104,43 +105,79 @@ function canonical(input){
   throw Error('日付・金額・カテゴリ・内容を確認してください')
  return e
 }
+// Inline approvals use a durable replay receipt, separate for each verified
+// HomeFlow member. Persist BEFORE POST; a crashed PWA must replay the same key.
 async function submitIntent(operation,entry,target=null){
  if(busy.value)throw Error('前の申請を処理中です')
  if(!['create','update','delete','restore'].includes(operation))throw Error('操作が無効です')
+ const actor=props.userId,household=props.householdId
  const snapshot=JSON.stringify({operation,entry,resource_id:target?.resource_id||null,
   expected_version:target?.version||0})
- if(inlineRequest&&inlineRequest.snapshot!==snapshot)
-  throw Error('前の申請結果が未確定です。同じ内容で再試行してください')
- if(!inlineRequest)inlineRequest={snapshot,key:'shared-entry:'+crypto.randomUUID(),
-  proposalId:null,userId:props.userId,householdId:props.householdId}
- const pending=inlineRequest
- if(pending.userId!==props.userId||pending.householdId!==props.householdId)
-  throw Error('別の家族の申請を再送できません')
  busy.value=true
  try{
+  if(!inlineRequest){
+   const saved=await readMemberDeviceState(actor,household,'shared-inline')
+   if(saved){
+    if(saved.userId!==actor||saved.householdId!==household||
+      !/^shared-entry:[0-9a-f-]{36}$/.test(saved.key||'')||
+      typeof saved.snapshot!=='string')
+     throw Error('前回の申請の再送情報が破損しています。新しい申請を送信しないでください')
+    inlineRequest=saved
+   }
+  }
+  if(inlineRequest?.snapshot!==snapshot){
+   if(inlineRequest?.acknowledged){
+    // The old intent has a durable server receipt. A different user action
+    // may start a new intent; the original has already been acknowledged.
+    await clearMemberDeviceState(actor,household,'shared-inline')
+    inlineRequest=null
+   }else if(inlineRequest)throw Error('前回の送信結果が未確認です。元の内容で再試行してください')
+  }
+  if(!inlineRequest){
+   inlineRequest={snapshot,key:'shared-entry:'+crypto.randomUUID(),
+    proposalId:null,userId:actor,householdId:household,acknowledged:false}
+   await writeMemberDeviceState(actor,household,inlineRequest,'shared-inline')
+  }
+  const pending=inlineRequest
+  if(pending.userId!==actor||pending.householdId!==household||
+    pending.snapshot!==snapshot)throw Error('別の家族の申請を再送できません')
+  if(pending.acknowledged){
+   if(!pending.proposalId)throw Error('提出済み申請の受付番号がありません')
+   return {proposalId:pending.proposalId,status:pending.status||'submitted_status_unknown'}
+  }
   if(!pending.proposalId){
    const result=await api('/api/family-finance/shared-mutation-requests',
-    post({expected_user_id:props.userId,idempotency_key:pending.key,
+    post({expected_user_id:actor,idempotency_key:pending.key,
      operation,resource_id:target?.resource_id||null,
      expected_version:target?.version||0,entry}))
    const data=result.prepared
    if(data?.applied!==false||!data?.proposal_id)
     throw Error('申請の準備結果を確認できません')
    pending.proposalId=data.proposal_id
+   await writeMemberDeviceState(actor,household,pending,'shared-inline')
    if(data.status==='submitted_status_unknown'&&data.homeflow_approval_id){
-    inlineRequest=null
+    pending.status=data.status;pending.acknowledged=true
+    await writeMemberDeviceState(actor,household,pending,'shared-inline')
     return {proposalId:pending.proposalId,status:data.status}
    }
    if(data.status!=='prepared')throw Error('申請の受付状態を確認してください')
   }
   const result=await api('/api/family-finance/shared-mutation-requests/'+
    encodeURIComponent(pending.proposalId)+'/submit',
-   post({expected_user_id:props.userId}))
+   post({expected_user_id:actor}))
   if(result.applied!==false||result.status!=='submitted_status_unknown')
    throw Error('HomeFlow の受付が未確認です。重複申請しないでください')
-  inlineRequest=null
+  pending.status=result.status;pending.acknowledged=true
+  await writeMemberDeviceState(actor,household,pending,'shared-inline')
   return {proposalId:pending.proposalId,status:result.status}
  }finally{busy.value=false}
+}
+// Caller clears only after its corresponding draft removal is durably stored.
+async function clearAcknowledgedIntent(){
+ if(!inlineRequest?.acknowledged)return
+ const actor=props.userId,household=props.householdId
+ await clearMemberDeviceState(actor,household,'shared-inline')
+ inlineRequest=null
 }
 // Personal neutral transfers modify the same immutable household row directly.
  // They are transfers (not household income/expense), so no owner approval.
@@ -200,7 +237,7 @@ async function submitRestore(record){
  if(target.entry?.type==='transfer')return directNeutralTransfer('restore',target)
  return submitIntent('restore',null,target)
 }
-defineExpose({submitEntry,submitMutation,submitRestore,openForEntry})
+defineExpose({submitEntry,submitMutation,submitRestore,openForEntry,clearAcknowledgedIntent})
 async function toggle(){
  if(busy.value)return
  open.value=!open.value

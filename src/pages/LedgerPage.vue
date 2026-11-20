@@ -7,7 +7,7 @@ import LedgerTypeFilter from '../LedgerTypeFilter.vue'
 import { isExternalLedgerEntry } from '../ledger-origin.js'
 // Shared refs and navigation actions remain owned by App.vue.
 // This page only renders its own view; links to 明細 call the same parent actions.
-const { categories, tab, month, resetMonth, selectedYear, input, paymentSources, transferDestinations, rewardDestinations, editReceiptImage, editReceiptFileName, receiptSaveError, selectEditReceipt, receiptImageIds, canDeleteReceipt, viewedReceiptUrl, viewReceipt, closeReceipt, removeReceiptImage, editingEntry, INCOME_CATEGORIES, categoryIconPath, categoryLabel, yen, load, setEntryType, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, manualPayment, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, detailFilter, prepaidHistoryFilter, detailLoading, visibleEntryCount, listPageSize, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, expandedMonth, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, groupedPagedEntries, toggleEntryDay, clearDetailFilter, visibleCalendarDays, toggleDay, startSwipe, endSwipe, handleEntryClick, monthLabel, formatLedgerTotal } = inject('kakeibo-page-context')
+const { categories, tab, month, resetMonth, selectedYear, input, paymentSources, transferDestinations, rewardDestinations, editReceiptImage, editReceiptFileName, receiptSaveError, selectEditReceipt, receiptImageIds, receiptIndexWarning, refreshReceiptImageIds, canDeleteReceipt, viewedReceiptUrl, viewReceipt, closeReceipt, removeReceiptImage, editingEntry, INCOME_CATEGORIES, categoryIconPath, categoryLabel, yen, load, setEntryType, pendingEntryIds, editSaving, remove, startEdit, cancelEdit, saveEdit, manualPayment, selectedDay, entryTypeFilter, calendarExpanded, swipedEntryId, detailFilter, prepaidHistoryFilter, detailLoading, visibleEntryCount, listPageSize, displayEntries, setEntryTypeFilter, sortedDisplayEntries, annualDetailMode, expandedMonth, annualMonthGroups, paymentMethodAnnualTotals, loadMoreAnnualEntries, loadMoreEntries, expandedEntryDays, groupedPagedEntries, toggleEntryDay, clearDetailFilter, visibleCalendarDays, toggleDay, startSwipe, endSwipe, handleEntryClick, monthLabel, formatLedgerTotal } = inject('kakeibo-page-context')
 const memberPaymentChoices=inject('kakeibo-member-payment-choices',[])
 const memberIncomeCategories=inject('kakeibo-member-income-categories',[])
 const memberExpenseCategories=inject('kakeibo-member-expense-categories',[])
@@ -15,6 +15,10 @@ const memberExpenseCategories=inject('kakeibo-member-expense-categories',[])
 <template>
 <section  class="page-section">
       <div class="page-heading"><div><h1>収支明細</h1></div><div class="heading-period"><input type="month" v-model="month" class="month" aria-label="集計月" /><button type="button" class="period-reset" @click="resetMonth" aria-label="今月に戻す" title="今月に戻す">今月</button></div></div>
+      <p v-if="receiptIndexWarning" role="alert" class="help receipt-index-warning">
+        {{receiptIndexWarning}}
+        <button type="button" class="button-secondary" @click="refreshReceiptImageIds">再試行</button>
+      </p>
       <LedgerTypeFilter :model-value="entryTypeFilter" @change="setEntryTypeFilter" />
       <section v-if="!detailFilter && !prepaidHistoryFilter" class="month-calendar" aria-label="月間明細カレンダー">
         <div class="calendar-heading"><strong>{{ monthLabel }}</strong><div class="calendar-actions"><button type="button" class="calendar-reset" @click="calendarExpanded = !calendarExpanded">{{ calendarExpanded ? '週のみ表示' : '月全体を表示' }}</button><button v-if="selectedDay" type="button" class="calendar-reset" @click="selectedDay = ''">選択解除</button></div></div>

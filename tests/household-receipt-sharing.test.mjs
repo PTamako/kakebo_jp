@@ -39,7 +39,10 @@ function fixture(){
   first:async()=>statement.get(...values)||null,
   all:async()=>({results:statement.all(...values)}),
   run:async()=>({meta:{changes:statement.run(...values).changes}})
- });return {...b(),bind:(...args)=>b(args)}}}
+ });return {...b(),bind:(...args)=>{
+  if(args.length>100)throw Error('too many SQL variables: D1 max 100')
+  return b(args)
+ }}}}
  const objects=new Map()
  const bucket={
   async get(key){
@@ -131,4 +134,36 @@ test('receipt page buttons follow the image uploader, and the household path is 
  assert.match(memberApp,/memberLedger\.canDeleteReceipt=computed/)
  assert.match(memberApp,/own\?await fetchMemberReceipt\(own\.receipt_id\):await fetchHouseholdReceipt\(id\)/)
  assert.match(router,/if\(parts\[0\]==='household-receipts'\)return familyHouseholdReceipts/)
+})
+
+
+test('production D1 max 100 SQL bindings: 100 receipt IDs + household ID must be split server-side',async()=>{
+ const f=fixture()
+ try{
+  await f.addMemberImage()
+  const ids=[540,...Array.from({length:99},(_,i)=>1000+i)]
+  const res=await f.call(owner,'GET','','?ids='+ids.join(','))
+  assert.equal(res.status,200,'a request containing 100 IDs must not produce a 503')
+  assert.deepEqual(res.data.items,[{entry_id:540,source:'member',can_delete:false}])
+  const member=await f.call(uploader,'GET','','?ids='+ids.join(','))
+  assert.equal(member.status,200)
+  assert.deepEqual(member.data.items,[{entry_id:540,source:'member',can_delete:true}])
+  const image=await f.call(owner,'GET','/540')
+  assert.equal(image.status,200)
+  assert.deepEqual(image.data,payload)
+ }finally{f.sqlite.close()}
+})
+
+test('large household receipt listing keeps member and original R2 badges together',async()=>{
+ const f=fixture()
+ try{
+  await f.addMemberImage()
+  const ids=[540,542,...Array.from({length:98},(_,i)=>1200+i)]
+  const result=await f.call(owner,'GET','','?ids='+ids.join(','))
+  assert.equal(result.status,200)
+  assert.deepEqual(result.data.items,[
+   {entry_id:540,source:'member',can_delete:false},
+   {entry_id:542,source:'legacy',can_delete:true}
+  ])
+ }finally{f.sqlite.close()}
 })

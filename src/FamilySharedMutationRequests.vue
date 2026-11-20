@@ -68,7 +68,10 @@ async function load(){
     if(ticket!==version||actor!==props.userId||household!==props.householdId)return
     if(prior.entry)draft.value={...prior.entry,amount:String(prior.entry.amount)}
     stableKey.value=saved.key
-    message.value='前回の申請を復元しました。元の内容で再送して受付状態を確認できます。'
+    const known=(pending.items||[]).find(x=>x.proposal_id===saved.proposalId&&x.status==='prepared')
+    if(known)prepared.value={proposal_id:saved.proposalId,status:'prepared',applied:false}
+    message.value=known?'未提出の申請を復元しました。送信または取消を選んでください。'
+     :'前回の申請を復元しました。元の内容で再送して受付状態を確認できます。'
    }
   }
   available.value=true;error.value=''
@@ -350,7 +353,7 @@ async function prepare(){
   await writeMemberDeviceState(actor,household,retry,'shared-editor')
   prepared.value=result.prepared;message.value='申請を保存しました。明細は未変更です。HomeFlow に提出してください。'
  }catch(e){if(ticket===version)error.value=e.message}
- finally{if(ticket===version)busy.value=false}
+ finally{if(actor===props.userId&&household===props.householdId&&alive)busy.value=false}
 }
 async function submit(p=prepared.value){
  if(!p||busy.value||p.status!=='prepared')return

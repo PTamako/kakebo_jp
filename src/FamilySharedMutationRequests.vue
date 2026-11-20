@@ -197,8 +197,11 @@ async function submitIntent(operation,entry,target=null){
 }
 // Caller clears only after its corresponding draft removal is durably stored.
 async function clearAcknowledgedIntent(){
- if(!inlineRequest?.acknowledged)return
  const actor=props.userId,household=props.householdId
+ const saved=inlineRequest||await readMemberDeviceState(actor,household,'shared-inline')
+ if(!saved?.acknowledged)return
+ if(saved.userId!==actor||saved.householdId!==household)
+  throw Error('確認済み申請の所有者が一致しません')
  await clearMemberDeviceState(actor,household,'shared-inline')
  inlineRequest=null
 }

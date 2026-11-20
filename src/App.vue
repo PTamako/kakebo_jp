@@ -50,6 +50,7 @@ import { getReceiptImage, deleteReceiptImage, cleanupReceiptImages, listReceiptI
 import { uploadR2Receipt, getR2Receipt, getR2ReceiptVersion, deleteR2Receipt, listR2ReceiptsByIds } from './receipt-cloud.js'
 import { migrateLegacyReceipts } from './receipt-migration.js'
 import { readDeviceDraft, writeDeviceDraft } from './draft-store.js'
+import { persistFinancialDraftBeforePost } from './draft-submit.js'
 import { readPendingReceiptMarkers, markPendingReceipt, clearPendingReceipt } from './pending-receipts.js'
 
 const tab = ref('add')
@@ -1342,6 +1343,13 @@ async function saveAll() {
       const f = forms.value[0]
       // Retain one stable ID across retries (including "saved on server, reply lost").
       if (!f.clientRequestId) f.clientRequestId = crypto.randomUUID()
+      // Persist the idempotency key before network submission. A lost response
+      // followed by an app restart must replay the same key, not insert twice.
+      const persistedSnapshot = await persistFinancialDraftBeforePost({
+        hydrated:draftHydrated, snapshot:snapshotDraft(), persist:queueDeviceDraft
+      })
+      draftCurrentSnapshot=persistedSnapshot
+      draftCurrentSignature=draftSignature(persistedSnapshot)
       const result = await api('entries', { method: 'POST', body: JSON.stringify({
         ...f, amount: Number(f.amount), duplicatePolicy:'check',
         // Approval applies only to flagged rows, not the whole import batch.
@@ -1509,6 +1517,7 @@ async function saveEdit() {
     return
   }
   editSaving.value = true
+  let entryCommitted=false
   try {
     // An approved household row is protected by the immutable shared-entry
     // registry. Original editor must use its owner-scoped audited CAS route;
@@ -1551,6 +1560,7 @@ async function saveEdit() {
         body: JSON.stringify({ ...e, amount: Number(e.amount) })
       })
     }
+    entryCommitted=true
     ledgerRevision.value++
     if (editReceiptImage.value) {
       try { await persistReceipt(e.id, editReceiptImage.value, true, editReceiptVersion.value); editReceiptImage.value = null; editReceiptVersion.value = null }
@@ -1589,7 +1599,11 @@ async function saveEdit() {
     // The editor can also be opened directly from the monthly full list.
     // Scroll to the edited transaction after refresh, without requiring a day click.
     if (!returnDay && entryTypeFilter.value === 'all') await focusLastEditedDayInAll()
-  } catch (err) { flash('更新に失敗しました：' + err.message) }
+  } catch (err) {
+    flash(entryCommitted
+      ? '記録の変更は保存済みです。画面の更新だけが失敗しました。明細を再読み込みしてください：'+err.message
+      : '更新に失敗しました：'+err.message)
+  }
   finally { editSaving.value = false }
 }
 

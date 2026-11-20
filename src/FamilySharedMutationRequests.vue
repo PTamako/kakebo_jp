@@ -254,6 +254,31 @@ function startChange(row,op){
  action.value=op;resource.value=row.resource_id;
  if(op==='update')draft.value={...row.entry,amount:String(row.entry.amount)}
 }
+// The standalone approval editor uses an independent durable replay slot.
+// A lost HTTP response must not regenerate its HomeFlow request key.
+async function prepareEditorReplay(payload){
+ const user=props.userId,household=props.householdId
+ const snapshot=JSON.stringify({operation:payload.operation,
+  resource_id:payload.resource_id,expected_version:payload.expected_version,
+  entry:payload.entry})
+ let saved=await readMemberDeviceState(user,household,'shared-editor')
+ if(saved){
+  if(saved.userId!==user||saved.householdId!==household||
+    typeof saved.snapshot!=='string'||!/^shared-entry:[0-9a-f-]{36}$/.test(saved.key||''))
+   throw Error('前回の承認申請の再送情報が破損しています')
+  if(saved.snapshot!==snapshot){
+   if(!saved.acknowledged)throw Error('前回の申請結果が未確認です。同じ内容で再試行してください')
+   await clearMemberDeviceState(user,household,'shared-editor')
+   saved=null
+  }
+ }
+ if(!saved){
+  saved={userId:user,householdId:household,snapshot,
+   key:'shared-entry:'+crypto.randomUUID(),proposalId:null,acknowledged:false}
+  await writeMemberDeviceState(user,household,saved,'shared-editor')
+ }
+ return saved
+}
 async function prepare(){
  if(!canWrite.value||busy.value||prepared.value)return
  const op=action.value,selected=chosen.value
@@ -278,18 +303,31 @@ async function prepare(){
   return
  }
  const payload={expected_user_id:actor,
-  idempotency_key:stableKey.value||'shared-entry:'+crypto.randomUUID(),
   operation:op,resource_id:op==='create'?null:selected?.resource_id,
   expected_version:op==='create'?0:selected?.version,
   entry:['create','update'].includes(op)?record():null}
  if(!payload.entry&&['create','update'].includes(op))return
- stableKey.value=payload.idempotency_key
  busy.value=true;error.value='';message.value=''
  try{
+  const retry=await prepareEditorReplay(payload)
+  payload.idempotency_key=retry.key
+  stableKey.value=retry.key
   const result=await api('/api/family-finance/shared-mutation-requests',post(payload))
   if(ticket!==version||actor!==props.userId||household!==props.householdId)return
-  if(result.prepared?.status!=='prepared'||result.prepared?.applied!==false)
+  if(result.prepared?.applied!==false||!result.prepared?.proposal_id)
    throw Error('申請の受付結果を確認できません')
+  if(result.prepared.status==='submitted_status_unknown'){
+   retry.acknowledged=true
+   await writeMemberDeviceState(actor,household,retry,'shared-editor')
+   await clearMemberDeviceState(actor,household,'shared-editor')
+   stableKey.value=''
+   message.value='HomeFlow に提出済みです。審査状況を確認してください。'
+   await load()
+   return
+  }
+  if(result.prepared.status!=='prepared')throw Error('申請の受付状態を確認してください')
+  retry.proposalId=result.prepared.proposal_id
+  await writeMemberDeviceState(actor,household,retry,'shared-editor')
   prepared.value=result.prepared;message.value='申請を保存しました。明細は未変更です。HomeFlow に提出してください。'
  }catch(e){if(ticket===version)error.value=e.message}
  finally{if(ticket===version)busy.value=false}
@@ -304,6 +342,7 @@ async function submit(p=prepared.value){
   if(ticket!==version||actor!==props.userId)return
   if(result.applied!==false||result.status!=='submitted_status_unknown')
    throw Error('審査結果を確認できません。元の申請で再確認してください')
+  await clearMemberDeviceState(actor,hh,'shared-editor')
   prepared.value=null;stableKey.value=''
   message.value='HomeFlow に申請を送信しました。承認・実行後に明細へ反映されます。'
   await load()
@@ -319,6 +358,7 @@ async function cancel(){
    post({expected_user_id:actor}))
   if(ticket!==version||actor!==props.userId)return
   if(result.status!=='cancelled')throw Error('未提出の申請だけを取り消せます')
+  await clearMemberDeviceState(actor,hh,'shared-editor')
   prepared.value=null;stableKey.value='';message.value='申請を取り消しました。明細は変更されていません'
   await load()
  }catch(e){if(ticket===version)error.value=e.message}

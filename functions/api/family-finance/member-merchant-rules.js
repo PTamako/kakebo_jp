@@ -83,6 +83,7 @@ export async function familyMemberMerchantRules(req,env,url,user,parts){
    }
    const stamp=Date.now();
    if(!old){
+    if(x.previous_keyword!==undefined)return fail('RULE_VERSION_CHANGED',409);
     const count=await first(db,'SELECT COUNT(*) AS count FROM family_member_merchant_rules '+
      'WHERE household_id=? AND owner_user_id=?',user.household_id,user.user_id);
     if(Number(count?.count||0)>=200)return fail('RULE_LIMIT_REACHED',409);

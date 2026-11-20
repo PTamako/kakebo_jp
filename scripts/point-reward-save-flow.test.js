@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { persistFinancialDraftBeforePost } from '../src/draft-submit.js'
 
 // Exercise the actual App.vue saveAll body. A syntax-only build cannot catch
 // variables declared in the duplicate-check try block but used during POST.
@@ -38,6 +39,12 @@ function harness(drafts, history=[], acceptDuplicate=true) {
     confirm:()=>{confirmations++;return acceptDuplicate},
     nextTick:async()=>{},
     persistDraftLocally:async()=>{draftPersists++},
+    persistFinancialDraftBeforePost,draftHydrated:true,
+    snapshotDraft:()=>({updatedAt:Date.now(),mode:'manual',input:input.value,
+      forms:forms.value.map(f=>({...f,receiptImage:null,receiptFileName:''}))}),
+    queueDeviceDraft:async()=>{draftPersists++},
+    draftCurrentSnapshot:null,draftCurrentSignature:'',
+    draftSignature:JSON.stringify,
     syncDraftToD1:()=>{},
     loadPaymentSettings:async()=>{},
     load:async()=>{},loadYear:async()=>{},loadTransfers:async()=>{},

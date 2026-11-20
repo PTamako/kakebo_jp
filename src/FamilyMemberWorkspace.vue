@@ -15,6 +15,8 @@ import MemberFixedCosts from './MemberFixedCosts.vue'
 import FamilySharedMutationRequests from './FamilySharedMutationRequests.vue'
 import TransactionForm from './TransactionForm.vue'
 import {parseEntries,parseReceipt,ocrImage} from './parse.js'
+import {readMemberDeviceState,writeMemberDeviceState} from './draft-store.js'
+import {memberDraftSnapshot,verifiedMemberDraft} from './member-draft-safety.js'
 import {compressReceiptImage} from './receipt-image.js'
 import EntryInputPage from './EntryInputPage.vue'
 import {ICON_LIBRARY} from './icon-library.js'
@@ -396,6 +398,66 @@ const memberOcrBusy=ref(false),memberOcrStatus=ref(''),memberOcrWarning=ref('')
 const memberScanPaymentSource=ref('cash')
 const memberImportPaymentSource=ref('cash')
 const memberAiQuota=ref(null)
+
+// Member drafts are partitioned by verified HomeFlow user and household.
+// No receipt image blobs are placed in this store.
+const memberDraftLoaded=ref(false)
+let memberDraftTimer=null,memberDraftEpoch=0,memberDraftWriteQueue=Promise.resolve()
+function memberDraftValue(nextForms=memberEntries.value){
+ return memberDraftSnapshot({userId:props.user.user_id,householdId:props.user.household_id,
+  forms:nextForms,rawText:memberRawText.value,inputMode:memberInputMode.value,
+  pendingPaidEntry})
+}
+function queueMemberDraftWrite(snapshot){
+ const user=snapshot.userId,household=snapshot.householdId
+ memberDraftWriteQueue=memberDraftWriteQueue.catch(()=>{}).then(()=>
+  writeMemberDeviceState(user,household,snapshot))
+ return memberDraftWriteQueue
+}
+async function persistMemberDraft(nextForms=memberEntries.value){
+ if(!memberDraftLoaded.value)throw Error('端末の下書き復元が完了していません。再読み込みしてください')
+ if(memberDraftTimer){clearTimeout(memberDraftTimer);memberDraftTimer=null}
+ const snapshot=memberDraftValue(nextForms)
+ try{await queueMemberDraftWrite(snapshot)}
+ catch(e){throw Error('下書きと再送防止IDを端末に保存できません：'+e.message)}
+ return snapshot
+}
+function scheduleMemberDraftSave(){
+ if(!memberDraftLoaded.value)return
+ if(memberDraftTimer)clearTimeout(memberDraftTimer)
+ memberDraftTimer=setTimeout(()=>{
+  memberDraftTimer=null
+  void persistMemberDraft().catch(e=>{memberEntryError.value=e.message})
+ },300)
+}
+watch([memberEntries,memberRawText,memberInputMode],scheduleMemberDraftSave,{deep:true})
+async function hydrateMemberDraft(){
+ const ticket=++memberDraftEpoch,user=props.user.user_id,household=props.user.household_id
+ memberDraftLoaded.value=false
+ if(memberDraftTimer){clearTimeout(memberDraftTimer);memberDraftTimer=null}
+ try{
+  await memberDraftWriteQueue.catch(()=>{})
+  const stored=await readMemberDeviceState(user,household)
+  if(ticket!==memberDraftEpoch||user!==props.user.user_id||household!==props.user.household_id)return
+  const data=stored?verifiedMemberDraft(stored,user,household):null
+  if(stored&&!data)throw Error('保存済み下書きの本人情報または内容が一致しません')
+  memberEntries.value=data?.forms||[]
+  memberRawText.value=data?.rawText||''
+  memberInputMode.value=data?.inputMode||'manual'
+  pendingPaidEntry=data?.pendingPaidEntry||null
+  memberDraftRecoveryInfo.value=data&&(data.forms.length||data.rawText||data.pendingPaidEntry)
+   ?'端末の下書きを復元しました（画像は再選択してください）':''
+  memberDraftLoaded.value=true
+ }catch(e){
+  if(ticket===memberDraftEpoch){memberDraftLoaded.value=false
+   memberEntryError.value='下書きの復元に失敗しました。重複記帳を防ぐため保存できません：'+e.message}
+ }
+}
+function memberDraftHidden(){
+ if(document.visibilityState==='hidden'&&memberDraftLoaded.value)
+  void persistMemberDraft().catch(e=>{memberEntryError.value=e.message})
+}
+
 const memberAiEnabled=ref((()=>{
  try{return localStorage.getItem('kakeibo-ai-ocr-enabled')==='true'}catch{return false}
 })())

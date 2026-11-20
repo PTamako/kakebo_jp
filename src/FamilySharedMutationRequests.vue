@@ -1,5 +1,5 @@
 <script setup>
-import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
+import {computed,nextTick,onMounted,onUnmounted,ref,watch} from 'vue'
 import {readMemberDeviceState,writeMemberDeviceState,clearMemberDeviceState} from './draft-store.js'
 const props=defineProps({userId:{type:String,required:true},householdId:{type:String,required:true},headless:{type:Boolean,default:false},onlyWhenOpen:{type:Boolean,default:false}})
 const open=ref(false),busy=ref(false),error=ref(''),message=ref(''),
@@ -51,6 +51,26 @@ async function load(){
   ])
   if(!alive||!open.value||ticket!==version||actor!==props.userId||household!==props.householdId)return
   rows.value=active.items||[];deleted.value=trash.items||[];proposals.value=pending.items||[]
+  if(!stableKey.value&&!prepared.value){
+   const saved=await readMemberDeviceState(actor,household,'shared-editor')
+   if(saved){
+    if(saved.userId!==actor||saved.householdId!==household||
+      !/^shared-entry:[0-9a-f-]{36}$/.test(saved.key||'')||
+      typeof saved.snapshot!=='string')
+     throw Error('前回の申請を復元できません。重複申請を防ぐため新規送信しないでください')
+    const prior=JSON.parse(saved.snapshot)
+    if(!['create','update','delete','restore'].includes(prior.operation))
+     throw Error('前回の申請の操作種類を確認できません')
+    if(ticket!==version||actor!==props.userId||household!==props.householdId)return
+    action.value=prior.operation
+    resource.value=prior.resource_id||''
+    await nextTick() // let the resource watcher run before restoring edited values
+    if(ticket!==version||actor!==props.userId||household!==props.householdId)return
+    if(prior.entry)draft.value={...prior.entry,amount:String(prior.entry.amount)}
+    stableKey.value=saved.key
+    message.value='前回の申請を復元しました。元の内容で再送して受付状態を確認できます。'
+   }
+  }
   available.value=true;error.value=''
  }catch(e){
   if(ticket===version){rows.value=[];deleted.value=[];proposals.value=[];

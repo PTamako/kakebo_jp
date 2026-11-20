@@ -583,20 +583,26 @@ async function submitPaidExpense(choice,record){
  const snapshot=JSON.stringify({user,source:record.paymentSource,entry})
  if(pendingPaidEntry&&pendingPaidEntry.snapshot!==snapshot)
   throw Error('前回の送信結果が未確認です。元の内容で再試行してください')
- if(!pendingPaidEntry)pendingPaidEntry={snapshot,key:'member-spend:'+crypto.randomUUID(),requestId:null}
+ if(!pendingPaidEntry)pendingPaidEntry={snapshot,key:'member-spend:'+crypto.randomUUID(),
+  requestId:null,acknowledged:false,receiptRef:null}
  const pending=pendingPaidEntry
- // Durably preserve the same payment key BEFORE any prepare/submit call.
+ // Retain the same replay key and submitted payload until the member draft
+ // is atomically consumed. Clearing a key before removing its draft can cause
+ // a duplicate if iOS closes the PWA between those two steps.
  await persistMemberDraft()
+ if(pending.acknowledged){
+  if(!pending.receiptRef)throw Error('前回の受付番号が不明です。審査一覧を確認してください')
+  return {type:'pending',receiptRef:pending.receiptRef}
+ }
  if(choice.kind==='shared'){
-  // Card sharing authorizes the payment method, never an immediate household
-  // ledger mutation. The actual expense must be approved in HomeFlow.
   const result=await sharedMutationRef.value?.submitEntry({
    ...entry,type:'expense',payment_source:choice.card.card_name
   })
   if(!result?.proposalId)throw Error('共有カードの HomeFlow 審査受付を確認できません')
-  pendingPaidEntry=null
-  try{await persistMemberDraft()}catch(e){pendingPaidEntry=pending;throw e}
-  return {type:'pending',receiptRef:'proposal:'+result.proposalId}
+  pending.receiptRef='proposal:'+result.proposalId
+  pending.acknowledged=true
+  await persistMemberDraft()
+  return {type:'pending',receiptRef:pending.receiptRef}
  }
  if(choice.kind!=='personal')throw Error('支払方法を確認してください')
  const a=choice.account
@@ -614,21 +620,21 @@ async function submitPaidExpense(choice,record){
   pending.requestId=prepared.request_id
   await persistMemberDraft()
   if(prepared.status==='submitted_status_unknown'&&prepared.approval_id){
-   const requestId=pending.requestId
-   pendingPaidEntry=null
-   try{await persistMemberDraft()}catch(e){pendingPaidEntry=pending;throw e}
-   return {type:'pending',receiptRef:'request:'+requestId}
+   pending.receiptRef='request:'+pending.requestId
+   pending.acknowledged=true
+   await persistMemberDraft()
+   return {type:'pending',receiptRef:pending.receiptRef}
   }
   if(prepared.status!=='prepared')throw Error('決済申請の状態を確認してください')
  }
- const requestId=pending.requestId
- const response=await api(path+'/'+encodeURIComponent(requestId)+'/submit',
+ const response=await api(path+'/'+encodeURIComponent(pending.requestId)+'/submit',
   request({expected_user_id:user}))
  if(response.applied!==false||response.status!=='submitted_status_unknown')
   throw Error('HomeFlow 承認依頼の受付を確認できません')
- pendingPaidEntry=null
- try{await persistMemberDraft()}catch(e){pendingPaidEntry=pending;throw e}
- return {type:'pending',receiptRef:'request:'+requestId}
+ pending.receiptRef='request:'+pending.requestId
+ pending.acknowledged=true
+ await persistMemberDraft()
+ return {type:'pending',receiptRef:pending.receiptRef}
 }
 async function submitMemberFixedCost(item){
  if(memberEntryPending.value||busy.value)throw Error('別の操作が進行中です')
@@ -642,7 +648,14 @@ async function submitMemberFixedCost(item){
   if(!result?.proposalId)throw Error('HomeFlow の申請受付を確認できません')
  }else result=await submitPaidExpense(choice,record)
  await refresh()
- // No member-entry draft for a manually submitted fixed cost.
+ // A fixed-cost request has no entry-form draft. Consume the acknowledged
+ // payment receipt in the same durable member snapshot before allowing a
+ // new, intentional payment request.
+ if(choice.kind==='personal'||choice.kind==='shared'){
+  const previous=pendingPaidEntry
+  pendingPaidEntry=null
+  try{await persistMemberDraft()}catch(e){pendingPaidEntry=previous;throw e}
+ }
  if(result?.receiptRef?.startsWith('proposal:')||result?.proposalId)
   await sharedMutationRef.value?.clearAcknowledgedIntent()
  return result
@@ -721,7 +734,10 @@ async function submitMemberEntry(){
    // A later failure leaves all unsent rows editable, not silently discarded.
    // Server receipt already confirmed: persist removal before another write.
    // If local storage is unavailable, retain the same retry key on restart.
-   await persistMemberDraft(memberEntries.value.slice(1))
+   const priorPaid=pendingPaidEntry
+   if(choice.kind==='personal'||choice.kind==='shared')pendingPaidEntry=null
+   try{await persistMemberDraft(memberEntries.value.slice(1))}
+   catch(e){pendingPaidEntry=priorPaid;throw e}
    memberEntries.value.shift();sent++
    if(receiptRef.startsWith('proposal:'))
     await sharedMutationRef.value?.clearAcknowledgedIntent()

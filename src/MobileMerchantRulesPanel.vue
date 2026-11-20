@@ -41,8 +41,9 @@ const paymentOptions=computed(()=>[
 ])
 const hasChanges=computed(()=>{
   const keyword=newKeyword.value.trim()
-  if(keyword.length<2||(!category.value&&!payment.value))return false
-  return creating.value ? true : Boolean(selected.value&&(
+  if(keyword.length<2)return false
+  if(creating.value)return Boolean(category.value||payment.value)
+  return Boolean(selected.value&&(
     keyword!==selected.value.keyword||category.value!==selected.value.category||payment.value!==selected.value.payment_source))
 })
 function openPanel(){

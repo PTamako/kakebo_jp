@@ -349,9 +349,18 @@ async function refreshReceiptImageIds() {
     ])
   } catch(error) {
     if(requestId!==receiptIndexRequest)return
+    // This is a background index lookup, not a receipt upload or ledger save.
+    // A temporary R2/D1 metadata failure must not mask successful text-only
+    // recognition or record edits with an unrelated image-error toast.
     const localIds=await listReceiptImageIds().catch(()=>[])
-    receiptImageIds.value=new Set([...receiptImageIds.value,...localIds])
-    flash('レシート画像の表示状態を確認できません：'+error.message)
+    if(requestId!==receiptIndexRequest)return
+    const wanted=new Set(ids)
+    receiptImageIds.value=new Set([
+      ...[...receiptImageIds.value].filter(id=>wanted.has(id)),
+      ...localIds.filter(id=>wanted.has(id))
+    ])
+    // Explicit image view/upload/delete actions still report their own errors.
+    console.warn('Receipt image index refresh skipped:',error)
   }
 }
 async function viewReceipt(entryId) {
@@ -717,7 +726,9 @@ async function load() {
     }
     if(!stillActive())return
     entries.value = nextEntries
-    refreshReceiptImageIds().catch(() => {})
+    // Receipt badges are needed on the ledger screen, not during text entry
+    // or a save that happens to refresh the monthly ledger in the background.
+    if (tab.value === 'list') void refreshReceiptImageIds()
     stats.value = nextStats
     loadedMonth = requestedMonth
   } catch (e) {
@@ -859,7 +870,11 @@ watch(month, async () => {
 watch(selectedYear, async () => { editListReturn.value = null; visibleEntryCount.value = 20; await loadYear(); if (tab.value === 'list' && detailFilter.value?.period === 'year') await openCategoryDetails(detailFilter.value.category, detailFilter.value.type, 'year', detailFilter.value.paymentMethod || '') })
 watch(tab, value => {
   if (value === 'stat' && statsPeriod.value === 'year') loadYear()
-  if (value === 'list') { editListReturn.value = null; visibleEntryCount.value = 20 }
+  if (value === 'list') {
+    editListReturn.value = null
+    visibleEntryCount.value = 20
+    void refreshReceiptImageIds()
+  }
   // Reset the vertical position on tab changes like a native app.
   window.scrollTo(0, 0)
 })

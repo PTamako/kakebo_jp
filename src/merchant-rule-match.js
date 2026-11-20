@@ -4,7 +4,7 @@
 export function normalizedMerchantKey(value) {
   return String(value ?? '').normalize('NFKC').toLocaleLowerCase('ja-JP')
     .replace(/[\u30a1-\u30f6]/g, char=>String.fromCharCode(char.charCodeAt(0)-0x60))
-    .replace(/[\s\u3000・･、,，.．。/／()（）［］\[\]_-]/g, '')
+    .replace(/[\s\u3000・･、,，.．。\/／()（）［］\[\]_-]/g, '')
 }
 export function bestMerchantRule(merchant, rules = []) {
   const name = normalizedMerchantKey(merchant)

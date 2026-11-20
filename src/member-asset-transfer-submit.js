@@ -35,6 +35,7 @@ export async function submitMemberPersonalTransfer({record,userId,accounts,persi
  })
  if(record.memberAssetPending&&record.memberAssetPending.fingerprint!==fingerprint)
   throw Error('前回の資産処理の送信結果が未確認です。内容を変更せず同じ申請を再送してください')
+ if(record.memberAssetPending?.acknowledged===true)return {type:'applied'}
  const wasPending=!!record.memberAssetPending
  let pending=record.memberAssetPending
  if(!pending){
@@ -125,6 +126,10 @@ export async function submitMemberPersonalTransfer({record,userId,accounts,persi
   result.issuer_api_verified!==false||result.applied!==true||
   result.counterpart_confirmed!==true)
   throw Error('本人のポイント取引の受付結果を確認できません')
- record.memberAssetPending=null
+ if(typeof persistPending==='function'){
+  // Keep the acknowledged key on the draft until its removal is durable.
+  pending.acknowledged=true
+  await persistPending()
+ }else record.memberAssetPending=null
  return {type:'applied'}
 }

@@ -480,7 +480,7 @@ async function saveMerchantRule({keyword,oldKeyword=keyword,oldCategory,oldPayme
     throw Error('支払方法を確認してください')
   let changed=false
   try{
-    if(keyword!==oldKeyword && (category||paymentSource)){
+    if(oldKeyword && keyword!==oldKeyword && (category||paymentSource)){
       if(!original)throw Error('変更対象の店舗ルールが見つかりません')
       if(merchantRulesCombined.value.some(item=>item.keyword===keyword))
         throw Error('同じ店舗名のルールが既にあります')

@@ -612,7 +612,7 @@ main.theme-yellow .bottom-nav button.nav-add.active {
 
 
 /* Expanded themes and compact color-only picker.
-   Legacy IDs peach/latte/slate now represent amber/peacock/graphite to preserve device preferences. */
+   Legacy IDs peach/latte/slate now represent amber/peacock/navy to preserve device preferences. */
 main.theme-lavender {
   --ink:#51465b;--muted:#867992;--line:#ebe0f2;
   --blue:#b697d1;--blue-dark:#8563a8;--paper:#faf5ff;--card:#fff;
@@ -632,9 +632,9 @@ main.theme-latte {
   --chart-6:#bd718e;--chart-7:#7b9d62;--chart-8:#8495aa;--chart-9:#ad8070;--chart-10:#528e93;
 }
 main.theme-slate {
-  --ink:#303640;--muted:#636c78;--line:#dde1e6;
-  --blue:#4b5563;--blue-dark:#303946;--paper:#f2f4f6;--card:#fff;
-  --chart-1:#4b5563;--chart-2:#6c93ba;--chart-3:#72a695;--chart-4:#cba65f;--chart-5:#9a84ba;
+  --ink:#26364f;--muted:#5e708b;--line:#d9e2ef;
+  --blue:#263e63;--blue-dark:#192c49;--paper:#f1f4fa;--card:#fff;
+  --chart-1:#263e63;--chart-2:#6c93ba;--chart-3:#72a695;--chart-4:#cba65f;--chart-5:#9a84ba;
   --chart-6:#bf8291;--chart-7:#819b65;--chart-8:#c78c66;--chart-9:#849aa9;--chart-10:#a49aa4;
 }
 /* New palettes inherit the shared component styles, with a matching hero and calendar. */

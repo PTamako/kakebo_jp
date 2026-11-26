@@ -611,8 +611,8 @@ main.theme-yellow .bottom-nav button.nav-add.active {
 }
 
 
-/* Expanded cream themes and compact color-only picker.
-   Theme IDs and existing saved pink/blue/yellow/green values are preserved. */
+/* Expanded themes and compact color-only picker.
+   Legacy IDs peach/latte/slate now represent amber/peacock/navy to preserve device preferences. */
 main.theme-lavender {
   --ink:#51465b;--muted:#867992;--line:#ebe0f2;
   --blue:#b697d1;--blue-dark:#8563a8;--paper:#faf5ff;--card:#fff;
@@ -620,22 +620,22 @@ main.theme-lavender {
   --chart-6:#cf8ba9;--chart-7:#849bbd;--chart-8:#b39a82;--chart-9:#8fb8aa;--chart-10:#bb9db9;
 }
 main.theme-peach {
-  --ink:#604a40;--muted:#927d75;--line:#f3e2d6;
-  --blue:#df9c7e;--blue-dark:#b87458;--paper:#fff7f2;--card:#fff;
-  --chart-1:#d68c6a;--chart-2:#9bb898;--chart-3:#b38ec5;--chart-4:#d5ab66;--chart-5:#7fa9bf;
-  --chart-6:#c97e99;--chart-7:#8ead9b;--chart-8:#a395c5;--chart-9:#c1ad77;--chart-10:#9a918d;
+  --ink:#543523;--muted:#80614f;--line:#ead8c9;
+  --blue:#b65c28;--blue-dark:#88401c;--paper:#fff5eb;--card:#fff;
+  --chart-1:#b65c28;--chart-2:#4f8f85;--chart-3:#8e78b5;--chart-4:#c69943;--chart-5:#557fa6;
+  --chart-6:#bd718e;--chart-7:#779b60;--chart-8:#887da3;--chart-9:#bb906c;--chart-10:#818b97;
 }
 main.theme-latte {
-  --ink:#554a42;--muted:#918277;--line:#ede1d6;
-  --blue:#b59a81;--blue-dark:#876a53;--paper:#fbf7f0;--card:#fff;
-  --chart-1:#ab856a;--chart-2:#91a88c;--chart-3:#aa90ba;--chart-4:#d1a16d;--chart-5:#82a8bb;
-  --chart-6:#bc8c8f;--chart-7:#87a79c;--chart-8:#bdad80;--chart-9:#9f99bb;--chart-10:#ac9388;
+  --ink:#24474b;--muted:#547579;--line:#d1e5e6;
+  --blue:#147d82;--blue-dark:#0f5960;--paper:#eff8f8;--card:#fff;
+  --chart-1:#147d82;--chart-2:#c78354;--chart-3:#9a79b8;--chart-4:#bc9b42;--chart-5:#688eb6;
+  --chart-6:#bd718e;--chart-7:#7b9d62;--chart-8:#8495aa;--chart-9:#ad8070;--chart-10:#528e93;
 }
 main.theme-slate {
-  --ink:#394f60;--muted:#768b99;--line:#dfe9ed;
-  --blue:#86a8bd;--blue-dark:#537d95;--paper:#f3f8fa;--card:#fff;
-  --chart-1:#719ab6;--chart-2:#c49b7a;--chart-3:#9c94c9;--chart-4:#7eaea0;--chart-5:#c6ad70;
-  --chart-6:#b58fa7;--chart-7:#83acc2;--chart-8:#a7b387;--chart-9:#ca968d;--chart-10:#8d9fb0;
+  --ink:#26364f;--muted:#5e708b;--line:#d9e2ef;
+  --blue:#263e63;--blue-dark:#192c49;--paper:#f1f4fa;--card:#fff;
+  --chart-1:#263e63;--chart-2:#6c93ba;--chart-3:#72a695;--chart-4:#cba65f;--chart-5:#9a84ba;
+  --chart-6:#bf8291;--chart-7:#819b65;--chart-8:#c78c66;--chart-9:#849aa9;--chart-10:#a49aa4;
 }
 /* New palettes inherit the shared component styles, with a matching hero and calendar. */
 main:is(.theme-lavender,.theme-peach,.theme-latte,.theme-slate) .hero-total {

@@ -67,9 +67,10 @@ const themes = [
   { id: 'yellow', label: 'イエロー', color: '#d9b957' },
   { id: 'green', label: 'グリーン', color: '#78ad91' },
   { id: 'lavender', label: 'ラベンダー', color: '#b697d1' },
-  { id: 'peach', label: 'ピーチ', color: '#df9c7e' },
-  { id: 'latte', label: 'ミルクティー', color: '#b59a81' },
-  { id: 'slate', label: 'スモーキーブルー', color: '#86a8bd' },
+  // Keep legacy IDs so existing device preferences still resolve.
+  { id: 'peach', label: 'アンバー', color: '#b65c28' },
+  { id: 'latte', label: 'ピーコック', color: '#147d82' },
+  { id: 'slate', label: 'ネイビー', color: '#263e63' },
 ]
 // Theme is an intentionally device-only preference. Retain the existing key.
 const storedTheme = (() => {
